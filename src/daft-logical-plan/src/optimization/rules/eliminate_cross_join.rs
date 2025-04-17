@@ -444,14 +444,11 @@ mod tests {
 
     #[fixture]
     fn t1() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("a", DataType::UInt32),
-                Field::new("b", DataType::UInt32),
-                Field::new("c", DataType::UInt32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("a", DataType::UInt32),
+            Field::new("b", DataType::UInt32),
+            Field::new("c", DataType::UInt32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -464,14 +461,11 @@ mod tests {
 
     #[fixture]
     fn t2() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("a", DataType::UInt32),
-                Field::new("b", DataType::UInt32),
-                Field::new("c", DataType::UInt32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("a", DataType::UInt32),
+            Field::new("b", DataType::UInt32),
+            Field::new("c", DataType::UInt32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {

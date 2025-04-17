@@ -10,7 +10,10 @@ def monotonically_increasing_id() -> Expression:
     The implementation puts the partition number in the upper 28 bits, and the row number in each partition
     in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
 
-    Example:
+    Returns:
+        Expression: An expression that generates monotonically increasing IDs
+
+    Examples:
         >>> import daft
         >>> from daft.functions import monotonically_increasing_id
         >>> daft.context.set_runner_ray()  # doctest: +SKIP
@@ -34,8 +37,6 @@ def monotonically_increasing_id() -> Expression:
         <BLANKLINE>
         (Showing first 4 of 4 rows)
 
-    Returns:
-        Expression: An expression that generates monotonically increasing IDs
     """
     return Expression._from_pyexpr(native.monotonically_increasing_id())
 
@@ -46,7 +47,7 @@ def columns_sum(*exprs: Expression | str) -> Expression:
     Args:
         exprs: The columns to sum.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.functions import columns_sum
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -77,7 +78,7 @@ def columns_mean(*exprs: Expression | str) -> Expression:
     Args:
         exprs: The columns to average.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.functions import columns_mean
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -108,7 +109,7 @@ def columns_avg(*exprs: Expression | str) -> Expression:
     Args:
         exprs: The columns to average across.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.functions import columns_avg
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -139,7 +140,7 @@ def columns_min(*exprs: Expression | str) -> Expression:
     Args:
         exprs: The columns to find the minimum of.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.functions import columns_min
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -170,7 +171,7 @@ def columns_max(*exprs: Expression | str) -> Expression:
     Args:
         exprs: The columns to find the maximum of.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.functions import columns_max
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -193,3 +194,8 @@ def columns_max(*exprs: Expression | str) -> Expression:
     if not exprs:
         raise ValueError("columns_max requires at least one expression")
     return list_(*exprs).list.max().alias("columns_max")
+
+
+def row_number() -> Expression:
+    """Return the row number of the current row (used for window functions)."""
+    return Expression._from_pyexpr(native.row_number())

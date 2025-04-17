@@ -4,6 +4,7 @@ use std::{
 };
 
 use daft_dsl::{Expr, ExprRef};
+use daft_session::Session;
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
     FunctionArguments,
@@ -301,17 +302,36 @@ impl SQLPlanner<'_> {
 
         fn get_func_from_sqlfunctions_registry(
             name: impl AsRef<str>,
-        ) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
+        ) -> Option<Arc<dyn SQLFunction>> {
             let name = name.as_ref();
-            SQL_FUNCTIONS.get(name).cloned().ok_or_else(|| {
-                PlannerError::unsupported_sql(format!("Function `{}` not found", name))
-            })
+            SQL_FUNCTIONS.get(name).cloned()
+        }
+
+        fn get_func_from_session(
+            session: &Session,
+            name: impl AsRef<str>,
+        ) -> SQLPlannerResult<Option<Arc<dyn SQLFunction>>> {
+            let name = name.as_ref();
+
+            match session.get_function(name)? {
+                Some(f) => Ok(Some(Arc::new(f))),
+                None => Ok(None),
+            }
         }
 
         // lookup function variant(s) by name
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let mut fn_match = get_func_from_sqlfunctions_registry(fn_name.as_str())?;
+
+        let mut fn_match = if let Some(fn_match) =
+            get_func_from_session(&self.context.borrow().session, &fn_name)?
+        {
+            fn_match
+        } else {
+            get_func_from_sqlfunctions_registry(fn_name.as_str()).ok_or_else(|| {
+                PlannerError::unsupported_sql(format!("Function `{}` not found", fn_name))
+            })?
+        };
 
         // TODO: Filter the variants for correct arity.
         //
@@ -341,7 +361,13 @@ impl SQLPlanner<'_> {
 
                 match (fn_name.as_str(), duplicate_treatment) {
                     ("count", DuplicateTreatment::Distinct) => {
-                        fn_match = get_func_from_sqlfunctions_registry("count_distinct")?;
+                        fn_match = get_func_from_sqlfunctions_registry("count_distinct")
+                            .ok_or_else(|| {
+                                PlannerError::unsupported_sql(format!(
+                                    "Function `{}` not found",
+                                    fn_name
+                                ))
+                            })?;
                     }
                     ("count", DuplicateTreatment::All) => (),
                     (name, DuplicateTreatment::Distinct) => {

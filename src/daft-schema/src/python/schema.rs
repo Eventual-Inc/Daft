@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use super::{datatype::PyDataType, field::PyField};
 use crate::{field::Field, schema};
 
-#[pyclass(module = "daft.daft")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft", eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PySchema {
     pub schema: schema::SchemaRef,
 }
@@ -23,9 +23,8 @@ impl PySchema {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         let pyarrow_fields = self
             .schema
-            .fields
-            .iter()
-            .map(|(_, f)| {
+            .into_iter()
+            .map(|f| {
                 // NOTE: Use PyDataType::to_arrow because we need to dip into Python to get
                 // the registered Arrow extension types
                 let py_dtype: PyDataType = f.dtype.clone().into();
@@ -52,31 +51,26 @@ impl PySchema {
         Ok(new_schema.into())
     }
 
-    pub fn eq(&self, other: &Self) -> PyResult<bool> {
-        Ok(self.schema.fields.eq(&other.schema.fields))
-    }
-
     pub fn estimate_row_size_bytes(&self) -> PyResult<f64> {
         Ok(self.schema.estimate_row_size_bytes())
     }
 
     #[staticmethod]
-    pub fn from_field_name_and_types(names_and_types: Vec<(String, PyDataType)>) -> PyResult<Self> {
+    pub fn from_field_name_and_types(names_and_types: Vec<(String, PyDataType)>) -> Self {
         let fields = names_and_types
             .iter()
-            .map(|(name, pydtype)| Field::new(name, pydtype.clone().into()))
-            .collect();
-        let schema = schema::Schema::new(fields)?;
-        Ok(Self {
+            .map(|(name, pydtype)| Field::new(name, pydtype.clone().into()));
+        let schema = schema::Schema::new(fields);
+        Self {
             schema: schema.into(),
-        })
+        }
     }
 
     #[staticmethod]
-    pub fn from_fields(fields: Vec<PyField>) -> PyResult<Self> {
-        Ok(Self {
-            schema: schema::Schema::new(fields.iter().map(|f| f.field.clone()).collect())?.into(),
-        })
+    pub fn from_fields(fields: Vec<PyField>) -> Self {
+        Self {
+            schema: schema::Schema::new(fields.iter().map(|f| f.field.clone())).into(),
+        }
     }
 
     pub fn __repr__(&self) -> PyResult<String> {

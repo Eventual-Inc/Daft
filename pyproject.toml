@@ -41,7 +41,7 @@ ray = [
   "packaging"
 ]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
-unity = ["unitycatalog"]
+unity = ["httpx <= 0.27.2", "unitycatalog"]
 viz = []
 
 [project.scripts]

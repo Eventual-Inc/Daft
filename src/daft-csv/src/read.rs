@@ -314,7 +314,7 @@ async fn read_csv_single_into_table(
     };
 
     let schema: arrow2::datatypes::Schema = schema_fields.into();
-    let schema = Arc::new(Schema::try_from(&schema)?);
+    let schema = Arc::new(schema.into());
 
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
@@ -633,12 +633,12 @@ fn parse_into_column_array_chunk_stream(
         .iter()
         .map(|i| fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(daft_core::prelude::Schema::new(fields_subset)?);
+    let read_schema = Arc::new(daft_core::prelude::Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
         read_schema
-            .fields
-            .values()
-            .map(|f| Arc::new(f.clone()))
+            .into_iter()
+            .cloned()
+            .map(Arc::new)
             .collect::<Vec<_>>(),
     );
 
@@ -824,7 +824,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         if compression.is_none() {
@@ -886,7 +886,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -937,7 +937,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -988,7 +988,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1038,7 +1038,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1086,7 +1086,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1134,7 +1134,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1181,7 +1181,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1229,7 +1229,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1293,7 +1293,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1341,7 +1341,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1389,7 +1389,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1437,7 +1437,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1476,7 +1476,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1519,7 +1519,7 @@ mod tests {
                 Field::new("petal.length", DataType::Null),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         let null_column = table.get_column("petal.length")?;
@@ -1553,7 +1553,7 @@ mod tests {
             Field::new("petal.length", DataType::Null),
             Field::new("petal.width", DataType::Float64),
             Field::new("variety", DataType::Utf8),
-        ])?;
+        ]);
 
         let table = read_csv(
             file.as_ref(),
@@ -1575,7 +1575,7 @@ mod tests {
                 Field::new("petal.length", DataType::Null),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         let null_column = table.get_column("petal.length")?;
@@ -1614,7 +1614,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1650,7 +1650,7 @@ mod tests {
             Field::new("petal.length", DataType::Boolean),
             Field::new("petal.width", DataType::Boolean),
             Field::new("variety", DataType::Int64),
-        ])?;
+        ]);
         let table = read_csv(
             file.as_ref(),
             Some(CsvConvertOptions::default().with_schema(Some(schema.into()))),
@@ -1731,7 +1731,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1818,7 +1818,7 @@ mod tests {
                 Field::new("column_2", DataType::Float64),
                 Field::new("column_3", DataType::Float64),
                 Field::new("column_4", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
 
@@ -1843,7 +1843,7 @@ mod tests {
             Field::new("petal.length", DataType::Float64),
             Field::new("petal.width", DataType::Float64),
             Field::new("variety", DataType::Utf8),
-        ])?;
+        ]);
 
         let table = read_csv(
             file.as_ref(),
@@ -1915,7 +1915,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8)
-            ])?
+            ])
             .into(),
         );
 
@@ -1950,7 +1950,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8)
-            ])?
+            ])
             .into(),
         );
 
@@ -1986,7 +1986,7 @@ mod tests {
         assert_eq!(table.len(), 100);
         assert_eq!(
             table.schema,
-            Schema::new(vec![Field::new("b", DataType::Utf8)])?.into(),
+            Schema::new(vec![Field::new("b", DataType::Utf8)]).into(),
         );
 
         Ok(())
@@ -2017,7 +2017,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8)
-            ])?
+            ])
             .into(),
         );
 
@@ -2046,7 +2046,7 @@ mod tests {
         assert_eq!(table.len(), 100);
         assert_eq!(
             table.schema,
-            Schema::new(vec![Field::new("b", DataType::Utf8)])?.into(),
+            Schema::new(vec![Field::new("b", DataType::Utf8)]).into(),
         );
 
         Ok(())

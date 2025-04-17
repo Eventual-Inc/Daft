@@ -220,8 +220,16 @@ pub enum Expr {
         inputs: Vec<ExprRef>,
     },
 
+    // Over represents a window function as it is actually evaluated (since it requires a window spec)
+    #[display("{_0} over {_1}")]
+    Over(WindowExpr, window::WindowSpec),
+
+    // WindowFunction represents a window function as an expression, this alone cannot be evaluated since
+    // it requires a window spec. This variant only exists for constructing window functions in the
+    // DataFrame API and should not appear in logical or physical plans. It must be converted to an Over
+    // expression with a window spec before evaluation.
     #[display("window({_0})")]
-    Window(ExprRef, window::WindowSpec),
+    WindowFunction(WindowExpr),
 
     #[display("not({_0})")]
     Not(ExprRef),
@@ -332,6 +340,15 @@ pub enum AggExpr {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+}
+
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum WindowExpr {
+    #[display("agg({_0})")]
+    Agg(AggExpr),
+
+    #[display("row_number")]
+    RowNumber,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -668,6 +685,70 @@ impl From<&AggExpr> for ExprRef {
     }
 }
 
+impl WindowExpr {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.name(),
+            Self::RowNumber => "row_number",
+        }
+    }
+
+    pub fn semantic_id(&self, schema: &Schema) -> FieldID {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
+            Self::RowNumber => FieldID::new("row_number"),
+        }
+    }
+
+    pub fn children(&self) -> Vec<ExprRef> {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.children(),
+            Self::RowNumber => vec![],
+        }
+    }
+
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
+        match self {
+            Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
+            Self::RowNumber => Self::RowNumber,
+        }
+    }
+
+    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
+        match self {
+            Self::Agg(agg_expr) => agg_expr.to_field(schema),
+            Self::RowNumber => Ok(Field::new("row_number", DataType::UInt64)),
+        }
+    }
+}
+
+impl From<&WindowExpr> for ExprRef {
+    fn from(window_expr: &WindowExpr) -> Self {
+        Self::new(Expr::WindowFunction(window_expr.clone()))
+    }
+}
+
+impl From<AggExpr> for WindowExpr {
+    fn from(agg_expr: AggExpr) -> Self {
+        Self::Agg(agg_expr)
+    }
+}
+
+impl TryFrom<ExprRef> for WindowExpr {
+    type Error = DaftError;
+
+    fn try_from(expr: ExprRef) -> Result<Self, Self::Error> {
+        match expr.as_ref() {
+            Expr::Agg(agg_expr) => Ok(Self::Agg(agg_expr.clone())),
+            Expr::WindowFunction(window_expr) => Ok(window_expr.clone()),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected an AggExpr or WindowFunction, got {:?}",
+                expr
+            ))),
+        }
+    }
+}
+
 impl From<UnresolvedColumn> for ExprRef {
     fn from(col: UnresolvedColumn) -> Self {
         Self::new(Expr::Column(Column::Unresolved(col)))
@@ -774,11 +855,11 @@ impl Expr {
     }
 
     pub fn bool_and(self: ExprRef) -> ExprRef {
-        Arc::new(Self::Agg(AggExpr::BoolAnd(self)))
+        Self::Agg(AggExpr::BoolAnd(self)).into()
     }
 
     pub fn bool_or(self: ExprRef) -> ExprRef {
-        Arc::new(Self::Agg(AggExpr::BoolOr(self)))
+        Self::Agg(AggExpr::BoolOr(self)).into()
     }
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
@@ -795,6 +876,10 @@ impl Expr {
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Concat(self)).into()
+    }
+
+    pub fn row_number() -> ExprRef {
+        Self::WindowFunction(WindowExpr::RowNumber).into()
     }
 
     #[allow(clippy::should_implement_trait)]
@@ -977,7 +1062,7 @@ impl Expr {
 
                 FieldID::new(format!("(EXISTS {subquery_id})"))
             }
-            Self::Window(expr, window_spec) => {
+            Self::Over(expr, window_spec) => {
                 let child_id = expr.semantic_id(schema);
                 let partition_by_ids = window_spec
                     .partition_by
@@ -1001,6 +1086,10 @@ impl Expr {
 
                 FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}])"))
             }
+            Self::WindowFunction(window_expr) => {
+                let child_id = window_expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.window_fn()"))
+            }
         }
     }
 
@@ -1015,11 +1104,12 @@ impl Expr {
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
             | Self::Alias(expr, ..)
-            | Self::InSubquery(expr, _)
-            | Self::Window(expr, _) => {
+            | Self::InSubquery(expr, _) => {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),
+            Self::Over(window_expr, _) => window_expr.children(),
+            Self::WindowFunction(window_expr) => window_expr.children(),
 
             // Multiple children.
             Self::Function { inputs, .. } => inputs.clone(),
@@ -1070,10 +1160,6 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 subquery.clone(),
             ),
-            Self::Window(_, window_spec) => Self::Window(
-                children.first().expect("Should have 1 child").clone(),
-                window_spec.clone(),
-            ),
             // 2 children
             Self::BinaryOp { op, .. } => Self::BinaryOp {
                 op: *op,
@@ -1118,6 +1204,12 @@ impl Expr {
             },
             // N-ary
             Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
+            Self::Over(window_expr, window_spec) => {
+                Self::Over(window_expr.with_new_children(children), window_spec.clone())
+            }
+            Self::WindowFunction(window_expr) => {
+                Self::WindowFunction(window_expr.with_new_children(children))
+            }
             Self::Function {
                 func,
                 inputs: old_children,
@@ -1331,13 +1423,14 @@ impl Expr {
                         "Expected subquery to return a single column but received {subquery_schema}",
                     )));
                 }
-                let (_, first_field) = subquery_schema.fields.first().unwrap();
+                let first_field = subquery_schema.get_field_at_index(0).unwrap();
 
                 Ok(first_field.clone())
             }
             Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
-            Self::Window(expr, _) => expr.to_field(schema),
+            Self::Over(expr, _) => expr.to_field(schema),
+            Self::WindowFunction(expr) => expr.to_field(schema),
         }
     }
 
@@ -1380,7 +1473,8 @@ impl Expr {
             Self::Subquery(subquery) => subquery.name(),
             Self::InSubquery(expr, _) => expr.name(),
             Self::Exists(subquery) => subquery.name(),
-            Self::Window(expr, ..) => expr.name(),
+            Self::Over(expr, ..) => expr.name(),
+            Self::WindowFunction(expr) => expr.name(),
         }
     }
 
@@ -1461,7 +1555,8 @@ impl Expr {
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
-                | Expr::Window(..)
+                | Expr::Over(..)
+                | Expr::WindowFunction(..)
                 | Expr::Column(_) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
@@ -1499,6 +1594,8 @@ impl Expr {
             Self::Function { .. } => true,
             Self::ScalarFunction(..) => true,
             Self::Agg(_) => true,
+            Self::Over(..) => true,
+            Self::WindowFunction(..) => true,
             Self::IsIn(..) => true,
             Self::Between(..) => true,
             Self::BinaryOp { .. } => true,
@@ -1515,7 +1612,6 @@ impl Expr {
             } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
-            Self::Window(expr, ..) => expr.has_compute(),
         }
     }
 
@@ -1657,7 +1753,7 @@ pub fn has_agg(expr: &ExprRef) -> bool {
             found_agg = true;
             Ok(TreeNodeRecursion::Stop)
         }
-        Expr::Window(_, _) => Ok(TreeNodeRecursion::Jump),
+        Expr::Over(_, _) => Ok(TreeNodeRecursion::Jump),
         _ => Ok(TreeNodeRecursion::Continue),
     });
 
@@ -1764,16 +1860,14 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }
-        | Expr::Window(_, _)
         | Expr::FillNull(_, _) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,
             _ => 1.0,
         },
 
         // Everything else doesn't filter
-        Expr::Subquery(_) => 1.0,
+        Expr::Over(..) | Expr::WindowFunction(_) | Expr::Subquery(_) | Expr::List(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
-        Expr::List(_) => 1.0,
     };
 
     // Lower bound to 1% to prevent overly selective estimate
@@ -1784,8 +1878,8 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     let fields = exprs
         .iter()
         .map(|e| e.to_field(&input_schema))
-        .collect::<DaftResult<_>>()?;
-    Ok(Arc::new(Schema::new(fields)?))
+        .collect::<DaftResult<Vec<_>>>()?;
+    Ok(Arc::new(Schema::new(fields)))
 }
 
 /// Adds aliases as appropriate to ensure that all expressions have unique names.

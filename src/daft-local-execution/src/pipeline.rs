@@ -129,14 +129,14 @@ pub fn physical_plan_to_pipeline(
             schema,
             stats_state,
             aggregations,
+            aliases,
         }) => {
             let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let window_partition_only_sink =
-                WindowPartitionOnlySink::new(aggregations, partition_by, schema).with_context(
-                    |_| PipelineCreationSnafu {
+                WindowPartitionOnlySink::new(aggregations, aliases, partition_by, schema)
+                    .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),
-                    },
-                )?;
+                    })?;
             BlockingSinkNode::new(
                 Arc::new(window_partition_only_sink),
                 input_node,
@@ -469,7 +469,7 @@ pub fn physical_plan_to_pipeline(
                         ));
                     }
                 }
-                let key_schema = Arc::new(Schema::new(build_key_fields)?);
+                let key_schema = Arc::new(Schema::new(build_key_fields));
 
                 // we should move to a builder pattern
                 let probe_state_bridge = BroadcastStateBridge::new();

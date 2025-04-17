@@ -272,7 +272,7 @@ mod tests {
     #[cfg(feature = "python")]
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
         let py_obj = Python::with_gil(|py| py.None());
-        let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
+        let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)]).into();
         let plan = LogicalPlanBuilder::in_memory_scan(
             "foo",
             common_partitioning::PartitionCacheEntry::Python(Arc::new(py_obj)),
