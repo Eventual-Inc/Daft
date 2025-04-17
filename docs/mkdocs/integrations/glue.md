@@ -12,8 +12,6 @@ Daft integrates with [AWS Glue](https://docs.aws.amazon.com/glue/latest/dg/what-
 | Namespace | Database     |
 | Table     | Table        |
 
-For now, we do not use Glue's
-
 ## Example
 
 === "🐍 Python"
@@ -54,7 +52,9 @@ reading and writing both Iceberg and Delta Lake. We do not currently support cre
 
 ## Type System
 
-The Glue Catalog does not have a fixed set of types; rather, the types are dependent upon the table format.
+The [Glue Catalog Type System](https://docs.aws.amazon.com/glue/latest/dg/glue-types.html#glue-types-catalog) is based on the [Apache Hive Type System](https://cwiki.apache.org/confluence/display/hive/languagemanual+types); however, the exact types are not validated and are dependent upon the underlying table format.
+
+> The Data Catalog does not validate types written to type fields. When AWS Glue components read and write to the Data Catalog, they will be compatible with each other. AWS Glue components also aim to preserve a high degree of compatibility with the Hive types. However, AWS Glue components do not guarantee compatibility with all Hive types.
 
 | Table Format | Type System                                                                                                                              |
 |--------------|------------------------------------------------------------------------------------------------------------------------------------------|
@@ -70,9 +70,10 @@ The Glue Catalog does not have a fixed set of types; rather, the types are depen
 
     This is not considered a stable API, it is just a patch technique!
 
-The Daft `GlueCatalog` class has a field called `_table_impls` which holds a list of `GlueTable` implementation classes. When we resolve a table, we call Glue's `GetTable` API and call `from_table_info` with the [Glue Table object](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-catalog-tables.html#aws-glue-api-catalog-tables-Table). It is expected that each `GlueTable` implementation will throw a `ValueError` if the table metadata does not match.
+To implement a custom table format, you must implement the `GlueTable` abstract class and register to your `GlueCatalog` instance. To register,
+you must append your custom table's class to the catalog's `_table_impls` field.
 
-To implement a custom table format, you may implement the `GlueTable` abstract class, and append the class to the
+The Daft `GlueCatalog._table_impls` field holds a list of `GlueTable` implementation classes. When we resolve a table, we call Glue's `GetTable` API and call `from_table_info` with the [Glue Table object](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-catalog-tables.html#aws-glue-api-catalog-tables-Table). It is expected that each `GlueTable` implementation will throw a `ValueError` if the table metadata does not match.
 
 ```python
 from daft.catalog.__glue import GlueCatalog, GlueTable, load_glue

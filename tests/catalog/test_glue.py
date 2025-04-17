@@ -128,7 +128,7 @@ def test_drop_namespace(glue_catalog, glue_client):
     res = glue_client.get_databases()
     assert len(res["DatabaseList"]) == 0
 
-    # drop if doesn"t exist should error
+    # drop if doesn't exist should error
     with pytest.raises(NotFoundError, match="not found"):
         glue_catalog.drop_namespace("nonexistent_namespace")
 
@@ -166,7 +166,7 @@ def test_list_namespaces(glue_catalog, glue_client):
     assert Identifier("namespace1") in namespaces
     assert Identifier("namespace2") in namespaces
 
-    # glue doesn"t have any patterns/filters for get_databases
+    # glue doesn't have any patterns/filters for get_databases
     with pytest.raises(ValueError):
         glue_catalog.list_namespaces("namespace1")
 
@@ -180,7 +180,7 @@ def test_get_table(glue_catalog, glue_client):
     table = glue_catalog.get_table("test_database.test_table")
     assert table.name == "test_table"
 
-    # Test getting a table that doesn"t exist
+    # Test getting a table that doesn't exist
     with pytest.raises(NotFoundError, match="not found"):
         glue_catalog.get_table("test_database.nonexistent_table")
 

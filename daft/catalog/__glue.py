@@ -192,7 +192,7 @@ class GlueCatalog(Catalog):
         """Gets a table by its identifier (<database_name>.<table_name>).
 
         Args:
-            identifier (Identifier | str):
+            identifier (Identifier | str): the name of the table to get
         """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
@@ -289,7 +289,7 @@ class GlueCatalog(Catalog):
 
 
 class GlueTable(Table, ABC):
-    """GlueTable is the base class for various Glue format."""
+    """GlueTable is the base class for various Glue table formats."""
 
     _catalog: GlueCatalog
     _table: GlueTableInfo
@@ -314,7 +314,7 @@ class GlueTable(Table, ABC):
 
 
 class GlueCsvTable(GlueTable):
-    """GlueTable implemented by s."""
+    """GlueCsvTable is for Glue classification='CSV' where we have delimited files under a common S3 prefix."""
 
     _path: str
     _schema: Schema
@@ -382,7 +382,7 @@ class GlueCsvTable(GlueTable):
 
 
 class GlueParquetTable(GlueTable):
-    """GlueTable implemented by s."""
+    """GlueParquetTable is for Glue classification='parquet' where we have parquet files under a common S3 prefix."""
 
     _path: str
     _schema: Schema
@@ -442,6 +442,8 @@ class GlueParquetTable(GlueTable):
 
 
 class GlueIcebergTable(GlueTable):
+    """GlueIcebergTable is for Glue table_type='ICEBERG'."""
+
     _io_config: IOConfig | None
     _pyiceberg_table: PyIcebergTable
 
@@ -493,11 +495,13 @@ class GlueIcebergTable(GlueTable):
 
 
 class GlueDeltaTable(GlueTable):
+    """GlueDeltaTable is for Glue table_type='ICEBERG'."""
+
     _io_config: IOConfig | None
     _unity_catalog_table: UnityCatalogTable
 
     def __init__(self):
-        raise ValueError("GlueIcebergTable.__init__() not supported!")
+        raise ValueError("GlueDeltaTable.__init__() not supported!")
 
     @classmethod
     def from_table_info(cls, catalog: GlueCatalog, table: GlueTableInfo) -> GlueTable:
@@ -558,6 +562,8 @@ def _convert_glue_column(column: GlueColumnInfo) -> Field:
     return Field.create(column["Name"], _convert_glue_type(column["Type"]))
 
 
+# TODO update to support more Hive types.
+# https://cwiki.apache.org/confluence/display/hive/languagemanual+types
 def _convert_glue_type(type: str) -> DataType:
     type = type.lower()
     if type == "boolean":
