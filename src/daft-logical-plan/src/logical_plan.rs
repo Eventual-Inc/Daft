@@ -171,10 +171,8 @@ impl LogicalPlan {
                 let res = distinct
                     .input
                     .schema()
-                    .fields
-                    .iter()
-                    .map(|(name, _)| name)
-                    .cloned()
+                    .field_names()
+                    .map(ToString::to_string)
                     .collect();
                 vec![res]
             }

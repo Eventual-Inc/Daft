@@ -325,7 +325,7 @@ mod tests {
     }
     #[test]
     fn test_simplify_binary_compare() -> DaftResult<()> {
-        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Boolean)])?);
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Boolean)]));
         let col_a = col("a");
 
         // a == true

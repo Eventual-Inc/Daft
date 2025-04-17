@@ -383,13 +383,7 @@ async fn stream_scan_task(
         FileFormatConfig::Csv(cfg) => {
             let schema_of_file = scan_task.schema.clone();
             let col_names = if !cfg.has_headers {
-                Some(
-                    schema_of_file
-                        .fields
-                        .values()
-                        .map(|f| f.name.as_str())
-                        .collect::<Vec<_>>(),
-                )
+                Some(schema_of_file.field_names().collect::<Vec<_>>())
             } else {
                 None
             };
