@@ -39,6 +39,7 @@ nav:
     - SQL: integrations/sql.md
     - Hugging Face Datasets: integrations/huggingface.md
     - S3 Tables: integrations/s3tables.md
+    - Glue: integrations/glue.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
