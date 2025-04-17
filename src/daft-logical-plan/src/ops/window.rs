@@ -127,8 +127,8 @@ impl Window {
                 .window_spec
                 .order_by
                 .iter()
-                .zip(self.window_spec.ascending.iter())
-                .map(|(e, asc)| format!("{} {}", e.name(), if *asc { "ASC" } else { "DESC" }))
+                .zip(self.window_spec.descending.iter())
+                .map(|(e, desc)| format!("{} {}", e.name(), if *desc { "DESC" } else { "ASC" }))
                 .collect::<Vec<_>>()
                 .join(", ");
             lines.push(format!("  Order by: [{}]", order_cols));

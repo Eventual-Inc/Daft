@@ -1060,6 +1060,7 @@ impl Expr {
             }
             Self::Over(expr, window_spec) => {
                 let child_id = expr.semantic_id(schema);
+
                 let partition_by_ids = window_spec
                     .partition_by
                     .iter()
@@ -1069,12 +1070,12 @@ impl Expr {
                 let order_by_ids = window_spec
                     .order_by
                     .iter()
-                    .zip(window_spec.ascending.iter())
-                    .map(|(e, asc)| {
+                    .zip(window_spec.descending.iter())
+                    .map(|(e, desc)| {
                         format!(
                             "{}:{}",
                             e.semantic_id(schema),
-                            if *asc { "asc" } else { "desc" }
+                            if *desc { "desc" } else { "asc" }
                         )
                     })
                     .collect::<Vec<_>>()
@@ -1084,7 +1085,7 @@ impl Expr {
             }
             Self::WindowFunction(window_expr) => {
                 let child_id = window_expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.window_fn()"))
+                FieldID::new(format!("{child_id}.window_function()"))
             }
         }
     }
