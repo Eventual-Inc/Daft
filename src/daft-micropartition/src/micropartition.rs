@@ -663,8 +663,7 @@ fn prune_fields_from_schema(
         let filtered_columns = schema
             .into_iter()
             .filter(|field| names_to_keep.contains(field.name.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
+            .cloned();
         Ok(Arc::new(Schema::new(filtered_columns)))
     } else {
         Ok(schema)
