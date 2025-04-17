@@ -19,29 +19,37 @@ use crate::{
         ExtensionArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray, NullArray,
         Utf8Array,
     },
-    kernels::search_sorted::{build_compare_with_nulls, cmp_float},
+    kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
     series::Series,
 };
 
 pub fn build_multi_array_compare(
     arrays: &[Series],
     descending: &[bool],
+    nulls_first: &[bool],
 ) -> DaftResult<DynComparator> {
-    build_multi_array_bicompare(arrays, arrays, descending)
+    build_multi_array_bicompare(arrays, arrays, descending, nulls_first)
 }
 
 pub fn build_multi_array_bicompare(
     left: &[Series],
     right: &[Series],
     descending: &[bool],
+    nulls_first: &[bool],
 ) -> DaftResult<DynComparator> {
     let mut cmp_list = Vec::with_capacity(left.len());
 
-    for ((l, r), desc) in left.iter().zip(right.iter()).zip(descending.iter()) {
-        cmp_list.push(build_compare_with_nulls(
+    for (((l, r), desc), nf) in left
+        .iter()
+        .zip(right.iter())
+        .zip(descending.iter())
+        .zip(nulls_first.iter())
+    {
+        cmp_list.push(build_nulls_first_compare_with_nulls(
             l.to_arrow().as_ref(),
             r.to_arrow().as_ref(),
             *desc,
+            *nf,
         )?);
     }
 
@@ -93,7 +101,7 @@ where
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
-        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = arrow_array.values().as_slice();
 
@@ -187,7 +195,7 @@ impl Float32Array {
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
-        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = arrow_array.values().as_slice();
 
@@ -281,7 +289,7 @@ impl Float64Array {
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
-        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = arrow_array.values().as_slice();
 
@@ -375,7 +383,7 @@ impl Decimal128Array {
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
-        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = arrow_array.values().as_slice();
 
@@ -458,7 +466,7 @@ impl NullArray {
     {
         let first_nulls_first = *nulls_first.first().unwrap();
 
-        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let result = multi_column_idx_sort(
             self.data().validity(),
@@ -510,7 +518,7 @@ impl BooleanArray {
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
-        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = self
             .data()
@@ -609,7 +617,8 @@ macro_rules! impl_binary_like_sort {
                 let first_desc = *descending.first().unwrap();
                 let first_nulls_first = *nulls_first.first().unwrap();
 
-                let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+                let others_cmp =
+                    build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
                 let values = self.as_arrow();
 

@@ -115,6 +115,54 @@ def test_lag_lead_with_different_offsets(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
+def test_lag_lead_with_col_default(make_df):
+    """Test lag and lead functions with column default values."""
+    random.seed(45)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        defaults = random.sample(range(10, 100), 50)
+        values = random.sample(range(10, 100), 50)
+        for ts in range(50):
+            value = values[ts]
+            data.append({"category": category, "ts": ts, "default": defaults[ts], "value": value})
+
+            expected_row = {
+                "category": category,
+                "ts": ts,
+                "default": defaults[ts],
+                "value": value,
+                "lag_10": 2 * defaults[ts] if ts < 10 else values[ts - 10],
+                "lead_10": 2 * defaults[ts] if ts >= 40 else values[ts + 10],
+                "lag_50": 2 * defaults[ts],
+                "lead_50": 2 * defaults[ts],
+                "lag_15_default_99": 99 if ts < 15 else values[ts - 15],
+                "lead_15_default_99": 99 if ts >= 35 else values[ts + 15],
+            }
+            expected_data.append(expected_row)
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("default"),
+        col("value"),
+        col("value").lag(10, default=2 * col("default")).over(window_spec).alias("lag_10"),
+        col("value").lead(10, default=2 * col("default")).over(window_spec).alias("lead_10"),
+        col("value").lag(50, default=2 * col("default")).over(window_spec).alias("lag_50"),
+        col("value").lead(50, default=2 * col("default")).over(window_spec).alias("lead_50"),
+        col("value").lag(15, default=99).over(window_spec).alias("lag_15_default_99"),
+        col("value").lead(15, default=99).over(window_spec).alias("lead_15_default_99"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
 def test_lag_lead_with_multiple_partitions(make_df):
     """Test lag and lead functions with multiple partition columns."""
     random.seed(45)

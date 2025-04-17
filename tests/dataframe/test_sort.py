@@ -281,129 +281,6 @@ def test_sort_desc_nulls_first(make_df):
 
 
 @pytest.mark.parametrize(
-    "cast_to",
-    [
-        DataType.float32(),
-        DataType.float64(),
-        DataType.int8(),
-        DataType.int16(),
-        DataType.int32(),
-        DataType.int64(),
-        DataType.uint8(),
-        DataType.uint16(),
-        DataType.uint32(),
-        DataType.uint64(),
-    ],
-)
-@pytest.mark.parametrize(
-    "nulls_first,desc,expected",
-    [
-        (
-            [False, False],
-            [False, False],
-            {
-                "id1": [1, 1, 2, 2, None, None],
-                "id2": [2, None, 1, 2, 1, None],
-                "values": ["f1", "e1", "c1", "a1", "d1", "b1"],
-            },
-        ),
-        (
-            [True, False],
-            [False, False],
-            {
-                "id1": [None, None, 1, 1, 2, 2],
-                "id2": [1, None, 2, None, 1, 2],
-                "values": ["d1", "b1", "f1", "e1", "c1", "a1"],
-            },
-        ),
-        (
-            [False, True],
-            [False, False],
-            {
-                "id1": [1, 1, 2, 2, None, None],
-                "id2": [2, None, 1, 2, 1, None],
-                "values": ["f1", "e1", "c1", "a1", "d1", "b1"],
-            },
-        ),
-        (
-            [True, True],
-            [False, False],
-            {
-                "id1": [None, None, 1, 1, 2, 2],
-                "id2": [1, None, 2, None, 1, 2],
-                "values": ["d1", "b1", "f1", "e1", "c1", "a1"],
-            },
-        ),
-        # Descending
-        (
-            [False, False],
-            [True, True],
-            {
-                "id1": [2, 2, 1, 1, None, None],
-                "id2": [2, 1, None, 2, None, 1],
-                "values": ["a1", "c1", "e1", "f1", "b1", "d1"],
-            },
-        ),
-        (
-            [True, False],
-            [True, True],
-            {
-                "id1": [None, None, 2, 2, 1, 1],
-                "id2": [None, 1, 2, 1, None, 2],
-                "values": ["b1", "d1", "a1", "c1", "e1", "f1"],
-            },
-        ),
-        (
-            [False, True],
-            [True, True],
-            {
-                "id1": [2, 2, 1, 1, None, None],
-                "id2": [2, 1, None, 2, None, 1],
-                "values": ["a1", "c1", "e1", "f1", "b1", "d1"],
-            },
-        ),
-        (
-            [True, True],
-            [True, True],
-            {
-                "id1": [None, None, 2, 2, 1, 1],
-                "id2": [None, 1, 2, 1, None, 2],
-                "values": ["b1", "d1", "a1", "c1", "e1", "f1"],
-            },
-        ),
-    ],
-)
-def test_multi_column_sort_nulls_first(make_df, cast_to, nulls_first, desc, expected):
-    df = make_df(
-        {
-            "id1": [2, None, 2, None, 1, 1],
-            "id2": [2, None, 1, 1, None, 2],
-            "values": ["a1", "b1", "c1", "d1", "e1", "f1"],
-        },
-    )
-    df = df.select(
-        df["id1"].cast(cast_to).alias("id1"),
-        df["id2"].cast(cast_to).alias("id2"),
-        df["values"],
-    )
-
-    result = df.sort(["id1", "id2"], desc=desc, nulls_first=nulls_first).to_pydict()
-
-    assert result == expected
-
-    # test sql also
-    id1_ordering = "desc" if desc[0] else "asc"
-    id1_nulls = "nulls first" if nulls_first[0] else "nulls last"
-    id2_ordering = "desc" if desc[1] else "asc"
-    id2_nulls = "nulls first" if nulls_first[1] else "nulls last"
-
-    result = daft.sql(f"""
-    select * from df order by id1 {id1_ordering} {id1_nulls}, id2 {id2_ordering} {id2_nulls}
-    """).to_pydict()
-    assert result == expected
-
-
-@pytest.mark.parametrize(
     "desc,nulls_first,expected_data",
     [
         (True, True, {"b": [None, None, 10, 5, 1]}),
@@ -418,3 +295,115 @@ def test_sort_combinations(desc, nulls_first, expected_data):
     actual = df.sort(by="b", desc=desc, nulls_first=nulls_first)
     expected = daft.from_pydict(expected_data)
     assert actual.to_pydict() == expected.to_pydict()
+
+
+@pytest.mark.parametrize(
+    "desc,nulls_first,expected",
+    [
+        pytest.param(
+            [False, False],
+            [False, False],
+            {"a": [0, 1, -1, 10, None, None, 999], "id": [1, 2, 3, 3, 3, 4, None]},
+            id="asc asc, last last",
+        ),
+        pytest.param(
+            [False, False],
+            [False, True],
+            {"a": [0, 1, None, -1, 10, None, 999], "id": [1, 2, 3, 3, 3, 4, None]},
+            id="asc asc, last first",
+        ),
+        pytest.param(
+            [False, False],
+            [True, False],
+            {"a": [999, 0, 1, -1, 10, None, None], "id": [None, 1, 2, 3, 3, 3, 4]},
+            id="asc asc, first last",
+        ),
+        pytest.param(
+            [False, False],
+            [True, True],
+            {"a": [999, 0, 1, None, -1, 10, None], "id": [None, 1, 2, 3, 3, 3, 4]},
+            id="asc asc, first first",
+        ),
+        pytest.param(
+            [True, False],
+            [False, False],
+            {"a": [None, -1, 10, None, 1, 0, 999], "id": [4, 3, 3, 3, 2, 1, None]},
+            id="desc asc, last last",
+        ),
+        pytest.param(
+            [True, False],
+            [False, True],
+            {"a": [None, None, -1, 10, 1, 0, 999], "id": [4, 3, 3, 3, 2, 1, None]},
+            id="desc asc, last first",
+        ),
+        pytest.param(
+            [True, False],
+            [True, False],
+            {"a": [999, None, -1, 10, None, 1, 0], "id": [None, 4, 3, 3, 3, 2, 1]},
+            id="desc asc, first last",
+        ),
+        pytest.param(
+            [True, False],
+            [True, True],
+            {"a": [999, None, None, -1, 10, 1, 0], "id": [None, 4, 3, 3, 3, 2, 1]},
+            id="desc asc, first first",
+        ),
+        pytest.param(
+            [False, True],
+            [False, False],
+            {"a": [0, 1, 10, -1, None, None, 999], "id": [1, 2, 3, 3, 3, 4, None]},
+            id="asc desc, last last",
+        ),
+        pytest.param(
+            [False, True],
+            [False, True],
+            {"a": [0, 1, None, 10, -1, None, 999], "id": [1, 2, 3, 3, 3, 4, None]},
+            id="asc desc, last first",
+        ),
+        pytest.param(
+            [False, True],
+            [True, False],
+            {"a": [999, 0, 1, 10, -1, None, None], "id": [None, 1, 2, 3, 3, 3, 4]},
+            id="asc desc, first last",
+        ),
+        pytest.param(
+            [False, True],
+            [True, True],
+            {"a": [999, 0, 1, None, 10, -1, None], "id": [None, 1, 2, 3, 3, 3, 4]},
+            id="asc desc, first first",
+        ),
+        pytest.param(
+            [True, True],
+            [False, False],
+            {"a": [None, 10, -1, None, 1, 0, 999], "id": [4, 3, 3, 3, 2, 1, None]},
+            id="desc desc, last last",
+        ),
+        pytest.param(
+            [True, True],
+            [False, True],
+            {"a": [None, None, 10, -1, 1, 0, 999], "id": [4, 3, 3, 3, 2, 1, None]},
+            id="desc desc, last first",
+        ),
+        pytest.param(
+            [True, True],
+            [True, False],
+            {"a": [999, None, 10, -1, None, 1, 0], "id": [None, 4, 3, 3, 3, 2, 1]},
+            id="desc desc, first last",
+        ),
+        pytest.param(
+            [True, True],
+            [True, True],
+            {"a": [999, None, None, 10, -1, 1, 0], "id": [None, 4, 3, 3, 3, 2, 1]},
+            id="desc desc, first first",
+        ),
+    ],
+)
+def test_multi_column_sort_combinations(desc, nulls_first, expected):
+    df = daft.from_pydict(
+        {
+            "a": [0, 1, -1, 10, None, 999, None],
+            "id": [1, 2, 3, 3, 4, None, 3],
+        }
+    )
+    result = df.sort(by=["id", "a"], desc=desc, nulls_first=nulls_first)
+    assert result.to_pydict() == expected
