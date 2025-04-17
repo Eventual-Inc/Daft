@@ -158,10 +158,6 @@ extra:
   - icon: simple/substack
     link: https://blog.getdaft.io/
 
-  # This is a macro you should use to refer to paths
-  # When referring to methods, the syntax is {{ api_path }}/path/to/method
-  # api_path: api_docs/doc_gen
-
 # Additional Style
 extra_css:
 - css/extra.css
@@ -179,8 +175,6 @@ markdown_extensions:
     alternate_style: true
 - pymdownx.snippets:
     check_paths: true
-      # base_path: ['docs/source', "."]
-      # dedent_subsections: true
 - pymdownx.superfences
 - pymdownx.details
 - attr_list
@@ -200,7 +194,6 @@ plugins:
     include_source: true
 - search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-# - macros
 - autorefs
 - minify:
     minify_html: true
