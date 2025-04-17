@@ -57,7 +57,7 @@ pub fn infer_join_schema(
                     })
                     .map(Ok),
             )
-            .collect::<DaftResult<_>>()?;
+            .collect::<DaftResult<Vec<_>>>()?;
 
         Ok(Schema::new(fields).into())
     }

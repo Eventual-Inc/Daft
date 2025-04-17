@@ -59,8 +59,7 @@ impl PySchema {
     pub fn from_field_name_and_types(names_and_types: Vec<(String, PyDataType)>) -> Self {
         let fields = names_and_types
             .iter()
-            .map(|(name, pydtype)| Field::new(name, pydtype.clone().into()))
-            .collect();
+            .map(|(name, pydtype)| Field::new(name, pydtype.clone().into()));
         let schema = schema::Schema::new(fields);
         Self {
             schema: schema.into(),
@@ -70,7 +69,7 @@ impl PySchema {
     #[staticmethod]
     pub fn from_fields(fields: Vec<PyField>) -> Self {
         Self {
-            schema: schema::Schema::new(fields.iter().map(|f| f.field.clone()).collect()).into(),
+            schema: schema::Schema::new(fields.iter().map(|f| f.field.clone())).into(),
         }
     }
 

@@ -411,8 +411,7 @@ impl ScanOperator for GlobScanOperator {
         let partition_fields = self
             .partitioning_keys
             .iter()
-            .map(|partition_spec| partition_spec.clone_field())
-            .collect();
+            .map(|partition_spec| partition_spec.clone_field());
         let partition_schema = Schema::new(partition_fields);
         let (first_filepath, first_metadata) =
             if let Some((first_filepath, first_metadata)) = &self.first_metadata {

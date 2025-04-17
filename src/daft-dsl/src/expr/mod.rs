@@ -1873,7 +1873,7 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     let fields = exprs
         .iter()
         .map(|e| e.to_field(&input_schema))
-        .collect::<DaftResult<_>>()?;
+        .collect::<DaftResult<Vec<_>>>()?;
     Ok(Arc::new(Schema::new(fields)))
 }
 

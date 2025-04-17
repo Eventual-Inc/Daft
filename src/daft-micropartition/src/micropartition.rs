@@ -630,8 +630,7 @@ impl MicroPartition {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let schema_with_id_index_map = std::iter::once(Field::new(column_name, DataType::UInt64))
-            .chain(self.schema.fields().iter().cloned())
-            .collect();
+            .chain(self.schema.fields().iter().cloned());
 
         let schema_with_id = Schema::new(schema_with_id_index_map);
 

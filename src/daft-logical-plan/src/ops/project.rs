@@ -37,7 +37,7 @@ impl Project {
         let fields = factored_projection
             .iter()
             .map(|expr| expr.to_field(&factored_input.schema()))
-            .collect::<DaftResult<_>>()?;
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let projected_schema = Schema::new(fields).into();
 

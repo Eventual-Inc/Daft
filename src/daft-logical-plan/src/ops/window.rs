@@ -69,7 +69,7 @@ impl Window {
                         Ok(Field::new(name, dtype))
                     }),
             )
-            .collect::<DaftResult<_>>()?;
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let schema = Arc::new(Schema::new(fields));
 

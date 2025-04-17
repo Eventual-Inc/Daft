@@ -726,7 +726,7 @@ impl ParquetFileReader {
             .collect::<DaftResult<Vec<_>>>()?;
 
         RecordBatch::new_with_size(
-            Schema::new(all_series.iter().map(|s| s.field().clone()).collect()),
+            Schema::new(all_series.iter().map(|s| s.field().clone())),
             all_series,
             self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
         )

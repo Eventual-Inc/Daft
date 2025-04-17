@@ -90,7 +90,7 @@ fn arrow_chunk_to_table(
     }
 
     let mut table = RecordBatch::new_with_size(
-        Schema::new(all_series.iter().map(|s| s.field().clone()).collect()),
+        Schema::new(all_series.iter().map(|s| s.field().clone())),
         all_series,
         len,
     )
@@ -501,7 +501,7 @@ pub async fn local_parquet_read_async(
             Ok((
                 metadata,
                 RecordBatch::new_with_size(
-                    Schema::new(converted_arrays.iter().map(|s| s.field().clone()).collect()),
+                    Schema::new(converted_arrays.iter().map(|s| s.field().clone())),
                     converted_arrays,
                     num_rows_read,
                 )?,

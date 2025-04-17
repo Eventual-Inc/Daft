@@ -196,7 +196,7 @@ impl RecordBatch {
         let columns = columns.into();
         assert!(!columns.is_empty(), "Cannot call RecordBatch::new() with empty columns. This indicates an internal error, please file an issue.");
 
-        let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect());
+        let schema = Schema::new(columns.iter().map(|s| s.field().clone()));
         let schema: SchemaRef = schema.into();
         validate_schema(schema.as_ref(), columns.as_slice())?;
 
@@ -499,7 +499,7 @@ impl RecordBatch {
             .map(|s| self.get_column(s).cloned())
             .collect::<DaftResult<Vec<_>>>()?;
         Self::new_with_size(
-            Schema::new(series_by_name.iter().map(|s| s.field().clone()).collect()),
+            Schema::new(series_by_name.iter().map(|s| s.field().clone())),
             series_by_name,
             self.len(),
         )
@@ -829,7 +829,7 @@ impl RecordBatch {
             .iter()
             .map(|s| s.as_physical())
             .collect::<DaftResult<Vec<_>>>()?;
-        let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()).collect());
+        let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()));
         Self::new_with_size(new_schema, new_series, self.len())
     }
 

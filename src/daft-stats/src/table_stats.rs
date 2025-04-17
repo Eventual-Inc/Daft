@@ -201,7 +201,7 @@ impl Display for TableStatistics {
             .iter()
             .map(|(s, c)| c.combined_series().unwrap().rename(s))
             .collect::<Vec<_>>();
-        let tbl_schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect());
+        let tbl_schema = Schema::new(columns.iter().map(|s| s.field().clone()));
         let tab = RecordBatch::new_with_size(tbl_schema, columns, 2).unwrap();
         write!(f, "{tab}")
     }

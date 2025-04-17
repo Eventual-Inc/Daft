@@ -30,25 +30,40 @@ pub struct Schema {
 }
 
 impl Schema {
-    pub fn new(fields: Vec<Field>) -> Self {
+    pub fn new<I, F>(fields: I) -> Self
+    where
+        I: IntoIterator<Item = F>,
+        F: Into<Field>,
+    {
         let mut name_to_indices = HashMap::<String, Vec<usize>>::new();
 
-        for (i, f) in fields.iter().enumerate() {
-            if let Some(indices) = name_to_indices.get_mut(&f.name) {
-                indices.push(i);
-            } else {
-                name_to_indices.insert(f.name.clone(), vec![i]);
-            }
-        }
+        let field_vec = fields
+            .into_iter()
+            .enumerate()
+            .map(|(idx, field)| {
+                let field = field.into();
+
+                if let Some(indices) = name_to_indices.get_mut(&field.name) {
+                    indices.push(idx);
+                } else {
+                    name_to_indices.insert(field.name.clone(), vec![idx]);
+                }
+
+                field
+            })
+            .collect();
 
         Self {
-            fields,
+            fields: field_vec,
             name_to_indices,
         }
     }
 
     pub fn empty() -> Self {
-        Self::new(vec![])
+        Self {
+            fields: vec![],
+            name_to_indices: HashMap::new(),
+        }
     }
 
     pub fn to_struct(&self) -> DataType {
@@ -154,11 +169,7 @@ impl Schema {
         }
 
         Ok(Self::new(
-            self.fields
-                .iter()
-                .chain(other.fields.iter())
-                .cloned()
-                .collect(),
+            self.fields.iter().chain(other.fields.iter()).cloned(),
         ))
     }
 
