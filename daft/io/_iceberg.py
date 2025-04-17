@@ -68,7 +68,8 @@ def read_iceberg(
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
 
     Note:
-        This function requires the use of [PyIceberg](https://py.iceberg.apache.org/), which is the Apache Iceberg's official project for Python.
+        This function requires the use of [PyIceberg](https://py.iceberg.apache.org/), which is the Apache Iceberg's
+        official project for Python.
 
     Examples:
         >>> import pyiceberg
@@ -80,6 +81,7 @@ def read_iceberg(
         >>> # the read operation from Iceberg
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
+
     """
     import pyiceberg
 

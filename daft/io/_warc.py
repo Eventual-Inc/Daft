@@ -43,6 +43,7 @@ def read_warc(
         >>> df = daft.read_warc("/path/to/files-*.warc")
         >>> df = daft.read_warc("s3://path/to/files-*.warc")
         >>> df = daft.read_warc("gs://path/to/files-*.warc")
+
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

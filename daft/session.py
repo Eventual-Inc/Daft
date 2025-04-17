@@ -225,7 +225,14 @@ class Session:
     def create_temp_table(self, identifier: str, source: TableSource | object = None) -> Table:
         """Creates a temp table scoped to this session's lifetime.
 
-        Example:
+        Args:
+            identifier (str): table identifier (name)
+            source (TableSource|object): table source like a schema or dataframe
+
+        Returns:
+            Table: new table instance
+
+        Examples:
             >>> import daft
             >>> from daft.session import Session
             >>> sess = Session()
@@ -234,12 +241,6 @@ class Session:
             >>> sess.list_tables()
             [Identifier(''T''), Identifier(''S'')]
 
-        Args:
-            identifier (str): table identifier (name)
-            source (TableSource|object): table source like a schema or dataframe
-
-        Returns:
-            Table: new table instance
         """
         s = source if isinstance(source, TableSource) else TableSource._from_obj(source)
         return self._session.create_temp_table(identifier, s._source, replace=True)
