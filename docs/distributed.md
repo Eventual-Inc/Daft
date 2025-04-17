@@ -32,8 +32,8 @@ For more information about the `address` keyword argument, please see the [Ray d
 If you want to start a single node ray cluster on your local machine, you can do the following:
 
 ```bash
-> pip install ray[default]
-> ray start --head --port=6379
+pip install ray[default]
+ray start --head --port=6379
 ```
 
 This should output something like:

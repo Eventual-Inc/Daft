@@ -29,16 +29,18 @@ nav:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
   - Integrations:
+    - Catalogs & Tables:
+      - Apache Iceberg: integrations/iceberg.md
+      - Apache Hudi: integrations/hudi.md
+      - Delta Lake: integrations/delta_lake.md
+      - S3 Tables: integrations/s3tables.md
+      - Unity Catalog: integrations/unity_catalog.md
+    - Storage:
+      - Amazon Web Services: integrations/aws.md
+      - Hugging Face Datasets: integrations/huggingface.md
+      - Microsoft Azure: integrations/azure.md
+      - SQL: integrations/sql.md
     - Ray: integrations/ray.md
-    - Unity Catalog: integrations/unity_catalog.md
-    - Apache Iceberg: integrations/iceberg.md
-    - Delta Lake: integrations/delta_lake.md
-    - Apache Hudi: integrations/hudi.md
-    - Amazon Web Services: integrations/aws.md
-    - Microsoft Azure: integrations/azure.md
-    - SQL: integrations/sql.md
-    - Hugging Face Datasets: integrations/huggingface.md
-    - S3 Tables: integrations/s3tables.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
@@ -80,6 +82,7 @@ theme:
   favicon: img/favicon.png
   font:
     text: Oxygen
+    code: consolas
   features:
   - search.suggest
   - search.highlight
