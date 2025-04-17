@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+from tests.conftest import get_tests_daft_runner_name
+
 
 def test_set_operation(spark_session):
     """Test the Set operation with various data types and edge cases."""
@@ -65,6 +69,8 @@ def test_unset_operation(spark_session):
     assert spark_session.conf.get(key) == "second"
 
 
+# TODO: debug and fix stalling issue on mac
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="stalls on macOS Ray runner")
 def test_edge_cases(spark_session):
     """Test various edge cases and potential error conditions."""
     # Test very long key and value

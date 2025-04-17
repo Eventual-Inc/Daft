@@ -79,33 +79,47 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    pub fn window_row_number(&self, name: String, group_by: &[ExprRef]) -> DaftResult<Self> {
+    /// Simplified version of window_agg_sorted that works with pre-sorted single partitions
+    pub fn window_agg_sorted_partition(
+        &self,
+        to_agg: &AggExpr,
+        name: String,
+        group_by: &[ExprRef],
+    ) -> DaftResult<Self> {
         if group_by.is_empty() {
             return Err(DaftError::ValueError(
-                "Group by cannot be empty for window row number".into(),
+                "Group by cannot be empty for window aggregation".into(),
             ));
         }
 
-        // Table with just the groupby columns.
-        let groupby_table = self.eval_expression_list(group_by)?;
-
-        // Get the grouped values (by indices, one array of indices per group).
-        let (_, groupvals_indices) = groupby_table.make_groups()?;
-
-        let mut row_to_group_mapping = vec![0; self.len()];
-        for (group_idx, indices) in groupvals_indices.iter().enumerate() {
-            for &row_idx in indices {
-                row_to_group_mapping[row_idx as usize] = group_idx;
-            }
+        if matches!(to_agg, AggExpr::MapGroups { .. }) {
+            return Err(DaftError::ValueError(
+                "MapGroups not supported in window functions".into(),
+            ));
         }
 
-        // Create row numbers within each group
-        let mut row_numbers = vec![0u64; self.len()];
-        for indices in &groupvals_indices {
-            for (i, &row_idx) in indices.iter().enumerate() {
-                row_numbers[row_idx as usize] = (i + 1) as u64;
-            }
-        }
+        // Since this is a single partition, we can just evaluate the aggregation expression directly
+        let agg_result = self.eval_agg_expression(to_agg, None)?;
+        let window_col = agg_result.rename(&name);
+
+        // The aggregation result might be just a single value, so we need to broadcast it
+        // to match the length of the partition
+        let broadcast_result = if window_col.len() != self.len() {
+            window_col.broadcast(self.len())?
+        } else {
+            window_col
+        };
+
+        // Create a new RecordBatch with just the window column
+        let window_result = Self::from_nonempty_columns(vec![broadcast_result])?;
+
+        // Union the original data with the window result
+        self.union(&window_result)
+    }
+
+    pub fn window_row_number_partition(&self, name: String) -> DaftResult<Self> {
+        // Create a sequence of row numbers (1-based)
+        let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
 
         // Create a Series from the row numbers
         let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
