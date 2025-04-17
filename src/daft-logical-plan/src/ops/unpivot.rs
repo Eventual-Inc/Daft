@@ -80,7 +80,7 @@ impl Unpivot {
             .chain([Ok(variable_field), Ok(value_field)])
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let output_schema = Schema::new(output_fields)?.into();
+        let output_schema = Schema::new(output_fields).into();
 
         Ok(Self {
             plan_id: None,

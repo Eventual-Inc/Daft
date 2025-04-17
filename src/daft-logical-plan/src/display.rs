@@ -44,13 +44,10 @@ mod test {
     };
 
     fn plan_1() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("text", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -62,14 +59,11 @@ mod test {
     }
 
     fn plan_2() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("first_name", DataType::Utf8),
-                Field::new("last_name", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("first_name", DataType::Utf8),
+            Field::new("last_name", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {

@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
+use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
@@ -11,14 +12,14 @@ use crate::{
 };
 
 /// Session holds all state for query planning and execution (e.g. connection).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Session {
     /// Session state for interior mutability
     state: Arc<RwLock<SessionState>>,
 }
 
 /// Session state is to be kept internal, consider a builder.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SessionState {
     /// Session identifier
     _id: String,
@@ -28,10 +29,74 @@ struct SessionState {
     catalogs: Bindings<CatalogRef>,
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
-    // TODO execution context
+    /// User defined functions
+    functions: Bindings<WrappedUDFClass>,
 }
 
 impl Session {
+    /// Creates an independent copy of the Session with its own separate state.
+    ///
+    /// This method performs a complete clone of the underlying `SessionState`,
+    /// creating a new `Arc<RwLock<SessionState>>` that contains the cloned state.
+    /// Any changes made to the state of the forked session will not affect the
+    /// original session and vice versa.
+    ///
+    /// # Comparison with `clone_ref()`
+    ///
+    /// Unlike `clone_ref()` which only creates a new reference to the same underlying state,
+    /// `fork()` creates a complete copy of the state. This makes `fork()` more expensive
+    /// but ensures complete isolation between the original and new session.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let original_session = Session::empty();
+    /// // ... configure original_session ...
+    ///
+    /// // Create an independent copy with the same initial state
+    /// let forked_session = original_session.fork();
+    ///
+    /// // Changes to forked_session won't affect original_session
+    /// ```
+    ///
+    pub fn fork(&self) -> Self {
+        let state = self.state().clone();
+        Self {
+            state: Arc::new(RwLock::new(state)),
+        }
+    }
+
+    /// Creates a new session that shares the same underlying state with the original.
+    ///
+    /// This method creates a new `Session` instance that contains a clone of the `Arc`
+    /// pointer to the same `RwLock<SessionState>`, but does not clone the state itself.
+    /// This means that any changes to the state through either session will be visible
+    /// to the other session.
+    ///
+    /// # Comparison with `fork()`
+    ///
+    /// Unlike `fork()` which creates a completely independent copy of the session state,
+    /// `clone_ref()` only clones the reference to the state. This makes `clone_ref()` much
+    /// cheaper but means that changes to one session will affect all sessions created
+    /// with `clone_ref()`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let original_session = Session::empty();
+    /// // ... configure original_session ...
+    ///
+    /// // Create another session that shares state with the original
+    /// let shared_session = original_session.clone_ref();
+    ///
+    /// // Changes through shared_session will be visible to original_session and vice versa
+    /// ```
+    pub fn clone_ref(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
+
     /// Creates a new empty session
     pub fn empty() -> Self {
         let state = SessionState {
@@ -39,6 +104,7 @@ impl Session {
             options: Options::default(),
             catalogs: Bindings::empty(),
             tables: Bindings::empty(),
+            functions: Bindings::empty(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -243,6 +309,34 @@ impl Session {
             IdentifierMode::Normalize => str::to_lowercase,
         }
     }
+
+    pub fn attach_function(&self, function: WrappedUDFClass, alias: Option<String>) -> Result<()> {
+        #[cfg(feature = "python")]
+        {
+            let name = match alias {
+                Some(name) => name,
+                None => function.name()?,
+            };
+
+            self.state_mut().functions.bind(name, function);
+            Ok(())
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            Err(daft_catalog::error::Error::unsupported(
+                "attach_function without python",
+            ))
+        }
+    }
+
+    pub fn detach_function(&self, name: &str) -> Result<()> {
+        self.state_mut().functions.remove(name);
+        Ok(())
+    }
+
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+        self.state().get_function(name)
+    }
 }
 
 impl SessionState {
@@ -262,6 +356,28 @@ impl SessionState {
             tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
             _ => panic!("ambiguous table identifier"),
         }
+    }
+
+    #[cfg(feature = "python")]
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+        let mut items = self
+            .functions
+            .lookup(name, daft_catalog::LookupMode::Insensitive)
+            .into_iter();
+
+        if items.len() > 1 {
+            let names = items
+                .map(|i| i.name())
+                .collect::<pyo3::PyResult<Vec<_>>>()?;
+
+            crate::ambiguous_identifier_err!("Function", names);
+        }
+        Ok(items.next().cloned())
+    }
+
+    #[cfg(not(feature = "python"))]
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+        Ok(None)
     }
 }
 
@@ -286,13 +402,10 @@ mod tests {
     use super::*;
 
     fn mock_plan() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("text", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {

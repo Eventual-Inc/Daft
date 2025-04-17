@@ -130,7 +130,7 @@ pub(crate) async fn read_json_schema_single(
         None => reader,
     };
     let arrow_schema = infer_schema(reader, None, max_bytes).await?;
-    let schema = Schema::try_from(&arrow_schema)?;
+    let schema = arrow_schema.into();
     Ok(schema)
 }
 
@@ -246,7 +246,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?,
+            ]),
         );
 
         Ok(())
@@ -309,7 +309,7 @@ mod tests {
                         Field::new("list", DataType::List(Box::new(DataType::Int64))),
                     ])
                 ),
-            ])?,
+            ]),
         );
 
         Ok(())
@@ -332,7 +332,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?,
+            ]),
         );
 
         Ok(())
@@ -360,7 +360,7 @@ mod tests {
                 // Float + Int => Float, non-conflicting
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?,
+            ]),
         );
 
         Ok(())
@@ -383,7 +383,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?,
+            ]),
         );
 
         Ok(())
@@ -433,7 +433,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
         );
 
         Ok(())
