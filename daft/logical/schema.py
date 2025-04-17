@@ -130,7 +130,7 @@ class Schema:
         yield from (self[name] for name in col_names)
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, Schema) and self._schema.eq(other._schema)
+        return isinstance(other, Schema) and self._schema == other._schema
 
     def to_name_set(self) -> set[str]:
         return set(self.column_names())

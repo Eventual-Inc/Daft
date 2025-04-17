@@ -627,24 +627,16 @@ impl ScanTask {
         match (&self.generated_fields, &self.pushdowns.columns) {
             (None, None) => self.schema.clone(),
             _ => {
-                let mut fields = self.schema.fields.clone();
+                let mut fields = self.schema.fields().to_vec();
                 // Extend the schema with generated fields.
                 if let Some(generated_fields) = &self.generated_fields {
-                    fields.extend(
-                        generated_fields
-                            .fields
-                            .iter()
-                            .map(|(name, field)| (name.clone(), field.clone())),
-                    );
+                    fields.extend(generated_fields.fields().iter().cloned());
                 }
                 // Filter the schema based on the pushdown column filters.
                 if let Some(columns) = &self.pushdowns.columns {
-                    fields = fields
-                        .into_iter()
-                        .filter(|(name, _)| columns.contains(name))
-                        .collect();
+                    fields.retain(|field| columns.contains(&field.name));
                 }
-                Arc::new(Schema { fields })
+                Arc::new(Schema::new(fields))
             }
         }
     }
@@ -780,9 +772,8 @@ impl ScanTask {
 
             // Calculate size based on materialized schema and WARC column sizes
             let row_size: usize = mat_schema
-                .fields
-                .iter()
-                .map(|(name, _)| warc_column_sizes().get(name.as_str()).copied().unwrap_or(8))
+                .field_names()
+                .map(|name| warc_column_sizes().get(name).copied().unwrap_or(8))
                 .sum();
 
             let estimate = (approx_num_rows * row_size as f64) as usize;

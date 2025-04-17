@@ -57,7 +57,7 @@ impl Pivot {
                 .into_iter()
                 .chain(pivot_value_fields)
                 .collect::<Vec<_>>();
-            Schema::new(fields)?.into()
+            Schema::new(fields).into()
         };
 
         Ok(Self {

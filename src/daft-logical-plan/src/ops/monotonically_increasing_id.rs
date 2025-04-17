@@ -27,9 +27,9 @@ impl MonotonicallyIncreasingId {
         let column_name = column_name.unwrap_or(Self::DEFAULT_COLUMN_NAME);
 
         let fields_with_id = std::iter::once(Field::new(column_name, DataType::UInt64))
-            .chain(input.schema().fields.values().cloned())
+            .chain(input.schema().fields().iter().cloned())
             .collect();
-        let schema_with_id = Schema::new(fields_with_id)?;
+        let schema_with_id = Schema::new(fields_with_id);
 
         Ok(Self {
             plan_id: None,

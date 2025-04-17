@@ -187,15 +187,16 @@ impl GlobScanOperator {
         let (partitioning_keys, generated_fields) = if partition_fields.is_empty() {
             (vec![], Schema::empty())
         } else {
-            let generated_fields = Schema::new(partition_fields)?;
+            let generated_fields = Schema::new(partition_fields);
             let generated_fields = match user_provided_schema.clone() {
                 Some(hint) => generated_fields.apply_hints(&hint)?,
                 None => generated_fields,
             };
             // Extract partitioning keys only after the user's schema hints have been applied.
-            let partitioning_keys = (&generated_fields.fields)
-                .into_iter()
-                .map(|(_, field)| PartitionField::new(field.clone(), None, None))
+            let partitioning_keys = generated_fields
+                .fields()
+                .iter()
+                .map(|field| PartitionField::new(field.clone(), None, None))
                 .collect::<Result<Vec<_>, _>>()?;
             (partitioning_keys, generated_fields)
         };
@@ -413,7 +414,7 @@ impl ScanOperator for GlobScanOperator {
             .iter()
             .map(|partition_spec| partition_spec.clone_field())
             .collect();
-        let partition_schema = Schema::new(partition_fields)?;
+        let partition_schema = Schema::new(partition_fields);
         let (first_filepath, first_metadata) =
             if let Some((first_filepath, first_metadata)) = &self.first_metadata {
                 (Some(first_filepath), Some(first_metadata))

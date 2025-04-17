@@ -39,7 +39,7 @@ impl Project {
             .map(|expr| expr.to_field(&factored_input.schema()))
             .collect::<DaftResult<_>>()?;
 
-        let projected_schema = Schema::new(fields)?.into();
+        let projected_schema = Schema::new(fields).into();
 
         Ok(Self {
             plan_id: None,

@@ -172,23 +172,29 @@ impl OuterHashJoinProbeSink {
                 Ok(Field::new(name.clone(), supertype))
             })
             .collect::<DaftResult<_>>()?;
-        let outer_common_col_schema = Arc::new(Schema::new(outer_common_col_fields)?);
+        let outer_common_col_schema = Arc::new(Schema::new(outer_common_col_fields));
         let left_non_join_fields = left_schema
-            .fields
-            .values()
+            .fields()
+            .iter()
             .filter(|f| !common_join_cols.contains(&f.name))
             .cloned()
             .collect();
-        let left_non_join_schema = Arc::new(Schema::new(left_non_join_fields)?);
-        let left_non_join_columns = left_non_join_schema.fields.keys().cloned().collect();
+        let left_non_join_schema = Arc::new(Schema::new(left_non_join_fields));
+        let left_non_join_columns = left_non_join_schema
+            .field_names()
+            .map(ToString::to_string)
+            .collect();
         let right_non_join_fields = right_schema
-            .fields
-            .values()
+            .fields()
+            .iter()
             .filter(|f| !common_join_cols.contains(&f.name))
             .cloned()
             .collect();
-        let right_non_join_schema = Arc::new(Schema::new(right_non_join_fields)?);
-        let right_non_join_columns = right_non_join_schema.fields.keys().cloned().collect();
+        let right_non_join_schema = Arc::new(Schema::new(right_non_join_fields));
+        let right_non_join_columns = right_non_join_schema
+            .field_names()
+            .map(ToString::to_string)
+            .collect();
         let common_join_cols = common_join_cols.into_iter().collect();
         Ok(Self {
             params: Arc::new(OuterHashJoinParams {
@@ -488,8 +494,8 @@ impl OuterHashJoinProbeSink {
         let left = build_side_table.get_columns(left_non_join_columns)?;
         let right = {
             let columns = right_non_join_schema
-                .fields
-                .values()
+                .fields()
+                .iter()
                 .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
                 .collect::<Vec<_>>();
             RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len())
@@ -519,8 +525,8 @@ impl OuterHashJoinProbeSink {
         let left = build_side_table.get_columns(left_non_join_columns)?;
         let right = {
             let columns = right_non_join_schema
-                .fields
-                .values()
+                .fields()
+                .iter()
                 .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
                 .collect::<Vec<_>>();
             RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len())
@@ -543,8 +549,8 @@ impl OuterHashJoinProbeSink {
         let join_table = build_side_table.get_columns(common_join_cols)?;
         let left = {
             let columns = left_non_join_schema
-                .fields
-                .values()
+                .fields()
+                .iter()
                 .map(|field| Series::full_null(&field.name, &field.dtype, build_side_table.len()))
                 .collect::<Vec<_>>();
             RecordBatch::new_unchecked(

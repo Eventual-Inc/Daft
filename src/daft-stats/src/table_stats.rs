@@ -85,11 +85,11 @@ impl TableStatistics {
             .map(|e| self.eval_expression(e))
             .collect::<crate::Result<Vec<_>>>()?;
 
-        let new_col_stats = result_cols
-            .into_iter()
-            .zip(expected_schema.fields.keys())
-            .map(|(c, f)| (f.clone(), c))
-            .collect::<IndexMap<_, _>>();
+        let new_col_stats = expected_schema
+            .field_names()
+            .map(ToString::to_string)
+            .zip(result_cols)
+            .collect();
 
         Ok(Self {
             columns: new_col_stats,
@@ -101,7 +101,7 @@ impl TableStatistics {
 
         if let Some(schema) = schema {
             // if schema provided, use it
-            for field in schema.fields.values() {
+            for field in schema.fields() {
                 let name = field.name.as_str();
                 let elem_size = if let Some(stats) = self.columns.get(name) {
                     // first try to use column stats
@@ -176,19 +176,19 @@ impl TableStatistics {
         fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> crate::Result<Self> {
         let mut columns = IndexMap::new();
-        for (field_name, field) in &schema.fields {
-            let crs = match self.columns.get(field_name) {
+        for field in schema.fields() {
+            let crs = match self.columns.get(&field.name) {
                 Some(column_stat) => column_stat
                     .cast(&field.dtype)
                     .unwrap_or(ColumnRangeStatistics::Missing),
                 None => fill_map
                     .as_ref()
-                    .and_then(|m| m.get(field_name.as_str()))
+                    .and_then(|m| m.get(field.name.as_str()))
                     .map(|e| self.eval_expression(e))
                     .transpose()?
                     .unwrap_or(ColumnRangeStatistics::Missing),
             };
-            columns.insert(field_name.clone(), crs);
+            columns.insert(field.name.clone(), crs);
         }
         Ok(Self { columns })
     }
@@ -201,7 +201,7 @@ impl Display for TableStatistics {
             .iter()
             .map(|(s, c)| c.combined_series().unwrap().rename(s))
             .collect::<Vec<_>>();
-        let tbl_schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect()).unwrap();
+        let tbl_schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect());
         let tab = RecordBatch::new_with_size(tbl_schema, columns, 2).unwrap();
         write!(f, "{tab}")
     }

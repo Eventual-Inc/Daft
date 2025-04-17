@@ -272,7 +272,7 @@ async fn read_json_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        let daft_schema = Arc::new(Schema::try_from(&schema)?);
+        let daft_schema = Arc::new(schema.into());
         return RecordBatch::empty(Some(daft_schema));
     }
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
@@ -504,12 +504,13 @@ fn parse_into_column_array_chunk_stream(
     schema: Arc<arrow2::datatypes::Schema>,
     schema_is_projection: bool,
 ) -> DaftResult<impl TableChunkStream + Send> {
-    let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(schema.as_ref())?);
+    let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
     let daft_fields = Arc::new(
         daft_schema
-            .fields
-            .values()
-            .map(|f| Arc::new(f.clone()))
+            .fields()
+            .iter()
+            .cloned()
+            .map(Arc::new)
             .collect::<Vec<_>>(),
     );
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
@@ -692,7 +693,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         if compression.is_none() {
@@ -759,7 +760,7 @@ mod tests {
                         Field::new("list", DataType::List(Box::new(DataType::Int64))),
                     ])
                 ),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -795,7 +796,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, Some(5), None);
@@ -833,7 +834,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("petalLength", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -874,7 +875,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -910,7 +911,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -946,7 +947,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -973,7 +974,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -1004,7 +1005,7 @@ mod tests {
                 Field::new("petalLength", DataType::Null),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         let null_column = table.get_column("petalLength")?;
@@ -1040,7 +1041,7 @@ mod tests {
             Field::new("petalLength", DataType::Null),
             Field::new("petalWidth", DataType::Float64),
             Field::new("species", DataType::Utf8),
-        ])?;
+        ]);
         let table = read_json(
             file.as_ref(),
             Some(JsonConvertOptions::default().with_schema(Some(schema.into()))),
@@ -1061,7 +1062,7 @@ mod tests {
                 Field::new("petalLength", DataType::Null),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         let null_column = table.get_column("petalLength")?;
@@ -1096,7 +1097,7 @@ mod tests {
             Field::new("petalLength", DataType::Float64),
             Field::new("petalWidth", DataType::Float64),
             Field::new("species", DataType::Utf8),
-        ])?;
+        ]);
 
         let table = read_json(
             file.as_ref(),
@@ -1118,7 +1119,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         let null_column = table.get_column("petalLength")?;
@@ -1145,7 +1146,7 @@ mod tests {
             Field::new("petalLength", DataType::Boolean),
             Field::new("petalWidth", DataType::Boolean),
             Field::new("species", DataType::Int64),
-        ])?;
+        ]);
         let table = read_json(
             file.as_ref(),
             Some(JsonConvertOptions::default().with_schema(Some(schema.into()))),
@@ -1212,7 +1213,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1247,7 +1248,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1284,7 +1285,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("petalLength", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
 
@@ -1319,7 +1320,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1354,7 +1355,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1389,7 +1390,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 

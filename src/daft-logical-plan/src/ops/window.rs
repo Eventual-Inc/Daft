@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{expr::window::WindowSpec, WindowExpr};
 
@@ -54,14 +55,23 @@ impl Window {
     ) -> Result<Self> {
         let input_schema = input.schema();
 
-        let mut fields = input_schema.fields.clone();
+        let fields = input_schema
+            .fields()
+            .iter()
+            .cloned()
+            .map(Ok)
+            .chain(
+                aliases
+                    .iter()
+                    .zip(window_functions.iter())
+                    .map(|(name, expr)| {
+                        let dtype = expr.to_field(&input_schema)?.dtype;
+                        Ok(Field::new(name, dtype))
+                    }),
+            )
+            .collect::<DaftResult<_>>()?;
 
-        for (name, expr) in aliases.iter().zip(window_functions.iter()) {
-            let dtype = expr.to_field(&input_schema)?.dtype;
-            fields.insert(name.to_string(), Field::new(name.to_string(), dtype));
-        }
-
-        let schema = Arc::new(Schema::new(fields.values().cloned().collect())?);
+        let schema = Arc::new(Schema::new(fields));
 
         Ok(Self {
             plan_id: None,

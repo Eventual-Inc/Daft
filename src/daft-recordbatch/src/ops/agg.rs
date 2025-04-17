@@ -177,7 +177,7 @@ impl RecordBatch {
         // Broadcast either the keys or the grouped_cols, depending on which is unit-length
         let final_len = grouped_col.len();
         let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
-        let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()).collect())?;
+        let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()).collect());
         Self::new_with_broadcast(final_schema, final_columns, final_len)
     }
 }

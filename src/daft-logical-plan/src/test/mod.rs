@@ -16,7 +16,7 @@ pub fn dummy_scan_operator_with_size(
     fields: Vec<Field>,
     num_rows_per_task: Option<usize>,
 ) -> ScanOperatorRef {
-    let schema = Arc::new(Schema::new(fields).unwrap());
+    let schema = Arc::new(Schema::new(fields));
     ScanOperatorRef(Arc::new(DummyScanOperator {
         schema,
         num_scan_tasks: 1,

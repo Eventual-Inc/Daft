@@ -2750,6 +2750,7 @@ dependencies = [
  "common-error",
  "common-py-serde",
  "common-version",
+ "derivative",
  "derive_more",
  "html-escape",
  "indexmap 2.7.0",

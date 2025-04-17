@@ -517,7 +517,7 @@ impl SparkAnalyzer<'_> {
 
         let to_select = plan
             .schema()
-            .exclude(&column_names)?
+            .exclude(&column_names)
             .names()
             .into_iter()
             .map(unresolved_col)
@@ -555,10 +555,7 @@ impl SparkAnalyzer<'_> {
             read_stream_metadata(&mut reader).wrap_err("Failed to read stream metadata")?;
 
         let arrow_schema = metadata.schema.clone();
-        let daft_schema = Arc::new(
-            Schema::try_from(&arrow_schema)
-                .wrap_err("Failed to convert Arrow schema to Daft schema.")?,
-        );
+        let daft_schema = Arc::new(Schema::from(&arrow_schema));
 
         let reader = StreamReader::new(reader, metadata, None);
 
@@ -736,12 +733,12 @@ impl SparkAnalyzer<'_> {
         let result = self.relation_to_daft_schema(input).await?;
 
         let fields: ConnectResult<Vec<StructField>> = result
-            .fields
+            .fields()
             .iter()
-            .map(|(name, field)| {
+            .map(|field| {
                 let field_type = to_spark_datatype(&field.dtype);
                 Ok(StructField {
-                    name: name.clone(), // todo(correctness): name vs field.name... will they always be the same?
+                    name: field.name.clone(), // todo(correctness): name vs field.name... will they always be the same?
                     data_type: Some(field_type),
                     nullable: true, // todo(correctness): is this correct?
                     metadata: None, // todo(completeness): might want to add metadata here

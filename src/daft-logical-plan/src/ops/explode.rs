@@ -37,12 +37,12 @@ impl Explode {
 
             let fields = input
                 .schema()
-                .fields
+                .fields()
                 .iter()
-                .map(|(name, field)| explode_schema.fields.get(name).unwrap_or(field))
+                .map(|field| explode_schema.get_field(&field.name).unwrap_or(field))
                 .cloned()
                 .collect::<Vec<_>>();
-            Schema::new(fields)?.into()
+            Schema::new(fields).into()
         };
 
         Ok(Self {

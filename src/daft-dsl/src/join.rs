@@ -7,10 +7,9 @@ use crate::{deduplicate_expr_names, ExprRef};
 pub fn get_common_join_cols<'a>(
     left_schema: &'a SchemaRef,
     right_schema: &'a SchemaRef,
-) -> impl Iterator<Item = &'a String> {
+) -> impl Iterator<Item = &'a str> {
     left_schema
-        .fields
-        .keys()
+        .field_names()
         .filter(|name| right_schema.has_field(name))
 }
 
@@ -46,11 +45,11 @@ pub fn infer_join_schema(
             })
             .chain(
                 left_schema
-                    .fields
+                    .fields()
                     .iter()
-                    .chain(right_schema.fields.iter())
-                    .filter_map(|(name, field)| {
-                        if common_cols.contains(name) {
+                    .chain(right_schema.fields())
+                    .filter_map(|field| {
+                        if common_cols.contains(field.name.as_str()) {
                             None
                         } else {
                             Some(field.clone())
@@ -60,7 +59,7 @@ pub fn infer_join_schema(
             )
             .collect::<DaftResult<_>>()?;
 
-        Ok(Schema::new(fields)?.into())
+        Ok(Schema::new(fields).into())
     }
 }
 

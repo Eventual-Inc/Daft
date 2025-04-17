@@ -65,9 +65,9 @@ impl ProbeSet {
         assert_eq!(self.schema.len(), input.schema.len());
         assert!(self
             .schema
-            .fields
-            .values()
-            .zip(input.schema.fields.values())
+            .fields()
+            .iter()
+            .zip(input.schema.fields())
             .all(|(l, r)| l.dtype == r.dtype));
 
         let hashes = input.hash_rows()?;

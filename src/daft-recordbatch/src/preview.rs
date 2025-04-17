@@ -185,13 +185,13 @@ impl Preview {
         let row: Vec<Cell> = self
             .batch
             .schema
-            .fields
+            .fields()
             .iter()
             .enumerate()
             .map(|(idx, field)| {
                 // Use schema for default header.
-                let mut text = field.1.name.to_string();
-                let mut info = field.1.dtype.to_string();
+                let mut text = field.name.to_string();
+                let mut info = field.dtype.to_string();
                 // Use column overrides if any.
                 if let Some(overrides) = self.options.column(idx) {
                     text = overrides.header.clone().unwrap_or(text);

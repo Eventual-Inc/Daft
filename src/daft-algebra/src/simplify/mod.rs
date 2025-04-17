@@ -97,16 +97,13 @@ mod test {
 
     #[fixture]
     fn schema() -> SchemaRef {
-        Arc::new(
-            Schema::new(vec![
-                Field::new("bool", DataType::Boolean),
-                Field::new("int", DataType::Int32),
-                Field::new("a", DataType::Boolean),
-                Field::new("b", DataType::Boolean),
-                Field::new("c", DataType::Boolean),
-            ])
-            .unwrap(),
-        )
+        Arc::new(Schema::new(vec![
+            Field::new("bool", DataType::Boolean),
+            Field::new("int", DataType::Int32),
+            Field::new("a", DataType::Boolean),
+            Field::new("b", DataType::Boolean),
+            Field::new("c", DataType::Boolean),
+        ]))
     }
 
     #[rstest]

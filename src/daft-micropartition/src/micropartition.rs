@@ -195,13 +195,7 @@ fn materialize_scan_task(
         FileFormatConfig::Csv(cfg) => {
             let schema_of_file = scan_task.schema.clone();
             let col_names = if !cfg.has_headers {
-                Some(
-                    schema_of_file
-                        .fields
-                        .values()
-                        .map(|f| f.name.as_str())
-                        .collect::<Vec<_>>(),
-                )
+                Some(schema_of_file.field_names().collect::<Vec<_>>())
             } else {
                 None
             };
@@ -635,15 +629,11 @@ impl MicroPartition {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let mut schema_with_id_index_map = self.schema.fields.clone();
-        schema_with_id_index_map.shift_insert(
-            0,
-            column_name.to_string(),
-            Field::new(column_name, DataType::UInt64),
-        );
-        let schema_with_id = Schema {
-            fields: schema_with_id_index_map,
-        };
+        let schema_with_id_index_map = std::iter::once(Field::new(column_name, DataType::UInt64))
+            .chain(self.schema.fields().iter().cloned())
+            .collect();
+
+        let schema_with_id = Schema::new(schema_with_id_index_map);
 
         Ok(Self::new_loaded(
             Arc::new(schema_with_id),
@@ -658,11 +648,7 @@ fn prune_fields_from_schema(
     columns: Option<&[&str]>,
 ) -> DaftResult<Arc<Schema>> {
     if let Some(columns) = columns {
-        let avail_names = schema
-            .fields
-            .keys()
-            .map(std::string::String::as_str)
-            .collect::<HashSet<_>>();
+        let avail_names = schema.field_names().collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
             if avail_names.contains(col_name) {
@@ -677,12 +663,12 @@ fn prune_fields_from_schema(
         }
         let filtered_columns = schema
             .as_ref()
-            .fields
-            .values()
+            .fields()
+            .iter()
             .filter(|field| names_to_keep.contains(field.name.as_str()))
             .cloned()
             .collect::<Vec<_>>();
-        Ok(Arc::new(Schema::new(filtered_columns)?))
+        Ok(Arc::new(Schema::new(filtered_columns)))
     } else {
         Ok(schema)
     }
@@ -738,7 +724,7 @@ pub fn read_csv_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
+                .try_reduce(|s1, s2| s1.non_distinct_union(s2.as_ref()).map(Arc::new))?
                 .unwrap();
             let tables = tables
                 .into_iter()
@@ -787,7 +773,7 @@ pub fn read_json_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
+                .try_reduce(|s1, s2| s1.non_distinct_union(s2.as_ref()).map(Arc::new))?
                 .unwrap();
             let tables = tables
                 .into_iter()
@@ -985,7 +971,7 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
         let unioned_schema = all_tables
             .iter()
             .map(|t| t.schema.clone())
-            .reduce(|l, r| l.non_distinct_union(&r).into());
+            .try_reduce(|l, r| l.non_distinct_union(&r).map(Arc::new))?;
         unioned_schema.expect("we need at least 1 schema")
     };
 
@@ -1074,7 +1060,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
+                let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1098,7 +1084,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
+                let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1134,7 +1120,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         } else {
             let unioned_schema = schemas
                 .into_iter()
-                .reduce(|l, r| Arc::new(l.non_distinct_union(&r)));
+                .try_reduce(|l, r| l.non_distinct_union(&r).map(Arc::new))?;
             unioned_schema.expect("we need at least 1 schema")
         };
 
@@ -1357,7 +1343,7 @@ mod tests {
     async fn test_mp_stream() -> DaftResult<()> {
         let columns = vec![Int32Array::from_values("a", vec![1].into_iter()).into_series()];
         let columns2 = vec![Int32Array::from_values("a", vec![2].into_iter()).into_series()];
-        let schema = Schema::new(vec![Field::new("a", DataType::Int32)])?;
+        let schema = Schema::new(vec![Field::new("a", DataType::Int32)]);
 
         let table1 = RecordBatch::from_nonempty_columns(columns)?;
         let table2 = RecordBatch::from_nonempty_columns(columns2)?;

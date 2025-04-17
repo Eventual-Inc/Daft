@@ -25,7 +25,7 @@ fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
         }
         seen.insert(name.clone());
     }
-    Schema::new(fields)
+    Ok(Schema::new(fields))
 }
 
 impl MicroPartition {
@@ -95,7 +95,7 @@ impl MicroPartition {
         let expected_new_columns = infer_schema(exprs, &self.schema)?;
         let eval_stats = if let Some(stats) = &self.statistics {
             let mut new_stats = stats.columns.clone();
-            for (name, _) in &expected_new_columns.fields {
+            for name in expected_new_columns.field_names() {
                 if let Some(v) = new_stats.get_mut(name) {
                     *v = ColumnRangeStatistics::Missing;
                 } else {
@@ -107,15 +107,7 @@ impl MicroPartition {
             None
         };
 
-        let mut expected_schema =
-            Schema::new(self.schema.fields.values().cloned().collect::<Vec<_>>())?;
-        for (name, field) in expected_new_columns.fields {
-            if let Some(v) = expected_schema.fields.get_mut(&name) {
-                *v = field;
-            } else {
-                expected_schema.fields.insert(name.to_string(), field);
-            }
-        }
+        let expected_schema = self.schema.non_distinct_union(&expected_new_columns)?;
 
         Ok(Self::new_loaded(
             Arc::new(expected_schema),

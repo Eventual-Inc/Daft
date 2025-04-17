@@ -84,7 +84,7 @@ impl<'a> JsonReader<'a> {
             .and_then(|options| options.schema.as_ref())
         {
             Some(schema) => schema.clone(),
-            None => Arc::new(Schema::try_from(&infer_schema(bytes, None, None)?)?),
+            None => Arc::new(infer_schema(bytes, None, None)?.into()),
         };
 
         let pool = if let Some(max_in_flight) = max_chunks_in_flight {
@@ -166,7 +166,7 @@ impl<'a> JsonReader<'a> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
-        let daft_fields = self.schema.fields.values().map(|f| Arc::new(f.clone()));
+        let daft_fields = self.schema.fields().iter().cloned().map(Arc::new);
 
         let arrow_schema = self.schema.to_arrow()?;
 

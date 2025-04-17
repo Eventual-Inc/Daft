@@ -15,7 +15,7 @@ pub fn summarize(input: &LogicalPlanBuilder) -> DaftResult<LogicalPlanBuilder> {
     let mut cnts: Vec<ExprRef> = vec![]; // count              :: int64
     let mut nuls: Vec<ExprRef> = vec![]; // nulls              :: int64
     let mut unqs: Vec<ExprRef> = vec![]; // approx_distinct    :: int64
-    for (_, field) in &input.schema().fields {
+    for field in input.schema().fields() {
         let col = daft_dsl::resolved_col(field.name.as_str());
         cols.push(field.name.to_string().lit());
         typs.push(field.dtype.to_string().lit());

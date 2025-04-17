@@ -44,7 +44,7 @@ impl<'a> GrowableRecordBatch<'a> {
         }
         let growables = series_list
             .into_iter()
-            .zip(first_schema.fields.values())
+            .zip(first_schema.fields())
             .map(|(vector, f)| make_growable(&f.name, &f.dtype, vector, use_validity, capacity))
             .collect::<Vec<_>>();
         Ok(Self { growables })

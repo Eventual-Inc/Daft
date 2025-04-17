@@ -1419,7 +1419,7 @@ impl Expr {
                         "Expected subquery to return a single column but received {subquery_schema}",
                     )));
                 }
-                let (_, first_field) = subquery_schema.fields.first().unwrap();
+                let first_field = subquery_schema.get_field_at_index(0).unwrap();
 
                 Ok(first_field.clone())
             }
@@ -1874,7 +1874,7 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
         .iter()
         .map(|e| e.to_field(&input_schema))
         .collect::<DaftResult<_>>()?;
-    Ok(Arc::new(Schema::new(fields)?))
+    Ok(Arc::new(Schema::new(fields)))
 }
 
 /// Adds aliases as appropriate to ensure that all expressions have unique names.
