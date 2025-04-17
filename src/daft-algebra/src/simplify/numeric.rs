@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_simplify_numeric_identity_operations() -> DaftResult<()> {
-        let empty_schema = Arc::new(Schema::new(vec![])?);
+        let empty_schema = Arc::new(Schema::empty());
         let col_expr = col("a".to_string());
 
         // Test addition with 0.
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_simplify_numeric_identity_operations_edge_cases() -> DaftResult<()> {
-        let empty_schema = Arc::new(Schema::new(vec![])?);
+        let empty_schema = Arc::new(Schema::empty());
         let col_expr = col("a".to_string());
 
         // 1 / a should not be simplified.

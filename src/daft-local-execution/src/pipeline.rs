@@ -534,7 +534,7 @@ pub fn physical_plan_to_pipeline(
                         ));
                     }
                 }
-                let key_schema = Arc::new(Schema::new(build_key_fields)?);
+                let key_schema = Arc::new(Schema::new(build_key_fields));
 
                 // we should move to a builder pattern
                 let probe_state_bridge = BroadcastStateBridge::new();

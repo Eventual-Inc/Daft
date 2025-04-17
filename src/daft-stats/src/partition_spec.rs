@@ -24,14 +24,8 @@ impl PartitionSpec {
     pub fn to_fill_map(&self) -> HashMap<&str, ExprRef> {
         self.keys
             .schema
-            .fields
-            .iter()
-            .map(|(col, _)| {
-                (
-                    col.as_str(),
-                    self.keys.get_column(col).unwrap().clone().lit(),
-                )
-            })
+            .field_names()
+            .map(|col| (col, self.keys.get_column(col).unwrap().clone().lit()))
             .collect()
     }
 }
@@ -44,7 +38,7 @@ impl PartialEq for PartitionSpec {
         }
 
         // Assuming exact matches in field names and types, now compare each field's values
-        for field_name in self.keys.schema.as_ref().fields.keys() {
+        for field_name in self.keys.schema.as_ref().field_names() {
             let self_column = self.keys.get_column(field_name).unwrap();
             let other_column = other.keys.get_column(field_name).unwrap();
             if let Some(value_eq) = self_column.equal(other_column).unwrap().get(0) {

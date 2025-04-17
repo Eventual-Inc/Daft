@@ -222,9 +222,8 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
 
                             let all_projections = params
                                 .original_schema
-                                .fields
-                                .keys()
-                                .map(|k| resolved_col(k.clone()))
+                                .field_names()
+                                .map(resolved_col)
                                 .collect::<Vec<_>>();
 
                             let final_result = RecordBatch::concat(&partitions)?;

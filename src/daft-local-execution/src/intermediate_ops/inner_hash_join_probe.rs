@@ -66,16 +66,14 @@ impl InnerHashJoinProbeOperator {
         probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
     ) -> Self {
         let left_non_join_columns = left_schema
-            .fields
-            .keys()
+            .field_names()
             .filter(|c| !common_join_keys.contains(*c))
-            .cloned()
+            .map(ToString::to_string)
             .collect();
         let right_non_join_columns = right_schema
-            .fields
-            .keys()
+            .field_names()
             .filter(|c| !common_join_keys.contains(*c))
-            .cloned()
+            .map(ToString::to_string)
             .collect();
         let common_join_keys = common_join_keys.into_iter().collect();
         Self {

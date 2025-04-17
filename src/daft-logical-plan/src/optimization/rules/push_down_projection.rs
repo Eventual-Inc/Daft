@@ -148,12 +148,11 @@ impl PushDownProjection {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
                             let pruned_upstream_schema = upstream_schema
-                                .fields
-                                .iter()
-                                .filter(|&(name, _)| required_columns.contains(name))
-                                .map(|(_, field)| field.clone())
+                                .into_iter()
+                                .filter(|field| required_columns.contains(&field.name))
+                                .cloned()
                                 .collect::<Vec<_>>();
-                            let schema = Schema::new(pruned_upstream_schema)?;
+                            let schema = Schema::new(pruned_upstream_schema);
                             let new_source: LogicalPlan = Source::new(
                                 schema.into(),
                                 Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
@@ -477,7 +476,8 @@ impl PushDownProjection {
                     projection_dependencies: &IndexSet<String>,
                 ) -> DaftResult<Transformed<LogicalPlanRef>> {
                     let schema = side.schema();
-                    let upstream_names: IndexSet<String> = schema.fields.keys().cloned().collect();
+                    let upstream_names: IndexSet<String> =
+                        schema.field_names().map(ToString::to_string).collect();
 
                     let combined_dependencies: IndexSet<_> = side_dependencies
                         .union(
@@ -627,7 +627,7 @@ impl PushDownProjection {
                 .expect("we expect 2 set of required columns for join");
             let right_schema = join.right.schema();
 
-            if right_required_cols.len() < right_schema.fields.len() {
+            if right_required_cols.len() < right_schema.len() {
                 let new_subprojection: LogicalPlan = {
                     let pushdown_column_exprs = right_required_cols
                         .iter()

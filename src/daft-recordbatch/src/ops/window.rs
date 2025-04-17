@@ -8,7 +8,7 @@ use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
 use crate::RecordBatch;
 
 impl RecordBatch {
-    pub fn window_agg(
+    pub fn window_grouped_agg(
         &self,
         to_agg: &[AggExpr],
         aliases: &[String],
@@ -72,7 +72,7 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    pub fn window_agg_sorted_partition(&self, to_agg: &AggExpr, name: String) -> DaftResult<Self> {
+    pub fn window_agg(&self, to_agg: &AggExpr, name: String) -> DaftResult<Self> {
         if matches!(to_agg, AggExpr::MapGroups { .. }) {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
@@ -82,12 +82,8 @@ impl RecordBatch {
         let agg_result = self.eval_agg_expression(to_agg, None)?;
         let window_col = agg_result.rename(&name);
 
-        // The aggregation result might be just a single value, broadcast it if needed
-        let broadcast_result = if window_col.len() != self.len() {
-            window_col.broadcast(self.len())?
-        } else {
-            window_col
-        };
+        // Broadcast the aggregation result to match the length of the partition
+        let broadcast_result = window_col.broadcast(self.len())?;
 
         let window_result = Self::from_nonempty_columns(vec![broadcast_result])?;
         self.union(&window_result)
@@ -206,7 +202,7 @@ impl RecordBatch {
         self.union(&window_batch)
     }
 
-    pub fn window_row_number_partition(&self, name: String) -> DaftResult<Self> {
+    pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
         let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
         let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
         let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
@@ -215,6 +211,7 @@ impl RecordBatch {
     }
 
     pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
+        // Create rank numbers for pre-sorted partition
         let mut rank_numbers = vec![0u64; self.len()];
 
         if self.is_empty() {

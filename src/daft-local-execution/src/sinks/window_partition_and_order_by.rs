@@ -209,10 +209,10 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
 
                                     *partition = match window_expr {
                                         WindowExpr::Agg(agg_expr) => {
-                                            partition.window_agg_sorted_partition(agg_expr, name.clone())?
+                                            partition.window_agg(agg_expr, name.clone())?
                                         }
                                         WindowExpr::RowNumber => {
-                                            partition.window_row_number_partition(name.clone())?
+                                            partition.window_row_number(name.clone())?
                                         }
                                         WindowExpr::Rank => {
                                             partition.window_rank(name.clone(), &params.order_by, false)?
@@ -229,9 +229,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
 
                             let all_projections = params
                                 .original_schema
-                                .fields
-                                .keys()
-                                .map(|k| resolved_col(k.clone()))
+                                .field_names()
+                                .map(resolved_col)
                                 .collect::<Vec<_>>();
 
                             let final_result = RecordBatch::concat(&partitions)?;

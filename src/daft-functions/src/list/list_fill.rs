@@ -84,8 +84,7 @@ mod tests {
         let schema = Schema::new(vec![
             Field::new("c0", DataType::Int32),
             Field::new("c1", DataType::Utf8),
-        ])
-        .unwrap();
+        ]);
 
         let fill = ListFill {};
         let DaftError::SchemaMismatch(e) =
