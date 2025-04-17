@@ -1442,8 +1442,6 @@ class DataFrame:
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 2     ┆ 5     ┆ 8     │
             ╰───────┴───────┴───────╯
-            <BLANKLINE>
-            (Showing first 2 of 2 rows)
         """
         ExpressionsProjection.from_schema(self._builder.schema())
         builder = self._builder.distinct()
@@ -1818,7 +1816,7 @@ class DataFrame:
             │ 1     ┆ 9     │
             ╰───────┴───────╯
             <BLANKLINE>
-            (Showing first 4 of 4 rows)
+            (Showing first 4 of 4 rows)s
 
             You can also specify null positioning (first/last) for each column
 
