@@ -83,7 +83,7 @@ theme:
   favicon: img/favicon.png
   font:
     text: Oxygen
-    code: consolas
+    code: Consolas
   features:
   - search.suggest
   - search.highlight
