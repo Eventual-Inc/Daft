@@ -75,7 +75,7 @@ impl Error {
                 .into_iter()
                 .map(Into::into)
                 .collect::<Vec<_>>()
-                .join(","),
+                .join(", "),
         }
     }
 
