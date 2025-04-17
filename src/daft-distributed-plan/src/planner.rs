@@ -2,92 +2,19 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
-use common_scan_info::{PartitionField, PhysicalScanInfo, Pushdowns, ScanState, ScanTaskLikeRef};
+use common_scan_info::{PhysicalScanInfo, ScanState};
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
-use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::{
-    ops::Source, optimization::OptimizerBuilder, source_info::PlaceHolderInfo, ClusteringSpec,
-    LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+    ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
+    LogicalPlanRef, SourceInfo,
 };
 use daft_schema::schema::SchemaRef;
 
-struct SourcePlanProducer {
-    scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    source_schema: SchemaRef,
-    output_schema: SchemaRef,
-    partitioning_keys: Vec<PartitionField>,
-    pushdowns: Pushdowns,
-    next_source: usize,
-    config: Arc<DaftExecutionConfig>,
-}
-
-impl SourcePlanProducer {
-    const DEFAULT_PLAN_SIZE: usize = 1024 * 1024 * 1024 * 16; // 16GB
-
-    pub fn new(
-        source: PhysicalScanInfo,
-        output_schema: SchemaRef,
-        config: Arc<DaftExecutionConfig>,
-    ) -> Self {
-        let scan_tasks = match source.scan_state {
-            ScanState::Operator(_) => panic!("Operator scan state not supported"),
-            ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
-        };
-        Self {
-            scan_tasks,
-            source_schema: source.source_schema,
-            output_schema,
-            partitioning_keys: source.partitioning_keys,
-            pushdowns: source.pushdowns,
-            next_source: 0,
-            config,
-        }
-    }
-
-    pub fn next_plan(&mut self) -> Option<LogicalPlanRef> {
-        let mut start = self.next_source;
-        if start >= self.scan_tasks.len() {
-            return None;
-        }
-
-        let mut scan_tasks = Vec::new();
-        let mut scan_task_total_memory_cost = 0;
-
-        while scan_task_total_memory_cost < Self::DEFAULT_PLAN_SIZE && start < self.scan_tasks.len()
-        {
-            let scan_task = self.scan_tasks[start].clone();
-            scan_task_total_memory_cost += scan_task
-                .estimate_in_memory_size_bytes(Some(&self.config))
-                .unwrap_or(Self::DEFAULT_PLAN_SIZE);
-            scan_tasks.push(scan_task);
-            start += 1;
-        }
-
-        self.next_source = start;
-
-        let source = PhysicalScanInfo {
-            scan_state: ScanState::Tasks(scan_tasks.into()),
-            source_schema: self.source_schema.clone(),
-            partitioning_keys: self.partitioning_keys.clone(),
-            pushdowns: self.pushdowns.clone(),
-        };
-        Some(
-            LogicalPlan::Source(Source::new(
-                self.output_schema.clone(),
-                SourceInfo::Physical(source).into(),
-            ))
-            .into(),
-        )
-    }
-
-    pub fn has_remaining_plans(&self) -> bool {
-        self.next_source < self.scan_tasks.len()
-    }
-}
+use crate::stage::{CollectStage, LimitStage, SwordfishStage};
 
 pub struct DistributedPhysicalPlanner {
-    logical_plan: LogicalPlanRef,
-    source_producer: SourcePlanProducer,
+    remaining_logical_plan: Option<LogicalPlanRef>,
+    config: Arc<DaftExecutionConfig>,
 }
 
 impl DistributedPhysicalPlanner {
@@ -101,41 +28,122 @@ impl DistributedPhysicalPlanner {
                 "Cannot run this physical plan on distributed swordfish yet".to_string(),
             ));
         }
-        let mut replacer = ReplaceSourcesWithPlaceholder {
-            scan_infos: Vec::new(),
-            output_schemas: Vec::new(),
-        };
-        let replaced = plan.rewrite(&mut replacer)?;
-        let plan = replaced.data;
-        let inputs = replacer.scan_infos;
-        assert_eq!(inputs.len(), 1); // for now we only support map pipelines, so only 1 source
 
         Ok(Self {
-            logical_plan: plan,
-            source_producer: SourcePlanProducer::new(
-                inputs[0].clone(),
-                replacer.output_schemas[0].clone(),
-                config.clone(),
-            ),
+            remaining_logical_plan: Some(plan),
+            config: config.clone(),
         })
     }
 
-    pub fn next_plan(&mut self) -> DaftResult<Option<LocalPhysicalPlanRef>> {
-        if let Some(source) = self.source_producer.next_plan() {
-            let next_logical_plan =
-                replace_placeholders_with_sources(self.logical_plan.clone(), source)?;
-            let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
-            let optimized_logical_plan =
-                optimizer.optimize(next_logical_plan, |_, _, _, _, _| {})?;
-            let local_physical_plan = translate(&optimized_logical_plan)?;
-            Ok(Some(local_physical_plan))
-        } else {
-            Ok(None)
+    pub fn next_stage(&mut self) -> DaftResult<Option<Box<dyn SwordfishStage + Send + Sync>>> {
+        println!("getting next stage");
+        if self.remaining_logical_plan.is_none() {
+            return Ok(None);
+        }
+
+        let remaining_plan = match self.remaining_logical_plan.take() {
+            Some(plan) => plan,
+            None => return Ok(None),
+        };
+
+        // Analyze the plan to see if we have a stage boundary (currently just limit)
+        let (next_stage, remaining_plan) =
+            find_and_split_at_stage_boundary(&remaining_plan, &self.config)?;
+
+        self.remaining_logical_plan = remaining_plan;
+
+        println!("next stage: {:#?}", next_stage);
+        println!("remaining plan: {:#?}", self.remaining_logical_plan);
+
+        Ok(Some(next_stage))
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.remaining_logical_plan.is_none()
+    }
+}
+
+/// Find a stage boundary in the plan and split the plan at that point
+/// Currently only finds limit operations, but can be extended for other stage boundaries
+/// Returns a StageBoundary with boundary-specific information if found
+fn find_and_split_at_stage_boundary(
+    plan: &LogicalPlanRef,
+    config: &Arc<DaftExecutionConfig>,
+) -> DaftResult<(
+    Box<dyn SwordfishStage + Send + Sync>,
+    Option<LogicalPlanRef>,
+)> {
+    struct StageBoundarySplitter {
+        next_stage: Option<Box<dyn SwordfishStage + Send + Sync>>,
+        config: Arc<DaftExecutionConfig>,
+    }
+
+    impl TreeNodeRewriter for StageBoundarySplitter {
+        type Node = LogicalPlanRef;
+
+        fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+            Ok(Transformed::no(node))
+        }
+
+        fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+            match node.as_ref() {
+                LogicalPlan::Limit(limit) => {
+                    println!("found limit stage");
+                    let schema = node.schema();
+                    let ph = PlaceHolderInfo::new(schema.clone(), ClusteringSpec::default().into());
+                    let placeholder = LogicalPlan::Source(Source::new(
+                        schema,
+                        SourceInfo::PlaceHolder(ph).into(),
+                    ));
+
+                    let (plan, scan_infos, output_schemas) =
+                        replace_sources_with_placeholders(&node)?;
+                    let scan_info = scan_infos.first().unwrap();
+                    let output_schema = output_schemas.first().unwrap();
+
+                    self.next_stage = Some(Box::new(LimitStage::new(
+                        scan_info.clone(),
+                        output_schema.clone(),
+                        plan,
+                        limit.limit as usize,
+                        self.config.clone(),
+                    )));
+
+                    Ok(Transformed::new(
+                        placeholder.into(),
+                        true,
+                        common_treenode::TreeNodeRecursion::Stop,
+                    ))
+                }
+                _ => Ok(Transformed::no(node)),
+            }
         }
     }
 
-    pub fn has_remaining_plans(&self) -> bool {
-        self.source_producer.has_remaining_plans()
+    let mut splitter = StageBoundarySplitter {
+        next_stage: None,
+        config: config.clone(),
+    };
+
+    let transformed = plan.clone().rewrite(&mut splitter)?;
+
+    if let Some(next_stage) = splitter.next_stage {
+        Ok((next_stage, Some(transformed.data)))
+    } else {
+        // make collect stage
+        let plan = transformed.data;
+        println!("making collect stage for plan: {:#?}", plan);
+        let (plan, scan_infos, output_schemas) = replace_sources_with_placeholders(&plan)?;
+        let scan_info = scan_infos.first().unwrap();
+        println!("scan info: {:#?}", scan_info);
+        let output_schema = output_schemas.first().unwrap();
+        let collect_stage = Box::new(CollectStage::new(
+            scan_info.clone(),
+            output_schema.clone(),
+            plan,
+            config.clone(),
+        ));
+        Ok((collect_stage, None))
     }
 }
 
@@ -152,7 +160,7 @@ fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
         LogicalPlan::Explode(explode) => can_translate_logical_plan(&explode.input),
         LogicalPlan::Unpivot(unpivot) => can_translate_logical_plan(&unpivot.input),
         LogicalPlan::Pivot(pivot) => can_translate_logical_plan(&pivot.input),
-        LogicalPlan::Limit(_) => false,
+        LogicalPlan::Limit(limit) => can_translate_logical_plan(&limit.input),
         LogicalPlan::Sort(_) => false,
         LogicalPlan::Distinct(_) => false,
         LogicalPlan::Aggregate(_) => false,
@@ -208,7 +216,23 @@ impl TreeNodeRewriter for ReplaceSourcesWithPlaceholder {
     }
 }
 
-fn replace_placeholders_with_sources(
+pub fn replace_sources_with_placeholders(
+    plan: &LogicalPlanRef,
+) -> DaftResult<(LogicalPlanRef, Vec<PhysicalScanInfo>, Vec<SchemaRef>)> {
+    let mut replacer = ReplaceSourcesWithPlaceholder {
+        scan_infos: Vec::new(),
+        output_schemas: Vec::new(),
+    };
+
+    let transformed = plan.clone().rewrite(&mut replacer)?;
+    Ok((
+        transformed.data,
+        replacer.scan_infos,
+        replacer.output_schemas,
+    ))
+}
+
+pub fn replace_placeholders_with_sources(
     plan: LogicalPlanRef,
     new_source_plan: LogicalPlanRef,
 ) -> DaftResult<LogicalPlanRef> {

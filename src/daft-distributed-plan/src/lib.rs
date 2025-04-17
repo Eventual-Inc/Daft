@@ -1,4 +1,5 @@
 mod planner;
+mod stage;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]

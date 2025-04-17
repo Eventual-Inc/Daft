@@ -9,7 +9,7 @@ import time
 import uuid
 from datetime import datetime
 from queue import Full, Queue
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator, List
 
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
@@ -1332,9 +1332,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
         elif daft_execution_config.big_buddha_special:
             try:
+                print("building distributed plan")
                 distributed_planner = DistributedPhysicalPlanner.from_logical_plan_builder(
                     builder._builder, daft_execution_config
                 )
+                print("distributed plan built")
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
@@ -1345,8 +1347,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
             else:
                 # If plan building succeeds, execute it
-                for obj in run_distributed_swordfish(distributed_planner, daft_execution_config, results_buffer_size):
-                    yield RayMaterializedResult(obj)
+                print("executing distributed plan")
+                for result in run_distributed_swordfish(distributed_planner, daft_execution_config, results_buffer_size):
+                    yield result
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.
@@ -1427,8 +1430,8 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 class PartitionMetadataAccessor:
     """Wrapper class around Remote[List[PartitionMetadata]] to memoize lookups."""
 
-    def __init__(self, ref: ray.ObjectRef) -> None:
-        self._ref: ray.ObjectRef = ref
+    def __init__(self, ref: ray.ObjectRef | List[ray.ObjectRef]) -> None:
+        self._ref: ray.ObjectRef | List[ray.ObjectRef] = ref
         self._metadatas: None | list[PartitionMetadata] = None
 
     def _get_metadatas(self) -> list[PartitionMetadata]:

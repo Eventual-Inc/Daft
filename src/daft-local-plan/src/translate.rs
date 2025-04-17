@@ -8,8 +8,8 @@ use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
-pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
-    match plan.as_ref() {
+pub fn translate(plan: &LogicalPlan) -> DaftResult<LocalPhysicalPlanRef> {
+    match plan {
         LogicalPlan::Source(source) => {
             match source.source_info.as_ref() {
                 SourceInfo::InMemory(info) => Ok(LocalPhysicalPlan::in_memory_scan(
