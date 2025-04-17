@@ -47,7 +47,7 @@ from daft.daft import PyIdentifier, PyTableSource
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Any, Literal, final
+from typing import TYPE_CHECKING, Literal, Any
 
 from daft.logical.schema import Schema
 
@@ -283,7 +283,7 @@ class Catalog(ABC):
         table_bucket_arn: str,
         client: object | None = None,
         session: object | None = None,
-    ):
+    ) -> Catalog:
         """Creates a Daft Catalog from S3 Tables bucket ARN, with optional client or session.
 
         If neither a boto3 client nor session is given, an Iceberg REST client is used.
@@ -308,7 +308,44 @@ class Catalog(ABC):
             else:
                 return S3Catalog.from_arn(table_bucket_arn)
         except ImportError:
-            raise ImportError("S3 Tables support not installed: pip install -U 'getdaft[aws]'")
+            raise ImportError("S3 Tables support not installed: pip install -U 'daft[aws]'")
+
+    @staticmethod
+    def from_glue(
+        name: str,
+        client: object | None = None,
+        session: object | None = None,
+    ) -> Catalog:
+        """Creates a Daft Catalog backed by the AWS Glue service, with optional client or session.
+
+        Terms:
+            - AWS Glue          -> Daft Catalog
+            - AWS Glue Database -> Daft Namespace
+            - AWS Glue Table    -> Daft Table
+
+        Args:
+            name (str): glue database name
+            type (Literal["iceberg"]): optional catalog type
+            client: optional boto3 client
+            session: optional boto3 session
+            **options: additional options for boto3 client creation
+
+        Returns:
+            Catalog: new daft catalog instance backed by AWS Glue.
+        """
+        try:
+            from daft.catalog.__glue import GlueCatalog
+
+            if client is not None and session is not None:
+                raise ValueError("Can provide either a client or session but not both.")
+            elif client is not None:
+                return GlueCatalog.from_client(name, client)
+            elif session is not None:
+                return GlueCatalog.from_session(name, session)
+            else:
+                raise ValueError("Must provide either a client or session.")
+        except ImportError:
+            raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
 
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
@@ -352,10 +389,10 @@ class Catalog(ABC):
     # has_*
     ###
 
-    def has_namespace(self, identifier: Identifier | str):
+    def has_namespace(self, identifier: Identifier | str) -> bool:
         raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
 
-    def has_table(self, identifier: Identifier | str):
+    def has_table(self, identifier: Identifier | str) -> bool:
         """Returns True if the table exists, otherwise False."""
         try:
             _ = self.get_table(identifier)
