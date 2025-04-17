@@ -627,15 +627,21 @@ impl ScanTask {
         match (&self.generated_fields, &self.pushdowns.columns) {
             (None, None) => self.schema.clone(),
             _ => {
-                let mut fields = self.schema.fields().to_vec();
-                // Extend the schema with generated fields.
-                if let Some(generated_fields) = &self.generated_fields {
-                    fields.extend(generated_fields.fields().iter().cloned());
-                }
+                let schema_with_generated_fields =
+                    if let Some(generated_fields) = &self.generated_fields {
+                        // Extend the schema with generated fields.
+                        Arc::new(self.schema.non_distinct_union(generated_fields).unwrap())
+                    } else {
+                        self.schema.clone()
+                    };
+
+                let mut fields = schema_with_generated_fields.fields().to_vec();
+
                 // Filter the schema based on the pushdown column filters.
                 if let Some(columns) = &self.pushdowns.columns {
                     fields.retain(|field| columns.contains(&field.name));
                 }
+
                 Arc::new(Schema::new(fields))
             }
         }
