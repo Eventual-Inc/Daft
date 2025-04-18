@@ -2,7 +2,6 @@ import pyarrow as pa
 import pytest
 
 import daft
-from tests.conftest import get_tests_daft_runner_name
 from tests.integration.io.conftest import minio_create_bucket
 
 TABLE_NAME = "my_table"
@@ -37,8 +36,6 @@ def test_lancedb_roundtrip(lance_dataset_path):
     assert df_loaded.to_pydict() == df1.concat(df2).to_pydict()
 
 
-# TODO: re-enable test on Ray when fixed
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Lance fails to load credentials on Ray")
 @pytest.mark.integration()
 def test_lancedb_minio(minio_io_config):
     df1 = daft.from_pydict(data1)

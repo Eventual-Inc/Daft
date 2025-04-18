@@ -45,7 +45,7 @@ pyarrow==16.0.0
 ray[data, client]==2.34.0
 
 # Lance
-pylance>=0.10.12
+pylance>=0.20.0
 
 #Iceberg
 pyiceberg==0.7.0
