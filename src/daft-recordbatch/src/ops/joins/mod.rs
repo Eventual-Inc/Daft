@@ -54,7 +54,7 @@ fn add_non_join_key_columns(
         .collect::<HashSet<_>>();
 
     // TODO(Clark): Parallelize with rayon.
-    for field in left.schema.fields.values() {
+    for field in left.schema.as_ref() {
         if join_keys.contains(&field.name) {
             continue;
         }
@@ -63,7 +63,7 @@ fn add_non_join_key_columns(
 
     drop(lidx);
 
-    for field in right.schema.fields.values() {
+    for field in right.schema.as_ref() {
         if join_keys.contains(&field.name) {
             continue;
         }

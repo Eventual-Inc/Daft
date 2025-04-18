@@ -5,7 +5,7 @@ use daft_dsl::{AggExpr, ExprRef};
 use crate::RecordBatch;
 
 impl RecordBatch {
-    pub fn window_agg(
+    pub fn window_grouped_agg(
         &self,
         to_agg: &[AggExpr],
         aliases: &[String],
@@ -74,5 +74,38 @@ impl RecordBatch {
 
         // Union the original data with the window result
         self.union(&window_result)
+    }
+
+    pub fn window_agg(&self, to_agg: &AggExpr, name: String) -> DaftResult<Self> {
+        if matches!(to_agg, AggExpr::MapGroups { .. }) {
+            return Err(DaftError::ValueError(
+                "MapGroups not supported in window functions".into(),
+            ));
+        }
+
+        // Since this is a single partition, we can just evaluate the aggregation expression directly
+        let agg_result = self.eval_agg_expression(to_agg, None)?;
+        let window_col = agg_result.rename(&name);
+
+        // Broadcast the aggregation result to match the length of the partition
+        let broadcast_result = window_col.broadcast(self.len())?;
+
+        // Create a new RecordBatch with just the window column
+        let window_result = Self::from_nonempty_columns(vec![broadcast_result])?;
+
+        // Union the original data with the window result
+        self.union(&window_result)
+    }
+
+    pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
+        // Create a sequence of row numbers (1-based)
+        let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
+
+        // Create a Series from the row numbers
+        let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
+        let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
+
+        // Union the original data with the row number column
+        self.union(&row_number_batch)
     }
 }

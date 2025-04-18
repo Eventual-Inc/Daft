@@ -50,17 +50,15 @@ impl OptimizerRule for SimplifyNullFilteredJoin {
                     ) =>
                     {
                         let left_preserved = *join_type == JoinType::Left || {
-                            let left_cols: HashSet<ExprRef> = HashSet::from_iter(
-                                left.schema().fields.keys().cloned().map(resolved_col),
-                            );
+                            let left_cols: HashSet<ExprRef> =
+                                HashSet::from_iter(left.schema().field_names().map(resolved_col));
 
                             predicate_removes_nulls(predicate.clone(), &input.schema(), &left_cols)?
                         };
 
                         let right_preserved = *join_type == JoinType::Right || {
-                            let right_cols: HashSet<ExprRef> = HashSet::from_iter(
-                                right.schema().fields.keys().cloned().map(resolved_col),
-                            );
+                            let right_cols: HashSet<ExprRef> =
+                                HashSet::from_iter(right.schema().field_names().map(resolved_col));
 
                             predicate_removes_nulls(
                                 predicate.clone(),

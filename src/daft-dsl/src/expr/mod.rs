@@ -1060,6 +1060,7 @@ impl Expr {
             }
             Self::Over(expr, window_spec) => {
                 let child_id = expr.semantic_id(schema);
+
                 let partition_by_ids = window_spec
                     .partition_by
                     .iter()
@@ -1069,12 +1070,12 @@ impl Expr {
                 let order_by_ids = window_spec
                     .order_by
                     .iter()
-                    .zip(window_spec.ascending.iter())
-                    .map(|(e, asc)| {
+                    .zip(window_spec.descending.iter())
+                    .map(|(e, desc)| {
                         format!(
                             "{}:{}",
                             e.semantic_id(schema),
-                            if *asc { "asc" } else { "desc" }
+                            if *desc { "desc" } else { "asc" }
                         )
                     })
                     .collect::<Vec<_>>()
@@ -1084,7 +1085,7 @@ impl Expr {
             }
             Self::WindowFunction(window_expr) => {
                 let child_id = window_expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.window_fn()"))
+                FieldID::new(format!("{child_id}.window_function()"))
             }
         }
     }
@@ -1419,7 +1420,7 @@ impl Expr {
                         "Expected subquery to return a single column but received {subquery_schema}",
                     )));
                 }
-                let (_, first_field) = subquery_schema.fields.first().unwrap();
+                let first_field = subquery_schema.get_field_at_index(0).unwrap();
 
                 Ok(first_field.clone())
             }
@@ -1873,8 +1874,8 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     let fields = exprs
         .iter()
         .map(|e| e.to_field(&input_schema))
-        .collect::<DaftResult<_>>()?;
-    Ok(Arc::new(Schema::new(fields)?))
+        .collect::<DaftResult<Vec<_>>>()?;
+    Ok(Arc::new(Schema::new(fields)))
 }
 
 /// Adds aliases as appropriate to ensure that all expressions have unique names.

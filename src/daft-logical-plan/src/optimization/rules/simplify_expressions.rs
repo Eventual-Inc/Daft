@@ -57,13 +57,10 @@ mod test {
     };
 
     fn make_source() -> LogicalPlanBuilder {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("bool", DataType::Boolean),
-                Field::new("int", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("bool", DataType::Boolean),
+            Field::new("int", DataType::Int32),
+        ]));
         LogicalPlanBuilder::from(
             LogicalPlan::Source(Source {
                 plan_id: None,

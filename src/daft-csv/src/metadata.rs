@@ -173,7 +173,7 @@ where
 {
     let (schema, read_stats) =
         read_csv_arrow_schema_from_uncompressed_reader(reader, parse_options, max_bytes).await?;
-    Ok((Schema::try_from(&schema)?, read_stats))
+    Ok((schema.into(), read_stats))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -340,7 +340,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?,
+            ]),
         );
         assert_eq!(read_stats.total_bytes_read, 328);
         assert_eq!(read_stats.total_records_read, 20);
@@ -375,7 +375,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?,
+            ]),
         );
         assert_eq!(read_stats.total_bytes_read, 328);
         assert_eq!(read_stats.total_records_read, 20);
@@ -425,7 +425,7 @@ mod tests {
                 Field::new("column_3", DataType::Float64),
                 Field::new("column_4", DataType::Float64),
                 Field::new("column_5", DataType::Utf8),
-            ])?,
+            ]),
         );
         assert_eq!(read_stats.total_bytes_read, 328);
         assert_eq!(read_stats.total_records_read, 20);
@@ -454,7 +454,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?,
+            ]),
         );
         assert_eq!(read_stats.total_bytes_read, 49);
         assert_eq!(read_stats.total_records_read, 3);
@@ -480,7 +480,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?,
+            ]),
         );
         assert_eq!(read_stats.total_bytes_read, 82);
         assert_eq!(read_stats.total_records_read, 6);
@@ -510,7 +510,7 @@ mod tests {
                 Field::new("petal.length", DataType::Utf8),
                 Field::new("petal.width", DataType::Utf8),
                 Field::new("variety", DataType::Utf8),
-            ])?,
+            ]),
         );
         assert_eq!(read_stats.total_bytes_read, 33);
         assert_eq!(read_stats.total_records_read, 2);
@@ -536,7 +536,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?,
+            ]),
         );
         // Max bytes doesn't include header, so add 15 bytes to upper bound.
         assert!(
@@ -650,7 +650,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8)
-            ])?
+            ])
         );
 
         Ok(())
