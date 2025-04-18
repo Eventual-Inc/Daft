@@ -29,17 +29,19 @@ nav:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
   - Integrations:
+    - Catalogs & Tables:
+      - Apache Hudi: integrations/hudi.md
+      - Apache Iceberg: integrations/iceberg.md
+      - AWS Glue: integrations/glue.md
+      - Delta Lake: integrations/delta_lake.md
+      - S3 Tables: integrations/s3tables.md
+      - Unity Catalog: integrations/unity_catalog.md
+    - Storage:
+      - Amazon Web Services: integrations/aws.md
+      - Hugging Face Datasets: integrations/huggingface.md
+      - Microsoft Azure: integrations/azure.md
+      - SQL: integrations/sql.md
     - Ray: integrations/ray.md
-    - Unity Catalog: integrations/unity_catalog.md
-    - Apache Iceberg: integrations/iceberg.md
-    - Delta Lake: integrations/delta_lake.md
-    - Apache Hudi: integrations/hudi.md
-    - Amazon Web Services: integrations/aws.md
-    - Microsoft Azure: integrations/azure.md
-    - SQL: integrations/sql.md
-    - Hugging Face Datasets: integrations/huggingface.md
-    - S3 Tables: integrations/s3tables.md
-    - Glue: integrations/glue.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
@@ -155,17 +157,14 @@ extra:
     link: https://www.youtube.com/@daftdf
   - icon: simple/substack
     link: https://blog.getdaft.io/
-
-  # This is a macro you should use to refer to paths
-  # When referring to methods, the syntax is {{ api_path }}/path/to/method
-  # api_path: api_docs/doc_gen
+  generator: false
 
 # Additional Style
 extra_css:
 - css/extra.css
 
 extra_javascript:
-- js/docstring.js
+- js/custom.js
 
 # Extensions
 markdown_extensions:
@@ -177,8 +176,6 @@ markdown_extensions:
     alternate_style: true
 - pymdownx.snippets:
     check_paths: true
-      # base_path: ['docs/source', "."]
-      # dedent_subsections: true
 - pymdownx.superfences
 - pymdownx.details
 - attr_list
@@ -198,7 +195,6 @@ plugins:
     include_source: true
 - search:
     separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
-# - macros
 - autorefs
 - minify:
     minify_html: true
@@ -225,7 +221,7 @@ plugins:
           signature_crossrefs: true
           unwrap_annotated: true
           summary:
-            attributes: false
+            attributes: true
             functions: true
           extra:
             trim_doctest_flags: true

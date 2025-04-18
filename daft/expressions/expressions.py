@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import builtins
 import math
-import os
 import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -56,29 +55,6 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
-
-# This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
-# return a class instance of the namespace instead of a property object.
-elif os.getenv("DAFT_SPHINX_BUILD") == "1":
-    from typing import Any
-
-    # when building docs (with Sphinx) we need access to the functions
-    # associated with the namespaces from the class, as we don't have
-    # an instance; @sphinx_accessor is a @property that allows this.
-    NS = TypeVar("NS")
-
-    class sphinx_accessor(property):
-        def __get__(  # type: ignore[override]
-            self,
-            instance: Any,
-            cls: type[NS],
-        ) -> NS:
-            try:
-                return self.fget(instance if isinstance(instance, cls) else cls)  # type: ignore[misc]
-            except (AttributeError, ImportError):
-                return self  # type: ignore[return-value]
-
-    property = sphinx_accessor  # type: ignore[misc]
 
 
 def lit(value: object) -> Expression:
