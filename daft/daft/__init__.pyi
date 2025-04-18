@@ -2039,8 +2039,11 @@ class PyTable:
 
 class PyTableSource:
     @staticmethod
-    def from_builder(builder: LogicalPlanBuilder):
-        PyTable
+    def from_pyschema(schema: PySchema):
+        PyTableSource
+    @staticmethod
+    def from_pybuilder(builder: LogicalPlanBuilder):
+        PyTableSource
 
 ###
 # daft-session
