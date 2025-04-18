@@ -13,7 +13,3 @@ Daft integrates with various catalog implementations using its `Catalog` and `Ta
 ::: daft.catalog.Table
     options:
         filters: ["!^_"]
-
-::: daft.catalog.TableSource
-    options:
-        filters: ["!^_"]
