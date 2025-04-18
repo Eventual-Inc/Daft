@@ -4399,7 +4399,29 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.embedding` attribute."""
 
     def cosine_distance(self, other: Expression) -> Expression:
-        """Compute the cosine distance between two embeddings."""
+        """Compute the cosine distance between two embeddings.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"e1": [[1, 2, 3], [1, 2, 3]], "e2": [[1, 2, 3], [-1, -2, -3]]})
+            >>> dtype = daft.DataType.fixed_size_list(daft.DataType.float32(), 3)
+            >>> df = df.with_column("dist", df["e1"].cast(dtype).embedding.cosine_distance(df["e2"].cast(dtype)))
+            >>> df.show()
+            ╭─────────────┬──────────────┬─────────╮
+            │ e1          ┆ e2           ┆ dist    │
+            │ ---         ┆ ---          ┆ ---     │
+            │ List[Int64] ┆ List[Int64]  ┆ Float64 │
+            ╞═════════════╪══════════════╪═════════╡
+            │ [1, 2, 3]   ┆ [1, 2, 3]    ┆ 0       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [1, 2, 3]   ┆ [-1, -2, -3] ┆ 2       │
+            ╰─────────────┴──────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Returns:
+            Expression: a Float64 Expression with the cosine distance between the two embeddings.
+        """
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
 
 
