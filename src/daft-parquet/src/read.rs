@@ -975,7 +975,7 @@ pub async fn read_parquet_schema_and_metadata(
 
     let metadata = builder.metadata;
     let arrow_schema = infer_schema_with_options(&metadata, Some(schema_inference_options.into()))?;
-    let schema = Schema::try_from(&arrow_schema)?;
+    let schema = arrow_schema.into();
     Ok((schema, metadata))
 }
 

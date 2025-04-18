@@ -245,6 +245,7 @@ def _infer_filesystem(
     ###
     elif protocol == "file":
         resolved_filesystem = pafs.LocalFileSystem()
+        path = os.path.expanduser(path)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem, None
 

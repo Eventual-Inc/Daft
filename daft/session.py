@@ -9,11 +9,13 @@ from daft.daft import PySession, PyTableSource, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
+from daft.udf import UDF
 
 __all__ = [
     "Session",
     "attach",
     "attach_catalog",
+    "attach_function",
     "attach_table",
     "create_namespace",
     "create_namespace_if_not_exists",
@@ -24,6 +26,7 @@ __all__ = [
     "current_namespace",
     "current_session",
     "detach_catalog",
+    "detach_function",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -95,11 +98,11 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Table, alias: str | None = None) -> None:
-        """Attaches a known attachable object like a Catalog or Table.
+    def attach(self, object: Catalog | Table | UDF, alias: str | None = None) -> None:
+        """Attaches a known attachable object like a Catalog, Table or UDF.
 
         Args:
-            object (Catalog|Table): object which is attachable to a session
+            object (Catalog|Table|UDF): object which is attachable to a session
 
         Returns:
             None
@@ -108,6 +111,8 @@ class Session:
             self.attach_catalog(object, alias)
         elif isinstance(object, Table):
             self.attach_table(object, alias)
+        elif isinstance(object, UDF):
+            self.attach_function(object, alias)
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
@@ -222,7 +227,14 @@ class Session:
     def create_temp_table(self, identifier: str, source: Schema | DataFrame) -> Table:
         """Creates a temp table scoped to this session's lifetime.
 
-        Example:
+        Args:
+            identifier (str): table identifier (name)
+            source (TableSource|object): table source like a schema or dataframe
+
+        Returns:
+            Table: new table instance
+
+        Examples:
             >>> import daft
             >>> from daft.session import Session
             >>> sess = Session()
@@ -482,6 +494,17 @@ class Session:
 
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
+    ###
+    # functions
+    ###
+    def attach_function(self, function: UDF, alias: str | None = None):
+        """Attaches a Python function as a UDF in the current session."""
+        self._session.attach_function(function, alias)
+
+    def detach_function(self, alias: str):
+        """Detaches a Python function as a UDF in the current session."""
+        self._session.detach_function(alias)
+
 
 ###
 # global active session
@@ -509,7 +532,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Table, alias: str | None = None) -> None:
+def attach(object: Catalog | Table | UDF, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -704,3 +727,18 @@ def set_session(session: Session):
     # ```
     global _SESSION
     _SESSION = session
+
+
+###
+# functions
+###
+
+
+def attach_function(function: UDF, alias: str | None = None):
+    """Attaches a Python function as a UDF in the current session."""
+    _session().attach_function(function, alias)
+
+
+def detach_function(alias: str):
+    """Detaches a Python function as a UDF in the current session."""
+    _session().detach_function(alias)

@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn test_rule_batch_once() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])),
             1,
         );
 
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])),
             1,
         );
 
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_max() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])),
             1,
         );
 
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_max_passes() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])),
             1,
         );
 
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_no_limit() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])),
             1,
         );
 

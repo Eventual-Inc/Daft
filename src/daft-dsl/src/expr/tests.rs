@@ -60,7 +60,7 @@ fn check_arithmetic_type_with_columns() -> DaftResult<()> {
     let schema = Schema::new(vec![
         Field::new("x", DataType::Float64),
         Field::new("y", DataType::Int64),
-    ])?;
+    ]);
 
     let z = Expr::BinaryOp {
         left: x,

@@ -176,7 +176,7 @@ pub async fn read_csv_local(
             io_stats,
         )
         .await?;
-        return RecordBatch::empty(Some(Arc::new(Schema::try_from(&schema)?)));
+        return RecordBatch::empty(Some(Arc::new(schema.into())));
     }
     let concated_table = tables_concat(collected_tables)?;
 
@@ -242,12 +242,12 @@ pub async fn stream_csv_local(
         .iter()
         .map(|i| schema.fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(Schema::new(fields_subset)?);
+    let read_schema = Arc::new(Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
         read_schema
-            .fields
-            .values()
-            .map(|f| Arc::new(f.clone()))
+            .into_iter()
+            .cloned()
+            .map(Arc::new)
             .collect::<Vec<_>>(),
     );
 
