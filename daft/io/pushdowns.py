@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import singledispatchmethod
 from typing import Generic, Sequence, TypeVar, Union
 
-Value = Union[str, int, float, bool]
+Value = Union[str, int, float, bool, None]
 R = TypeVar("R")
 C = TypeVar("C")
 
@@ -27,9 +27,15 @@ class Term(ABC):
 
 @dataclass(frozen=True)
 class Reference(Term):
-    """Reference to a field in some schema, this is not bound to any schema."""
+    """Reference to a field in some schema.
 
-    name: str
+    Attributes:
+        path: Field path in the schema which is typically a column name.
+        index: Field index if this reference is bound to a schema.
+    """
+
+    path: str
+    index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -41,14 +47,18 @@ class Literal(Term):
     simple consumption of daft's rust expressions from a python context. We may
     iterate on this design's complexity as more advanced use-cases emerge.
 
-    Example:
-    >>> v1 = Literal("hello")
-    >>> v2 = Literal(1)
-    >>> v3 = Literal(2.0)
-    >>> v4 = Literal(False)
+    Attributes:
+        value: Literal value is some python object.
+
+    Examples:
+        >>> v1 = Literal("hello")
+        >>> v2 = Literal(1)
+        >>> v3 = Literal(2.0)
+        >>> v4 = Literal(False)
+        >>> v5 = Literal(None)
     """
 
-    value: Value | None
+    value: Value
 
 
 @dataclass(frozen=True)
@@ -106,17 +116,19 @@ class Expr(Term):
 
 @dataclass(frozen=True)
 class Arg:
-    """Arg is just an s-expression with optional label, notably does not inherit from Term."""
+    """Arg is just an s-expression with optional label, notably does not inherit from Term.
+
+    Attributes:
+        term: Term is the actual argument.
+        label: Label is an optional label if this argument was named.
+    """
 
     term: Term
     label: str | None = None
 
-    def __str__(self) -> str:
-        return LispyVisitor()._arg(self, None)
-
 
 class TermVisitor(ABC, Generic[C, R]):
-    """TermrVisitor uses the @singledispatchmethod for a class-based visitor.
+    """TermVisitor uses the @singledispatchmethod for a class-based visitor.
 
     Note that we are not using the typical "accept" method on an term variant
     for dispatching because the @singledispatchmethod handles this for us.
@@ -159,7 +171,7 @@ class LispyVisitor(TermVisitor[None, str]):
     """LispyVisitor is an example visitor implementation for printing s-expressions.
 
     This can be implemented *much* more concisely directly in the __str__ .. but
-    this is an exercise and tutorial to show off visitor usage and atterns. We
+    this is an exercise and tutorial to show off visitor usage and patterns. We
     use a 'str' return type and there is currently no scoped context. An example
     of scoped context here might be an indentation level for pretty-printing.
 
@@ -176,8 +188,8 @@ class LispyVisitor(TermVisitor[None, str]):
     ###
 
     def visit_reference(self, term: Reference, context: None) -> str:
-        """References use their unquoted name."""
-        return term.name
+        """References just use their unquoted path."""
+        return term.path
 
     def visit_literal(self, term: Literal, context: None) -> str:
         """Literals uses the underlying value's lisp representation."""

@@ -781,8 +781,8 @@ class Pushdowns:
         ...
 
     @staticmethod
-    def _to_term(expr: PyExpr) -> Term:
-        """Converts a PyExpr into a pushdown Term."""
+    def _to_term(expr: PyExpr, schema: PySchema | None = None) -> Term:
+        """Converts a PyExpr into a pushdown Term, optionally binding to the given schema."""
         ...
 
 def read_parquet(

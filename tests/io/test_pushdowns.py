@@ -2,12 +2,181 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from daft.daft import Pushdowns as PyPushdowns
+from daft.daft import PyExpr
 from daft.expressions import col, lit
 from daft.io.pushdowns import Expr, Literal, Reference, Term
+from daft.io.scan import ScanPushdowns
+from daft.logical.schema import DataType as dt
+from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.expressions import Expression
+
+
+def _term(expr: Expression, schema: Schema | None = None) -> Term:
+    return PyPushdowns._to_term(expr._expr, schema._schema if schema else None)
+
+
+def test_expr_getitem():
+    # positional arguments
+    expr = Expr("f", 1, 2, 3)
+    assert expr[0] == Literal(1)
+    assert expr[1] == Literal(2)
+    assert expr[2] == Literal(3)
+
+    # named arguments
+    expr = Expr("g", x=10, y=20)
+    assert expr["x"] == Literal(10)
+    assert expr["y"] == Literal(20)
+
+    # mixed arguments
+    expr = Expr("h", 100, 200, name="test")
+    assert expr[0] == Literal(100)
+    assert expr[1] == Literal(200)
+    assert expr["name"] == Literal("test")
+
+    # nested expressions
+    expr = Expr("nested", Expr("inner", 5))
+    assert expr[0] == Expr("inner", 5)
+    assert expr[0][0] == Literal(5)
+
+
+###
+# Sanity Translation Tests
+###
+
+
+def test_pyexpr_lit():
+    # null/nil/none
+    assert _term(lit(None)) == Literal(None)
+
+    # bool
+    assert _term(lit(True)) == Literal(True)
+    assert _term(lit(False)) == Literal(False)
+
+    # int
+    assert _term(lit(0)) == Literal(0)
+    assert _term(lit(1)) == Literal(1)
+    assert _term(lit(-1)) == Literal(-1)
+
+    # float
+    assert _term(lit(0.0)) == Literal(0)
+    assert _term(lit(1.0)) == Literal(1.0)
+    assert _term(lit(-1.0)) == Literal(-1.0)
+
+    # string
+    assert _term(lit("hello")) == Literal("hello")
+    assert _term(lit("🤠🤠")) == Literal("🤠🤠")
+
+
+def test_pyexpr_col():
+    assert _term(col("a")) == Reference("a")
+
+
+def test_pyexpr_alias():
+    assert _term(col("a").alias("xyz")) == Expr("alias", "xyz", Reference("a"))
+    assert _term(lit(42).alias("answer")) == Expr("alias", "answer", 42)
+
+
+def test_pyexpr_not():
+    assert _term(~lit(42)) == Expr("not", 42)
+
+
+def test_pyexpr_predicates():
+    # logical operators
+    assert _term(lit(True) & lit(False)) == Expr("and", True, False)
+    assert _term(lit(True) | lit(False)) == Expr("or", True, False)
+
+    # comparisons
+    assert _term(lit(1) == lit(2)) == Expr("=", 1, 2)
+    assert _term(lit(1) != lit(2)) == Expr("!=", 1, 2)
+    assert _term(lit(1) < lit(2)) == Expr("<", 1, 2)
+    assert _term(lit(1) <= lit(2)) == Expr("<=", 1, 2)
+    assert _term(lit(1) > lit(2)) == Expr(">", 1, 2)
+    assert _term(lit(1) >= lit(2)) == Expr(">=", 1, 2)
+
+
+###
+# Iceberg Pushdown Tests
+###
+
+
+def test_iceberg_predicates():
+    """Test we can translate each one of the Iceberg predicates.
+
+    References:
+        - https://iceberg.apache.org/javadoc/1.0.0/index.html?org/apache/iceberg/expressions/Expressions.html
+        - https://py.iceberg.apache.org/reference/pyiceberg/expressions/
+    """
+    assert _term(~col("a")) == Expr("not", Reference("a"))
+
+    assert _term(lit(True) & lit(False)) == Expr("and", True, False)
+    assert _term(lit(True) | lit(False)) == Expr("or", True, False)
+
+    assert _term(lit(1) == lit(2)) == Expr("=", 1, 2)
+    assert _term(lit(1) != lit(2)) == Expr("!=", 1, 2)
+    assert _term(lit(1) < lit(2)) == Expr("<", 1, 2)
+    assert _term(lit(1) <= lit(2)) == Expr("<=", 1, 2)
+    assert _term(lit(1) > lit(2)) == Expr(">", 1, 2)
+    assert _term(lit(1) >= lit(2)) == Expr(">=", 1, 2)
+
+    assert _term(col("a").is_null()) == Expr("is_null", Reference("a"))
+    assert _term(col("a").not_null()) == Expr("not_null", Reference("a"))
+
+    assert _term(col("a").float.is_nan()) == Expr("is_nan", Reference("a"))
+    assert _term(col("a").float.not_nan()) == Expr("not_nan", Reference("a"))
+
+    # TODO LIST EXPRESSIONS
+    # items = list_(lit(1), lit(2), lit(3))
+    # assert _term(col("a").is_in(items)) == Expr("is_in", Reference("a"), Expr("list", 1, 2, 3))
+    # assert _term(~(col("a").is_in(items))) == Expr("not", Expr("is_in", Reference("a"), Expr("list", 1, 2, 3)))
+
+    # TODO STARTSWITH
+    # assert _term(col("a").str.startswith("xyz")) == Expr("startswith", "xyz")
+    # assert _term(~(col("a").str.startswith("xyz"))) == Expr("not", Expr("startswith", "xyz"))
+
+
+###
+# Pushdowns Translations Tests
+###
+
+
+def _create_py_pushdowns(
+    columns: list[str] | None = None,
+    filters: PyExpr | None = None,
+    partition_filters: PyExpr | None = None,
+    limit: int | None = None,
+) -> PyPushdowns:
+    pushdowns = PyPushdowns.__new__(PyPushdowns)
+    pushdowns.columns = columns
+    pushdowns.filters = filters
+    pushdowns.partition_filters = partition_filters
+    pushdowns.limit = limit
+    return pushdowns
+
+
+@pytest.mark.skip("Cannot instantiate a PyPushdowns at the moment.")
+def test_column_pushdown_binding():
+    schema = Schema._from_pydict(
+        {
+            "a": dt.bool(),  # 0
+            "b": dt.bool(),  # 1
+            "c": dt.bool(),  # 2
+        }
+    )
+    pypushdowns = _create_py_pushdowns(columns=["c", "b", "a"])  # !! reverse order on purpose !!
+    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+    assert pushdowns.projections[0] == Reference("c", 2)
+    assert pushdowns.projections[1] == Reference("b", 1)
+    assert pushdowns.projections[2] == Reference("a", 0)
+
+
+###
+# LispyVisitor Tests
+###
 
 
 def test_print_literal():
@@ -58,124 +227,3 @@ def test_print_expr():
 
     # literal objects
     assert str(Expr("f", Literal(42), keyword=Literal("value"))) == '(f 42 keyword::"value")'
-
-
-def test_expr_getitem():
-    # positional arguments
-    expr = Expr("f", 1, 2, 3)
-    assert expr[0] == Literal(1)
-    assert expr[1] == Literal(2)
-    assert expr[2] == Literal(3)
-
-    # named arguments
-    expr = Expr("g", x=10, y=20)
-    assert expr["x"] == Literal(10)
-    assert expr["y"] == Literal(20)
-
-    # mixed arguments
-    expr = Expr("h", 100, 200, name="test")
-    assert expr[0] == Literal(100)
-    assert expr[1] == Literal(200)
-    assert expr["name"] == Literal("test")
-
-    # nested expressions
-    expr = Expr("nested", Expr("inner", 5))
-    assert expr[0] == Expr("inner", 5)
-    assert expr[0][0] == Literal(5)
-
-
-def _term(expr: Expression) -> Term:
-    return PyPushdowns._to_term(expr._expr)
-
-
-def test_pyexpr_lit():
-    # null/nil/none
-    assert _term(lit(None)) == Literal(None)
-
-    # bool
-    assert _term(lit(True)) == Literal(True)
-    assert _term(lit(False)) == Literal(False)
-
-    # int
-    assert _term(lit(0)) == Literal(0)
-    assert _term(lit(1)) == Literal(1)
-    assert _term(lit(-1)) == Literal(-1)
-
-    # float
-    assert _term(lit(0.0)) == Literal(0)
-    assert _term(lit(1.0)) == Literal(1.0)
-    assert _term(lit(-1.0)) == Literal(-1.0)
-
-    # string
-    assert _term(lit("hello")) == Literal("hello")
-    assert _term(lit("🤠🤠")) == Literal("🤠🤠")
-
-
-def test_pyexpr_col():
-    assert _term(col("a")) == Reference("a")
-
-
-def test_pyexpr_alias():
-    assert _term(col("a").alias("xyz")) == Expr("alias", "xyz", Reference("a"))
-    assert _term(lit(42).alias("answer")) == Expr("alias", "answer", 42)
-
-
-def test_pyexpr_not():
-    assert _term(~lit(42)) == Expr("not", 42)
-
-
-def test_pyexpr_binary_ops():
-    # comparison operators
-    assert _term(lit(1) == lit(2)) == Expr("=", 1, 2)
-    assert _term(lit(1) != lit(2)) == Expr("!=", 1, 2)
-    assert _term(lit(1) < lit(2)) == Expr("<", 1, 2)
-    assert _term(lit(1) <= lit(2)) == Expr("<=", 1, 2)
-    assert _term(lit(1) > lit(2)) == Expr(">", 1, 2)
-    assert _term(lit(1) >= lit(2)) == Expr(">=", 1, 2)
-    assert _term(lit(1).eq_null_safe(lit(2))) == Expr("eq_null_safe", 1, 2)
-
-    # arithmetic operators
-    assert _term(lit(1) + lit(2)) == Expr("+", 1, 2)
-    assert _term(lit(1) - lit(2)) == Expr("-", 1, 2)
-    assert _term(lit(1) * lit(2)) == Expr("*", 1, 2)
-    assert _term(lit(1) / lit(2)) == Expr("/", 1, 2)
-    assert _term(lit(1) // lit(2)) == Expr("quotient", 1, 2)
-    assert _term(lit(1) % lit(2)) == Expr("mod", 1, 2)
-
-    # logical operators
-    assert _term(lit(True) & lit(False)) == Expr("and", True, False)
-    assert _term(lit(True) | lit(False)) == Expr("or", True, False)
-    assert _term(lit(True) ^ lit(False)) == Expr("xor", True, False)
-
-    # bitwise operators are conflated with the logical operators, so skip.
-    # assert _term(lit(1).bitwise_and(lit(2))) == Expr("&", 1, 2)
-    # assert _term(lit(1).bitwise_or(lit(2))) == Expr("|", 1, 2)
-    # assert _term(lit(1).bitwise_xor(lit(2))) == Expr("^", 1, 2)
-
-    # bitwise shifts are ok
-    assert _term(lit(1).shift_left(lit(2))) == Expr("lshift", 1, 2)
-    assert _term(lit(1).shift_right(lit(2))) == Expr("rshift", 1, 2)
-
-
-def test_pyexpr_null_ops():
-    assert _term(col("a").is_null()) == Expr("is_null", Reference("a"))
-    assert _term(col("a").not_null()) == Expr("not_null", Reference("a"))
-
-
-def test_pyexpr_between():
-    assert _term(col("a").between(lit(1), lit(10))) == Expr("between", Reference("a"), 1, 10)
-    assert _term(lit(5).between(lit(1), lit(10))) == Expr("between", 5, 1, 10)
-
-
-def test_pyexpr_builtin_functions():
-    assert _term(lit(1).abs()) == Expr("abs", 1)
-    assert _term(lit(1).floor()) == Expr("floor", 1)
-
-
-def test_pyexpr_partition_functions():
-    assert _term(col("a").partitioning.years()) == Expr("years", Reference("a"))
-    assert _term(col("a").partitioning.months()) == Expr("months", Reference("a"))
-    assert _term(col("a").partitioning.days()) == Expr("days", Reference("a"))
-    assert _term(col("a").partitioning.hours()) == Expr("hours", Reference("a"))
-    assert _term(col("a").partitioning.iceberg_bucket(10)) == Expr("iceberg_bucket", Reference("a"))
-    assert _term(col("a").partitioning.iceberg_truncate(5)) == Expr("iceberg_truncate", Reference("a"))

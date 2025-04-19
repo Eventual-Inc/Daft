@@ -12,12 +12,11 @@ from daft.daft import (
 from daft.daft import (
     Pushdowns as PyPushdowns,
 )
-from daft.io.pushdowns import Pushdowns, Term
+from daft.io.pushdowns import Pushdowns, Reference, Term
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from daft.daft import PyExpr
     from daft.logical.schema import Field, Schema
 
 
@@ -82,26 +81,43 @@ class ScanPushdowns(Pushdowns):
     daft's other pyo3 wrapper classes.
 
     Attributes:
-        columns (list[str] | None): Optional list of column names to project.
-        predicate (Sexp | None): Optional filter predicate to apply to rows.
-        partition_predicate (Sexp | None): Optional filter predicate to apply to partitions.
+        projections (list[Term] | None): Optional list of Terms (typically column references) to project.
+        predicate (Term | None): Optional filter predicate to apply to rows.
         limit (int | None): Optional limit on the number of rows to return.
     """
 
-    columns: list[str] | None = None
+    projections: list[Reference] | None = None
     predicate: Term | None = None
-    partition_predicate: Term | None = None
     limit: int | None = None
 
     @classmethod
-    def _from_pypushdowns(cls, pushdowns: PyPushdowns) -> ScanPushdowns:
-        return ScanPushdowns(
-            columns=pushdowns.columns,
-            predicate=cls._to_term(pushdowns.filters),
-            partition_predicate=cls._to_term(pushdowns.partition_filters),
-            limit=pushdowns.limit,
-        )
+    def _from_pypushdowns(cls, pypushdowns: PyPushdowns, schema: Schema) -> ScanPushdowns:
+        # need the PySchema to send to rust side
+        _schema = schema._schema
 
-    @classmethod
-    def _to_term(cls, pyexpr: PyExpr | None) -> Term | None:
-        return PyPushdowns._to_term(pyexpr) if pyexpr else None
+        # use both the 'filters' and 'partition_filters' as the predicate
+        predicate: Term | None = None
+        p1 = pypushdowns.filters
+        p2 = pypushdowns.partition_filters
+
+        # combine the two predicates with 'and' if necessary
+        if p1 is not None and p2 is not None:
+            predicate = PyPushdowns._to_term(p1 & p2, _schema)
+        elif p1 is not None:
+            predicate = PyPushdowns._to_term(p1, _schema)
+        elif p2 is not None:
+            predicate = PyPushdowns._to_term(p2, _schema)
+
+        # field to index map is case-sensitive .. to do it proper we'll need rust-side work.
+        fields = {field.name: index for index, field in enumerate(schema)}
+
+        # convert each column name to a reference term, this requires resolving in the schema.
+        if pypushdowns.columns:
+            projections = [Reference(path=col, index=fields[col]) for col in pypushdowns.columns]
+        else:
+            projections = None
+
+        # limit is just an int, so no conversion necessary
+        limit = pypushdowns.limit
+
+        return ScanPushdowns(projections, predicate, limit)

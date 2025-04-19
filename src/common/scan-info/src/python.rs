@@ -1,7 +1,8 @@
 use daft_dsl::{
     functions::{partitioning::PartitioningExpr, FunctionExpr},
-    Column, Expr, LiteralValue, Operator,
+    Column, Expr, LiteralValue, Operator, ResolvedColumn,
 };
+use daft_schema::schema::SchemaRef;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -12,7 +13,7 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_dsl::python::PyExpr;
-    use daft_schema::python::field::PyField;
+    use daft_schema::python::{field::PyField, schema::PySchema};
     use pyo3::{prelude::*, pyclass};
     use serde::{Deserialize, Serialize};
 
@@ -146,8 +147,14 @@ pub mod pylib {
         }
 
         #[staticmethod]
-        pub fn _to_term(py: Python<'_>, expr: PyExpr) -> PyResult<PyObject> {
-            let tb = TermBuilder::new(py)?;
+        #[pyo3(signature = (expr,schema=None))]
+        pub fn _to_term(
+            py: Python<'_>,
+            expr: PyExpr,
+            schema: Option<PySchema>,
+        ) -> PyResult<PyObject> {
+            let schema = schema.map(|s| s.schema);
+            let tb = TermBuilder::new(py, schema)?;
             let term = tb.to_term(expr.expr.as_ref())?;
             Ok(term.unbind())
         }
@@ -171,13 +178,15 @@ type Term<'py> = Bound<'py, PyAny>;
 /// Holds the py GIL and module to make bound term building easy.
 struct TermBuilder<'py> {
     py: Python<'py>,
+    schema: Option<SchemaRef>,
     module: Bound<'py, PyModule>,
 }
 
 impl<'py> TermBuilder<'py> {
-    fn new(py: Python<'py>) -> PyResult<Self> {
+    fn new(py: Python<'py>, schema: Option<SchemaRef>) -> PyResult<Self> {
         Ok(Self {
             py,
+            schema,
             module: PyModule::import(py, "daft.io.pushdowns")?,
         })
     }
@@ -250,9 +259,28 @@ impl<'py> TermBuilder<'py> {
         self.to_expr(proc, args)
     }
 
-    /// Reference(<name>)
+    /// Reference(<path> [, <index>])
     fn to_reference(&self, column: &Column) -> PyResult<Term> {
-        self.module.getattr("Reference")?.call1((column.name(),))
+        // we allow unbound columns in construction.
+        let name = match column {
+            Column::Unresolved(col) => col.name.to_string(),
+            Column::Resolved(col) => match col {
+                ResolvedColumn::Basic(col) => col.to_string(),
+                _ => {
+                    return Err(PyValueError::new_err(format!(
+                        "Unexpected or unresolved column found in pushdown: {}",
+                        column
+                    )))
+                }
+            },
+        };
+        // if we have a schema, create a bound reference by setting its index.
+        let index = if let Some(schema) = &self.schema {
+            Some(schema.get_index(&name)?)
+        } else {
+            None
+        };
+        self.module.getattr("Reference")?.call1((name, index))
     }
 
     /// Literal(<value>)
