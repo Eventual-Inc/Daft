@@ -12,6 +12,7 @@ from daft.expressions.testing import expr_structurally_equal
 from daft.recordbatch import MicroPartition
 from daft.series import Series
 from daft.udf import udf
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_udf():
@@ -470,6 +471,9 @@ def test_udf_empty(batch_size, use_actor_pool):
     assert result.to_pydict() == {"a": []}
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() not in {"native", "ray"}, reason="requires Native or Ray Runner to be in use"
+)
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 def test_udf_with_error(use_actor_pool):
     df = daft.from_pydict({"a": []})
