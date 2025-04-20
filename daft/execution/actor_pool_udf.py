@@ -23,11 +23,13 @@ def actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Conn
     initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
     while True:
-        input: MicroPartition | None = conn.recv()
-        if input is None:
+        input_bytes: bytes | None = conn.recv()
+        if input_bytes is None:
             break
 
-        output = input.eval_expression_list(initialized_projection)
+        input = MicroPartition.from_ipc_stream(input_bytes)
+        evaluated = input.eval_expression_list(initialized_projection)
+        output = evaluated.to_ipc_stream()
         conn.send(output)
 
 
@@ -42,9 +44,10 @@ class ActorHandle:
         self.actor_process.start()
 
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
-        self.handle_conn.send(MicroPartition._from_pymicropartition(input))
-        output: MicroPartition = self.handle_conn.recv()
-        return output._micropartition
+        serialized = input.write_to_ipc_stream()
+        self.handle_conn.send(serialized)
+        output: bytes = self.handle_conn.recv()
+        return MicroPartition.from_ipc_stream(output)._micropartition
 
     def teardown(self) -> None:
         self.handle_conn.send(None)

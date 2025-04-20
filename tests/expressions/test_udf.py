@@ -307,6 +307,35 @@ def test_udf_return_tensor(batch_size):
         np.testing.assert_array_equal(result.to_pydict()["x"][i], np.ones((3, 3)) * i)
 
 
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_return_embedding(batch_size, use_actor_pool):
+    # Create test data
+    table = MicroPartition.from_pydict({"x": [0, 1, 2]})
+
+    # Define UDF that returns an embedding
+    @udf(return_dtype=DataType.embedding(DataType.float32(), 2), batch_size=batch_size)
+    def embedding_udf(x):
+        # Create a 2D embedding for each input value
+        return [np.array([i, i + 1], dtype=np.float32) for i in x.to_pylist()]
+
+    # Apply the UDF
+    if use_actor_pool:
+        embedding_udf = embedding_udf.with_concurrency(2)
+
+    expr = embedding_udf(col("x"))
+    result = table.eval_expression_list([expr])
+
+    # Verify results
+    embeddings = result.to_pydict()["x"]
+    assert len(embeddings) == 3
+
+    # Check each embedding vector
+    np.testing.assert_array_equal(embeddings[0], np.array([0, 1], dtype=np.float32))
+    np.testing.assert_array_equal(embeddings[1], np.array([1, 2], dtype=np.float32))
+    np.testing.assert_array_equal(embeddings[2], np.array([2, 3], dtype=np.float32))
+
+
 @pytest.mark.skip(
     reason="[RUST-INT][UDF] repr is very naive at the moment py_udf(...exprs), we should fix to show all parameters and use the function name"
 )
