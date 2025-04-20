@@ -468,3 +468,24 @@ def test_udf_empty(batch_size, use_actor_pool):
 
     result = df.select(identity(col("a")))
     assert result.to_pydict() == {"a": []}
+
+
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_with_error(use_actor_pool):
+    df = daft.from_pydict({"a": []})
+
+    @udf(return_dtype=DataType.int64())
+    def fail_hard(data):
+        raise ValueError("AN ERROR OCCURRED!")
+
+    if use_actor_pool:
+        fail_hard = fail_hard.with_concurrency(2)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        df.select(fail_hard(col("a"))).collect()
+
+    # where we see the error is going to differ whether we run on actor pool / ray runner or native, but regardless
+    # we should see the original error message
+    assert str(exc_info.value.__cause__) == "AN ERROR OCCURRED!" or "ValueError: AN ERROR OCCURRED!" in str(
+        exc_info.value
+    )
