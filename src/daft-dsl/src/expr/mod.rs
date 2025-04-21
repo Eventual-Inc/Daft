@@ -1624,7 +1624,7 @@ impl Expr {
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
-                | Expr::Over(..)
+                | Expr::Over(..) // TODO: add support for over
                 | Expr::WindowFunction(..)
                 | Expr::Column(_) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",

@@ -3,11 +3,14 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{
+    expr::window::{WindowBoundary, WindowFrame, WindowFrameType},
+    Expr, ExprRef, WindowExpr, WindowSpec,
+};
 use daft_session::Session;
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
-    FunctionArguments,
+    FunctionArguments, WindowType,
 };
 
 use crate::{
@@ -16,7 +19,7 @@ use crate::{
         coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
         SQLModuleConfig, SQLModuleFloat, SQLModuleImage, SQLModuleJson, SQLModuleList,
         SQLModuleMap, SQLModuleNumeric, SQLModulePartitioning, SQLModulePython, SQLModuleSketch,
-        SQLModuleStructs, SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8,
+        SQLModuleStructs, SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -41,6 +44,7 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleUri>();
     functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
+    functions.register::<SQLModuleWindow>();
     functions.add_fn("coalesce", SQLCoalesce {});
     functions
 });
@@ -50,10 +54,6 @@ fn check_features(func: &Function) -> SQLPlannerResult<()> {
     if func.filter.is_some() {
         // <agg>(..) FILTER (WHERE ..)
         unsupported_sql_err!("Aggregation `FILTER`");
-    }
-    if func.over.is_some() {
-        // WINDOW functions
-        unsupported_sql_err!("Window functions `OVER`");
     }
     if !func.within_group.is_empty() {
         // <agg>(...) WITHIN GROUP
@@ -383,8 +383,139 @@ impl SQLPlanner<'_> {
             }
         };
 
-        // validate input argument arity and return the validated expression.
-        fn_match.to_expr(&args, self)
+        if func.over.is_some() {
+            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
+            let window_fn = fn_match.to_expr(&args, self)?;
+            Ok(match &*window_fn {
+                Expr::Agg(agg_expr) => {
+                    Expr::Over(WindowExpr::Agg(agg_expr.clone()), window_spec).arced()
+                }
+                Expr::WindowFunction(window_expr) => {
+                    Expr::Over(window_expr.clone(), window_spec).arced()
+                }
+                _ => unsupported_sql_err!("window function expected"),
+            })
+        } else {
+            // validate input argument arity and return the validated expression.
+            fn_match.to_expr(&args, self)
+        }
+    }
+
+    fn parse_window_spec(&self, over: &WindowType) -> SQLPlannerResult<WindowSpec> {
+        match over {
+            WindowType::WindowSpec(spec) => {
+                let mut window_spec = WindowSpec::default();
+
+                if !spec.partition_by.is_empty() {
+                    for expr in &spec.partition_by {
+                        let parsed_expr = self.plan_expr(expr)?;
+                        window_spec.partition_by.push(parsed_expr);
+                    }
+                }
+
+                if !spec.order_by.is_empty() {
+                    for order in &spec.order_by {
+                        let parsed_expr = self.plan_expr(&order.expr)?;
+                        window_spec.order_by.push(parsed_expr);
+                        window_spec
+                            .descending
+                            .push(order.asc.is_some_and(|asc| !asc));
+                    }
+                }
+
+                if spec.window_frame.is_some() {
+                    if let Some(sql_frame) = &spec.window_frame {
+                        let frame_type = match sql_frame.units {
+                            sqlparser::ast::WindowFrameUnits::Rows => WindowFrameType::Rows,
+                            sqlparser::ast::WindowFrameUnits::Range => WindowFrameType::Range,
+                            sqlparser::ast::WindowFrameUnits::Groups => {
+                                unsupported_sql_err!("Window frame units: Groups")
+                            }
+                        };
+
+                        let start = self.convert_window_frame_bound(&sql_frame.start_bound)?;
+
+                        // Convert end bound or default to CURRENT ROW if not specified
+                        let end = match &sql_frame.end_bound {
+                            Some(end_bound) => self.convert_window_frame_bound(end_bound)?,
+                            None => WindowBoundary::Offset(0), // CURRENT ROW
+                        };
+
+                        window_spec.frame = Some(WindowFrame {
+                            frame_type,
+                            start,
+                            end,
+                        });
+                    }
+                }
+
+                // TODO: This should probably be done later in the code
+                if let Some(current_plan) = &self.current_plan {
+                    window_spec = current_plan.resolve_window_spec(window_spec)?;
+                }
+
+                Ok(window_spec)
+            }
+            WindowType::NamedWindow(_) => {
+                unsupported_sql_err!("Named windows are not supported yet")
+            }
+        }
+    }
+
+    /// Helper function to convert SQLParser's WindowFrameBound to Daft's WindowBoundary
+    fn convert_window_frame_bound(
+        &self,
+        bound: &sqlparser::ast::WindowFrameBound,
+    ) -> SQLPlannerResult<daft_dsl::expr::window::WindowBoundary> {
+        use daft_dsl::expr::window::WindowBoundary;
+
+        match bound {
+            sqlparser::ast::WindowFrameBound::CurrentRow => Ok(WindowBoundary::Offset(0)),
+            sqlparser::ast::WindowFrameBound::Preceding(None) => {
+                Ok(WindowBoundary::UnboundedPreceding())
+            }
+            sqlparser::ast::WindowFrameBound::Following(None) => {
+                Ok(WindowBoundary::UnboundedFollowing())
+            }
+            sqlparser::ast::WindowFrameBound::Preceding(Some(expr)) => {
+                let parsed_expr = self.plan_expr(expr)?;
+
+                if let Some(lit) = parsed_expr.as_literal() {
+                    if let Some(value) = lit.as_i64() {
+                        Ok(WindowBoundary::Offset(-value))
+                    } else {
+                        unsupported_sql_err!(
+                            "Window frame bound must be an integer, found: {}",
+                            lit
+                        )
+                    }
+                } else {
+                    unsupported_sql_err!(
+                        "Window frame bound must be a literal, found: {}",
+                        parsed_expr
+                    )
+                }
+            }
+            sqlparser::ast::WindowFrameBound::Following(Some(expr)) => {
+                let parsed_expr = self.plan_expr(expr)?;
+
+                if let Some(lit) = parsed_expr.as_literal() {
+                    if let Some(value) = lit.as_i64() {
+                        Ok(WindowBoundary::Offset(value))
+                    } else {
+                        unsupported_sql_err!(
+                            "Window frame bound must be an integer, found: {}",
+                            lit
+                        )
+                    }
+                } else {
+                    unsupported_sql_err!(
+                        "Window frame bound must be a literal, found: {}",
+                        parsed_expr
+                    )
+                }
+            }
+        }
     }
 
     pub(crate) fn plan_function_args<T>(
