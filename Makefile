@@ -3,6 +3,7 @@
 SHELL=/bin/bash
 VENV = .venv
 IS_M1 ?= 0
+INSTALL_EDITABLE ?= 0
 PYTHON_VERSION ?= python3.11
 
 # Hypothesis
@@ -37,6 +38,11 @@ ifeq ($(IS_M1), 1)
 	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
 else
 	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
+endif
+
+ifeq ($(INSTALL_EDITABLE), 1)
+	@echo "=== Installing editable package ==="
+	. $(VENV_BIN)/activate && uv pip install -e . --no-build-isolation
 endif
 
 .PHONY: check-toolchain
