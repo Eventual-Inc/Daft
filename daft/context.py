@@ -208,7 +208,7 @@ def set_execution_config(
     flight_shuffle_dirs: list[str] | None = None,
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
-    big_buddha_special: bool | None = None,
+    flotilla: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -288,7 +288,7 @@ def set_execution_config(
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,
-            big_buddha_special=big_buddha_special,
+            flotilla=flotilla,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

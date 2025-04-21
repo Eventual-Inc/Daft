@@ -1329,7 +1329,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
-        elif daft_execution_config.big_buddha_special:
+        elif daft_execution_config.flotilla:
             try:
                 distributed_planner = DistributedPhysicalPlan.from_logical_plan_builder(
                     builder._builder, daft_execution_config

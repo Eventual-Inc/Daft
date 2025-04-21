@@ -102,7 +102,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
         scantask_splitting_level=None,
-        big_buddha_special=None,
+        flotilla=None,
     ))]
     fn with_config_values(
         &self,
@@ -132,7 +132,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
-        big_buddha_special: Option<bool>,
+        flotilla: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -236,8 +236,8 @@ impl PyDaftExecutionConfig {
             config.scantask_splitting_level = scantask_splitting_level;
         }
 
-        if let Some(big_buddha_special) = big_buddha_special {
-            config.big_buddha_special = big_buddha_special;
+        if let Some(flotilla) = flotilla {
+            config.flotilla = flotilla;
         }
 
         Ok(Self {
@@ -361,8 +361,8 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn big_buddha_special(&self) -> PyResult<bool> {
-        Ok(self.config.big_buddha_special)
+    fn flotilla(&self) -> PyResult<bool> {
+        Ok(self.config.flotilla)
     }
 }
 

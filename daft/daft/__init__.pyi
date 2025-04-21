@@ -1938,7 +1938,7 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
-        big_buddha_special: bool | None = None,
+        flotilla: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1989,7 +1989,7 @@ class PyDaftExecutionConfig:
     @property
     def enable_ray_tracing(self) -> bool: ...
     @property
-    def big_buddha_special(self) -> bool: ...
+    def flotilla(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

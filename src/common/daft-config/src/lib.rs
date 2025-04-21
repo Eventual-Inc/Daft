@@ -64,7 +64,7 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
-    pub big_buddha_special: bool,
+    pub flotilla: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -96,7 +96,7 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
-            big_buddha_special: false,
+            flotilla: false,
         }
     }
 }
@@ -138,11 +138,11 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
             cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
         }
-        let big_buddha_special_env_var_name = "DAFT_BIG_BUDDHA_SPECIAL";
-        if let Ok(val) = std::env::var(big_buddha_special_env_var_name)
+        let flotilla_env_var_name = "DAFT_flotilla";
+        if let Ok(val) = std::env::var(flotilla_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
-            cfg.big_buddha_special = true;
+            cfg.flotilla = true;
         }
         cfg
     }

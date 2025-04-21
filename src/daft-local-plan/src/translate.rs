@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{join::normalize_join_keys, AggExpr, ExprRef, WindowExpr};
-use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{JoinType, LogicalPlan, SourceInfo};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
