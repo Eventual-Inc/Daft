@@ -44,13 +44,13 @@ document.addEventListener("DOMContentLoaded", function () {
   script.setAttribute("version", "stable");
   script.setAttribute("runllm-keyboard-shortcut", "Mod+j"); // cmd-j or ctrl-j to open the widget.
   script.setAttribute("runllm-name", "Daft");
-  script.setAttribute("runllm-position-x", "28px");
+  script.setAttribute("runllm-position-x", "20px");
   script.setAttribute("runllm-position-y", "98px");
   script.setAttribute("runllm-assistant-id", "160");
   script.setAttribute("runllm-preset", "mkdocs");
   script.setAttribute("runllm-theme-color", "#7862ff");
   script.setAttribute("runllm-join-community-text", "Join Daft Slack!");
-  script.setAttribute("runllm-community-url", "https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg");
+  script.setAttribute("runllm-community-url", "https://www.getdaft.io/slack.html?utm_source=docs&utm_medium=button&utm_campaign=docs_ask_ai");
   script.setAttribute("runllm-community-type", "slack");
 
   script.async = true;
