@@ -9,7 +9,7 @@ import time
 import uuid
 from datetime import datetime
 from queue import Full, Queue
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator, List
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
@@ -19,12 +19,11 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlanner
+from daft.daft import DistributedPhysicalPlan
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
-from daft.runners.distributed_swordfish import run_distributed_swordfish
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -1332,11 +1331,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
         elif daft_execution_config.big_buddha_special:
             try:
-                print("building distributed plan")
-                distributed_planner = DistributedPhysicalPlanner.from_logical_plan_builder(
+                distributed_planner = DistributedPhysicalPlan.from_logical_plan_builder(
                     builder._builder, daft_execution_config
                 )
-                print("distributed plan built")
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
@@ -1347,9 +1344,12 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
             else:
                 # If plan building succeeds, execute it
-                print("executing distributed plan")
-                for result in run_distributed_swordfish(distributed_planner, daft_execution_config, results_buffer_size):
-                    yield result
+                for obj, size_bytes, num_rows in distributed_planner.run_plan():
+                    print(f"obj: {obj}, size_bytes: {size_bytes}, num_rows: {num_rows}")
+                    materialized_result = RayMaterializedResult(
+                        partition=obj,
+                    )
+                    yield materialized_result
         else:
             # Finalize the logical plan and get a physical plan scheduler for translating the
             # physical plan to executable tasks.
@@ -1430,8 +1430,8 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 class PartitionMetadataAccessor:
     """Wrapper class around Remote[List[PartitionMetadata]] to memoize lookups."""
 
-    def __init__(self, ref: ray.ObjectRef | List[ray.ObjectRef]) -> None:
-        self._ref: ray.ObjectRef | List[ray.ObjectRef] = ref
+    def __init__(self, ref: ray.ObjectRef | list[ray.ObjectRef]) -> None:
+        self._ref: ray.ObjectRef | list[ray.ObjectRef] = ref
         self._metadatas: None | list[PartitionMetadata] = None
 
     def _get_metadatas(self) -> list[PartitionMetadata]:

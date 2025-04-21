@@ -1,18 +1,12 @@
 import logging
-from typing import AsyncGenerator, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
+from typing import AsyncGenerator, Callable, Dict, List, Union
 
 from daft.daft import (
-    DistributedPhysicalPlanner,
-    LocalPhysicalPlan,
     NativeExecutor,
-    PyDaftExecutionConfig,
-    SwordfishStage,
+    SwordfishWorkerTask,
 )
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import PartitionMetadata
-
-if TYPE_CHECKING:
-    from daft.runners.ray_runner import RayMaterializedResult, PartitionMetadataAccessor
 
 try:
     import ray
@@ -23,277 +17,135 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-@ray.remote(max_restarts=-1, max_task_retries=-1)
+@ray.remote(max_restarts=4, max_task_retries=4)
 class SwordfishActor:
     def __init__(self):
         self.native_executor = NativeExecutor()
 
     # Run a plan on swordfish and yield partitions
-    async def _run_plan(
+    async def run_plan(
         self,
-        local_physical_plan: LocalPhysicalPlan,
-        daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: Optional[int] = None,
-    ) -> AsyncGenerator[MicroPartition | PartitionMetadata, None]:
+        swordfish_worker_task: SwordfishWorkerTask,
+    ) -> AsyncGenerator[Union[MicroPartition, List[PartitionMetadata]], None]:
+        local_physical_plan = swordfish_worker_task.plan()
+        daft_execution_config = swordfish_worker_task.execution_config()
         metadatas = []
-        async for partition in self.native_executor.run_distributed(
-            local_physical_plan, daft_execution_config, results_buffer_size
-        ):
+
+        async for partition in self.native_executor.run_distributed(local_physical_plan, daft_execution_config):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
             yield mp
-            print("yielded mp: ", mp)
             metadata = PartitionMetadata.from_table(mp)
             metadatas.append(metadata)
-        print("yielding metadatas")
+
         yield metadatas
-        print("yielded metadatas: ", metadatas)
 
-    # Run a plan on swordfish and collect partitions
-    async def run_plan_and_collect(
+
+class RayPartitionRef:
+    def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int):
+        self.object_ref = object_ref
+        self._num_rows = num_rows
+        self._size_bytes = size_bytes
+
+    def size_bytes(self) -> int:
+        return self._size_bytes
+
+    def num_rows(self) -> int:
+        return self._num_rows
+
+
+class RaySwordfishTaskHandle:
+    def __init__(self, handle: ray.ObjectRef, add_memory_callback: Callable[[], None]):
+        print("initializing handle")
+        self.handle = handle
+        self.add_memory_callback = add_memory_callback
+
+    async def get_result(self) -> List[RayPartitionRef]:
+        results = []
+        async for result in self.handle:
+            results.append(result)
+
+        metadata = await results.pop()
+        self.add_memory_callback()
+        return [RayPartitionRef(ref, meta.num_rows, meta.size_bytes) for meta, ref in zip(metadata, results)]
+
+
+class RaySwordfishWorker:
+    def __init__(
         self,
-        local_physical_plan: LocalPhysicalPlan,
-        daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: Optional[int] = None,
-    ) -> List[ray.ObjectRef]:
-        # We use the actor handle to run the plan so that the outputs are yielded into the object store
-        actor_handle = ray.get_runtime_context().current_actor
-        result_gen = actor_handle._run_plan.remote(
-            local_physical_plan, daft_execution_config, results_buffer_size
-        )
-        print("got result gen", result_gen)
+        actor_node_id: str,
+        actor_handle: ray.actor.ActorHandle,
+        num_cpus: int,
+        total_memory_bytes: int,
+    ):
+        self.actor_node_id = actor_node_id
+        self.actor_handle = actor_handle
+        self.num_cpus = num_cpus
+        self.total_memory_bytes = total_memory_bytes
+        self.available_memory_bytes = total_memory_bytes
 
-        # Collect the partitions into a list and return them, once the this is finished then the plan
-        # is considered complete.
-        res = []
-        while True:
-            try:
-                result = await result_gen.__anext__()
-                print("got result", result)
-                res.append(result)
-            except StopAsyncIteration:
-                break
-            except Exception as e:
-                import time
-                import traceback
-                print("error", e)
-                traceback.print_exc()
-                time.sleep(1000)
-                raise e
-        return res
+    def get_actor_node_id(self) -> str:
+        return self.actor_node_id
 
-    async def run_plan_into_shuffle_cache(
-        self,
-        local_physical_plan: LocalPhysicalPlan,
-        daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: Optional[int] = None,
-    ) -> None:
-        pass
+    def get_num_cpus(self) -> int:
+        return self.num_cpus
+
+    def get_total_memory_bytes(self) -> int:
+        return self.total_memory_bytes
+
+    def get_available_memory_bytes(self) -> int:
+        return self.available_memory_bytes
+
+    def add_back_memory(self):
+        print(f"adding back memory to worker {self.actor_node_id}")
+        self.available_memory_bytes += 100 * 1024 * 1024 * 1024
+
+    def submit_task(self, task: SwordfishWorkerTask) -> RaySwordfishTaskHandle:
+        print(f"submitting task to worker {self.actor_node_id}, estimated memory cost: {task.estimated_memory_cost()}")
+        self.available_memory_bytes -= task.estimated_memory_cost()
+        return RaySwordfishTaskHandle(self.actor_handle.run_plan.remote(task), self.add_back_memory)
 
 
-class ActorManager:
-    ACTOR_MAX_TASKS = 4  # TODO: Make this configurable
-
+class RaySwordfishWorkerManager:
     def __init__(self):
-        self.actors = []
-        self.active_tasks_by_actor: Dict[SwordfishActor, int] = {}
-        self.task_to_actor: Dict[ray.ObjectRef, SwordfishActor] = {}
-        self._initialize_actors()
+        self.workers: Dict[str, RaySwordfishWorker] = {}
+        self._initialize_workers()
 
-    def _initialize_actors(self) -> None:
-        print("initializing actors")
+    def _initialize_workers(self):
         for node in ray.nodes():
             if (
                 "Resources" in node
                 and "CPU" in node["Resources"]
+                and "memory" in node["Resources"]
                 and node["Resources"]["CPU"] > 0
+                and node["Resources"]["memory"] > 0
             ):
-                actor = SwordfishActor.options(  # type: ignore
+                actor = SwordfishActor.options(
                     num_cpus=node["Resources"]["CPU"],
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=node["NodeID"], soft=True
+                        node_id=node["NodeID"],
+                        soft=True,
                     ),
                 ).remote()
-                self.actors.append(actor)
-                self.active_tasks_by_actor[actor] = 0
-        print("initialized actors")
-
-    def get_available_actors(self) -> List[SwordfishActor]:
-        return [
-            actor
-            for actor in self.actors
-            if self.active_tasks_by_actor[actor] < self.ACTOR_MAX_TASKS
-        ]
-
-    def increment_actor_tasks(self, actor: SwordfishActor) -> None:
-        self.active_tasks_by_actor[actor] += 1
-
-    def decrement_actor_tasks(self, actor: SwordfishActor) -> None:
-        self.active_tasks_by_actor[actor] -= 1
-
-    def can_submit_task(self, actor: SwordfishActor) -> bool:
-        return self.active_tasks_by_actor[actor] < self.ACTOR_MAX_TASKS
-
-    def submit_task(
-        self,
-        task: LocalPhysicalPlan,
-        actor: SwordfishActor,
-        daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: Optional[int] = None,
-    ) -> ray.ObjectRef:
-        task_ref = actor.run_plan_and_collect.remote(  # type: ignore
-            task, daft_execution_config, results_buffer_size
-        )
-        self.increment_actor_tasks(actor)
-        self.task_to_actor[task_ref] = actor
-        return task_ref
-
-    def complete_task(self, task_ref: ray.ObjectRef) -> None:
-        """Mark a task as completed and clean up actor tracking."""
-        if task_ref in self.task_to_actor:
-            actor = self.task_to_actor[task_ref]
-            self.decrement_actor_tasks(actor)
-            del self.task_to_actor[task_ref]
-
-
-class TaskDispatcher:
-    def __init__(self, actor_manager: ActorManager):
-        self.actor_manager = actor_manager
-        self.pending_tasks: List[Tuple[ray.ObjectRef, int]] = []
-        self.completed_results: Dict[
-            int, Tuple[List[ray.ObjectRef], List[ray.ObjectRef]]
-        ] = {}
-        self.next_submission_order = 0
-        self.current_submission_order = 0
-
-    def dispatch_tasks(
-        self,
-        stage: SwordfishStage,
-        daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: Optional[int] = None,
-    ) -> SwordfishStage:
-        available_actors = self.actor_manager.get_available_actors()
-        print("available actors", available_actors)
-        for actor in available_actors:
-            while self.actor_manager.can_submit_task(actor) and not stage.is_done():
-                print("getting next plan")
-                plan = stage.next_plan()
-                print("got plan")
-                assert plan is not None
-                print("submitting task")
-                task_ref = self.actor_manager.submit_task(
-                    plan, actor, daft_execution_config, results_buffer_size
+                self.workers[node["NodeID"]] = RaySwordfishWorker(
+                    node["NodeID"],
+                    actor,
+                    int(node["Resources"]["CPU"]),
+                    int(node["Resources"]["memory"]),
                 )
-                self.pending_tasks.append((task_ref, self.current_submission_order))
-                self.current_submission_order += 1
-                print("submitted task", task_ref)
-        print("done dispatching tasks")
-        return stage
 
-    def process_completed_tasks(
-        self,
-    ) -> List[Tuple[int, List[ray.ObjectRef], List[ray.ObjectRef]]]:
-        if not self.pending_tasks:
-            return []
+    def submit_task_to_worker(self, task: SwordfishWorkerTask, worker_id: str) -> RaySwordfishTaskHandle:
+        if worker_id not in self.workers:
+            raise ValueError(f"Worker {worker_id} not found")
+        return self.workers[worker_id].submit_task(task)
 
-        ready_task_refs, remaining_task_refs = ray.wait(
-            [task_ref for task_ref, _ in self.pending_tasks],
-            timeout=1.0,
-        )
-
-        # Find task orders before removing from pending tasks
-        task_orders = {
-            task_ref: order
-            for task_ref, order in self.pending_tasks
-            if task_ref in ready_task_refs
-        }
-
-        # Update pending tasks
-        self.pending_tasks = [
-            (task_ref, order)
-            for task_ref, order in self.pending_tasks
-            if task_ref in remaining_task_refs
+    def get_worker_resources(self) -> List[tuple[str, int, int]]:
+        return [
+            (
+                worker.get_actor_node_id(),
+                worker.get_num_cpus(),
+                worker.get_available_memory_bytes(),
+            )
+            for worker in self.workers.values()
         ]
-
-        completed = []
-        for task_ref in ready_task_refs:
-            # Get order from the saved mapping
-            submission_order = task_orders[task_ref]
-
-            # Update actor task count
-            self.actor_manager.complete_task(task_ref)
-
-            # Get results
-            metadatas, results = ray.get(task_ref)
-            completed.append((submission_order, metadatas, results))
-
-        return completed
-
-    def has_pending_work(self) -> bool:
-        return bool(self.pending_tasks or self.completed_results)
-
-
-def run_swordfish_stage(
-    stage: SwordfishStage,
-    daft_execution_config: PyDaftExecutionConfig,
-    results_buffer_size: Optional[int] = None,
-) -> Iterator["RayMaterializedResult"]:
-    """Executes distributed physical plans using Ray actors."""
-    actor_manager = ActorManager()
-    dispatcher = TaskDispatcher(actor_manager)
-
-    # Submit initial tasks
-    print("dispatching tasks")
-    stage = dispatcher.dispatch_tasks(stage, daft_execution_config, results_buffer_size)
-    print("dispatched tasks")
-
-    # Process results and submit new tasks
-    while dispatcher.has_pending_work() or not stage.is_done():
-        # Process completed tasks
-        completed_tasks = dispatcher.process_completed_tasks()
-        for order, metadatas, results in completed_tasks:
-            dispatcher.completed_results[order] = (metadatas, results)
-
-        # Submit new tasks if any actors have become available
-        if not stage.is_done() and completed_tasks:
-            # Only try to submit new tasks if some tasks completed, freeing up actors
-            stage = dispatcher.dispatch_tasks(
-                stage, daft_execution_config, results_buffer_size
-            )
-
-        # Yield results in order
-        while dispatcher.next_submission_order in dispatcher.completed_results:
-            metadatas, results = dispatcher.completed_results.pop(
-                dispatcher.next_submission_order
-            )
-            metadata_accessor = PartitionMetadataAccessor(metadatas)
-            yield from (
-                RayMaterializedResult(result, metadata_accessor, idx)
-                for idx, result in enumerate(results)
-            )
-            dispatcher.next_submission_order += 1
-    print("done running stage")
-
-
-def run_distributed_swordfish(
-    planner: DistributedPhysicalPlanner,
-    daft_execution_config: PyDaftExecutionConfig,
-    results_buffer_size: Optional[int] = None,
-) -> Iterator["RayMaterializedResult"]:
-    while not planner.is_done():
-        print("getting next stage")
-        stage = planner.next_stage()
-        print("got next stage")
-        if planner.is_done():
-            print("is done")
-            yield from run_swordfish_stage(
-                stage, daft_execution_config, results_buffer_size
-            )
-        else:
-            print("not done")
-            results = []
-            for obj in run_swordfish_stage(
-                stage, daft_execution_config, results_buffer_size
-            ):
-                results.append(obj)

@@ -1,11 +1,7 @@
-use std::{
-    cmp::min,
-    fmt::Debug,
-    sync::{Arc, Mutex},
-};
+use std::{cmp::min, fmt::Debug, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_scan_info::{PartitionField, PhysicalScanInfo, Pushdowns, ScanState, ScanTaskLikeRef};
 use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::{
@@ -15,14 +11,13 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 
-use crate::planner::replace_placeholders_with_sources;
+use crate::plan::replace_placeholders_with_sources;
 
-const DEFAULT_PLAN_SIZE: usize = 1024 * 1024 * 1024 * 16; // 16GB
+const DEFAULT_PLAN_SIZE: usize = 1024 * 1024 * 1024 * 180; // 16GB
 
-pub trait SwordfishStage: Send + Sync + Debug {
-    fn update(&mut self, num_rows: usize) -> DaftResult<()>;
-    fn next_plan(&mut self) -> DaftResult<Option<LocalPhysicalPlanRef>>;
-    fn is_done(&self) -> bool;
+pub enum Stage {
+    Collect(CollectStage),
+    Limit(LimitStage),
 }
 
 #[derive(Debug)]
@@ -47,7 +42,6 @@ impl CollectStage {
             ScanState::Operator(_) => panic!("Operator scan state not supported"),
             ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
         };
-        println!("scan tasks: {:#?}", scan_tasks);
         Self {
             scan_info_provider,
             scan_tasks,
@@ -59,19 +53,11 @@ impl CollectStage {
     }
 }
 
-impl SwordfishStage for CollectStage {
-    fn update(&mut self, _num_rows: usize) -> DaftResult<()> {
-        // CollectStage doesn't need to update anything based on rows processed
-        Ok(())
-    }
-
-    fn next_plan(&mut self) -> DaftResult<Option<LocalPhysicalPlanRef>> {
-        println!("collect stage next plan");
-        if self.is_done() {
-            println!("collect stage is done");
+impl CollectStage {
+    pub fn next_plan(&mut self) -> DaftResult<Option<LocalPhysicalPlanRef>> {
+        if self.next_scan_task_idx >= self.scan_tasks.len() {
             return Ok(None);
         }
-        println!("collect stage is not done");
 
         let mut scan_tasks = Vec::new();
         let mut scan_task_total_memory_cost = 0;
@@ -87,6 +73,7 @@ impl SwordfishStage for CollectStage {
             self.next_scan_task_idx += 1;
         }
 
+        println!("num scan tasks: {}", scan_tasks.len());
         let scan_info = self.scan_info_provider.make_scan_info(scan_tasks);
         let source_plan = LogicalPlan::Source(Source::new(
             self.output_schema.clone(),
@@ -98,17 +85,7 @@ impl SwordfishStage for CollectStage {
         let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
         let optimized_logical_plan = optimizer.optimize(plan.into(), |_, _, _, _, _| {})?;
         let local_physical_plan = translate(&optimized_logical_plan)?;
-        println!("collect stage next plan: {:#?}", local_physical_plan);
         Ok(Some(local_physical_plan))
-    }
-
-    fn is_done(&self) -> bool {
-        println!(
-            "collect stage is done: {}, {}",
-            self.next_scan_task_idx,
-            self.scan_tasks.len()
-        );
-        self.next_scan_task_idx >= self.scan_tasks.len()
     }
 }
 
@@ -169,9 +146,7 @@ impl LimitStage {
         let local_physical_plan = translate(&optimized_logical_plan)?;
         Ok(local_physical_plan)
     }
-}
 
-impl SwordfishStage for LimitStage {
     fn update(&mut self, num_rows: usize) -> DaftResult<()> {
         // Update the remaining limit based on the number of rows processed
         if self.remaining_limit <= num_rows {

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
+use common_partitioning::PartitionRef;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{
@@ -10,14 +11,19 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 
-use crate::stage::{CollectStage, LimitStage, SwordfishStage};
+use crate::{
+    dispatcher::TaskDispatcher,
+    program::Program,
+    ray::ray_worker_manager::RayWorkerManager,
+    stage::{CollectStage, LimitStage, Stage},
+};
 
-pub struct DistributedPhysicalPlanner {
+pub struct DistributedPhysicalPlan {
     remaining_logical_plan: Option<LogicalPlanRef>,
     config: Arc<DaftExecutionConfig>,
 }
 
-impl DistributedPhysicalPlanner {
+impl DistributedPhysicalPlan {
     pub fn from_logical_plan_builder(
         builder: &LogicalPlanBuilder,
         config: &Arc<DaftExecutionConfig>,
@@ -35,31 +41,26 @@ impl DistributedPhysicalPlanner {
         })
     }
 
-    pub fn next_stage(&mut self) -> DaftResult<Option<Box<dyn SwordfishStage + Send + Sync>>> {
-        println!("getting next stage");
-        if self.remaining_logical_plan.is_none() {
-            return Ok(None);
+    pub fn run_plan(&mut self) -> DaftResult<impl Iterator<Item = DaftResult<Vec<PartitionRef>>>> {
+        let remaining_plan = self.remaining_logical_plan.take().unwrap();
+        loop {
+            let dispatcher = TaskDispatcher::new(Arc::new(RayWorkerManager::new()));
+            let (stage, remaining_plan) =
+                find_and_split_at_stage_boundary(&remaining_plan, &self.config)?;
+            let program = Program::from_stage(stage, dispatcher, self.config.clone());
+            match remaining_plan {
+                Some(plan) => {
+                    self.remaining_logical_plan = Some(plan);
+                    let results = program.run_program().collect::<DaftResult<Vec<_>>>()?;
+                    self.update(results.into_iter().flatten().collect());
+                }
+                None => return Ok(program.run_program().into_iter()),
+            }
         }
-
-        let remaining_plan = match self.remaining_logical_plan.take() {
-            Some(plan) => plan,
-            None => return Ok(None),
-        };
-
-        // Analyze the plan to see if we have a stage boundary (currently just limit)
-        let (next_stage, remaining_plan) =
-            find_and_split_at_stage_boundary(&remaining_plan, &self.config)?;
-
-        self.remaining_logical_plan = remaining_plan;
-
-        println!("next stage: {:#?}", next_stage);
-        println!("remaining plan: {:#?}", self.remaining_logical_plan);
-
-        Ok(Some(next_stage))
     }
 
-    pub fn is_done(&self) -> bool {
-        self.remaining_logical_plan.is_none()
+    pub fn update(&mut self, results: Vec<PartitionRef>) {
+        todo!()
     }
 }
 
@@ -69,12 +70,9 @@ impl DistributedPhysicalPlanner {
 fn find_and_split_at_stage_boundary(
     plan: &LogicalPlanRef,
     config: &Arc<DaftExecutionConfig>,
-) -> DaftResult<(
-    Box<dyn SwordfishStage + Send + Sync>,
-    Option<LogicalPlanRef>,
-)> {
+) -> DaftResult<(Stage, Option<LogicalPlanRef>)> {
     struct StageBoundarySplitter {
-        next_stage: Option<Box<dyn SwordfishStage + Send + Sync>>,
+        next_stage: Option<Stage>,
         config: Arc<DaftExecutionConfig>,
     }
 
@@ -101,7 +99,7 @@ fn find_and_split_at_stage_boundary(
                     let scan_info = scan_infos.first().unwrap();
                     let output_schema = output_schemas.first().unwrap();
 
-                    self.next_stage = Some(Box::new(LimitStage::new(
+                    self.next_stage = Some(Stage::Limit(LimitStage::new(
                         scan_info.clone(),
                         output_schema.clone(),
                         plan,
@@ -132,18 +130,16 @@ fn find_and_split_at_stage_boundary(
     } else {
         // make collect stage
         let plan = transformed.data;
-        println!("making collect stage for plan: {:#?}", plan);
         let (plan, scan_infos, output_schemas) = replace_sources_with_placeholders(&plan)?;
         let scan_info = scan_infos.first().unwrap();
-        println!("scan info: {:#?}", scan_info);
         let output_schema = output_schemas.first().unwrap();
-        let collect_stage = Box::new(CollectStage::new(
+        let collect_stage = CollectStage::new(
             scan_info.clone(),
             output_schema.clone(),
             plan,
             config.clone(),
-        ));
-        Ok((collect_stage, None))
+        );
+        Ok((Stage::Collect(collect_stage), None))
     }
 }
 

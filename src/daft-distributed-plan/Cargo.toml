@@ -1,22 +1,31 @@
 [dependencies]
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
+common-partitioning = {path = "../common/partitioning", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
+daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
-daft-local-plan = {path = "../daft-local-plan", default-features = false}
+futures = {workspace = true}
+itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+pyo3-async-runtimes = {version = "0.23", features = ["tokio-runtime"], optional = true}
+serde = {workspace = true}
+tokio = {workspace = true}
 
 [features]
 python = [
-    "dep:pyo3",
-    "common-daft-config/python",
-    "common-error/python",
-    "common-scan-info/python",
-    "common-treenode/python",
-    "daft-logical-plan/python",
-    "daft-local-plan/python",
+  "dep:pyo3",
+  "dep:pyo3-async-runtimes",
+  "common-daft-config/python",
+  "common-error/python",
+  "common-py-serde/python",
+  "common-scan-info/python",
+  "common-treenode/python",
+  "daft-logical-plan/python",
+  "daft-local-plan/python"
 ]
 
 [lints]
