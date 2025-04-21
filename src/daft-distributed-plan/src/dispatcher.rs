@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use futures::StreamExt;
 
-use crate::{
-    task::{Task, TaskHandle},
-    worker::WorkerManager,
-};
+use crate::{task::Task, worker::WorkerManager};
 
 pub(crate) struct TaskDispatcher {
     worker_manager: Arc<dyn WorkerManager>,
@@ -27,13 +24,10 @@ impl TaskDispatcher {
         loop {
             let next_available_worker = dispatcher.get_available_worker();
             let has_available_worker = next_available_worker.is_some();
-            println!("has_available_worker: {}", has_available_worker);
             let num_pending_tasks = pending_tasks.len();
-            println!("num_pending_tasks: {}", num_pending_tasks);
             tokio::select! {
                 biased;
                 Some(task) = task_rx.recv(), if has_available_worker => {
-                    println!("dispatching task to worker");
                     let task_handle = dispatcher
                         .worker_manager
                         .submit_task_to_worker(task, next_available_worker.unwrap());
@@ -42,9 +36,7 @@ impl TaskDispatcher {
                     });
                 }
                 Some(result) = pending_tasks.next(), if num_pending_tasks > 0 => {
-                    println!("received result from task");
                     let result = result?;
-                    println!("sending result to result_tx");
                     if let Err(e) = result_tx.send(result).await {
                         eprintln!("Error sending result to result_tx: {}", e);
                         break;
@@ -54,15 +46,13 @@ impl TaskDispatcher {
                     break;
                 }
             }
-            println!("num_pending_tasks: {}", num_pending_tasks);
         }
-        println!("exiting task dispatch");
+
         Ok(())
     }
 
     pub fn get_available_worker(&self) -> Option<String> {
         let worker_resources = self.worker_manager.get_worker_resources();
-        println!("worker_resources: {:?}", worker_resources);
         // get the worker with the most available memory
         worker_resources
             .into_iter()

@@ -1,8 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_local_plan::PyLocalPhysicalPlan;
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -10,7 +9,11 @@ use itertools::Itertools;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{plan::DistributedPhysicalPlan, ray::ray_task_handle::RayPartitionRef, task::Task};
+#[cfg(feature = "python")]
+use crate::ray::ray_task_handle::RayPartitionRef;
+#[cfg(feature = "python")]
+use crate::ray::ray_worker_manager::RayWorkerManager;
+use crate::{plan::DistributedPhysicalPlan, task::Task};
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -73,7 +76,11 @@ impl PyDistributedPhysicalPlan {
     }
 
     pub fn run_plan(&mut self) -> PyResult<PythonIterator> {
-        let results = self.planner.run_plan()?.flatten_ok();
+        let ray_worker_manager = RayWorkerManager::new();
+        let results = self
+            .planner
+            .run_plan(Arc::new(ray_worker_manager))?
+            .flatten_ok();
         let iter = Box::new(results.map(|result| {
             let result = result?;
             let ray_part_ref = result.as_any().downcast_ref::<RayPartitionRef>().unwrap();

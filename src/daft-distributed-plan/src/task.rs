@@ -4,9 +4,9 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
-use pyo3::PyObject;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
 use crate::ray::ray_task_handle::RayTaskHandle;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,13 +39,17 @@ impl Task {
 }
 
 pub(crate) enum TaskHandle {
+    #[cfg(feature = "python")]
     Ray(RayTaskHandle),
 }
 
 impl TaskHandle {
     pub async fn get_result(&self) -> DaftResult<Vec<PartitionRef>> {
         match self {
+            #[cfg(feature = "python")]
             TaskHandle::Ray(ray_task_handle) => ray_task_handle.get_result().await,
+            #[cfg(not(feature = "python"))]
+            _ => panic!("No TaskHandle variants available"),
         }
     }
 }

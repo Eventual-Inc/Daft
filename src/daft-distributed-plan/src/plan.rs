@@ -14,8 +14,8 @@ use daft_schema::schema::SchemaRef;
 use crate::{
     dispatcher::TaskDispatcher,
     program::Program,
-    ray::ray_worker_manager::RayWorkerManager,
-    stage::{CollectStage, LimitStage, Stage},
+    stage::{CollectStage, Stage},
+    worker::WorkerManager,
 };
 
 pub struct DistributedPhysicalPlan {
@@ -41,39 +41,38 @@ impl DistributedPhysicalPlan {
         })
     }
 
-    pub fn run_plan(&mut self) -> DaftResult<impl Iterator<Item = DaftResult<Vec<PartitionRef>>>> {
+    pub fn run_plan(
+        &mut self,
+        worker_manager: Arc<dyn WorkerManager>,
+    ) -> DaftResult<impl Iterator<Item = DaftResult<Vec<PartitionRef>>>> {
         let remaining_plan = self.remaining_logical_plan.take().unwrap();
-        loop {
-            let dispatcher = TaskDispatcher::new(Arc::new(RayWorkerManager::new()));
-            let (stage, remaining_plan) =
-                find_and_split_at_stage_boundary(&remaining_plan, &self.config)?;
-            let program = Program::from_stage(stage, dispatcher, self.config.clone());
-            match remaining_plan {
-                Some(plan) => {
-                    self.remaining_logical_plan = Some(plan);
-                    let results = program.run_program().collect::<DaftResult<Vec<_>>>()?;
-                    self.update(results.into_iter().flatten().collect());
-                }
-                None => return Ok(program.run_program().into_iter()),
-            }
-        }
-    }
+        let (stage, remaining_plan) =
+            find_and_split_at_stage_boundary(&remaining_plan, &self.config)?;
 
-    pub fn update(&mut self, results: Vec<PartitionRef>) {
-        todo!()
+        assert!(
+            matches!(stage, Stage::Collect(_)),
+            "We only support collect stages for now"
+        );
+        assert!(
+            matches!(remaining_plan, None),
+            "We expect no remaining plan for collect stage"
+        );
+
+        let dispatcher = TaskDispatcher::new(worker_manager);
+        let program = Program::from_stage(stage, dispatcher, self.config.clone());
+        Ok(program.run_program().into_iter())
     }
 }
 
 /// Find a stage boundary in the plan and split the plan at that point
-/// Currently only finds limit operations, but can be extended for other stage boundaries
-/// Returns a StageBoundary with boundary-specific information if found
+/// This is still a WIP and will be extended to support more stage boundaries in the future
 fn find_and_split_at_stage_boundary(
     plan: &LogicalPlanRef,
     config: &Arc<DaftExecutionConfig>,
 ) -> DaftResult<(Stage, Option<LogicalPlanRef>)> {
     struct StageBoundarySplitter {
         next_stage: Option<Stage>,
-        config: Arc<DaftExecutionConfig>,
+        _config: Arc<DaftExecutionConfig>,
     }
 
     impl TreeNodeRewriter for StageBoundarySplitter {
@@ -84,43 +83,14 @@ fn find_and_split_at_stage_boundary(
         }
 
         fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            match node.as_ref() {
-                LogicalPlan::Limit(limit) => {
-                    println!("found limit stage");
-                    let schema = node.schema();
-                    let ph = PlaceHolderInfo::new(schema.clone(), ClusteringSpec::default().into());
-                    let placeholder = LogicalPlan::Source(Source::new(
-                        schema,
-                        SourceInfo::PlaceHolder(ph).into(),
-                    ));
-
-                    let (plan, scan_infos, output_schemas) =
-                        replace_sources_with_placeholders(&node)?;
-                    let scan_info = scan_infos.first().unwrap();
-                    let output_schema = output_schemas.first().unwrap();
-
-                    self.next_stage = Some(Stage::Limit(LimitStage::new(
-                        scan_info.clone(),
-                        output_schema.clone(),
-                        plan,
-                        limit.limit as usize,
-                        self.config.clone(),
-                    )));
-
-                    Ok(Transformed::new(
-                        placeholder.into(),
-                        true,
-                        common_treenode::TreeNodeRecursion::Stop,
-                    ))
-                }
-                _ => Ok(Transformed::no(node)),
-            }
+            // TODO: Implement stage boundary splitting
+            Ok(Transformed::no(node))
         }
     }
 
     let mut splitter = StageBoundarySplitter {
         next_stage: None,
-        config: config.clone(),
+        _config: config.clone(),
     };
 
     let transformed = plan.clone().rewrite(&mut splitter)?;
@@ -155,8 +125,8 @@ fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
         LogicalPlan::Sample(sample) => can_translate_logical_plan(&sample.input),
         LogicalPlan::Explode(explode) => can_translate_logical_plan(&explode.input),
         LogicalPlan::Unpivot(unpivot) => can_translate_logical_plan(&unpivot.input),
-        LogicalPlan::Pivot(pivot) => can_translate_logical_plan(&pivot.input),
-        LogicalPlan::Limit(limit) => can_translate_logical_plan(&limit.input),
+        LogicalPlan::Pivot(_) => false,
+        LogicalPlan::Limit(_) => false,
         LogicalPlan::Sort(_) => false,
         LogicalPlan::Distinct(_) => false,
         LogicalPlan::Aggregate(_) => false,
@@ -226,18 +196,4 @@ pub fn replace_sources_with_placeholders(
         replacer.scan_infos,
         replacer.output_schemas,
     ))
-}
-
-pub fn replace_placeholders_with_sources(
-    plan: LogicalPlanRef,
-    new_source_plan: LogicalPlanRef,
-) -> DaftResult<LogicalPlanRef> {
-    let new_plan = plan.transform_up(|plan| match plan.as_ref() {
-        LogicalPlan::Source(source) => match source.source_info.as_ref() {
-            SourceInfo::PlaceHolder(_ph) => Ok(Transformed::yes(new_source_plan.clone())),
-            _ => Ok(Transformed::no(plan)),
-        },
-        _ => Ok(Transformed::no(plan)),
-    })?;
-    Ok(new_plan.data)
 }
