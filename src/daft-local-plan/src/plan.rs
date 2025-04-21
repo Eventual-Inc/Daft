@@ -709,7 +709,7 @@ pub struct WindowPartitionOnly {
     pub aliases: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionAndOrderBy {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<ExprRef>,
