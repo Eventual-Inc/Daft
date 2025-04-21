@@ -43,11 +43,11 @@ import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from daft.daft import PyIdentifier, PyTableSource
+from daft.daft import PyIdentifier
 
 from daft.dataframe import DataFrame
 
-from typing import TYPE_CHECKING, Any, Literal, final
+from typing import TYPE_CHECKING, Any, Literal
 
 from daft.logical.schema import Schema
 
@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 __all__ = [
     "Catalog",
     "Identifier",
+    "Schema",
     "Table",
     # TODO deprecated catalog APIs #3819
     "read_table",
@@ -72,7 +73,8 @@ __all__ = [
 def unregister_catalog(catalog_name: str | None) -> bool:
     """Unregisters a catalog from the Daft catalog system.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.detach_catalog`.
+    Warning: DEPRECATED
+        This is deprecated and will be removed in daft >= 0.5.0; please use `daft.detach_catalog`.
 
     This function removes a previously registered catalog from the Daft catalog system.
 
@@ -82,7 +84,7 @@ def unregister_catalog(catalog_name: str | None) -> bool:
     Returns:
         bool: True if a catalog was successfully unregistered, False otherwise.
 
-    Example:
+    Examples:
         >>> import daft
         >>> daft.unregister_catalog("my_catalog")
         True
@@ -105,7 +107,8 @@ def unregister_catalog(catalog_name: str | None) -> bool:
 def read_table(name: str) -> DataFrame:
     """Finds a table with the specified name and reads it as a DataFrame.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.read_table`.
+    Warning: DEPRECATED
+        This is deprecated and will be removed in daft >= 0.5.0; please use `daft.read_table`.
 
     The provided name can be any of the following, and Daft will return them with the following order of priority:
 
@@ -132,7 +135,8 @@ def read_table(name: str) -> DataFrame:
 def register_table(name: str, dataframe: DataFrame) -> str:
     """Register a DataFrame as a named table.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_table`.
+    Warning: DEPRECATED
+        This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_table`.
 
     This function registers a DataFrame as a named table, making it accessible
     via Daft-SQL or Daft's `read_table` function.
@@ -144,7 +148,7 @@ def register_table(name: str, dataframe: DataFrame) -> str:
     Returns:
         str: The name of the registered table.
 
-    Example:
+    Examples:
         >>> df = daft.from_pydict({"foo": [1, 2, 3]})
         >>> daft.catalog.register_table("my_table", df)
         >>> daft.read_table("my_table")
@@ -163,7 +167,8 @@ def register_table(name: str, dataframe: DataFrame) -> str:
 def register_python_catalog(catalog: object, name: str | None = None) -> str:
     """Registers a Python catalog with Daft.
 
-    DEPRECATED: This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_catalog`.
+    Warning: DEPRECATED
+        This is deprecated and will be removed in daft >= 0.5.0; please use `daft.attach_catalog`.
 
     Currently supports:
 
@@ -180,7 +185,7 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
     Raises:
         ValueError: If an unsupported catalog type is provided.
 
-    Example:
+    Examples:
         >>> from pyiceberg.catalog import load_catalog
         >>> catalog = load_catalog("my_catalog")
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")
@@ -216,6 +221,12 @@ class Catalog(ABC):
 
         The table-like objects can be pydicts, dataframes, or a Table implementation.
 
+        Args:
+            tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
+
+        Returns:
+            Catalog: new catalog instance with name 'default'
+
         Examples:
             >>> import daft
             >>> from daft.catalog import Catalog, Table
@@ -234,11 +245,6 @@ class Catalog(ABC):
             >>> catalog.list_tables()
             ['R', 'S', 'T']
 
-        Args:
-            tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
-
-        Returns:
-            Catalog: new catalog instance with name 'default'
         """
         from daft.catalog.__memory import MemoryCatalog
 
@@ -283,7 +289,7 @@ class Catalog(ABC):
         table_bucket_arn: str,
         client: object | None = None,
         session: object | None = None,
-    ):
+    ) -> Catalog:
         """Creates a Daft Catalog from S3 Tables bucket ARN, with optional client or session.
 
         If neither a boto3 client nor session is given, an Iceberg REST client is used.
@@ -308,7 +314,44 @@ class Catalog(ABC):
             else:
                 return S3Catalog.from_arn(table_bucket_arn)
         except ImportError:
-            raise ImportError("S3 Tables support not installed: pip install -U 'getdaft[aws]'")
+            raise ImportError("S3 Tables support not installed: pip install -U 'daft[aws]'")
+
+    @staticmethod
+    def from_glue(
+        name: str,
+        client: object | None = None,
+        session: object | None = None,
+    ) -> Catalog:
+        """Creates a Daft Catalog backed by the AWS Glue service, with optional client or session.
+
+        Terms:
+            - AWS Glue          -> Daft Catalog
+            - AWS Glue Database -> Daft Namespace
+            - AWS Glue Table    -> Daft Table
+
+        Args:
+            name (str): glue database name
+            type (Literal["iceberg"]): optional catalog type
+            client: optional boto3 client
+            session: optional boto3 session
+            **options: additional options for boto3 client creation
+
+        Returns:
+            Catalog: new daft catalog instance backed by AWS Glue.
+        """
+        try:
+            from daft.catalog.__glue import GlueCatalog
+
+            if client is not None and session is not None:
+                raise ValueError("Can provide either a client or session but not both.")
+            elif client is not None:
+                return GlueCatalog.from_client(name, client)
+            elif session is not None:
+                return GlueCatalog.from_session(name, session)
+            else:
+                raise ValueError("Must provide either a client or session.")
+        except ImportError:
+            raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
 
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
@@ -330,19 +373,51 @@ class Catalog(ABC):
 
     @abstractmethod
     def create_namespace(self, identifier: Identifier | str):
-        """Creates a namespace in this catalog."""
+        """Creates a namespace in this catalog.
+
+        Args:
+            identifier (Identifier | str): namespace identifier
+
+        Returns:
+            None
+        """
+        raise NotImplementedError
 
     def create_namespace_if_not_exists(self, identifier: Identifier | str):
-        """Creates a namespace in this catalog if it does not already exist."""
+        """Creates a namespace in this catalog if it does not already exist.
+
+        Args:
+            identifier (Identifier | str): namespace identifier
+
+        Returns:
+            None
+        """
         if not self.has_namespace(identifier):
             self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
-        """Creates a table in this catalog."""
+    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+        """Creates a table in this catalog.
 
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource | object) -> Table:
-        """Creates a table in this catalog if it does not already exist."""
+        Args:
+            identifier (Identifier | str): table identifier
+            source (Schema | DataFrame): table source object such as a Schema or DataFrame.
+
+        Returns:
+            Table: new table instance.
+        """
+        raise NotImplementedError
+
+    def create_table_if_not_exists(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+        """Creates a table in this catalog if it does not already exist.
+
+        Args:
+            identifier (Identifier | str): table identifier
+            source (Schema | DataFrame): table source object such as a Schema or DataFrame.
+
+        Returns:
+            Table: the existing table (if exists) or the new table instance.
+        """
         try:
             return self.get_table(identifier)
         except NotFoundError:
@@ -353,9 +428,10 @@ class Catalog(ABC):
     ###
 
     def has_namespace(self, identifier: Identifier | str):
+        """Returns True if the namespace exists, otherwise False."""
         raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
 
-    def has_table(self, identifier: Identifier | str):
+    def has_table(self, identifier: Identifier | str) -> bool:
         """Returns True if the table exists, otherwise False."""
         try:
             _ = self.get_table(identifier)
@@ -458,7 +534,7 @@ class Catalog(ABC):
 class Identifier(Sequence):
     """A reference (path) to a catalog object.
 
-    Example:
+    Examples:
         >>> id = Identifier("a", "b")
         >>> assert len(id) == 2
     """
@@ -468,12 +544,13 @@ class Identifier(Sequence):
     def __init__(self, *parts: str):
         """Creates an Identifier from its parts.
 
-        Example:
+        Returns:
+            Identifier: A new identifier.
+
+        Examples:
             >>> from daft.catalog import Identifier
             >>> Identifier("namespace", "table")
 
-        Returns:
-            Identifier: A new identifier.
         """
         if len(parts) < 1:
             raise ValueError("Identifier requires at least one part.")
@@ -489,18 +566,19 @@ class Identifier(Sequence):
     def from_sql(input: str, normalize: bool = False) -> Identifier:
         """Parses an Identifier from an SQL string, normalizing to lowercase if specified.
 
-        Example:
-            >>> from daft.catalog import Identifier
-            >>> Identifier.from_sql("namespace.table") == Identifier("namespace", "table")
-            >>> Identifier.from_sql('"a.b"') == Identifier('"a.b."')
-            >>> Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
-
         Args:
             input (str): input sql string
             normalize (bool): flag to case-normalize the identifier text
 
         Returns:
             Identifier: new identifier instance
+
+        Examples:
+            >>> from daft.catalog import Identifier
+            >>> Identifier.from_sql("namespace.table") == Identifier("namespace", "table")
+            >>> Identifier.from_sql('"a.b"') == Identifier('"a.b."')
+            >>> Identifier.from_sql('ABC."xYz"', normalize=True) == Identifier("abc", "xYz")
+
         """
         i = Identifier.__new__(Identifier)
         i._ident = PyIdentifier.from_sql(input, normalize)
@@ -510,15 +588,16 @@ class Identifier(Sequence):
     def from_str(input: str) -> Identifier:
         """Parses an Identifier from a dot-delimited Python string without normalization.
 
-        Example:
-            >>> from daft.catalog import Identifier
-            >>> Identifier.from_str("namespace.table") == Identifier("namespace", "table")
-
         Args:
             input (str): input identifier string
 
         Returns:
             Identifier: new identifier instance
+
+        Examples:
+            >>> from daft.catalog import Identifier
+            >>> Identifier.from_str("namespace.table") == Identifier("namespace", "table")
+
         """
         return Identifier(*input.split("."))
 
@@ -577,7 +656,14 @@ class Table(ABC):
     def from_pydict(name: str, data: dict[str, InputListType]) -> Table:
         """Returns a read-only table backed by the given data.
 
-        Example:
+        Args:
+            name (str): table table
+            data dict[str,object]: keys are column names and the values are python lists, numpy arrays, or arrow arrays.
+
+        Returns:
+            DataFrame: new read-only table instance
+
+        Examples:
             >>> from daft.catalog import Table
             >>> table = Table.from_pydict({"foo": [1, 2]})
             >>> table.show()
@@ -593,12 +679,6 @@ class Table(ABC):
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
-        Args:
-            name (str): table table
-            data dict[str,object]: keys are column names and the values are python lists, numpy arrays, or arrow arrays.
-
-        Returns:
-            DataFrame: new read-only table instance
         """
         from daft.catalog.__memory import MemoryTable
 
@@ -608,17 +688,18 @@ class Table(ABC):
     def from_df(name: str, dataframe: DataFrame) -> Table:
         """Returns a read-only table backed by the DataFrame.
 
-        Example:
-            >>> import daft
-            >>> from daft.catalog import Table
-            >>> Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3]}))
-
         Args:
             name (str): table name
             dataframe (DataFrame): table source dataframe
 
         Returns:
             Table: new table instance
+
+        Examples:
+            >>> import daft
+            >>> from daft.catalog import Table
+            >>> Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3]}))
+
         """
         from daft.catalog.__memory import MemoryTable
 
@@ -771,63 +852,3 @@ class Table(ABC):
             category=DeprecationWarning,
         )
         return self.read()
-
-
-class TableSource:
-    """A TableSource is used to create a new table; this could be a Schema or DataFrame."""
-
-    _source: PyTableSource
-
-    def __init__(self) -> None:
-        raise ValueError("We do not support creating a TableSource via __init__")
-
-    @staticmethod
-    def from_df(df: DataFrame) -> TableSource:
-        """Creates a TableSource from a DataFrame.
-
-        Args:
-            df (DataFrame): source dataframe
-
-        Returns:
-            TableSource: new table source instance
-        """
-        s = TableSource.__new__(TableSource)
-        s._source = PyTableSource.from_builder(df._builder._builder)
-        return s
-
-    @staticmethod
-    def _from_obj(obj: object = None) -> TableSource:
-        # TODO for future sources, consider https://github.com/Eventual-Inc/Daft/pull/2864
-        if obj is None:
-            return TableSource._from_none()
-        elif isinstance(obj, DataFrame):
-            return TableSource.from_df(obj)
-        elif isinstance(obj, str):
-            return TableSource._from_path(obj)
-        elif isinstance(obj, Schema):
-            return TableSource._from_schema(obj)
-        else:
-            raise Exception(f"Unknown table source: {obj}")
-
-    @staticmethod
-    def _from_none() -> TableSource:
-        # for creating temp mutable tables, but we don't have those yet
-        # s = TableSource.__new__(TableSource)
-        # s._source = PyTableSource.empty()
-        # return s
-        # todo temp workaround just use an empty schema
-        return TableSource._from_schema(Schema._from_fields([]))
-
-    @staticmethod
-    def _from_schema(schema: Schema) -> TableSource:
-        # we don't have mutable temp tables, so just make an empty view
-        # s = TableSource.__new__(TableSource)
-        # s._source = PyTableSource.from_schema(schema._schema)
-        # return s
-        # todo temp workaround until create_table is wired
-        return TableSource.from_df(DataFrame._from_pylist([]))
-
-    @staticmethod
-    def _from_path(path: str) -> TableSource:
-        # for supporting daft.create_table("t", "/path/to/data") <-> CREATE TABLE t AS '/path/to/my.data'
-        raise NotImplementedError("creating a table source from a path is not yet supported.")

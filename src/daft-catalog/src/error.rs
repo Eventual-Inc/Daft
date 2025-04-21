@@ -25,7 +25,7 @@ pub enum Error {
     #[snafu(display("{type_} with name {ident} not found!"))]
     ObjectNotFound { type_: String, ident: String },
 
-    #[snafu(display("Ambgiuous identifier {input}, found {options}!"))]
+    #[snafu(display("Ambigiuous identifier for {input}: found `{options}`!"))]
     AmbiguousIdentifier { input: String, options: String },
 
     #[snafu(display("Invalid identifier {input}!"))]
@@ -75,7 +75,7 @@ impl Error {
                 .into_iter()
                 .map(Into::into)
                 .collect::<Vec<_>>()
-                .join("."),
+                .join(", "),
         }
     }
 

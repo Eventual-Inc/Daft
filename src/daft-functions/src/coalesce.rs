@@ -246,8 +246,7 @@ mod tests {
         let schema = Schema::new(vec![
             Field::new("s0", DataType::Int32),
             Field::new("s1", DataType::Int32),
-        ])
-        .unwrap();
+        ]);
         let expected = Field::new("s0", DataType::Int32);
 
         let coalesce = super::Coalesce {};
@@ -265,8 +264,7 @@ mod tests {
             Field::new("s0", DataType::Int8),
             Field::new("s1", DataType::Int8),
             Field::new("s2", DataType::Utf8),
-        ])
-        .unwrap();
+        ]);
         let expected = Field::new("s0", DataType::Utf8);
 
         let coalesce = super::Coalesce {};
@@ -290,7 +288,7 @@ mod tests {
         let expected = "could not determine supertype of Date and Boolean".to_string();
         let coalesce = super::Coalesce {};
         let DaftError::TypeError(e) = coalesce
-            .to_field(&[col_0, col_1, col_2], &schema.unwrap())
+            .to_field(&[col_0, col_1, col_2], &schema)
             .unwrap_err()
         else {
             panic!("Expected error")

@@ -21,7 +21,10 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{expr::Expr, ExprRef, LiteralValue};
+use crate::{
+    expr::{Expr, WindowExpr},
+    ExprRef, LiteralValue,
+};
 
 #[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
@@ -271,6 +274,17 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 pub enum ApproxPercentileInput {
     Single(f64),
     Many(Vec<f64>),
+}
+
+impl PyExpr {
+    /// converts the pyexpr into a `daft.Expression` python instance
+    /// `daft.Expression._from_pyexpr(self)`
+    pub fn into_expr_cls(self, py: Python) -> PyResult<PyObject> {
+        let daft = py.import("daft")?;
+        let expr_cls = daft.getattr("Expression")?;
+        let expr = expr_cls.call_method1("_from_pyexpr", (self,))?;
+        Ok(expr.unbind())
+    }
 }
 
 #[pymethods]
@@ -528,8 +542,9 @@ impl PyExpr {
     }
 
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
+        let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Window(self.expr.clone(), window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
         })
     }
 }

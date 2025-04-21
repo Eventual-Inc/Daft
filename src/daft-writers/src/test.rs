@@ -75,8 +75,7 @@ impl FileWriter for DummyWriter {
             Schema::new(vec![
                 path_series.field().clone(),
                 write_count_series.field().clone(),
-            ])
-            .unwrap(),
+            ]),
             vec![path_series.into(), write_count_series.into()],
             1,
         );
@@ -187,8 +186,7 @@ impl FileWriter for FailingWriter {
             Schema::new(vec![
                 path_series.field().clone(),
                 write_count_series.field().clone(),
-            ])
-            .unwrap(),
+            ]),
             vec![path_series.into(), write_count_series.into()],
             1,
         );
@@ -219,7 +217,7 @@ pub fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
     let series = UInt8Array::from_regular_iter(Field::new("ints", DataType::UInt8), range)
         .unwrap()
         .into_series();
-    let schema = Arc::new(Schema::new(vec![series.field().clone()]).unwrap());
+    let schema = Arc::new(Schema::new(vec![series.field().clone()]));
     let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
     Arc::new(MicroPartition::new_loaded(
         schema.into(),

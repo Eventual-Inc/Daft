@@ -49,9 +49,8 @@ fn intersect_or_except_plan(
 ) -> logical_plan::Result<LogicalPlan> {
     let on_expr = combine_conjunction(
         lhs.schema()
-            .fields
-            .values()
-            .zip(rhs.schema().fields.values())
+            .into_iter()
+            .zip(rhs.schema().fields())
             .map(|(l, r)| left_col(l.clone()).eq_null_safe(right_col(r.clone()))),
     );
 
@@ -81,9 +80,8 @@ fn check_structurally_equal(
     // lhs and rhs should have the same type for each field
     // TODO: Support nested types recursively
     if lhs
-        .fields
-        .values()
-        .zip(rhs.fields.values())
+        .into_iter()
+        .zip(rhs.fields())
         .any(|(l, r)| l.dtype != r.dtype)
     {
         return Err(DaftError::SchemaMismatch(format!(
@@ -174,17 +172,15 @@ impl Intersect {
             let left_cols = self
                 .lhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .collect::<Vec<ExprRef>>();
             // project the right cols to have the same name as the left cols
             let right_cols = self
                 .rhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .zip(left_cols.iter())
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();
@@ -312,9 +308,8 @@ impl Union {
                 let (lhs, rhs) = if lhs_schema != rhs_schema {
                     // we need to try to do a type coercion
                     let coerced_fields = lhs_schema
-                        .fields
-                        .values()
-                        .zip(rhs_schema.fields.values())
+                        .into_iter()
+                        .zip(rhs_schema.fields())
                         .map(|(l, r)| {
                             let new_dtype = get_supertype(&l.dtype, &r.dtype).ok_or_else(|| {
                                 logical_plan::Error::CreationError {
@@ -346,8 +341,8 @@ impl Union {
                 }
             }
             UnionStrategy::ByName => {
-                let lhs_fields = lhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
-                let rhs_fields = rhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
+                let lhs_fields = lhs_schema.into_iter().cloned().collect::<IndexSet<_>>();
+                let rhs_fields = rhs_schema.into_iter().cloned().collect::<IndexSet<_>>();
                 let all_fields = lhs_fields
                     .union(&rhs_fields)
                     .cloned()
@@ -465,17 +460,15 @@ impl Except {
             let left_cols = self
                 .lhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .collect::<Vec<ExprRef>>();
             // project the right cols to have the same name as the left cols
             let right_cols = self
                 .rhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .zip(left_cols.iter())
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();

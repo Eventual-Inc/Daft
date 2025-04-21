@@ -3,6 +3,7 @@
 import inspect
 from typing import Optional
 
+import daft
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.daft import PyCatalog as _PyCatalog
@@ -100,7 +101,19 @@ def sql_expr(sql: str) -> Expression:
 def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool = True) -> DataFrame:
     """Run a SQL query, returning the results as a DataFrame.
 
-    .. WARNING::
+    Args:
+        sql (str): SQL query to execute
+        catalog (SQLCatalog, optional): Catalog of tables to use in the query.
+            Defaults to None, in which case a catalog will be built from variables
+            in the callers scope.
+        register_globals (bool, optional): Whether to incorporate global
+            variables into the supplied catalog, in which case a copy of the
+            catalog will be made and the original not modified. Defaults to True.
+
+    Returns:
+        DataFrame: Dataframe containing the results of the query
+
+    Warning:
         This features is early in development and will likely experience API changes.
 
     Examples:
@@ -153,18 +166,6 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
         ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-
-    Args:
-        sql (str): SQL query to execute
-        catalog (SQLCatalog, optional): Catalog of tables to use in the query.
-            Defaults to None, in which case a catalog will be built from variables
-            in the callers scope.
-        register_globals (bool, optional): Whether to incorporate global
-            variables into the supplied catalog, in which case a copy of the
-            catalog will be made and the original not modified. Defaults to True.
-
-    Returns:
-        DataFrame: Dataframe containing the results of the query
     """
     if register_globals:
         try:
@@ -185,5 +186,8 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
     planning_config = get_context().daft_planning_config
 
     _py_catalog = catalog._catalog
-    _py_logical = _sql(sql, _py_catalog, planning_config)
+
+    sess = daft.current_session()._session
+
+    _py_logical = _sql(sql, _py_catalog, sess, planning_config)
     return DataFrame(LogicalPlanBuilder(_py_logical))

@@ -225,7 +225,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan = add_repartition(base.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
@@ -250,7 +250,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("b")]);
@@ -276,7 +276,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan1 = add_repartition(base1.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
@@ -286,7 +286,7 @@ mod tests {
                 Field::new("x", DataType::Int32),
                 Field::new("y", DataType::Int32),
                 Field::new("z", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan2 = add_repartition(base2.clone(), 1, vec![resolved_col("x"), resolved_col("y")]);

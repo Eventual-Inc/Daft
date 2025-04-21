@@ -188,7 +188,7 @@ impl LogicalPlan {
                     },
                 ) => {
                     let schema = if let Some(fields) = scan_operator.0.generated_fields() {
-                        &Arc::new(source_schema.non_distinct_union(&fields))
+                        &Arc::new(source_schema.non_distinct_union(&fields)?)
                     } else {
                         source_schema
                     };

@@ -1,0 +1,103 @@
+/*https://github.com/squidfunk/mkdocs-material/issues/2574#issuecomment-821979698*/
+[data-md-toggle="search"]:not(:checked) ~ .md-header .md-search__form::after {
+    position: absolute;
+    top: .3rem;
+    right: .3rem;
+    display: block;
+    padding: .1rem .4rem;
+    color: var(--md-default-bg-color);
+    font-weight: bold;
+    font-size: .8rem;
+    border: .05rem solid var(--md-default-bg-color--lighter);
+    border-radius: .1rem;
+    content: "/";
+}
+
+:root {
+  --md-primary-fg-color: #532687;
+  --md-accent-fg-color: #ad9fff;
+}
+
+[data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
+  --md-typeset-a-color: #7862FF;
+}
+
+/* NOTE ADMONITIONS */
+
+/* use daft purple for note admonitions */
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  border-color: rgb(120,98,255);
+}
+
+/* heading background color for note admonitions */
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  background-color: rgb(120,98,255, 0.1);
+}
+
+/* color of icon (before) & arrow (after) for note admonitions */
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before,
+.md-typeset .note > .admonition-title::after,
+.md-typeset .note > summary::after {
+  background-color: rgb(120,98,255);
+}
+
+/* box shadow on click for expanding boxes for note admonitions */
+.md-typeset .admonition.note:focus-within,
+.md-typeset details.note:focus-within {
+  box-shadow: 0 0 0 .2rem rgba(120,98,255, 0.1)
+}
+
+/* EXAMPLE ADMONITIONS */
+
+/* use blue for example admonitions */
+.md-typeset .admonition.example,
+.md-typeset details.example {
+  border-color: rgba(68, 138, 255);
+}
+
+/* heading background color for example admonitions */
+.md-typeset .example > .admonition-title,
+.md-typeset .example > summary {
+  background-color: rgba(68, 138, 255, 0.1);
+}
+
+/* colors of icon (before) & arrow (after) for example admonitions */
+.md-typeset .example > .admonition-title::before,
+.md-typeset .example > summary::before,
+.md-typeset .example > .admonition-title::after,
+.md-typeset .example > summary::after {
+  background-color: rgba(68, 138, 255);
+}
+
+/* box shadow on click for expanding boxes for example admonitions */
+.md-typeset .admonition.example:focus-within,
+.md-typeset details.example:focus-within {
+  box-shadow: 0 0 0 .2rem rgba(68, 138, 255, 0.1)
+}
+
+/* use 100% width for tables */
+.md-typeset__table {
+  width: 100%;
+}
+
+.md-typeset__table table:not([class]) {
+  display: table
+}
+
+/* method label */
+code.doc-symbol-method::after {
+  content: "method";
+}
+
+/* don't display >>> */
+.highlight .gp {
+  display: none;
+}
+
+/* display width */
+.md-grid {
+  max-width: 70rem;
+}

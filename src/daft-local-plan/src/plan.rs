@@ -3,7 +3,7 @@ use std::{cmp::max, sync::Arc};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::*;
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{AggExpr, ExprRef, WindowExpr};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
@@ -48,6 +48,7 @@ pub enum LocalPhysicalPlan {
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
     WindowPartitionOnly(WindowPartitionOnly),
+    WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
 }
 
 impl LocalPhysicalPlan {
@@ -83,7 +84,10 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
-            | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. }) => stats_state,
+            | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. }) => {
+                stats_state
+            }
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
@@ -236,7 +240,8 @@ impl LocalPhysicalPlan {
         partition_by: Vec<ExprRef>,
         schema: SchemaRef,
         stats_state: StatsState,
-        aggregations: Vec<ExprRef>,
+        aggregations: Vec<AggExpr>,
+        aliases: Vec<String>,
     ) -> LocalPhysicalPlanRef {
         Self::WindowPartitionOnly(WindowPartitionOnly {
             input,
@@ -244,6 +249,31 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             aggregations,
+            aliases,
+        })
+        .arced()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn window_partition_and_order_by(
+        input: LocalPhysicalPlanRef,
+        partition_by: Vec<ExprRef>,
+        order_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        functions: Vec<WindowExpr>,
+        aliases: Vec<String>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
+            input,
+            partition_by,
+            order_by,
+            descending,
+            schema,
+            stats_state,
+            functions,
+            aliases,
         })
         .arced()
     }
@@ -479,6 +509,7 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
+            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
     }
 }
@@ -674,5 +705,18 @@ pub struct WindowPartitionOnly {
     pub partition_by: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub aggregations: Vec<ExprRef>,
+    pub aggregations: Vec<AggExpr>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct WindowPartitionAndOrderBy {
+    pub input: LocalPhysicalPlanRef,
+    pub partition_by: Vec<ExprRef>,
+    pub order_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub functions: Vec<WindowExpr>,
+    pub aliases: Vec<String>,
 }

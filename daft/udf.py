@@ -5,6 +5,7 @@ import functools
 import inspect
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
+import daft
 from daft.daft import PyDataType, ResourceRequest
 from daft.datatype import DataType, DataTypeLike
 from daft.dependencies import np, pa
@@ -51,6 +52,7 @@ class BoundUDFArgs:
                 for kwarg_key, x in val.items():
                     if isinstance(x, Expression):
                         parsed_expressions[kwarg_key] = x
+
             elif isinstance(val, Expression):
                 parsed_expressions[key] = val
 
@@ -89,6 +91,7 @@ def run_udf(
     arg_keys = bound_args.arg_keys()
     pyvalues = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
     expressions = bound_args.expressions()
+
     assert len(evaluated_expressions) == len(
         expressions
     ), "Computed series must map 1:1 to the expressions that were evaluated"
@@ -187,7 +190,7 @@ class UDF:
 
     Calling this class produces a `daft.Expression` that can be used in a DataFrame function.
 
-    Example:
+    Examples:
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.float64())
         ... def multiply_and_add(x: daft.Series, y: float, z: float):
@@ -259,18 +262,6 @@ class UDF:
     ) -> UDF:
         """Replace the resource requests for running each instance of your UDF.
 
-        For instance, if your UDF requires 4 CPUs to run, you can configure it like so:
-
-        >>> import daft
-        >>>
-        >>> @daft.udf(return_dtype=daft.DataType.string())
-        ... def example_udf(inputs):
-        ...     # You will have access to 4 CPUs here if you configure your UDF correctly!
-        ...     return inputs
-        >>>
-        >>> # Parametrize the UDF to run with 4 CPUs
-        >>> example_udf_4CPU = example_udf.override_options(num_cpus=4)
-
         Args:
             num_cpus: Number of CPUs to allocate each running instance of your UDF. Note that this is purely used for placement (e.g. if your
                 machine has 8 CPUs and you specify num_cpus=4, then Daft can run at most 2 instances of your UDF at a time).
@@ -279,6 +270,20 @@ class UDF:
             memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
                 this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
             batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
+
+        Examples:
+            For instance, if your UDF requires 4 CPUs to run, you can configure it like so:
+
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string())
+            ... def example_udf(inputs):
+            ...     # You will have access to 4 CPUs here if you configure your UDF correctly!
+            ...     return inputs
+            >>>
+            >>> # Parametrize the UDF to run with 4 CPUs
+            >>> example_udf_4CPU = example_udf.override_options(num_cpus=4)
+
         """
         new_resource_request = ResourceRequest() if self.resource_request is None else self.resource_request
         if num_cpus is not _UnsetMarker:
@@ -325,7 +330,7 @@ class UDF:
     def with_concurrency(self, concurrency: int) -> UDF:
         """Override the concurrency of this UDF, which tells Daft how many instances of your UDF to run concurrently.
 
-        Example:
+        Examples:
             >>> import daft
             >>>
             >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
@@ -344,7 +349,7 @@ class UDF:
     def with_init_args(self, *args, **kwargs) -> UDF:
         """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
 
-        Example:
+        Examples:
             >>> import daft
             >>>
             >>> @daft.udf(return_dtype=daft.DataType.string())
@@ -405,22 +410,39 @@ def udf(
 
     UDFs allow users to run arbitrary Python code on the outputs of Expressions.
 
-    .. NOTE::
+    Args:
+        return_dtype (DataType): Returned type of the UDF
+        num_cpus: Number of CPUs to allocate each running instance of your UDF. Note that this is purely used for placement (e.g. if your
+            machine has 8 CPUs and you specify num_cpus=4, then Daft can run at most 2 instances of your UDF at a time). The default `None`
+            indicates that Daft is free to allocate as many instances of the UDF as it wants to.
+        num_gpus: Number of GPUs to allocate each running instance of your UDF. This is used for placement and also for allocating
+            the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
+        memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
+            this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+        batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
+        concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
+            UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
+            loading model weights for model batch inference.
+
+    Returns:
+        Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
+
+    Note:
         In most cases, UDFs will be slower than a native kernel/expression because of the required Rust and Python overheads. If
         your computation can be expressed using Daft expressions, you should do so instead of writing a UDF. If your UDF expresses a
         common use-case that isn't already covered by Daft, you should file a ticket or contribute this functionality back to Daft
         as a kernel!
 
-    In the example below, we create a UDF that:
+    Examples:
+        In the example below, we create a UDF that:
 
-    1. Receives data under the argument name ``x``
-    2. Iterates over the ``x`` Daft Series
-    3. Adds a Python constant value ``c`` to every element in ``x``
-    4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
-    5. We can call our UDF on a dataframe using any of the dataframe projection operations (:meth:`df.with_column() <daft.DataFrame.with_column>`,
-       :meth:`df.select() <daft.DataFrame.select>`, etc.)
+            1. Receives data under the argument name ``x``
+            2. Iterates over the ``x`` Daft Series
+            3. Adds a Python constant value ``c`` to every element in ``x``
+            4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
+            5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.with_column),
+            [df.select()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.select), etc.)
 
-    Example:
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.int64())
         ... def add_constant(x: daft.Series, c=10):
@@ -443,77 +465,59 @@ def udf(
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-    Resource Requests
-    -----------------
+    Tip: "Resource Requests"
+        You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 2 CPUs to run. On a
+        machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once!
 
-    You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 2 CPUs to run. On a
-    machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once!
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
+        ... def udf_needs_2_cpus(x: daft.Series):
+        ...     return x
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ x     ┆ new_x │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 1     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 2     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 3     │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
-    >>> import daft
-    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
-    ... def udf_needs_2_cpus(x: daft.Series):
-    ...     return x
-    >>>
-    >>> df = daft.from_pydict({"x": [1, 2, 3]})
-    >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
-    >>> df.show()
-    ╭───────┬───────╮
-    │ x     ┆ new_x │
-    │ ---   ┆ ---   │
-    │ Int64 ┆ Int64 │
-    ╞═══════╪═══════╡
-    │ 1     ┆ 1     │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 2     ┆ 2     │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 3     ┆ 3     │
-    ╰───────┴───────╯
-    <BLANKLINE>
-    (Showing first 3 of 3 rows)
+        Your UDFs' resources can also be overridden before you call it like so:
 
-    Your UDFs' resources can also be overridden before you call it like so:
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
+        ... def udf_needs_4_cpus(x: daft.Series):
+        ...     return x
+        >>>
+        >>> # Override the num_cpus to 2 instead
+        >>> udf_needs_2_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
+        >>> df.show()
+        ╭───────┬───────╮
+        │ x     ┆ new_x │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 1     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 2     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 3     │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
-    >>> import daft
-    >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
-    ... def udf_needs_4_cpus(x: daft.Series):
-    ...     return x
-    >>>
-    >>> # Override the num_cpus to 2 instead
-    >>> udf_needs_2_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
-    >>>
-    >>> df = daft.from_pydict({"x": [1, 2, 3]})
-    >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
-    >>> df.show()
-    ╭───────┬───────╮
-    │ x     ┆ new_x │
-    │ ---   ┆ ---   │
-    │ Int64 ┆ Int64 │
-    ╞═══════╪═══════╡
-    │ 1     ┆ 1     │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 2     ┆ 2     │
-    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-    │ 3     ┆ 3     │
-    ╰───────┴───────╯
-    <BLANKLINE>
-    (Showing first 3 of 3 rows)
-
-    Args:
-        return_dtype (DataType): Returned type of the UDF
-        num_cpus: Number of CPUs to allocate each running instance of your UDF. Note that this is purely used for placement (e.g. if your
-            machine has 8 CPUs and you specify num_cpus=4, then Daft can run at most 2 instances of your UDF at a time). The default `None`
-            indicates that Daft is free to allocate as many instances of the UDF as it wants to.
-        num_gpus: Number of GPUs to allocate each running instance of your UDF. This is used for placement and also for allocating
-            the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
-        memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
-            this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
-        batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
-        concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
-            UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
-            loading model weights for model batch inference.
-
-    Returns:
-        Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
     """
     inferred_return_dtype = DataType._infer_type(return_dtype)
 
@@ -521,6 +525,7 @@ def udf(
         # Grab a name for the UDF. It **should** be unique.
         module_name = getattr(f, "__module__", "")  # type: ignore[call-overload]
         qual_name = getattr(f, "__qualname__")  # type: ignore[call-overload]
+
         if module_name:
             name = f"{module_name}.{qual_name}"
         else:
@@ -535,8 +540,7 @@ def udf(
                 memory_bytes=memory_bytes,
             )
         )
-
-        return UDF(
+        udf = UDF(
             inner=f,
             name=name,
             return_dtype=inferred_return_dtype,
@@ -544,5 +548,8 @@ def udf(
             batch_size=batch_size,
             concurrency=concurrency,
         )
+
+        daft.attach_function(udf)
+        return udf
 
     return _udf

@@ -42,11 +42,11 @@ use crate::{
 ///     force_virtual_addressing (bool, optional): Force S3 client to use virtual addressing in all cases. If False, virtual addressing will only be used if `endpoint_url` is empty, defaults to False
 ///     profile_name (str, optional): Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
 ///
-/// Example:
+/// Examples:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct S3Config {
     pub config: crate::S3Config,
 }
@@ -59,7 +59,7 @@ pub struct S3Config {
 ///     session_token (str, optional): AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     expiry (datetime.datetime, optional): Expiry time of the credentials, credentials are assumed to be permanent if not provided
 ///
-/// Example:
+/// Examples:
 ///     >>> from datetime import datetime, timedelta, timezone
 ///     >>> get_credentials = lambda: S3Credentials(
 ///     ...     key_id="xxx",
@@ -69,7 +69,7 @@ pub struct S3Config {
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
 }
@@ -92,11 +92,11 @@ pub struct S3Credentials {
 ///     endpoint_url (str, optional): Custom URL to the Azure endpoint, e.g. ``https://my-account-name.blob.core.windows.net``. Overrides `use_fabric_endpoint` if set
 ///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing Azure over HTTPS rather than HTTP, defaults to True
 ///
-/// Example:
+/// Examples:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
 ///     >>> daft.read_parquet("az://some-path", io_config=io_config)
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct AzureConfig {
     pub config: crate::AzureConfig,
 }
@@ -116,11 +116,11 @@ pub struct AzureConfig {
 ///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from GCS in milliseconds, defaults to 30 seconds
 ///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
 ///
-/// Example:
+/// Examples:
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
 ///     >>> daft.read_parquet("gs://some-path", io_config=io_config)
 #[derive(Clone, Default)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct GCSConfig {
     pub config: crate::GCSConfig,
 }
@@ -131,7 +131,8 @@ pub struct GCSConfig {
 ///     s3: Configuration to use when accessing URLs with the `s3://` scheme
 ///     azure: Configuration to use when accessing URLs with the `az://` or `abfs://` scheme
 ///     gcs: Configuration to use when accessing URLs with the `gs://` or `gcs://` scheme
-/// Example:
+///
+/// Examples:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True), gcs=GCSConfig(...))
 ///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path", "gs://path3"], io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -146,7 +147,7 @@ pub struct IOConfig {
 ///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
 ///     bearer_token (str, optional): Bearer token to use for authentication. This will be used as the value for the `Authorization` header. such as "Authorization: Bearer xxx"
 ///
-/// Example:
+/// Examples:
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
 #[derive(Clone, Default)]

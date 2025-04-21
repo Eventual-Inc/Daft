@@ -714,11 +714,7 @@ impl JoinGraphBuilder {
         // columns might be rearranged, or columns that were not originally selected might now be in the output schema.
         // Hence, we take the original output schema and turn it into a projection that we should apply after all other join
         // ordering projections have been applied.
-        let output_projection = output_schema
-            .fields
-            .iter()
-            .map(|(name, _)| resolved_col(name.clone()))
-            .collect();
+        let output_projection = output_schema.field_names().map(resolved_col).collect();
         Self {
             plan,
             join_conds_to_resolve: vec![],

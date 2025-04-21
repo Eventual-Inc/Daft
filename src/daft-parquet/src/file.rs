@@ -30,8 +30,8 @@ use crate::{
     stream_reader::spawn_column_iters_to_table_task,
     utils::combine_stream,
     JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
-    UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
-    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
+    UnableToCreateParquetPageStreamSnafu, UnableToParseSchemaFromMetadataSnafu,
+    UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
 };
 
 pub struct ParquetReaderBuilder {
@@ -279,10 +279,7 @@ impl ParquetReaderBuilder {
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
 
-        let daft_schema =
-            Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
-                path: self.uri.to_string(),
-            })?;
+        let daft_schema = Schema::from(&arrow_schema);
         let row_ranges = build_row_ranges(
             self.limit,
             self.row_start_offset,
@@ -407,9 +404,7 @@ impl ParquetFileReader {
         original_num_rows: Option<usize>,
         delete_rows: Option<Vec<i64>>,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
-            self.arrow_schema.as_ref(),
-        )?);
+        let daft_schema = Arc::new(self.arrow_schema.as_ref().into());
 
         let num_parallel_tasks = determine_parquet_parallelism(&daft_schema);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
@@ -732,7 +727,7 @@ impl ParquetFileReader {
             .collect::<DaftResult<Vec<_>>>()?;
 
         RecordBatch::new_with_size(
-            Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
+            Schema::new(all_series.iter().map(|s| s.field().clone())),
             all_series,
             self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
         )

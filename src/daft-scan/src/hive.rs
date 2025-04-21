@@ -66,8 +66,8 @@ pub fn hive_partitions_to_series(
     partitions
         .iter()
         .filter_map(|(key, value)| {
-            if table_schema.fields.contains_key(key) {
-                let target_dtype = &table_schema.fields.get(key).unwrap().dtype;
+            if table_schema.has_field(key) {
+                let target_dtype = &table_schema.get_field(key).unwrap().dtype;
                 if value.is_empty() {
                     Some(Ok(Series::full_null(key, target_dtype, 1)))
                 } else {

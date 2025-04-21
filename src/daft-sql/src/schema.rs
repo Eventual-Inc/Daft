@@ -33,7 +33,7 @@ pub(crate) fn try_parse_schema(schema: HashMap<String, String>) -> SQLPlannerRes
         let dtype = try_parse_dtype(dtype_str)?;
         fields.push(Field::new(name, dtype));
     }
-    Ok(Schema::new(fields)?)
+    Ok(Schema::new(fields))
 }
 
 /// Converts a sqlparser DataType to a daft DataType

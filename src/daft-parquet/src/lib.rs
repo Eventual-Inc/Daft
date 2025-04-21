@@ -33,7 +33,7 @@ fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
         .checked_mul(2.try_into().unwrap())
         .unwrap()
         .get() as f64
-        / max(daft_schema.fields.len(), 1) as f64)
+        / max(daft_schema.len(), 1) as f64)
         .ceil() as usize
 }
 
