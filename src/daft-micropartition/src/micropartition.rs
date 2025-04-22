@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
+    io::Cursor,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
@@ -639,6 +640,45 @@ impl MicroPartition {
             Arc::new(tables_with_id),
             self.statistics.clone(),
         ))
+    }
+
+    pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
+        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let schema = self.schema.to_arrow()?;
+        let options = arrow2::io::ipc::write::WriteOptions { compression: None };
+        let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
+        writer.start(&schema, None)?;
+        let tables = self.tables_or_read(IOStatsContext::new("write to stream"))?;
+        for table in tables.iter() {
+            let chunk = table.to_chunk();
+            writer.write(&chunk, None)?;
+        }
+        writer.finish()?;
+        let mut finished_buffer = writer.into_inner();
+        finished_buffer.shrink_to_fit();
+        Ok(finished_buffer)
+    }
+
+    pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
+        let mut cursor = Cursor::new(buffer);
+        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+        let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
+        let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+        let tables = reader
+            .into_iter()
+            .map(|state| {
+                let state = state?;
+                let arrow_chunk = match state {
+                    arrow2::io::ipc::read::StreamState::Some(chunk) => chunk,
+                    _ => panic!("State should not be waiting when reading from IPC buffer"),
+                };
+                let record_batch =
+                    RecordBatch::from_arrow(schema.clone(), arrow_chunk.into_arrays())?;
+                Ok(record_batch)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(Self::new_loaded(schema.into(), Arc::new(tables), None))
     }
 }
 

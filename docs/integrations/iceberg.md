@@ -107,9 +107,7 @@ This call will then return a DataFrame containing the operations that were perfo
 | `LIST<element_type>`                | [`daft.DataType.list(element_type)`][daft.datatype.DataType.list]                            |
 | `MAP<key_type, value_type>`         | [`daft.DataType.map(key_type, value_type)`][daft.datatype.DataType.map]                      |
 
-References:
-
-* [Iceberg Schemas and Data Types](https://iceberg.apache.org/spec/#schemas-and-data-types)
+See also [Iceberg Schemas and Data Types](https://iceberg.apache.org/spec/#schemas-and-data-types).
 
 ## Reference
 
@@ -125,7 +123,7 @@ upwards, via composition with additional operators, to form a tree with sources
 as the leaves. We typically call these leaves *tables* or *sources* and their
 algebraic operator is called a *scan*.
 
-#### [`read_iceberg`][daft.read_iceberg]
+### [`read_iceberg`][daft.read_iceberg]
 
 Daft's [`daft.read_iceberg`][daft.read_iceberg] method creates a DataFrame from the the given PyIceberg
 table. It produces rows by traversing the table's metadata tree to locate all
@@ -140,7 +138,7 @@ metadata. The scan operator's primary method, `to_scan_tasks`, accepts pushdowns
 and the associated pushdowns. Finally, we read each data file's parquet to
 produce a stream of record batches which later operators consume and transform.
 
-#### [`write_iceberg`][daft.DataFrame.write_iceberg]
+### [`write_iceberg`][daft.DataFrame.write_iceberg]
 
 Daft's [`write_iceberg`][daft.DataFrame.write_iceberg] method writes the DataFrame's contents to the given PyIceberg table.
 It works by creating a special *sink* operator which consumes all inputs and writes
@@ -155,7 +153,7 @@ writers.
 Finally, we update the Iceberg table's metadata to include these new data files,
 and use a transaction to update the latest metadata pointer.
 
-#### Iceberg Architecture
+### Iceberg Architecture
 
 !!! note "Note"
 
@@ -174,14 +172,14 @@ The *data layer* is composed of data files and delete files; where as the
 *metadata layer* is composed of manifest files, manifest lists, and metadata
 files.
 
-##### Manifest Files
+#### Manifest Files
 
 Manifest files (avro) keep track of data files, delete files, and statistics.
 These lists track the leaves of the iceberg tree. While all manifest files use
 the same schema, a manifest file contains either exclusively data files or
 exclusively delete files.
 
-##### Manifest List
+#### Manifest List
 
 Manifests lists (snapshots) contain all manifest file locations along with their
 partitions, and partition columns upper and lower bounds. Each entry in the
@@ -197,7 +195,7 @@ manifest list has the form,
 These are not all of the fields, but gives us an idea of what a manifest
 list looks like.
 
-##### Metadata Files
+#### Metadata Files
 
 Metadata files store the table schema, partition information, and a list of all
 snapshots including which one is the current. Each time an Iceberg table is
@@ -205,12 +203,12 @@ modified, a new metadata file is created; this is what is meant earlier by
 "re-rooting" the tree. The *catalog* is responsible for atomically updating the
 current metadata file.
 
-##### Puffin Files
+#### Puffin Files
 
 Puffin files store arbitrary metadata as blobs along with the necessary metadata
 to use these blobs.
 
-#### Table Writes
+### Table Writes
 
 Iceberg can efficiently insert (append) and update rows. To insert data, the new
 data files (parquet) are written to object storage along with a new manifest
@@ -226,7 +224,7 @@ applied (COW) or deleting (MOR) then including the updated in the insert. All
 records which were not matched (did not exist) are inserted like a normal
 insert.
 
-#### Tables Reads
+### Tables Reads
 
 Iceberg reads begin by fetching the latest metadata file to then locate the
 "current snapshot id". The current snapshot is a manifest list which has the
@@ -234,9 +232,9 @@ relevant manifest files which ultimately gives us a list of all data files
 pertaining to the query. For each metadata layer, we can leverage the statistics
 to prune both manifest files and data files.
 
-#### Other
+### Other
 
-##### COW vs. MOR
+#### COW vs. MOR
 
 When data is modified or deleted, we can either rewrite the relevant portion
 (copy-on-write) or save the modifications for later reconciliation
@@ -244,7 +242,7 @@ When data is modified or deleted, we can either rewrite the relevant portion
 modifications are more expensive. Merge-on-read optimizes for write performance;
 however, reads are more expensive.
 
-##### Delete File
+#### Delete File
 
 Delete files are used for the merge-on-read strategy in which tables updates are
 written to a "delete file" which is applied or "merged" with the data files
@@ -253,7 +251,7 @@ deletes. Positional deletes denote which rows (filepath+row) have been deleted,
 whereas equality deletes have an equality condition i.e. `WHERE x = 100` to
 filter rows.
 
-##### Partitioning
+#### Partitioning
 
 When a table is partitioned on some field, Iceberg will write separate data files
 for each record, grouped by the partitioned field's value. That is, each data file
@@ -261,7 +259,7 @@ will contain records for a single partition. This enables efficient scanning of
 a partition because all other data files can be ignored. You may partition by a
 column's value (identity) or use a *partition transform* to derive a partition value.
 
-###### [Apache Iceberg Partition Transforms](https://iceberg.apache.org/spec/#partition-transforms)
+##### [Apache Iceberg Partition Transforms](https://iceberg.apache.org/spec/#partition-transforms)
 
 | Transform     | Description                 |
 |---------------|-----------------------------|
@@ -289,7 +287,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 4. **Does Daft support Iceberg REST catalog implementations?**
 
-    *Yes! Daft uses PyIceberg to interface with Iceberg catalogs which has extensive Iceberg REST catalog support.
+    *Yes! Daft uses PyIceberg to interface with Iceberg catalogs which has extensive Iceberg REST catalog support.*
 
 5. **How does Daft handle positional deletes vs equality deletes?**
 
@@ -309,7 +307,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 9. **How does Daft handle schema evolution?**
 
-    *Daft currently does not expose any data definition operators beyond `create_table`.*
+    *Daft currently does not expose any data definition operators beyond [create_table][daft.session.Session.create_table].*
 
 10. **Does Daft support reading table metadata like snapshot information?**
 
@@ -321,7 +319,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 12. **Can Daft read and write partition transforms like truncate, bucket, or hour?**
 
-    *Daft can read and write all Iceberg partition transform types: identity, bucket, date transforms (year/month/day), and truncate.
+    *Daft can read and write all Iceberg partition transform types: identity, bucket, date transforms (year/month/day), and truncate.*
 
 13. **How does Daft optimize queries against partitioned data?**
 

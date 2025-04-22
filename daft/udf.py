@@ -436,12 +436,12 @@ def udf(
     Examples:
         In the example below, we create a UDF that:
 
-            1. Receives data under the argument name ``x``
-            2. Iterates over the ``x`` Daft Series
-            3. Adds a Python constant value ``c`` to every element in ``x``
-            4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
-            5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.with_column),
-            [df.select()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.select), etc.)
+        1. Receives data under the argument name ``x``
+        2. Iterates over the ``x`` Daft Series
+        3. Adds a Python constant value ``c`` to every element in ``x``
+        4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
+        5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://www.getdaft.io/projects/docs/en/latest/api/dataframe/#daft.DataFrame.with_column),
+        [df.select()](https://www.getdaft.io/projects/docs/en/latest/api/dataframe/#daft.DataFrame.select), etc.)
 
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.int64())
@@ -465,7 +465,8 @@ def udf(
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-    Tip: "Resource Requests"
+        **Resource Requests:**
+
         You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 2 CPUs to run. On a
         machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once!
 
@@ -491,7 +492,7 @@ def udf(
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-        Your UDFs' resources can also be overridden before you call it like so:
+        Your UDF's resources can also be overridden before you call it like so:
 
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
