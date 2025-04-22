@@ -7,11 +7,10 @@ from typing import TYPE_CHECKING
 
 from botocore.exceptions import ClientError
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
+from daft.catalog import Catalog, Identifier, NotFoundError, Schema, Table
 from daft.catalog.__iceberg import IcebergCatalog
 from daft.dataframe import DataFrame
 from daft.io import read_iceberg
-from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from boto3 import Session
@@ -137,17 +136,15 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to create namespace: {e}") from e
 
-    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
         if isinstance(source, Schema):
-            return self._create_table(identifier, source)
+            return self._create_table_from_schema(identifier, source)
         elif isinstance(source, DataFrame):
             raise ValueError("S3 Tables create table from DataFrame not yet supported.")
-        elif isinstance(source, str):
-            raise ValueError("S3 Tables create table from path not yet supported.")
         else:
             raise Exception(f"Unknown table source: {source}")
 
-    def _create_table(self, ident: Identifier | str, source: Schema) -> Table:
+    def _create_table_from_schema(self, ident: Identifier | str, source: Schema) -> Table:
         path = S3Path.from_ident(ident)
         if len(path) < 2:
             raise ValueError(f"Table identifier is missing a namespace, {path!s}")

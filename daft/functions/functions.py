@@ -197,5 +197,44 @@ def columns_max(*exprs: Expression | str) -> Expression:
 
 
 def row_number() -> Expression:
-    """Return the row number of the current row (used for window functions)."""
+    """Return the row number of the current row (used for window functions).
+
+    Example:
+        >>> import daft
+        >>> from daft.window import Window
+        >>> from daft.functions import row_number
+        >>> df = daft.from_pydict({"category": ["A", "A", "A", "A", "B", "B", "B", "B"], "value": [1, 7, 2, 9, 1, 3, 3, 7]})
+        >>>
+        >>> # Ascending order
+        >>> window = Window().partition_by("category").order_by("value")
+        >>> df = df.with_column("row", row_number().over(window))
+        >>> df = df.sort("category")
+        >>> df.show()
+        ╭──────────┬───────┬────────╮
+        │ category ┆ value ┆ row    │
+        │ ---      ┆ ---   ┆ ---    │
+        │ Utf8     ┆ Int64 ┆ UInt64 │
+        ╞══════════╪═══════╪════════╡
+        │ A        ┆ 1     ┆ 1      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ A        ┆ 2     ┆ 2      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ A        ┆ 7     ┆ 3      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ A        ┆ 9     ┆ 4      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ B        ┆ 1     ┆ 1      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ B        ┆ 3     ┆ 2      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ B        ┆ 3     ┆ 3      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ B        ┆ 7     ┆ 4      │
+        ╰──────────┴───────┴────────╯
+        <BLANKLINE>
+        (Showing first 8 rows)
+
+    Returns:
+        Expression: An expression that returns the row number of the current row.
+    """
     return Expression._from_pyexpr(native.row_number())

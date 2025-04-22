@@ -96,3 +96,8 @@ code.doc-symbol-method::after {
 .highlight .gp {
   display: none;
 }
+
+/* display width */
+.md-grid {
+  max-width: 70rem;
+}

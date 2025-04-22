@@ -9,10 +9,9 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.table import Table as InnerTable
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Table, TableSource
+from daft.catalog import Catalog, Identifier, NotFoundError, Schema, Table
 from daft.dataframe import DataFrame
 from daft.io._iceberg import read_iceberg
-from daft.logical.schema import Schema
 
 
 class IcebergCatalog(Catalog):
@@ -50,75 +49,64 @@ class IcebergCatalog(Catalog):
     ###
 
     def create_namespace(self, identifier: Identifier | str):
-        if isinstance(identifier, Identifier):
-            identifier = tuple(identifier)  # type: ignore
-        self._inner.create_namespace(identifier)
+        ident = _to_pyiceberg_ident(identifier)
+        self._inner.create_namespace(ident)
 
-    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
         if isinstance(source, DataFrame):
             return self._create_table_from_df(identifier, source)
-        elif isinstance(source, str):
-            return self._create_table_from_path(identifier, source)
         elif isinstance(source, Schema):
             return self._create_table_from_schema(identifier, source)
         else:
             raise Exception(f"Unknown table source: {source}")
 
-    def _create_table_from_df(self, ident: Identifier | str, source: DataFrame) -> Table:
-        t = self._create_table_from_schema(ident, source.schema())
+    def _create_table_from_df(self, identifier: Identifier | str, source: DataFrame) -> Table:
+        t = self._create_table_from_schema(identifier, source.schema())
         t.append(source)
         return t
 
-    def _create_table_from_path(self, ident: Identifier | str, source: str) -> Table:
-        raise ValueError("table from path not yet supported")
-
-    def _create_table_from_schema(self, ident: Identifier | str, source: Schema) -> Table:
-        if isinstance(ident, Identifier):
-            ident = tuple(ident)  # type: ignore
-        obj = self._inner.create_table(ident, schema=source.to_pyarrow_schema())
-        return IcebergTable._from_obj(obj)
+    def _create_table_from_schema(self, identifier: Identifier | str, source: Schema) -> Table:
+        i = _to_pyiceberg_ident(identifier)
+        t = IcebergTable.__new__(IcebergTable)
+        t._inner = self._inner.create_table(i, schema=source.to_pyarrow_schema())
+        return t
 
     ###
     # drop_*
     ###
 
     def drop_namespace(self, identifier: Identifier | str):
-        if isinstance(identifier, Identifier):
-            identifier = tuple(identifier)  # type: ignore
-        self._inner.drop_namespace(identifier)
+        ident = _to_pyiceberg_ident(identifier)
+        self._inner.drop_namespace(ident)
 
     def drop_table(self, identifier: Identifier | str):
-        if isinstance(identifier, Identifier):
-            identifier = tuple(identifier)  # type: ignore
-        self._inner.drop_table(identifier)
+        ident = _to_pyiceberg_ident(identifier)
+        self._inner.drop_table(ident)
 
     ###
     # has_*
     ###
 
     def has_namespace(self, identifier: Identifier | str) -> bool:
-        if isinstance(identifier, Identifier):
-            identifier = tuple(identifier)  # type: ignore
+        ident = _to_pyiceberg_ident(identifier)
         try:
-            _ = self._inner.list_namespaces(identifier)
+            _ = self._inner.list_namespaces(ident)
             return True
         except NoSuchNamespaceError:
             return False
 
     def has_table(self, identifier: Identifier | str) -> bool:
-        if isinstance(identifier, Identifier):
-            identifier = tuple(identifier)  # type: ignore
-        return self._inner.table_exists(identifier)
+        ident = _to_pyiceberg_ident(identifier)
+        return self._inner.table_exists(ident)
 
     ###
     # get_*
     ###
 
     def get_table(self, identifier: Identifier | str) -> IcebergTable:
-        if isinstance(identifier, Identifier):
-            identifier = tuple(identifier)  # type: ignore
+        ident = _to_pyiceberg_ident(identifier)
         try:
-            return IcebergTable._from_obj(self._inner.load_table(identifier))
+            return IcebergTable._from_obj(self._inner.load_table(ident))
         except NoSuchTableError as ex:
             # convert to not found because we want to (sometimes) ignore it internally
             raise NotFoundError() from ex
@@ -132,7 +120,8 @@ class IcebergCatalog(Catalog):
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         """List namespaces under the given namespace (pattern) in the catalog, or all namespaces if no namespace is provided."""
-        return [Identifier(*tup) for tup in self._inner.list_namespaces(pattern)]
+        prefix = () if pattern is None else _to_pyiceberg_ident(pattern)
+        return [Identifier(*tup) for tup in self._inner.list_namespaces(prefix)]
 
     def list_tables(self, pattern: str | None = None) -> list[str]:
         """List tables under the given namespace (pattern) in the catalog, or all tables if no namespace is provided."""
@@ -181,3 +170,7 @@ class IcebergTable(Table):
         self._validate_options("Iceberg write", options, IcebergTable._write_options)
 
         df.write_iceberg(self._inner, mode=mode)
+
+
+def _to_pyiceberg_ident(ident: Identifier | str) -> tuple[str, ...] | str:
+    return tuple(ident) if isinstance(ident, Identifier) else ident

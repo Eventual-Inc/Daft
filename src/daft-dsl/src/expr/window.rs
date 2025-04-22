@@ -84,8 +84,8 @@ pub struct WindowSpec {
     pub partition_by: Vec<Arc<Expr>>,
     /// Order by expressions
     pub order_by: Vec<Arc<Expr>>,
-    /// Whether each order by expression is ascending
-    pub ascending: Vec<bool>,
+    /// Whether each order by expression is descending
+    pub descending: Vec<bool>,
     /// Window frame specification
     pub frame: Option<WindowFrame>,
     /// Minimum number of observations required to produce a value
@@ -97,7 +97,7 @@ impl Default for WindowSpec {
         Self {
             partition_by: Vec::new(),
             order_by: Vec::new(),
-            ascending: Vec::new(),
+            descending: Vec::new(),
             frame: None,
             min_periods: 1,
         }
@@ -118,15 +118,15 @@ impl WindowSpec {
         new_spec
     }
 
-    pub fn with_order_by(&self, exprs: Vec<PyExpr>, ascending: Vec<bool>) -> Self {
+    pub fn with_order_by(&self, exprs: Vec<PyExpr>, descending: Vec<bool>) -> Self {
         assert_eq!(
             exprs.len(),
-            ascending.len(),
-            "Order by expressions and ascending flags must have same length"
+            descending.len(),
+            "Order by expressions and descending flags must have same length"
         );
         let mut new_spec = self.clone();
         new_spec.order_by = exprs.into_iter().map(|e| e.expr).collect();
-        new_spec.ascending = ascending;
+        new_spec.descending = descending;
         new_spec
     }
 
@@ -165,11 +165,11 @@ impl fmt::Display for WindowSpec {
                 write!(f, ", ")?;
             }
             write!(f, "order_by=[")?;
-            for (i, (expr, asc)) in self.order_by.iter().zip(self.ascending.iter()).enumerate() {
+            for (i, (expr, desc)) in self.order_by.iter().zip(self.descending.iter()).enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
                 }
-                write!(f, "{}:{}", expr, if *asc { "asc" } else { "desc" })?;
+                write!(f, "{}:{}", expr, if *desc { "desc" } else { "asc" })?;
             }
             write!(f, "]")?;
         }
