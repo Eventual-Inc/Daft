@@ -375,3 +375,62 @@ def test_string_min_max(make_df):
     ).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_window(make_df):
+    """Test window aggregation with range frame type."""
+    random.seed(50)
+
+    data = []
+    expected_data = []
+
+    possible_timestamps = random.sample(range(1000), 300)
+    possible_timestamps.sort()
+
+    for category in ["A", "B"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+
+        for i, (ts, value) in enumerate(zip(timestamps, values)):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            range_start = ts - 2
+            range_end = ts + 2
+
+            range_values = []
+            for j, other_ts in enumerate(timestamps):
+                if range_start <= other_ts <= range_end:
+                    range_values.append(values[j])
+
+            range_sum = sum(range_values)
+            range_avg = sum(range_values) / len(range_values) if range_values else None
+            range_min = min(range_values) if range_values else None
+            range_max = max(range_values) if range_values else None
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "range_sum": range_sum,
+                    "range_avg": range_avg,
+                    "range_min": range_min,
+                    "range_max": range_max,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(-2, 2)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)

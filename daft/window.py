@@ -148,4 +148,17 @@ class Window:
         Returns:
             Window: A window specification with the given frame bounds.
         """
-        raise NotImplementedError("Window.range_between is not implemented yet")
+        if isinstance(start, int):
+            start = _WindowBoundary.offset(start)
+        if isinstance(end, int):
+            end = _WindowBoundary.offset(end)
+
+        frame = _WindowFrame(
+            frame_type=_WindowFrameType.Range,
+            start=start,
+            end=end,
+        )
+
+        new_window = self
+        new_window._spec = self._spec.with_frame(frame).with_min_periods(min_periods)
+        return new_window

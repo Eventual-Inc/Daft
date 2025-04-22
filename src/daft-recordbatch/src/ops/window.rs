@@ -94,13 +94,15 @@ impl RecordBatch {
         &self,
         name: String,
         agg_expr: &AggExpr,
+        order_by: &[ExprRef],
+        descending: &[bool],
         min_periods: i64,
         dtype: &DataType,
         frame: &WindowFrame,
     ) -> DaftResult<Self> {
-        if matches!(frame.frame_type, WindowFrameType::Range) {
+        if matches!(frame.frame_type, WindowFrameType::Range) && order_by.len() != 1 {
             return Err(DaftError::ValueError(
-                "RANGE frame type is not supported yet for window_agg_dynamic_frame".into(),
+                "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
             ));
         }
 
@@ -151,29 +153,45 @@ impl RecordBatch {
                 | AggExpr::CountDistinct(_)
         );
 
-        if supports_incremental {
-            self.window_agg_incremental(
+        match frame.frame_type {
+            WindowFrameType::Rows => {
+                if supports_incremental {
+                    self.window_agg_incremental(
+                        agg_expr,
+                        &name,
+                        dtype,
+                        frame,
+                        static_start,
+                        static_end,
+                        min_periods,
+                        &null_series,
+                        total_rows,
+                    )
+                } else {
+                    self.window_agg_non_incremental(
+                        agg_expr,
+                        &name,
+                        frame,
+                        static_start,
+                        static_end,
+                        min_periods,
+                        &null_series,
+                        total_rows,
+                    )
+                }
+            }
+            WindowFrameType::Range => self.window_agg_range_frame(
                 agg_expr,
                 &name,
-                dtype,
                 frame,
                 static_start,
                 static_end,
+                &order_by[0],
+                descending[0],
                 min_periods,
                 &null_series,
                 total_rows,
-            )
-        } else {
-            self.window_agg_non_incremental(
-                agg_expr,
-                &name,
-                frame,
-                static_start,
-                static_end,
-                min_periods,
-                &null_series,
-                total_rows,
-            )
+            ),
         }
     }
 
@@ -337,6 +355,24 @@ impl RecordBatch {
         let renamed_result = final_result_series.rename(name);
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_range_frame(
+        // TODO: figure out details for desc and window frame bounds, ie if it's descending and start is negative?
+        &self,
+        _agg_expr: &AggExpr,
+        _name: &str,
+        _frame: &WindowFrame,
+        _static_start: Option<usize>,
+        _static_end: Option<usize>,
+        _order_by: &ExprRef,
+        _descending: bool,
+        _min_periods: i64,
+        _null_series: &Series,
+        _total_rows: usize,
+    ) -> DaftResult<Self> {
+        todo!();
     }
 
     pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
