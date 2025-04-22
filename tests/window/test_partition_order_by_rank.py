@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
-from daft.functions import row_number
+from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -255,6 +255,181 @@ def test_multi_window_agg_functions(make_df):
             assert (
                 actual_rank == expected_rank
             ), f"Incorrect single-partition row number for {category}, value {value}: got {actual_rank}, expected {expected_rank}"
+
+
+def test_rank_function_single_row_per_group(make_df):
+    """Test rank function with single row per group."""
+    data = [
+        {"category": "A", "value": 10},
+        {"category": "B", "value": 20},
+        {"category": "C", "value": 30},
+    ]
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("value", desc=False)
+
+    result = df.select(col("category"), col("value"), rank().over(window_spec).alias("rank")).collect()
+
+    expected = {
+        "category": ["A", "B", "C"],
+        "value": [10, 20, 30],
+        "rank": [1, 1, 1],
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category"], check_dtype=False)
+
+    result = df.select(col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category"], check_dtype=False)
+
+
+def test_rank_function_no_order_by(make_df):
+    """Test rank function when order_by columns are the same as group_by."""
+    data = [
+        {"category": "A", "value": 10},
+        {"category": "A", "value": 20},
+        {"category": "A", "value": 30},
+        {"category": "B", "value": 40},
+        {"category": "B", "value": 50},
+        {"category": "C", "value": 60},
+    ]
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("category", desc=False)
+
+    result = df.select(col("category"), col("value"), rank().over(window_spec).alias("rank")).collect()
+
+    expected = {
+        "category": ["A", "A", "A", "B", "B", "C"],
+        "value": [10, 20, 30, 40, 50, 60],
+        "rank": [1, 1, 1, 1, 1, 1],
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category", "value"], check_dtype=False)
+
+    result = df.select(col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category", "value"], check_dtype=False)
+
+
+def test_multiple_rank_functions(make_df):
+    """Test multiple rank functions over different window specifications.
+
+    Creates a dataset with category (A, B, C) and subcategory (1, 2, 3) groups,
+    each containing values with ties. Tests row_number, rank, and dense_rank
+    functions over different window specifications.
+    """
+    import random
+
+    random.seed(42)
+
+    data = []
+
+    for category in ["A", "B", "C"]:
+        for subcategory in [1, 2, 3]:
+            values = [random.randint(1, 10) for _ in range(8)]
+
+            for value in values:
+                data.append({"category": category, "subcategory": subcategory, "value": value})
+
+    random.shuffle(data)
+    df = make_df(data)
+
+    category_window = Window().partition_by("category").order_by("value", desc=False)
+    subcategory_window = Window().partition_by("subcategory").order_by("value", desc=False)
+    combined_window = Window().partition_by(["category", "subcategory"]).order_by("value", desc=False)
+
+    result = df.select(
+        col("category"),
+        col("subcategory"),
+        col("value"),
+        row_number().over(category_window).alias("row_number_by_category"),
+        row_number().over(subcategory_window).alias("row_number_by_subcategory"),
+        row_number().over(combined_window).alias("row_number_combined"),
+        rank().over(category_window).alias("rank_by_category"),
+        rank().over(subcategory_window).alias("rank_by_subcategory"),
+        rank().over(combined_window).alias("rank_combined"),
+        dense_rank().over(category_window).alias("dense_rank_by_category"),
+        dense_rank().over(subcategory_window).alias("dense_rank_by_subcategory"),
+        dense_rank().over(combined_window).alias("dense_rank_combined"),
+    ).collect()
+
+    result_df = result.to_pandas()
+
+    def validate_rank_function(df, partition_cols, rank_col, rank_type):
+        partition_groups = df.groupby(partition_cols)
+
+        for partition_key, group in partition_groups:
+            sorted_group = group.sort_values("value").reset_index(drop=True)
+
+            value_to_ranks = {}
+            for _, row in sorted_group.iterrows():
+                value = row["value"]
+                rank = row[rank_col]
+
+                if value not in value_to_ranks:
+                    value_to_ranks[value] = []
+                value_to_ranks[value].append(rank)
+
+            if rank_type == "row_number":
+                all_ranks = sorted([r for ranks in value_to_ranks.values() for r in ranks])
+                assert len(all_ranks) == len(
+                    set(all_ranks)
+                ), f"Row numbers should be unique within partition {partition_key}"
+
+                assert all_ranks == list(range(1, len(all_ranks) + 1)), f"Row numbers should be sequential: {all_ranks}"
+
+            elif rank_type == "rank":
+                for value, ranks in value_to_ranks.items():
+                    assert len(set(ranks)) == 1, f"All instances of value {value} should have the same rank: {ranks}"
+
+                unique_value_ranks = {value: ranks[0] for value, ranks in value_to_ranks.items()}
+
+                prev_value = None
+                prev_rank = 0
+                for value in sorted(unique_value_ranks.keys()):
+                    rank = unique_value_ranks[value]
+                    assert (
+                        rank > prev_rank
+                    ), f"Rank should increase for larger values: {value} has rank {rank}, previous rank was {prev_rank}"
+
+                    if prev_value is not None:
+                        expected_min_rank = prev_rank + len(value_to_ranks[prev_value])
+                        assert (
+                            rank >= expected_min_rank
+                        ), f"Rank for value {value} should be at least {expected_min_rank}, got {rank}"
+
+                    prev_value = value
+                    prev_rank = rank
+
+            elif rank_type == "dense_rank":
+                for value, ranks in value_to_ranks.items():
+                    assert (
+                        len(set(ranks)) == 1
+                    ), f"All instances of value {value} should have the same dense rank: {ranks}"
+
+                unique_value_ranks = {value: ranks[0] for value, ranks in value_to_ranks.items()}
+
+                unique_values = sorted(unique_value_ranks.keys())
+                unique_ranks = [unique_value_ranks[v] for v in unique_values]
+
+                assert unique_ranks[0] == 1, f"First dense rank should be 1, got {unique_ranks[0]}"
+
+                for i in range(1, len(unique_ranks)):
+                    assert (
+                        unique_ranks[i] == unique_ranks[i - 1] + 1
+                    ), f"Dense rank should increase by 1 for each distinct value: {unique_values[i]} has rank {unique_ranks[i]}, previous was {unique_ranks[i-1]}"
+
+    for partition, col_prefix in [
+        (["category"], "by_category"),
+        (["subcategory"], "by_subcategory"),
+        (["category", "subcategory"], "combined"),
+    ]:
+        validate_rank_function(result_df, partition, f"row_number_{col_prefix}", "row_number")
+        validate_rank_function(result_df, partition, f"rank_{col_prefix}", "rank")
+        validate_rank_function(result_df, partition, f"dense_rank_{col_prefix}", "dense_rank")
 
 
 def test_multi_ordering_combinations(make_df):

@@ -206,12 +206,18 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
 
                                 for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
-                                    match window_expr {
-                                        WindowExpr::RowNumber => {
-                                            *partition = partition.window_row_number(name.clone())?;
-                                        }
+                                    *partition = match window_expr {
                                         WindowExpr::Agg(agg_expr) => {
-                                            *partition = partition.window_agg(agg_expr, name.clone())?;
+                                            partition.window_agg(agg_expr, name.clone())?
+                                        }
+                                        WindowExpr::RowNumber => {
+                                            partition.window_row_number(name.clone())?
+                                        }
+                                        WindowExpr::Rank => {
+                                            partition.window_rank(name.clone(), &params.order_by, false)?
+                                        }
+                                        WindowExpr::DenseRank => {
+                                            partition.window_rank(name.clone(), &params.order_by, true)?
                                         }
                                     }
                                 }

@@ -120,7 +120,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::round);
 
     add!(sequence::monotonically_increasing_id);
-    add!(sequence::row_number);
 
     add!(temporal::dt_date);
     add!(temporal::dt_day);
