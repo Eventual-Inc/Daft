@@ -1869,6 +1869,197 @@ Here's a simple example showing these functions in action:
 
 These functions are especially useful when you need to calculate statistics across related columns or find extreme values from multiple fields in your data.
 
+### Window Specifications
+
+Daft window functions support several types of window specifications:
+
+#### Partition By
+
+The simplest window specification divides data into partitions:
+
+```python
+window_spec = Window().partition_by("department")
+```
+
+With this specification, you can apply aggregate functions that calculate results within each partition:
+
+```python
+df = df.with_columns({
+    "dept_total": col("salary").sum().over(window_spec),
+    "dept_avg": col("salary").mean().over(window_spec),
+    "dept_min": col("salary").min().over(window_spec),
+    "dept_max": col("salary").max().over(window_spec),
+    "dept_count": col("salary").count().over(window_spec)
+})
+```
+
+#### Partition By + Order By
+
+Adding ordering to a window specification enables ranking and ordered aggregations:
+
+```python
+window_spec = Window().partition_by("department").order_by("salary", desc=True)
+```
+
+This enables ranking functions like:
+
+```python
+from daft.functions import rank, dense_rank, row_number
+
+df = df.with_columns({
+    "salary_rank": rank().over(window_spec),
+    "salary_dense_rank": dense_rank().over(window_spec),
+    "row_num": row_number().over(window_spec)
+})
+```
+
+It also enables lead/lag functions that access data from adjacent rows:
+
+```python
+df = df.with_column(
+    "next_salary",
+    col("salary").lead(1).over(window_spec)
+)
+```
+
+#### Partition By + Order By + Rows Between
+
+You can further refine window functions by specifying a row-based frame:
+
+```python
+# Running total of salary within each department
+running_window = Window().partition_by("department").order_by("salary").rows_between(
+    Window.unbounded_preceding, Window.current_row
+)
+
+df = df.with_column(
+    "running_total",
+    col("salary").sum().over(running_window)
+)
+```
+
+##### Using min_periods for Robust Calculations
+
+When working with window frames, the `min_periods` parameter specifies the minimum number of rows required in the window frame for a calculation to be performed. If there are fewer rows in the frame than `min_periods`, the result will be NULL:
+
+```python
+from daft import Window, col
+
+# Create sample data
+df = daft.from_pydict({
+    "date": ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04", "2023-01-05"],
+    "sales": [100.0, 150.0, 200.0, 150.0, 180.0]
+})
+
+# Standard 3-day moving average (default min_periods=1)
+basic_window = Window().order_by("date").rows_between(-1, 1)
+df = df.with_column("moving_avg", col("sales").mean().over(basic_window))
+
+# 3-day moving average that requires at least 3 rows in the frame
+strict_window = Window().order_by("date").rows_between(-1, 1, min_periods=3)
+df = df.with_column("strict_avg", col("sales").mean().over(strict_window))
+
+df.show()
+```
+
+In this example:
+- For the first and last rows, the window frame only contains 2 rows (edge effect)
+  - `moving_avg` will calculate an average as min_periods=1 by default
+  - `strict_avg` will return NULL as there are only 2 rows in the frame (less than min_periods=3)
+- For the middle rows, both calculations will have values since all frames contain 3 rows
+
+This parameter is particularly useful for:
+- Ensuring sufficient data points for statistical validity
+- Handling edge cases at the boundaries of your dataset
+- Setting appropriate thresholds for calculating metrics like moving averages
+- Preventing calculations based on too few data points
+
+### Supported Window Functions
+
+Daft supports various window functions depending on the window specification:
+
+- **With Partition By only**: All aggregate functions (sum, mean, count, min, max, etc.)
+- **With Partition By + Order By**:
+  - All aggregate functions
+  - Ranking functions (row_number, rank, dense_rank)
+  - Offset functions (lead, lag)
+- **With Partition By + Order By + Rows Between**: Aggregate functions only
+
+### Common Use Cases
+
+#### Running Totals and Cumulative Sums
+
+```python
+from daft import Window, col
+
+df = daft.from_pydict({
+    "date": ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04", "2023-01-05"],
+    "sales": [100, 150, 200, 120, 180]
+})
+
+# Define a window specification for calculating cumulative values
+running_window = Window().order_by("date").rows_between(
+    Window.unbounded_preceding, Window.current_row
+)
+
+# Calculate running total sales
+df = df.with_column(
+    "cumulative_sales",
+    col("sales").sum().over(running_window)
+)
+
+df.show()
+```
+
+#### Ranking Within Groups
+
+```python
+from daft import Window, col, rank, dense_rank, row_number
+
+df = daft.from_pydict({
+    "category": ["A", "A", "A", "B", "B", "C"],
+    "product": ["P1", "P2", "P3", "P4", "P5", "P6"],
+    "sales": [1000, 1500, 1000, 2000, 1800, 3000]
+})
+
+# Define a window specification partitioned by category and ordered by sales
+window_spec = Window().partition_by("category").order_by("sales", desc=True)
+
+# Add ranking columns
+df = df.with_columns({
+    "rank": rank().over(window_spec),
+    "dense_rank": dense_rank().over(window_spec),
+    "row_number": row_number().over(window_spec)
+})
+
+df.show()
+```
+
+#### Percentage of Group Total
+
+```python
+from daft import Window, col
+
+df = daft.from_pydict({
+    "region": ["East", "East", "West", "West", "North", "South"],
+    "product": ["A", "B", "A", "B", "C", "C"],
+    "sales": [100, 150, 200, 250, 300, 350]
+})
+
+# Define a window specification partitioned by region
+window_spec = Window().partition_by("region")
+
+# Calculate percentage of total sales in each region
+df = df.with_column(
+    "pct_of_region",
+    (col("sales") * 100 / col("sales").sum().over(window_spec)).round(2)
+)
+
+df.show()
+```
+
+For more detailed information on window functions, refer to the [Window Functions API Reference](api/window.md).
+
 ## User-Defined Functions (UDF)
 
 A key piece of functionality in Daft is the ability to flexibly define custom functions that can run computations on any data in your dataframe. This section walks you through the different types of UDFs that Daft allows you to run.
