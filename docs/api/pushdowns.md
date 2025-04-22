@@ -1,6 +1,6 @@
 # Pushdowns
 
-Daft has predicate, projection, and limit pushdowns with expressions being represented by *Terms*.
+Daft has predicate, projection, and limit pushdowns with expressions being represented by *Terms*. Learn more about [Pushdowns](../advanced/pushdowns.md) in the Daft User Guide.
 
 ::: daft.io.pushdowns.Pushdowns
     options:

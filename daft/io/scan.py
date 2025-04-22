@@ -33,34 +33,42 @@ def make_partition_field(
 class ScanOperator(abc.ABC):
     @abc.abstractmethod
     def schema(self) -> Schema:
+        """Returns the schema of the data source."""
         raise NotImplementedError()
 
     @abc.abstractmethod
     def display_name(self) -> str:
+        """Returns a human-readable name for this scan operator."""
         return self.__class__.__name__
 
     @abc.abstractmethod
     def partitioning_keys(self) -> list[PartitionField]:
+        """Returns the partitioning keys for this data source."""
         raise NotImplementedError()
 
     @abc.abstractmethod
     def can_absorb_filter(self) -> bool:
+        """Returns true if this scan can accept predicate pushdowns."""
         raise NotImplementedError()
 
     @abc.abstractmethod
     def can_absorb_limit(self) -> bool:
+        """Returns true if this scan can accept limit pushdowns."""
         raise NotImplementedError()
 
     @abc.abstractmethod
     def can_absorb_select(self) -> bool:
+        """Returns true if this scan can accept projection pushdowns."""
         raise NotImplementedError()
 
     @abc.abstractmethod
     def multiline_display(self) -> list[str]:
+        """Returns a multi-line string representation of this scan operator."""
         raise NotImplementedError()
 
     @abc.abstractmethod
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        """Converts this scan operator into scan tasks with the given pushdowns."""
         raise NotImplementedError()
 
 

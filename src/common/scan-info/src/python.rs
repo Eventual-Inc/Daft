@@ -108,6 +108,28 @@ pub mod pylib {
 
     #[pymethods]
     impl PyPushdowns {
+        #[new]
+        #[pyo3(signature = (
+            filters = None,
+            partition_filters = None,
+            columns = None,
+            limit = None,
+        ))]
+        pub fn new(
+            filters: Option<PyExpr>,
+            partition_filters: Option<PyExpr>,
+            columns: Option<Vec<String>>,
+            limit: Option<usize>,
+        ) -> Self {
+            let pushdowns = Pushdowns::new(
+                filters.map(|f| f.expr),
+                partition_filters.map(|f| f.expr),
+                columns.map(Arc::new),
+                limit,
+            );
+            Self(Arc::new(pushdowns))
+        }
+
         pub fn __repr__(&self) -> PyResult<String> {
             Ok(format!("{:#?}", self.0))
         }
@@ -326,7 +348,7 @@ impl<'py> TermBuilder<'py> {
         }
     }
 
-    /// Expr(proc=proc, *args, **kwargs)
+    /// Expr(<proc>, *args, **kwargs)
     fn to_expr(&self, proc: &str, args: Bound<'py, PyList>) -> PyResult<Term> {
         args.insert(0, proc.to_string())?;
         let args = PyTuple::new(self.py, args)?;

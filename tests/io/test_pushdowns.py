@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 from daft.daft import Pushdowns as PyPushdowns
-from daft.daft import PyExpr
 from daft.expressions import col, lit
 from daft.io.pushdowns import Expr, Literal, Reference, Term
 from daft.io.scan import ScanPushdowns
@@ -104,21 +101,6 @@ def test_pyexpr_predicates():
 ###
 
 
-def _create_py_pushdowns(
-    columns: list[str] | None = None,
-    filters: PyExpr | None = None,
-    partition_filters: PyExpr | None = None,
-    limit: int | None = None,
-) -> PyPushdowns:
-    pushdowns = PyPushdowns.__new__(PyPushdowns)
-    pushdowns.columns = columns
-    pushdowns.filters = filters
-    pushdowns.partition_filters = partition_filters
-    pushdowns.limit = limit
-    return pushdowns
-
-
-@pytest.mark.skip("Cannot instantiate a PyPushdowns at the moment.")
 def test_column_pushdown_binding():
     schema = Schema._from_pydict(
         {
@@ -127,11 +109,95 @@ def test_column_pushdown_binding():
             "c": dt.bool(),  # 2
         }
     )
-    pypushdowns = _create_py_pushdowns(columns=["c", "b", "a"])  # !! reverse order on purpose !!
+    pypushdowns = PyPushdowns(columns=["c", "b", "a"])  # !! reverse order on purpose !!
     pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+
+    assert pushdowns.projections
     assert pushdowns.projections[0] == Reference("c", 2)
     assert pushdowns.projections[1] == Reference("b", 1)
     assert pushdowns.projections[2] == Reference("a", 0)
+    assert pushdowns.limit is None
+    assert pushdowns.predicate is None
+
+
+def test_simple_predicate_pushdown():
+    schema = Schema._from_pydict(
+        {
+            "a": dt.bool(),  # 0
+        }
+    )
+    predicate = col("a") == lit(1)  # (= a 1)
+    pypushdowns = PyPushdowns(filters=predicate._expr)
+    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+
+    assert pushdowns.projections is None
+    assert pushdowns.predicate == Expr("=", Reference("a", 0), 1)
+    assert pushdowns.limit is None
+
+
+def test_complex_predicate_pushdown():
+    schema = Schema._from_pydict(
+        {
+            "a": dt.bool(),  # 0
+            "b": dt.bool(),  # 1
+            "c": dt.bool(),  # 2
+        }
+    )
+    predicate = col("a") == (col("b") + col("c"))  # (= a (+ b c))
+    pypushdowns = PyPushdowns(filters=predicate._expr)
+    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+
+    assert pushdowns.projections is None
+    assert pushdowns.predicate == Expr("=", Reference("a", 0), Expr("+", Reference("b", 1), Reference("c", 2)))
+    assert pushdowns.limit is None
+
+
+def test_limit_pushdown():
+    schema = Schema._from_pydict({"a": dt.bool()})
+    pypushdowns = PyPushdowns(limit=1738)
+    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+
+    assert pushdowns.projections is None
+    assert pushdowns.predicate is None
+    assert pushdowns.limit == 1738
+
+
+def test_simple_partition_pushdown():
+    schema = Schema._from_pydict(
+        {
+            "a": dt.bool(),  # 0
+        }
+    )
+    predicate = col("a") == lit(1)  # (= a 1)
+    pypushdowns = PyPushdowns(partition_filters=predicate._expr)
+    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+
+    assert pushdowns.projections is None
+    assert pushdowns.predicate == Expr("=", Reference("a", 0), 1)
+    assert pushdowns.limit is None
+
+
+def test_composite_partition_pushdown():
+    schema = Schema._from_pydict(
+        {
+            "a": dt.bool(),  # 0
+            "b": dt.bool(),  # 1
+        }
+    )
+
+    # rust side has these split
+    filters = col("a") == lit(1)  # (= a 1)
+    partition_filters = col("b") > lit(2)  # (> b 2)
+    pypushdowns = PyPushdowns(filters=filters._expr, partition_filters=partition_filters._expr)
+    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+
+    # translation should combine them.
+    p1 = Expr("=", Reference("a", 0), 1)
+    p2 = Expr(">", Reference("b", 1), 2)
+
+    assert pushdowns.projections is None
+    assert pushdowns.predicate == Expr("and", p1, p2)
+    assert pushdowns.limit is None
 
 
 ###
