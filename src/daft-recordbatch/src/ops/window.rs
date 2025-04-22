@@ -106,9 +106,6 @@ impl RecordBatch {
 
         let total_rows = self.len();
 
-        // Pre-allocate the vector to hold all result series
-        let mut result_series = Vec::with_capacity(total_rows);
-
         // Determine if we have dynamic or static boundaries
         let is_start_dynamic = matches!(frame.start, WindowBoundary::Offset(_));
         let is_end_dynamic = matches!(frame.end, WindowBoundary::Offset(_));
@@ -155,130 +152,189 @@ impl RecordBatch {
         );
 
         if supports_incremental {
-            // Use the optimized implementation with incremental state updates
-            // Initialize the state for incremental aggregation
-            let mut agg_state = create_window_agg_state(agg_expr, dtype)?;
-
-            // Track previous window boundaries
-            let mut prev_frame_start = 0;
-            let mut prev_frame_end = 0;
-
-            for row_idx in 0..total_rows {
-                // Calculate frame bounds for this row
-                let frame_start = if let Some(idx) = static_start {
-                    idx
-                } else {
-                    match &frame.start {
-                        WindowBoundary::Offset(offset) => {
-                            (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
-                        }
-                        _ => unreachable!("Start boundary type already checked"),
-                    }
-                };
-
-                let frame_end = if let Some(idx) = static_end {
-                    idx
-                } else {
-                    match &frame.end {
-                        WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
-                            .max(0)
-                            .min(total_rows as i64)
-                            as usize,
-                        _ => unreachable!("End boundary type already checked"),
-                    }
-                };
-
-                let frame_size = frame_end as i64 - frame_start as i64;
-
-                if frame_size < 0 {
-                    return Err(DaftError::ValueError(
-                        "Negative frame size is not allowed".into(),
-                    ));
-                }
-
-                // Check min_periods requirement
-                if frame_size < min_periods {
-                    // Add a null series for this row
-                    result_series.push(null_series.clone());
-                    continue;
-                }
-
-                // Remove values that left the window (values that were in the previous window but not in the current one)
-                if frame_start > prev_frame_start {
-                    let remove_slice = self.slice(prev_frame_start, frame_start)?;
-                    if let Ok(col) = remove_slice.get_column(agg_expr.name()) {
-                        agg_state.remove(col, prev_frame_start as u64, frame_start as u64)?;
-                    }
-                }
-
-                // Add new values that entered the window (values that are in the current window but weren't in the previous)
-                if frame_end > prev_frame_end {
-                    let add_slice = self.slice(prev_frame_end, frame_end)?;
-                    if let Ok(col) = add_slice.get_column(agg_expr.name()) {
-                        agg_state.add(col, prev_frame_end as u64, frame_end as u64)?;
-                    }
-                }
-
-                // Update previous boundaries for the next iteration
-                prev_frame_start = frame_start;
-                prev_frame_end = frame_end;
-
-                // Evaluate current state to get the result for this row
-                let agg_result = agg_state.evaluate()?;
-                result_series.push(agg_result);
-            }
+            self.window_agg_incremental(
+                agg_expr,
+                &name,
+                dtype,
+                frame,
+                static_start,
+                static_end,
+                min_periods,
+                &null_series,
+                total_rows,
+            )
         } else {
-            // Use the non-optimized implementation (recalculate for each row)
-            for row_idx in 0..total_rows {
-                // Calculate frame bounds for this row
-                let frame_start = if let Some(idx) = static_start {
-                    idx
-                } else {
-                    match &frame.start {
-                        WindowBoundary::Offset(offset) => {
-                            (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
-                        }
-                        _ => unreachable!("Start boundary type already checked"),
+            self.window_agg_non_incremental(
+                agg_expr,
+                &name,
+                frame,
+                static_start,
+                static_end,
+                min_periods,
+                &null_series,
+                total_rows,
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_incremental(
+        &self,
+        agg_expr: &AggExpr,
+        name: &str,
+        dtype: &DataType,
+        frame: &WindowFrame,
+        static_start: Option<usize>,
+        static_end: Option<usize>,
+        min_periods: i64,
+        null_series: &Series,
+        total_rows: usize,
+    ) -> DaftResult<Self> {
+        // Use the optimized implementation with incremental state updates
+        // Initialize the state for incremental aggregation
+        let mut agg_state = create_window_agg_state(agg_expr, dtype)?;
+        let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
+
+        // Track previous window boundaries
+        let mut prev_frame_start = 0;
+        let mut prev_frame_end = 0;
+
+        for row_idx in 0..total_rows {
+            // Calculate frame bounds for this row
+            let frame_start = if let Some(idx) = static_start {
+                idx
+            } else {
+                match &frame.start {
+                    WindowBoundary::Offset(offset) => {
+                        (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
                     }
-                };
-
-                let frame_end = if let Some(idx) = static_end {
-                    idx
-                } else {
-                    match &frame.end {
-                        WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
-                            .max(0)
-                            .min(total_rows as i64)
-                            as usize,
-                        _ => unreachable!("End boundary type already checked"),
-                    }
-                };
-
-                let frame_size = frame_end as i64 - frame_start as i64;
-
-                if frame_size < 0 {
-                    return Err(DaftError::ValueError(
-                        "Negative frame size is not allowed".into(),
-                    ));
+                    _ => unreachable!("Start boundary type already checked"),
                 }
+            };
 
-                // Check min_periods requirement
-                if frame_size < min_periods {
-                    // Add a null series for this row
-                    result_series.push(null_series.clone());
-                    continue;
+            let frame_end = if let Some(idx) = static_end {
+                idx
+            } else {
+                match &frame.end {
+                    WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
+                        .max(0)
+                        .min(total_rows as i64)
+                        as usize,
+                    _ => unreachable!("End boundary type already checked"),
                 }
+            };
 
-                // Calculate aggregation for this frame
-                let frame_data = self.slice(frame_start, frame_end)?;
-                let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
-                result_series.push(agg_result);
+            let frame_size = frame_end as i64 - frame_start as i64;
+
+            if frame_size < 0 {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
             }
+
+            // Check min_periods requirement
+            if frame_size < min_periods {
+                // Add a null series for this row
+                result_series.push(null_series.clone());
+                continue;
+            }
+
+            // Remove values that left the window (values that were in the previous window but not in the current one)
+            if frame_start > prev_frame_start {
+                let remove_slice = self.slice(prev_frame_start, frame_start)?;
+                if let Ok(col) = remove_slice.get_column(agg_expr.name()) {
+                    agg_state.remove(col, prev_frame_start as u64, frame_start as u64)?;
+                }
+            }
+
+            // Add new values that entered the window (values that are in the current window but weren't in the previous)
+            if frame_end > prev_frame_end {
+                let add_slice = self.slice(prev_frame_end, frame_end)?;
+                if let Ok(col) = add_slice.get_column(agg_expr.name()) {
+                    agg_state.add(col, prev_frame_end as u64, frame_end as u64)?;
+                }
+            }
+
+            // Update previous boundaries for the next iteration
+            prev_frame_start = frame_start;
+            prev_frame_end = frame_end;
+
+            // Evaluate current state to get the result for this row
+            let agg_result = agg_state.evaluate()?;
+            result_series.push(agg_result);
         }
 
         // Rename the result and create the final record batch
         let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
-        let renamed_result = final_result_series.rename(&name);
+        let renamed_result = final_result_series.rename(name);
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_non_incremental(
+        &self,
+        agg_expr: &AggExpr,
+        name: &str,
+        frame: &WindowFrame,
+        static_start: Option<usize>,
+        static_end: Option<usize>,
+        min_periods: i64,
+        null_series: &Series,
+        total_rows: usize,
+    ) -> DaftResult<Self> {
+        // Use the non-optimized implementation (recalculate for each row)
+        let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
+
+        for row_idx in 0..total_rows {
+            // Calculate frame bounds for this row
+            let frame_start = if let Some(idx) = static_start {
+                idx
+            } else {
+                match &frame.start {
+                    WindowBoundary::Offset(offset) => {
+                        (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
+                    }
+                    _ => unreachable!("Start boundary type already checked"),
+                }
+            };
+
+            let frame_end = if let Some(idx) = static_end {
+                idx
+            } else {
+                match &frame.end {
+                    WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
+                        .max(0)
+                        .min(total_rows as i64)
+                        as usize,
+                    _ => unreachable!("End boundary type already checked"),
+                }
+            };
+
+            let frame_size = frame_end as i64 - frame_start as i64;
+
+            if frame_size < 0 {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
+            }
+
+            // Check min_periods requirement
+            if frame_size < min_periods {
+                // Add a null series for this row
+                result_series.push(null_series.clone());
+                continue;
+            }
+
+            // Calculate aggregation for this frame
+            let frame_data = self.slice(frame_start, frame_end)?;
+            let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
+            result_series.push(agg_result);
+        }
+
+        // Rename the result and create the final record batch
+        let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
+        let renamed_result = final_result_series.rename(name);
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }
