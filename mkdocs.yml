@@ -61,6 +61,7 @@ nav:
   - Groupby: api/groupby.md
   - User-Defined Functions: api/udf.md
   - Series: api/series.md
+  - Pushdowns: api/pushdowns.md
   - Configuration: api/config.md
   - Miscellaneous: api/misc.md
 - SQL Reference:

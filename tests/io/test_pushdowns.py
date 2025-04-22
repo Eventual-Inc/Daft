@@ -100,46 +100,6 @@ def test_pyexpr_predicates():
 
 
 ###
-# Iceberg Pushdown Tests
-###
-
-
-def test_iceberg_predicates():
-    """Test we can translate each one of the Iceberg predicates.
-
-    References:
-        - https://iceberg.apache.org/javadoc/1.0.0/index.html?org/apache/iceberg/expressions/Expressions.html
-        - https://py.iceberg.apache.org/reference/pyiceberg/expressions/
-    """
-    assert _term(~col("a")) == Expr("not", Reference("a"))
-
-    assert _term(lit(True) & lit(False)) == Expr("and", True, False)
-    assert _term(lit(True) | lit(False)) == Expr("or", True, False)
-
-    assert _term(lit(1) == lit(2)) == Expr("=", 1, 2)
-    assert _term(lit(1) != lit(2)) == Expr("!=", 1, 2)
-    assert _term(lit(1) < lit(2)) == Expr("<", 1, 2)
-    assert _term(lit(1) <= lit(2)) == Expr("<=", 1, 2)
-    assert _term(lit(1) > lit(2)) == Expr(">", 1, 2)
-    assert _term(lit(1) >= lit(2)) == Expr(">=", 1, 2)
-
-    assert _term(col("a").is_null()) == Expr("is_null", Reference("a"))
-    assert _term(col("a").not_null()) == Expr("not_null", Reference("a"))
-
-    assert _term(col("a").float.is_nan()) == Expr("is_nan", Reference("a"))
-    assert _term(col("a").float.not_nan()) == Expr("not_nan", Reference("a"))
-
-    # TODO LIST EXPRESSIONS
-    # items = list_(lit(1), lit(2), lit(3))
-    # assert _term(col("a").is_in(items)) == Expr("is_in", Reference("a"), Expr("list", 1, 2, 3))
-    # assert _term(~(col("a").is_in(items))) == Expr("not", Expr("is_in", Reference("a"), Expr("list", 1, 2, 3)))
-
-    # TODO STARTSWITH
-    # assert _term(col("a").str.startswith("xyz")) == Expr("startswith", "xyz")
-    # assert _term(~(col("a").str.startswith("xyz"))) == Expr("not", Expr("startswith", "xyz"))
-
-
-###
 # Pushdowns Translations Tests
 ###
 

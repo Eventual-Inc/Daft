@@ -249,6 +249,20 @@ impl<'py> TermBuilder<'py> {
                     args.append(self.to_term(arg.as_ref())?)?;
                 }
             }
+            Expr::List(items) => {
+                // (list <items>...)
+                proc = "list";
+                for arg in items.iter().as_ref() {
+                    args.append(self.to_term(arg.as_ref())?)?;
+                }
+            }
+            Expr::IsIn(item, items) => {
+                // (is_in item (list <items>))
+                proc = "is_in";
+                let items = Expr::List(items.clone());
+                args.append(self.to_term(item)?)?;
+                args.append(self.to_term(items.as_ref())?)?;
+            }
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Unsupported pushdown expression: {}",
@@ -340,8 +354,8 @@ impl<'py> TermBuilder<'py> {
             Operator::TrueDivide => "/",
             // use scheme-like names (please don't use display).
             Operator::FloorDivide => "quotient",
-            Operator::EqNullSafe => "eq_null_safe",
             Operator::Modulus => "mod",
+            Operator::EqNullSafe => "eq_null_safe",
             // ash is too arcane and more complicated
             Operator::ShiftLeft => "lshift",
             Operator::ShiftRight => "rshift",
@@ -357,6 +371,7 @@ impl<'py> TermBuilder<'py> {
                 PartitioningExpr::Months => Ok("months"),
                 PartitioningExpr::Days => Ok("days"),
                 PartitioningExpr::Hours => Ok("hours"),
+                // TODO parameters
                 PartitioningExpr::IcebergBucket(_) => Ok("iceberg_bucket"),
                 PartitioningExpr::IcebergTruncate(_) => Ok("iceberg_truncate"),
             },

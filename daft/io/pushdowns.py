@@ -63,7 +63,7 @@ class Literal(Term):
 
 @dataclass(frozen=True)
 class Expr(Term):
-    """Expr is a generic expression form which has the procedure symbol and its args.
+    """Expr is a generic expression represented by a procedure symbol and its args.
 
     This representation was chosen because it's the simplest while avoiding the complexity
     of a more 'pure' concatenation style or introducing additional Term variants.
