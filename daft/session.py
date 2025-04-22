@@ -204,7 +204,10 @@ class Session:
         return catalog.create_table(identifier, source, properties)
 
     def create_table_if_not_exists(
-        self, identifier: Identifier | str, source: Schema | DataFrame, **properties: Any
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        **properties: Any,
     ) -> Table:
         """Creates a table in the current catalog if it does not already exist.
 

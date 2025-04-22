@@ -53,7 +53,10 @@ class IcebergCatalog(Catalog):
         self._inner.create_namespace(ident)
 
     def create_table(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
     ) -> Table:
         if isinstance(source, DataFrame):
             return self._create_table_from_df(identifier, source)

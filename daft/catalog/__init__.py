@@ -400,7 +400,10 @@ class Catalog(ABC):
 
     @abstractmethod
     def create_table(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
     ) -> Table:
         """Creates a table in this catalog.
 
@@ -414,7 +417,10 @@ class Catalog(ABC):
         raise NotImplementedError
 
     def create_table_if_not_exists(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
     ) -> Table:
         """Creates a table in this catalog if it does not already exist.
 

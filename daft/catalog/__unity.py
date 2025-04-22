@@ -49,7 +49,10 @@ class UnityCatalog(Catalog):
         raise NotImplementedError("Unity create_namespace not yet supported.")
 
     def create_table(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
     ) -> Table:
         raise NotImplementedError("Unity create_table not yet supported.")
 

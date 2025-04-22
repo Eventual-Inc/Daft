@@ -137,7 +137,10 @@ class S3Catalog(Catalog):
             raise ValueError(f"Failed to create namespace: {e}") from e
 
     def create_table(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
     ) -> Table:
         if isinstance(source, Schema):
             return self._create_table_from_schema(identifier, source)

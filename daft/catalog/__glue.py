@@ -141,7 +141,10 @@ class GlueCatalog(Catalog):
             raise ValueError(f"Namespace {identifier} already exists")
 
     def create_table(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
     ) -> Table:
         """Creates a table in AWS Glue.
 
