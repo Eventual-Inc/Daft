@@ -318,3 +318,61 @@ def test_different_min_periods(make_df):
     print(result.to_pandas())
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+@pytest.mark.skip(reason="String min/max window aggregation is not supported yet")
+def test_string_min_max(make_df):
+    """Test min and max window aggregations with string values."""
+    data = []
+    expected_data = []
+
+    categories = ["A", "B"]
+    string_values = {
+        "A": ["apple", "banana", "cherry", "date", "elderberry", "fig", "grape", "honeydew", "kiwi", "lemon"],
+        "B": [
+            "almond",
+            "brazil nut",
+            "cashew",
+            "hazelnut",
+            "macadamia",
+            "pecan",
+            "pistachio",
+            "walnut",
+            "peanut",
+            "chestnut",
+        ],
+    }
+
+    for category in categories:
+        values = string_values[category]
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "text": value})
+
+            start_idx = max(0, ts - 2)
+            end_idx = min(ts + 1, len(values))
+            window_vals = values[start_idx:end_idx]
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "text": value,
+                    "window_min": min(window_vals),
+                    "window_max": max(window_vals),
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-2, 0)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("text"),
+        col("text").min().over(window_spec).alias("window_min"),
+        col("text").max().over(window_spec).alias("window_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)

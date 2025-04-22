@@ -45,6 +45,7 @@ daft-warc = {path = "src/daft-warc", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
+ordered-float = "5.0.0"
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
