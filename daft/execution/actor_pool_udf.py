@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import traceback
-from multiprocessing import shared_memory
+from multiprocessing import resource_tracker, shared_memory
 from typing import TYPE_CHECKING
 
 from daft.expressions import Expression, ExpressionsProjection
@@ -20,9 +20,11 @@ _SENTINEL = ("__EXIT__", 0)
 
 
 class SharedMemoryTransport:
-    def write(self, data: bytes) -> tuple[str, int]:
+    def write_and_close(self, data: bytes) -> tuple[str, int]:
         shm = shared_memory.SharedMemory(create=True, size=len(data))
+        resource_tracker.unregister(shm.name, "shared_memory")
         shm.buf[: len(data)] = data
+        shm.close()
         return shm.name, len(data)
 
     def read_and_release(self, name: str, size: int) -> bytes:
@@ -53,7 +55,7 @@ def actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Conn
             evaluated = input.eval_expression_list(initialized_projection)
             output_bytes = evaluated.to_ipc_stream()
 
-            out_name, out_size = transport.write(output_bytes)
+            out_name, out_size = transport.write_and_close(output_bytes)
             conn.send(("success", out_name, out_size))
     except Exception as e:
         try:
@@ -79,7 +81,7 @@ class ActorHandle:
             raise RuntimeError("Actor process is not alive")
 
         serialized = input.write_to_ipc_stream()
-        shm_name, shm_size = self.transport.write(serialized)
+        shm_name, shm_size = self.transport.write_and_close(serialized)
         self.handle_conn.send((shm_name, shm_size))
 
         response = self.handle_conn.recv()
