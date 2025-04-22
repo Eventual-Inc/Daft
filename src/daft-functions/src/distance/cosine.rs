@@ -58,22 +58,40 @@ where
     T: NumericNative,
     <T::DAFTTYPE as DaftNumericType>::Native: SpatialSimilarity,
 {
-    let query = &query.fixed_size_list()?.flat_child;
-    let query = query.try_as_slice::<T>()?;
+    // Check if query is a single literal or a series.
+    if query.len() == 1 {
+        let query = &query.fixed_size_list()?.flat_child;
+        let query = query.try_as_slice::<T>()?;
 
-    Ok(source
-        .into_iter()
-        .map(|list_opt| {
-            let list = list_opt.as_ref()?;
-            let list = list.try_as_slice::<T>();
-            debug_assert!(
-                list.is_ok(),
-                "types should already be checked at this point"
-            );
-            let list = list.unwrap();
-            SpatialSimilarity::cosine(list, query)
-        })
-        .collect::<Vec<_>>())
+        Ok(source
+            .into_iter()
+            .map(|list_opt| {
+                // Safe to unwrap after try_as_slice because types should be checked at this point.
+                let list_slice = list_opt.as_ref()?.try_as_slice::<T>().ok()?;
+                SpatialSimilarity::cosine(list_slice, query)
+            })
+            .collect::<Vec<_>>())
+    } else {
+        if query.len() != source.len() {
+            return Err(DaftError::ValueError(format!(
+                "Query length ({}) must match source length ({})",
+                query.len(),
+                source.len()
+            )));
+        }
+        let query = query.fixed_size_list()?;
+
+        Ok(source
+            .into_iter()
+            .zip(query.into_iter())
+            .map(|(list_opt, query_opt)| {
+                // Safe to unwrap after try_as_slice because types should be checked at this point.
+                let list_slice = list_opt.as_ref()?.try_as_slice::<T>().ok()?;
+                let query_slice = query_opt.as_ref()?.try_as_slice::<T>().ok()?;
+                SpatialSimilarity::cosine(list_slice, query_slice)
+            })
+            .collect::<Vec<_>>())
+    }
 }
 
 #[typetag::serde]
@@ -90,12 +108,6 @@ impl ScalarUDF for CosineDistanceFunction {
         match inputs {
             [source, query] => {
                 let source_name = source.name();
-                if query.len() != 1 {
-                    return Err(DaftError::ValueError(
-                        "Expected query to be a single value".to_string(),
-                    ));
-                }
-
                 let source = source.fixed_size_list()?;
 
                 let res = match query.data_type() {

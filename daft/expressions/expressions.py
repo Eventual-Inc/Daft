@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import builtins
 import math
-import os
 import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -56,29 +55,6 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
-
-# This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
-# return a class instance of the namespace instead of a property object.
-elif os.getenv("DAFT_SPHINX_BUILD") == "1":
-    from typing import Any
-
-    # when building docs (with Sphinx) we need access to the functions
-    # associated with the namespaces from the class, as we don't have
-    # an instance; @sphinx_accessor is a @property that allows this.
-    NS = TypeVar("NS")
-
-    class sphinx_accessor(property):
-        def __get__(  # type: ignore[override]
-            self,
-            instance: Any,
-            cls: type[NS],
-        ) -> NS:
-            try:
-                return self.fget(instance if isinstance(instance, cls) else cls)  # type: ignore[misc]
-            except (AttributeError, ImportError):
-                return self  # type: ignore[return-value]
-
-    property = sphinx_accessor  # type: ignore[misc]
 
 
 def lit(value: object) -> Expression:
@@ -4505,7 +4481,29 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.embedding` attribute."""
 
     def cosine_distance(self, other: Expression) -> Expression:
-        """Compute the cosine distance between two embeddings."""
+        """Compute the cosine distance between two embeddings.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"e1": [[1, 2, 3], [1, 2, 3]], "e2": [[1, 2, 3], [-1, -2, -3]]})
+            >>> dtype = daft.DataType.fixed_size_list(daft.DataType.float32(), 3)
+            >>> df = df.with_column("dist", df["e1"].cast(dtype).embedding.cosine_distance(df["e2"].cast(dtype)))
+            >>> df.show()
+            ╭─────────────┬──────────────┬─────────╮
+            │ e1          ┆ e2           ┆ dist    │
+            │ ---         ┆ ---          ┆ ---     │
+            │ List[Int64] ┆ List[Int64]  ┆ Float64 │
+            ╞═════════════╪══════════════╪═════════╡
+            │ [1, 2, 3]   ┆ [1, 2, 3]    ┆ 0       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ [1, 2, 3]   ┆ [-1, -2, -3] ┆ 2       │
+            ╰─────────────┴──────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Returns:
+            Expression: a Float64 Expression with the cosine distance between the two embeddings.
+        """
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
 
 
