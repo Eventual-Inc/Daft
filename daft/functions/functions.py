@@ -274,7 +274,7 @@ def rank() -> Expression:
         │ B        ┆ 4     ┆ 3      │
         ╰──────────┴───────┴────────╯
         <BLANKLINE>
-        (Showing first 8 of 8 rows)
+        (Showing first 8 rows)
 
     Returns:
         Expression: An expression that returns the rank of the current row.
@@ -319,7 +319,7 @@ def dense_rank() -> Expression:
         │ B        ┆ 4     ┆ 2          │
         ╰──────────┴───────┴────────────╯
         <BLANKLINE>
-        (Showing first 8 of 8 rows)
+        (Showing first 8 rows)
 
     Returns:
         Expression: An expression that returns the dense rank of the current row.

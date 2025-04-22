@@ -567,14 +567,14 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (offset, default=None))]
-    pub fn offset(&self, offset: i64, default: Option<&Self>) -> PyResult<Self> {
+    pub fn offset(&self, offset: isize, default: Option<&Self>) -> PyResult<Self> {
         let default = default.map(|e| e.expr.clone());
         Ok(Self {
-            expr: Arc::new(Expr::WindowFunction(WindowExpr::Offset(
-                self.expr.clone(),
+            expr: Arc::new(Expr::WindowFunction(WindowExpr::Offset {
+                input: self.expr.clone(),
                 offset,
                 default,
-            ))),
+            })),
         })
     }
 }

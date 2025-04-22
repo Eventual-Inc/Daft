@@ -150,37 +150,11 @@ impl RecordBatch {
         self.union(&rank_batch)
     }
 
-    // Helper method to process default values for window_offset
-    fn process_default_for_window(
-        &self,
-        default_expr: &ExprRef,
-        target_type: &DataType,
-        slice_start: usize,
-        slice_end: usize,
-        target_length: usize,
-    ) -> DaftResult<Series> {
-        // Only evaluate on the slice we need for efficiency
-        let default_slice = self.slice(slice_start, slice_end)?;
-        let def_col = default_slice.eval_expression(default_expr)?;
-
-        let def_col = if def_col.data_type() != target_type {
-            def_col.cast(target_type)?
-        } else {
-            def_col
-        };
-
-        if def_col.len() != target_length {
-            def_col.broadcast(target_length)
-        } else {
-            Ok(def_col)
-        }
-    }
-
     pub fn window_offset(
         &self,
         name: String,
         expr: ExprRef,
-        offset: i64,
+        offset: isize,
         default: Option<ExprRef>,
     ) -> DaftResult<Self> {
         // Short-circuit if offset is 0 - just return the value itself
@@ -192,56 +166,61 @@ impl RecordBatch {
         }
 
         let expr_col = self.eval_expression(&expr)?;
-        let abs_offset = offset.unsigned_abs() as usize;
+        let abs_offset = offset.unsigned_abs();
+
+        let process_default = |default_opt: &Option<ExprRef>,
+                               target_type: &DataType,
+                               slice_start: usize,
+                               slice_end: usize,
+                               target_length: usize|
+         -> DaftResult<Series> {
+            if let Some(default_expr) = default_opt {
+                // Only evaluate on the slice we need for efficiency
+                let default_slice = self.slice(slice_start, slice_end)?;
+                let def_col = default_slice.eval_expression(default_expr)?;
+
+                let def_col = if def_col.data_type() != target_type {
+                    def_col.cast(target_type)?
+                } else {
+                    def_col
+                };
+
+                if def_col.len() != target_length {
+                    def_col.broadcast(target_length)
+                } else {
+                    Ok(def_col)
+                }
+            } else {
+                // Otherwise, create a column of nulls
+                Ok(Series::full_null(
+                    expr_col.name(),
+                    target_type,
+                    target_length,
+                ))
+            }
+        };
 
         let mut result_col = if self.is_empty() || abs_offset >= self.len() {
             // Special case: empty array or offset exceeds array length
-            if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    0,
-                    self.len(),
-                    self.len(),
-                )?
-            } else {
-                // Otherwise, create a column of nulls
-                Series::full_null(expr_col.name(), expr_col.data_type(), self.len())
-            }
+            process_default(&default, expr_col.data_type(), 0, self.len(), self.len())?
         } else if offset > 0 {
             // LEAD: shift values ahead by offset
             let source_values = expr_col.slice(abs_offset, self.len())?;
-
-            let default_values = if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    self.len() - abs_offset,
-                    self.len(),
-                    abs_offset,
-                )?
-            } else {
-                // Otherwise use nulls
-                Series::full_null(expr_col.name(), expr_col.data_type(), abs_offset)
-            };
+            let default_values = process_default(
+                &default,
+                expr_col.data_type(),
+                self.len() - abs_offset,
+                self.len(),
+                abs_offset,
+            )?;
 
             // Construct result by concatenating source and default values
             let cols = vec![&source_values, &default_values];
             Series::concat(&cols)?
         } else {
             // LAG: shift values back by offset
-            let default_values = if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    0,
-                    abs_offset,
-                    abs_offset,
-                )?
-            } else {
-                // Otherwise use nulls
-                Series::full_null(expr_col.name(), expr_col.data_type(), abs_offset)
-            };
+            let default_values =
+                process_default(&default, expr_col.data_type(), 0, abs_offset, abs_offset)?;
 
             let source_values = expr_col.slice(0, self.len() - abs_offset)?;
 
