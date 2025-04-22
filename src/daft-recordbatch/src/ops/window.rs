@@ -99,27 +99,14 @@ impl RecordBatch {
     }
 
     pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
-        // Create rank numbers for pre-sorted partition
-        let mut rank_numbers = vec![0u64; self.len()];
-
         if self.is_empty() {
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
+            // Empty partition case - no work needed
+            let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
             let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
             return self.union(&rank_batch);
         }
 
-        // Single row case - always rank 1
-        if self.len() == 1 {
-            rank_numbers[0] = 1;
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
-            let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
-            return self.union(&rank_batch);
-        }
-
-        // Initialize rank tracking variables
-        let mut cur_rank = 1;
-        let mut next_rank = 1;
-
+        // Get the order_by columns
         let order_by_table = self.eval_expression_list(order_by)?;
 
         // Create a comparator for checking equality between rows
@@ -131,32 +118,31 @@ impl RecordBatch {
                 &vec![true; order_by_table.columns.len()],
             )?;
 
-        // First row always has rank 1
-        rank_numbers[0] = 1;
-
-        // Compute ranks for remaining rows
-        for (i, rank) in rank_numbers.iter_mut().enumerate().skip(1) {
-            // Always increment next_rank for regular rank()
-            if !dense {
-                next_rank += 1;
-            }
-
-            // Check if the current row has the same values as the previous row
-            let is_equal = comparator(i - 1, i);
-
-            if !is_equal {
-                // Different value, update rank
-                if dense {
-                    // For dense_rank, just increment by 1
-                    cur_rank += 1;
-                } else {
-                    // For rank(), use the next_rank which accounts for ties
-                    cur_rank = next_rank;
+        // Use iterator to generate rank numbers
+        let rank_numbers: Vec<u64> = std::iter::once(1)
+            .chain((1..self.len()).scan((1, 1), |(cur_rank, next_rank), i| {
+                // Always increment next_rank for regular rank()
+                if !dense {
+                    *next_rank += 1;
                 }
-            }
 
-            *rank = cur_rank;
-        }
+                // Check if the current row has the same values as the previous row
+                let is_equal = comparator(i - 1, i);
+
+                if !is_equal {
+                    // Different value, update rank
+                    if dense {
+                        // For dense_rank, just increment by 1
+                        *cur_rank += 1;
+                    } else {
+                        // For rank(), use the next_rank which accounts for ties
+                        *cur_rank = *next_rank;
+                    }
+                }
+
+                Some(*cur_rank)
+            }))
+            .collect();
 
         let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
         let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
