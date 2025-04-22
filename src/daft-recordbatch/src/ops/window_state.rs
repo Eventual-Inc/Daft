@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{count_mode::CountMode, prelude::*};
 use daft_dsl::AggExpr;
 use ordered_float::OrderedFloat;
 
@@ -50,6 +50,40 @@ impl MeanWindowState {
 
 impl WindowAggStateOps for MeanWindowState {
     fn add(&mut self, value: &Series) -> DaftResult<()> {
+        // Use optimized approach for series with multiple elements
+        // The threshold of 4 elements is chosen as a balance between:
+        // 1. Function call overhead for the optimized path
+        // 2. Iteration cost for the element-by-element approach
+        // For small series, the iteration is likely faster than making additional function calls
+        if value.len() > 4 {
+            // Use the existing sum aggregation for batch sum
+            let sum_result = value.sum(None)?;
+
+            // Use count aggregation to get the number of valid elements
+            let count_result = value.count(None, CountMode::Valid)?;
+
+            // Extract the sum and count values
+            if !sum_result.is_empty() && !count_result.is_empty() {
+                let sum_val = match sum_result.data_type() {
+                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
+                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
+                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
+                    _ => sum_result
+                        .cast(&DataType::Float64)?
+                        .f64()?
+                        .get(0)
+                        .unwrap_or(0.0),
+                };
+
+                let count_val = count_result.u64()?.get(0).unwrap_or(0) as usize;
+
+                self.sum += sum_val;
+                self.count += count_val;
+            }
+            return Ok(());
+        }
+
+        // For small series or edge cases, fall back to the original approach
         // Convert to f64 to ensure we can compute the mean correctly
         let value = match value.data_type() {
             dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
@@ -76,6 +110,36 @@ impl WindowAggStateOps for MeanWindowState {
     }
 
     fn remove(&mut self, value: &Series) -> DaftResult<()> {
+        // Use optimized approach for series with multiple elements
+        if value.len() > 4 {
+            // Use the existing sum aggregation for batch sum
+            let sum_result = value.sum(None)?;
+
+            // Use count aggregation to get the number of valid elements
+            let count_result = value.count(None, CountMode::Valid)?;
+
+            // Extract the sum and count values
+            if !sum_result.is_empty() && !count_result.is_empty() {
+                let sum_val = match sum_result.data_type() {
+                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
+                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
+                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
+                    _ => sum_result
+                        .cast(&DataType::Float64)?
+                        .f64()?
+                        .get(0)
+                        .unwrap_or(0.0),
+                };
+
+                let count_val = count_result.u64()?.get(0).unwrap_or(0) as usize;
+
+                self.sum -= sum_val;
+                self.count -= count_val;
+            }
+            return Ok(());
+        }
+
+        // For small series or edge cases, fall back to the original approach
         // Convert to f64 to ensure we can compute the mean correctly
         let value = match value.data_type() {
             dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
@@ -147,6 +211,33 @@ impl SumWindowState {
 
 impl WindowAggStateOps for SumWindowState {
     fn add(&mut self, value: &Series) -> DaftResult<()> {
+        // Use optimized approach for series with multiple elements
+        // The threshold of 4 elements is chosen as a balance between:
+        // 1. Function call overhead for the optimized path
+        // 2. Iteration cost for the element-by-element approach
+        // For small series, the iteration is likely faster than making additional function calls
+        if value.len() > 4 {
+            // Use the existing sum aggregation which is optimized for batch operations
+            let sum_result = value.sum(None)?;
+
+            // Extract the single sum value (sum always returns a Series with a single value)
+            if !sum_result.is_empty() {
+                let sum_val = match sum_result.data_type() {
+                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
+                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
+                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
+                    _ => sum_result
+                        .cast(&DataType::Float64)?
+                        .f64()?
+                        .get(0)
+                        .unwrap_or(0.0),
+                };
+                self.sum += sum_val;
+            }
+            return Ok(());
+        }
+
+        // For small series or edge cases, fall back to the original approach
         // Convert to f64 to ensure we can compute the sum correctly
         let value = match value.data_type() {
             dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
@@ -172,6 +263,29 @@ impl WindowAggStateOps for SumWindowState {
     }
 
     fn remove(&mut self, value: &Series) -> DaftResult<()> {
+        // Use optimized approach for series with multiple elements
+        if value.len() > 4 {
+            // Use the existing sum aggregation which is optimized for batch operations
+            let sum_result = value.sum(None)?;
+
+            // Extract the single sum value (sum always returns a Series with a single value)
+            if !sum_result.is_empty() {
+                let sum_val = match sum_result.data_type() {
+                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
+                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
+                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
+                    _ => sum_result
+                        .cast(&DataType::Float64)?
+                        .f64()?
+                        .get(0)
+                        .unwrap_or(0.0),
+                };
+                self.sum -= sum_val;
+            }
+            return Ok(());
+        }
+
+        // For small series or edge cases, fall back to the original approach
         // Convert to f64 to ensure we can compute the sum correctly
         let value = match value.data_type() {
             dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
