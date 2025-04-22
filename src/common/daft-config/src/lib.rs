@@ -138,7 +138,7 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
             cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
         }
-        let flotilla_env_var_name = "DAFT_flotilla";
+        let flotilla_env_var_name = "DAFT_FLOTILLA";
         if let Ok(val) = std::env::var(flotilla_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {

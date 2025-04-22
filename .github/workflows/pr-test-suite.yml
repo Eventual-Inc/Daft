@@ -23,13 +23,13 @@ jobs:
         python-version: ['3.9', '3.10']
         daft-runner: [py, ray, native]
         pyarrow-version: [8.0.0, 16.0.0]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         os: [ubuntu-latest, macos-latest]
         exclude:
         - daft-runner: py
-          enable-aqe: 1
+          flotilla: 1
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
         - daft-runner: ray
           pyarrow-version: 8.0.0
         - daft-runner: py
@@ -92,7 +92,7 @@ jobs:
         CARGO_TARGET_DIR: ./target
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
 
     - name: Build library and Test with pytest with code coverage (macOS)
       if: ${{ (runner.os == 'macOS') }}
@@ -115,7 +115,7 @@ jobs:
         CARGO_TARGET_DIR: ./target
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
 
     - name: Upload coverage report
       if: ${{ (runner.os == 'macOS') }}
@@ -206,12 +206,12 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [py, ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: py
-          enable-aqe: 1
+          flotilla: 1
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -254,7 +254,7 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -286,12 +286,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: py
-          enable-aqe: 1
+          flotilla: 1
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -336,7 +336,7 @@ jobs:
         pytest tests/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -370,12 +370,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: py
-          enable-aqe: 1
+          flotilla: 1
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -438,7 +438,7 @@ jobs:
         pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() }}
@@ -470,12 +470,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: py
-          enable-aqe: 1
+          flotilla: 1
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -521,7 +521,7 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -553,12 +553,12 @@ jobs:
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray, native]
-        enable-aqe: [1, 0]
+        flotilla: [1, 0]
         exclude:
         - daft-runner: py
-          enable-aqe: 1
+          flotilla: 1
         - daft-runner: native
-          enable-aqe: 1
+          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -603,7 +603,7 @@ jobs:
         pytest tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
