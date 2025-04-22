@@ -61,5 +61,5 @@ def test_iceberg_transforms():
     assert _term(col("a").partitioning.hours()) == Expr("hours", Reference("a"))
 
     # need args from functions
-    # assert _term(col("a").partitioning.iceberg_bucket(16)) == Expr("iceberg_bucket", Reference("a"), 16)
-    # assert _term(col("a").partitioning.iceberg_truncate(10)) == Expr("iceberg_truncate", Reference("a"), 10)
+    assert _term(col("a").partitioning.iceberg_bucket(16)) == Expr("iceberg_bucket", Reference("a"), 16)
+    assert _term(col("a").partitioning.iceberg_truncate(10)) == Expr("iceberg_truncate", Reference("a"), 10)

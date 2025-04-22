@@ -263,6 +263,22 @@ impl<'py> TermBuilder<'py> {
                 for arg in inputs {
                     args.append(self.to_term(arg.as_ref())?)?;
                 }
+                // ineligant .. add args from the two iceberg partitioning functions
+                if let FunctionExpr::Partitioning(pexpr) = func {
+                    match pexpr {
+                        PartitioningExpr::IcebergBucket(buckets) => {
+                            let lit = LiteralValue::Int32(*buckets);
+                            let arg = self.to_literal(&lit)?;
+                            args.append(arg)?;
+                        }
+                        PartitioningExpr::IcebergTruncate(size) => {
+                            let lit = LiteralValue::Int64(*size);
+                            let arg = self.to_literal(&lit)?;
+                            args.append(arg)?;
+                        }
+                        _ => {}
+                    };
+                }
             }
             Expr::ScalarFunction(scalar_function) => {
                 // (<proc> <args>...)

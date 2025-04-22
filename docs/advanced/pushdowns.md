@@ -22,14 +22,7 @@ pushed-down expressions. You can construct a
 
 Once you have the pushdown terms, you will need to apply them based upon
 your own context. One way to operate on a term tree is using the
-[`TermVisitor`][daft.io.pushdowns.TermVisitor]. Here's an end-to-end example
-with boilerplate omitted.
-
-### Example
-
-```python
-
-```
+[`TermVisitor`][daft.io.pushdowns.TermVisitor].
 
 ## Term Reference
 
