@@ -57,7 +57,6 @@ class RayPartitionRef:
 
 class RaySwordfishTaskHandle:
     def __init__(self, handle: ray.ObjectRef, add_memory_callback: Callable[[], None]):
-        print("initializing handle")
         self.handle = handle
         self.add_memory_callback = add_memory_callback
 
@@ -98,11 +97,9 @@ class RaySwordfishWorker:
         return self.available_memory_bytes
 
     def add_back_memory(self):
-        print(f"adding back memory to worker {self.actor_node_id}")
         self.available_memory_bytes += 100 * 1024 * 1024 * 1024
 
     def submit_task(self, task: SwordfishWorkerTask) -> RaySwordfishTaskHandle:
-        print(f"submitting task to worker {self.actor_node_id}, estimated memory cost: {task.estimated_memory_cost()}")
         self.available_memory_bytes -= task.estimated_memory_cost()
         return RaySwordfishTaskHandle(self.actor_handle.run_plan.remote(task), self.add_back_memory)
 

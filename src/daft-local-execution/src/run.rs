@@ -2,14 +2,13 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::{Arc, OnceLock},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
-use common_runtime::{RuntimeRef, RuntimeTask};
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;

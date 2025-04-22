@@ -86,8 +86,8 @@ impl PyDistributedPhysicalPlan {
             let ray_part_ref = result.as_any().downcast_ref::<RayPartitionRef>().unwrap();
             pyo3::Python::with_gil(|py| {
                 let objref = ray_part_ref.object_ref.clone_ref(py);
-                let size_bytes = ray_part_ref.size_bytes;
-                let num_rows = ray_part_ref.num_rows;
+                let size_bytes = ray_part_ref._size_bytes;
+                let num_rows = ray_part_ref._num_rows;
                 Ok((objref, size_bytes, num_rows)
                     .into_pyobject(py)?
                     .unbind()

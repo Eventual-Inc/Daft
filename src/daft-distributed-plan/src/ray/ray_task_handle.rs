@@ -42,8 +42,8 @@ impl RayTaskHandle {
 #[derive(Debug, FromPyObject)]
 pub struct RayPartitionRef {
     pub object_ref: PyObject,
-    pub num_rows: usize,
-    pub size_bytes: usize,
+    pub _num_rows: usize,
+    pub _size_bytes: usize,
 }
 
 impl Partition for RayPartitionRef {
@@ -51,9 +51,9 @@ impl Partition for RayPartitionRef {
         self
     }
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        Ok(Some(self.size_bytes))
+        Ok(Some(self._size_bytes))
     }
     fn num_rows(&self) -> DaftResult<usize> {
-        Ok(self.num_rows)
+        Ok(self._num_rows)
     }
 }

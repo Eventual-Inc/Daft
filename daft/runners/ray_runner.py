@@ -1345,7 +1345,6 @@ class RayRunner(Runner[ray.ObjectRef]):
             else:
                 # If plan building succeeds, execute it
                 for obj, size_bytes, num_rows in distributed_planner.run_plan():
-                    print(f"obj: {obj}, size_bytes: {size_bytes}, num_rows: {num_rows}")
                     materialized_result = RayMaterializedResult(
                         partition=obj,
                     )
