@@ -207,7 +207,7 @@ impl RecordBatch {
                 if frame_start > prev_frame_start {
                     let remove_slice = self.slice(prev_frame_start, frame_start)?;
                     if let Ok(col) = remove_slice.get_column(agg_expr.name()) {
-                        agg_state.remove(col)?;
+                        agg_state.remove(col, prev_frame_start as u64, frame_start as u64)?;
                     }
                 }
 
@@ -215,7 +215,7 @@ impl RecordBatch {
                 if frame_end > prev_frame_end {
                     let add_slice = self.slice(prev_frame_end, frame_end)?;
                     if let Ok(col) = add_slice.get_column(agg_expr.name()) {
-                        agg_state.add(col)?;
+                        agg_state.add(col, prev_frame_end as u64, frame_end as u64)?;
                     }
                 }
 

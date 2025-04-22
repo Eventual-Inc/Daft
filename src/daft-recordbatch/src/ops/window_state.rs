@@ -1,37 +1,85 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    cmp::{Ordering, Reverse},
+    collections::{BinaryHeap, HashMap},
+};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{count_mode::CountMode, prelude::*};
 use daft_dsl::AggExpr;
-use ordered_float::OrderedFloat;
+
+#[derive(Debug, Clone)]
+struct IndexedValue {
+    value: Series,
+    idx: u64,
+}
+
+impl Eq for IndexedValue {}
+
+impl PartialEq for IndexedValue {
+    fn eq(&self, other: &Self) -> bool {
+        if self.idx != other.idx {
+            return false;
+        }
+
+        match self.value.equal(&other.value) {
+            Ok(result) => result.into_iter().all(|x| x.unwrap_or(false)),
+            Err(_) => false,
+        }
+    }
+}
+
+#[allow(clippy::non_canonical_partial_ord_impl)]
+impl PartialOrd for IndexedValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self.value.lt(&other.value) {
+            Ok(result) => {
+                if result.into_iter().any(|x| x.unwrap_or(false)) {
+                    return Some(Ordering::Less);
+                }
+            }
+            Err(_) => return None,
+        }
+
+        match self.value.equal(&other.value) {
+            Ok(result) => {
+                if result.into_iter().all(|x| x.unwrap_or(false)) {
+                    return Some(self.idx.cmp(&other.idx));
+                }
+            }
+            Err(_) => return None,
+        }
+
+        Some(Ordering::Greater)
+    }
+}
+
+impl Ord for IndexedValue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
 
 /// Trait for window aggregation state common operations
 pub trait WindowAggStateOps {
-    /// Add a value to the state
-    fn add(&mut self, value: &Series) -> DaftResult<()>;
+    /// Add a value to the state with index information
+    fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()>;
 
-    /// Remove a value from the state
-    fn remove(&mut self, value: &Series) -> DaftResult<()>;
+    /// Remove a value from the state with index information
+    fn remove(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()>;
 
     /// Evaluate the current state to produce an aggregation result
-    fn evaluate(&self) -> DaftResult<Series>;
+    fn evaluate(&mut self) -> DaftResult<Series>;
 }
 
-/// State for computing mean in a sliding window
 pub struct MeanWindowState {
-    /// Name of the output column
     name: String,
-    /// Running sum
-    sum: f64,
-    /// Count of non-null values
+    sum_series: Option<Series>,
     count: usize,
-    /// Field information for the output
     field: Field,
 }
 
 impl MeanWindowState {
     pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        // Extract expression name for output column
         let name = match agg_expr {
             AggExpr::Mean(expr) => expr.name().to_string(),
             _ => panic!("Expected Mean aggregation"),
@@ -41,7 +89,7 @@ impl MeanWindowState {
 
         Self {
             name,
-            sum: 0.0,
+            sum_series: None,
             count: 0,
             field,
         }
@@ -49,59 +97,35 @@ impl MeanWindowState {
 }
 
 impl WindowAggStateOps for MeanWindowState {
-    fn add(&mut self, value: &Series) -> DaftResult<()> {
-        // Use optimized approach for series with multiple elements
-        // The threshold of 4 elements is chosen as a balance between:
-        // 1. Function call overhead for the optimized path
-        // 2. Iteration cost for the element-by-element approach
-        // For small series, the iteration is likely faster than making additional function calls
+    fn add(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
         if value.len() > 4 {
-            // Use the existing sum aggregation for batch sum
             let sum_result = value.sum(None)?;
-
-            // Use count aggregation to get the number of valid elements
             let count_result = value.count(None, CountMode::Valid)?;
 
-            // Extract the sum and count values
             if !sum_result.is_empty() && !count_result.is_empty() {
-                let sum_val = match sum_result.data_type() {
-                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
-                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
-                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
-                    _ => sum_result
-                        .cast(&DataType::Float64)?
-                        .f64()?
-                        .get(0)
-                        .unwrap_or(0.0),
-                };
-
                 let count_val = count_result.u64()?.get(0).unwrap_or(0) as usize;
 
-                self.sum += sum_val;
-                self.count += count_val;
+                if count_val > 0 {
+                    if let Some(ref mut sum_series) = self.sum_series {
+                        *sum_series = (sum_series as &Series + &sum_result)?;
+                    } else {
+                        self.sum_series = Some(sum_result);
+                    }
+                    self.count += count_val;
+                }
             }
             return Ok(());
         }
 
-        // For small series or edge cases, fall back to the original approach
-        // Convert to f64 to ensure we can compute the mean correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Mean can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
-            }
-        };
+        for i in 0..value.len() {
+            if value.is_valid(i) {
+                let scalar_value = value.slice(i, i + 1)?;
 
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                self.sum += val;
+                if let Some(ref mut sum_series) = self.sum_series {
+                    *sum_series = (sum_series as &Series + &scalar_value)?;
+                } else {
+                    self.sum_series = Some(scalar_value);
+                }
                 self.count += 1;
             }
         }
@@ -109,91 +133,66 @@ impl WindowAggStateOps for MeanWindowState {
         Ok(())
     }
 
-    fn remove(&mut self, value: &Series) -> DaftResult<()> {
-        // Use optimized approach for series with multiple elements
-        if value.len() > 4 {
-            // Use the existing sum aggregation for batch sum
-            let sum_result = value.sum(None)?;
+    fn remove(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
+        if self.sum_series.is_none() {
+            return Ok(());
+        }
 
-            // Use count aggregation to get the number of valid elements
+        if value.len() > 4 {
+            let sum_result = value.sum(None)?;
             let count_result = value.count(None, CountMode::Valid)?;
 
-            // Extract the sum and count values
             if !sum_result.is_empty() && !count_result.is_empty() {
-                let sum_val = match sum_result.data_type() {
-                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
-                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
-                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
-                    _ => sum_result
-                        .cast(&DataType::Float64)?
-                        .f64()?
-                        .get(0)
-                        .unwrap_or(0.0),
-                };
-
                 let count_val = count_result.u64()?.get(0).unwrap_or(0) as usize;
 
-                self.sum -= sum_val;
-                self.count -= count_val;
+                if count_val > 0 && self.count >= count_val {
+                    if let Some(ref mut sum_series) = self.sum_series {
+                        *sum_series = (sum_series as &Series - &sum_result)?;
+                        self.count -= count_val;
+                    }
+                }
             }
             return Ok(());
         }
 
-        // For small series or edge cases, fall back to the original approach
-        // Convert to f64 to ensure we can compute the mean correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Mean can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
-            }
-        };
+        for i in 0..value.len() {
+            if value.is_valid(i) && self.count > 0 {
+                let scalar_value = value.slice(i, i + 1)?;
 
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                self.sum -= val;
-                self.count -= 1;
+                if let Some(ref mut sum_series) = self.sum_series {
+                    *sum_series = (sum_series as &Series - &scalar_value)?;
+                    self.count -= 1;
+                }
             }
         }
 
         Ok(())
     }
 
-    fn evaluate(&self) -> DaftResult<Series> {
-        if self.count == 0 {
-            // Return null if no data
+    fn evaluate(&mut self) -> DaftResult<Series> {
+        if self.count == 0 || self.sum_series.is_none() {
             return Ok(Series::full_null(&self.name, &self.field.dtype, 1));
         }
 
-        // Compute mean
-        let mean = self.sum / self.count as f64;
+        let count_value = self.count as f64;
+        let count_array = Float64Array::from((self.name.as_str(), vec![count_value])).into_series();
 
-        // Create array with single value
-        let array = Float64Array::from((self.name.as_str(), vec![mean])).into_series();
+        let mean_series = (self.sum_series.as_ref().unwrap() as &Series / &count_array)?;
 
-        Ok(array)
+        let result = mean_series.rename(&self.name);
+
+        Ok(result)
     }
 }
 
-/// State for computing sum in a sliding window
 pub struct SumWindowState {
-    /// Name of the output column
     name: String,
-    /// Running sum (stored as f64 for compatibility across numeric types)
-    sum: f64,
-    /// Field information for the output
+    sum_series: Option<Series>,
     field: Field,
 }
 
 impl SumWindowState {
     pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        // Extract expression name for output column
         let name = match agg_expr {
             AggExpr::Sum(expr) => expr.name().to_string(),
             _ => panic!("Expected Sum aggregation"),
@@ -203,148 +202,91 @@ impl SumWindowState {
 
         Self {
             name,
-            sum: 0.0,
+            sum_series: None,
             field,
         }
     }
 }
 
 impl WindowAggStateOps for SumWindowState {
-    fn add(&mut self, value: &Series) -> DaftResult<()> {
-        // Use optimized approach for series with multiple elements
-        // The threshold of 4 elements is chosen as a balance between:
-        // 1. Function call overhead for the optimized path
-        // 2. Iteration cost for the element-by-element approach
-        // For small series, the iteration is likely faster than making additional function calls
+    fn add(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
         if value.len() > 4 {
-            // Use the existing sum aggregation which is optimized for batch operations
             let sum_result = value.sum(None)?;
 
-            // Extract the single sum value (sum always returns a Series with a single value)
             if !sum_result.is_empty() {
-                let sum_val = match sum_result.data_type() {
-                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
-                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
-                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
-                    _ => sum_result
-                        .cast(&DataType::Float64)?
-                        .f64()?
-                        .get(0)
-                        .unwrap_or(0.0),
-                };
-                self.sum += sum_val;
+                if let Some(ref mut sum_series) = self.sum_series {
+                    *sum_series = (sum_series as &Series + &sum_result)?;
+                } else {
+                    self.sum_series = Some(sum_result);
+                }
             }
             return Ok(());
         }
 
-        // For small series or edge cases, fall back to the original approach
-        // Convert to f64 to ensure we can compute the sum correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Sum can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
-            }
-        };
+        for i in 0..value.len() {
+            if value.is_valid(i) {
+                let scalar_value = value.slice(i, i + 1)?;
 
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                self.sum += val;
+                if let Some(ref mut sum_series) = self.sum_series {
+                    *sum_series = (sum_series as &Series + &scalar_value)?;
+                } else {
+                    self.sum_series = Some(scalar_value);
+                }
             }
         }
 
         Ok(())
     }
 
-    fn remove(&mut self, value: &Series) -> DaftResult<()> {
-        // Use optimized approach for series with multiple elements
+    fn remove(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
+        if self.sum_series.is_none() {
+            return Ok(());
+        }
+
         if value.len() > 4 {
-            // Use the existing sum aggregation which is optimized for batch operations
             let sum_result = value.sum(None)?;
 
-            // Extract the single sum value (sum always returns a Series with a single value)
             if !sum_result.is_empty() {
-                let sum_val = match sum_result.data_type() {
-                    DataType::Float64 => sum_result.f64()?.get(0).unwrap_or(0.0),
-                    DataType::Int64 => sum_result.i64()?.get(0).unwrap_or(0) as f64,
-                    DataType::UInt64 => sum_result.u64()?.get(0).unwrap_or(0) as f64,
-                    _ => sum_result
-                        .cast(&DataType::Float64)?
-                        .f64()?
-                        .get(0)
-                        .unwrap_or(0.0),
-                };
-                self.sum -= sum_val;
+                if let Some(ref mut sum_series) = self.sum_series {
+                    *sum_series = (sum_series as &Series - &sum_result)?;
+                }
             }
             return Ok(());
         }
 
-        // For small series or edge cases, fall back to the original approach
-        // Convert to f64 to ensure we can compute the sum correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Sum can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
-            }
-        };
+        for i in 0..value.len() {
+            if value.is_valid(i) {
+                let scalar_value = value.slice(i, i + 1)?;
 
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                self.sum -= val;
+                if let Some(ref mut sum_series) = self.sum_series {
+                    *sum_series = (sum_series as &Series - &scalar_value)?;
+                }
             }
         }
 
         Ok(())
     }
 
-    fn evaluate(&self) -> DaftResult<Series> {
-        // Create appropriate numeric array based on output type
-        match self.field.dtype {
-            DataType::Float64 => {
-                let array = Float64Array::from((self.name.as_str(), vec![self.sum])).into_series();
-                Ok(array)
+    fn evaluate(&mut self) -> DaftResult<Series> {
+        match &self.sum_series {
+            Some(sum) => {
+                let result = sum.rename(&self.name);
+                Ok(result)
             }
-            DataType::Int64 => {
-                let array =
-                    Int64Array::from((self.name.as_str(), vec![self.sum as i64])).into_series();
-                Ok(array)
-            }
-            // Add other numeric types as needed
-            _ => {
-                // Default to Float64 for other types
-                let array = Float64Array::from((self.name.as_str(), vec![self.sum])).into_series();
-                Ok(array)
-            }
+            None => Ok(Series::full_null(&self.name, &self.field.dtype, 1)),
         }
     }
 }
 
-/// State for computing min in a sliding window using an efficient sorted data structure
 pub struct MinWindowState {
-    /// Name of the output column
     name: String,
-    /// Map of values and their counts, sorted naturally (smallest to largest)
-    values: BTreeMap<OrderedFloat<f64>, usize>,
-    /// Field information for the output
+    heap: BinaryHeap<Reverse<IndexedValue>>,
+    cur_idx: u64,
     field: Field,
 }
 
 impl MinWindowState {
     pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        // Extract expression name for output column
         let name = match agg_expr {
             AggExpr::Min(expr) => expr.name().to_string(),
             _ => panic!("Expected Min aggregation"),
@@ -354,115 +296,68 @@ impl MinWindowState {
 
         Self {
             name,
-            values: BTreeMap::new(),
+            heap: BinaryHeap::new(),
+            cur_idx: 0,
             field,
         }
     }
 }
 
 impl WindowAggStateOps for MinWindowState {
-    fn add(&mut self, value: &Series) -> DaftResult<()> {
-        // Convert to f64 to ensure we can compute the min correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Min can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
+    fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
+        let mut idx = start_idx;
+        for i in 0..value.len() {
+            if value.is_valid(i) {
+                let scalar_value = value.slice(i, i + 1)?;
+                self.heap.push(Reverse(IndexedValue {
+                    value: scalar_value,
+                    idx,
+                }));
             }
-        };
-
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                // Increment count or insert with count 1
-                *self.values.entry(OrderedFloat(val)).or_insert(0) += 1;
-            }
+            idx += 1;
         }
+
+        debug_assert!(
+            idx == end_idx,
+            "Index does not match end_idx in add operation"
+        );
 
         Ok(())
     }
 
-    fn remove(&mut self, value: &Series) -> DaftResult<()> {
-        // Convert to f64 to ensure we can compute the min correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Min can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
-            }
-        };
-
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                let ordered_val = OrderedFloat(val);
-                if let Some(count) = self.values.get_mut(&ordered_val) {
-                    *count -= 1;
-                    // Remove entry if count reaches 0
-                    if *count == 0 {
-                        self.values.remove(&ordered_val);
-                    }
-                }
-            }
-        }
+    fn remove(&mut self, _value: &Series, _start_idx: u64, end_idx: u64) -> DaftResult<()> {
+        self.cur_idx = end_idx;
 
         Ok(())
     }
 
-    fn evaluate(&self) -> DaftResult<Series> {
-        // BTreeMap is sorted, so the first key is the minimum value
-        match self.values.keys().next() {
-            Some(min) => {
-                let min_val = min.0;
-                // Create array with appropriate type
-                match self.field.dtype {
-                    DataType::Float64 => {
-                        let array =
-                            Float64Array::from((self.name.as_str(), vec![min_val])).into_series();
-                        Ok(array)
-                    }
-                    DataType::Int64 => {
-                        let array = Int64Array::from((self.name.as_str(), vec![min_val as i64]))
-                            .into_series();
-                        Ok(array)
-                    }
-                    // Add other numeric types as needed
-                    _ => {
-                        // Default to Float64 for other types
-                        let array =
-                            Float64Array::from((self.name.as_str(), vec![min_val])).into_series();
-                        Ok(array)
-                    }
-                }
+    fn evaluate(&mut self) -> DaftResult<Series> {
+        let mut min_value = None;
+
+        while let Some(Reverse(entry)) = self.heap.peek() {
+            if entry.idx >= self.cur_idx {
+                min_value = Some(entry.value.clone());
+                break;
             }
+            self.heap.pop();
+        }
+
+        match min_value {
+            Some(min_val) => Ok(min_val),
             None => Ok(Series::full_null(&self.name, &self.field.dtype, 1)),
         }
     }
 }
 
-/// State for computing max in a sliding window using an efficient sorted data structure
 pub struct MaxWindowState {
-    /// Name of the output column
     name: String,
-    /// Map of values and their counts, sorted naturally (smallest to largest)
-    values: BTreeMap<OrderedFloat<f64>, usize>,
-    /// Field information for the output
+    heap: BinaryHeap<IndexedValue>,
+    cur_idx: u64,
     field: Field,
 }
 
 impl MaxWindowState {
     pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        // Extract expression name for output column
         let name = match agg_expr {
             AggExpr::Max(expr) => expr.name().to_string(),
             _ => panic!("Expected Max aggregation"),
@@ -472,115 +367,68 @@ impl MaxWindowState {
 
         Self {
             name,
-            values: BTreeMap::new(),
+            heap: BinaryHeap::new(),
+            cur_idx: 0,
             field,
         }
     }
 }
 
 impl WindowAggStateOps for MaxWindowState {
-    fn add(&mut self, value: &Series) -> DaftResult<()> {
-        // Convert to f64 to ensure we can compute the max correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Max can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
+    fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
+        let mut idx = start_idx;
+        for i in 0..value.len() {
+            if value.is_valid(i) {
+                let scalar_value = value.slice(i, i + 1)?;
+                self.heap.push(IndexedValue {
+                    value: scalar_value,
+                    idx,
+                });
             }
-        };
-
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                // Increment count or insert with count 1
-                *self.values.entry(OrderedFloat(val)).or_insert(0) += 1;
-            }
+            idx += 1;
         }
+
+        debug_assert!(
+            idx == end_idx,
+            "Index does not match end_idx in add operation"
+        );
 
         Ok(())
     }
 
-    fn remove(&mut self, value: &Series) -> DaftResult<()> {
-        // Convert to f64 to ensure we can compute the max correctly
-        let value = match value.data_type() {
-            dt if dt.is_numeric() => value.cast(&DataType::Float64)?,
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Max can only be computed on numeric types, got {}",
-                    value.data_type()
-                )))
-            }
-        };
-
-        // Get the f64 array and extract the value
-        let value_array = value.f64()?;
-
-        // Process each value in the array
-        for i in 0..value_array.len() {
-            if let Some(val) = value_array.get(i) {
-                let ordered_val = OrderedFloat(val);
-                if let Some(count) = self.values.get_mut(&ordered_val) {
-                    *count -= 1;
-                    // Remove entry if count reaches 0
-                    if *count == 0 {
-                        self.values.remove(&ordered_val);
-                    }
-                }
-            }
-        }
+    fn remove(&mut self, _value: &Series, _start_idx: u64, end_idx: u64) -> DaftResult<()> {
+        self.cur_idx = end_idx;
 
         Ok(())
     }
 
-    fn evaluate(&self) -> DaftResult<Series> {
-        // For max, we need the last key in the BTreeMap
-        match self.values.keys().next_back() {
-            Some(max) => {
-                let max_val = max.0;
-                // Create array with appropriate type
-                match self.field.dtype {
-                    DataType::Float64 => {
-                        let array =
-                            Float64Array::from((self.name.as_str(), vec![max_val])).into_series();
-                        Ok(array)
-                    }
-                    DataType::Int64 => {
-                        let array = Int64Array::from((self.name.as_str(), vec![max_val as i64]))
-                            .into_series();
-                        Ok(array)
-                    }
-                    // Add other numeric types as needed
-                    _ => {
-                        // Default to Float64 for other types
-                        let array =
-                            Float64Array::from((self.name.as_str(), vec![max_val])).into_series();
-                        Ok(array)
-                    }
-                }
+    fn evaluate(&mut self) -> DaftResult<Series> {
+        let mut temp_heap = self.heap.clone();
+        let mut max_value = None;
+
+        while let Some(entry) = temp_heap.peek() {
+            if entry.idx >= self.cur_idx {
+                max_value = Some(entry.value.clone());
+                break;
             }
+            temp_heap.pop();
+        }
+
+        match max_value {
+            Some(max_val) => Ok(max_val),
             None => Ok(Series::full_null(&self.name, &self.field.dtype, 1)),
         }
     }
 }
 
-/// State for computing count distinct in a sliding window
 pub struct CountDistinctWindowState {
-    /// Name of the output column
     name: String,
-    /// Map of values to their counts
     value_counts: HashMap<u64, usize>,
-    /// Field information for the output
     field: Field,
 }
 
 impl CountDistinctWindowState {
     pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        // Extract expression name for output column
         let name = match agg_expr {
             AggExpr::CountDistinct(expr) => expr.name().to_string(),
             _ => panic!("Expected CountDistinct aggregation"),
@@ -597,11 +445,9 @@ impl CountDistinctWindowState {
 }
 
 impl WindowAggStateOps for CountDistinctWindowState {
-    fn add(&mut self, value: &Series) -> DaftResult<()> {
-        // Hash the values including validity information
+    fn add(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
         let hashed = value.hash_with_validity(None)?;
 
-        // Iterate through the hash values and increment counts
         for i in 0..hashed.len() {
             if let Some(hash) = hashed.get(i) {
                 *self.value_counts.entry(hash).or_insert(0) += 1;
@@ -611,11 +457,9 @@ impl WindowAggStateOps for CountDistinctWindowState {
         Ok(())
     }
 
-    fn remove(&mut self, value: &Series) -> DaftResult<()> {
-        // Hash the values including validity information
+    fn remove(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
         let hashed = value.hash_with_validity(None)?;
 
-        // Iterate through the hash values and decrement counts
         for i in 0..hashed.len() {
             if let Some(hash) = hashed.get(i) {
                 if let Some(count) = self.value_counts.get_mut(&hash) {
@@ -630,18 +474,15 @@ impl WindowAggStateOps for CountDistinctWindowState {
         Ok(())
     }
 
-    fn evaluate(&self) -> DaftResult<Series> {
-        // Count of distinct values is the number of keys in the hashmap
+    fn evaluate(&mut self) -> DaftResult<Series> {
         let count = self.value_counts.len() as u64;
 
-        // Create array with proper type matching field dtype
         match self.field.dtype {
             DataType::UInt64 => {
                 let array = UInt64Array::from((self.name.as_str(), vec![count])).into_series();
                 Ok(array)
             }
             _ => {
-                // Default to UInt64 for other types
                 let array = UInt64Array::from((self.name.as_str(), vec![count])).into_series();
                 Ok(array)
             }
@@ -649,7 +490,6 @@ impl WindowAggStateOps for CountDistinctWindowState {
     }
 }
 
-/// Enum that holds different types of window aggregation states
 pub enum WindowAggState {
     Mean(MeanWindowState),
     Sum(SumWindowState),
@@ -658,31 +498,26 @@ pub enum WindowAggState {
     CountDistinct(CountDistinctWindowState),
 }
 
-// Define a unified macro to implement both WindowAggState methods and the factory function
 macro_rules! impl_window_agg_system {
     ($(($variant:ident, $state_type:ty)),*) => {
-        // Implement WindowAggState methods
         impl WindowAggState {
-            /// Forward the add operation to the appropriate state implementation
-            pub fn add(&mut self, value: &Series) -> DaftResult<()> {
+            pub fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
                 match self {
                     $(
-                        Self::$variant(state) => state.add(value),
+                        Self::$variant(state) => state.add(value, start_idx, end_idx),
                     )*
                 }
             }
 
-            /// Forward the remove operation to the appropriate state implementation
-            pub fn remove(&mut self, value: &Series) -> DaftResult<()> {
+            pub fn remove(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
                 match self {
                     $(
-                        Self::$variant(state) => state.remove(value),
+                        Self::$variant(state) => state.remove(value, start_idx, end_idx),
                     )*
                 }
             }
 
-            /// Forward the evaluate operation to the appropriate state implementation
-            pub fn evaluate(&self) -> DaftResult<Series> {
+            pub fn evaluate(&mut self) -> DaftResult<Series> {
                 match self {
                     $(
                         Self::$variant(state) => state.evaluate(),
@@ -691,7 +526,6 @@ macro_rules! impl_window_agg_system {
             }
         }
 
-        // Implement factory function for creating window state instances
         pub fn create_window_agg_state(agg_expr: &AggExpr, out_dtype: &DataType) -> DaftResult<WindowAggState> {
             match agg_expr {
                 $(
@@ -703,7 +537,6 @@ macro_rules! impl_window_agg_system {
     };
 }
 
-// Implement the entire window aggregation system with a single macro call
 impl_window_agg_system! {
     (Mean, MeanWindowState),
     (Sum, SumWindowState),

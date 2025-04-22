@@ -320,7 +320,6 @@ def test_different_min_periods(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
-@pytest.mark.skip(reason="String min/max window aggregation is not supported yet")
 def test_string_min_max(make_df):
     """Test min and max window aggregations with string values."""
     data = []

@@ -2088,7 +2088,6 @@ dependencies = [
  "libc",
  "log",
  "lzma-sys",
- "ordered-float",
  "pyo3",
  "pyo3-log",
  "sysinfo",
@@ -2677,7 +2676,6 @@ dependencies = [
  "html-escape",
  "indexmap 2.7.0",
  "num-traits",
- "ordered-float",
  "pyo3",
  "rand 0.8.5",
  "serde",
@@ -5093,15 +5091,6 @@ dependencies = [
  "fallible-streaming-iterator",
  "flate2",
  "prost 0.9.0",
-]
-
-[[package]]
-name = "ordered-float"
-version = "5.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2c1f9f56e534ac6a9b8a4600bdf0f530fb393b5f393e7b4d03489c3cf0c3f01"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
