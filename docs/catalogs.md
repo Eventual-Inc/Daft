@@ -162,4 +162,3 @@ df = daft.read_table("my_temp_table")
 * [Catalog][daft.catalog.Catalog] - Interface for creating and accessing both tables and namespaces
 * [Identifier][daft.catalog.Identifier] - Paths to objects e.g. `catalog.namespace.table`
 * [Table][daft.catalog.Table] - Interface for reading and writing dataframes
-* [TableSource][daft.catalog.TableSource] - Sources for table creation like a schema or dataframe
