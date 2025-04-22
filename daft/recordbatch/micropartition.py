@@ -108,6 +108,10 @@ class MicroPartition:
         table = RecordBatch.from_pydict(data)
         return MicroPartition._from_tables([table])
 
+    @staticmethod
+    def from_ipc_stream(stream: bytes) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.read_from_ipc_stream(stream))
+
     @classmethod
     def concat(cls, to_merge: list[MicroPartition]) -> MicroPartition:
         micropartitions = []
@@ -154,6 +158,9 @@ class MicroPartition:
             schema=schema,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
+
+    def to_ipc_stream(self) -> bytes:
+        return self._micropartition.write_to_ipc_stream()
 
     ###
     # Compute methods (MicroPartition -> MicroPartition)

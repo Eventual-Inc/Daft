@@ -911,6 +911,19 @@ impl PyMicroPartition {
             unreachable!()
         }
     }
+
+    pub fn write_to_ipc_stream<'a>(&'a self, py: Python<'a>) -> PyResult<Bound<'a, PyBytes>> {
+        let buffer = py.allow_threads(|| self.inner.write_to_ipc_stream())?;
+        let bytes = PyBytes::new(py, &buffer);
+        Ok(bytes)
+    }
+
+    #[staticmethod]
+    pub fn read_from_ipc_stream(bytes: Bound<'_, PyBytes>, py: Python) -> PyResult<Self> {
+        let buffer = bytes.as_bytes();
+        let mp = py.allow_threads(|| MicroPartition::read_from_ipc_stream(buffer))?;
+        Ok(mp.into())
+    }
 }
 
 pub fn read_json_into_py_table(
