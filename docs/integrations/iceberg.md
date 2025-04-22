@@ -287,7 +287,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 4. **Does Daft support Iceberg REST catalog implementations?**
 
-    *Yes! Daft uses PyIceberg to interface with Iceberg catalogs which has extensive Iceberg REST catalog support.
+    *Yes! Daft uses PyIceberg to interface with Iceberg catalogs which has extensive Iceberg REST catalog support.*
 
 5. **How does Daft handle positional deletes vs equality deletes?**
 
@@ -307,7 +307,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 9. **How does Daft handle schema evolution?**
 
-    *Daft currently does not expose any data definition operators beyond `create_table`.*
+    *Daft currently does not expose any data definition operators beyond [create_table][daft.session.Session.create_table].*
 
 10. **Does Daft support reading table metadata like snapshot information?**
 
@@ -319,7 +319,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 12. **Can Daft read and write partition transforms like truncate, bucket, or hour?**
 
-    *Daft can read and write all Iceberg partition transform types: identity, bucket, date transforms (year/month/day), and truncate.
+    *Daft can read and write all Iceberg partition transform types: identity, bucket, date transforms (year/month/day), and truncate.*
 
 13. **How does Daft optimize queries against partitioned data?**
 
