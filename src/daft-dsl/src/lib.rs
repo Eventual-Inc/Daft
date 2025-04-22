@@ -49,6 +49,9 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::initialize_udfs, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::get_udf_names, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::eq, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::row_number, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::rank, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::dense_rank, parent)?)?;
 
     Ok(())
 }
