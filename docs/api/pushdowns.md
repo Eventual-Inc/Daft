@@ -1,7 +1,6 @@
 # Pushdowns
 
-Pushdowns in Daft are represented using *Terms* which model expressions
-as basic
+Daft has predicate, projection, and limit pushdowns with expressions being represented by *Terms*.
 
 ::: daft.io.pushdowns.Pushdowns
     options:

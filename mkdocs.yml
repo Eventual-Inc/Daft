@@ -28,6 +28,7 @@ nav:
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
+    - Pushdowns: advanced/pushdowns.md
   - Integrations:
     - Catalogs & Tables:
       - Apache Hudi: integrations/hudi.md
@@ -63,6 +64,7 @@ nav:
   - Groupby: api/groupby.md
   - User-Defined Functions: api/udf.md
   - Series: api/series.md
+  - I/O: api/io.md
   - Pushdowns: api/pushdowns.md
   - Configuration: api/config.md
   - Miscellaneous: api/misc.md

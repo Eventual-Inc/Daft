@@ -74,11 +74,11 @@ class Expr(Term):
     This is enforced on instantiation since we use python args and kwargs.
 
     Example:
-    >>> Expr("f", 42)  # (f 42)
-    >>> Expr("f", "hello")  # (f "hello")
-    >>> Expr("f", 1, 2.5, "test")  # (f 1 2.50 "test")
-    >>> Expr("f", value=True)  # (f value::true)
-    >>> Expr("f", x=10, y=20.5)  # (f x::10 y::20.50)
+        >>> Expr("f", 42)  # (f 42)
+        >>> Expr("f", "hello")  # (f "hello")
+        >>> Expr("f", 1, 2.5, "test")  # (f 1 2.50 "test")
+        >>> Expr("f", value=True)  # (f value::true)
+        >>> Expr("f", x=10, y=20.5)  # (f x::10 y::20.50)
     """
 
     proc: str

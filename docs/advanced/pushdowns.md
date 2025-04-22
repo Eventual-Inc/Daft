@@ -2,9 +2,7 @@
 
 !!! warning "Warning"
 
-    These APIs are early in their development. Please feel free to
-    [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose).
-    We'd love hear what you would like, thank you! 🤘
+    These APIs are considered experimental.
 
 Daft supports predicate, projection, and limit pushdowns in its scan operators.
 
