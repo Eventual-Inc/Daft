@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     expr::{Expr, WindowExpr},
-    ExprRef, LiteralValue,
+    ExprRef, LiteralValue, Operator,
 };
 
 #[pyfunction]
@@ -406,49 +406,47 @@ impl PyExpr {
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Plus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Plus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Minus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Minus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Multiply, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Multiply, self.into(), other.expr.clone()).into())
     }
+
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(
-            crate::Operator::FloorDivide,
-            self.into(),
-            other.expr.clone(),
-        )
-        .into())
+        Ok(crate::binary_op(Operator::FloorDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::TrueDivide, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::TrueDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Modulus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Modulus, self.into(), other.expr.clone()).into())
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::And, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::And, self.into(), other.expr.clone()).into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Or, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Or, self.into(), other.expr.clone()).into())
     }
 
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Xor, self.into(), other.expr.clone()).into())
     }
 
     pub fn __lshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftLeft, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftLeft, self.into(), other.expr.clone()).into())
     }
 
     pub fn __rshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftRight, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftRight, self.into(), other.expr.clone()).into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
@@ -480,7 +478,7 @@ impl PyExpr {
     }
 
     pub fn eq_null_safe(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::EqNullSafe, self.into(), other.into()).into())
+        Ok(crate::binary_op(Operator::EqNullSafe, self.into(), other.into()).into())
     }
 
     pub fn is_in(&self, other: Vec<Self>) -> PyResult<Self> {
