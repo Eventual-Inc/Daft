@@ -31,12 +31,14 @@ impl ScalarUDF for Utf8ToDatetime {
                 Ok(data_field) => match &data_field.dtype {
                     DataType::Utf8 => {
                         let timeunit = infer_timeunit_from_format_string(&self.format);
-                        // if it has an offset, we coerce it to UTC. This is consistent with other engines (duckdb, polars)
-                        let has_offset = format_string_has_offset(&self.format);
-                        let timezone = if has_offset {
+
+                        let timezone = if let Some(tz) = &self.timezone {
+                            Some(tz.clone())
+                        } else if format_string_has_offset(&self.format) {
+                            // if it has an offset, we coerce it to UTC. This is consistent with other engines (duckdb, polars)
                             Some("UTC".to_string())
                         } else {
-                            self.timezone.clone()
+                            None
                         };
 
                         Ok(Field::new(
