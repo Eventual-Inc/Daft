@@ -41,7 +41,9 @@ def mock_boto3_session():
 @pytest.fixture
 def mock_botocore_session():
     with mock_aws():
-        yield botocore.session.Session()
+        sess = botocore.session.Session()
+        sess.set_config_variable("region", "us-west-2")
+        yield sess
 
 
 @pytest.fixture
