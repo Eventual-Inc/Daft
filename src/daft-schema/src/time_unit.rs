@@ -72,3 +72,8 @@ pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
         TimeUnit::Microseconds
     }
 }
+
+#[must_use]
+pub fn format_string_has_offset(format: &str) -> bool {
+    format.contains('+') || format.contains('-') || format.contains('Z') || format.contains('z')
+}
