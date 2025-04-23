@@ -203,6 +203,9 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
     return name
 
 
+Properties = dict[str, Any]
+
+
 class NotFoundError(Exception):
     """Raised when some catalog object is not able to be found."""
 
@@ -396,7 +399,12 @@ class Catalog(ABC):
             self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         """Creates a table in this catalog.
 
         Args:
@@ -408,7 +416,12 @@ class Catalog(ABC):
         """
         raise NotImplementedError
 
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table_if_not_exists(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         """Creates a table in this catalog if it does not already exist.
 
         Args:
@@ -421,7 +434,7 @@ class Catalog(ABC):
         try:
             return self.get_table(identifier)
         except NotFoundError:
-            return self.create_table(identifier, source)
+            return self.create_table(identifier, source, properties)
 
     ###
     # has_*

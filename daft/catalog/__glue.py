@@ -9,7 +9,7 @@ import boto3
 import botocore
 from botocore.exceptions import ClientError
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Table
 from daft.datatype import DataType
 from daft.logical.schema import Field, Schema
 
@@ -154,12 +154,18 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.AlreadyExistsException:
             raise ValueError(f"Namespace {identifier} already exists")
 
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         """Creates a table in AWS Glue.
 
         Args:
             identifier (Identifier | str): The name of the table to create.
-            source (TableSource | object): The source data for the table.
+            source (Schema | DataFrame): The source data for the table.
+            properties (Properties): Additional table properties.
 
         Returns:
             Table: The created table.
