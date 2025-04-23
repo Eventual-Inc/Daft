@@ -946,13 +946,18 @@ impl Utf8Array {
                             }
                         }
                         None => {
-                            // try with timezone first
-                            if let Ok(dt) = chrono::DateTime::parse_from_str(val, format) {
+                            let has_offset = val.contains('+') || val.contains('-') || val.contains('Z');
+                            if has_offset {
+                                let datetime = chrono::DateTime::parse_from_str(val, format).map_err(|e| {
+                                    DaftError::ComputeError(format!(
+                                        "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
+                                    ))
+                                })?;
                                 match timeunit {
-                                    TimeUnit::Seconds => dt.timestamp(),
-                                    TimeUnit::Milliseconds => dt.timestamp_millis(),
-                                    TimeUnit::Microseconds => dt.timestamp_micros(),
-                                    TimeUnit::Nanoseconds => dt.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
+                                    TimeUnit::Seconds => datetime.timestamp(),
+                                    TimeUnit::Milliseconds => datetime.timestamp_millis(),
+                                    TimeUnit::Microseconds => datetime.timestamp_micros(),
+                                    TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
                                 }
                             } else {
                                 let naive_datetime = chrono::NaiveDateTime::parse_from_str(val, format).map_err(|e| {
