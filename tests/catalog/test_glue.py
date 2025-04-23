@@ -83,6 +83,7 @@ def test_catalog_from_client(glue_client):
 
 
 def test_catalog_from_session(mock_boto3_session, mock_botocore_session):
+    # Test both boto3 and botocore sessions.
     assert Catalog.from_glue("gc", session=mock_boto3_session)
     assert GlueCatalog.from_session("gc", session=mock_boto3_session)
 
