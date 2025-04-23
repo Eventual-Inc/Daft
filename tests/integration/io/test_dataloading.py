@@ -1,11 +1,11 @@
 import pytest
 import torch
 import torchvision.models as models
-from botocore import session
+from boto3 import session
 from torch.utils.data import DataLoader
 
 import daft
-from daft.catalog.__glue import load_glue
+from daft.catalog.__glue import GlueCatalog
 
 
 @pytest.mark.integration()
@@ -14,14 +14,7 @@ def test_dataloading_from_glue_iceberg(pytestconfig):
         pytest.skip("Test can only run in a credentialled environment, and when run with the `--credentials` flag")
 
     sess = session.Session()
-    creds = sess.get_credentials()
-    catalog = load_glue(
-        name="glue_catalog",
-        region_name="us-west-2",
-        aws_access_key_id=creds.access_key,
-        aws_secret_access_key=creds.secret_key,
-        aws_session_token=creds.token,
-    )
+    catalog = GlueCatalog.from_session(name="glue_catalog", session=sess)
 
     images_table = catalog.get_table("glue_iceberg_test.coco_images")
     images_df = images_table.read()  # noqa: F841
