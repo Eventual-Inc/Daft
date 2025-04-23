@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from botocore.exceptions import ClientError
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Schema, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__iceberg import IcebergCatalog
 from daft.dataframe import DataFrame
 from daft.io import read_iceberg
@@ -136,7 +136,12 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to create namespace: {e}") from e
 
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         if isinstance(source, Schema):
             return self._create_table_from_schema(identifier, source)
         elif isinstance(source, DataFrame):

@@ -9,7 +9,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.table import Table as InnerTable
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Schema, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.dataframe import DataFrame
 from daft.io._iceberg import read_iceberg
 
@@ -52,7 +52,12 @@ class IcebergCatalog(Catalog):
         ident = _to_pyiceberg_ident(identifier)
         self._inner.create_namespace(ident)
 
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         if isinstance(source, DataFrame):
             return self._create_table_from_df(identifier, source)
         elif isinstance(source, Schema):
