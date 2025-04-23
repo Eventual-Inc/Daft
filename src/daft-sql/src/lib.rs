@@ -30,7 +30,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
 
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
@@ -105,14 +105,23 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let session = Session::default();
+        static SESSION: LazyLock<Session> = LazyLock::new(|| {
+            let session = Session::default();
+            // construct views from the tables and attach to the session
+            session
+                .create_temp_table("tbl1", &tbl_1().into(), false)
+                .unwrap();
+            session
+                .create_temp_table("tbl2", &tbl_2().into(), false)
+                .unwrap();
+            session
+                .create_temp_table("tbl3", &tbl_3().into(), false)
+                .unwrap();
 
-        // construct views from the tables and attach to the session
-        _ = session.create_temp_table("tbl1", &tbl_1().into(), false);
-        _ = session.create_temp_table("tbl2", &tbl_2().into(), false);
-        _ = session.create_temp_table("tbl3", &tbl_3().into(), false);
+            session
+        });
 
-        SQLPlanner::new(session.into())
+        SQLPlanner::new(&SESSION)
     }
 
     #[rstest]

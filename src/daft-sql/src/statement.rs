@@ -207,6 +207,7 @@ impl SQLPlanner<'_> {
 
 #[cfg(test)]
 mod test {
+    use daft_session::Session;
     use sqlparser::{dialect::GenericDialect, parser::Parser};
 
     use super::*;
@@ -222,8 +223,8 @@ mod test {
     fn test_use_catalog() {
         let sql = "USE mycatalog";
         let statement = parse_sql(sql);
-
-        let mut planner = SQLPlanner::new(Default::default());
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
         let plan = planner.plan_statement(&statement).unwrap();
 
         if let Statement::Use(use_stmt) = plan {
@@ -238,8 +239,8 @@ mod test {
     fn test_use_catalog_with_namespace() -> SQLPlannerResult<()> {
         let sql = "USE mycatalog.myschema";
         let statement = parse_sql(sql);
-
-        let mut planner = SQLPlanner::new(Default::default());
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
         let plan = planner.plan_statement(&statement).unwrap();
 
         if let Statement::Use(use_stmt) = plan {
@@ -258,8 +259,9 @@ mod test {
     fn test_use_catalog_with_multi_level_namespace() -> SQLPlannerResult<()> {
         let sql = "USE mycatalog.myschema.mysubschema";
         let statement = parse_sql(sql);
+        let session = Session::default();
 
-        let mut planner = SQLPlanner::new(Default::default());
+        let mut planner = SQLPlanner::new(&session);
         let plan = planner.plan_statement(&statement).unwrap();
 
         if let Statement::Use(use_stmt) = plan {
