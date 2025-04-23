@@ -954,8 +954,11 @@ impl Utf8Array {
                                         "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
                                     ))
                                 })?.to_utc();
+
                                 // if it has an offset, we coerce it to UTC. This is consistent with other engines (duckdb, polars, datafusion)
-                                timezone = Some("UTC".to_string());
+                                if timezone.is_none() {
+                                    timezone = Some("UTC".to_string());
+                                }
 
                                 match timeunit {
                                     TimeUnit::Seconds => datetime.timestamp(),
