@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Literal
 
 import boto3
+import botocore
 from botocore.exceptions import ClientError
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Table
@@ -13,7 +14,6 @@ from daft.datatype import DataType
 from daft.logical.schema import Field, Schema
 
 if TYPE_CHECKING:
-    from boto3 import Session
     from mypy_boto3_glue import GlueClient
     from mypy_boto3_glue.type_defs import ColumnOutputTypeDef as GlueColumnInfo
     from mypy_boto3_glue.type_defs import TableTypeDef as GlueTableInfo
@@ -111,11 +111,25 @@ class GlueCatalog(Catalog):
         return c
 
     @staticmethod
-    def from_session(name: str, session: Session) -> GlueCatalog:
-        """Creates a GlueCatalog using the boto3 session to get a glue client."""
+    def from_session(name: str, session: boto3.Session | botocore.session.Session) -> GlueCatalog:
+        """Creates a GlueCatalog using the provided boto3 or botocore session to get a glue client.
+
+        Args:
+            name: Name of the catalog
+            session: A boto3.Session or botocore.session.Session object
+
+        Returns:
+            A configured GlueCatalog instance
+        """
         c = GlueCatalog.__new__(GlueCatalog)
         c._name = name
-        c._client = session.client("glue")
+        if isinstance(session, boto3.Session):
+            c._client = session.client("glue")
+        elif isinstance(session, botocore.session.Session):
+            c._client = session.create_client("glue")
+        else:
+            raise TypeError(f"Expected boto3.Session or botocore.session.Session, got {type(session).__name__}")
+
         return c
 
     @property
