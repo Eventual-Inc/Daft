@@ -1,3 +1,7 @@
+import random
+import uuid
+
+import pandas as pd
 import pytest
 import torch
 import torchvision.models as models
@@ -71,3 +75,34 @@ def test_dataloading_from_glue_iceberg(pytestconfig):
 
     assert all_embeddings.shape[0] == len(ids), "Number of embeddings should match number of ids"
     assert all_embeddings.shape[1] == 512, "ResNet18 should produce 512-dimensional embeddings"
+
+
+@pytest.mark.integration()
+def test_pandas_to_daft_to_glue_iceberg(pytestconfig):
+    if pytestconfig.getoption("--credentials") is not True:
+        pytest.skip("Test requires AWS credentials and `--credentials` flag")
+
+    # Create random data in pandas.
+    num_rows = 10
+    df_pd = pd.DataFrame(
+        {
+            "id": [str(uuid.uuid4()) for _ in range(num_rows)],
+            "double_col": [random.random() for _ in range(num_rows)],
+            "int_col": [random.randint(0, 3) for _ in range(num_rows)],
+        }
+    )
+
+    # Convert to daft DataFrame.
+    df = daft.from_pandas(df_pd)
+
+    # Overwrite data in Glue Iceberg table.
+    sess = session.Session()
+    catalog = GlueCatalog.from_session(name="glue_catalog", session=sess)
+    table = catalog.get_table("glue_iceberg_test.pandas_to_glue_table")
+    table.write(df, mode="overwrite")
+
+    # Validate that we wrote the data correctly.
+    read_back = table.read()
+    read_back_pd = read_back.sort("id").to_pandas().reset_index(drop=True)
+    df_pd = df_pd.sort_values("id").reset_index(drop=True)
+    assert read_back_pd.equals(df_pd), "Did not write data correctly to Glue Iceberg table"
