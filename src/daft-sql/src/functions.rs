@@ -323,8 +323,7 @@ impl SQLPlanner<'_> {
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
 
-        let mut fn_match = if let Some(fn_match) =
-            get_func_from_session(&self.context.borrow().session, &fn_name)?
+        let mut fn_match = if let Some(fn_match) = get_func_from_session(self.session(), &fn_name)?
         {
             fn_match
         } else {
