@@ -219,6 +219,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                         WindowExpr::DenseRank => {
                                             partition.window_rank(name.clone(), &params.order_by, true)?
                                         }
+                                        WindowExpr::Offset { input, offset, default } => {
+                                            partition.window_offset(name.clone(), input.clone(), *offset, default.clone())?
+                                        }
                                     }
                                 }
                             }

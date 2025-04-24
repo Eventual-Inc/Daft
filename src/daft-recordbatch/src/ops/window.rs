@@ -28,10 +28,7 @@ impl RecordBatch {
             ));
         }
 
-        // Table with just the groupby columns.
         let groupby_table = self.eval_expression_list(group_by)?;
-
-        // Get the grouped values (by indices, one array of indices per group).
         let (_, groupvals_indices) = groupby_table.make_groups()?;
 
         let mut row_to_group_mapping = vec![0; self.len()];
@@ -59,7 +56,6 @@ impl RecordBatch {
             .into_iter()
             .zip(aliases)
             .map(|(agg_col, name)| {
-                // Create a Series of indices to use with take()
                 let take_indices = UInt64Array::from((
                     "row_to_group_mapping",
                     row_to_group_mapping
@@ -72,10 +68,7 @@ impl RecordBatch {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        // Create a new RecordBatch with just the window columns (no group keys)
         let window_result = Self::from_nonempty_columns(window_cols)?;
-
-        // Union the original data with the window result
         self.union(&window_result)
     }
 
@@ -86,29 +79,22 @@ impl RecordBatch {
             ));
         }
 
-        // Since this is a single partition, we can just evaluate the aggregation expression directly
         let agg_result = self.eval_agg_expression(to_agg, None)?;
         let window_col = agg_result.rename(&name);
 
         // Broadcast the aggregation result to match the length of the partition
         let broadcast_result = window_col.broadcast(self.len())?;
 
-        // Create a new RecordBatch with just the window column
         let window_result = Self::from_nonempty_columns(vec![broadcast_result])?;
-
-        // Union the original data with the window result
         self.union(&window_result)
     }
 
     pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
         // Create a sequence of row numbers (1-based)
         let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
-
-        // Create a Series from the row numbers
         let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
         let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
 
-        // Union the original data with the row number column
         self.union(&row_number_batch)
     }
 
@@ -158,11 +144,94 @@ impl RecordBatch {
             }))
             .collect();
 
-        // Create a Series from the rank numbers
         let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
         let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
 
-        // Union the original data with the rank column
         self.union(&rank_batch)
+    }
+
+    pub fn window_offset(
+        &self,
+        name: String,
+        expr: ExprRef,
+        offset: isize,
+        default: Option<ExprRef>,
+    ) -> DaftResult<Self> {
+        // Short-circuit if offset is 0 - just return the value itself
+        if offset == 0 {
+            let expr_col = self.eval_expression(&expr)?;
+            let renamed_col = expr_col.rename(&name);
+            let result_batch = Self::from_nonempty_columns(vec![renamed_col])?;
+            return self.union(&result_batch);
+        }
+
+        let expr_col = self.eval_expression(&expr)?;
+        let abs_offset = offset.unsigned_abs();
+
+        let process_default = |default_opt: &Option<ExprRef>,
+                               target_type: &DataType,
+                               slice_start: usize,
+                               slice_end: usize,
+                               target_length: usize|
+         -> DaftResult<Series> {
+            if let Some(default_expr) = default_opt {
+                // Only evaluate on the slice we need for efficiency
+                let default_slice = self.slice(slice_start, slice_end)?;
+                let def_col = default_slice.eval_expression(default_expr)?;
+
+                let def_col = if def_col.data_type() != target_type {
+                    def_col.cast(target_type)?
+                } else {
+                    def_col
+                };
+
+                if def_col.len() != target_length {
+                    def_col.broadcast(target_length)
+                } else {
+                    Ok(def_col)
+                }
+            } else {
+                // Otherwise, create a column of nulls
+                Ok(Series::full_null(
+                    expr_col.name(),
+                    target_type,
+                    target_length,
+                ))
+            }
+        };
+
+        let mut result_col = if self.is_empty() || abs_offset >= self.len() {
+            // Special case: empty array or offset exceeds array length
+            process_default(&default, expr_col.data_type(), 0, self.len(), self.len())?
+        } else if offset > 0 {
+            // LEAD: shift values ahead by offset
+            let source_values = expr_col.slice(abs_offset, self.len())?;
+            let default_values = process_default(
+                &default,
+                expr_col.data_type(),
+                self.len() - abs_offset,
+                self.len(),
+                abs_offset,
+            )?;
+
+            // Construct result by concatenating source and default values
+            let cols = vec![&source_values, &default_values];
+            Series::concat(&cols)?
+        } else {
+            // LAG: shift values back by offset
+            let default_values =
+                process_default(&default, expr_col.data_type(), 0, abs_offset, abs_offset)?;
+
+            let source_values = expr_col.slice(0, self.len() - abs_offset)?;
+
+            // Construct result by concatenating default and source values
+            let cols = vec![&default_values, &source_values];
+            Series::concat(&cols)?
+        };
+
+        result_col = result_col.rename(&name);
+        let offset_batch = Self::from_nonempty_columns(vec![result_col])?;
+
+        self.union(&offset_batch)
     }
 }
