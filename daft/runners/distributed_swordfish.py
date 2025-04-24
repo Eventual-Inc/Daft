@@ -1,9 +1,12 @@
 import logging
-from typing import AsyncGenerator, Callable, Dict, List, Union
-
+from typing import AsyncGenerator, Callable, Dict, List, Tuple
+import asyncio
+from dataclasses import dataclass
 from daft.daft import (
+    LocalPhysicalPlan,
     NativeExecutor,
-    SwordfishWorkerTask,
+    PyDaftExecutionConfig,
+    RaySwordfishTask,
 )
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import PartitionMetadata
@@ -25,49 +28,65 @@ class SwordfishActor:
     # Run a plan on swordfish and yield partitions
     async def run_plan(
         self,
-        swordfish_worker_task: SwordfishWorkerTask,
-    ) -> AsyncGenerator[Union[MicroPartition, List[PartitionMetadata]], None]:
-        local_physical_plan = swordfish_worker_task.plan()
-        daft_execution_config = swordfish_worker_task.execution_config()
-        metadatas = []
-
-        async for partition in self.native_executor.run_distributed(local_physical_plan, daft_execution_config):
+        plan: LocalPhysicalPlan,
+        psets: dict[str, list[ray.ObjectRef]],
+        daft_execution_config: PyDaftExecutionConfig,
+    ) -> AsyncGenerator[MicroPartition, None]:
+        psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
+        psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+        async for partition in self.native_executor.run_async(
+            plan, psets_mp, daft_execution_config
+        ):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
             yield mp
-            metadata = PartitionMetadata.from_table(mp)
-            metadatas.append(metadata)
 
-        yield metadatas
+    async def concat_and_get_metadata(
+        self, *partitions: MicroPartition
+    ) -> Tuple[PartitionMetadata, MicroPartition]:
+        concated = MicroPartition.concat(partitions)
+        return PartitionMetadata.from_table(concated), concated
 
 
+@dataclass
 class RayPartitionRef:
-    def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int):
-        self.object_ref = object_ref
-        self._num_rows = num_rows
-        self._size_bytes = size_bytes
-
-    def size_bytes(self) -> int:
-        return self._size_bytes
-
-    def num_rows(self) -> int:
-        return self._num_rows
+    object_ref: ray.ObjectRef
+    num_rows: int
+    size_bytes: int
 
 
 class RaySwordfishTaskHandle:
-    def __init__(self, handle: ray.ObjectRef, add_memory_callback: Callable[[], None]):
-        self.handle = handle
+    def __init__(
+        self,
+        result_handle: ray.ObjectRef,
+        actor_handle: ray.actor.ActorHandle,
+        add_memory_callback: Callable[[int], None],
+        task_memory_cost: int,
+    ):
+        self.result_handle = result_handle
+        self.actor_handle = actor_handle
         self.add_memory_callback = add_memory_callback
+        self.task_memory_cost = task_memory_cost
 
-    async def get_result(self) -> List[RayPartitionRef]:
+    async def _get_result(self) -> List[RayPartitionRef]:
         results = []
-        async for result in self.handle:
+        async for result in self.result_handle:
             results.append(result)
 
-        metadata = await results.pop()
-        self.add_memory_callback()
-        return [RayPartitionRef(ref, meta.num_rows, meta.size_bytes) for meta, ref in zip(metadata, results)]
+        metadata, result = self.actor_handle.concat_and_get_metadata.options(num_returns=2).remote(
+            *results
+        )
+        metadata = await metadata
+        self.add_memory_callback(self.task_memory_cost)
+        return RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
+
+    async def get_result(self) -> List[RayPartitionRef]:
+        task = asyncio.create_task(self._get_result())
+        return await task
+
+    def cancel(self):
+        ray.cancel(self.result_handle)
 
 
 class RaySwordfishWorker:
@@ -96,12 +115,23 @@ class RaySwordfishWorker:
     def get_available_memory_bytes(self) -> int:
         return self.available_memory_bytes
 
-    def add_back_memory(self):
-        self.available_memory_bytes += 100 * 1024 * 1024 * 1024
+    def add_back_memory(self, memory_bytes: int):
+        self.available_memory_bytes += memory_bytes
 
-    def submit_task(self, task: SwordfishWorkerTask) -> RaySwordfishTaskHandle:
+    def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         self.available_memory_bytes -= task.estimated_memory_cost()
-        return RaySwordfishTaskHandle(self.actor_handle.run_plan.remote(task), self.add_back_memory)
+        psets = {k: [v["object_ref"] for v in v] for k, v in task.psets().items()}
+        return RaySwordfishTaskHandle(
+            self.actor_handle.run_plan.remote(
+                task.plan(), psets, task.execution_config()
+            ),
+            self.actor_handle,
+            self.add_back_memory,
+            task.estimated_memory_cost(),
+        )
+
+    def shutdown(self):
+        ray.kill(self.actor_handle)
 
 
 class RaySwordfishWorkerManager:
@@ -132,7 +162,9 @@ class RaySwordfishWorkerManager:
                     int(node["Resources"]["memory"]),
                 )
 
-    def submit_task_to_worker(self, task: SwordfishWorkerTask, worker_id: str) -> RaySwordfishTaskHandle:
+    def submit_task_to_worker(
+        self, task: RaySwordfishTask, worker_id: str
+    ) -> RaySwordfishTaskHandle:
         if worker_id not in self.workers:
             raise ValueError(f"Worker {worker_id} not found")
         return self.workers[worker_id].submit_task(task)
@@ -146,3 +178,12 @@ class RaySwordfishWorkerManager:
             )
             for worker in self.workers.values()
         ]
+
+    def try_autoscale(self, num_workers: int):
+        ray.autoscaler.sdk.request_resources(
+            num_cpus=num_workers,
+        )
+
+    def shutdown(self):
+        for worker in self.workers.values():
+            worker.shutdown()

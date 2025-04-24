@@ -1,20 +1,14 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
-use common_scan_info::{PhysicalScanInfo, ScanState};
-use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
-use daft_logical_plan::{
-    ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
-    LogicalPlanRef, SourceInfo,
-};
-use daft_schema::schema::SchemaRef;
+use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, LogicalPlanRef};
 
 use crate::{
-    dispatcher::TaskDispatcher,
-    program::Program,
-    stage::{CollectStage, Stage},
+    dispatcher::{TaskDispatcher, TaskDispatcherHandle},
+    get_or_init_runtime,
+    stage::{split_at_stage_boundary, Stage},
     worker::WorkerManager,
 };
 
@@ -41,75 +35,79 @@ impl DistributedPhysicalPlan {
         })
     }
 
+    pub async fn plan_loop(
+        mut remaining_logical_plan: Option<LogicalPlanRef>,
+        config: Arc<DaftExecutionConfig>,
+        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
+        mut psets: HashMap<String, Vec<PartitionRef>>,
+        result_sender: tokio::sync::mpsc::Sender<PartitionRef>,
+    ) -> DaftResult<()> {
+        while let Some(remaining_plan) = remaining_logical_plan.take() {
+            let worker_manager = worker_manager_creator();
+            let task_dispatcher = TaskDispatcher::new(worker_manager);
+            let mut joinset = tokio::task::JoinSet::new();
+            let task_dispatcher_handle =
+                TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset)?;
+
+            let (next_stage, remaining_plan) = split_at_stage_boundary(&remaining_plan, &config)?;
+
+            match (next_stage, remaining_plan) {
+                (Stage::Collect(collect_stage), None) => {
+                    let mut stage_result_receiver = collect_stage.spawn_stage_programs(
+                        std::mem::take(&mut psets),
+                        task_dispatcher_handle,
+                        &mut joinset,
+                    )?;
+                    while let Some(result) = stage_result_receiver.recv().await {
+                        println!("planner sending result");
+                        if let Err(e) = result_sender.send(result).await {
+                            return Ok(());
+                        }
+                        println!("planner sent result");
+                    }
+                    println!("planner done sending results");
+                }
+                (Stage::ShuffleMap(shuffle_map_stage), Some(remaining_plan)) => {
+                    let mut stage_result_receiver = shuffle_map_stage.spawn_stage_programs(
+                        std::mem::take(&mut psets),
+                        task_dispatcher_handle,
+                        &mut joinset,
+                    )?;
+                    let mut results = Vec::new();
+                    while let Some(result) = stage_result_receiver.recv().await {
+                        results.push(result);
+                    }
+                    remaining_logical_plan =
+                        Some(DistributedPhysicalPlan::update(remaining_plan, results)?);
+                }
+                (_, _) => panic!("We only support collect stages for now"),
+            }
+            while let Some(result) = joinset.join_next().await {
+                result.map_err(|e| DaftError::InternalError(e.to_string()))??;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn update(plan: LogicalPlanRef, results: Vec<PartitionRef>) -> DaftResult<LogicalPlanRef> {
+        todo!()
+    }
+
     pub fn run_plan(
         &mut self,
-        worker_manager: Arc<dyn WorkerManager>,
-    ) -> DaftResult<impl Iterator<Item = DaftResult<Vec<PartitionRef>>>> {
-        let remaining_plan = self.remaining_logical_plan.take().unwrap();
-        let (stage, remaining_plan) =
-            find_and_split_at_stage_boundary(&remaining_plan, &self.config)?;
-
-        assert!(
-            matches!(stage, Stage::Collect(_)),
-            "We only support collect stages for now"
-        );
-        assert!(
-            matches!(remaining_plan, None),
-            "We expect no remaining plan for collect stage"
-        );
-
-        let dispatcher = TaskDispatcher::new(worker_manager);
-        let program = Program::from_stage(stage, dispatcher, self.config.clone());
-        Ok(program.run_program().into_iter())
-    }
-}
-
-/// Find a stage boundary in the plan and split the plan at that point
-/// This is still a WIP and will be extended to support more stage boundaries in the future
-fn find_and_split_at_stage_boundary(
-    plan: &LogicalPlanRef,
-    config: &Arc<DaftExecutionConfig>,
-) -> DaftResult<(Stage, Option<LogicalPlanRef>)> {
-    struct StageBoundarySplitter {
-        next_stage: Option<Stage>,
-        _config: Arc<DaftExecutionConfig>,
-    }
-
-    impl TreeNodeRewriter for StageBoundarySplitter {
-        type Node = LogicalPlanRef;
-
-        fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            Ok(Transformed::no(node))
-        }
-
-        fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            // TODO: Implement stage boundary splitting
-            Ok(Transformed::no(node))
-        }
-    }
-
-    let mut splitter = StageBoundarySplitter {
-        next_stage: None,
-        _config: config.clone(),
-    };
-
-    let transformed = plan.clone().rewrite(&mut splitter)?;
-
-    if let Some(next_stage) = splitter.next_stage {
-        Ok((next_stage, Some(transformed.data)))
-    } else {
-        // make collect stage
-        let plan = transformed.data;
-        let (plan, scan_infos, output_schemas) = replace_sources_with_placeholders(&plan)?;
-        let scan_info = scan_infos.first().unwrap();
-        let output_schema = output_schemas.first().unwrap();
-        let collect_stage = CollectStage::new(
-            scan_info.clone(),
-            output_schema.clone(),
-            plan,
-            config.clone(),
-        );
-        Ok((Stage::Collect(collect_stage), None))
+        psets: HashMap<String, Vec<PartitionRef>>,
+        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
+    ) -> PlanResultProducer {
+        let (result_sender, result_receiver) = tokio::sync::mpsc::channel(1);
+        let runtime = get_or_init_runtime();
+        let handle = runtime.spawn(DistributedPhysicalPlan::plan_loop(
+            self.remaining_logical_plan.take(),
+            self.config.clone(),
+            worker_manager_creator,
+            psets,
+            result_sender,
+        ));
+        PlanResultProducer::new(handle, result_receiver)
     }
 }
 
@@ -125,8 +123,8 @@ fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
         LogicalPlan::Sample(sample) => can_translate_logical_plan(&sample.input),
         LogicalPlan::Explode(explode) => can_translate_logical_plan(&explode.input),
         LogicalPlan::Unpivot(unpivot) => can_translate_logical_plan(&unpivot.input),
+        LogicalPlan::Limit(limit) => can_translate_logical_plan(&limit.input),
         LogicalPlan::Pivot(_) => false,
-        LogicalPlan::Limit(_) => false,
         LogicalPlan::Sort(_) => false,
         LogicalPlan::Distinct(_) => false,
         LogicalPlan::Aggregate(_) => false,
@@ -141,59 +139,47 @@ fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
     }
 }
 
-pub(super) struct ReplaceSourcesWithPlaceholder {
-    pub scan_infos: Vec<PhysicalScanInfo>,
-    pub output_schemas: Vec<SchemaRef>,
+pub struct PlanResultProducer {
+    handle: Option<tokio::task::JoinHandle<DaftResult<()>>>,
+    rx: tokio::sync::mpsc::Receiver<PartitionRef>,
 }
 
-impl TreeNodeRewriter for ReplaceSourcesWithPlaceholder {
-    type Node = LogicalPlanRef;
-
-    fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
-        Ok(Transformed::no(node))
-    }
-
-    fn f_up(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
-        match node.as_ref() {
-            LogicalPlan::Source(source) => {
-                let source_info = source.source_info.as_ref();
-                if let SourceInfo::Physical(info) = source_info {
-                    assert!(matches!(info.scan_state, ScanState::Tasks(_)));
-
-                    self.scan_infos.push(info.clone());
-                    self.output_schemas.push(source.output_schema.clone());
-
-                    let ph = PlaceHolderInfo::new(
-                        source.output_schema.clone(),
-                        ClusteringSpec::default().into(),
-                    );
-                    let new_scan = LogicalPlan::Source(Source::new(
-                        source.output_schema.clone(),
-                        SourceInfo::PlaceHolder(ph).into(),
-                    ));
-
-                    Ok(Transformed::yes(new_scan.into()))
-                } else {
-                    Ok(Transformed::no(node))
-                }
-            }
-            _ => Ok(Transformed::no(node)),
+impl PlanResultProducer {
+    pub fn new(
+        handle: tokio::task::JoinHandle<DaftResult<()>>,
+        rx: tokio::sync::mpsc::Receiver<PartitionRef>,
+    ) -> Self {
+        Self {
+            handle: Some(handle),
+            rx,
         }
     }
-}
 
-pub fn replace_sources_with_placeholders(
-    plan: &LogicalPlanRef,
-) -> DaftResult<(LogicalPlanRef, Vec<PhysicalScanInfo>, Vec<SchemaRef>)> {
-    let mut replacer = ReplaceSourcesWithPlaceholder {
-        scan_infos: Vec::new(),
-        output_schemas: Vec::new(),
-    };
-
-    let transformed = plan.clone().rewrite(&mut replacer)?;
-    Ok((
-        transformed.data,
-        replacer.scan_infos,
-        replacer.output_schemas,
-    ))
+    pub async fn get_next(&mut self) -> Option<DaftResult<PartitionRef>> {
+        println!("getting next");
+        if self.handle.is_none() {
+            return None;
+        }
+        match self.rx.recv().await {
+            Some(result) => {
+                println!("got result");
+                Some(Ok(result))
+            }
+            None => {
+                println!("no result");
+                if let Some(handle) = self.handle.take() {
+                    let res = handle
+                        .await
+                        .map_err(|e| DaftError::InternalError(e.to_string()));
+                    match res {
+                        Ok(Ok(_)) => None,
+                        Ok(Err(e)) => Some(Err(e)),
+                        Err(e) => Some(Err(e)),
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }

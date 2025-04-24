@@ -1,9 +1,8 @@
 use pyo3::prelude::*;
 
-use super::ray_task_handle::RayTaskHandle;
+use super::task::{RaySwordfishTask, RayTaskResultHandle};
 use crate::{
-    python::PySwordfishWorkerTask,
-    task::{Task, TaskHandle},
+    task::{SwordfishTask, SwordfishTaskResultHandle},
     worker::WorkerManager,
 };
 
@@ -29,9 +28,13 @@ impl RayWorkerManager {
 }
 
 impl WorkerManager for RayWorkerManager {
-    fn submit_task_to_worker(&self, task: Task, worker_id: String) -> TaskHandle {
+    fn submit_task_to_worker(
+        &self,
+        task: SwordfishTask,
+        worker_id: String,
+    ) -> SwordfishTaskResultHandle {
         Python::with_gil(|py| {
-            let py_task = PySwordfishWorkerTask { task };
+            let py_task = RaySwordfishTask { task };
             let py_task_handle = self
                 .ray_worker_manager
                 .call_method1(
@@ -40,7 +43,7 @@ impl WorkerManager for RayWorkerManager {
                     (py_task, worker_id),
                 )
                 .unwrap();
-            TaskHandle::Ray(RayTaskHandle::new(py_task_handle))
+            SwordfishTaskResultHandle::Ray(RayTaskResultHandle::new(py_task_handle))
         })
     }
 
@@ -63,6 +66,14 @@ impl WorkerManager for RayWorkerManager {
                 .call_method1(py, pyo3::intern!(py, "try_autoscale"), (num_workers,))
                 .unwrap();
             ()
+        })
+    }
+
+    fn shutdown(&self) -> () {
+        Python::with_gil(|py| {
+            self.ray_worker_manager
+                .call_method0(py, pyo3::intern!(py, "shutdown"))
+                .unwrap();
         })
     }
 }

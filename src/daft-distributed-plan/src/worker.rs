@@ -1,9 +1,14 @@
-use crate::task::{Task, TaskHandle};
+use crate::task::{SwordfishTask, SwordfishTaskResultHandle};
 
 pub(crate) trait WorkerManager: Send + Sync {
-    fn submit_task_to_worker(&self, task: Task, worker_id: String) -> TaskHandle;
+    fn submit_task_to_worker(
+        &self,
+        task: SwordfishTask,
+        worker_id: String,
+    ) -> SwordfishTaskResultHandle;
     // (worker id, num_cpus, memory)
     fn get_worker_resources(&self) -> Vec<(String, usize, usize)>;
     #[allow(dead_code)]
     fn try_autoscale(&self, num_workers: usize) -> ();
+    fn shutdown(&self) -> ();
 }

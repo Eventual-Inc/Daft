@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -7,21 +7,24 @@ use daft_local_plan::LocalPhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
-use crate::ray::ray_task_handle::RayTaskHandle;
+use crate::ray::task::RayTaskResultHandle;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Task {
+#[derive(Debug)]
+pub(crate) struct SwordfishTask {
     plan: LocalPhysicalPlanRef,
     daft_execution_config: Arc<DaftExecutionConfig>,
+    psets: HashMap<String, Vec<PartitionRef>>,
 }
-impl Task {
+impl SwordfishTask {
     pub fn new(
         plan: LocalPhysicalPlanRef,
         daft_execution_config: Arc<DaftExecutionConfig>,
+        psets: HashMap<String, Vec<PartitionRef>>,
     ) -> Self {
         Self {
             plan,
             daft_execution_config,
+            psets,
         }
     }
 
@@ -30,24 +33,28 @@ impl Task {
     }
 
     pub fn estimated_memory_cost(&self) -> usize {
-        16 * 1024 * 1024 * 1024
+        self.plan.estimated_memory_cost()
     }
 
     pub fn execution_config(&self) -> Arc<DaftExecutionConfig> {
         self.daft_execution_config.clone()
     }
+
+    pub fn psets(&self) -> HashMap<String, Vec<PartitionRef>> {
+        self.psets.clone()
+    }
 }
 
-pub(crate) enum TaskHandle {
+pub(crate) enum SwordfishTaskResultHandle {
     #[cfg(feature = "python")]
-    Ray(RayTaskHandle),
+    Ray(RayTaskResultHandle),
 }
 
-impl TaskHandle {
-    pub async fn get_result(&self) -> DaftResult<Vec<PartitionRef>> {
+impl SwordfishTaskResultHandle {
+    pub async fn get_result(&self) -> DaftResult<PartitionRef> {
         match self {
             #[cfg(feature = "python")]
-            TaskHandle::Ray(ray_task_handle) => ray_task_handle.get_result().await,
+            SwordfishTaskResultHandle::Ray(ray_task_handle) => ray_task_handle.get_result().await,
             #[cfg(not(feature = "python"))]
             _ => panic!("No TaskHandle variants available"),
         }

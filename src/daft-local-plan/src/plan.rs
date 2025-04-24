@@ -512,6 +512,112 @@ impl LocalPhysicalPlan {
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
     }
+
+    pub fn estimated_memory_cost(&self) -> usize {
+        match self {
+            Self::PhysicalScan(PhysicalScan { stats_state, .. })
+            | Self::EmptyScan(EmptyScan { stats_state, .. })
+            | Self::InMemoryScan(InMemoryScan { stats_state, .. }) => {
+                stats_state.materialized_stats().approx_stats.size_bytes
+            }
+            Self::Filter(Filter {
+                input, stats_state, ..
+            })
+            | Self::Limit(Limit {
+                input, stats_state, ..
+            })
+            | Self::Project(Project {
+                input, stats_state, ..
+            })
+            | Self::ActorPoolProject(ActorPoolProject {
+                input, stats_state, ..
+            })
+            | Self::UnGroupedAggregate(UnGroupedAggregate {
+                input, stats_state, ..
+            })
+            | Self::HashAggregate(HashAggregate {
+                input, stats_state, ..
+            })
+            | Self::WindowPartitionOnly(WindowPartitionOnly {
+                input, stats_state, ..
+            })
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
+                input,
+                stats_state,
+                ..
+            })
+            | Self::Pivot(Pivot {
+                input, stats_state, ..
+            })
+            | Self::Sort(Sort {
+                input, stats_state, ..
+            })
+            | Self::Sample(Sample {
+                input, stats_state, ..
+            })
+            | Self::Explode(Explode {
+                input, stats_state, ..
+            })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                input,
+                stats_state,
+                ..
+            })
+            | Self::Unpivot(Unpivot {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::Concat(Concat {
+                input,
+                other,
+                stats_state,
+                ..
+            }) => max(
+                max(input.estimated_memory_cost(), other.estimated_memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::HashJoin(HashJoin {
+                left,
+                right,
+                stats_state,
+                ..
+            }) => max(
+                max(left.estimated_memory_cost(), right.estimated_memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::CrossJoin(CrossJoin {
+                left,
+                right,
+                stats_state,
+                ..
+            }) => max(
+                max(left.estimated_memory_cost(), right.estimated_memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::PhysicalWrite(PhysicalWrite {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

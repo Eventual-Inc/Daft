@@ -115,7 +115,7 @@ impl PyNativeExecutor {
     }
 
     #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
-    pub fn run_local<'a>(
+    pub fn run<'a>(
         &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
@@ -161,18 +161,35 @@ impl PyNativeExecutor {
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
-    #[pyo3(signature = (local_physical_plan, cfg, results_buffer_size=None))]
-    pub fn run_distributed<'a>(
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
+    pub fn run_async<'a>(
         &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
+        psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<Bound<'a, PyAny>> {
+        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
+            .into_iter()
+            .map(|(part_id, parts)| {
+                (
+                    part_id,
+                    Arc::new(
+                        parts
+                            .into_iter()
+                            .map(std::convert::Into::into)
+                            .collect::<Vec<Arc<MicroPartition>>>()
+                            .into(),
+                    ),
+                )
+            })
+            .collect();
+        let psets = InMemoryPartitionSetCache::new(&native_psets);
         let res = py.allow_threads(|| {
             self.executor.run(
                 &local_physical_plan.plan,
-                &InMemoryPartitionSetCache::empty(),
+                &psets,
                 cfg.config,
                 results_buffer_size,
             )

@@ -24,9 +24,11 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
+from daft.runners.distributed_swordfish import RayPartitionRef
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
+from daft.utils import SyncFromAsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -1344,9 +1346,16 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
             else:
                 # If plan building succeeds, execute it
-                for obj, size_bytes, num_rows in distributed_planner.run_plan():
+                from functools import partial
+                psets = {k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()] for k, v in self._part_set_cache.get_all_partition_sets().items()}
+                sync_iter = SyncFromAsyncIterator(partial(distributed_planner.run_plan, psets))
+                for obj, size_bytes, num_rows in sync_iter:
+                    print(obj, size_bytes, num_rows)
+                    metadata_accessor = PartitionMetadataAccessor.from_metadata_list([PartitionMetadata(num_rows, size_bytes)])
                     materialized_result = RayMaterializedResult(
                         partition=obj,
+                        metadatas=metadata_accessor,
+                        metadata_idx=0,
                     )
                     yield materialized_result
         else:
@@ -1429,8 +1438,8 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 class PartitionMetadataAccessor:
     """Wrapper class around Remote[List[PartitionMetadata]] to memoize lookups."""
 
-    def __init__(self, ref: ray.ObjectRef | list[ray.ObjectRef]) -> None:
-        self._ref: ray.ObjectRef | list[ray.ObjectRef] = ref
+    def __init__(self, ref: ray.ObjectRef) -> None:
+        self._ref: ray.ObjectRef = ref
         self._metadatas: None | list[PartitionMetadata] = None
 
     def _get_metadatas(self) -> list[PartitionMetadata]:

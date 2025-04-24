@@ -1,60 +1,62 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_error::DaftResult;
-use common_py_serde::impl_bincode_py_state_serialization;
-use daft_local_plan::PyLocalPhysicalPlan;
+use common_partitioning::Partition;
 use daft_logical_plan::PyLogicalPlanBuilder;
-use itertools::Itertools;
 use pyo3::prelude::*;
-use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 #[cfg(feature = "python")]
-use crate::ray::ray_task_handle::RayPartitionRef;
+use crate::ray::task::{RayPartitionRef, RaySwordfishTask};
 #[cfg(feature = "python")]
-use crate::ray::ray_worker_manager::RayWorkerManager;
-use crate::{plan::DistributedPhysicalPlan, task::Task};
+use crate::ray::worker_manager::RayWorkerManager;
+use crate::{
+    get_or_init_task_locals,
+    plan::{DistributedPhysicalPlan, PlanResultProducer},
+    worker::WorkerManager,
+};
 
 #[cfg(feature = "python")]
 #[pyclass]
-struct PythonIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
+struct PythonPartitionRefStream {
+    inner: Arc<Mutex<PlanResultProducer>>,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl PythonIterator {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+impl PythonPartitionRefStream {
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
-        let iter = &mut slf.iter;
-        Ok(py.allow_threads(|| iter.next().transpose())?)
-    }
-}
-
-#[pyclass(module = "daft.daft", name = "SwordfishWorkerTask")]
-#[derive(Serialize, Deserialize)]
-pub(crate) struct PySwordfishWorkerTask {
-    pub task: Task,
-}
-
-impl_bincode_py_state_serialization!(PySwordfishWorkerTask);
-
-#[pymethods]
-impl PySwordfishWorkerTask {
-    fn estimated_memory_cost(&self) -> usize {
-        self.task.estimated_memory_cost()
-    }
-
-    fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
-        let plan = self.task.plan();
-        Ok(PyLocalPhysicalPlan { plan })
-    }
-
-    fn execution_config(&self) -> PyResult<PyDaftExecutionConfig> {
-        let config = self.task.execution_config();
-        Ok(PyDaftExecutionConfig { config })
+    fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let next = {
+                let mut inner = inner.lock().await;
+                inner.get_next().await
+            };
+            println!("got next");
+            Python::with_gil(|py| {
+                let next = match next {
+                    Some(result) => {
+                        println!("got result");
+                        let result = result?;
+                        let ray_part_ref =
+                            result.as_any().downcast_ref::<RayPartitionRef>().unwrap();
+                        let objref = ray_part_ref.object_ref.clone_ref(py);
+                        let size_bytes = ray_part_ref.size_bytes;
+                        let num_rows = ray_part_ref.num_rows;
+                        let ret = (objref, size_bytes, num_rows);
+                        Some(ret)
+                    }
+                    None => {
+                        println!("no result");
+                        None
+                    }
+                };
+                Ok(next)
+            })
+        })
     }
 }
 
@@ -75,32 +77,35 @@ impl PyDistributedPhysicalPlan {
         Ok(Self { planner })
     }
 
-    pub fn run_plan(&mut self) -> PyResult<PythonIterator> {
-        let ray_worker_manager = RayWorkerManager::new();
-        let results = self
-            .planner
-            .run_plan(Arc::new(ray_worker_manager))?
-            .flatten_ok();
-        let iter = Box::new(results.map(|result| {
-            let result = result?;
-            let ray_part_ref = result.as_any().downcast_ref::<RayPartitionRef>().unwrap();
-            pyo3::Python::with_gil(|py| {
-                let objref = ray_part_ref.object_ref.clone_ref(py);
-                let size_bytes = ray_part_ref._size_bytes;
-                let num_rows = ray_part_ref._num_rows;
-                Ok((objref, size_bytes, num_rows)
-                    .into_pyobject(py)?
-                    .unbind()
-                    .into_any())
+    pub fn run_plan(
+        &mut self,
+        psets: HashMap<String, Vec<RayPartitionRef>>,
+        py: Python,
+    ) -> PyResult<PythonPartitionRefStream> {
+        let _ = get_or_init_task_locals(py);
+        let psets = psets
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    v.into_iter()
+                        .map(|v| Arc::new(v) as Arc<dyn Partition>)
+                        .collect(),
+                )
             })
-        }));
-        let part_iter = PythonIterator { iter };
-        Ok(part_iter)
+            .collect();
+        let worker_manager_creator =
+            Arc::new(|| Box::new(RayWorkerManager::new()) as Box<dyn WorkerManager>);
+        let part_stream = self.planner.run_plan(psets, worker_manager_creator);
+        let part_stream = PythonPartitionRefStream {
+            inner: Arc::new(Mutex::new(part_stream)),
+        };
+        Ok(part_stream)
     }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
-    parent.add_class::<PySwordfishWorkerTask>()?;
+    parent.add_class::<RaySwordfishTask>()?;
     Ok(())
 }

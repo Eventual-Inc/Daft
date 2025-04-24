@@ -1,45 +1,85 @@
-use std::sync::Arc;
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 
-use crate::{task::Task, worker::WorkerManager};
+use crate::{task::SwordfishTask, worker::WorkerManager};
+
+pub type TaskDispatchWrapper = (
+    // Task to dispatch
+    SwordfishTask,
+    // Result channel
+    tokio::sync::oneshot::Sender<DaftResult<PartitionRef>>,
+    // Cancel channel
+    tokio::sync::oneshot::Receiver<()>,
+);
 
 pub(crate) struct TaskDispatcher {
-    worker_manager: Arc<dyn WorkerManager>,
+    worker_manager: Box<dyn WorkerManager>,
 }
 
 impl TaskDispatcher {
-    pub fn new(worker_manager: Arc<dyn WorkerManager>) -> Self {
+    pub fn new(worker_manager: Box<dyn WorkerManager>) -> Self {
         Self { worker_manager }
     }
 
-    pub async fn run_task_dispatch(
+    pub fn spawn_task_dispatcher(
+        task_dispatcher: TaskDispatcher,
+        joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
+    ) -> DaftResult<TaskDispatcherHandle> {
+        let (task_dispatcher_sender, task_dispatcher_receiver) = tokio::sync::mpsc::channel(1);
+        joinset.spawn(async move {
+            TaskDispatcher::run_dispatch_loop(task_dispatcher, task_dispatcher_receiver).await;
+            Ok(())
+        });
+        Ok(TaskDispatcherHandle::new(task_dispatcher_sender))
+    }
+
+    pub async fn run_dispatch_loop(
         dispatcher: Self,
-        mut task_rx: tokio::sync::mpsc::Receiver<Task>,
-        result_tx: tokio::sync::mpsc::Sender<Vec<PartitionRef>>,
-    ) -> DaftResult<()> {
-        let mut pending_tasks = futures::stream::FuturesOrdered::new();
+        mut task_rx: tokio::sync::mpsc::Receiver<TaskDispatchWrapper>,
+    ) -> () {
+        let mut pending_tasks = tokio::task::JoinSet::new();
         loop {
             let next_available_worker = dispatcher.get_available_worker();
             let has_available_worker = next_available_worker.is_some();
             let num_pending_tasks = pending_tasks.len();
             tokio::select! {
                 biased;
-                Some(task) = task_rx.recv(), if has_available_worker => {
+                Some(task_dispatch_wrapper) = task_rx.recv(), if has_available_worker => {
                     let task_handle = dispatcher
                         .worker_manager
-                        .submit_task_to_worker(task, next_available_worker.unwrap());
-                    pending_tasks.push_back(async move {
-                        task_handle.get_result().await
+                        .submit_task_to_worker(task_dispatch_wrapper.0, next_available_worker.unwrap());
+                    pending_tasks.spawn(async move {
+                        tokio::select! {
+                            biased;
+                            _ = task_dispatch_wrapper.2 => {
+                                return None;
+                            }
+                            result = task_handle.get_result() => {
+                                println!("got task handle result");
+                                Some((result, task_dispatch_wrapper.1))
+                            }
+                        }
                     });
                 }
-                Some(result) = pending_tasks.next(), if num_pending_tasks > 0 => {
-                    let result = result?;
-                    if let Err(e) = result_tx.send(result).await {
-                        eprintln!("Error sending result to result_tx: {}", e);
-                        break;
+                Some(result) = pending_tasks.join_next(), if num_pending_tasks > 0 => {
+                    match result {
+                        Ok(Some((result, result_tx))) => {
+                            println!("sending result");
+                            let _ = result_tx.send(result);
+                            println!("sent result");
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            eprintln!("Error in task: {:?}", e);
+                        }
                     }
                 }
                 else => {
@@ -47,8 +87,7 @@ impl TaskDispatcher {
                 }
             }
         }
-
-        Ok(())
+        dispatcher.worker_manager.shutdown();
     }
 
     pub fn get_available_worker(&self) -> Option<String> {
@@ -58,5 +97,79 @@ impl TaskDispatcher {
             .into_iter()
             .max_by_key(|(_, _, memory)| *memory)
             .map(|(worker_id, _, _)| worker_id)
+    }
+}
+
+#[derive(Clone)]
+pub struct TaskDispatcherHandle {
+    task_dispatcher_sender: tokio::sync::mpsc::Sender<TaskDispatchWrapper>,
+}
+
+impl TaskDispatcherHandle {
+    pub fn new(task_dispatcher_sender: tokio::sync::mpsc::Sender<TaskDispatchWrapper>) -> Self {
+        Self {
+            task_dispatcher_sender,
+        }
+    }
+
+    pub async fn submit_task(
+        &self,
+        task: SwordfishTask,
+    ) -> Result<TaskResultReceiver, tokio::sync::mpsc::error::SendError<TaskDispatchWrapper>> {
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let task_dispatch_wrapper = (task, result_tx, cancel_rx);
+        self.task_dispatcher_sender
+            .send(task_dispatch_wrapper)
+            .await?;
+        Ok(TaskResultReceiver::new(result_rx, cancel_tx))
+    }
+}
+
+pub struct TaskResultReceiver {
+    result_rx: tokio::sync::oneshot::Receiver<DaftResult<PartitionRef>>,
+    cancel_tx: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+impl TaskResultReceiver {
+    pub fn new(
+        result_rx: tokio::sync::oneshot::Receiver<DaftResult<PartitionRef>>,
+        cancel_tx: tokio::sync::oneshot::Sender<()>,
+    ) -> Self {
+        Self {
+            result_rx,
+            cancel_tx: Some(cancel_tx),
+        }
+    }
+}
+
+impl Future for TaskResultReceiver {
+    type Output = Option<DaftResult<PartitionRef>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.result_rx.poll_unpin(cx) {
+            Poll::Ready(Ok(result)) => {
+                println!("task result receiver got result");
+                Poll::Ready(Some(result))
+            }
+            Poll::Ready(Err(_)) => {
+                println!("task result receiver got error");
+                Poll::Ready(None)
+            }
+            Poll::Pending => {
+                println!("task result receiver is pending");
+                Poll::Pending
+            }
+        }
+    }
+}
+
+impl Drop for TaskResultReceiver {
+    fn drop(&mut self) {
+        if let Some(cancel_tx) = self.cancel_tx.take() {
+            if !cancel_tx.is_closed() {
+                let _ = cancel_tx.send(());
+            }
+        }
     }
 }

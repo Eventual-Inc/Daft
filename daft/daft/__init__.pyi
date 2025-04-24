@@ -8,6 +8,7 @@ from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
+from daft.runners.distributed_swordfish import RayPartitionRef
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -1876,27 +1877,29 @@ class DistributedPhysicalPlan:
     def from_logical_plan_builder(
         builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
-    def run_plan(self) -> Iterator[tuple[object, int, int]]: ...
+    def run_plan(self, psets: dict[str, list[RayPartitionRef]]) -> AsyncIterator[tuple[object, int, int]]: ...
 
 class LocalPhysicalPlan: ...
 
-class SwordfishWorkerTask:
+class RaySwordfishTask:
     def plan(self) -> LocalPhysicalPlan: ...
+    def psets(self) -> dict[str, list[RayPartitionRef]]: ...
     def execution_config(self) -> PyDaftExecutionConfig: ...
     def estimated_memory_cost(self) -> int: ...
 
 class NativeExecutor:
     def __init__(self) -> None: ...
-    def run_local(
+    def run(
         self,
         plan: LocalPhysicalPlan,
-        psets: dict[str, list[PartitionT]],
+        psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
     ) -> Iterator[PyMicroPartition]: ...
-    def run_distributed(
+    def run_async(
         self,
         plan: LocalPhysicalPlan,
+        psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
     ) -> AsyncIterator[PyMicroPartition]: ...

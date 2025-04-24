@@ -37,7 +37,7 @@ class NativeExecutor:
         }
         return (
             LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-            for part in self._executor.run_local(local_physical_plan, psets_mp, daft_execution_config, results_buffer_size)
+            for part in self._executor.run(local_physical_plan, psets_mp, daft_execution_config, results_buffer_size)
         )
 
     def pretty_print(
