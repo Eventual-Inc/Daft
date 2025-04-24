@@ -6,7 +6,11 @@ import daft
 from daft import Window, col
 from daft.functions import row_number
 from daft.sql.sql import SQLCatalog
-from tests.conftest import assert_df_equals
+from tests.conftest import assert_df_equals, get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+)
 
 
 def test_row_number_window_function():
