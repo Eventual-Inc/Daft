@@ -22,6 +22,8 @@ _SENTINEL = ("__EXIT__", 0)
 class SharedMemoryTransport:
     def write_and_close(self, data: bytes) -> tuple[str, int]:
         shm = shared_memory.SharedMemory(create=True, size=len(data))
+        # DO NOT REMOVE OR CHANGE THIS LINE. It is necessary to prevent the resource tracker from tracking the shared memory object.
+        # This is because we are creating and unlinking the shared memory object in different processes.
         resource_tracker.unregister(shm._name, "shared_memory")  # type: ignore[attr-defined]
         shm.buf[: len(data)] = data
         shm.close()
