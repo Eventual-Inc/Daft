@@ -8,13 +8,67 @@ use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{instrument, Span};
 
-use super::{
-    blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    },
-    window_base::{base_sink, make_base_state, WindowBaseState, WindowSinkParams},
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
 };
 use crate::ExecutionTaskSpawner;
+
+#[derive(Default)]
+struct SinglePartitionWindowState {
+    partitions: Vec<RecordBatch>,
+}
+
+enum WindowPartitionAndOrderByState {
+    Accumulating {
+        inner_states: Vec<Option<SinglePartitionWindowState>>,
+    },
+    Done,
+}
+
+impl WindowPartitionAndOrderByState {
+    fn new(num_partitions: usize) -> Self {
+        let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
+        Self::Accumulating { inner_states }
+    }
+
+    fn push(&mut self, input: Arc<MicroPartition>, partition_by: &[ExprRef]) -> DaftResult<()> {
+        if let Self::Accumulating {
+            ref mut inner_states,
+        } = self
+        {
+            let partitioned = input.partition_by_hash(partition_by, inner_states.len())?;
+            for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+                let state = state.get_or_insert_with(SinglePartitionWindowState::default);
+                for table in p.get_tables()?.iter() {
+                    state.partitions.push(table.clone());
+                }
+            }
+        } else {
+            panic!("WindowPartitionAndOrderBySink should be in Accumulating state");
+        }
+        Ok(())
+    }
+
+    fn finalize(&mut self) -> Vec<Option<SinglePartitionWindowState>> {
+        let res = if let Self::Accumulating {
+            ref mut inner_states,
+        } = self
+        {
+            std::mem::take(inner_states)
+        } else {
+            panic!("WindowPartitionAndOrderBySink should be in Accumulating state");
+        };
+        *self = Self::Done;
+        res
+    }
+}
+
+impl BlockingSinkState for WindowPartitionAndOrderByState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
 
 struct WindowPartitionAndOrderByParams {
     window_exprs: Vec<WindowExpr>,
@@ -23,20 +77,6 @@ struct WindowPartitionAndOrderByParams {
     order_by: Vec<ExprRef>,
     descending: Vec<bool>,
     original_schema: SchemaRef,
-}
-
-impl WindowSinkParams for WindowPartitionAndOrderByParams {
-    fn original_schema(&self) -> &SchemaRef {
-        &self.original_schema
-    }
-
-    fn partition_by(&self) -> &[ExprRef] {
-        &self.partition_by
-    }
-
-    fn name(&self) -> &'static str {
-        "WindowPartitionAndOrderBy"
-    }
 }
 
 pub struct WindowPartitionAndOrderBySink {
@@ -74,15 +114,24 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn BlockingSinkState>,
+        mut state: Box<dyn BlockingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        base_sink(
-            self.window_partition_and_order_by_params.clone(),
-            input,
-            state,
-            spawner,
-        )
+        let params = self.window_partition_and_order_by_params.clone();
+        spawner
+            .spawn(
+                async move {
+                    let window_state = state
+                        .as_any_mut()
+                        .downcast_mut::<WindowPartitionAndOrderByState>()
+                        .expect("WindowPartitionAndOrderBySink should have WindowPartitionAndOrderByState");
+
+                    window_state.push(input, &params.partition_by)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
+            .into()
     }
 
     #[instrument(skip_all, name = "WindowPartitionAndOrderBySink::finalize")]
@@ -102,9 +151,11 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         .map(|mut state| {
                             state
                                 .as_any_mut()
-                                .downcast_mut::<WindowBaseState>()
-                                .expect("WindowPartitionAndOrderBySink should have WindowBaseState")
-                                .finalize(params.name())
+                                .downcast_mut::<WindowPartitionAndOrderByState>()
+                                .expect(
+                                    "WindowPartitionAndOrderBySink should have WindowPartitionAndOrderByState",
+                                )
+                                .finalize()
                                 .into_iter()
                         })
                         .collect::<Vec<_>>();
@@ -113,9 +164,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
 
                     for _partition_idx in 0..num_partitions {
                         let per_partition_state = state_iters.iter_mut().map(|state| {
-                            state
-                                .next()
-                                .expect("WindowBaseState should have SinglePartitionWindowState")
+                            state.next().expect(
+                                "WindowPartitionAndOrderByState should have SinglePartitionWindowState",
+                            )
                         });
 
                         let all_partitions: Vec<RecordBatch> = per_partition_state
@@ -142,31 +193,19 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 return RecordBatch::empty(Some(params.original_schema.clone()));
                             }
 
-                            let partitionby_table =
-                                input_data.eval_expression_list(&params.partition_by)?;
-                            let (_, partitionvals_indices) = partitionby_table.make_groups()?;
+                            let groupby_table = input_data.eval_expression_list(&params.partition_by)?;
+                            let (_, groupvals_indices) = groupby_table.make_groups()?;
 
-                            let mut partitions = partitionvals_indices
-                                .iter()
-                                .map(|indices| {
-                                    let indices_series =
-                                        UInt64Array::from(("indices", indices.clone()))
-                                            .into_series();
-                                    input_data.take(&indices_series).unwrap()
-                                })
-                                .collect::<Vec<_>>();
+                            let mut partitions = groupvals_indices.iter().map(|indices| {
+                                let indices_series = UInt64Array::from(("indices", indices.clone())).into_series();
+                                input_data.take(&indices_series).unwrap()
+                            }).collect::<Vec<_>>();
 
                             for partition in &mut partitions {
                                 // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
-                                *partition = partition.sort(
-                                    &params.order_by,
-                                    &params.descending,
-                                    &params.descending,
-                                )?;
+                                *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
 
-                                for (window_expr, name) in
-                                    params.window_exprs.iter().zip(params.aliases.iter())
-                                {
+                                for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
                                     *partition = match window_expr {
                                         WindowExpr::Agg(agg_expr) => {
                                             partition.window_agg(agg_expr, name.clone())?
@@ -184,13 +223,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                             &params.order_by,
                                             true,
                                         )?,
-                                        WindowExpr::Offset(expr, offset, default) => partition
-                                            .window_offset(
-                                                name.clone(),
-                                                expr.clone(),
-                                                *offset,
-                                                default.clone(),
-                                            )?,
                                     }
                                 }
                             }
@@ -202,8 +234,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 .collect::<Vec<_>>();
 
                             let final_result = RecordBatch::concat(&partitions)?;
-                            let final_result =
-                                final_result.eval_expression_list(&all_projections)?;
+                            let final_result = final_result.eval_expression_list(&all_projections)?;
                             Ok(final_result)
                         });
                     }
@@ -266,6 +297,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        make_base_state(self.num_partitions())
+        Ok(Box::new(WindowPartitionAndOrderByState::new(
+            self.num_partitions(),
+        )))
     }
 }

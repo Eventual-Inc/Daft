@@ -351,9 +351,6 @@ pub enum WindowExpr {
 
     #[display("dense_rank")]
     DenseRank,
-
-    #[display("offset({_0}, {_1}, {_2:?})")]
-    Offset(ExprRef, i64, Option<ExprRef>),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -697,7 +694,6 @@ impl WindowExpr {
             Self::RowNumber => "row_number",
             Self::Rank => "rank",
             Self::DenseRank => "dense_rank",
-            Self::Offset(expr, _, _) => expr.name(),
         }
     }
 
@@ -707,16 +703,6 @@ impl WindowExpr {
             Self::RowNumber => FieldID::new("row_number"),
             Self::Rank => FieldID::new("rank"),
             Self::DenseRank => FieldID::new("dense_rank"),
-            Self::Offset(expr, offset, default) => {
-                let child_id = expr.semantic_id(schema);
-                let default_part = if let Some(default_expr) = default {
-                    let default_id = default_expr.semantic_id(schema);
-                    format!(",default={default_id}")
-                } else {
-                    String::new()
-                };
-                FieldID::new(format!("{child_id}.offset(offset={offset}{default_part})"))
-            }
         }
     }
 
@@ -726,13 +712,6 @@ impl WindowExpr {
             Self::RowNumber => vec![],
             Self::Rank => vec![],
             Self::DenseRank => vec![],
-            Self::Offset(expr, _, default) => {
-                let mut children = vec![expr.clone()];
-                if let Some(default_expr) = default {
-                    children.push(default_expr.clone());
-                }
-                children
-            }
         }
     }
 
@@ -742,21 +721,6 @@ impl WindowExpr {
             Self::RowNumber => Self::RowNumber,
             Self::Rank => Self::Rank,
             Self::DenseRank => Self::DenseRank,
-            // Offset can have either one or two children:
-            // 1. The first child is always the expression to offset
-            // 2. The second child is the optional default value (if provided)
-            Self::Offset(_, offset, _) => {
-                let expr = children
-                    .first()
-                    .expect("Should have at least 1 child")
-                    .clone();
-                let default = if children.len() > 1 {
-                    Some(children.get(1).unwrap().clone())
-                } else {
-                    None
-                };
-                Self::Offset(expr, *offset, default)
-            }
         }
     }
 
@@ -766,7 +730,6 @@ impl WindowExpr {
             Self::RowNumber => Ok(Field::new("row_number", DataType::UInt64)),
             Self::Rank => Ok(Field::new("rank", DataType::UInt64)),
             Self::DenseRank => Ok(Field::new("dense_rank", DataType::UInt64)),
-            Self::Offset(expr, _, _) => expr.to_field(schema),
         }
     }
 }
@@ -937,10 +900,6 @@ impl Expr {
 
     pub fn dense_rank() -> ExprRef {
         Self::WindowFunction(WindowExpr::DenseRank).into()
-    }
-
-    pub fn offset(self: ExprRef, offset: i64, default: Option<ExprRef>) -> ExprRef {
-        Self::WindowFunction(WindowExpr::Offset(self, offset, default)).into()
     }
 
     #[allow(clippy::should_implement_trait)]

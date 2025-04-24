@@ -785,7 +785,6 @@ jobs:
 
   doctests:
     runs-on: ubuntu-latest
-    continue-on-error: true
     env:
       python-version: '3.10'
     steps:

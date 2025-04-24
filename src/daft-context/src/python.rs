@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use common_error::DaftError;
+use pyo3::prelude::*;
 
 use crate::{DaftContext, Runner, RunnerConfig};
 
@@ -133,23 +134,23 @@ pub fn set_runner_ray(
     force_client_mode: Option<bool>,
 ) -> PyResult<PyDaftContext> {
     let noop_if_initialized = noop_if_initialized.unwrap_or(false);
-    let res =
-        super::set_runner_ray(address, max_task_backlog, force_client_mode).map(|ctx| ctx.into());
-    if noop_if_initialized {
-        match res {
-            Err(_) => Ok(super::get_context().into()),
-            Ok(ctx) => Ok(ctx),
+    let context = super::set_runner_ray(address, max_task_backlog, force_client_mode);
+    match context {
+        Ok(ctx) => Ok(ctx.into()),
+        Err(e)
+            if noop_if_initialized
+                && matches!(&e, DaftError::InternalError(msg) if msg.contains("Cannot set runner more than once")) =>
+        {
+            Ok(super::get_context().into())
         }
-    } else {
-        res.map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
+        Err(e) => Err(e.into()),
     }
 }
 
 #[pyfunction(signature = (num_threads = None))]
 pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> {
-    super::set_runner_native(num_threads)
-        .map(|ctx| ctx.into())
-        .map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
+    let ctx = super::set_runner_native(num_threads)?;
+    Ok(ctx.into())
 }
 
 #[pyfunction(signature = (use_thread_pool = None, num_threads = None))]
@@ -157,7 +158,6 @@ pub fn set_runner_py(
     use_thread_pool: Option<bool>,
     num_threads: Option<usize>,
 ) -> PyResult<PyDaftContext> {
-    super::set_runner_py(use_thread_pool, num_threads)
-        .map(|ctx| ctx.into())
-        .map_err(|_| PyRuntimeError::new_err("Cannot set runner more than once"))
+    let ctx = super::set_runner_py(use_thread_pool, num_threads)?;
+    Ok(ctx.into())
 }

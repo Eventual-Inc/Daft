@@ -146,34 +146,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     window.window_functions.clone(),
                     window.aliases.clone(),
                 ))
-            } else if !window.window_spec.partition_by.is_empty()
-                && !window.window_spec.order_by.is_empty()
-                && window.window_spec.frame.is_some()
-            {
-                let aggregations = window
-                    .window_functions
-                    .iter()
-                    .map(|w| {
-                        if let WindowExpr::Agg(agg_expr) = w {
-                            agg_expr.clone()
-                        } else {
-                            panic!("Expected AggExpr")
-                        }
-                    })
-                    .collect::<Vec<AggExpr>>();
-
-                Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
-                    input,
-                    window.window_spec.partition_by.clone(),
-                    window.window_spec.order_by.clone(),
-                    window.window_spec.descending.clone(),
-                    window.window_spec.frame.clone().unwrap(),
-                    window.window_spec.min_periods,
-                    window.schema.clone(),
-                    window.stats_state.clone(),
-                    aggregations,
-                    window.aliases.clone(),
-                ))
             } else {
                 Err(DaftError::not_implemented(
                     "Window with order by or frame not yet implemented",

@@ -260,12 +260,12 @@ impl AsRef<TableSource> for PyTableSource {
 #[pymethods]
 impl PyTableSource {
     #[staticmethod]
-    pub fn from_schema(schema: PySchema) -> PyTableSource {
+    pub fn from_pyschema(schema: PySchema) -> PyTableSource {
         Self(TableSource::Schema(schema.schema))
     }
 
     #[staticmethod]
-    pub fn from_builder(view: &PyLogicalPlanBuilder) -> PyTableSource {
+    pub fn from_pybuilder(view: &PyLogicalPlanBuilder) -> PyTableSource {
         Self(TableSource::View(view.builder.build()))
     }
 }

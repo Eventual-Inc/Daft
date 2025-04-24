@@ -1706,7 +1706,7 @@ SQL is a human-readable way of constructing these query plans, and can often be 
 
     Please give us feedback or submit an [issue](https://github.com/Eventual-Inc/Daft/issues) and we'd love to hear more about what you would like.
 
-Head to our [SQL Overview](sql.md) page for examples on using SQL with DataFrames, SQL Expressions, and SQL Functions.
+Head to our [SQL Overview](sql_overview.md) page for examples on using SQL with DataFrames, SQL Expressions, and SQL Functions.
 
 ## Aggregations and Grouping
 
