@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::ray::task::RayTaskResultHandle;
 
 #[derive(Debug)]
-pub(crate) struct SwordfishTask {
+pub struct SwordfishTask {
     plan: LocalPhysicalPlanRef,
     daft_execution_config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,

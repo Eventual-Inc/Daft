@@ -6,16 +6,17 @@ use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_local_plan::{translate, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{
     ops::{Filter, Source},
+    optimization::OptimizerBuilder,
     LogicalPlan, LogicalPlanRef, SourceInfo,
 };
 
 pub fn translate_logical_plan_to_local_physical_plans(
     logical_plan: LogicalPlanRef,
-    execution_config: Arc<DaftExecutionConfig>,
+    execution_config: &DaftExecutionConfig,
 ) -> DaftResult<Vec<LocalPhysicalPlanRef>> {
     fn create_logical_plan_splits(
         logical_plan: LogicalPlanRef,
-        execution_config: Arc<DaftExecutionConfig>,
+        execution_config: &DaftExecutionConfig,
         logical_plan_splits: &mut Vec<Vec<LogicalPlanRef>>,
     ) -> DaftResult<()> {
         match logical_plan.as_ref() {
@@ -106,7 +107,20 @@ pub fn translate_logical_plan_to_local_physical_plans(
                     .collect();
                 logical_plan_splits.push(plans_with_project);
             }
-            LogicalPlan::Limit(_) => panic!("Limit should have been converted into a program"),
+            LogicalPlan::Limit(limit) => {
+                create_logical_plan_splits(
+                    limit.input.clone(),
+                    execution_config,
+                    logical_plan_splits,
+                )?;
+                assert!(logical_plan_splits.len() == 1);
+                let plans = logical_plan_splits.pop().unwrap();
+                let plans_with_limit = plans
+                    .into_iter()
+                    .map(|plan| logical_plan.with_new_children(&[plan]).into())
+                    .collect();
+                logical_plan_splits.push(plans_with_limit);
+            }
             _ => todo!(),
         }
         Ok(())
@@ -120,9 +134,9 @@ pub fn translate_logical_plan_to_local_physical_plans(
     let translated_plans = plans
         .into_iter()
         .map(|plan| {
-            let owned_plan = Arc::unwrap_or_clone(plan);
-            let plan = owned_plan.with_materialized_stats();
-            translate(&plan)
+            let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
+            let optimized_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
+            translate(&optimized_plan)
         })
         .collect::<DaftResult<Vec<_>>>()?;
     Ok(translated_plans)
