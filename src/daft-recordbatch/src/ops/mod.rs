@@ -9,4 +9,3 @@ mod search_sorted;
 mod sort;
 mod unpivot;
 mod window;
-mod window_state;
