@@ -1632,18 +1632,6 @@ class Expression:
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 
-    def lag(self, offset: int, default: Any | None = None) -> Expression:
-        if default is not None:
-            default = Expression._to_expression(default)
-        expr = self._expr.offset(-offset, default._expr if default is not None else None)
-        return Expression._from_pyexpr(expr)
-
-    def lead(self, offset: int, default: Any | None = None) -> Expression:
-        if default is not None:
-            default = Expression._to_expression(default)
-        expr = self._expr.offset(offset, default._expr if default is not None else None)
-        return Expression._from_pyexpr(expr)
-
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 

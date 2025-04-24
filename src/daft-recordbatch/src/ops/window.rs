@@ -12,11 +12,11 @@ impl RecordBatch {
         &self,
         to_agg: &[AggExpr],
         aliases: &[String],
-        partition_by: &[ExprRef],
+        group_by: &[ExprRef],
     ) -> DaftResult<Self> {
-        if partition_by.is_empty() {
+        if group_by.is_empty() {
             return Err(DaftError::ValueError(
-                "Partition by cannot be empty for window aggregation".into(),
+                "Group by cannot be empty for window aggregation".into(),
             ));
         }
 
@@ -28,37 +28,41 @@ impl RecordBatch {
             ));
         }
 
-        let partitionby_table = self.eval_expression_list(partition_by)?;
-        let (_, partitionvals_indices) = partitionby_table.make_groups()?;
+        // Table with just the groupby columns.
+        let groupby_table = self.eval_expression_list(group_by)?;
 
-        let mut row_to_partition_mapping = vec![0; self.len()];
-        for (partition_idx, indices) in partitionvals_indices.iter().enumerate() {
+        // Get the grouped values (by indices, one array of indices per group).
+        let (_, groupvals_indices) = groupby_table.make_groups()?;
+
+        let mut row_to_group_mapping = vec![0; self.len()];
+        for (group_idx, indices) in groupvals_indices.iter().enumerate() {
             for &row_idx in indices {
-                row_to_partition_mapping[row_idx as usize] = partition_idx;
+                row_to_group_mapping[row_idx as usize] = group_idx;
             }
         }
 
-        // Take fast path short circuit if there is only 1 partition
-        let partition_idx_input = if partitionvals_indices.len() == 1 {
+        // Take fast path short circuit if there is only 1 group
+        let group_idx_input = if groupvals_indices.len() == 1 {
             None
         } else {
-            Some(&partitionvals_indices)
+            Some(&groupvals_indices)
         };
 
-        let partitioned_cols = agg_exprs
+        let grouped_cols = agg_exprs
             .iter()
-            .map(|e| self.eval_agg_expression(e, partition_idx_input))
+            .map(|e| self.eval_agg_expression(e, group_idx_input))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        // Instead of returning partitioned keys + aggregated columns like agg,
+        // Instead of returning grouped keys + aggregated columns like agg,
         // broadcast the aggregated values back to the original row indices
-        let window_cols = partitioned_cols
+        let window_cols = grouped_cols
             .into_iter()
             .zip(aliases)
             .map(|(agg_col, name)| {
+                // Create a Series of indices to use with take()
                 let take_indices = UInt64Array::from((
-                    "row_to_partition_mapping",
-                    row_to_partition_mapping
+                    "row_to_group_mapping",
+                    row_to_group_mapping
                         .iter()
                         .map(|&idx| idx as u64)
                         .collect::<Vec<_>>(),
@@ -68,7 +72,10 @@ impl RecordBatch {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
+        // Create a new RecordBatch with just the window columns (no group keys)
         let window_result = Self::from_nonempty_columns(window_cols)?;
+
+        // Union the original data with the window result
         self.union(&window_result)
     }
 
@@ -106,26 +113,14 @@ impl RecordBatch {
     }
 
     pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
-        // Create rank numbers for pre-sorted partition
-        let mut rank_numbers = vec![0u64; self.len()];
-
         if self.is_empty() {
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
+            // Empty partition case - no work needed
+            let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
             let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
             return self.union(&rank_batch);
         }
 
-        // Single row case - always rank 1
-        if self.len() == 1 {
-            rank_numbers[0] = 1;
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
-            let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
-            return self.union(&rank_batch);
-        }
-
-        let mut cur_rank = 1;
-        let mut next_rank = 1;
-
+        // Get the order_by columns
         let order_by_table = self.eval_expression_list(order_by)?;
 
         // Create a comparator for checking equality between rows
@@ -137,33 +132,37 @@ impl RecordBatch {
                 &vec![true; order_by_table.columns.len()],
             )?;
 
-        rank_numbers[0] = 1;
-
-        for (i, rank) in rank_numbers.iter_mut().enumerate().skip(1) {
-            // Always increment next_rank for regular rank()
-            if !dense {
-                next_rank += 1;
-            }
-
-            let is_equal = comparator(i - 1, i);
-
-            if !is_equal {
-                // Different value, update rank
-                if dense {
-                    // For dense_rank, just increment by 1
-                    cur_rank += 1;
-                } else {
-                    // For rank(), use the next_rank which accounts for ties
-                    cur_rank = next_rank;
+        // Use iterator to generate rank numbers
+        let rank_numbers: Vec<u64> = std::iter::once(1)
+            .chain((1..self.len()).scan((1, 1), |(cur_rank, next_rank), i| {
+                // Always increment next_rank for regular rank()
+                if !dense {
+                    *next_rank += 1;
                 }
-            }
 
-            *rank = cur_rank;
-        }
+                // Check if the current row has the same values as the previous row
+                let is_equal = comparator(i - 1, i);
 
+                if !is_equal {
+                    // Different value, update rank
+                    if dense {
+                        // For dense_rank, just increment by 1
+                        *cur_rank += 1;
+                    } else {
+                        // For rank(), use the next_rank which accounts for ties
+                        *cur_rank = *next_rank;
+                    }
+                }
+
+                Some(*cur_rank)
+            }))
+            .collect();
+
+        // Create a Series from the rank numbers
         let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
         let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
 
+        // Union the original data with the rank column
         self.union(&rank_batch)
     }
 }

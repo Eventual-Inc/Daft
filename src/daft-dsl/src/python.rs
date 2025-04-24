@@ -60,6 +60,24 @@ pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
+#[pyfunction]
+pub fn row_number() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::RowNumber);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn rank() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::Rank);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn dense_rank() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::DenseRank);
+    Ok(expr.into())
+}
+
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     years=None,
