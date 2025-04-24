@@ -139,8 +139,6 @@ impl RecordBatch {
             None
         };
 
-        let null_series = Series::full_null(name.as_str(), dtype, 1);
-
         // Check if we can use incremental state for optimized calculation
         let supports_incremental = matches!(
             agg_expr,
@@ -160,18 +158,17 @@ impl RecordBatch {
                 static_start,
                 static_end,
                 min_periods,
-                &null_series,
                 total_rows,
             )
         } else {
             self.window_agg_non_incremental(
                 agg_expr,
                 &name,
+                dtype,
                 frame,
                 static_start,
                 static_end,
                 min_periods,
-                &null_series,
                 total_rows,
             )
         }
@@ -187,13 +184,13 @@ impl RecordBatch {
         static_start: Option<usize>,
         static_end: Option<usize>,
         min_periods: i64,
-        null_series: &Series,
         total_rows: usize,
     ) -> DaftResult<Self> {
         // Use the optimized implementation with incremental state updates
         // Initialize the state for incremental aggregation
-        let mut agg_state = create_window_agg_state(agg_expr, dtype)?;
-        let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
+        let source = self.get_column(agg_expr.name())?;
+        let mut agg_state =
+            create_window_agg_state::<Int64Type>(source, agg_expr, dtype, total_rows)?;
 
         // Track previous window boundaries
         let mut prev_frame_start = 0;
@@ -233,40 +230,28 @@ impl RecordBatch {
             }
 
             // Check min_periods requirement
-            if frame_size < min_periods {
-                // Add a null series for this row
-                result_series.push(null_series.clone());
-                continue;
-            }
-
-            // Remove values that left the window (values that were in the previous window but not in the current one)
-            if frame_start > prev_frame_start {
-                let remove_slice = self.slice(prev_frame_start, frame_start)?;
-                if let Ok(col) = remove_slice.get_column(agg_expr.name()) {
-                    agg_state.remove(col, prev_frame_start as u64, frame_start as u64)?;
+            if frame_size >= min_periods {
+                // Remove values that left the window (values that were in the previous window but not in the current one)
+                if frame_start > prev_frame_start {
+                    agg_state.remove(prev_frame_start, frame_start)?;
                 }
-            }
 
-            // Add new values that entered the window (values that are in the current window but weren't in the previous)
-            if frame_end > prev_frame_end {
-                let add_slice = self.slice(prev_frame_end, frame_end)?;
-                if let Ok(col) = add_slice.get_column(agg_expr.name()) {
-                    agg_state.add(col, prev_frame_end as u64, frame_end as u64)?;
+                // Add new values that entered the window (values that are in the current window but weren't in the previous)
+                if frame_end > prev_frame_end {
+                    agg_state.add(prev_frame_end, frame_end)?;
                 }
-            }
 
-            // Update previous boundaries for the next iteration
-            prev_frame_start = frame_start;
-            prev_frame_end = frame_end;
+                // Update previous boundaries for the next iteration
+                prev_frame_start = frame_start;
+                prev_frame_end = frame_end;
+            }
 
             // Evaluate current state to get the result for this row
-            let agg_result = agg_state.evaluate()?;
-            result_series.push(agg_result);
+            agg_state.evaluate()?;
         }
 
-        // Rename the result and create the final record batch
-        let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
-        let renamed_result = final_result_series.rename(name);
+        // Build the final result series
+        let renamed_result = agg_state.build()?.rename(name);
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }
@@ -276,13 +261,15 @@ impl RecordBatch {
         &self,
         agg_expr: &AggExpr,
         name: &str,
+        dtype: &DataType,
         frame: &WindowFrame,
         static_start: Option<usize>,
         static_end: Option<usize>,
         min_periods: i64,
-        null_series: &Series,
         total_rows: usize,
     ) -> DaftResult<Self> {
+        let null_series = Series::full_null(name, dtype, 1);
+
         // Use the non-optimized implementation (recalculate for each row)
         let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
 
