@@ -213,16 +213,12 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                         WindowExpr::RowNumber => {
                                             partition.window_row_number(name.clone())?
                                         }
-                                        WindowExpr::Rank => partition.window_rank(
-                                            name.clone(),
-                                            &params.order_by,
-                                            false,
-                                        )?,
-                                        WindowExpr::DenseRank => partition.window_rank(
-                                            name.clone(),
-                                            &params.order_by,
-                                            true,
-                                        )?,
+                                        WindowExpr::Rank => {
+                                            partition.window_rank(name.clone(), &params.order_by, false)?
+                                        }
+                                        WindowExpr::DenseRank => {
+                                            partition.window_rank(name.clone(), &params.order_by, true)?
+                                        }
                                     }
                                 }
                             }
