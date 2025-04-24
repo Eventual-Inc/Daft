@@ -28,8 +28,8 @@ your own context. One way to operate on a term tree is using the
 
 !!! warn "Warning!"
 
-    This list is not comprehensive, and it is recommended to either inspect
-    a term tree or test your
+    This list is not comprehensive, and it is recommended to inspect
+    a term tree for particular expressions.
 
 ### Comparison Predicates
 
