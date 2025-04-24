@@ -10,6 +10,7 @@ import os
 import pathlib
 import typing
 import warnings
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
@@ -18,6 +19,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generic,
     Iterable,
     Iterator,
     List,
@@ -1129,6 +1131,13 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
+    def write_to_sink(self, sink: "WriteSink", **kwargs) -> "DataFrame":
+        """Writes the DataFrame to the given WriteSink."""
+        sink.start()
+        result = sink.write(self, **kwargs)
+        return sink.finish(result)
+
+    @DataframePublicAPI
     def write_lance(
         self,
         uri: Union[str, pathlib.Path],
@@ -1189,75 +1198,10 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        from daft import from_pydict
-        from daft.io.object_store_options import io_config_to_storage_options
+        from daft.dataframe.lance_write_sink import LanceWriteSink
 
-        try:
-            import lance
-            import pyarrow as pa
-
-        except ImportError:
-            raise ImportError("lance is not installed. Please install lance using `pip install daft[lance]`")
-
-        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-
-        if isinstance(uri, (str, pathlib.Path)):
-            if isinstance(uri, str):
-                table_uri = uri
-            elif isinstance(uri, pathlib.Path):
-                table_uri = str(uri)
-            else:
-                table_uri = uri
-        pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-
-        storage_options = io_config_to_storage_options(io_config, table_uri)
-
-        try:
-            table = lance.dataset(table_uri, storage_options=storage_options)
-
-        except ValueError:
-            table = None
-
-        version = 0
-        if table:
-            table_schema = table.schema
-            version = table.latest_version
-            if pyarrow_schema != table_schema and not (mode == "overwrite"):
-                raise ValueError(
-                    "Schema of data does not match table schema\n"
-                    f"Data schema:\n{pyarrow_schema}\nTable Schema:\n{table_schema}"
-                )
-
-        builder = self._builder.write_lance(
-            table_uri,
-            mode,
-            io_config=io_config,
-            kwargs=kwargs,
-        )
-        write_df = DataFrame(builder)
-        write_df.collect()
-
-        write_result = write_df.to_pydict()
-        assert "fragments" in write_result
-        fragments = write_result["fragments"]
-
-        if mode == "create" or mode == "overwrite":
-            operation = lance.LanceOperation.Overwrite(pyarrow_schema, fragments)
-        elif mode == "append":
-            operation = lance.LanceOperation.Append(fragments)
-
-        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
-        stats = dataset.stats.dataset_stats()
-
-        tbl = from_pydict(
-            {
-                "num_fragments": pa.array([stats["num_fragments"]], type=pa.int64()),
-                "num_deleted_rows": pa.array([stats["num_deleted_rows"]], type=pa.int64()),
-                "num_small_files": pa.array([stats["num_small_files"]], type=pa.int64()),
-                "version": pa.array([dataset.version], type=pa.int64()),
-            }
-        )
-        return tbl
+        sink = LanceWriteSink(uri, mode, io_config)
+        return self.write_to_sink(sink, **kwargs)
 
     ###
     # DataFrame operations
@@ -3750,3 +3694,24 @@ class GroupedDataFrame:
 
         """
         return self.df._map_groups(udf, group_by=self.group_by)
+
+
+T = TypeVar("T")  # Result type returned by `WriteSink.write()` and accepted by `WriteSink.finish()`.
+
+
+class WriteSink(ABC, Generic[T]):
+    """Interface for writing data to a sink that is not built-in."""
+
+    def start(self) -> None:
+        """Optional callback for when a write starts."""
+        pass
+
+    @abstractmethod
+    def write(self, dataframe: DataFrame, **kwargs) -> T:
+        """Write method that returns an intermediate result."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def finish(self, result: T) -> DataFrame:
+        """Finish method that consumes the result of write() and returns a DataFrame."""
+        raise NotImplementedError
