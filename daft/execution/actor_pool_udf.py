@@ -18,11 +18,13 @@ logger = logging.getLogger(__name__)
 
 _SENTINEL = ("__EXIT__", 0)
 
+resource_tracker.unregister = lambda *args, **kwargs: None
+resource_tracker.register = lambda *args, **kwargs: None
+
 
 class SharedMemoryTransport:
     def write_and_close(self, data: bytes) -> tuple[str, int]:
         shm = shared_memory.SharedMemory(create=True, size=len(data))
-        resource_tracker.unregister(shm.name, "shared_memory")
         shm.buf[: len(data)] = data
         shm.close()
         return shm.name, len(data)
@@ -90,7 +92,7 @@ class ActorHandle:
             exception_class = getattr(__builtins__, error_type, RuntimeError)
             raise exception_class(tb_str)
         elif response[0] == "success":
-            _, out_name, out_size = response
+            out_name, out_size = response[1], response[2]
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = MicroPartition.from_ipc_stream(output_bytes)
             return deserialized._micropartition
