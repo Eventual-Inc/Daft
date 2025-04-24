@@ -6,5 +6,3 @@ simple_python_wrapper!(
     crate::sequence::monotonically_increasing_id,
     []
 );
-
-simple_python_wrapper!(row_number, crate::sequence::row_number, []);

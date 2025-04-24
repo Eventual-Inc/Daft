@@ -268,11 +268,12 @@ sess.sql("SELECT * FROM example.tbl, temp LIMIT 1").show()
 
 For complete documentation, please see the [Session API docs](api/sessions.md).
 
-| Method                                                                                                                                  | Description                                                        |
-|-----------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
-| [`attach`][daft.Session.attach]                                                 | Attaches a catalog or table to this session.                       |
-| [`attach_catalog`][daft.Session.attach_catalog]                                 | Attaches (or creates) a catalog to this session                    |
-| [`attach_table`][daft.Session.attach_table]                                     | Attaches (or creates) a table to this session                      |
+| Method                                                                          | Description                                                        |
+|---------------------------------------------------------------------------------|--------------------------------------------------------------------|
+| [`attach`][daft.Session.attach]                                                 | Attaches a catalog, table, or function to this session.            |
+| [`attach_catalog`][daft.Session.attach_catalog]                                 | Attaches an exiting catalog to this session                        |
+| [`attach_table`][daft.Session.attach_table]                                     | Attaches an existing table to this session                         |
+| [`attach_function`][daft.Session.attach_function]                               | Attaches a user-defined function to this session                   |
 | [`create_namespace`][daft.Session.create_namespace]                             | Creates a new namespace                                            |
 | [`create_namespace_if_not_exists`][daft.Session.create_namespace_if_not_exists] | Creates a new namespace if it doesn't already exist                |
 | [`create_table`][daft.Session.create_table]                                     | Creates a new table from the source                                |
@@ -297,4 +298,4 @@ For complete documentation, please see the [Session API docs](api/sessions.md).
 | [`set_catalog`][daft.Session.set_catalog]                                       | Sets the current catalog.                                          |
 | [`set_namespace`][daft.Session.set_namespace]                                   | Sets the current namespace.                                        |
 | [`sql`][daft.Session.sql]                                                       | Executes SQL against the session.                                  |
-| [`use`][daft.Session.use]                                                       | Sets the current catalog and namespace.                              |
+| [`use`][daft.Session.use]                                                       | Sets the current catalog and namespace.                            |

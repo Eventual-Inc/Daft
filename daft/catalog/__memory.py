@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Schema, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.dataframe.dataframe import DataFrame
 
 
@@ -36,7 +36,12 @@ class MemoryCatalog(Catalog):
     def create_namespace(self, identifier: Identifier | str):
         raise NotImplementedError("Memory create_namespace not yet supported.")
 
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         raise NotImplementedError("Memory create_table not yet supported.")
 
     ###

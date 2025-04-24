@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.io.pushdowns import Term
     from daft.runners.runner import Runner
 
 class ImageMode(Enum):
@@ -775,8 +776,20 @@ class Pushdowns:
     partition_filters: PyExpr | None
     limit: int | None
 
+    def __init__(
+        self,
+        columns: list[str] | None = None,
+        filters: PyExpr | None = None,
+        partition_filters: PyExpr | None = None,
+        limit: int | None = None,
+    ) -> None: ...
     def filter_required_column_names(self) -> list[str]:
         """List of field names that are required by the filter predicate."""
+        ...
+
+    @staticmethod
+    def _to_term(expr: PyExpr, schema: PySchema | None = None) -> Term:
+        """Converts a PyExpr into a pushdown Term, optionally binding to the given schema."""
         ...
 
 def read_parquet(
@@ -1592,6 +1605,9 @@ class PyMicroPartition:
     def from_arrow_record_batches(record_batches: list[pa.RecordBatch], schema: PySchema) -> PyMicroPartition: ...
     @staticmethod
     def concat(tables: list[PyMicroPartition]) -> PyMicroPartition: ...
+    @staticmethod
+    def read_from_ipc_stream(bytes: bytes) -> PyMicroPartition: ...
+    def write_to_ipc_stream(self) -> bytes: ...
     def slice(self, start: int, end: int) -> PyMicroPartition: ...
     def to_record_batch(self) -> PyRecordBatch: ...
     def cast_to_schema(self, schema: PySchema) -> PyMicroPartition: ...

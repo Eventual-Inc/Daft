@@ -1,5 +1,8 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::ops::IntoGroups, prelude::*};
+use daft_core::{
+    array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
+    prelude::*,
+};
 use daft_dsl::{AggExpr, ExprRef};
 
 use crate::RecordBatch;
@@ -107,5 +110,59 @@ impl RecordBatch {
 
         // Union the original data with the row number column
         self.union(&row_number_batch)
+    }
+
+    pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
+        if self.is_empty() {
+            // Empty partition case - no work needed
+            let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
+            let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
+            return self.union(&rank_batch);
+        }
+
+        // Get the order_by columns
+        let order_by_table = self.eval_expression_list(order_by)?;
+
+        // Create a comparator for checking equality between rows
+        let comparator: Box<dyn Fn(usize, usize) -> bool + Send + Sync> =
+            build_multi_array_is_equal(
+                order_by_table.columns.as_slice(),
+                order_by_table.columns.as_slice(),
+                &vec![true; order_by_table.columns.len()],
+                &vec![true; order_by_table.columns.len()],
+            )?;
+
+        // Use iterator to generate rank numbers
+        let rank_numbers: Vec<u64> = std::iter::once(1)
+            .chain((1..self.len()).scan((1, 1), |(cur_rank, next_rank), i| {
+                // Always increment next_rank for regular rank()
+                if !dense {
+                    *next_rank += 1;
+                }
+
+                // Check if the current row has the same values as the previous row
+                let is_equal = comparator(i - 1, i);
+
+                if !is_equal {
+                    // Different value, update rank
+                    if dense {
+                        // For dense_rank, just increment by 1
+                        *cur_rank += 1;
+                    } else {
+                        // For rank(), use the next_rank which accounts for ties
+                        *cur_rank = *next_rank;
+                    }
+                }
+
+                Some(*cur_rank)
+            }))
+            .collect();
+
+        // Create a Series from the rank numbers
+        let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
+        let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
+
+        // Union the original data with the rank column
+        self.union(&rank_batch)
     }
 }

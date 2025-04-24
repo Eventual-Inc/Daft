@@ -165,9 +165,9 @@ pub enum ResolvedColumn {
     OuterRef(Field, PlanRef),
 }
 
-impl Display for Column {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
+impl Column {
+    pub fn name(&self) -> String {
+        match self {
             Self::Unresolved(UnresolvedColumn {
                 name,
                 plan_ref: PlanRef::Alias(plan_alias),
@@ -181,9 +181,13 @@ impl Display for Column {
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
             Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
-        };
+        }
+    }
+}
 
-        write!(f, "col({name})")
+impl Display for Column {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "col({})", self.name())
     }
 }
 
@@ -345,6 +349,12 @@ pub enum WindowExpr {
 
     #[display("row_number")]
     RowNumber,
+
+    #[display("rank")]
+    Rank,
+
+    #[display("dense_rank")]
+    DenseRank,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -686,6 +696,8 @@ impl WindowExpr {
         match self {
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::RowNumber => "row_number",
+            Self::Rank => "rank",
+            Self::DenseRank => "dense_rank",
         }
     }
 
@@ -693,6 +705,8 @@ impl WindowExpr {
         match self {
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::RowNumber => FieldID::new("row_number"),
+            Self::Rank => FieldID::new("rank"),
+            Self::DenseRank => FieldID::new("dense_rank"),
         }
     }
 
@@ -700,6 +714,8 @@ impl WindowExpr {
         match self {
             Self::Agg(agg_expr) => agg_expr.children(),
             Self::RowNumber => vec![],
+            Self::Rank => vec![],
+            Self::DenseRank => vec![],
         }
     }
 
@@ -707,6 +723,8 @@ impl WindowExpr {
         match self {
             Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
             Self::RowNumber => Self::RowNumber,
+            Self::Rank => Self::Rank,
+            Self::DenseRank => Self::DenseRank,
         }
     }
 
@@ -714,6 +732,8 @@ impl WindowExpr {
         match self {
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
             Self::RowNumber => Ok(Field::new("row_number", DataType::UInt64)),
+            Self::Rank => Ok(Field::new("rank", DataType::UInt64)),
+            Self::DenseRank => Ok(Field::new("dense_rank", DataType::UInt64)),
         }
     }
 }
@@ -876,6 +896,14 @@ impl Expr {
 
     pub fn row_number() -> ExprRef {
         Self::WindowFunction(WindowExpr::RowNumber).into()
+    }
+
+    pub fn rank() -> ExprRef {
+        Self::WindowFunction(WindowExpr::Rank).into()
+    }
+
+    pub fn dense_rank() -> ExprRef {
+        Self::WindowFunction(WindowExpr::DenseRank).into()
     }
 
     #[allow(clippy::should_implement_trait)]
@@ -1492,6 +1520,7 @@ impl Expr {
         }
     }
 
+    /// Returns the expression as SQL using PostgreSQL's dialect.
     pub fn to_sql(&self) -> Option<String> {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {

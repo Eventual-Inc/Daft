@@ -1,39 +1,41 @@
-use std::{rc::Rc, sync::Arc};
+use std::sync::Arc;
 
-use common_error::DaftResult;
 use daft_logical_plan::LogicalPlan;
 use daft_session::Session;
 
 use crate::{
-    error::PlannerError, statement, statement::Statement, table_provider::in_memory, SQLPlanner,
+    error::{PlannerError, SQLPlannerResult},
+    statement::{self, Statement},
+    table_provider::in_memory,
+    unsupported_sql_err, SQLPlanner,
 };
 
 /// Execute result is always a dataframe.
 pub(crate) type DataFrame = Arc<LogicalPlan>;
 
 /// Execute SQL statements against the session.
-pub(crate) fn execute_statement(sess: Session, statement: &str) -> DaftResult<Option<DataFrame>> {
-    let sess: Rc<Session> = Rc::new(sess);
-    let stmt = SQLPlanner::new(sess.clone()).plan(statement)?;
+pub(crate) fn execute_statement(
+    sess: &Session,
+    statement: &str,
+) -> SQLPlannerResult<Option<DataFrame>> {
+    let stmt = SQLPlanner::new(sess).plan(statement)?;
     match stmt {
-        Statement::Select(select) => execute_select(&sess, select),
-        Statement::Set(set) => execute_set(&sess, set),
-        Statement::Use(use_) => execute_use(&sess, use_),
-        Statement::ShowTables(show_tables) => execute_show_tables(&sess, show_tables),
+        Statement::Select(select) => execute_select(sess, select),
+        Statement::Set(set) => execute_set(sess, set),
+        Statement::Use(use_) => execute_use(sess, use_),
+        Statement::ShowTables(show_tables) => execute_show_tables(sess, show_tables),
     }
 }
 
-fn execute_select(_: &Session, select: DataFrame) -> DaftResult<Option<DataFrame>> {
+fn execute_select(_: &Session, select: DataFrame) -> SQLPlannerResult<Option<DataFrame>> {
     Ok(Some(select))
 }
 
-fn execute_set(_: &Session, _: statement::Set) -> DaftResult<Option<DataFrame>> {
-    Err(PlannerError::unsupported_sql(
-        "SET statement is not yet supported.".to_string(),
-    ))?
+fn execute_set(_: &Session, _: statement::Set) -> SQLPlannerResult<Option<DataFrame>> {
+    unsupported_sql_err!("SET statement")
 }
 
-fn execute_use(sess: &Session, use_: statement::Use) -> DaftResult<Option<DataFrame>> {
+fn execute_use(sess: &Session, use_: statement::Use) -> SQLPlannerResult<Option<DataFrame>> {
     sess.set_catalog(Some(&use_.catalog))?;
     sess.set_namespace(use_.namespace.as_ref())?;
     Ok(None)
@@ -42,7 +44,7 @@ fn execute_use(sess: &Session, use_: statement::Use) -> DaftResult<Option<DataFr
 fn execute_show_tables(
     sess: &Session,
     show_tables: statement::ShowTables,
-) -> DaftResult<Option<DataFrame>> {
+) -> SQLPlannerResult<Option<DataFrame>> {
     // lookup or use current schema
     let catalog = match show_tables.catalog {
         Some(catalog) => sess.get_catalog(&catalog)?,

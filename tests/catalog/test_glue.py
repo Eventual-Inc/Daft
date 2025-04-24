@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 import boto3
+import botocore
 import pytest
 from moto import mock_aws
 
@@ -32,9 +33,17 @@ else:
 
 
 @pytest.fixture
-def mock_session():
+def mock_boto3_session():
     with mock_aws():
         yield boto3.Session(region_name="us-west-2")
+
+
+@pytest.fixture
+def mock_botocore_session():
+    with mock_aws():
+        sess = botocore.session.Session()
+        sess.set_config_variable("region", "us-west-2")
+        yield sess
 
 
 @pytest.fixture
@@ -75,9 +84,13 @@ def test_catalog_from_client(glue_client):
     assert GlueCatalog.from_client("gc", glue_client)
 
 
-def test_catalog_from_session(mock_session):
-    assert Catalog.from_glue("gc", session=mock_session)
-    assert GlueCatalog.from_session("gc", session=mock_session)
+def test_catalog_from_session(mock_boto3_session, mock_botocore_session):
+    # Test both boto3 and botocore sessions.
+    assert Catalog.from_glue("gc", session=mock_boto3_session)
+    assert GlueCatalog.from_session("gc", session=mock_boto3_session)
+
+    assert Catalog.from_glue("gc", session=mock_botocore_session)
+    assert GlueCatalog.from_session("gc", session=mock_botocore_session)
 
 
 def test_catalog_no_args():
