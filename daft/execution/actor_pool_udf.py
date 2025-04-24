@@ -18,19 +18,11 @@ logger = logging.getLogger(__name__)
 
 _SENTINEL = ("__EXIT__", 0)
 
-# Disable python's resource tracking of shared memory objects. Instead, we rely on our own cleanup.
-# The multiprocessing library's resource tracker is does not properly track shared memory objects when the objects are created and
-# unlinked in different processes, although it is allowed to be used in this way.
-# For reference, see these issues:
-# https://github.com/vllm-project/vllm/issues/5468
-# https://stackoverflow.com/questions/62748654/python-3-8-shared-memory-resource-tracker-producing-unexpected-warnings-at-appli
-resource_tracker.unregister = lambda *args, **kwargs: None
-resource_tracker.register = lambda *args, **kwargs: None
-
 
 class SharedMemoryTransport:
     def write_and_close(self, data: bytes) -> tuple[str, int]:
         shm = shared_memory.SharedMemory(create=True, size=len(data))
+        resource_tracker.unregister(shm._name, "shared_memory")  # type: ignore[attr-defined]
         shm.buf[: len(data)] = data
         shm.close()
         return shm.name, len(data)
