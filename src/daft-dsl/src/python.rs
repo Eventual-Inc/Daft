@@ -563,6 +563,18 @@ impl PyExpr {
             expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
         })
     }
+
+    #[pyo3(signature = (offset, default=None))]
+    pub fn offset(&self, offset: isize, default: Option<&Self>) -> PyResult<Self> {
+        let default = default.map(|e| e.expr.clone());
+        Ok(Self {
+            expr: Arc::new(Expr::WindowFunction(WindowExpr::Offset {
+                input: self.expr.clone(),
+                offset,
+                default,
+            })),
+        })
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);
