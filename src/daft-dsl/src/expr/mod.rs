@@ -165,9 +165,9 @@ pub enum ResolvedColumn {
     OuterRef(Field, PlanRef),
 }
 
-impl Display for Column {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
+impl Column {
+    pub fn name(&self) -> String {
+        match self {
             Self::Unresolved(UnresolvedColumn {
                 name,
                 plan_ref: PlanRef::Alias(plan_alias),
@@ -181,9 +181,13 @@ impl Display for Column {
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
             Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
-        };
+        }
+    }
+}
 
-        write!(f, "col({name})")
+impl Display for Column {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "col({})", self.name())
     }
 }
 
@@ -352,8 +356,16 @@ pub enum WindowExpr {
     #[display("dense_rank")]
     DenseRank,
 
-    #[display("offset({_0}, {_1}, {_2:?})")]
-    Offset(ExprRef, i64, Option<ExprRef>),
+    // input: the column to offset
+    // offset > 0: LEAD (shift values ahead by offset)
+    // offset < 0: LAG (shift values behind by offset)
+    // default: the value to fill before / after the offset
+    #[display("offset({input}, {offset}, {default:?})")]
+    Offset {
+        input: ExprRef,
+        offset: isize,
+        default: Option<ExprRef>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -697,7 +709,11 @@ impl WindowExpr {
             Self::RowNumber => "row_number",
             Self::Rank => "rank",
             Self::DenseRank => "dense_rank",
-            Self::Offset(expr, _, _) => expr.name(),
+            Self::Offset {
+                input,
+                offset: _,
+                default: _,
+            } => input.name(),
         }
     }
 
@@ -707,8 +723,12 @@ impl WindowExpr {
             Self::RowNumber => FieldID::new("row_number"),
             Self::Rank => FieldID::new("rank"),
             Self::DenseRank => FieldID::new("dense_rank"),
-            Self::Offset(expr, offset, default) => {
-                let child_id = expr.semantic_id(schema);
+            Self::Offset {
+                input,
+                offset,
+                default,
+            } => {
+                let child_id = input.semantic_id(schema);
                 let default_part = if let Some(default_expr) = default {
                     let default_id = default_expr.semantic_id(schema);
                     format!(",default={default_id}")
@@ -726,8 +746,12 @@ impl WindowExpr {
             Self::RowNumber => vec![],
             Self::Rank => vec![],
             Self::DenseRank => vec![],
-            Self::Offset(expr, _, default) => {
-                let mut children = vec![expr.clone()];
+            Self::Offset {
+                input,
+                offset: _,
+                default,
+            } => {
+                let mut children = vec![input.clone()];
                 if let Some(default_expr) = default {
                     children.push(default_expr.clone());
                 }
@@ -745,8 +769,12 @@ impl WindowExpr {
             // Offset can have either one or two children:
             // 1. The first child is always the expression to offset
             // 2. The second child is the optional default value (if provided)
-            Self::Offset(_, offset, _) => {
-                let expr = children
+            Self::Offset {
+                input: _,
+                offset,
+                default: _,
+            } => {
+                let input = children
                     .first()
                     .expect("Should have at least 1 child")
                     .clone();
@@ -755,7 +783,11 @@ impl WindowExpr {
                 } else {
                     None
                 };
-                Self::Offset(expr, *offset, default)
+                Self::Offset {
+                    input,
+                    offset: *offset,
+                    default,
+                }
             }
         }
     }
@@ -766,7 +798,11 @@ impl WindowExpr {
             Self::RowNumber => Ok(Field::new("row_number", DataType::UInt64)),
             Self::Rank => Ok(Field::new("rank", DataType::UInt64)),
             Self::DenseRank => Ok(Field::new("dense_rank", DataType::UInt64)),
-            Self::Offset(expr, _, _) => expr.to_field(schema),
+            Self::Offset {
+                input,
+                offset: _,
+                default: _,
+            } => input.to_field(schema),
         }
     }
 }
@@ -939,8 +975,13 @@ impl Expr {
         Self::WindowFunction(WindowExpr::DenseRank).into()
     }
 
-    pub fn offset(self: ExprRef, offset: i64, default: Option<ExprRef>) -> ExprRef {
-        Self::WindowFunction(WindowExpr::Offset(self, offset, default)).into()
+    pub fn offset(self: ExprRef, offset: isize, default: Option<ExprRef>) -> ExprRef {
+        Self::WindowFunction(WindowExpr::Offset {
+            input: self,
+            offset,
+            default,
+        })
+        .into()
     }
 
     #[allow(clippy::should_implement_trait)]
@@ -1565,6 +1606,7 @@ impl Expr {
         }
     }
 
+    /// Returns the expression as SQL using PostgreSQL's dialect.
     pub fn to_sql(&self) -> Option<String> {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {

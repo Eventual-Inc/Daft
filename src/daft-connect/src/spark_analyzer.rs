@@ -795,7 +795,7 @@ impl SparkAnalyzer<'_> {
         let session = self.session.session().clone_ref();
         let session = Rc::new(session);
 
-        let mut planner = SQLPlanner::new(session);
+        let mut planner = SQLPlanner::new(&session);
         let plan = planner.plan_sql(&query)?;
         Ok(plan.into())
     }

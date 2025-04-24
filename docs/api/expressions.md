@@ -33,7 +33,7 @@ Daft Expressions allow you to express some computation that needs to happen in a
 
 ::: daft.expressions.Expression
     options:
-        filters: ["!^_[^_]", "!str", "!binary", "!float", "!dt", "!list", "!struct", "!map", "!image", "!partitioning", "!url", "!json", "!embedding"]
+        filters: ["!^_[^_]"]
 
 ::: daft.expressions.expressions.ExpressionStringNamespace
     options:

@@ -230,26 +230,14 @@ impl RecordBatch {
     }
 
     pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
-        // Create rank numbers for pre-sorted partition
-        let mut rank_numbers = vec![0u64; self.len()];
-
         if self.is_empty() {
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
+            // Empty partition case - no work needed
+            let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
             let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
             return self.union(&rank_batch);
         }
 
-        // Single row case - always rank 1
-        if self.len() == 1 {
-            rank_numbers[0] = 1;
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
-            let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
-            return self.union(&rank_batch);
-        }
-
-        let mut cur_rank = 1;
-        let mut next_rank = 1;
-
+        // Get the order_by columns
         let order_by_table = self.eval_expression_list(order_by)?;
 
         // Create a comparator for checking equality between rows
@@ -261,29 +249,31 @@ impl RecordBatch {
                 &vec![true; order_by_table.columns.len()],
             )?;
 
-        rank_numbers[0] = 1;
-
-        for (i, rank) in rank_numbers.iter_mut().enumerate().skip(1) {
-            // Always increment next_rank for regular rank()
-            if !dense {
-                next_rank += 1;
-            }
-
-            let is_equal = comparator(i - 1, i);
-
-            if !is_equal {
-                // Different value, update rank
-                if dense {
-                    // For dense_rank, just increment by 1
-                    cur_rank += 1;
-                } else {
-                    // For rank(), use the next_rank which accounts for ties
-                    cur_rank = next_rank;
+        // Use iterator to generate rank numbers
+        let rank_numbers: Vec<u64> = std::iter::once(1)
+            .chain((1..self.len()).scan((1, 1), |(cur_rank, next_rank), i| {
+                // Always increment next_rank for regular rank()
+                if !dense {
+                    *next_rank += 1;
                 }
-            }
 
-            *rank = cur_rank;
-        }
+                // Check if the current row has the same values as the previous row
+                let is_equal = comparator(i - 1, i);
+
+                if !is_equal {
+                    // Different value, update rank
+                    if dense {
+                        // For dense_rank, just increment by 1
+                        *cur_rank += 1;
+                    } else {
+                        // For rank(), use the next_rank which accounts for ties
+                        *cur_rank = *next_rank;
+                    }
+                }
+
+                Some(*cur_rank)
+            }))
+            .collect();
 
         let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
         let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
@@ -291,37 +281,14 @@ impl RecordBatch {
         self.union(&rank_batch)
     }
 
-    fn process_default_for_window(
-        &self,
-        default_expr: &ExprRef,
-        target_type: &DataType,
-        slice_start: usize,
-        slice_end: usize,
-        target_length: usize,
-    ) -> DaftResult<Series> {
-        let default_slice = self.slice(slice_start, slice_end)?;
-        let def_col = default_slice.eval_expression(default_expr)?;
-
-        let def_col = if def_col.data_type() != target_type {
-            def_col.cast(target_type)?
-        } else {
-            def_col
-        };
-
-        if def_col.len() != target_length {
-            def_col.broadcast(target_length)
-        } else {
-            Ok(def_col)
-        }
-    }
-
     pub fn window_offset(
         &self,
         name: String,
         expr: ExprRef,
-        offset: i64,
+        offset: isize,
         default: Option<ExprRef>,
     ) -> DaftResult<Self> {
+        // Short-circuit if offset is 0 - just return the value itself
         if offset == 0 {
             let expr_col = self.eval_expression(&expr)?;
             let renamed_col = expr_col.rename(&name);
@@ -330,52 +297,61 @@ impl RecordBatch {
         }
 
         let expr_col = self.eval_expression(&expr)?;
-        let abs_offset = offset.unsigned_abs() as usize;
+        let abs_offset = offset.unsigned_abs();
+
+        let process_default = |default_opt: &Option<ExprRef>,
+                               target_type: &DataType,
+                               slice_start: usize,
+                               slice_end: usize,
+                               target_length: usize|
+         -> DaftResult<Series> {
+            if let Some(default_expr) = default_opt {
+                // Only evaluate on the slice we need for efficiency
+                let default_slice = self.slice(slice_start, slice_end)?;
+                let def_col = default_slice.eval_expression(default_expr)?;
+
+                let def_col = if def_col.data_type() != target_type {
+                    def_col.cast(target_type)?
+                } else {
+                    def_col
+                };
+
+                if def_col.len() != target_length {
+                    def_col.broadcast(target_length)
+                } else {
+                    Ok(def_col)
+                }
+            } else {
+                // Otherwise, create a column of nulls
+                Ok(Series::full_null(
+                    expr_col.name(),
+                    target_type,
+                    target_length,
+                ))
+            }
+        };
 
         let mut result_col = if self.is_empty() || abs_offset >= self.len() {
-            if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    0,
-                    self.len(),
-                    self.len(),
-                )?
-            } else {
-                Series::full_null(expr_col.name(), expr_col.data_type(), self.len())
-            }
+            // Special case: empty array or offset exceeds array length
+            process_default(&default, expr_col.data_type(), 0, self.len(), self.len())?
         } else if offset > 0 {
             // LEAD: shift values ahead by offset
             let source_values = expr_col.slice(abs_offset, self.len())?;
-
-            let default_values = if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    self.len() - abs_offset,
-                    self.len(),
-                    abs_offset,
-                )?
-            } else {
-                Series::full_null(expr_col.name(), expr_col.data_type(), abs_offset)
-            };
+            let default_values = process_default(
+                &default,
+                expr_col.data_type(),
+                self.len() - abs_offset,
+                self.len(),
+                abs_offset,
+            )?;
 
             // Construct result by concatenating source and default values
             let cols = vec![&source_values, &default_values];
             Series::concat(&cols)?
         } else {
             // LAG: shift values back by offset
-            let default_values = if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    0,
-                    abs_offset,
-                    abs_offset,
-                )?
-            } else {
-                Series::full_null(expr_col.name(), expr_col.data_type(), abs_offset)
-            };
+            let default_values =
+                process_default(&default, expr_col.data_type(), 0, abs_offset, abs_offset)?;
 
             let source_values = expr_col.slice(0, self.len() - abs_offset)?;
 

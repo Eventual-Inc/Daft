@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 /// -- 'alias' is a name (lvalue) to bind the resolved reference to.
 /// -- 'T' is an identifier (rvalue) to reference a table.
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Bindings<T> {
     /// case-preserved bindings (default)
     bindings: HashMap<String, T>,
