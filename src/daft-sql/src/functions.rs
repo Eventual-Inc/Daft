@@ -382,8 +382,8 @@ impl SQLPlanner<'_> {
             }
         };
 
-        if func.over.is_some() {
-            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
+        if let Some(over) = func.over.as_ref() {
+            let window_spec = self.parse_window_spec(over)?;
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
@@ -392,7 +392,7 @@ impl SQLPlanner<'_> {
                 Expr::WindowFunction(window_expr) => {
                     Expr::Over(window_expr.clone(), window_spec).arced()
                 }
-                _ => unsupported_sql_err!("window function expected"),
+                _ => unsupported_sql_err!("window function expected, found: {:?}", window_fn),
             })
         } else {
             // validate input argument arity and return the validated expression.
