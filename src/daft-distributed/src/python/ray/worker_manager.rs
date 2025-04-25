@@ -6,6 +6,7 @@ use crate::scheduling::{
     worker::WorkerManager,
 };
 
+// Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
 pub struct RayWorkerManager {
     ray_worker_manager: PyObject,
 }

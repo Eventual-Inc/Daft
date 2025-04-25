@@ -15,7 +15,9 @@ mod actor_pool_project;
 mod collect;
 mod limit;
 mod task_producer;
+mod translate;
 
+// A program creates tasks from a logical plan and submits them to the task dispatcher.
 #[allow(dead_code)]
 pub enum Program {
     Collect(CollectProgram),
@@ -24,6 +26,7 @@ pub enum Program {
 }
 
 impl Program {
+    // Spawn the tasks of a program onto the joinset, and return a receiver to receive the results of the program.
     pub fn spawn_program(
         self,
         _task_dispatcher_handle: TaskDispatcherHandle,

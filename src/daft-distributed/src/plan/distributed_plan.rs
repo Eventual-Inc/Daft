@@ -43,33 +43,39 @@ impl DistributedPhysicalPlan {
         result_sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
         while let Some(remaining_plan) = remaining_logical_plan.take() {
+            // On each iteration, we get a new stage to
+            let (next_stage, remaining_plan) = split_at_stage_boundary(&remaining_plan, &config)?;
+
+            // Setup the worker manager and task dispatcher for this
             let worker_manager = worker_manager_creator();
             let task_dispatcher = TaskDispatcher::new(worker_manager);
             let mut joinset = create_join_set();
             let task_dispatcher_handle =
                 TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset)?;
 
-            let (next_stage, remaining_plan) = split_at_stage_boundary(&remaining_plan, &config)?;
-
             match (next_stage, remaining_plan) {
+                // If we have a collect stage, that should mean we're at the end of the plan.
                 (Stage::Collect(collect_stage), None) => {
                     let mut stage_result_receiver = collect_stage.spawn_stage_programs(
                         std::mem::take(&mut psets),
                         task_dispatcher_handle,
                         &mut joinset,
                     )?;
+                    // For collect, we stream the results out via the result sender.
                     while let Some(result) = stage_result_receiver.recv().await {
                         if result_sender.send(result).await.is_err() {
                             return Ok(());
                         }
                     }
                 }
+                // If we have a shuffle map stage, there should be a remaining plan.
                 (Stage::ShuffleMap(shuffle_map_stage), Some(remaining_plan)) => {
                     let mut stage_result_receiver = shuffle_map_stage.spawn_stage_programs(
                         std::mem::take(&mut psets),
                         task_dispatcher_handle,
                         &mut joinset,
                     )?;
+                    // For shuffle map, we accumulate the results and then update the remaining logical plan.
                     let mut results = Vec::new();
                     while let Some(result) = stage_result_receiver.recv().await {
                         results.push(result);
@@ -78,6 +84,7 @@ impl DistributedPhysicalPlan {
                 }
                 (_, _) => panic!("We only support collect stages for now"),
             }
+            // Join all the spawned tasks before the next iteration to raise any errors.
             while let Some(result) = joinset.join_next().await {
                 result.map_err(|e| DaftError::InternalError(e.to_string()))??;
             }
@@ -89,6 +96,8 @@ impl DistributedPhysicalPlan {
         _plan: LogicalPlanRef,
         _results: Vec<PartitionRef>,
     ) -> DaftResult<LogicalPlanRef> {
+        // Update the logical plan with the results of the previous stage.
+        // This is where the AQE magic happens.
         todo!()
     }
 
@@ -138,6 +147,8 @@ fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
     }
 }
 
+// This is the output of a plan, a receiver to receive the results of the plan.
+// And the join handle to the task that runs the plan.
 pub struct PlanResultProducer {
     handle: Option<JoinHandle<DaftResult<()>>>,
     rx: Receiver<PartitionRef>,

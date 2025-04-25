@@ -12,14 +12,16 @@ use daft_local_plan::LocalPhysicalPlanRef;
 use daft_logical_plan::LogicalPlanRef;
 use futures::{Stream, StreamExt};
 
-use crate::{
-    channel::Receiver, plan::translate::translate_logical_plan_to_local_physical_plans,
-    scheduling::task::SwordfishTask,
-};
+use super::translate::translate_program_plan_to_local_physical_plans;
+use crate::{channel::Receiver, scheduling::task::SwordfishTask};
 
+// A task producer creates tasks from a logical plan and produces a stream of tasks.
 #[allow(dead_code)]
 pub enum TaskProducer {
+    // A source task producer simply translates a logical plan into a stream of tasks.
     SourceTask(SourceTaskProducer),
+    // An intermediate task producer takes an input receiver and a logical plan, and produces a stream of tasks.
+    // It is used for intermediate programs where the previous program's output is an input to the next program.
     IntermediateTask(IntermediateTaskProducer),
 }
 
@@ -67,7 +69,7 @@ impl SourceTaskProducer {
     ) -> Self {
         // VecDeque::from<Vec<_>> is guaranteed to be O(1) and not re-allocate / allocate new memory
         let local_physical_plans = VecDeque::from(
-            translate_logical_plan_to_local_physical_plans(plan, &daft_execution_config).unwrap(),
+            translate_program_plan_to_local_physical_plans(plan, &daft_execution_config).unwrap(),
         );
         Self {
             local_physical_plans,

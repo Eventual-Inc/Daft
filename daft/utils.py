@@ -128,6 +128,11 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
 
 
 class SyncFromAsyncIterator:
+    """Convert an async iterator to a sync iterator.
+
+    Note that the async iterator is created lazily upon first iteration.
+    """
+
     def __init__(self, async_iter_producer: Callable[[], AsyncIterator]):
         self.async_iter_producer = async_iter_producer
         self.async_iter = None

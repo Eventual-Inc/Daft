@@ -1354,6 +1354,10 @@ class RayRunner(Runner[ray.ObjectRef]):
                     ]
                     for k, v in self._part_set_cache.get_all_partition_sets().items()
                 }
+                # SyncFromAsyncIterator is used to convert an async iterator to a sync iterator.
+                # This is because the distributed planner returns an async iterator.
+                # Note that the async iterator is created lazily upon first iteration, this is because the `run_plan`
+                # method needs to capture the current python event loop.
                 sync_iter = SyncFromAsyncIterator(partial(distributed_planner.run_plan, psets))
                 for obj, size_bytes, num_rows in sync_iter:
                     metadata_accessor = PartitionMetadataAccessor.from_metadata_list(

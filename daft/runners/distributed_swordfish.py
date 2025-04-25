@@ -22,7 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 @ray.remote(max_restarts=4, max_task_retries=4)
-class SwordfishActor:
+class RaySwordfishWorker:
+    """RaySwordfishWorker is a ray actor that runs local physical plans on swordfish.
+
+    It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
+    """
+
     def __init__(self):
         self.native_executor = NativeExecutor()
 
@@ -32,6 +37,7 @@ class SwordfishActor:
         psets: dict[str, list[ray.ObjectRef]],
         daft_execution_config: PyDaftExecutionConfig,
     ) -> AsyncGenerator[MicroPartition, None]:
+        """Run a plan on swordfish and yield partitions."""
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
         async for partition in self.native_executor.run_async(plan, psets_mp, daft_execution_config):
@@ -41,11 +47,17 @@ class SwordfishActor:
             yield mp
 
     async def concat_and_get_metadata(self, *partitions: MicroPartition) -> Tuple[PartitionMetadata, MicroPartition]:
+        """Concatenate a list of partitions and return the metadata and the concatenated partition."""
         concated = MicroPartition.concat(list(partitions))
         return PartitionMetadata.from_table(concated), concated
 
 
 class RaySwordfishTaskHandle:
+    """RaySwordfishTaskHandle is a handle to a task that is running on a swordfish actor.
+
+    It is used to asynchronously get the result of the task, cancel the task, and perform any post-task cleanup.
+    """
+
     def __init__(
         self,
         result_handle: ray.ObjectRef,
@@ -76,7 +88,12 @@ class RaySwordfishTaskHandle:
         ray.cancel(self.result_handle)
 
 
-class RaySwordfishWorker:
+class RaySwordfishWorkerHandle:
+    """RaySwordfishWorkerHandle is a wrapper around a ray swordfish actor.
+
+    It is used to submit tasks to the worker and keep track of the worker's node id, handle, number of cpus, total and available memory.
+    """
+
     def __init__(
         self,
         actor_node_id: str,
@@ -120,8 +137,14 @@ class RaySwordfishWorker:
 
 
 class RaySwordfishWorkerManager:
+    """RaySwordfishWorkerManager is keeps track of all swordfish workers, creates new workers, and shuts down workers.
+
+    It should have a global view of all workers and their resources.
+    It is also responsible for autoscaling the number of workers.
+    """
+
     def __init__(self):
-        self.workers: Dict[str, RaySwordfishWorker] = {}
+        self.workers: Dict[str, RaySwordfishWorkerHandle] = {}
         self._initialize_workers()
 
     def _initialize_workers(self):
@@ -133,14 +156,14 @@ class RaySwordfishWorkerManager:
                 and node["Resources"]["CPU"] > 0
                 and node["Resources"]["memory"] > 0
             ):
-                actor = SwordfishActor.options(
+                actor = RaySwordfishWorker.options(
                     num_cpus=node["Resources"]["CPU"],
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=node["NodeID"],
                         soft=True,
                     ),
                 ).remote()
-                self.workers[node["NodeID"]] = RaySwordfishWorker(
+                self.workers[node["NodeID"]] = RaySwordfishWorkerHandle(
                     node["NodeID"],
                     actor,
                     int(node["Resources"]["CPU"]),
@@ -161,6 +184,7 @@ class RaySwordfishWorkerManager:
         ]
 
     def try_autoscale(self, num_workers: int):
+        """Try to autoscale the number of workers. this is a hint to the autoscaler to add more workers if needed."""
         ray.autoscaler.sdk.request_resources(
             num_cpus=num_workers,
         )

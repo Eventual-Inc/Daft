@@ -30,12 +30,14 @@ impl RayTaskResultHandle {
 impl SwordfishTaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
     async fn get_result(&self) -> DaftResult<PartitionRef> {
+        // get the task locals, i.e. the asyncio event loop, and the handle to the task
         let (task_locals, handle) = Python::with_gil(|py| {
             let task_locals = TASK_LOCALS.get().unwrap().clone_ref(py);
             let handle = self.handle.clone_ref(py);
             (task_locals, handle)
         });
 
+        // create a rust future that awaits the python future
         let fut = async move {
             let py_awaitable = Python::with_gil(|py| {
                 let coroutine = handle
@@ -45,6 +47,8 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
             })?;
             py_awaitable.await
         };
+
+        // await the rust future in the scope of the asyncio event loop
         let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, fut).await?;
 
         let ray_part_ref =
