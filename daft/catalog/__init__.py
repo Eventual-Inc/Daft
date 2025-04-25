@@ -211,8 +211,7 @@ class NotFoundError(Exception):
 
 
 class Catalog(ABC):
-    """
-    Interface for Python catalog implementations.
+    """Interface for Python catalog implementations.
 
     A Catalog is a service for discovering, accessing, and querying
     tabular and non-tabular data. You can instantiate a Catalog using
@@ -269,8 +268,7 @@ class Catalog(ABC):
 
     @staticmethod
     def from_iceberg(catalog: object) -> Catalog:
-        """
-        Create a Daft Catalog from a PyIceberg catalog object.
+        """Create a Daft Catalog from a PyIceberg catalog object.
 
         Example:
             >>> from pyiceberg.catalog import load_catalog
@@ -292,8 +290,7 @@ class Catalog(ABC):
 
     @staticmethod
     def from_unity(catalog: object) -> Catalog:
-        """
-        Create a Daft Catalog from a Unity Catalog client.
+        """Create a Daft Catalog from a Unity Catalog client.
 
         Example:
             >>> from unity_sdk import UnityCatalogClient
