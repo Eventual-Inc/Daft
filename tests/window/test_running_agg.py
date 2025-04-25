@@ -375,3 +375,158 @@ def test_string_min_max(make_df):
     ).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_min_max_with_none(make_df):
+    """Test min and max window functions with None values."""
+    random.seed(42)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        values = []
+        for _ in range(100):
+            if random.random() < 0.1:
+                values.append(None)
+            else:
+                values.append(random.randint(1, 100))
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            start_idx = max(0, ts - 1)
+            end_idx = min(ts + 1 + 1, len(values))
+            window_vals = [v for v in values[start_idx:end_idx] if v is not None]
+
+            window_min = min(window_vals) if window_vals else None
+            window_max = max(window_vals) if window_vals else None
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "window_min": window_min,
+                    "window_max": window_max,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-1, 1)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").min().over(window_spec).alias("window_min"),
+        col("value").max().over(window_spec).alias("window_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_count_count_distinct_with_none(make_df):
+    """Test count and count_distinct window functions with None values."""
+    random.seed(51)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        values = []
+        for _ in range(10):
+            if random.random() < 0.2:
+                values.append(None)
+            else:
+                values.append(random.randint(1, 5))
+
+        print(f"{category}:")
+        print(f"{[(ts, value) for ts, value in enumerate(values)]}")
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            start_idx = max(0, ts - 2)
+            end_idx = min(ts + 2 + 1, len(values))
+            window_vals = values[start_idx:end_idx]
+
+            window_count = sum(1 for v in window_vals if v is not None)
+
+            window_distinct = len(set(v for v in window_vals if v is not None))
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "window_count": window_count,
+                    "window_distinct": window_distinct,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-2, 2)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").count().over(window_spec).alias("window_count"),
+        col("value").count_distinct().over(window_spec).alias("window_distinct"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_sum_avg_with_none(make_df):
+    """Test sum and avg window functions with None values."""
+    random.seed(52)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        values = []
+        for _ in range(100):
+            if random.random() < 0.1:
+                values.append(None)
+            else:
+                values.append(random.randint(1, 100))
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            # Calculate expected window values
+            start_idx = max(0, ts - 2)
+            end_idx = min(ts + 2 + 1, len(values))
+            window_vals = [v for v in values[start_idx:end_idx] if v is not None]
+
+            window_sum = sum(window_vals) if window_vals else None
+            window_avg = sum(window_vals) / len(window_vals) if window_vals else None
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "window_sum": window_sum,
+                    "window_avg": window_avg,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-2, 2)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("window_sum"),
+        col("value").mean().over(window_spec).alias("window_avg"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
