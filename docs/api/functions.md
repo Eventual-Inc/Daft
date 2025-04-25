@@ -5,3 +5,7 @@ Daft Functions provide a set of built-in operations that can be applied to DataF
 ::: daft.functions
     options:
         filters: ["!^_"]
+
+::: daft.functions.llm_generate
+    options:
+        filters: ["!^_"]
