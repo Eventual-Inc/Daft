@@ -15,7 +15,7 @@ use crate::{
     scheduling::worker::WorkerManager,
 };
 
-#[pyclass]
+#[pyclass(frozen)]
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultProducer>>,
 }
