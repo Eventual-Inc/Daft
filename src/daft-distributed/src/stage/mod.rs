@@ -10,12 +10,13 @@ use shuffle_map::ShuffleMapStage;
 mod collect;
 mod shuffle_map;
 
+#[allow(dead_code)]
 pub enum Stage {
     Collect(CollectStage),
-    #[allow(dead_code)]
     ShuffleMap(ShuffleMapStage),
 }
 
+#[allow(dead_code)]
 pub fn split_at_stage_boundary(
     plan: &LogicalPlanRef,
     config: &Arc<DaftExecutionConfig>,

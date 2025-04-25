@@ -12,7 +12,7 @@ use crate::{
     channel::{
         create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver, Sender,
     },
-    runtime::{create_join_set, JoinSet},
+    runtime::JoinSet,
     scheduling::{task::SwordfishTask, worker::WorkerManager},
 };
 
@@ -26,15 +26,18 @@ pub type TaskDispatchWrapper = (
 );
 
 // The task dispatcher is responsible for dispatching tasks to workers.
+#[allow(dead_code)]
 pub(crate) struct TaskDispatcher {
     worker_manager: Box<dyn WorkerManager>,
 }
 
 impl TaskDispatcher {
+    #[allow(dead_code)]
     pub fn new(worker_manager: Box<dyn WorkerManager>) -> Self {
         Self { worker_manager }
     }
 
+    #[allow(dead_code)]
     pub fn spawn_task_dispatcher(
         task_dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
@@ -48,77 +51,10 @@ impl TaskDispatcher {
     }
 
     pub async fn run_dispatch_loop(
-        dispatcher: Self,
-        mut task_rx: Receiver<TaskDispatchWrapper>,
+        _dispatcher: Self,
+        _task_rx: Receiver<TaskDispatchWrapper>,
     ) -> DaftResult<()> {
-        let mut pending_tasks = create_join_set();
-        loop {
-            // The dispatch loop works as follows:
-            // 1. Check if there is an available worker.
-            // 2. Concurrently
-            //    - Wait for a new task and submit it if there is an available worker.
-            //    - Wait for a result to be ready and send it back to the caller via the result channel.
-            //
-            // We should think about making this smarter in the future. As we can make tasks have scheduling strategies / hints.
-
-            let next_available_worker = dispatcher.get_available_worker();
-            let has_available_worker = next_available_worker.is_some();
-            let num_pending_tasks = pending_tasks.len();
-            tokio::select! {
-                biased;
-                // If there is an available worker, dispatch a task to it.
-                Some(task_dispatch_wrapper) = task_rx.recv(), if has_available_worker => {
-                    // Submit the task to the worker.
-                    let task_handle = dispatcher
-                        .worker_manager
-                        .submit_task_to_worker(task_dispatch_wrapper.0, next_available_worker.unwrap());
-                    // Spawn a task to wait for the result of the task.
-                    pending_tasks.spawn(async move {
-                        tokio::select! {
-                            biased;
-                            // If the task is cancelled, return None.
-                            _ = task_dispatch_wrapper.2 => {
-                                None
-                            }
-                            // If the task is ready, return the result and the result channel.
-                            result = task_handle.get_result() => {
-                                Some((result, task_dispatch_wrapper.1))
-                            }
-                        }
-                    });
-                }
-                // If there is a pending task, wait for the result of the task.
-                Some(result) = pending_tasks.join_next(), if num_pending_tasks > 0 => {
-                    // If the task is ready, send the result back to the caller via the result channel.
-                    match result {
-                        Ok(Some((result, result_tx))) => {
-                            let _ = result_tx.send(result);
-                        }
-                        // If the task is cancelled, do nothing.
-                        Ok(None) => {}
-                        // If there is an error, return it.
-                        Err(e) => {
-                            return Err(DaftError::InternalError(e.to_string()));
-                        }
-                    }
-                }
-                else => {
-                    break;
-                }
-            }
-        }
-        // Shutdown the worker manager once the dispatch loop is done.
-        dispatcher.worker_manager.shutdown();
-        Ok(())
-    }
-
-    pub fn get_available_worker(&self) -> Option<String> {
-        let worker_resources = self.worker_manager.get_worker_resources();
-        // get the worker with the most available memory
-        worker_resources
-            .into_iter()
-            .max_by_key(|(_, _, memory)| *memory)
-            .map(|(worker_id, _, _)| worker_id)
+        todo!()
     }
 }
 

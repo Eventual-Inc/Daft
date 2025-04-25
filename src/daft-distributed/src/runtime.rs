@@ -36,6 +36,7 @@ pub fn get_or_init_task_locals(py: pyo3::Python<'_>) -> &'static pyo3_async_runt
 pub type JoinSet<T> = tokio::task::JoinSet<T>;
 pub type JoinHandle<T> = tokio::task::JoinHandle<T>;
 
+#[allow(dead_code)]
 pub fn create_join_set<T>() -> JoinSet<T> {
     tokio::task::JoinSet::new()
 }

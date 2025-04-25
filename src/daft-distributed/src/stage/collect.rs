@@ -10,12 +10,14 @@ use crate::{
     scheduling::dispatcher::TaskDispatcherHandle,
 };
 
+#[allow(dead_code)]
 pub struct CollectStage {
     logical_plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
 }
 
 impl CollectStage {
+    #[allow(dead_code)]
     pub fn new(logical_plan: LogicalPlanRef, config: Arc<DaftExecutionConfig>) -> Self {
         Self {
             logical_plan,
@@ -25,6 +27,7 @@ impl CollectStage {
 }
 
 impl CollectStage {
+    #[allow(dead_code)]
     pub fn spawn_stage_programs(
         &self,
         mut psets: HashMap<String, Vec<PartitionRef>>,

@@ -26,6 +26,7 @@ impl ShuffleMapStage {
 }
 
 impl ShuffleMapStage {
+    #[allow(dead_code)]
     pub fn spawn_stage_programs(
         &self,
         mut psets: HashMap<String, Vec<PartitionRef>>,

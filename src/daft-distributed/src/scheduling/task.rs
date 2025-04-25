@@ -43,5 +43,6 @@ impl SwordfishTask {
 
 #[async_trait::async_trait]
 pub trait SwordfishTaskResultHandle: Send + Sync {
+    #[allow(dead_code)]
     async fn get_result(&self) -> DaftResult<PartitionRef>;
 }

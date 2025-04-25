@@ -1,5 +1,6 @@
 use super::task::{SwordfishTask, SwordfishTaskResultHandle};
 
+#[allow(dead_code)]
 pub(crate) trait WorkerManager: Send + Sync {
     fn submit_task_to_worker(
         &self,
