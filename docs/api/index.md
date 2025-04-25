@@ -36,7 +36,7 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
     Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings, dates, tensors, and images.
 
-- [**Groupby**](groupby.md)
+- [**Aggregations**](aggregations.md)
 
     When performing aggregations such as sum, mean and count, Daft enables you to group data by certain keys and aggregate within those keys.
 
