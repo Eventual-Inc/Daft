@@ -29,7 +29,7 @@ impl PythonPartitionRefStream {
         let inner = self.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let next = {
-                let mut inner = inner.lock().await;
+                let inner = inner.lock().await;
                 inner.get_next().await
             };
             Python::with_gil(|py| {

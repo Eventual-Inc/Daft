@@ -79,36 +79,19 @@ fn can_translate_logical_plan(_plan: &LogicalPlanRef) -> bool {
 // This is the output of a plan, a receiver to receive the results of the plan.
 // And the join handle to the task that runs the plan.
 pub struct PlanResultProducer {
-    handle: Option<JoinHandle<DaftResult<()>>>,
-    rx: Receiver<PartitionRef>,
+    _handle: Option<JoinHandle<DaftResult<()>>>,
+    _rx: Receiver<PartitionRef>,
 }
 
 impl PlanResultProducer {
     pub fn new(handle: JoinHandle<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
         Self {
-            handle: Some(handle),
-            rx,
+            _handle: Some(handle),
+            _rx: rx,
         }
     }
 
-    pub async fn get_next(&mut self) -> Option<DaftResult<PartitionRef>> {
-        self.handle.as_ref()?;
-        match self.rx.recv().await {
-            Some(result) => Some(Ok(result)),
-            None => {
-                if let Some(handle) = self.handle.take() {
-                    let res = handle
-                        .await
-                        .map_err(|e| DaftError::InternalError(e.to_string()));
-                    match res {
-                        Ok(Ok(())) => None,
-                        Ok(Err(e)) => Some(Err(e)),
-                        Err(e) => Some(Err(e)),
-                    }
-                } else {
-                    None
-                }
-            }
-        }
+    pub async fn get_next(&self) -> Option<DaftResult<PartitionRef>> {
+        todo!()
     }
 }
