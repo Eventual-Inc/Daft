@@ -15,6 +15,7 @@ use {
 pub trait Partition: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn size_bytes(&self) -> DaftResult<Option<usize>>;
+    fn num_rows(&self) -> DaftResult<usize>;
 }
 
 impl<T> Partition for Arc<T>
@@ -26,6 +27,10 @@ where
     }
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
         (**self).size_bytes()
+    }
+
+    fn num_rows(&self) -> DaftResult<usize> {
+        (**self).num_rows()
     }
 }
 

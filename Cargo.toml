@@ -19,6 +19,7 @@ daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dashboard = {path = "src/daft-dashboard", default-features = false}
+daft-distributed = {path = "src/daft-distributed", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
@@ -68,6 +69,7 @@ python = [
   "daft-core/python",
   "daft-csv/python",
   "daft-dashboard/python",
+  "daft-distributed/python",
   "daft-dsl/python",
   "daft-functions-json/python",
   "daft-functions/python",
@@ -296,6 +298,10 @@ path = "src/parquet2"
 [workspace.dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono"]
 version = "0.23.3"
+
+[workspace.dependencies.pyo3-async-runtimes]
+features = ["attributes", "tokio-runtime"]
+version = "0.23"
 
 [workspace.dependencies.pyo3-log]
 version = "0.12.1"

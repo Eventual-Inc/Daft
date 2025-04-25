@@ -1,0 +1,12 @@
+use common_daft_config::DaftExecutionConfig;
+use common_error::DaftResult;
+use daft_local_plan::LocalPhysicalPlanRef;
+use daft_logical_plan::LogicalPlanRef;
+
+#[allow(dead_code)]
+pub fn translate_logical_plan_to_local_physical_plans(
+    _logical_plan: LogicalPlanRef,
+    _execution_config: &DaftExecutionConfig,
+) -> DaftResult<Vec<LocalPhysicalPlanRef>> {
+    todo!()
+}
