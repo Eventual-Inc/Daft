@@ -168,6 +168,7 @@ extra_css:
 
 extra_javascript:
 - js/custom.js
+- js/runllm-widget.js
 
 # Extensions
 markdown_extensions:
