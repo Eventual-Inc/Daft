@@ -5,7 +5,10 @@ use daft_core::{
 };
 use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
 
-use crate::RecordBatch;
+use crate::{
+    ops::window_state::{create_window_agg_state, WindowAggStateOps},
+    RecordBatch,
+};
 
 impl RecordBatch {
     pub fn window_grouped_agg(
@@ -139,16 +142,119 @@ impl RecordBatch {
             None
         };
 
-        self.window_agg_non_incremental(
+        // Check if we can use incremental state for optimized calculation
+        let supports_incremental = matches!(
             agg_expr,
-            &name,
-            dtype,
-            frame,
-            static_start,
-            static_end,
-            min_periods,
-            total_rows,
-        )
+            AggExpr::Sum(_)
+                | AggExpr::Count(..)
+                | AggExpr::Mean(_)
+                | AggExpr::Min(_)
+                | AggExpr::Max(_)
+                | AggExpr::CountDistinct(_)
+        );
+
+        if supports_incremental {
+            self.window_agg_incremental(
+                agg_expr,
+                &name,
+                frame,
+                static_start,
+                static_end,
+                min_periods,
+                total_rows,
+            )
+        } else {
+            self.window_agg_non_incremental(
+                agg_expr,
+                &name,
+                dtype,
+                frame,
+                static_start,
+                static_end,
+                min_periods,
+                total_rows,
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_incremental(
+        &self,
+        agg_expr: &AggExpr,
+        name: &str,
+        frame: &WindowFrame,
+        static_start: Option<usize>,
+        static_end: Option<usize>,
+        min_periods: i64,
+        total_rows: usize,
+    ) -> DaftResult<Self> {
+        // Use the optimized implementation with incremental state updates
+        // Initialize the state for incremental aggregation
+        let source = self.get_column(agg_expr.name())?;
+        let mut agg_state = create_window_agg_state(source, agg_expr, total_rows)?;
+
+        // Track previous window boundaries
+        let mut prev_frame_start = 0;
+        let mut prev_frame_end = 0;
+
+        for row_idx in 0..total_rows {
+            // Calculate frame bounds for this row
+            let frame_start = if let Some(idx) = static_start {
+                idx
+            } else {
+                match &frame.start {
+                    WindowBoundary::Offset(offset) => {
+                        (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
+                    }
+                    _ => unreachable!("Start boundary type already checked"),
+                }
+            };
+
+            let frame_end = if let Some(idx) = static_end {
+                idx
+            } else {
+                match &frame.end {
+                    WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
+                        .max(0)
+                        .min(total_rows as i64)
+                        as usize,
+                    _ => unreachable!("End boundary type already checked"),
+                }
+            };
+
+            let frame_size = frame_end as i64 - frame_start as i64;
+
+            if frame_size < 0 {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
+            }
+
+            // Check min_periods requirement
+            if frame_size >= min_periods {
+                // Remove values that left the window (values that were in the previous window but not in the current one)
+                if frame_start > prev_frame_start {
+                    agg_state.remove(prev_frame_start, frame_start)?;
+                }
+
+                // Add new values that entered the window (values that are in the current window but weren't in the previous)
+                if frame_end > prev_frame_end {
+                    agg_state.add(prev_frame_end, frame_end)?;
+                }
+
+                // Update previous boundaries for the next iteration
+                prev_frame_start = frame_start;
+                prev_frame_end = frame_end;
+            }
+
+            // Evaluate current state to get the result for this row
+            agg_state.evaluate()?;
+        }
+
+        // Build the final result series
+        let renamed_result = agg_state.build()?.rename(name);
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
     }
 
     #[allow(clippy::too_many_arguments)]
