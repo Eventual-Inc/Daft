@@ -131,6 +131,7 @@ impl Stream for IntermediateTaskProducer {
 pub enum Program {
     Collect(CollectProgram),
     Limit(LimitProgram),
+    #[allow(dead_code)]
     ActorPoolProject(ActorPoolProjectProgram),
 }
 
@@ -158,7 +159,7 @@ impl Program {
                 next_receiver,
                 joinset,
             ),
-            Program::ActorPoolProject(program) => todo!(),
+            Program::ActorPoolProject(_program) => todo!(),
         }
     }
 }
@@ -293,7 +294,6 @@ pub fn logical_plan_to_programs(plan: LogicalPlanRef) -> DaftResult<Vec<Program>
     struct ProgramBoundarySplitter {
         root: LogicalPlanRef,
         programs: Vec<Program>,
-        config: Arc<DaftExecutionConfig>,
     }
 
     impl TreeNodeRewriter for ProgramBoundarySplitter {
@@ -337,7 +337,6 @@ pub fn logical_plan_to_programs(plan: LogicalPlanRef) -> DaftResult<Vec<Program>
     let mut splitter = ProgramBoundarySplitter {
         root: plan.clone(),
         programs: vec![],
-        config: Arc::new(DaftExecutionConfig::default()),
     };
 
     let _transformed = plan.rewrite(&mut splitter)?;

@@ -32,16 +32,19 @@ pub fn translate_logical_plan_to_local_physical_plans(
                         ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                     };
                     if scan_tasks.is_empty() {
+                        println!("scan_tasks is empty");
                         logical_plan_splits.push(vec![logical_plan]);
                     } else {
                         let mut plans = Vec::new();
                         let mut scan_tasks_accumulator = Vec::new();
                         let mut scan_tasks_bytes_so_far = 0;
                         for scan_task in scan_tasks.iter() {
+                            println!("scan_task: {:#?}", scan_task);
                             scan_tasks_bytes_so_far += scan_task
                                 .estimate_in_memory_size_bytes(Some(&execution_config))
                                 .unwrap_or(0);
                             if scan_tasks_bytes_so_far > execution_config.scan_tasks_max_size_bytes
+                                && !scan_tasks_accumulator.is_empty()
                             {
                                 let plan = LogicalPlan::Source(Source::new(
                                     source.output_schema.clone(),
@@ -54,12 +57,14 @@ pub fn translate_logical_plan_to_local_physical_plans(
                                         pushdowns: info.pushdowns.clone(),
                                     })),
                                 ));
+                                println!("plan: {:#?}", plan);
                                 plans.push(plan.into());
                                 scan_tasks_bytes_so_far = 0;
-                            } else {
-                                scan_tasks_accumulator.push(scan_task.clone());
                             }
+                            scan_tasks_accumulator.push(scan_task.clone());
+                            println!("scan_task_accumulator: {:#?}", scan_tasks_accumulator);
                         }
+                        println!("scan_tasks_accumulator: {:#?}", scan_tasks_accumulator);
                         if !scan_tasks_accumulator.is_empty() {
                             let plan = LogicalPlan::Source(Source::new(
                                 source.output_schema.clone(),
@@ -72,6 +77,7 @@ pub fn translate_logical_plan_to_local_physical_plans(
                             ));
                             plans.push(plan.into());
                         }
+                        println!("plans: {:#?}", plans);
                         logical_plan_splits.push(plans);
                     }
                 }
@@ -131,6 +137,7 @@ pub fn translate_logical_plan_to_local_physical_plans(
 
     assert!(logical_plan_splits.len() == 1);
     let plans = logical_plan_splits.pop().unwrap();
+    println!("plans: {:#?}", plans);
     let translated_plans = plans
         .into_iter()
         .map(|plan| {

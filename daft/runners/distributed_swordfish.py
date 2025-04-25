@@ -32,6 +32,7 @@ class SwordfishActor:
         psets: dict[str, list[ray.ObjectRef]],
         daft_execution_config: PyDaftExecutionConfig,
     ) -> AsyncGenerator[MicroPartition, None]:
+        plan.print_plan()
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
         async for partition in self.native_executor.run_async(

@@ -1,18 +1,10 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use futures::StreamExt;
 
 use crate::{
     dispatcher::{TaskDispatcherHandle, TaskResultReceiver},
     program::TaskProducer,
-    task::SwordfishTask,
 };
 
 pub struct Operator {
@@ -46,11 +38,9 @@ impl Operator {
                     break;
                 }
             };
-            println!("operator sending result rx");
             if let Err(_) = result_tx.send(result_rx).await {
                 break;
             }
-            println!("operator sent result rx");
         }
         Ok(())
     }
@@ -60,21 +50,14 @@ impl Operator {
         result_tx: tokio::sync::mpsc::Sender<PartitionRef>,
     ) -> DaftResult<()> {
         while let Some(result_rx) = result_rx.recv().await {
-            println!("got result rx");
             let result = match result_rx.await {
                 Some(result) => {
-                    println!("got result in await_results_and_send_to_output");
-                    if let Err(e) = &result {
-                        println!("error sending result: {}", e);
-                    }
                     result?
                 }
                 None => {
-                    println!("no result in await_results_and_send_to_output");
                     break;
                 }
             };
-            println!("operator sending result");
             if let Err(_) = result_tx.send(result).await {
                 break;
             }

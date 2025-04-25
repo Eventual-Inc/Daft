@@ -6,7 +6,7 @@ use common_partitioning::PartitionRef;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, LogicalPlanRef};
 
 use crate::{
-    dispatcher::{TaskDispatcher, TaskDispatcherHandle},
+    dispatcher::TaskDispatcher,
     get_or_init_runtime,
     stage::{split_at_stage_boundary, Stage},
     worker::WorkerManager,
@@ -59,13 +59,10 @@ impl DistributedPhysicalPlan {
                         &mut joinset,
                     )?;
                     while let Some(result) = stage_result_receiver.recv().await {
-                        println!("planner sending result");
-                        if let Err(e) = result_sender.send(result).await {
+                        if let Err(_) = result_sender.send(result).await {
                             return Ok(());
                         }
-                        println!("planner sent result");
                     }
-                    println!("planner done sending results");
                 }
                 (Stage::ShuffleMap(shuffle_map_stage), Some(remaining_plan)) => {
                     let mut stage_result_receiver = shuffle_map_stage.spawn_stage_programs(
@@ -89,7 +86,10 @@ impl DistributedPhysicalPlan {
         Ok(())
     }
 
-    pub fn update(plan: LogicalPlanRef, results: Vec<PartitionRef>) -> DaftResult<LogicalPlanRef> {
+    pub fn update(
+        _plan: LogicalPlanRef,
+        _results: Vec<PartitionRef>,
+    ) -> DaftResult<LogicalPlanRef> {
         todo!()
     }
 
@@ -156,17 +156,12 @@ impl PlanResultProducer {
     }
 
     pub async fn get_next(&mut self) -> Option<DaftResult<PartitionRef>> {
-        println!("getting next");
         if self.handle.is_none() {
             return None;
         }
         match self.rx.recv().await {
-            Some(result) => {
-                println!("got result");
-                Some(Ok(result))
-            }
+            Some(result) => Some(Ok(result)),
             None => {
-                println!("no result");
                 if let Some(handle) = self.handle.take() {
                     let res = handle
                         .await

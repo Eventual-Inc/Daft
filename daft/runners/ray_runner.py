@@ -1350,7 +1350,6 @@ class RayRunner(Runner[ray.ObjectRef]):
                 psets = {k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()] for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 sync_iter = SyncFromAsyncIterator(partial(distributed_planner.run_plan, psets))
                 for obj, size_bytes, num_rows in sync_iter:
-                    print(obj, size_bytes, num_rows)
                     metadata_accessor = PartitionMetadataAccessor.from_metadata_list([PartitionMetadata(num_rows, size_bytes)])
                     materialized_result = RayMaterializedResult(
                         partition=obj,

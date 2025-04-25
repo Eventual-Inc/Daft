@@ -1,44 +1,17 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
-use daft_local_plan::translate;
-use daft_logical_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::LogicalPlanRef;
 
-use crate::{
-    dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-    get_or_init_runtime,
-    operator::Operator,
-    program::{logical_plan_to_programs, Program},
-    worker::WorkerManager,
-};
+use crate::{dispatcher::TaskDispatcherHandle, program::logical_plan_to_programs};
 
 pub enum Stage {
     Collect(CollectStage),
     #[allow(dead_code)]
     ShuffleMap(ShuffleMapStage),
-}
-
-pub type StageResult = Box<dyn Iterator<Item = DaftResult<PartitionRef>> + Send + Sync + 'static>;
-
-impl Stage {
-    pub fn spawn_stage_programs(
-        &self,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        task_dispatcher_handle: TaskDispatcherHandle,
-        joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
-    ) -> DaftResult<tokio::sync::mpsc::Receiver<PartitionRef>> {
-        match self {
-            Stage::Collect(stage) => {
-                stage.spawn_stage_programs(psets, task_dispatcher_handle, joinset)
-            }
-            Stage::ShuffleMap(stage) => {
-                stage.spawn_stage_programs(psets, task_dispatcher_handle, joinset)
-            }
-        }
-    }
 }
 pub struct CollectStage {
     logical_plan: LogicalPlanRef,
@@ -78,11 +51,14 @@ impl CollectStage {
 }
 
 pub struct ShuffleMapStage {
+    #[allow(dead_code)]
     logical_plan: LogicalPlanRef,
+    #[allow(dead_code)]
     config: Arc<DaftExecutionConfig>,
 }
 
 impl ShuffleMapStage {
+    #[allow(dead_code)]
     pub fn new(logical_plan: LogicalPlanRef, config: Arc<DaftExecutionConfig>) -> Self {
         Self {
             logical_plan,
@@ -92,9 +68,9 @@ impl ShuffleMapStage {
 
     pub fn spawn_stage_programs(
         &self,
-        mut psets: HashMap<String, Vec<PartitionRef>>,
-        task_dispatcher_handle: TaskDispatcherHandle,
-        joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
+        _psets: HashMap<String, Vec<PartitionRef>>,
+        _task_dispatcher_handle: TaskDispatcherHandle,
+        _joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
     ) -> DaftResult<tokio::sync::mpsc::Receiver<PartitionRef>> {
         todo!()
     }
@@ -139,18 +115,4 @@ pub fn split_at_stage_boundary(
         let collect_stage = CollectStage::new(plan, config.clone());
         Ok((Stage::Collect(collect_stage), None))
     }
-}
-
-pub fn replace_placeholders_with_sources(
-    plan: LogicalPlanRef,
-    new_source_plan: LogicalPlanRef,
-) -> DaftResult<LogicalPlanRef> {
-    let new_plan = plan.transform_up(|plan| match plan.as_ref() {
-        LogicalPlan::Source(source) => match source.source_info.as_ref() {
-            SourceInfo::PlaceHolder(_ph) => Ok(Transformed::yes(new_source_plan.clone())),
-            _ => Ok(Transformed::no(plan)),
-        },
-        _ => Ok(Transformed::no(plan)),
-    })?;
-    Ok(new_plan.data)
 }

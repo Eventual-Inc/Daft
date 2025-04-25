@@ -1,13 +1,12 @@
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
 };
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use futures::{FutureExt, StreamExt};
+use futures::FutureExt;
 
 use crate::{task::SwordfishTask, worker::WorkerManager};
 
@@ -63,7 +62,6 @@ impl TaskDispatcher {
                                 return None;
                             }
                             result = task_handle.get_result() => {
-                                println!("got task handle result");
                                 Some((result, task_dispatch_wrapper.1))
                             }
                         }
@@ -72,9 +70,7 @@ impl TaskDispatcher {
                 Some(result) = pending_tasks.join_next(), if num_pending_tasks > 0 => {
                     match result {
                         Ok(Some((result, result_tx))) => {
-                            println!("sending result");
                             let _ = result_tx.send(result);
-                            println!("sent result");
                         }
                         Ok(None) => {}
                         Err(e) => {
@@ -148,18 +144,9 @@ impl Future for TaskResultReceiver {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {
-            Poll::Ready(Ok(result)) => {
-                println!("task result receiver got result");
-                Poll::Ready(Some(result))
-            }
-            Poll::Ready(Err(_)) => {
-                println!("task result receiver got error");
-                Poll::Ready(None)
-            }
-            Poll::Pending => {
-                println!("task result receiver is pending");
-                Poll::Pending
-            }
+            Poll::Ready(Ok(result)) => Poll::Ready(Some(result)),
+            Poll::Ready(Err(_)) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }

@@ -35,11 +35,9 @@ impl PythonPartitionRefStream {
                 let mut inner = inner.lock().await;
                 inner.get_next().await
             };
-            println!("got next");
             Python::with_gil(|py| {
                 let next = match next {
                     Some(result) => {
-                        println!("got result");
                         let result = result?;
                         let ray_part_ref =
                             result.as_any().downcast_ref::<RayPartitionRef>().unwrap();
@@ -49,10 +47,7 @@ impl PythonPartitionRefStream {
                         let ret = (objref, size_bytes, num_rows);
                         Some(ret)
                     }
-                    None => {
-                        println!("no result");
-                        None
-                    }
+                    None => None,
                 };
                 Ok(next)
             })

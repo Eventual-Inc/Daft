@@ -23,6 +23,11 @@ impl PyLocalPhysicalPlan {
             plan: physical_plan,
         })
     }
+
+    pub fn print_plan(&self) -> PyResult<()> {
+        println!("{:#?}", self.plan);
+        Ok(())
+    }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
