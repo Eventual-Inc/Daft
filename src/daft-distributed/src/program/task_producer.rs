@@ -13,7 +13,7 @@ use daft_logical_plan::LogicalPlanRef;
 use futures::{Stream, StreamExt};
 
 use crate::{
-    plan::translate::translate_logical_plan_to_local_physical_plans,
+    channel::Receiver, plan::translate::translate_logical_plan_to_local_physical_plans,
     scheduling::task::SwordfishTask,
 };
 
@@ -27,7 +27,7 @@ impl TaskProducer {
     #[allow(dead_code)]
     pub fn new(
         plan: LogicalPlanRef,
-        input_rx: Option<tokio::sync::mpsc::Receiver<PartitionRef>>,
+        input_rx: Option<Receiver<PartitionRef>>,
         psets: HashMap<String, Vec<PartitionRef>>,
         daft_execution_config: Arc<DaftExecutionConfig>,
     ) -> Self {
@@ -96,7 +96,7 @@ impl Stream for SourceTaskProducer {
 
 pub struct IntermediateTaskProducer {
     _plan: LogicalPlanRef,
-    _input_rx: tokio::sync::mpsc::Receiver<PartitionRef>,
+    _input_rx: Receiver<PartitionRef>,
     _daft_execution_config: Arc<DaftExecutionConfig>,
 }
 
@@ -104,7 +104,7 @@ impl IntermediateTaskProducer {
     #[allow(dead_code)]
     pub fn new(
         plan: LogicalPlanRef,
-        input_rx: tokio::sync::mpsc::Receiver<PartitionRef>,
+        input_rx: Receiver<PartitionRef>,
         daft_execution_config: Arc<DaftExecutionConfig>,
     ) -> Self {
         Self {

@@ -5,7 +5,10 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_logical_plan::LogicalPlanRef;
 
-use crate::{program::logical_plan_to_programs, scheduling::dispatcher::TaskDispatcherHandle};
+use crate::{
+    channel::Receiver, program::logical_plan_to_programs, runtime::JoinSet,
+    scheduling::dispatcher::TaskDispatcherHandle,
+};
 
 pub struct ShuffleMapStage {
     logical_plan: LogicalPlanRef,
@@ -27,8 +30,8 @@ impl ShuffleMapStage {
         &self,
         mut psets: HashMap<String, Vec<PartitionRef>>,
         task_dispatcher_handle: TaskDispatcherHandle,
-        joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
-    ) -> DaftResult<tokio::sync::mpsc::Receiver<PartitionRef>> {
+        joinset: &mut JoinSet<DaftResult<()>>,
+    ) -> DaftResult<Receiver<PartitionRef>> {
         let programs = logical_plan_to_programs(self.logical_plan.clone())?;
         let config = self.config.clone();
         let mut next_receiver = None;

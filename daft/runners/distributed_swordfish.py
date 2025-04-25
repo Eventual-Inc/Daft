@@ -26,7 +26,6 @@ class SwordfishActor:
     def __init__(self):
         self.native_executor = NativeExecutor()
 
-    # Run a plan on swordfish and yield partitions
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
@@ -149,8 +148,6 @@ class RaySwordfishWorkerManager:
                 )
 
     def submit_task_to_worker(self, task: RaySwordfishTask, worker_id: str) -> RaySwordfishTaskHandle:
-        if worker_id not in self.workers:
-            raise ValueError(f"Worker {worker_id} not found")
         return self.workers[worker_id].submit_task(task)
 
     def get_worker_resources(self) -> List[tuple[str, int, int]]:

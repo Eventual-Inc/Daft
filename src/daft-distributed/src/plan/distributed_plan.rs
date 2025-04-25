@@ -6,7 +6,8 @@ use common_partitioning::PartitionRef;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, LogicalPlanRef};
 
 use crate::{
-    runtime::get_or_init_runtime,
+    channel::{create_channel, Receiver, Sender},
+    runtime::{create_join_set, get_or_init_runtime, JoinHandle},
     scheduling::{dispatcher::TaskDispatcher, worker::WorkerManager},
     stage::{split_at_stage_boundary, Stage},
 };
@@ -39,12 +40,12 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
         worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
         mut psets: HashMap<String, Vec<PartitionRef>>,
-        result_sender: tokio::sync::mpsc::Sender<PartitionRef>,
+        result_sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
         while let Some(remaining_plan) = remaining_logical_plan.take() {
             let worker_manager = worker_manager_creator();
             let task_dispatcher = TaskDispatcher::new(worker_manager);
-            let mut joinset = tokio::task::JoinSet::new();
+            let mut joinset = create_join_set();
             let task_dispatcher_handle =
                 TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset)?;
 
@@ -96,7 +97,7 @@ impl DistributedPhysicalPlan {
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
     ) -> PlanResultProducer {
-        let (result_sender, result_receiver) = tokio::sync::mpsc::channel(1);
+        let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
         let handle = runtime.spawn(Self::plan_loop(
             self.remaining_logical_plan.take(),
@@ -138,15 +139,12 @@ fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
 }
 
 pub struct PlanResultProducer {
-    handle: Option<tokio::task::JoinHandle<DaftResult<()>>>,
-    rx: tokio::sync::mpsc::Receiver<PartitionRef>,
+    handle: Option<JoinHandle<DaftResult<()>>>,
+    rx: Receiver<PartitionRef>,
 }
 
 impl PlanResultProducer {
-    pub fn new(
-        handle: tokio::task::JoinHandle<DaftResult<()>>,
-        rx: tokio::sync::mpsc::Receiver<PartitionRef>,
-    ) -> Self {
+    pub fn new(handle: JoinHandle<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
         Self {
             handle: Some(handle),
             rx,

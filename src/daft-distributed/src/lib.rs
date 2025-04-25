@@ -1,3 +1,4 @@
+mod channel;
 mod plan;
 mod program;
 #[cfg(feature = "python")]

@@ -27,3 +27,10 @@ pub fn get_or_init_runtime() -> &'static Runtime {
 pub fn get_or_init_task_locals(py: pyo3::Python<'_>) -> &'static pyo3_async_runtimes::TaskLocals {
     TASK_LOCALS.get_or_init(|| pyo3_async_runtimes::tokio::get_current_locals(py).unwrap())
 }
+
+pub type JoinSet<T> = tokio::task::JoinSet<T>;
+pub type JoinHandle<T> = tokio::task::JoinHandle<T>;
+
+pub fn create_join_set<T>() -> JoinSet<T> {
+    tokio::task::JoinSet::new()
+}

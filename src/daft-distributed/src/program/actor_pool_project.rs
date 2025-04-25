@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 
-use crate::scheduling::dispatcher::TaskDispatcherHandle;
+use crate::{channel::Receiver, runtime::JoinSet, scheduling::dispatcher::TaskDispatcherHandle};
 
 pub struct ActorPoolProjectProgram {}
 
@@ -20,9 +20,9 @@ impl ActorPoolProjectProgram {
         _task_dispatcher_handle: TaskDispatcherHandle,
         _config: Arc<DaftExecutionConfig>,
         _psets: HashMap<String, Vec<PartitionRef>>,
-        _input_rx: Option<tokio::sync::mpsc::Receiver<PartitionRef>>,
-        _joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
-    ) -> tokio::sync::mpsc::Receiver<PartitionRef> {
+        _input_rx: Option<Receiver<PartitionRef>>,
+        _joinset: &mut JoinSet<DaftResult<()>>,
+    ) -> Receiver<PartitionRef> {
         todo!()
     }
 }

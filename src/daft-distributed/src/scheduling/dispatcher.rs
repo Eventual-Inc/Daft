@@ -8,7 +8,13 @@ use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
 
-use super::{task::SwordfishTask, worker::WorkerManager};
+use crate::{
+    channel::{
+        create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver, Sender,
+    },
+    runtime::{create_join_set, JoinSet},
+    scheduling::{task::SwordfishTask, worker::WorkerManager},
+};
 
 pub type TaskDispatchWrapper = (
     // Task to dispatch
@@ -30,9 +36,9 @@ impl TaskDispatcher {
 
     pub fn spawn_task_dispatcher(
         task_dispatcher: Self,
-        joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
+        joinset: &mut JoinSet<DaftResult<()>>,
     ) -> DaftResult<TaskDispatcherHandle> {
-        let (task_dispatcher_sender, task_dispatcher_receiver) = tokio::sync::mpsc::channel(1);
+        let (task_dispatcher_sender, task_dispatcher_receiver) = create_channel(1);
         joinset.spawn(Self::run_dispatch_loop(
             task_dispatcher,
             task_dispatcher_receiver,
@@ -42,9 +48,9 @@ impl TaskDispatcher {
 
     pub async fn run_dispatch_loop(
         dispatcher: Self,
-        mut task_rx: tokio::sync::mpsc::Receiver<TaskDispatchWrapper>,
+        mut task_rx: Receiver<TaskDispatchWrapper>,
     ) -> DaftResult<()> {
-        let mut pending_tasks = tokio::task::JoinSet::new();
+        let mut pending_tasks = create_join_set();
         loop {
             let next_available_worker = dispatcher.get_available_worker();
             let has_available_worker = next_available_worker.is_some();
@@ -99,41 +105,39 @@ impl TaskDispatcher {
 
 #[derive(Clone)]
 pub struct TaskDispatcherHandle {
-    task_dispatcher_sender: tokio::sync::mpsc::Sender<TaskDispatchWrapper>,
+    task_dispatcher_sender: Sender<TaskDispatchWrapper>,
 }
 
 impl TaskDispatcherHandle {
-    pub fn new(task_dispatcher_sender: tokio::sync::mpsc::Sender<TaskDispatchWrapper>) -> Self {
+    pub fn new(task_dispatcher_sender: Sender<TaskDispatchWrapper>) -> Self {
         Self {
             task_dispatcher_sender,
         }
     }
 
     #[allow(dead_code)]
-    pub async fn submit_task(
-        &self,
-        task: SwordfishTask,
-    ) -> Result<TaskResultReceiver, tokio::sync::mpsc::error::SendError<TaskDispatchWrapper>> {
-        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<TaskResultReceiver> {
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let (cancel_tx, cancel_rx) = create_oneshot_channel();
         let task_dispatch_wrapper = (task, result_tx, cancel_rx);
         self.task_dispatcher_sender
             .send(task_dispatch_wrapper)
-            .await?;
+            .await
+            .map_err(|e| DaftError::InternalError(e.to_string()))?;
         Ok(TaskResultReceiver::new(result_rx, cancel_tx))
     }
 }
 
 pub struct TaskResultReceiver {
-    result_rx: tokio::sync::oneshot::Receiver<DaftResult<PartitionRef>>,
-    cancel_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+    cancel_tx: Option<OneshotSender<()>>,
 }
 
 impl TaskResultReceiver {
     #[allow(dead_code)]
     pub fn new(
-        result_rx: tokio::sync::oneshot::Receiver<DaftResult<PartitionRef>>,
-        cancel_tx: tokio::sync::oneshot::Sender<()>,
+        result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+        cancel_tx: OneshotSender<()>,
     ) -> Self {
         Self {
             result_rx,

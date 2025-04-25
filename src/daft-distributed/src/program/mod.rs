@@ -9,7 +9,7 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
 use limit::LimitProgram;
 
-use crate::scheduling::dispatcher::TaskDispatcherHandle;
+use crate::{channel::Receiver, runtime::JoinSet, scheduling::dispatcher::TaskDispatcherHandle};
 
 mod actor_pool_project;
 mod collect;
@@ -29,9 +29,9 @@ impl Program {
         _task_dispatcher_handle: TaskDispatcherHandle,
         _config: Arc<DaftExecutionConfig>,
         _psets: HashMap<String, Vec<PartitionRef>>,
-        _joinset: &mut tokio::task::JoinSet<DaftResult<()>>,
-        _next_receiver: Option<tokio::sync::mpsc::Receiver<PartitionRef>>,
-    ) -> tokio::sync::mpsc::Receiver<PartitionRef> {
+        _joinset: &mut JoinSet<DaftResult<()>>,
+        _next_receiver: Option<Receiver<PartitionRef>>,
+    ) -> Receiver<PartitionRef> {
         todo!()
     }
 }
