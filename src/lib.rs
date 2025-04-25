@@ -123,6 +123,7 @@ pub mod pylib {
         daft_io::register_modules(m)?;
         daft_json::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
+        daft_local_plan::register_modules(m)?;
         daft_logical_plan::register_modules(m)?;
         daft_parquet::register_modules(m)?;
         daft_micropartition::register_modules(m)?;
