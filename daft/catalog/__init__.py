@@ -270,7 +270,6 @@ class Catalog(ABC):
     def from_iceberg(catalog: object) -> Catalog:
         """Create a Daft Catalog from a PyIceberg catalog object.
 
-        
         Example:
             >>> from pyiceberg.catalog import load_catalog
             >>> iceberg_catalog = load_catalog("my_iceberg_catalog")
@@ -280,7 +279,7 @@ class Catalog(ABC):
             catalog (object): a PyIceberg catalog instance
 
         Returns:
-            Catalog: a new Catalog instance backed by the Iceberg catalog.
+            Catalog: a new Catalog instance backed by the PyIceberg catalog.
         """
         try:
             from daft.catalog.__iceberg import IcebergCatalog
@@ -293,7 +292,6 @@ class Catalog(ABC):
     def from_unity(catalog: object) -> Catalog:
         """Create a Daft Catalog from a Unity Catalog client.
 
-        
         Example:
             >>> from unity_sdk import UnityCatalogClient
             >>> unity_client = UnityCatalogClient(...)
@@ -320,7 +318,6 @@ class Catalog(ABC):
     ) -> Catalog:
         """Creates a Daft Catalog from S3 Tables bucket ARN, with optional client or session.
 
-        
         If neither a boto3 client nor session is provided, the Iceberg REST
         client will be used under the hood.
 
