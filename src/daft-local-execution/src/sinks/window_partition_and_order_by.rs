@@ -12,7 +12,7 @@ use super::{
     blocking_sink::{
         BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     },
-    window_base::{base_sink, make_base_state, WindowBaseState, WindowSinkParams},
+    window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
 use crate::ExecutionTaskSpawner;
 
@@ -269,6 +269,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        make_base_state(self.num_partitions())
+        WindowBaseState::make_base_state(self.num_partitions())
     }
 }
