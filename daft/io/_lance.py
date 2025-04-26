@@ -22,7 +22,7 @@ def _lancedb_table_factory_function(
     fragment = ds.get_fragment(fragment_id)
     assert fragment is not None, RuntimeError(f"Unable to find lance fragment {fragment_id}")
     return (
-        RecordBatch.from_arrow_record_batches([rb], rb.schema)._table
+        RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
         for rb in fragment.to_batches(columns=required_columns)
     )
 
