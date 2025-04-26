@@ -14,9 +14,7 @@ pub struct PyLocalPhysicalPlan {
 #[pymethods]
 impl PyLocalPhysicalPlan {
     #[staticmethod]
-    pub fn from_logical_plan_builder(
-        logical_plan_builder: &PyLogicalPlanBuilder,
-    ) -> PyResult<Self> {
+    fn from_logical_plan_builder(logical_plan_builder: &PyLogicalPlanBuilder) -> PyResult<Self> {
         let logical_plan = logical_plan_builder.builder.build();
         let physical_plan = translate(&logical_plan)?;
         Ok(Self {

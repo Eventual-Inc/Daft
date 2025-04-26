@@ -13,7 +13,7 @@ use crate::{
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
 #[pyclass(module = "daft.daft")]
-pub struct RayTaskResultHandle {
+pub(crate) struct RayTaskResultHandle {
     handle: PyObject,
 }
 
@@ -65,7 +65,7 @@ impl Drop for RayTaskResultHandle {
 
 #[pyclass(module = "daft.daft", name = "RayPartitionRef")]
 #[derive(Debug, FromPyObject)]
-pub struct RayPartitionRef {
+pub(crate) struct RayPartitionRef {
     pub object_ref: PyObject,
     pub num_rows: usize,
     pub size_bytes: usize,
@@ -84,8 +84,15 @@ impl Partition for RayPartitionRef {
 }
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishTask")]
-pub struct RaySwordfishTask {
-    pub task: SwordfishTask,
+pub(crate) struct RaySwordfishTask {
+    task: SwordfishTask,
+}
+
+impl RaySwordfishTask {
+    #[allow(dead_code)]
+    pub fn new(task: SwordfishTask) -> Self {
+        Self { task }
+    }
 }
 
 #[pymethods]

@@ -7,7 +7,8 @@ use crate::scheduling::{
 };
 
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
-pub struct RayWorkerManager {
+#[allow(dead_code)]
+pub(crate) struct RayWorkerManager {
     ray_worker_manager: PyObject,
 }
 
@@ -35,7 +36,7 @@ impl WorkerManager for RayWorkerManager {
         worker_id: String,
     ) -> Box<dyn SwordfishTaskResultHandle> {
         Python::with_gil(|py| {
-            let py_task = RaySwordfishTask { task };
+            let py_task = RaySwordfishTask::new(task);
             let py_task_handle = self
                 .ray_worker_manager
                 .call_method1(

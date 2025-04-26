@@ -67,7 +67,7 @@ impl LocalPartitionStream {
     fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    pub fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
+    fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let stream = self.stream.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut stream = stream.lock().await;

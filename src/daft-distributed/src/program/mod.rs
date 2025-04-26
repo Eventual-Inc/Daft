@@ -53,7 +53,7 @@ impl ProgramContext {
 
 // A program creates tasks from a logical plan and submits them to the task dispatcher.
 #[allow(dead_code)]
-pub enum Program {
+pub(crate) enum Program {
     Collect(CollectProgram),
     Limit(LimitProgram),
 }
@@ -69,12 +69,12 @@ impl Program {
     }
 }
 
-pub struct RunningProgram {
+pub(crate) struct RunningProgram {
     result_receiver: Receiver<PartitionRef>,
 }
 
 impl RunningProgram {
-    pub fn new(result_receiver: Receiver<PartitionRef>) -> Self {
+    fn new(result_receiver: Receiver<PartitionRef>) -> Self {
         Self { result_receiver }
     }
 
@@ -91,7 +91,7 @@ impl Stream for RunningProgram {
     }
 }
 
-pub fn logical_plan_to_program(
+pub(crate) fn logical_plan_to_program(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,

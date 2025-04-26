@@ -22,13 +22,13 @@ use crate::{
     },
 };
 
-pub struct Stage {
+pub(crate) struct Stage {
     logical_plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
 }
 
 impl Stage {
-    pub fn new(logical_plan: LogicalPlanRef, config: Arc<DaftExecutionConfig>) -> Self {
+    fn new(logical_plan: LogicalPlanRef, config: Arc<DaftExecutionConfig>) -> Self {
         Self {
             logical_plan,
             config,
@@ -37,7 +37,7 @@ impl Stage {
 }
 
 impl Stage {
-    pub fn run_stage(
+    pub(crate) fn run_stage(
         self,
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
@@ -51,7 +51,7 @@ impl Stage {
 }
 
 #[allow(dead_code)]
-pub struct RunningStage {
+pub(crate) struct RunningStage {
     result_receiver: Receiver<PartitionRef>,
     stage_context: StageContext,
 }
@@ -73,15 +73,13 @@ impl Stream for RunningStage {
     }
 }
 
-pub struct StageContext {
+pub(crate) struct StageContext {
     pub task_dispatcher_handle: TaskDispatcherHandle,
     pub joinset: JoinSet<DaftResult<()>>,
 }
 
 impl StageContext {
-    pub fn new(
-        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
-    ) -> Self {
+    fn new(worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>) -> Self {
         let worker_manager = worker_manager_creator();
         let task_dispatcher = TaskDispatcher::new(worker_manager);
         let mut joinset = JoinSet::new();
@@ -95,7 +93,7 @@ impl StageContext {
 }
 
 #[allow(dead_code)]
-pub fn split_at_stage_boundary(
+pub(crate) fn split_at_stage_boundary(
     plan: &LogicalPlanRef,
     config: &Arc<DaftExecutionConfig>,
 ) -> DaftResult<(Stage, Option<LogicalPlanRef>)> {

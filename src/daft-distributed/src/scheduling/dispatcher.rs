@@ -47,7 +47,7 @@ impl TaskDispatcher {
 }
 
 #[derive(Clone)]
-pub struct TaskDispatcherHandle {
+pub(crate) struct TaskDispatcherHandle {
     task_dispatcher_sender: Sender<DispatchableTask>,
 }
 
@@ -97,7 +97,7 @@ impl DispatchableTask {
     }
 }
 
-pub struct SubmittedTask {
+pub(crate) struct SubmittedTask {
     result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
     cancel_tx: Option<OneshotSender<()>>,
 }

@@ -12,6 +12,7 @@ pub struct SwordfishTask {
     psets: HashMap<String, Vec<PartitionRef>>,
 }
 impl SwordfishTask {
+    #[allow(dead_code)]
     pub fn new(
         plan: LocalPhysicalPlanRef,
         daft_execution_config: Arc<DaftExecutionConfig>,
