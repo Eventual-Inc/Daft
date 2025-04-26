@@ -5,19 +5,20 @@ use std::{collections::HashMap, sync::Arc};
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::Partition;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use futures::StreamExt;
 use pyo3::prelude::*;
 use ray::{RayPartitionRef, RaySwordfishTask, RayWorkerManager};
 use tokio::sync::Mutex;
 
 use crate::{
-    plan::distributed_plan::{DistributedPhysicalPlan, PlanResultProducer},
+    plan::{DistributedPhysicalPlan, PlanResult},
     runtime::get_or_init_task_locals,
     scheduling::worker::WorkerManager,
 };
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
-    inner: Arc<Mutex<PlanResultProducer>>,
+    inner: Arc<Mutex<PlanResult>>,
 }
 
 #[pymethods]
@@ -27,10 +28,11 @@ impl PythonPartitionRefStream {
     }
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let inner = self.inner.clone();
+        // future into py requires that the future is Send + 'static, so we wrap the inner in an Arc<Mutex<>>
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let next = {
-                let inner = inner.lock().await;
-                inner.get_next().await
+                let mut inner = inner.lock().await;
+                inner.next().await
             };
             Python::with_gil(|py| {
                 let next = match next {
@@ -52,7 +54,7 @@ impl PythonPartitionRefStream {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan")]
+#[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan", frozen)]
 struct PyDistributedPhysicalPlan {
     planner: DistributedPhysicalPlan,
 }
@@ -60,17 +62,19 @@ struct PyDistributedPhysicalPlan {
 #[pymethods]
 impl PyDistributedPhysicalPlan {
     #[staticmethod]
-    pub fn from_logical_plan_builder(
+    fn from_logical_plan_builder(
         builder: &PyLogicalPlanBuilder,
         config: &PyDaftExecutionConfig,
     ) -> PyResult<Self> {
-        let planner =
-            DistributedPhysicalPlan::from_logical_plan_builder(&builder.builder, &config.config)?;
+        let planner = DistributedPhysicalPlan::from_logical_plan_builder(
+            &builder.builder,
+            config.config.clone(),
+        )?;
         Ok(Self { planner })
     }
 
-    pub fn run_plan(
-        &mut self,
+    fn run_plan(
+        &self,
         psets: HashMap<String, Vec<RayPartitionRef>>,
         py: Python,
     ) -> PyResult<PythonPartitionRefStream> {

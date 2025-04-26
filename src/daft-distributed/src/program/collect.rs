@@ -1,51 +1,54 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_logical_plan::LogicalPlanRef;
+use daft_local_plan::LocalPhysicalPlanRef;
 
+use super::{ProgramContext, RunningProgram};
 use crate::{
-    channel::{create_channel, Receiver, Sender},
-    program::task_producer::TaskProducer,
-    runtime::JoinSet,
+    channel::{create_channel, Sender},
     scheduling::dispatcher::TaskDispatcherHandle,
+    stage::StageContext,
 };
 
-pub struct CollectProgram {
-    #[allow(dead_code)]
-    plan: LogicalPlanRef,
+pub(crate) struct CollectProgram {
+    program_context: ProgramContext,
 }
 
 impl CollectProgram {
-    pub fn new(plan: LogicalPlanRef) -> Self {
-        Self { plan }
+    pub fn new(program_context: ProgramContext) -> Self {
+        Self { program_context }
     }
 
-    async fn run_program(
+    async fn program_loop(
         _task_dispatcher_handle: TaskDispatcherHandle,
-        _task_producer: TaskProducer,
+        _local_physical_plans: Vec<LocalPhysicalPlanRef>,
+        _psets: HashMap<String, Vec<PartitionRef>>,
+        _input_program: Option<RunningProgram>,
         _result_tx: Sender<PartitionRef>,
     ) -> DaftResult<()> {
         todo!()
     }
 
-    #[allow(dead_code)]
-    pub fn spawn_program(
-        self,
-        task_dispatcher_handle: TaskDispatcherHandle,
-        config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        input_rx: Option<Receiver<PartitionRef>>,
-        joinset: &mut JoinSet<DaftResult<()>>,
-    ) -> Receiver<PartitionRef> {
-        let task_producer = TaskProducer::new(self.plan, input_rx, psets, config);
+    pub fn run_program(mut self, stage_context: &mut StageContext) -> RunningProgram {
+        let task_dispatcher_handle = stage_context.task_dispatcher_handle.clone();
+        let input_program = if let Some(input_program) = self.program_context.input_programs.pop() {
+            assert!(self.program_context.input_programs.is_empty());
+            let input_running_program = input_program.run_program(stage_context);
+            Some(input_running_program)
+        } else {
+            None
+        };
         let (result_tx, result_rx) = create_channel(1);
-        joinset.spawn(Self::run_program(
+        let program_loop = Self::program_loop(
             task_dispatcher_handle,
-            task_producer,
+            self.program_context.local_physical_plans,
+            self.program_context.input_psets,
+            input_program,
             result_tx,
-        ));
-        result_rx
+        );
+        stage_context.joinset.spawn(program_loop);
+
+        RunningProgram::new(result_rx)
     }
 }

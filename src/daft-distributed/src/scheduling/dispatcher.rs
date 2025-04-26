@@ -15,16 +15,6 @@ use crate::{
     runtime::JoinSet,
     scheduling::{task::SwordfishTask, worker::WorkerManager},
 };
-
-pub type TaskDispatchWrapper = (
-    // Task to dispatch
-    SwordfishTask,
-    // Result channel
-    tokio::sync::oneshot::Sender<DaftResult<PartitionRef>>,
-    // Cancel channel
-    tokio::sync::oneshot::Receiver<()>,
-);
-
 // The task dispatcher is responsible for dispatching tasks to workers.
 #[allow(dead_code)]
 pub(crate) struct TaskDispatcher {
@@ -32,27 +22,25 @@ pub(crate) struct TaskDispatcher {
 }
 
 impl TaskDispatcher {
-    #[allow(dead_code)]
     pub fn new(worker_manager: Box<dyn WorkerManager>) -> Self {
         Self { worker_manager }
     }
 
-    #[allow(dead_code)]
     pub fn spawn_task_dispatcher(
         task_dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
-    ) -> DaftResult<TaskDispatcherHandle> {
+    ) -> TaskDispatcherHandle {
         let (task_dispatcher_sender, task_dispatcher_receiver) = create_channel(1);
         joinset.spawn(Self::run_dispatch_loop(
             task_dispatcher,
             task_dispatcher_receiver,
         ));
-        Ok(TaskDispatcherHandle::new(task_dispatcher_sender))
+        TaskDispatcherHandle::new(task_dispatcher_sender)
     }
 
-    pub async fn run_dispatch_loop(
+    async fn run_dispatch_loop(
         _dispatcher: Self,
-        _task_rx: Receiver<TaskDispatchWrapper>,
+        _task_rx: Receiver<DispatchableTask>,
     ) -> DaftResult<()> {
         todo!()
     }
@@ -60,37 +48,62 @@ impl TaskDispatcher {
 
 #[derive(Clone)]
 pub struct TaskDispatcherHandle {
-    task_dispatcher_sender: Sender<TaskDispatchWrapper>,
+    task_dispatcher_sender: Sender<DispatchableTask>,
 }
 
 impl TaskDispatcherHandle {
-    pub fn new(task_dispatcher_sender: Sender<TaskDispatchWrapper>) -> Self {
+    fn new(task_dispatcher_sender: Sender<DispatchableTask>) -> Self {
         Self {
             task_dispatcher_sender,
         }
     }
 
     #[allow(dead_code)]
-    pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<TaskResultReceiver> {
+    pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
         let (result_tx, result_rx) = create_oneshot_channel();
         let (cancel_tx, cancel_rx) = create_oneshot_channel();
-        let task_dispatch_wrapper = (task, result_tx, cancel_rx);
+        let dispatchable_task = DispatchableTask::new(task, result_tx, cancel_rx);
+
         self.task_dispatcher_sender
-            .send(task_dispatch_wrapper)
+            .send(dispatchable_task)
             .await
             .map_err(|e| DaftError::InternalError(e.to_string()))?;
-        Ok(TaskResultReceiver::new(result_rx, cancel_tx))
+
+        Ok(SubmittedTask::new(result_rx, cancel_tx))
     }
 }
 
-pub struct TaskResultReceiver {
+#[allow(dead_code)]
+struct DispatchableTask {
+    // The task to dispatch
+    task: SwordfishTask,
+    // The sender to send the result into
+    result_tx: OneshotSender<DaftResult<PartitionRef>>,
+    // The receiver to receive the cancel signal
+    cancel_rx: OneshotReceiver<()>,
+}
+
+impl DispatchableTask {
+    fn new(
+        task: SwordfishTask,
+        result_tx: OneshotSender<DaftResult<PartitionRef>>,
+        cancel_rx: OneshotReceiver<()>,
+    ) -> Self {
+        Self {
+            task,
+            result_tx,
+            cancel_rx,
+        }
+    }
+}
+
+pub struct SubmittedTask {
     result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
     cancel_tx: Option<OneshotSender<()>>,
 }
 
-impl TaskResultReceiver {
-    #[allow(dead_code)]
-    pub fn new(
+impl SubmittedTask {
+    fn new(
         result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
         cancel_tx: OneshotSender<()>,
     ) -> Self {
@@ -101,7 +114,7 @@ impl TaskResultReceiver {
     }
 }
 
-impl Future for TaskResultReceiver {
+impl Future for SubmittedTask {
     type Output = Option<DaftResult<PartitionRef>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -113,7 +126,7 @@ impl Future for TaskResultReceiver {
     }
 }
 
-impl Drop for TaskResultReceiver {
+impl Drop for SubmittedTask {
     fn drop(&mut self) {
         if let Some(cancel_tx) = self.cancel_tx.take() {
             if !cancel_tx.is_closed() {

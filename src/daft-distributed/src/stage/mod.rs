@@ -1,19 +1,97 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
-use collect::CollectStage;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::LogicalPlanRef;
-use shuffle_map::ShuffleMapStage;
+use futures::Stream;
 
-mod collect;
-mod shuffle_map;
+use crate::{
+    channel::Receiver,
+    program::logical_plan_to_program,
+    runtime::JoinSet,
+    scheduling::{
+        dispatcher::{TaskDispatcher, TaskDispatcherHandle},
+        worker::WorkerManager,
+    },
+};
+
+pub struct Stage {
+    logical_plan: LogicalPlanRef,
+    config: Arc<DaftExecutionConfig>,
+}
+
+impl Stage {
+    pub fn new(logical_plan: LogicalPlanRef, config: Arc<DaftExecutionConfig>) -> Self {
+        Self {
+            logical_plan,
+            config,
+        }
+    }
+}
+
+impl Stage {
+    pub fn run_stage(
+        self,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
+    ) -> DaftResult<RunningStage> {
+        let program = logical_plan_to_program(self.logical_plan, self.config, psets)?;
+        let mut stage_context = StageContext::new(worker_manager_creator);
+        let running_program = program.run_program(&mut stage_context);
+        let running_stage = RunningStage::new(running_program.into_inner(), stage_context);
+        Ok(running_stage)
+    }
+}
 
 #[allow(dead_code)]
-pub enum Stage {
-    Collect(CollectStage),
-    ShuffleMap(ShuffleMapStage),
+pub struct RunningStage {
+    result_receiver: Receiver<PartitionRef>,
+    stage_context: StageContext,
+}
+
+impl RunningStage {
+    fn new(result_receiver: Receiver<PartitionRef>, stage_context: StageContext) -> Self {
+        Self {
+            result_receiver,
+            stage_context,
+        }
+    }
+}
+
+impl Stream for RunningStage {
+    type Item = DaftResult<PartitionRef>;
+
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        todo!()
+    }
+}
+
+pub struct StageContext {
+    pub task_dispatcher_handle: TaskDispatcherHandle,
+    pub joinset: JoinSet<DaftResult<()>>,
+}
+
+impl StageContext {
+    pub fn new(
+        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
+    ) -> Self {
+        let worker_manager = worker_manager_creator();
+        let task_dispatcher = TaskDispatcher::new(worker_manager);
+        let mut joinset = JoinSet::new();
+        let task_dispatcher_handle =
+            TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
+        Self {
+            task_dispatcher_handle,
+            joinset,
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -53,7 +131,7 @@ pub fn split_at_stage_boundary(
     } else {
         // make collect stage
         let plan = transformed.data;
-        let collect_stage = CollectStage::new(plan, config.clone());
-        Ok((Stage::Collect(collect_stage), None))
+        let stage = Stage::new(plan, config.clone());
+        Ok((stage, None))
     }
 }
