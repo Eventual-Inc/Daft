@@ -152,11 +152,33 @@ impl MapArray {
     impl_logical_type!(ListArray);
 
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow().unwrap();
+        let (key_dtype, value_dtype) = match &self.field().dtype {
+            DataType::Map { key, value } => (key, value),
+            _ => panic!("Expected map type"),
+        };
+        let struct_type = arrow2::datatypes::DataType::Struct(vec![
+            arrow2::datatypes::Field::new("key", key_dtype.to_arrow().unwrap(), false),
+            arrow2::datatypes::Field::new("value", value_dtype.to_arrow().unwrap(), true),
+        ]);
+        let inner_struct_array = self
+            .physical
+            .flat_child
+            .struct_()
+            .expect("Expected struct array");
+
+        let arrow_field = Box::new(arrow2::array::StructArray::new(
+            struct_type,
+            inner_struct_array
+                .children
+                .iter()
+                .map(|s| s.to_arrow())
+                .collect(),
+            inner_struct_array.validity().cloned(),
+        ));
         Box::new(arrow2::array::MapArray::new(
-            arrow_dtype,
+            self.data_type().to_arrow().unwrap(),
             self.physical.offsets().try_into().unwrap(),
-            self.physical.flat_child.to_arrow(),
+            arrow_field,
             self.physical.validity().cloned(),
         ))
     }
