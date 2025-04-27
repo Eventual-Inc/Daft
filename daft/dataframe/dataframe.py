@@ -3049,9 +3049,12 @@ class DataFrame:
         context = get_context()
         if self._result is None:
             self._result_cache = context.get_or_create_runner().run(self._builder)
+            print("Materialized results")
             result = self._result
             assert result is not None
+            print("Waiting for results")
             result.wait()
+            print("Results materialized")
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
@@ -3076,6 +3079,7 @@ class DataFrame:
             self._num_preview_rows = num_preview_rows
         else:
             self._num_preview_rows = dataframe_len
+        print("Collected results")
         return self
 
     def _construct_show_preview(self, n: int) -> "Preview":

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
@@ -8,9 +8,10 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
 };
+use serde::{Deserialize, Serialize};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
-#[derive(Debug, strum::IntoStaticStr)]
+#[derive(Debug, strum::IntoStaticStr, Serialize, Deserialize)]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
@@ -511,15 +512,121 @@ impl LocalPhysicalPlan {
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
     }
+
+    pub fn estimated_memory_cost(&self) -> usize {
+        match self {
+            Self::PhysicalScan(PhysicalScan { stats_state, .. })
+            | Self::EmptyScan(EmptyScan { stats_state, .. })
+            | Self::InMemoryScan(InMemoryScan { stats_state, .. }) => {
+                stats_state.materialized_stats().approx_stats.size_bytes
+            }
+            Self::Filter(Filter {
+                input, stats_state, ..
+            })
+            | Self::Limit(Limit {
+                input, stats_state, ..
+            })
+            | Self::Project(Project {
+                input, stats_state, ..
+            })
+            | Self::ActorPoolProject(ActorPoolProject {
+                input, stats_state, ..
+            })
+            | Self::UnGroupedAggregate(UnGroupedAggregate {
+                input, stats_state, ..
+            })
+            | Self::HashAggregate(HashAggregate {
+                input, stats_state, ..
+            })
+            | Self::WindowPartitionOnly(WindowPartitionOnly {
+                input, stats_state, ..
+            })
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
+                input,
+                stats_state,
+                ..
+            })
+            | Self::Pivot(Pivot {
+                input, stats_state, ..
+            })
+            | Self::Sort(Sort {
+                input, stats_state, ..
+            })
+            | Self::Sample(Sample {
+                input, stats_state, ..
+            })
+            | Self::Explode(Explode {
+                input, stats_state, ..
+            })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                input,
+                stats_state,
+                ..
+            })
+            | Self::Unpivot(Unpivot {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::Concat(Concat {
+                input,
+                other,
+                stats_state,
+                ..
+            }) => max(
+                max(input.estimated_memory_cost(), other.estimated_memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::HashJoin(HashJoin {
+                left,
+                right,
+                stats_state,
+                ..
+            }) => max(
+                max(left.estimated_memory_cost(), right.estimated_memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::CrossJoin(CrossJoin {
+                left,
+                right,
+                stats_state,
+                ..
+            }) => max(
+                max(left.estimated_memory_cost(), right.estimated_memory_cost()),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            Self::PhysicalWrite(PhysicalWrite {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite {
+                input, stats_state, ..
+            }) => max(
+                input.estimated_memory_cost(),
+                stats_state.materialized_stats().approx_stats.size_bytes,
+            ),
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InMemoryScan {
     pub info: InMemoryInfo,
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     pub pushdowns: Pushdowns,
@@ -527,13 +634,13 @@ pub struct PhysicalScan {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
@@ -541,7 +648,7 @@ pub struct Project {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
@@ -549,7 +656,7 @@ pub struct ActorPoolProject {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: ExprRef,
@@ -557,7 +664,7 @@ pub struct Filter {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
     pub num_rows: i64,
@@ -565,7 +672,7 @@ pub struct Limit {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<ExprRef>,
@@ -573,7 +680,7 @@ pub struct Explode {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,
@@ -583,7 +690,7 @@ pub struct Sort {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
     pub fraction: f64,
@@ -593,7 +700,7 @@ pub struct Sample {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
     pub column_name: String,
@@ -601,7 +708,7 @@ pub struct MonotonicallyIncreasingId {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<ExprRef>,
@@ -609,7 +716,7 @@ pub struct UnGroupedAggregate {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<ExprRef>,
@@ -618,7 +725,7 @@ pub struct HashAggregate {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Unpivot {
     pub input: LocalPhysicalPlanRef,
     pub ids: Vec<ExprRef>,
@@ -629,7 +736,7 @@ pub struct Unpivot {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Pivot {
     pub input: LocalPhysicalPlanRef,
     pub group_by: Vec<ExprRef>,
@@ -641,7 +748,7 @@ pub struct Pivot {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -653,7 +760,7 @@ pub struct HashJoin {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -661,7 +768,7 @@ pub struct CrossJoin {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
     pub other: LocalPhysicalPlanRef,
@@ -669,7 +776,7 @@ pub struct Concat {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalWrite {
     pub input: LocalPhysicalPlanRef,
     pub data_schema: SchemaRef,
@@ -679,7 +786,7 @@ pub struct PhysicalWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CatalogWrite {
     pub input: LocalPhysicalPlanRef,
     pub catalog_type: daft_logical_plan::CatalogType,
@@ -689,7 +796,7 @@ pub struct CatalogWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LanceWrite {
     pub input: LocalPhysicalPlanRef,
     pub lance_info: daft_logical_plan::LanceCatalogInfo,
@@ -698,7 +805,7 @@ pub struct LanceWrite {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionOnly {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<ExprRef>,
@@ -708,7 +815,7 @@ pub struct WindowPartitionOnly {
     pub aliases: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionAndOrderBy {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<ExprRef>,

@@ -1,13 +1,14 @@
 import builtins
 import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterator, Literal
 
 from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
+from daft.runners.distributed_swordfish import RayPartitionRef
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -1889,15 +1890,38 @@ class LogicalPlanBuilder:
     def repr_ascii(self, simple: bool) -> str: ...
     def repr_mermaid(self, options: MermaidOptions) -> str: ...
 
+class DistributedPhysicalPlan:
+    @staticmethod
+    def from_logical_plan_builder(
+        builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
+    ) -> DistributedPhysicalPlan: ...
+    def run_plan(self, psets: dict[str, list[RayPartitionRef]]) -> AsyncIterator[tuple[object, int, int]]: ...
+
+class LocalPhysicalPlan:
+    def print_plan(self) -> None: ...
+
+class RaySwordfishTask:
+    def plan(self) -> LocalPhysicalPlan: ...
+    def psets(self) -> dict[str, list[RayPartitionRef]]: ...
+    def execution_config(self) -> PyDaftExecutionConfig: ...
+    def estimated_memory_cost(self) -> int: ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
     def run(
         self,
-        builder: LogicalPlanBuilder,
-        psets: dict[str, list[PartitionT]],
+        plan: LocalPhysicalPlan,
+        psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
     ) -> Iterator[PyMicroPartition]: ...
+    def run_async(
+        self,
+        plan: LocalPhysicalPlan,
+        psets: dict[str, list[PyMicroPartition]],
+        daft_execution_config: PyDaftExecutionConfig,
+        results_buffer_size: int | None,
+    ) -> AsyncIterator[PyMicroPartition]: ...
     def repr_ascii(
         self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool
     ) -> str: ...
@@ -1936,6 +1960,7 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        flotilla: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1985,6 +2010,8 @@ class PyDaftExecutionConfig:
     def flight_shuffle_dirs(self) -> list[str]: ...
     @property
     def enable_ray_tracing(self) -> bool: ...
+    @property
+    def flotilla(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

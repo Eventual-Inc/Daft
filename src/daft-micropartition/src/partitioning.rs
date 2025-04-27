@@ -18,6 +18,9 @@ impl Partition for MicroPartition {
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
         self.size_bytes()
     }
+    fn num_rows(&self) -> DaftResult<usize> {
+        Ok(self.len())
+    }
 }
 
 // An in memory partition set

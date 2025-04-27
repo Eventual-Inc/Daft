@@ -32,6 +32,7 @@ log = {workspace = true}
 num-format = {workspace = true}
 pin-project = "1"
 pyo3 = {workspace = true, optional = true}
+pyo3-async-runtimes = {version = "0.23", features = ["attributes", "tokio-runtime"], optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
@@ -40,6 +41,7 @@ tracing = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "dep:pyo3-async-runtimes",
   "common-daft-config/python",
   "common-display/python",
   "common-error/python",

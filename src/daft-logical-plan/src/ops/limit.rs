@@ -19,7 +19,7 @@ pub struct Limit {
 }
 
 impl Limit {
-    pub(crate) fn new(input: Arc<LogicalPlan>, limit: i64, eager: bool) -> Self {
+    pub fn new(input: Arc<LogicalPlan>, limit: i64, eager: bool) -> Self {
         Self {
             plan_id: None,
             input,

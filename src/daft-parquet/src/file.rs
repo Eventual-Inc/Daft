@@ -316,6 +316,7 @@ pub struct ParquetFileReader {
 }
 
 impl ParquetFileReader {
+    // Note: We may want to reconsider this for swordfish.
     const DEFAULT_CHUNK_SIZE: usize = 2048;
     // Set to 2GB because that's the maximum size of strings allowable by Parquet (using i32 offsets).
     // See issue: https://github.com/Eventual-Inc/Daft/issues/3007

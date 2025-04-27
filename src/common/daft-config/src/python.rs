@@ -101,7 +101,8 @@ impl PyDaftExecutionConfig {
         pre_shuffle_merge_threshold=None,
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
-        scantask_splitting_level=None
+        scantask_splitting_level=None,
+        flotilla=None,
     ))]
     fn with_config_values(
         &self,
@@ -131,6 +132,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
+        flotilla: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -232,6 +234,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.scantask_splitting_level = scantask_splitting_level;
+        }
+
+        if let Some(flotilla) = flotilla {
+            config.flotilla = flotilla;
         }
 
         Ok(Self {
@@ -352,6 +358,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn scantask_splitting_level(&self) -> PyResult<i32> {
         Ok(self.config.scantask_splitting_level)
+    }
+
+    #[getter]
+    fn flotilla(&self) -> PyResult<bool> {
+        Ok(self.config.flotilla)
     }
 }
 

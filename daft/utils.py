@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterable, Union
 
 from daft.dependencies import pa
 
@@ -47,7 +47,8 @@ def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
     ]
     """
     return [
-        frozenset((key, freeze(value)) for key, value in zip(pydict.keys(), values)) for values in zip(*pydict.values())
+        frozenset((key, freeze(value)) for key, value in zip(pydict.keys(), values))
+        for values in zip(*pydict.values())
     ]
 
 
@@ -67,7 +68,11 @@ def map_operator_arrow_semantics_bool(
     right_pylist: list,
 ) -> list[bool | None]:
     return [
-        bool(operator(left, right)) if (left is not None and right is not None) else None
+        (
+            bool(operator(left, right))
+            if (left is not None and right is not None)
+            else None
+        )
         for (left, right) in zip(left_pylist, right_pylist)
     ]
 
@@ -83,8 +88,13 @@ def python_list_membership_check(
         return [elem in right_pylist for elem in left_pylist]
 
 
-def python_list_between_check(value_pylist: list, lower_pylist: list, upper_pylist: list) -> list:
-    return [value <= upper and value >= lower for value, lower, upper in zip(value_pylist, lower_pylist, upper_pylist)]
+def python_list_between_check(
+    value_pylist: list, lower_pylist: list, upper_pylist: list
+) -> list:
+    return [
+        value <= upper and value >= lower
+        for value, lower, upper in zip(value_pylist, lower_pylist, upper_pylist)
+    ]
 
 
 def map_operator_arrow_semantics(
@@ -103,7 +113,8 @@ def pyarrow_supports_fixed_shape_tensor() -> bool:
     from daft.context import get_context
 
     return hasattr(pa, "fixed_shape_tensor") and (
-        (get_context().get_or_create_runner().name != "ray") or get_arrow_version() >= (13, 0, 0)
+        (get_context().get_or_create_runner().name != "ray")
+        or get_arrow_version() >= (13, 0, 0)
     )
 
 
@@ -124,3 +135,38 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
 
     column_iter: Iterable[ColumnInputType] = [columns] if is_column_input(columns) else columns  # type: ignore
     return [col(c) if isinstance(c, str) else c for c in column_iter]
+
+
+import asyncio
+
+class SyncFromAsyncIterator:
+    def __init__(self, async_iter_producer: Callable[[], AsyncIterator]):
+        self.async_iter_producer = async_iter_producer
+        self.async_iter = None
+        self.loop = asyncio.new_event_loop()
+        self.stopped = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.stopped:
+            raise StopIteration
+
+        try:
+            return self.loop.run_until_complete(self._get_next())
+        except StopAsyncIteration:
+            self.stopped = True
+            self.loop.close()
+            raise StopIteration
+
+    async def _get_next(self):
+        if self.async_iter is None:
+            self.async_iter = self.async_iter_producer()
+            print("new async iter")
+        print("getting next")
+        res = await self.async_iter.__anext__()
+        print("got next")
+        if res is None:
+            raise StopAsyncIteration
+        return res

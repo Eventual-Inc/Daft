@@ -69,7 +69,7 @@ pub(crate) struct TaskSet<T> {
     inner: tokio::task::JoinSet<T>,
 }
 
-impl<T: 'static> TaskSet<T> {
+impl<T: Send + 'static> TaskSet<T> {
     fn new() -> Self {
         Self {
             inner: tokio::task::JoinSet::new(),
@@ -78,9 +78,9 @@ impl<T: 'static> TaskSet<T> {
 
     fn spawn<F>(&mut self, future: F)
     where
-        F: std::future::Future<Output = T> + 'static,
+        F: std::future::Future<Output = T> + Send + 'static,
     {
-        self.inner.spawn_local(future);
+        self.inner.spawn(future);
     }
 
     async fn join_next(&mut self) -> Option<Result<T, tokio::task::JoinError>> {
@@ -137,7 +137,7 @@ impl ExecutionRuntimeContext {
     }
     pub fn spawn(
         &mut self,
-        task: impl std::future::Future<Output = DaftResult<()>> + 'static,
+        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
         node_name: &str,
     ) {
         let node_name = node_name.to_string();

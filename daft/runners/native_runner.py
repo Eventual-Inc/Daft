@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Iterator
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig, set_compute_runtime_num_worker_threads
+from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, set_compute_runtime_num_worker_threads
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -80,9 +80,10 @@ class NativeRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         builder = builder.optimize()
+        plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
         results_gen = executor.run(
-            builder,
+            plan,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
             daft_execution_config,
             results_buffer_size,
