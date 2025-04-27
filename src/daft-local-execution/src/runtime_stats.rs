@@ -8,8 +8,8 @@ use std::{
     time::Instant,
 };
 
+use async_channel::SendError;
 use daft_micropartition::MicroPartition;
-use kanal::SendError;
 use tracing::{instrument::Instrumented, Instrument};
 
 use crate::{
@@ -174,7 +174,10 @@ impl CountingSender {
         }
     }
     #[inline]
-    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
+    pub(crate) async fn send(
+        &self,
+        v: Arc<MicroPartition>,
+    ) -> Result<(), SendError<Arc<MicroPartition>>> {
         self.rt.mark_rows_emitted(v.len() as u64);
         if let Some(ref pb) = self.progress_bar {
             pb.render();

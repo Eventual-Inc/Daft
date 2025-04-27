@@ -95,7 +95,7 @@ impl DispatchSpawner for RoundRobinDispatcher {
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
-            (0..num_workers).map(|_| create_channel(0)).unzip();
+            (0..num_workers).map(|_| create_channel(1)).unzip();
         let morsel_size = self.morsel_size;
         let task = runtime_handle.spawn(async move {
             Self::dispatch_inner(worker_senders, input_receivers, morsel_size).await
@@ -213,7 +213,7 @@ impl DispatchSpawner for PartitionedDispatcher {
         runtime_handle: &mut RuntimeHandle,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
-            (0..num_workers).map(|_| create_channel(0)).unzip();
+            (0..num_workers).map(|_| create_channel(1)).unzip();
         let partition_by = self.partition_by.clone();
         let dispatch_task = runtime_handle.spawn(async move {
             Self::dispatch_inner(worker_senders, input_receivers, partition_by).await
