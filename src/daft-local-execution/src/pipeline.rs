@@ -656,6 +656,7 @@ pub fn physical_plan_to_pipeline(
                 file_info.partition_cols.clone(),
                 file_schema.clone(),
                 Some(file_info.clone()),
+                cfg.maintain_order_for_writes,
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }
@@ -704,6 +705,7 @@ pub fn physical_plan_to_pipeline(
                 partition_by,
                 file_schema.clone(),
                 None,
+                cfg.maintain_order_for_writes,
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }
@@ -723,6 +725,7 @@ pub fn physical_plan_to_pipeline(
                 None,
                 file_schema.clone(),
                 None,
+                cfg.maintain_order_for_writes,
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }

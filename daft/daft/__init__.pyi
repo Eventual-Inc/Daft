@@ -1936,6 +1936,7 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        maintain_order_for_writes: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1985,6 +1986,8 @@ class PyDaftExecutionConfig:
     def flight_shuffle_dirs(self) -> list[str]: ...
     @property
     def enable_ray_tracing(self) -> bool: ...
+    @property
+    def maintain_order_for_writes(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
