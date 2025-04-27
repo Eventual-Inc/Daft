@@ -268,6 +268,33 @@ impl Mul for &Series {
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Mul)
             }
+            // ----------------
+            // Temporal types
+            // ----------------
+            output_type if output_type.is_temporal() => {
+                match (self.data_type(), rhs.data_type()) {
+                    // ----------------
+                    // Duration
+                    // ----------------
+                    // Duration * numeric = Duration
+                    (DataType::Duration(..), dt) if dt.is_numeric() => {
+                        let physical_result = lhs
+                            .duration()?
+                            .physical
+                            .mul(rhs.cast(&DataType::Int64)?.i64()?)?;
+                        physical_result.cast(output_type)
+                    }
+                    // numeric * Duration = Duration
+                    (dt, DataType::Duration(..)) if dt.is_numeric() => {
+                        let physical_result = rhs
+                            .duration()?
+                            .physical
+                            .mul(lhs.cast(&DataType::Int64)?.i64()?)?;
+                        physical_result.cast(output_type)
+                    }
+                    _ => arithmetic_op_not_implemented!(self, "*", rhs, output_type),
+                }
+            }
             _ => arithmetic_op_not_implemented!(self, "*", rhs, output_type),
         }
     }
