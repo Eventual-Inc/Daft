@@ -5,7 +5,10 @@ use daft_core::{
 };
 use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
 
-use crate::{ops::window_state::create_window_agg_state, RecordBatch};
+use crate::{
+    ops::window_state::{create_window_agg_state, WindowAggStateOps},
+    RecordBatch,
+};
 
 impl RecordBatch {
     pub fn window_grouped_agg(
@@ -108,138 +111,98 @@ impl RecordBatch {
 
         let total_rows = self.len();
 
-        // Determine if we have dynamic or static boundaries
-        let is_start_dynamic = matches!(frame.start, WindowBoundary::Offset(_));
-        let is_end_dynamic = matches!(frame.end, WindowBoundary::Offset(_));
-
-        // Calculate static bounds (if applicable)
-        let static_start = if !is_start_dynamic {
-            match &frame.start {
-                WindowBoundary::UnboundedPreceding() => Some(0),
-                WindowBoundary::UnboundedFollowing() => {
-                    return Err(DaftError::ValueError(
-                        "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
-                    ));
-                }
-                _ => None,
+        // Calculate boundaries within the rows_between function as they are relative
+        let start_boundary = match &frame.start {
+            WindowBoundary::UnboundedPreceding() => None,
+            WindowBoundary::Offset(offset) => Some(*offset),
+            WindowBoundary::UnboundedFollowing() => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
+                ));
             }
-        } else {
-            None
         };
 
-        let static_end = if !is_end_dynamic {
-            match &frame.end {
-                WindowBoundary::UnboundedFollowing() => Some(total_rows),
-                WindowBoundary::UnboundedPreceding() => {
-                    return Err(DaftError::ValueError(
-                        "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
-                    ));
-                }
-                _ => None,
+        let end_boundary = match &frame.end {
+            WindowBoundary::UnboundedFollowing() => None,
+            WindowBoundary::Offset(offset) => Some(*offset),
+            WindowBoundary::UnboundedPreceding() => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
+                ));
             }
-        } else {
-            None
         };
 
-        let null_series = Series::full_null(name.as_str(), dtype, 1);
-
-        // Check if we can use incremental state for optimized calculation
-        let supports_incremental = matches!(
-            agg_expr,
-            AggExpr::Mean(_)
-                | AggExpr::Sum(_)
-                | AggExpr::Min(_)
-                | AggExpr::Max(_)
-                | AggExpr::CountDistinct(_)
-        );
-
-        match frame.frame_type {
-            WindowFrameType::Rows => {
-                if supports_incremental {
-                    self.window_agg_incremental(
-                        agg_expr,
-                        &name,
-                        dtype,
-                        frame,
-                        static_start,
-                        static_end,
-                        min_periods,
-                        &null_series,
-                        total_rows,
-                    )
-                } else {
-                    self.window_agg_non_incremental(
-                        agg_expr,
-                        &name,
-                        frame,
-                        static_start,
-                        static_end,
-                        min_periods,
-                        &null_series,
-                        total_rows,
-                    )
-                }
-            }
-            WindowFrameType::Range => self.window_agg_range_frame(
+        if matches!(frame.frame_type, WindowFrameType::Range) {
+            self.window_agg_range_between(
                 agg_expr,
                 &name,
-                frame,
-                static_start,
-                static_end,
+                dtype,
+                start_boundary,
+                end_boundary,
                 &order_by[0],
                 descending[0],
                 min_periods,
-                &null_series,
                 total_rows,
-            ),
+            )
+        } else {
+            match agg_expr {
+                AggExpr::Sum(_)
+                | AggExpr::Count(..)
+                | AggExpr::Mean(_)
+                | AggExpr::Min(_)
+                | AggExpr::Max(_)
+                | AggExpr::CountDistinct(_) => self.window_agg_rows_optimized(
+                    agg_expr,
+                    &name,
+                    start_boundary,
+                    end_boundary,
+                    min_periods,
+                    total_rows,
+                ),
+                _ => self.window_agg_rows(
+                    agg_expr,
+                    &name,
+                    dtype,
+                    start_boundary,
+                    end_boundary,
+                    min_periods,
+                    total_rows,
+                ),
+            }
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_incremental(
+    fn window_agg_rows_optimized(
         &self,
         agg_expr: &AggExpr,
         name: &str,
-        dtype: &DataType,
-        frame: &WindowFrame,
-        static_start: Option<usize>,
-        static_end: Option<usize>,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
         min_periods: i64,
-        null_series: &Series,
         total_rows: usize,
     ) -> DaftResult<Self> {
         // Use the optimized implementation with incremental state updates
         // Initialize the state for incremental aggregation
-        let mut agg_state = create_window_agg_state(agg_expr, dtype)?;
-        let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
+        let source = self.get_column(agg_expr.name())?;
+        let mut agg_state = create_window_agg_state(source, agg_expr, total_rows)?;
 
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
 
         for row_idx in 0..total_rows {
-            // Calculate frame bounds for this row
-            let frame_start = if let Some(idx) = static_start {
-                idx
-            } else {
-                match &frame.start {
-                    WindowBoundary::Offset(offset) => {
-                        (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
-                    }
-                    _ => unreachable!("Start boundary type already checked"),
-                }
+            // Calculate frame bounds for this row using the provided boundaries
+            let frame_start = match start_boundary {
+                None => 0, // Unbounded preceding
+                Some(offset) => (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize,
             };
 
-            let frame_end = if let Some(idx) = static_end {
-                idx
-            } else {
-                match &frame.end {
-                    WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
-                        .max(0)
-                        .min(total_rows as i64)
-                        as usize,
-                    _ => unreachable!("End boundary type already checked"),
-                }
+            let frame_end = match end_boundary {
+                None => total_rows, // Unbounded following
+                Some(offset) => ((row_idx + 1) as i64 + offset)
+                    .max(0)
+                    .min(total_rows as i64) as usize,
             };
 
             let frame_size = frame_end as i64 - frame_start as i64;
@@ -251,103 +214,75 @@ impl RecordBatch {
             }
 
             // Check min_periods requirement
-            if frame_size < min_periods {
-                // Add a null series for this row
-                result_series.push(null_series.clone());
-                continue;
-            }
-
-            // Remove values that left the window (values that were in the previous window but not in the current one)
-            if frame_start > prev_frame_start {
-                let remove_slice = self.slice(prev_frame_start, frame_start)?;
-                if let Ok(col) = remove_slice.get_column(agg_expr.name()) {
-                    agg_state.remove(col, prev_frame_start as u64, frame_start as u64)?;
+            if frame_size >= min_periods {
+                // Remove values that left the window (values that were in the previous window but not in the current one)
+                if frame_start > prev_frame_start {
+                    agg_state.remove(prev_frame_start, frame_start)?;
                 }
-            }
 
-            // Add new values that entered the window (values that are in the current window but weren't in the previous)
-            if frame_end > prev_frame_end {
-                let add_slice = self.slice(prev_frame_end, frame_end)?;
-                if let Ok(col) = add_slice.get_column(agg_expr.name()) {
-                    agg_state.add(col, prev_frame_end as u64, frame_end as u64)?;
+                // Add new values that entered the window (values that are in the current window but weren't in the previous)
+                if frame_end > prev_frame_end {
+                    agg_state.add(prev_frame_end, frame_end)?;
                 }
-            }
 
-            // Update previous boundaries for the next iteration
-            prev_frame_start = frame_start;
-            prev_frame_end = frame_end;
+                // Update previous boundaries for the next iteration
+                prev_frame_start = frame_start;
+                prev_frame_end = frame_end;
+            }
 
             // Evaluate current state to get the result for this row
-            let agg_result = agg_state.evaluate()?;
-            result_series.push(agg_result);
+            agg_state.evaluate()?;
         }
 
-        // Rename the result and create the final record batch
-        let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
-        let renamed_result = final_result_series.rename(name);
+        // Build the final result series
+        let renamed_result = agg_state.build()?.rename(name);
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_non_incremental(
+    fn window_agg_rows(
         &self,
         agg_expr: &AggExpr,
         name: &str,
-        frame: &WindowFrame,
-        static_start: Option<usize>,
-        static_end: Option<usize>,
+        dtype: &DataType,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
         min_periods: i64,
-        null_series: &Series,
         total_rows: usize,
     ) -> DaftResult<Self> {
+        let null_series = Series::full_null(name, dtype, 1);
+
         // Use the non-optimized implementation (recalculate for each row)
         let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
-            let frame_start = if let Some(idx) = static_start {
-                idx
-            } else {
-                match &frame.start {
-                    WindowBoundary::Offset(offset) => {
-                        (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
-                    }
-                    _ => unreachable!("Start boundary type already checked"),
-                }
+            let frame_start = match start_boundary {
+                None => 0, // Unbounded preceding
+                Some(offset) => (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize,
             };
 
-            let frame_end = if let Some(idx) = static_end {
-                idx
-            } else {
-                match &frame.end {
-                    WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
-                        .max(0)
-                        .min(total_rows as i64)
-                        as usize,
-                    _ => unreachable!("End boundary type already checked"),
-                }
+            let frame_end = match end_boundary {
+                None => total_rows, // Unbounded following
+                Some(offset) => ((row_idx + 1) as i64 + offset)
+                    .max(0)
+                    .min(total_rows as i64) as usize,
             };
 
             let frame_size = frame_end as i64 - frame_start as i64;
 
-            if frame_size < 0 {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            }
+            assert!(frame_size >= 0, "Negative frame size is not allowed");
 
-            // Check min_periods requirement
             if frame_size < min_periods {
                 // Add a null series for this row
                 result_series.push(null_series.clone());
-                continue;
+            } else {
+                // Calculate aggregation for this frame
+                let frame_data = self.slice(frame_start, frame_end)?;
+                let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
+                result_series.push(agg_result);
             }
-
-            // Calculate aggregation for this frame
-            let frame_data = self.slice(frame_start, frame_end)?;
-            let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
-            result_series.push(agg_result);
         }
 
         // Rename the result and create the final record batch
@@ -358,18 +293,17 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_range_frame(
+    fn window_agg_range_between(
         // TODO: figure out details for desc and window frame bounds, ie if it's descending and start is negative?
         &self,
         _agg_expr: &AggExpr,
         _name: &str,
-        _frame: &WindowFrame,
-        _static_start: Option<usize>,
-        _static_end: Option<usize>,
+        _dtype: &DataType,
+        _start_boundary: Option<i64>,
+        _end_boundary: Option<i64>,
         _order_by: &ExprRef,
         _descending: bool,
         _min_periods: i64,
-        _null_series: &Series,
         _total_rows: usize,
     ) -> DaftResult<Self> {
         todo!();
@@ -384,26 +318,14 @@ impl RecordBatch {
     }
 
     pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
-        // Create rank numbers for pre-sorted partition
-        let mut rank_numbers = vec![0u64; self.len()];
-
         if self.is_empty() {
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
+            // Empty partition case - no work needed
+            let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
             let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
             return self.union(&rank_batch);
         }
 
-        // Single row case - always rank 1
-        if self.len() == 1 {
-            rank_numbers[0] = 1;
-            let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
-            let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
-            return self.union(&rank_batch);
-        }
-
-        let mut cur_rank = 1;
-        let mut next_rank = 1;
-
+        // Get the order_by columns
         let order_by_table = self.eval_expression_list(order_by)?;
 
         // Create a comparator for checking equality between rows
@@ -415,29 +337,31 @@ impl RecordBatch {
                 &vec![true; order_by_table.columns.len()],
             )?;
 
-        rank_numbers[0] = 1;
-
-        for (i, rank) in rank_numbers.iter_mut().enumerate().skip(1) {
-            // Always increment next_rank for regular rank()
-            if !dense {
-                next_rank += 1;
-            }
-
-            let is_equal = comparator(i - 1, i);
-
-            if !is_equal {
-                // Different value, update rank
-                if dense {
-                    // For dense_rank, just increment by 1
-                    cur_rank += 1;
-                } else {
-                    // For rank(), use the next_rank which accounts for ties
-                    cur_rank = next_rank;
+        // Use iterator to generate rank numbers
+        let rank_numbers: Vec<u64> = std::iter::once(1)
+            .chain((1..self.len()).scan((1, 1), |(cur_rank, next_rank), i| {
+                // Always increment next_rank for regular rank()
+                if !dense {
+                    *next_rank += 1;
                 }
-            }
 
-            *rank = cur_rank;
-        }
+                // Check if the current row has the same values as the previous row
+                let is_equal = comparator(i - 1, i);
+
+                if !is_equal {
+                    // Different value, update rank
+                    if dense {
+                        // For dense_rank, just increment by 1
+                        *cur_rank += 1;
+                    } else {
+                        // For rank(), use the next_rank which accounts for ties
+                        *cur_rank = *next_rank;
+                    }
+                }
+
+                Some(*cur_rank)
+            }))
+            .collect();
 
         let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
         let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
@@ -445,37 +369,14 @@ impl RecordBatch {
         self.union(&rank_batch)
     }
 
-    fn process_default_for_window(
-        &self,
-        default_expr: &ExprRef,
-        target_type: &DataType,
-        slice_start: usize,
-        slice_end: usize,
-        target_length: usize,
-    ) -> DaftResult<Series> {
-        let default_slice = self.slice(slice_start, slice_end)?;
-        let def_col = default_slice.eval_expression(default_expr)?;
-
-        let def_col = if def_col.data_type() != target_type {
-            def_col.cast(target_type)?
-        } else {
-            def_col
-        };
-
-        if def_col.len() != target_length {
-            def_col.broadcast(target_length)
-        } else {
-            Ok(def_col)
-        }
-    }
-
     pub fn window_offset(
         &self,
         name: String,
         expr: ExprRef,
-        offset: i64,
+        offset: isize,
         default: Option<ExprRef>,
     ) -> DaftResult<Self> {
+        // Short-circuit if offset is 0 - just return the value itself
         if offset == 0 {
             let expr_col = self.eval_expression(&expr)?;
             let renamed_col = expr_col.rename(&name);
@@ -484,52 +385,61 @@ impl RecordBatch {
         }
 
         let expr_col = self.eval_expression(&expr)?;
-        let abs_offset = offset.unsigned_abs() as usize;
+        let abs_offset = offset.unsigned_abs();
+
+        let process_default = |default_opt: &Option<ExprRef>,
+                               target_type: &DataType,
+                               slice_start: usize,
+                               slice_end: usize,
+                               target_length: usize|
+         -> DaftResult<Series> {
+            if let Some(default_expr) = default_opt {
+                // Only evaluate on the slice we need for efficiency
+                let default_slice = self.slice(slice_start, slice_end)?;
+                let def_col = default_slice.eval_expression(default_expr)?;
+
+                let def_col = if def_col.data_type() != target_type {
+                    def_col.cast(target_type)?
+                } else {
+                    def_col
+                };
+
+                if def_col.len() != target_length {
+                    def_col.broadcast(target_length)
+                } else {
+                    Ok(def_col)
+                }
+            } else {
+                // Otherwise, create a column of nulls
+                Ok(Series::full_null(
+                    expr_col.name(),
+                    target_type,
+                    target_length,
+                ))
+            }
+        };
 
         let mut result_col = if self.is_empty() || abs_offset >= self.len() {
-            if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    0,
-                    self.len(),
-                    self.len(),
-                )?
-            } else {
-                Series::full_null(expr_col.name(), expr_col.data_type(), self.len())
-            }
+            // Special case: empty array or offset exceeds array length
+            process_default(&default, expr_col.data_type(), 0, self.len(), self.len())?
         } else if offset > 0 {
             // LEAD: shift values ahead by offset
             let source_values = expr_col.slice(abs_offset, self.len())?;
-
-            let default_values = if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    self.len() - abs_offset,
-                    self.len(),
-                    abs_offset,
-                )?
-            } else {
-                Series::full_null(expr_col.name(), expr_col.data_type(), abs_offset)
-            };
+            let default_values = process_default(
+                &default,
+                expr_col.data_type(),
+                self.len() - abs_offset,
+                self.len(),
+                abs_offset,
+            )?;
 
             // Construct result by concatenating source and default values
             let cols = vec![&source_values, &default_values];
             Series::concat(&cols)?
         } else {
             // LAG: shift values back by offset
-            let default_values = if let Some(default_expr) = default {
-                self.process_default_for_window(
-                    &default_expr,
-                    expr_col.data_type(),
-                    0,
-                    abs_offset,
-                    abs_offset,
-                )?
-            } else {
-                Series::full_null(expr_col.name(), expr_col.data_type(), abs_offset)
-            };
+            let default_values =
+                process_default(&default, expr_col.data_type(), 0, abs_offset, abs_offset)?;
 
             let source_values = expr_col.slice(0, self.len() - abs_offset)?;
 

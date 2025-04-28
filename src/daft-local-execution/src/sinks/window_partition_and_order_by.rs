@@ -12,7 +12,7 @@ use super::{
     blocking_sink::{
         BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     },
-    window_base::{base_sink, make_base_state, WindowBaseState, WindowSinkParams},
+    window_base::{base_sink, WindowBaseState, WindowSinkParams},
 };
 use crate::ExecutionTaskSpawner;
 
@@ -142,11 +142,11 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 return RecordBatch::empty(Some(params.original_schema.clone()));
                             }
 
-                            let partitionby_table =
+                            let groupby_table =
                                 input_data.eval_expression_list(&params.partition_by)?;
-                            let (_, partitionvals_indices) = partitionby_table.make_groups()?;
+                            let (_, groupvals_indices) = groupby_table.make_groups()?;
 
-                            let mut partitions = partitionvals_indices
+                            let mut partitions = groupvals_indices
                                 .iter()
                                 .map(|indices| {
                                     let indices_series =
@@ -184,13 +184,16 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                             &params.order_by,
                                             true,
                                         )?,
-                                        WindowExpr::Offset(expr, offset, default) => partition
-                                            .window_offset(
-                                                name.clone(),
-                                                expr.clone(),
-                                                *offset,
-                                                default.clone(),
-                                            )?,
+                                        WindowExpr::Offset {
+                                            input,
+                                            offset,
+                                            default,
+                                        } => partition.window_offset(
+                                            name.clone(),
+                                            input.clone(),
+                                            *offset,
+                                            default.clone(),
+                                        )?,
                                     }
                                 }
                             }
@@ -266,6 +269,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        make_base_state(self.num_partitions())
+        WindowBaseState::make_base_state(self.num_partitions())
     }
 }

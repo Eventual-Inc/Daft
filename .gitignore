@@ -63,5 +63,5 @@ out/**
 *.tsbuildinfo
 next-env.d.ts
 
-# mkdocs build
+# docs build
 site

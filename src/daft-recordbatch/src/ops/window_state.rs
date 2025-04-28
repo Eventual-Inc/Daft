@@ -1,11 +1,165 @@
 use std::{
-    cmp::{Ordering, Reverse},
+    cmp::{Eq, Ordering, Reverse},
     collections::{BinaryHeap, HashMap},
 };
 
+use arrow2::bitmap::{Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
-use daft_core::{count_mode::CountMode, prelude::*};
+use daft_core::{
+    array::ops::arrow2::comparison::build_is_equal,
+    prelude::*,
+    series::IntoSeries,
+    utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
+};
 use daft_dsl::AggExpr;
+use num_traits::Zero;
+
+/// Trait for window aggregation state inner implementations
+pub trait WindowAggStateOps {
+    /// Add a value to the state with index information
+    fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()>;
+
+    /// Remove a value from the state with index information
+    fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()>;
+
+    /// Evaluate the current state and push the result to internal buffer
+    fn evaluate(&mut self) -> DaftResult<()>;
+
+    /// Build the final result series containing all accumulated results
+    fn build(&self) -> DaftResult<Series>;
+}
+
+// Macro to define window state structs with their WindowAggStateOps implementations
+macro_rules! define_window_state {
+    ($name:ident) => {
+        pub struct $name {
+            inner: Box<dyn WindowAggStateOps>,
+        }
+
+        impl WindowAggStateOps for $name {
+            fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+                self.inner.add(start_idx, end_idx)
+            }
+
+            fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+                self.inner.remove(start_idx, end_idx)
+            }
+
+            fn evaluate(&mut self) -> DaftResult<()> {
+                self.inner.evaluate()
+            }
+
+            fn build(&self) -> DaftResult<Series> {
+                self.inner.build()
+            }
+        }
+    };
+}
+
+struct SumWindowStateInner<T>
+where
+    T: DaftNumericType,
+{
+    source: DataArray<T>,
+    sum: T::Native,
+    sum_vec: Vec<T::Native>,
+}
+
+impl<T> SumWindowStateInner<T>
+where
+    T: DaftNumericType,
+{
+    fn new(source: &Series, total_length: usize) -> Self {
+        let source_array = source.downcast::<DataArray<T>>().unwrap().clone();
+        Self {
+            source: source_array,
+            sum: T::Native::zero(),
+            sum_vec: Vec::with_capacity(total_length),
+        }
+    }
+}
+
+impl<T> WindowAggStateOps for SumWindowStateInner<T>
+where
+    T: DaftNumericType,
+    DataArray<T>: IntoSeries,
+{
+    fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if self.source.is_valid(i) {
+                self.sum = self.sum + self.source.get(i).unwrap();
+            }
+        }
+        Ok(())
+    }
+
+    fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if self.source.is_valid(i) {
+                self.sum = self.sum - self.source.get(i).unwrap();
+            }
+        }
+        Ok(())
+    }
+
+    fn evaluate(&mut self) -> DaftResult<()> {
+        self.sum_vec.push(self.sum);
+        Ok(())
+    }
+
+    fn build(&self) -> DaftResult<Series> {
+        Ok(DataArray::<T>::from(("", self.sum_vec.clone())).into_series())
+    }
+}
+
+struct CountWindowStateInner {
+    source: Bitmap,
+    count: usize,
+    count_vec: Vec<u64>,
+}
+
+impl CountWindowStateInner {
+    fn new(source: &Series, total_length: usize) -> Self {
+        let source_bitmap = source
+            .validity()
+            .cloned()
+            .unwrap_or_else(|| Bitmap::new_constant(true, source.len()));
+        Self {
+            source: source_bitmap,
+            count: 0,
+            count_vec: Vec::with_capacity(total_length),
+        }
+    }
+}
+
+impl WindowAggStateOps for CountWindowStateInner {
+    fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if self.source.get_bit(i) {
+                self.count += 1;
+            }
+        }
+        Ok(())
+    }
+
+    fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if self.source.get_bit(i) {
+                self.count -= 1;
+            }
+        }
+        Ok(())
+    }
+
+    fn evaluate(&mut self) -> DaftResult<()> {
+        self.count_vec.push(self.count as u64);
+        Ok(())
+    }
+
+    fn build(&self) -> DaftResult<Series> {
+        Ok(DataArray::<UInt64Type>::from(("", self.count_vec.clone())).into_series())
+    }
+}
 
 #[derive(Debug, Clone)]
 struct IndexedValue {
@@ -59,488 +213,390 @@ impl Ord for IndexedValue {
     }
 }
 
-/// Trait for window aggregation state common operations
-pub trait WindowAggStateOps {
-    /// Add a value to the state with index information
-    fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()>;
-
-    /// Remove a value from the state with index information
-    fn remove(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()>;
-
-    /// Evaluate the current state to produce an aggregation result
-    fn evaluate(&mut self) -> DaftResult<Series>;
+struct MinWindowStateInner {
+    source: Series,
+    min_heap: BinaryHeap<Reverse<IndexedValue>>,
+    cur_idx: usize,
+    validity: MutableBitmap,
+    min_idxs: Vec<u64>,
 }
 
-pub struct MeanWindowState {
-    name: String,
-    sum_series: Option<Series>,
-    count: usize,
-    field: Field,
-}
-
-impl MeanWindowState {
-    pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        let name = match agg_expr {
-            AggExpr::Mean(expr) => expr.name().to_string(),
-            _ => panic!("Expected Mean aggregation"),
-        };
-
-        let field = Field::new(name.clone(), out_dtype.clone());
-
+impl MinWindowStateInner {
+    fn new(source: &Series, total_length: usize) -> Self {
         Self {
-            name,
-            sum_series: None,
-            count: 0,
-            field,
-        }
-    }
-}
-
-impl WindowAggStateOps for MeanWindowState {
-    fn add(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
-        if value.len() > 4 {
-            let sum_result = value.sum(None)?;
-            let count_result = value.count(None, CountMode::Valid)?;
-
-            if !sum_result.is_empty() && !count_result.is_empty() {
-                let count_val = count_result.u64()?.get(0).unwrap_or(0) as usize;
-
-                if count_val > 0 {
-                    if let Some(ref mut sum_series) = self.sum_series {
-                        *sum_series = (sum_series as &Series + &sum_result)?;
-                    } else {
-                        self.sum_series = Some(sum_result);
-                    }
-                    self.count += count_val;
-                }
-            }
-            return Ok(());
-        }
-
-        for i in 0..value.len() {
-            if value.is_valid(i) {
-                let scalar_value = value.slice(i, i + 1)?;
-
-                if let Some(ref mut sum_series) = self.sum_series {
-                    *sum_series = (sum_series as &Series + &scalar_value)?;
-                } else {
-                    self.sum_series = Some(scalar_value);
-                }
-                self.count += 1;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn remove(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
-        if self.sum_series.is_none() {
-            return Ok(());
-        }
-
-        if value.len() > 4 {
-            let sum_result = value.sum(None)?;
-            let count_result = value.count(None, CountMode::Valid)?;
-
-            if !sum_result.is_empty() && !count_result.is_empty() {
-                let count_val = count_result.u64()?.get(0).unwrap_or(0) as usize;
-
-                if count_val > 0 && self.count >= count_val {
-                    if let Some(ref mut sum_series) = self.sum_series {
-                        *sum_series = (sum_series as &Series - &sum_result)?;
-                        self.count -= count_val;
-                    }
-                }
-            }
-            return Ok(());
-        }
-
-        for i in 0..value.len() {
-            if value.is_valid(i) && self.count > 0 {
-                let scalar_value = value.slice(i, i + 1)?;
-
-                if let Some(ref mut sum_series) = self.sum_series {
-                    *sum_series = (sum_series as &Series - &scalar_value)?;
-                    self.count -= 1;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn evaluate(&mut self) -> DaftResult<Series> {
-        if self.count == 0 || self.sum_series.is_none() {
-            return Ok(Series::full_null(&self.name, &self.field.dtype, 1));
-        }
-
-        let count_value = self.count as f64;
-        let count_array = Float64Array::from((self.name.as_str(), vec![count_value])).into_series();
-
-        let mean_series = (self.sum_series.as_ref().unwrap() as &Series / &count_array)?;
-
-        let result = mean_series.rename(&self.name);
-
-        Ok(result)
-    }
-}
-
-pub struct SumWindowState {
-    name: String,
-    sum_series: Option<Series>,
-    field: Field,
-}
-
-impl SumWindowState {
-    pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        let name = match agg_expr {
-            AggExpr::Sum(expr) => expr.name().to_string(),
-            _ => panic!("Expected Sum aggregation"),
-        };
-
-        let field = Field::new(name.clone(), out_dtype.clone());
-
-        Self {
-            name,
-            sum_series: None,
-            field,
-        }
-    }
-}
-
-impl WindowAggStateOps for SumWindowState {
-    fn add(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
-        if value.len() > 4 {
-            let sum_result = value.sum(None)?;
-
-            if !sum_result.is_empty() {
-                if let Some(ref mut sum_series) = self.sum_series {
-                    *sum_series = (sum_series as &Series + &sum_result)?;
-                } else {
-                    self.sum_series = Some(sum_result);
-                }
-            }
-            return Ok(());
-        }
-
-        for i in 0..value.len() {
-            if value.is_valid(i) {
-                let scalar_value = value.slice(i, i + 1)?;
-
-                if let Some(ref mut sum_series) = self.sum_series {
-                    *sum_series = (sum_series as &Series + &scalar_value)?;
-                } else {
-                    self.sum_series = Some(scalar_value);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn remove(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
-        if self.sum_series.is_none() {
-            return Ok(());
-        }
-
-        if value.len() > 4 {
-            let sum_result = value.sum(None)?;
-
-            if !sum_result.is_empty() {
-                if let Some(ref mut sum_series) = self.sum_series {
-                    *sum_series = (sum_series as &Series - &sum_result)?;
-                }
-            }
-            return Ok(());
-        }
-
-        for i in 0..value.len() {
-            if value.is_valid(i) {
-                let scalar_value = value.slice(i, i + 1)?;
-
-                if let Some(ref mut sum_series) = self.sum_series {
-                    *sum_series = (sum_series as &Series - &scalar_value)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn evaluate(&mut self) -> DaftResult<Series> {
-        match &self.sum_series {
-            Some(sum) => {
-                let result = sum.rename(&self.name);
-                Ok(result)
-            }
-            None => Ok(Series::full_null(&self.name, &self.field.dtype, 1)),
-        }
-    }
-}
-
-pub struct MinWindowState {
-    name: String,
-    heap: BinaryHeap<Reverse<IndexedValue>>,
-    cur_idx: u64,
-    field: Field,
-}
-
-impl MinWindowState {
-    pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        let name = match agg_expr {
-            AggExpr::Min(expr) => expr.name().to_string(),
-            _ => panic!("Expected Min aggregation"),
-        };
-
-        let field = Field::new(name.clone(), out_dtype.clone());
-
-        Self {
-            name,
-            heap: BinaryHeap::new(),
+            source: source.clone(),
+            min_heap: BinaryHeap::new(),
             cur_idx: 0,
-            field,
+            validity: MutableBitmap::with_capacity(total_length),
+            min_idxs: Vec::with_capacity(total_length),
         }
     }
 }
 
-impl WindowAggStateOps for MinWindowState {
-    fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
-        let mut idx = start_idx;
-        for i in 0..value.len() {
-            if value.is_valid(i) {
-                let scalar_value = value.slice(i, i + 1)?;
-                self.heap.push(Reverse(IndexedValue {
-                    value: scalar_value,
-                    idx,
+impl WindowAggStateOps for MinWindowStateInner {
+    fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if self.source.is_valid(i) {
+                self.min_heap.push(Reverse(IndexedValue {
+                    value: self.source.slice(i, i + 1).unwrap(),
+                    idx: i as u64,
                 }));
             }
-            idx += 1;
         }
-
-        debug_assert!(
-            idx == end_idx,
-            "Index does not match end_idx in add operation"
-        );
-
         Ok(())
     }
 
-    fn remove(&mut self, _value: &Series, _start_idx: u64, end_idx: u64) -> DaftResult<()> {
+    fn remove(&mut self, _start_idx: usize, end_idx: usize) -> DaftResult<()> {
         self.cur_idx = end_idx;
-
         Ok(())
     }
 
-    fn evaluate(&mut self) -> DaftResult<Series> {
-        let mut min_value = None;
-
-        while let Some(Reverse(entry)) = self.heap.peek() {
-            if entry.idx >= self.cur_idx {
-                min_value = Some(entry.value.clone());
-                break;
-            }
-            self.heap.pop();
+    fn evaluate(&mut self) -> DaftResult<()> {
+        while !self.min_heap.is_empty() && self.min_heap.peek().unwrap().0.idx < self.cur_idx as u64
+        {
+            self.min_heap.pop();
         }
-
-        match min_value {
-            Some(min_val) => Ok(min_val),
-            None => Ok(Series::full_null(&self.name, &self.field.dtype, 1)),
+        if self.min_heap.is_empty() {
+            self.validity.push(false);
+            self.min_idxs.push(0);
+        } else {
+            self.validity.push(true);
+            self.min_idxs.push(self.min_heap.peek().unwrap().0.idx);
         }
+        Ok(())
+    }
+
+    fn build(&self) -> DaftResult<Series> {
+        let result = self
+            .source
+            .take(&DataArray::<UInt64Type>::from(("", self.min_idxs.clone())).into_series())
+            .unwrap();
+        result.with_validity(Some(self.validity.clone().into()))
     }
 }
 
-pub struct MaxWindowState {
-    name: String,
-    heap: BinaryHeap<IndexedValue>,
-    cur_idx: u64,
-    field: Field,
+struct MaxWindowStateInner {
+    source: Series,
+    max_heap: BinaryHeap<IndexedValue>,
+    cur_idx: usize,
+    max_idxs: Vec<u64>,
+    validity: MutableBitmap,
 }
 
-impl MaxWindowState {
-    pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        let name = match agg_expr {
-            AggExpr::Max(expr) => expr.name().to_string(),
-            _ => panic!("Expected Max aggregation"),
-        };
-
-        let field = Field::new(name.clone(), out_dtype.clone());
-
+impl MaxWindowStateInner {
+    fn new(source: &Series, total_length: usize) -> Self {
         Self {
-            name,
-            heap: BinaryHeap::new(),
+            source: source.clone(),
+            max_heap: BinaryHeap::new(),
             cur_idx: 0,
-            field,
+            max_idxs: Vec::with_capacity(total_length),
+            validity: MutableBitmap::with_capacity(total_length),
         }
     }
 }
 
-impl WindowAggStateOps for MaxWindowState {
-    fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
-        let mut idx = start_idx;
-        for i in 0..value.len() {
-            if value.is_valid(i) {
-                let scalar_value = value.slice(i, i + 1)?;
-                self.heap.push(IndexedValue {
-                    value: scalar_value,
-                    idx,
+impl WindowAggStateOps for MaxWindowStateInner {
+    fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if self.source.is_valid(i) {
+                self.max_heap.push(IndexedValue {
+                    value: self.source.slice(i, i + 1).unwrap(),
+                    idx: i as u64,
                 });
             }
-            idx += 1;
         }
-
-        debug_assert!(
-            idx == end_idx,
-            "Index does not match end_idx in add operation"
-        );
-
         Ok(())
     }
 
-    fn remove(&mut self, _value: &Series, _start_idx: u64, end_idx: u64) -> DaftResult<()> {
+    fn remove(&mut self, _start_idx: usize, end_idx: usize) -> DaftResult<()> {
         self.cur_idx = end_idx;
-
         Ok(())
     }
 
-    fn evaluate(&mut self) -> DaftResult<Series> {
-        let mut temp_heap = self.heap.clone();
-        let mut max_value = None;
-
-        while let Some(entry) = temp_heap.peek() {
-            if entry.idx >= self.cur_idx {
-                max_value = Some(entry.value.clone());
-                break;
-            }
-            temp_heap.pop();
+    fn evaluate(&mut self) -> DaftResult<()> {
+        while !self.max_heap.is_empty() && self.max_heap.peek().unwrap().idx < self.cur_idx as u64 {
+            self.max_heap.pop();
         }
-
-        match max_value {
-            Some(max_val) => Ok(max_val),
-            None => Ok(Series::full_null(&self.name, &self.field.dtype, 1)),
+        if self.max_heap.is_empty() {
+            self.validity.push(false);
+            self.max_idxs.push(0);
+        } else {
+            self.validity.push(true);
+            self.max_idxs.push(self.max_heap.peek().unwrap().idx);
         }
+        Ok(())
+    }
+
+    fn build(&self) -> DaftResult<Series> {
+        let result = self
+            .source
+            .take(&DataArray::<UInt64Type>::from(("", self.max_idxs.clone())).into_series())
+            .unwrap();
+        result.with_validity(Some(self.validity.clone().into()))
     }
 }
 
-pub struct CountDistinctWindowState {
-    name: String,
-    value_counts: HashMap<u64, usize>,
-    field: Field,
+struct CountDistinctWindowStateInner {
+    hashed: DataArray<UInt64Type>,
+    counts: HashMap<IndexHash, usize, IdentityBuildHasher>,
+    count_vec: Vec<u64>,
+    comparator: Box<dyn Fn(usize, usize) -> bool>,
 }
 
-impl CountDistinctWindowState {
-    pub fn new(out_dtype: &DataType, agg_expr: &AggExpr) -> Self {
-        let name = match agg_expr {
-            AggExpr::CountDistinct(expr) => expr.name().to_string(),
-            _ => panic!("Expected CountDistinct aggregation"),
-        };
+impl CountDistinctWindowStateInner {
+    fn new(source: &Series, total_length: usize) -> Self {
+        let hashed = source.hash_with_validity(None).unwrap();
 
-        let field = Field::new(name.clone(), out_dtype.clone());
+        let array = source.to_arrow();
+        let comparator = build_is_equal(&*array, &*array, true, false).unwrap();
 
         Self {
-            name,
-            value_counts: HashMap::new(),
-            field,
+            hashed,
+            counts: HashMap::with_capacity_and_hasher(total_length, Default::default()),
+            count_vec: Vec::with_capacity(total_length),
+            comparator: Box::new(comparator),
         }
     }
 }
 
-impl WindowAggStateOps for CountDistinctWindowState {
-    fn add(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
-        let hashed = value.hash_with_validity(None)?;
+impl WindowAggStateOps for CountDistinctWindowStateInner {
+    fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if let Some(hash) = self.hashed.get(i) {
+                let index_hash = IndexHash {
+                    idx: i as u64,
+                    hash,
+                };
 
-        for i in 0..hashed.len() {
-            if let Some(hash) = hashed.get(i) {
-                *self.value_counts.entry(hash).or_insert(0) += 1;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn remove(&mut self, value: &Series, _start_idx: u64, _end_idx: u64) -> DaftResult<()> {
-        let hashed = value.hash_with_validity(None)?;
-
-        for i in 0..hashed.len() {
-            if let Some(hash) = hashed.get(i) {
-                if let Some(count) = self.value_counts.get_mut(&hash) {
-                    *count -= 1;
-                    if *count == 0 {
-                        self.value_counts.remove(&hash);
+                let mut found_match = false;
+                for (existing_hash, count) in &mut self.counts {
+                    if existing_hash.hash == hash
+                        && (self.comparator)(i, existing_hash.idx as usize)
+                    {
+                        *count += 1;
+                        found_match = true;
+                        break;
                     }
                 }
+
+                if !found_match {
+                    self.counts.insert(index_hash, 1);
+                }
             }
         }
-
         Ok(())
     }
 
-    fn evaluate(&mut self) -> DaftResult<Series> {
-        let count = self.value_counts.len() as u64;
+    fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        for i in start_idx..end_idx {
+            if let Some(hash) = self.hashed.get(i) {
+                let mut keys_to_remove = Vec::new();
 
-        match self.field.dtype {
-            DataType::UInt64 => {
-                let array = UInt64Array::from((self.name.as_str(), vec![count])).into_series();
-                Ok(array)
-            }
-            _ => {
-                let array = UInt64Array::from((self.name.as_str(), vec![count])).into_series();
-                Ok(array)
+                for (k, v) in &mut self.counts {
+                    if k.hash == hash && (self.comparator)(i, k.idx as usize) {
+                        *v -= 1;
+                        if *v == 0 {
+                            keys_to_remove.push(IndexHash {
+                                idx: k.idx,
+                                hash: k.hash,
+                            });
+                        }
+                        break;
+                    }
+                }
+
+                for key in keys_to_remove {
+                    self.counts.remove(&key);
+                }
             }
         }
+        Ok(())
+    }
+
+    fn evaluate(&mut self) -> DaftResult<()> {
+        self.count_vec.push(self.counts.len() as u64);
+        Ok(())
+    }
+
+    fn build(&self) -> DaftResult<Series> {
+        Ok(DataArray::<UInt64Type>::from(("", self.count_vec.clone())).into_series())
     }
 }
 
-pub enum WindowAggState {
-    Mean(MeanWindowState),
-    Sum(SumWindowState),
-    Min(MinWindowState),
-    Max(MaxWindowState),
-    CountDistinct(CountDistinctWindowState),
+// Define window state structs using the macro
+define_window_state!(SumWindowState);
+define_window_state!(CountWindowState);
+define_window_state!(MinWindowState);
+define_window_state!(MaxWindowState);
+define_window_state!(CountDistinctWindowState);
+
+pub struct MeanWindowState {
+    inner_sum: SumWindowState,
+    inner_count: CountWindowState,
 }
 
-macro_rules! impl_window_agg_system {
-    ($(($variant:ident, $state_type:ty)),*) => {
-        impl WindowAggState {
-            pub fn add(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
+// Macro to define the WindowAggState enum and its implementations
+macro_rules! define_window_agg_states {
+    ($(($variant:ident, $state:ident, $pattern:pat)),+) => {
+        pub enum WindowAggState {
+            $($variant($state)),+
+        }
+
+        impl WindowAggStateOps for WindowAggState {
+            fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
                 match self {
-                    $(
-                        Self::$variant(state) => state.add(value, start_idx, end_idx),
-                    )*
+                    $(Self::$variant(state) => state.add(start_idx, end_idx),)+
                 }
             }
 
-            pub fn remove(&mut self, value: &Series, start_idx: u64, end_idx: u64) -> DaftResult<()> {
+            fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
                 match self {
-                    $(
-                        Self::$variant(state) => state.remove(value, start_idx, end_idx),
-                    )*
+                    $(Self::$variant(state) => state.remove(start_idx, end_idx),)+
                 }
             }
 
-            pub fn evaluate(&mut self) -> DaftResult<Series> {
+            fn evaluate(&mut self) -> DaftResult<()> {
                 match self {
-                    $(
-                        Self::$variant(state) => state.evaluate(),
-                    )*
+                    $(Self::$variant(state) => state.evaluate(),)+
+                }
+            }
+
+            fn build(&self) -> DaftResult<Series> {
+                match self {
+                    $(Self::$variant(state) => state.build(),)+
                 }
             }
         }
 
-        pub fn create_window_agg_state(agg_expr: &AggExpr, out_dtype: &DataType) -> DaftResult<WindowAggState> {
+        pub fn create_window_agg_state(
+            source: &Series,
+            agg_expr: &AggExpr,
+            total_length: usize,
+        ) -> DaftResult<WindowAggState> {
             match agg_expr {
                 $(
-                    AggExpr::$variant(_) => Ok(WindowAggState::$variant(<$state_type>::new(out_dtype, agg_expr))),
-                )*
-                _ => Err(DaftError::ValueError(format!("Aggregation type {:?} does not support incremental window computation", agg_expr))),
+                $pattern => Ok(WindowAggState::$variant($state::new(source, total_length))),
+                )+
+                _ => Err(DaftError::ValueError(format!(
+                    "Aggregation type {:?} does not support incremental window computation",
+                    agg_expr
+                ))),
             }
         }
     };
 }
 
-impl_window_agg_system! {
-    (Mean, MeanWindowState),
-    (Sum, SumWindowState),
-    (Min, MinWindowState),
-    (Max, MaxWindowState),
-    (CountDistinct, CountDistinctWindowState)
+// Use the macro to define WindowAggState and implementations
+define_window_agg_states! {
+    (Sum, SumWindowState, AggExpr::Sum(_)),
+    (Count, CountWindowState, AggExpr::Count(..)),
+    (Mean, MeanWindowState, AggExpr::Mean(_)),
+    (Min, MinWindowState, AggExpr::Min(_)),
+    (Max, MaxWindowState, AggExpr::Max(_)),
+    (CountDistinct, CountDistinctWindowState, AggExpr::CountDistinct(_))
+}
+
+impl WindowAggStateOps for MeanWindowState {
+    fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        self.inner_sum.add(start_idx, end_idx)?;
+        self.inner_count.add(start_idx, end_idx)
+    }
+
+    fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        self.inner_sum.remove(start_idx, end_idx)?;
+        self.inner_count.remove(start_idx, end_idx)
+    }
+
+    fn evaluate(&mut self) -> DaftResult<()> {
+        self.inner_sum.evaluate()?;
+        self.inner_count.evaluate()
+    }
+
+    fn build(&self) -> DaftResult<Series> {
+        let sum = self.inner_sum.build()?;
+        let count = self.inner_count.build()?;
+        Ok((sum / count).unwrap())
+    }
+}
+
+impl SumWindowState {
+    fn new(source: &Series, total_length: usize) -> Self {
+        match source.data_type() {
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                let casted = source.cast(&DataType::Int64).unwrap();
+                let inner = Box::new(SumWindowStateInner::<Int64Type>::new(&casted, total_length));
+                Self { inner }
+            }
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                let casted = source.cast(&DataType::UInt64).unwrap();
+                let inner = Box::new(SumWindowStateInner::<UInt64Type>::new(
+                    &casted,
+                    total_length,
+                ));
+                Self { inner }
+            }
+            DataType::Float32 => {
+                let inner = Box::new(SumWindowStateInner::<Float32Type>::new(
+                    source,
+                    total_length,
+                ));
+                Self { inner }
+            }
+            DataType::Float64 => {
+                let inner = Box::new(SumWindowStateInner::<Float64Type>::new(
+                    source,
+                    total_length,
+                ));
+                Self { inner }
+            }
+            _ => panic!("Unsupported data type for SumWindowState"),
+        }
+    }
+}
+
+impl CountWindowState {
+    fn new(source: &Series, total_length: usize) -> Self {
+        let inner = CountWindowStateInner::new(source, total_length);
+        Self {
+            inner: Box::new(inner),
+        }
+    }
+}
+
+impl MeanWindowState {
+    fn new(source: &Series, total_length: usize) -> Self {
+        let inner_sum = SumWindowState::new(source, total_length);
+        let inner_count = CountWindowState::new(source, total_length);
+        Self {
+            inner_sum,
+            inner_count,
+        }
+    }
+}
+
+impl MinWindowState {
+    fn new(source: &Series, total_length: usize) -> Self {
+        let inner = MinWindowStateInner::new(source, total_length);
+        Self {
+            inner: Box::new(inner),
+        }
+    }
+}
+
+impl MaxWindowState {
+    fn new(source: &Series, total_length: usize) -> Self {
+        let inner = MaxWindowStateInner::new(source, total_length);
+        Self {
+            inner: Box::new(inner),
+        }
+    }
+}
+
+impl CountDistinctWindowState {
+    fn new(source: &Series, total_length: usize) -> Self {
+        let inner = CountDistinctWindowStateInner::new(source, total_length);
+        Self {
+            inner: Box::new(inner),
+        }
+    }
 }
