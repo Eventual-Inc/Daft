@@ -4,6 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
+    expr::window::WindowSpec,
     functions::{struct_::StructExpr, FunctionExpr},
     has_agg, is_actor_pool_udf, left_col, resolved_col, right_col, AggExpr, Column, Expr, ExprRef,
     PlanRef, ResolvedColumn, UnresolvedColumn,
@@ -306,6 +307,33 @@ impl ExprResolver<'_> {
             }
         })
         .map(|res| res.data)
+    }
+
+    /// Resolve expressions in a window specification
+    pub fn resolve_window_spec(
+        &self,
+        window_spec: WindowSpec,
+        plan: LogicalPlanRef,
+    ) -> DaftResult<WindowSpec> {
+        let partition_by = if !window_spec.partition_by.is_empty() {
+            self.resolve(window_spec.partition_by, plan.clone())?
+        } else {
+            vec![]
+        };
+
+        let order_by = if !window_spec.order_by.is_empty() {
+            self.resolve(window_spec.order_by, plan)?
+        } else {
+            vec![]
+        };
+
+        Ok(WindowSpec {
+            partition_by,
+            order_by,
+            descending: window_spec.descending,
+            frame: window_spec.frame,
+            min_periods: window_spec.min_periods,
+        })
     }
 
     fn validate_expr(&self, expr: ExprRef) -> DaftResult<ExprRef> {

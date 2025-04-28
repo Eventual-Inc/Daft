@@ -191,7 +191,7 @@ class DeltaLakeScanOperator(ScanOperator):
                         # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
                         arrow_arr = pa.array([part_values[field_name].as_py()], type=dtype.field(field_idx).type)
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-                partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)._table
+                partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)._recordbatch
             else:
                 partition_values = None
 
@@ -230,7 +230,7 @@ class DeltaLakeScanOperator(ScanOperator):
                 iceberg_delete_files=None,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
-                stats=stats._table if stats is not None else None,
+                stats=stats._recordbatch if stats is not None else None,
             )
             if st is None:
                 continue
