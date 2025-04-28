@@ -206,7 +206,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
 
                                 for (window_expr, name) in params.window_exprs.iter().zip(params.aliases.iter()) {
-
                                     *partition = match window_expr {
                                         WindowExpr::Agg(agg_expr) => {
                                             partition.window_agg(agg_expr, name.clone())?

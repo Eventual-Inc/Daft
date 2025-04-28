@@ -14,7 +14,9 @@ use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
-use daft_dsl::{left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn};
+use daft_dsl::{
+    left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn, WindowSpec,
+};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
@@ -309,6 +311,11 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn resolve_window_spec(&self, window_spec: WindowSpec) -> DaftResult<WindowSpec> {
+        let expr_resolver = ExprResolver::default();
+        expr_resolver.resolve_window_spec(window_spec, self.plan.clone())
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
