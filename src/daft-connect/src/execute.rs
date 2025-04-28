@@ -1,4 +1,4 @@
-use std::{future::ready, rc::Rc, sync::Arc};
+use std::{future::ready, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormat, WriteMode};
@@ -288,10 +288,9 @@ impl ConnectSession {
         }
 
         // TODO: converge Session and ConnectSession
-        let session = self.session().clone_ref();
-        let session = Rc::new(session);
+        let session = self.session();
 
-        let mut planner = daft_sql::SQLPlanner::new(session);
+        let mut planner = daft_sql::SQLPlanner::new(&session);
 
         let plan = planner.plan_sql(&sql).wrap_err("Error planning SQL")?;
 

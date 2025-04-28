@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal
 
 from unitycatalog import NotFoundError as UnityNotFoundError
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Schema, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.io._deltalake import read_deltalake
 from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
 from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
@@ -48,7 +48,12 @@ class UnityCatalog(Catalog):
     def create_namespace(self, identifier: Identifier | str):
         raise NotImplementedError("Unity create_namespace not yet supported.")
 
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         raise NotImplementedError("Unity create_table not yet supported.")
 
     ###

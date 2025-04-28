@@ -80,20 +80,19 @@ struct OrderByExprs {
 /// TODO move bound_ctes into per-planner scope since these are a scoped concept.
 #[derive(Default)]
 pub(crate) struct PlannerContext {
-    /// Session provides access to metadata and the path for name resolution.
-    /// TODO move into SQLPlanner once state is flipped.
-    /// TODO consider decoupling session from planner via a resolver trait.
-    pub(crate) session: Rc<Session>,
     /// Bindings for common table expressions (cte).
     bound_ctes: Bindings<LogicalPlanBuilder>,
+    /// tables that are bound to the sql context only.
+    /// We don't bind them directly to the session because they are scoped to the sql context, not the session.
+    bound_tables: Bindings<LogicalPlanRef>,
 }
 
 impl PlannerContext {
     /// Creates a new context from the session
-    fn new(session: Rc<Session>) -> Self {
+    fn new() -> Self {
         Self {
-            session,
             bound_ctes: Bindings::default(),
+            bound_tables: Bindings::default(),
         }
     }
 
@@ -108,12 +107,11 @@ impl PlannerContext {
 /// TODO flip SQLPlanner to pass scoped state objects rather than being stateful itself.
 /// This gives us control on state management without coupling our scopes to the call stack.
 /// It also eliminates extra references on the shared context and we can remove interior mutability.
-#[derive(Default)]
-pub struct SQLPlanner<'a> {
+pub struct SQLPlanner<'sess> {
     /// Shared context for all planners
     pub(crate) context: Rc<RefCell<PlannerContext>>,
     /// Planner for the outer scope
-    parent: Option<&'a SQLPlanner<'a>>,
+    parent: Option<&'sess SQLPlanner<'sess>>,
     /// In-scope bindings introduced by the current relation's schema
     pub(crate) current_plan: Option<LogicalPlanBuilder>,
     /// Plan that will be used as the right side of the join, used for planning join predicates
@@ -121,31 +119,55 @@ pub struct SQLPlanner<'a> {
     /// Aliases from selection that can be used in other clauses
     /// but may not yet be in the schema of `current_relation`.
     bound_columns: Bindings<ExprRef>,
+    session: &'sess Session,
 }
 
-impl<'a> SQLPlanner<'a> {
-    /// Create a new query planner for the session.
-    pub fn new(session: Rc<Session>) -> Self {
-        let context = PlannerContext::new(session);
-        let context = Rc::new(RefCell::new(context));
-        Self {
-            context,
-            ..Default::default()
-        }
-    }
+// These are split out into separate impls these out so it's a bit easier
+// to reason about the lifetimes
 
+impl<'a> SQLPlanner<'a> {
     fn new_child(&'a self) -> Self {
         Self {
             context: self.context.clone(),
             parent: Some(self),
-            ..Default::default()
+            current_plan: None,
+            right_side_plan: None,
+            bound_columns: Bindings::default(),
+            session: self.session,
+        }
+    }
+}
+
+impl<'sess> SQLPlanner<'sess> {
+    /// Create a new query planner for the session.
+    pub fn new(session: &'sess Session) -> Self {
+        let context = PlannerContext::new();
+        let context = Rc::new(RefCell::new(context));
+        Self {
+            context,
+            parent: None,
+            current_plan: None,
+            right_side_plan: None,
+            bound_columns: Bindings::default(),
+            session,
         }
     }
 
+    /// Borrow the planning session
+    pub(crate) fn session(&self) -> &'sess Session {
+        self.session
+    }
+}
+
+impl SQLPlanner<'_> {
     fn new_with_context(&self) -> Self {
         Self {
             context: self.context.clone(),
-            ..Default::default()
+            parent: None,
+            current_plan: None,
+            right_side_plan: None,
+            bound_columns: Bindings::default(),
+            session: self.session,
         }
     }
 
@@ -182,14 +204,17 @@ impl<'a> SQLPlanner<'a> {
 
     /// Get the table associated with the name from the session and wrap in a SubqueryAlias.
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
-        let table = self.session().get_table(name)?;
-        let plan = table.get_logical_plan()?;
-        Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
-    }
+        let name_str = name.to_string();
+        let ctx = self.context.borrow();
+        let table = ctx.bound_tables.get(&name_str);
+        if let Some(table) = table {
+            Ok(LogicalPlanBuilder::from(table.clone()).alias(name_str))
+        } else {
+            let table = self.session().get_table(name)?;
 
-    /// Borrow the planning session
-    fn session(&self) -> Ref<'_, Rc<Session>> {
-        Ref::map(self.context.borrow(), |i| &i.session)
+            let plan = table.get_logical_plan()?;
+            Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
+        }
     }
 
     /// Clears the current context used for planning a SQL query
@@ -215,12 +240,15 @@ impl<'a> SQLPlanner<'a> {
             let plan = self.new_with_context().plan_query(&cte.query)?;
 
             let plan = apply_table_alias(plan, &cte.alias)?;
-
             self.context_mut()
                 .bound_ctes
                 .insert(cte.alias.name.value.clone(), plan);
         }
         Ok(())
+    }
+
+    pub fn bind_table(&self, name: String, plan: LogicalPlanRef) {
+        self.context_mut().bound_tables.insert(name, plan);
     }
 
     pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
@@ -1825,7 +1853,8 @@ fn check_wildcard_options(
 }
 
 pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
-    let planner = SQLPlanner::default();
+    let session = Session::empty();
+    let planner = SQLPlanner::new(&session);
 
     let tokens = Tokenizer::new(&GenericDialect, s.as_ref()).tokenize()?;
 
@@ -1850,7 +1879,8 @@ pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
 }
 
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
-    let mut planner = SQLPlanner::default();
+    let session = Session::empty();
+    let mut planner = SQLPlanner::new(&session);
 
     let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
 

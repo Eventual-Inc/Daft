@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     expr::{Expr, WindowExpr},
-    ExprRef, LiteralValue,
+    ExprRef, LiteralValue, Operator,
 };
 
 #[pyfunction]
@@ -57,6 +57,24 @@ pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<P
 #[pyfunction]
 pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Duration(val, tu.timeunit));
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn row_number() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::RowNumber);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn rank() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::Rank);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn dense_rank() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::DenseRank);
     Ok(expr.into())
 }
 
@@ -388,49 +406,47 @@ impl PyExpr {
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Plus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Plus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Minus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Minus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Multiply, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Multiply, self.into(), other.expr.clone()).into())
     }
+
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(
-            crate::Operator::FloorDivide,
-            self.into(),
-            other.expr.clone(),
-        )
-        .into())
+        Ok(crate::binary_op(Operator::FloorDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::TrueDivide, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::TrueDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Modulus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Modulus, self.into(), other.expr.clone()).into())
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::And, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::And, self.into(), other.expr.clone()).into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Or, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Or, self.into(), other.expr.clone()).into())
     }
 
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Xor, self.into(), other.expr.clone()).into())
     }
 
     pub fn __lshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftLeft, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftLeft, self.into(), other.expr.clone()).into())
     }
 
     pub fn __rshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftRight, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftRight, self.into(), other.expr.clone()).into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
@@ -462,7 +478,7 @@ impl PyExpr {
     }
 
     pub fn eq_null_safe(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::EqNullSafe, self.into(), other.into()).into())
+        Ok(crate::binary_op(Operator::EqNullSafe, self.into(), other.into()).into())
     }
 
     pub fn is_in(&self, other: Vec<Self>) -> PyResult<Self> {
@@ -545,6 +561,18 @@ impl PyExpr {
         let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
             expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
+        })
+    }
+
+    #[pyo3(signature = (offset, default=None))]
+    pub fn offset(&self, offset: isize, default: Option<&Self>) -> PyResult<Self> {
+        let default = default.map(|e| e.expr.clone());
+        Ok(Self {
+            expr: Arc::new(Expr::WindowFunction(WindowExpr::Offset {
+                input: self.expr.clone(),
+                offset,
+                default,
+            })),
         })
     }
 }
