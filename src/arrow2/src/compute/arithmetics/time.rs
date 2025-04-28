@@ -575,3 +575,60 @@ pub fn sub_interval_scalar(
         )),
     }
 }
+
+pub fn interval_mul_factor(
+    interval: &PrimitiveArray<months_days_ns>,
+    factor: &PrimitiveArray<u32>,
+) -> Result<PrimitiveArray<months_days_ns>> {
+    if factor.len() == 1 {
+        let value = factor.get(0);
+        let dtype = factor.data_type().clone();
+        let scalar = PrimitiveScalar::new(dtype, value);
+        return interval_mul_factor_scalar(interval, &scalar);
+    }
+
+    if interval.len() != factor.len() {
+        return Err(Error::InvalidArgumentError(
+            "Interval and factor arrays must have the same length".to_string(),
+        ));
+    }
+
+    Ok(binary(
+        interval,
+        factor,
+        interval.data_type().clone(),
+        |interval, factor| {
+            months_days_ns::new(
+                interval.months() * factor as i32,
+                interval.days() * factor as i32,
+                interval.ns() * factor as i64,
+            )
+        },
+    ))
+}
+
+pub fn interval_mul_factor_scalar(
+    interval: &PrimitiveArray<months_days_ns>,
+    factor: &PrimitiveScalar<u32>,
+) -> Result<PrimitiveArray<months_days_ns>> {
+    let factor = if let Some(factor) = *factor.value() {
+        factor
+    } else {
+        return Ok(PrimitiveArray::<months_days_ns>::new_null(
+            interval.data_type().clone(),
+            interval.len(),
+        ));
+    };
+
+    Ok(unary(
+        interval,
+        |interval| {
+            months_days_ns::new(
+                interval.months() * factor as i32,
+                interval.days() * factor as i32,
+                interval.ns() * factor as i64,
+            )
+        },
+        interval.data_type().clone(),
+    ))
+}
