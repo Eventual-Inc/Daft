@@ -47,7 +47,28 @@ __all__ = [
 
 
 class Session:
-    """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs."""
+    """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs.
+
+    Example:
+        >>> import daft
+        >>> from daft.session import Session
+
+        >>> sess = Session()
+
+        >>> # Create a temporary table from a DataFrame
+        >>> sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
+
+        >>> # Read the table as a DataFrame
+        >>> df = sess.read_table("T")
+
+        >>> # Execute an SQL query
+        >>> sess.sql("SELECT * FROM T").show()
+
+    You can also retrieve the current session without creating a new one:
+
+        >>> from daft.session import current_session
+        >>> sess = current_session()
+    """
 
     _session: PySession
 

@@ -1632,6 +1632,112 @@ class Expression:
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 
+    def lag(self, offset: int, default: Any | None = None) -> Expression:
+        """Get the value from a previous row within a window partition.
+
+        Args:
+            offset: The number of rows to look backward. Must be >= 0.
+            default: Value to use when no previous row exists. Can be a column reference.
+
+        Examples:
+            >>> import daft
+            >>> from daft import Window, col
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "category": ["A", "A", "A", "B", "B", "B"],
+            ...         "value": [1, 2, 3, 4, 5, 6],
+            ...         "default_val": [10, 20, 30, 40, 50, 60],
+            ...     }
+            ... )
+            >>>
+            >>> # Simple lag with null default
+            >>> window = Window().partition_by("category").order_by("value")
+            >>> df = df.with_column("lagged", col("value").lag(1).over(window))
+            >>>
+            >>> # Lag with column reference as default
+            >>> df = df.with_column("lagged_with_default", col("value").lag(1, default=col("default_val")).over(window))
+            >>> df.sort(["category", "value"]).show()
+            ╭──────────┬───────┬─────────────┬────────┬─────────────────────╮
+            │ category ┆ value ┆ default_val ┆ lagged ┆ lagged_with_default │
+            │ ---      ┆ ---   ┆ ---         ┆ ---    ┆ ---                 │
+            │ Utf8     ┆ Int64 ┆ Int64       ┆ Int64  ┆ Int64               │
+            ╞══════════╪═══════╪═════════════╪════════╪═════════════════════╡
+            │ A        ┆ 1     ┆ 10          ┆ None   ┆ 10                  │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A        ┆ 2     ┆ 20          ┆ 1      ┆ 1                   │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A        ┆ 3     ┆ 30          ┆ 2      ┆ 2                   │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B        ┆ 4     ┆ 40          ┆ None   ┆ 40                  │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B        ┆ 5     ┆ 50          ┆ 4      ┆ 4                   │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B        ┆ 6     ┆ 60          ┆ 5      ┆ 5                   │
+            ╰──────────┴───────┴─────────────┴────────┴─────────────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+
+        Returns:
+            Expression: Value from the row `offset` positions before the current row.
+        """
+        if default is not None:
+            default = Expression._to_expression(default)
+        expr = self._expr.offset(-offset, default._expr if default is not None else None)
+        return Expression._from_pyexpr(expr)
+
+    def lead(self, offset: int, default: Any | None = None) -> Expression:
+        """Get the value from a previous row within a window partition.
+
+        Args:
+            offset: The number of rows to look backward. Must be >= 0.
+            default: Value to use when no previous row exists. Can be a column reference.
+
+        Examples:
+            >>> import daft
+            >>> from daft import Window, col
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "category": ["A", "A", "A", "B", "B", "B"],
+            ...         "value": [1, 2, 3, 4, 5, 6],
+            ...         "default_val": [10, 20, 30, 40, 50, 60],
+            ...     }
+            ... )
+            >>>
+            >>> # Simple lag with null default
+            >>> window = Window().partition_by("category").order_by("value")
+            >>> df = df.with_column("lead", col("value").lead(1).over(window))
+            >>>
+            >>> # Lead with column reference as default
+            >>> df = df.with_column("lead_with_default", col("value").lead(1, default=col("default_val")).over(window))
+            >>> df.sort(["category", "value"]).show()
+            ╭──────────┬───────┬─────────────┬───────┬───────────────────╮
+            │ category ┆ value ┆ default_val ┆ lead  ┆ lead_with_default │
+            │ ---      ┆ ---   ┆ ---         ┆ ---   ┆ ---               │
+            │ Utf8     ┆ Int64 ┆ Int64       ┆ Int64 ┆ Int64             │
+            ╞══════════╪═══════╪═════════════╪═══════╪═══════════════════╡
+            │ A        ┆ 1     ┆ 10          ┆ 2     ┆ 2                 │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A        ┆ 2     ┆ 20          ┆ 3     ┆ 3                 │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A        ┆ 3     ┆ 30          ┆ None  ┆ 30                │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B        ┆ 4     ┆ 40          ┆ 5     ┆ 5                 │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B        ┆ 5     ┆ 50          ┆ 6     ┆ 6                 │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B        ┆ 6     ┆ 60          ┆ None  ┆ 60                │
+            ╰──────────┴───────┴─────────────┴───────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+
+        Returns:
+            Expression: Value from the row `offset` positions before the current row.
+        """
+        if default is not None:
+            default = Expression._to_expression(default)
+        expr = self._expr.offset(offset, default._expr if default is not None else None)
+        return Expression._from_pyexpr(expr)
+
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 
