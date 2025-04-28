@@ -30,6 +30,10 @@ impl WindowBaseState {
         Self::Accumulating { inner_states }
     }
 
+    pub fn make_base_state(num_partitions: usize) -> DaftResult<Box<dyn BlockingSinkState>> {
+        Ok(Box::new(Self::new(num_partitions)))
+    }
+
     pub fn push(
         &mut self,
         input: Arc<MicroPartition>,
@@ -82,7 +86,7 @@ pub trait WindowSinkParams: Send + Sync {
 }
 
 /// Sink method implementations for window operations
-#[instrument(skip_all, name = "WindowBaseSink::sink")]
+#[instrument(skip_all, name = "WindowBaseSink::window_sink")]
 pub fn base_sink<P: WindowSinkParams + 'static>(
     params: Arc<P>,
     input: Arc<MicroPartition>,
@@ -104,9 +108,4 @@ pub fn base_sink<P: WindowSinkParams + 'static>(
             Span::current(),
         )
         .into()
-}
-
-/// Helper to create the base window state
-pub fn make_base_state(num_partitions: usize) -> DaftResult<Box<dyn BlockingSinkState>> {
-    Ok(Box::new(WindowBaseState::new(num_partitions)))
 }

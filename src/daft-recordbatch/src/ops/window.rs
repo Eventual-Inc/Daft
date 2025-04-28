@@ -109,82 +109,60 @@ impl RecordBatch {
 
         let total_rows = self.len();
 
-        // Determine if we have dynamic or static boundaries
-        let is_start_dynamic = matches!(frame.start, WindowBoundary::Offset(_));
-        let is_end_dynamic = matches!(frame.end, WindowBoundary::Offset(_));
-
-        // Calculate static bounds (if applicable)
-        let static_start = if !is_start_dynamic {
-            match &frame.start {
-                WindowBoundary::UnboundedPreceding() => Some(0),
-                WindowBoundary::UnboundedFollowing() => {
-                    return Err(DaftError::ValueError(
-                        "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
-                    ));
-                }
-                _ => None,
+        // Calculate boundaries within the rows_between function as they are relative
+        let start_boundary = match &frame.start {
+            WindowBoundary::UnboundedPreceding() => None,
+            WindowBoundary::Offset(offset) => Some(*offset),
+            WindowBoundary::UnboundedFollowing() => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
+                ));
             }
-        } else {
-            None
         };
 
-        let static_end = if !is_end_dynamic {
-            match &frame.end {
-                WindowBoundary::UnboundedFollowing() => Some(total_rows),
-                WindowBoundary::UnboundedPreceding() => {
-                    return Err(DaftError::ValueError(
-                        "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
-                    ));
-                }
-                _ => None,
+        let end_boundary = match &frame.end {
+            WindowBoundary::UnboundedFollowing() => None,
+            WindowBoundary::Offset(offset) => Some(*offset),
+            WindowBoundary::UnboundedPreceding() => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
+                ));
             }
-        } else {
-            None
         };
 
-        // Check if we can use incremental state for optimized calculation
-        let supports_incremental = matches!(
-            agg_expr,
+        match agg_expr {
             AggExpr::Sum(_)
-                | AggExpr::Count(..)
-                | AggExpr::Mean(_)
-                | AggExpr::Min(_)
-                | AggExpr::Max(_)
-                | AggExpr::CountDistinct(_)
-        );
-
-        if supports_incremental {
-            self.window_agg_incremental(
+            | AggExpr::Count(..)
+            | AggExpr::Mean(_)
+            | AggExpr::Min(_)
+            | AggExpr::Max(_)
+            | AggExpr::CountDistinct(_) => self.window_agg_rows_optimized(
                 agg_expr,
                 &name,
-                frame,
-                static_start,
-                static_end,
+                start_boundary,
+                end_boundary,
                 min_periods,
                 total_rows,
-            )
-        } else {
-            self.window_agg_non_incremental(
+            ),
+            _ => self.window_agg_rows(
                 agg_expr,
                 &name,
                 dtype,
-                frame,
-                static_start,
-                static_end,
+                start_boundary,
+                end_boundary,
                 min_periods,
                 total_rows,
-            )
+            ),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_incremental(
+    fn window_agg_rows_optimized(
         &self,
         agg_expr: &AggExpr,
         name: &str,
-        frame: &WindowFrame,
-        static_start: Option<usize>,
-        static_end: Option<usize>,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
         min_periods: i64,
         total_rows: usize,
     ) -> DaftResult<Self> {
@@ -198,28 +176,17 @@ impl RecordBatch {
         let mut prev_frame_end = 0;
 
         for row_idx in 0..total_rows {
-            // Calculate frame bounds for this row
-            let frame_start = if let Some(idx) = static_start {
-                idx
-            } else {
-                match &frame.start {
-                    WindowBoundary::Offset(offset) => {
-                        (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
-                    }
-                    _ => unreachable!("Start boundary type already checked"),
-                }
+            // Calculate frame bounds for this row using the provided boundaries
+            let frame_start = match start_boundary {
+                None => 0, // Unbounded preceding
+                Some(offset) => (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize,
             };
 
-            let frame_end = if let Some(idx) = static_end {
-                idx
-            } else {
-                match &frame.end {
-                    WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
-                        .max(0)
-                        .min(total_rows as i64)
-                        as usize,
-                    _ => unreachable!("End boundary type already checked"),
-                }
+            let frame_end = match end_boundary {
+                None => total_rows, // Unbounded following
+                Some(offset) => ((row_idx + 1) as i64 + offset)
+                    .max(0)
+                    .min(total_rows as i64) as usize,
             };
 
             let frame_size = frame_end as i64 - frame_start as i64;
@@ -258,14 +225,13 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_non_incremental(
+    fn window_agg_rows(
         &self,
         agg_expr: &AggExpr,
         name: &str,
         dtype: &DataType,
-        frame: &WindowFrame,
-        static_start: Option<usize>,
-        static_end: Option<usize>,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
         min_periods: i64,
         total_rows: usize,
     ) -> DaftResult<Self> {
@@ -276,48 +242,31 @@ impl RecordBatch {
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
-            let frame_start = if let Some(idx) = static_start {
-                idx
-            } else {
-                match &frame.start {
-                    WindowBoundary::Offset(offset) => {
-                        (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize
-                    }
-                    _ => unreachable!("Start boundary type already checked"),
-                }
+            let frame_start = match start_boundary {
+                None => 0, // Unbounded preceding
+                Some(offset) => (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize,
             };
 
-            let frame_end = if let Some(idx) = static_end {
-                idx
-            } else {
-                match &frame.end {
-                    WindowBoundary::Offset(offset) => ((row_idx + 1) as i64 + offset)
-                        .max(0)
-                        .min(total_rows as i64)
-                        as usize,
-                    _ => unreachable!("End boundary type already checked"),
-                }
+            let frame_end = match end_boundary {
+                None => total_rows, // Unbounded following
+                Some(offset) => ((row_idx + 1) as i64 + offset)
+                    .max(0)
+                    .min(total_rows as i64) as usize,
             };
 
             let frame_size = frame_end as i64 - frame_start as i64;
 
-            if frame_size < 0 {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            }
+            assert!(frame_size >= 0, "Negative frame size is not allowed");
 
-            // Check min_periods requirement
             if frame_size < min_periods {
                 // Add a null series for this row
                 result_series.push(null_series.clone());
-                continue;
+            } else {
+                // Calculate aggregation for this frame
+                let frame_data = self.slice(frame_start, frame_end)?;
+                let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
+                result_series.push(agg_result);
             }
-
-            // Calculate aggregation for this frame
-            let frame_data = self.slice(frame_start, frame_end)?;
-            let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
-            result_series.push(agg_result);
         }
 
         // Rename the result and create the final record batch
