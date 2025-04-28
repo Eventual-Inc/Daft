@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def _generator_factory_function(func: Callable[[], Iterator["RecordBatch"]]) -> Iterator["PyRecordBatch"]:
     for table in func():
-        yield table._table
+        yield table._recordbatch
 
 
 def read_generator(

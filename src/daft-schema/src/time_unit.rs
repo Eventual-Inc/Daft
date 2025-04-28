@@ -72,3 +72,53 @@ pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
         TimeUnit::Microseconds
     }
 }
+
+#[must_use]
+pub fn format_string_has_offset(format: &str) -> bool {
+    // These are all valid chrono formats that contain an offset
+    format.contains("%Z")
+        || format.contains("%z")
+        || format.contains("%:z")
+        || format.contains("%::z")
+        || format.contains("%#z")
+        || format == "%+"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_string_has_offset() {
+        let test_cases = vec![
+            ("%Y-%m-%d %H:%M:%S %Z", true),
+            ("%Y-%m-%d %H:%M:%S %z", true),
+            ("%Y-%m-%d %H:%M:%S %:z", true),
+            ("%Y-%m-%d %H:%M:%S %::z", true),
+            ("%Y-%m-%d %H:%M:%S %#z", true),
+            ("%+", true),
+            ("Date: %Y-%m-%d Time: %H:%M:%S Zone: %Z", true),
+            ("%Y-%m-%dT%H:%M:%S%z", true),
+            ("%Y-%m-%d %H:%M:%S.%f %z", true),
+            ("%c %Z", true),
+            ("%Y-%m-%d %H:%M:%S", false),
+            ("%Y-%m-%dT%H:%M:%S", false),
+            ("%Y z %d", false),
+            ("%Y-%m-%d", false),
+            ("%H:%M:%S", false),
+            ("%Y-%m-%d %H:%M:%S.%f", false),
+            ("", false),
+            ("random text", false),
+            ("%%z", true),
+        ];
+
+        for (format, expected) in test_cases {
+            assert_eq!(
+                format_string_has_offset(format),
+                expected,
+                "Failed for format: {}",
+                format
+            );
+        }
+    }
+}

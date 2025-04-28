@@ -105,4 +105,4 @@ Daft Expressions allow you to express some computation that needs to happen in a
     options:
         filters: ["!^_"]
         toc_label: Expression.embedding
-        heading: Expression.emedding
+        heading: Expression.embedding

@@ -18,7 +18,7 @@ use crate::ExecutionTaskSpawner;
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<AggExpr>,
-    min_periods: i64,
+    min_periods: usize,
     aliases: Vec<String>,
     partition_by: Vec<ExprRef>,
     order_by: Vec<ExprRef>,
@@ -49,7 +49,7 @@ impl WindowPartitionAndDynamicFrameSink {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         aggregations: &[AggExpr],
-        min_periods: i64,
+        min_periods: usize,
         aliases: &[String],
         partition_by: &[ExprRef],
         order_by: &[ExprRef],

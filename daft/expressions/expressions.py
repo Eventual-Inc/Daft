@@ -1632,7 +1632,7 @@ class Expression:
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 
-    def lag(self, offset: int, default: Any | None = None) -> Expression:
+    def lag(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a previous row within a window partition.
 
         Args:
@@ -1685,7 +1685,7 @@ class Expression:
         expr = self._expr.offset(-offset, default._expr if default is not None else None)
         return Expression._from_pyexpr(expr)
 
-    def lead(self, offset: int, default: Any | None = None) -> Expression:
+    def lead(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a previous row within a window partition.
 
         Args:
