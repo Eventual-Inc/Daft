@@ -213,7 +213,7 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             date + INTERVAL '1' day AS date_add_day,
             date - INTERVAL '1 months' AS date_sub_month,
             ts - INTERVAL '1 year 0 days' AS ts_sub_year,
-            ts + INTERVAL '1' hour AS ts_add_hour,
+            ts + INTERVAL '1' hour * 2 AS ts_add_hour,
             ts - INTERVAL '1 minutes 99 second' AS ts_sub_minute
         FROM test
         """,

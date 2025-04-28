@@ -292,6 +292,12 @@ impl Mul for &Series {
                             .mul(lhs.cast(&DataType::Int64)?.i64()?)?;
                         physical_result.cast(output_type)
                     }
+                    // ----------------
+                    // Interval
+                    // ----------------
+                    (DataType::Interval, dt) if dt.is_numeric() => {
+                        let lhs_array = lhs.interval()?;
+                    }
                     _ => arithmetic_op_not_implemented!(self, "*", rhs, output_type),
                 }
             }
