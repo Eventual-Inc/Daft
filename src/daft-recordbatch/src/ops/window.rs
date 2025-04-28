@@ -136,7 +136,6 @@ impl RecordBatch {
             self.window_agg_range_between(
                 agg_expr,
                 &name,
-                dtype,
                 start_boundary,
                 end_boundary,
                 &order_by[0],
@@ -294,19 +293,125 @@ impl RecordBatch {
 
     #[allow(clippy::too_many_arguments)]
     fn window_agg_range_between(
-        // TODO: figure out details for desc and window frame bounds, ie if it's descending and start is negative?
         &self,
-        _agg_expr: &AggExpr,
-        _name: &str,
-        _dtype: &DataType,
-        _start_boundary: Option<i64>,
-        _end_boundary: Option<i64>,
-        _order_by: &ExprRef,
-        _descending: bool,
-        _min_periods: i64,
-        _total_rows: usize,
+        agg_expr: &AggExpr,
+        name: &str,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
+        order_by: &ExprRef,
+        descending: bool, // TODO: finalize behavior for descending
+        min_periods: i64,
+        total_rows: usize,
     ) -> DaftResult<Self> {
-        todo!();
+        // Use the optimized implementation with incremental state updates
+        // Initialize the state for incremental aggregation
+        let source = self.get_column(agg_expr.name())?;
+        let order_by_col = self.eval_expression(order_by)?;
+        assert!(
+            order_by_col.data_type().is_integer(),
+            "Order by column exclusively supports integer types currently"
+        );
+        let order_by_col = order_by_col.downcast::<Int64Array>()?;
+        let mut agg_state = create_window_agg_state(source, agg_expr, total_rows)?;
+
+        // Track previous window boundaries
+        let mut prev_frame_start = 0;
+        let mut prev_frame_end = 0;
+
+        for row_idx in 0..total_rows {
+            let current_row_order_by = order_by_col.get(row_idx).ok_or_else(|| {
+                DaftError::ValueError(format!(
+                    "Order by column cannot be null at index: {}",
+                    row_idx
+                ))
+            })?;
+
+            // Calculate frame bounds for this row using the provided boundaries
+            let frame_start = match start_boundary {
+                None => 0, // Unbounded preceding
+                Some(start_offset) => {
+                    let mut current_start = prev_frame_start; // Start search from previous start
+                    if descending {
+                        // Descending: Find first index `i` where value <= upper bound `current_row_order_by + end_offset`.
+                        let upper_bound = end_boundary
+                            .map_or(i64::MAX, |end_offset| current_row_order_by + end_offset);
+                        while current_start < total_rows
+                            && order_by_col.get(current_start).unwrap() > upper_bound
+                        {
+                            current_start += 1;
+                        }
+                    } else {
+                        // Ascending: Find first index `i` where value >= lower bound `current_row_order_by + start_offset`.
+                        let lower_bound = current_row_order_by + start_offset;
+                        while current_start < total_rows
+                            && order_by_col.get(current_start).unwrap() < lower_bound
+                        {
+                            current_start += 1;
+                        }
+                    }
+                    current_start
+                }
+            };
+
+            let frame_end = match end_boundary {
+                None => total_rows, // Unbounded following
+                Some(end_offset) => {
+                    let mut current_end = prev_frame_end; // Start search from previous end
+                    if descending {
+                        // Descending: Find first index `j` where value < lower bound `current_row_order_by + start_offset`.
+                        let lower_bound = start_boundary
+                            .map_or(i64::MIN, |start_offset| current_row_order_by + start_offset);
+                        while current_end < total_rows
+                            && order_by_col.get(current_end).unwrap() >= lower_bound
+                        {
+                            current_end += 1;
+                        }
+                    } else {
+                        // Ascending: Find first index `j` where value > upper bound `current_row_order_by + end_offset`.
+                        let upper_bound = current_row_order_by + end_offset;
+                        while current_end < total_rows
+                            && order_by_col.get(current_end).unwrap() <= upper_bound
+                        {
+                            current_end += 1;
+                        }
+                    }
+                    current_end
+                }
+            };
+
+            let frame_size = frame_end as i64 - frame_start as i64;
+
+            if frame_size < 0 {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
+            }
+
+            // Check min_periods requirement
+            if frame_size >= min_periods {
+                // Remove values that left the window (values that were in the previous window but not in the current one)
+                if frame_start > prev_frame_start {
+                    agg_state.remove(prev_frame_start, frame_start)?;
+                }
+
+                // Add new values that entered the window (values that are in the current window but weren't in the previous)
+                if frame_end > prev_frame_end {
+                    agg_state.add(prev_frame_end, frame_end)?;
+                }
+
+                // Update previous boundaries for the next iteration
+                prev_frame_start = frame_start;
+                prev_frame_end = frame_end;
+            }
+
+            // Evaluate current state to get the result for this row
+            agg_state.evaluate()?;
+        }
+
+        // Build the final result series
+        let renamed_result = agg_state.build()?.rename(name);
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
     }
 
     pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
