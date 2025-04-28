@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Iterator, Protocol
 
 if TYPE_CHECKING:
     from daft.io.pushdowns import Pushdowns
@@ -71,3 +71,13 @@ class DataSourceTask(ABC):
             An iterable of RecordBatch objects containing the data for this task.
         """
         ...
+
+
+class WithSchema(Protocol):
+    def schema(self) -> Schema: ...
+
+class DataSourceWithSchema(DataSource, WithSchema):
+    ...
+
+class DataSourceTaskWithSchema(DataSourceTask, WithSchema):
+    ...
