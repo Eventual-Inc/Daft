@@ -576,7 +576,8 @@ pub fn sub_interval_scalar(
     }
 }
 
-pub fn interval_mul_factor(
+/// Multiplies an interval by a factor.
+pub fn mul_interval(
     interval: &PrimitiveArray<months_days_ns>,
     factor: &PrimitiveArray<u32>,
 ) -> Result<PrimitiveArray<months_days_ns>> {
@@ -584,7 +585,7 @@ pub fn interval_mul_factor(
         let value = factor.get(0);
         let dtype = factor.data_type().clone();
         let scalar = PrimitiveScalar::new(dtype, value);
-        return interval_mul_factor_scalar(interval, &scalar);
+        return mul_interval_scalar(interval, &scalar);
     }
 
     if interval.len() != factor.len() {
@@ -607,7 +608,7 @@ pub fn interval_mul_factor(
     ))
 }
 
-pub fn interval_mul_factor_scalar(
+pub fn mul_interval_scalar(
     interval: &PrimitiveArray<months_days_ns>,
     factor: &PrimitiveScalar<u32>,
 ) -> Result<PrimitiveArray<months_days_ns>> {
