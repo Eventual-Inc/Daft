@@ -271,7 +271,7 @@ impl Mul for &Series {
             // ----------------
             // Temporal types
             // ----------------
-            output_type if output_type.is_temporal() => {
+            output_type if output_type.is_temporal() || output_type.is_interval() => {
                 match (self.data_type(), rhs.data_type()) {
                     // ----------------
                     // Duration
@@ -295,10 +295,21 @@ impl Mul for &Series {
                     // ----------------
                     // Interval
                     // ----------------
+                    // Interval * numeric = Interval
                     (DataType::Interval, dt) if dt.is_numeric() => {
-                        let lhs_array = lhs.interval()?;
+                        let physical_result =
+                            lhs.interval()?.mul(rhs.cast(&DataType::UInt32)?.u32()?)?;
+                        physical_result.cast(output_type)
                     }
-                    _ => arithmetic_op_not_implemented!(self, "*", rhs, output_type),
+                    // numeric * Interval = Interval
+                    (dt, DataType::Interval) if dt.is_numeric() => {
+                        let physical_result =
+                            rhs.interval()?.mul(lhs.cast(&DataType::UInt32)?.u32()?)?;
+                        physical_result.cast(output_type)
+                    }
+                    _ => {
+                        arithmetic_op_not_implemented!(self, "*", rhs, output_type)
+                    }
                 }
             }
             _ => arithmetic_op_not_implemented!(self, "*", rhs, output_type),

@@ -435,6 +435,18 @@ impl TimestampArray {
     }
 }
 
+impl IntervalArray {
+    pub fn mul(&self, factor: &UInt32Array) -> DaftResult<Self> {
+        let arrow_interval = self.as_arrow();
+        let arrow_factor = factor.as_arrow();
+        let result = arrow2::compute::arithmetics::time::interval_mul_factor(
+            &arrow_interval,
+            &arrow_factor,
+        )?;
+        Self::new(self.field.clone(), Box::new(result))
+    }
+}
+
 impl TimeArray {
     pub fn hour(&self) -> DaftResult<UInt32Array> {
         let physical = self.physical.as_arrow();
