@@ -178,6 +178,11 @@ def test_is_in_edge_cases():
                     datetime.datetime(2020, 3, 1, 0, 59, 59),
                     datetime.datetime(2029, 5, 15, 13, 34, 56),
                 ],
+                "ts_add_2_hour": [
+                    datetime.datetime(2022, 1, 1, 12, 0, 0),
+                    datetime.datetime(2020, 3, 1, 1, 59, 59),
+                    datetime.datetime(2029, 5, 15, 14, 34, 56),
+                ],
                 "ts_sub_minute": [
                     datetime.datetime(2022, 1, 1, 9, 57, 21),
                     datetime.datetime(2020, 2, 29, 23, 57, 20),
@@ -200,6 +205,7 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             (col("date") - interval(months=1)).alias("date_sub_month"),
             (col("ts") - interval(years=1, days=0)).alias("ts_sub_year"),
             (col("ts") + interval(hours=1)).alias("ts_add_hour"),
+            (col("ts") + interval(hours=1) * 2).alias("ts_add_2_hour"),
             (col("ts") - interval(minutes=1, seconds=99)).alias("ts_sub_minute"),
         )
         .collect()
@@ -213,7 +219,8 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             date + INTERVAL '1' day AS date_add_day,
             date - INTERVAL '1 months' AS date_sub_month,
             ts - INTERVAL '1 year 0 days' AS ts_sub_year,
-            ts + INTERVAL '1' hour * 2 AS ts_add_hour,
+            ts + INTERVAL '1' hour AS ts_add_hour,
+            ts + INTERVAL '1' hour * 2 AS ts_add_2_hour,
             ts - INTERVAL '1 minutes 99 second' AS ts_sub_minute
         FROM test
         """,
