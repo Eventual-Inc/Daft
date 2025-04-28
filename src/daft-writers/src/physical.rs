@@ -69,7 +69,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 std::fs::create_dir_all(&self.output_file_info.root_dir)?;
                 let file = std::fs::File::create(&filename)?;
                 let bufwriter = BufWriter::new(file);
-                let arrow_rs_schema = Arc::new(self.schema.to_arrow()?.to_arrow_rs_schema());
+                let arrow_rs_schema = Arc::new(self.schema.to_arrow()?.into());
                 let writer =
                     ArrowWriter::try_new(bufwriter, arrow_rs_schema, Some(writer_properties))
                         .expect("Failed to create ArrowWriter");
@@ -105,14 +105,11 @@ impl FileWriter for ArrowParquetWriter {
     fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         let mut file_writer = self.file_writer.lock().expect("Failed to lock file writer");
         let current_bytes_written = file_writer.bytes_written();
-        let tables = data.tables_or_read(IOStatsContext::new("ArrowParquetWriter::write"))?;
-        tables.iter().for_each(|daft_record_batch| {
-            let _ = file_writer.write(
-                &daft_record_batch
-                    .to_arrow_rs_record_batch()
-                    .expect("Failed to convert record batch to arrow rs record batch"),
-            );
-        });
+        let record_batches =
+            data.tables_or_read(IOStatsContext::new("ArrowParquetWriter::write"))?;
+        for record_batch in record_batches.iter().cloned() {
+            let _ = file_writer.write(&record_batch.try_into()?);
+        }
         // Flush the current row group.
         file_writer.flush().unwrap();
         let bytes_written = file_writer.bytes_written() - current_bytes_written;

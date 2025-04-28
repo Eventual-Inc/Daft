@@ -1,6 +1,6 @@
 [dependencies]
 arrow-array = {version = "54.2.1"}
-arrow2 = {workspace = true}
+arrow2 = {workspace = true, features = ["arrow"]}
 comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-display = {path = "../common/display", default-features = false}
@@ -20,6 +20,7 @@ serde = {workspace = true}
 serde_json = {workspace = true}
 
 [features]
+arrow = ["arrow2/arrow"]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "common-arrow-ffi/python", "common-display/python", "daft-image/python", "daft-logical-plan/python"]
 
 [lints]
