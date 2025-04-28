@@ -1,4 +1,5 @@
 [dependencies]
+arrow-array = {version = "54.2.1"}
 arrow2 = {workspace = true}
 comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}

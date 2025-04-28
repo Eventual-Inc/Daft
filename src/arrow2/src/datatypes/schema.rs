@@ -46,6 +46,11 @@ impl Schema {
             metadata: self.metadata,
         }
     }
+
+    pub fn to_arrow_rs_schema(&self) -> arrow_schema::Schema {
+        let fields: Vec<arrow_schema::Field> = self.fields.clone().into_iter().map(|f| f.into()).collect();
+        arrow_schema::Schema::new(fields)
+    }
 }
 
 impl From<Vec<Field>> for Schema {

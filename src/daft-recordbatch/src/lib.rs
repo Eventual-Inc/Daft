@@ -10,7 +10,10 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::{array::Array, chunk::Chunk};
+use arrow2::{
+    array::{to_data, Array},
+    chunk::Chunk,
+};
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
@@ -962,6 +965,17 @@ impl RecordBatch {
     pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
         let chunk = Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect());
         chunk
+    }
+
+    pub fn to_arrow_rs_record_batch(&self) -> DaftResult<arrow_array::RecordBatch> {
+        let schema = Arc::new(self.schema.to_arrow()?.to_arrow_rs_schema());
+        let columns = self
+            .columns
+            .iter()
+            .map(|s| arrow_array::make_array(to_data(s.to_arrow().as_ref())))
+            .collect::<Vec<_>>();
+        Ok(arrow_array::RecordBatch::try_new(schema, columns)
+            .expect("Failed to convert Daft RecordBatch to Arrow RecordBatch"))
     }
 }
 impl TryFrom<RecordBatch> for FileInfos {

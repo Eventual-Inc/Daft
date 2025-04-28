@@ -28,6 +28,7 @@ use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
@@ -79,12 +80,16 @@ pub trait WriterFactory: Send + Sync {
 
 pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo,
+    file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
 ) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
-    let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
-
     match file_info.file_format {
         FileFormat::Parquet => {
+            let base_writer_factory = PhysicalWriterFactory::new(
+                file_info.clone(),
+                file_schema,
+                cfg.native_parquet_writer,
+            );
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
                 cfg.parquet_target_filesize,
                 cfg.parquet_inflation_factor,
@@ -116,6 +121,8 @@ pub fn make_physical_writer_factory(
             }
         }
         FileFormat::Csv => {
+            let base_writer_factory =
+                PhysicalWriterFactory::new(file_info.clone(), file_schema, false);
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
                 cfg.csv_target_filesize,
                 cfg.csv_inflation_factor,
