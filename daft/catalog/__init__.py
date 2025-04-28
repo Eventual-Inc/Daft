@@ -217,9 +217,10 @@ class Catalog(ABC):
     tabular and non-tabular data. You can instantiate a Catalog using
     one of the static `from_` methods.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.catalog import Catalog
+        >>>
         >>> data = {"users": {"id": [1, 2, 3], "name": ["a", "b", "c"]}}
         >>> catalog = Catalog.from_pydict(data)
         >>> catalog.list_tables()
