@@ -440,7 +440,7 @@ impl IntervalArray {
         let arrow_interval = self.as_arrow();
         let arrow_factor = factor.as_arrow();
         let result =
-            arrow2::compute::arithmetics::time::mul_interval(&arrow_interval, &arrow_factor)?;
+            arrow2::compute::arithmetics::time::mul_interval(arrow_interval, arrow_factor)?;
         Self::new(self.field.clone(), Box::new(result))
     }
 }
