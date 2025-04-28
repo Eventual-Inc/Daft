@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::*;
-use daft_dsl::{AggExpr, ExprRef, WindowExpr};
+use daft_dsl::{AggExpr, ExprRef, WindowExpr, WindowFrame};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
@@ -48,6 +48,7 @@ pub enum LocalPhysicalPlan {
     LanceWrite(LanceWrite),
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
+    WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
 }
 
 impl LocalPhysicalPlan {
@@ -84,9 +85,11 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
-            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. }) => {
-                stats_state
-            }
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
+            | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                stats_state,
+                ..
+            }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
@@ -272,6 +275,34 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             functions,
+            aliases,
+        })
+        .arced()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn window_partition_and_dynamic_frame(
+        input: LocalPhysicalPlanRef,
+        partition_by: Vec<ExprRef>,
+        order_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        frame: WindowFrame,
+        min_periods: usize,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        aggregations: Vec<AggExpr>,
+        aliases: Vec<String>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+            input,
+            partition_by,
+            order_by,
+            descending,
+            frame,
+            min_periods,
+            schema,
+            stats_state,
+            aggregations,
             aliases,
         })
         .arced()
@@ -500,15 +531,18 @@ impl LocalPhysicalPlan {
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => schema,
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. })
+            | Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. })
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
+            | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                schema, ..
+            }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
-            Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
-            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
     }
 }
@@ -717,5 +751,19 @@ pub struct WindowPartitionAndOrderBy {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub functions: Vec<WindowExpr>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct WindowPartitionAndDynamicFrame {
+    pub input: LocalPhysicalPlanRef,
+    pub partition_by: Vec<ExprRef>,
+    pub order_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub frame: WindowFrame,
+    pub min_periods: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub aggregations: Vec<AggExpr>,
     pub aliases: Vec<String>,
 }

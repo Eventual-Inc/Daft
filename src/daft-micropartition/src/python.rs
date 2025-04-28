@@ -59,6 +59,16 @@ impl PyMicroPartition {
         }
     }
 
+    pub fn get_record_batches(&self, py: Python) -> PyResult<Vec<PyRecordBatch>> {
+        let record_batches = py.allow_threads(|| self.inner.get_tables())?;
+        Ok(record_batches
+            .iter()
+            .map(|rb| PyRecordBatch {
+                record_batch: rb.clone(),
+            })
+            .collect())
+    }
+
     pub fn size_bytes(&self) -> PyResult<Option<usize>> {
         Ok(self.inner.size_bytes()?)
     }
@@ -90,19 +100,19 @@ impl PyMicroPartition {
     }
 
     #[staticmethod]
-    pub fn from_tables(tables: Vec<PyRecordBatch>) -> PyResult<Self> {
-        match &tables[..] {
+    pub fn from_record_batches(record_batches: Vec<PyRecordBatch>) -> PyResult<Self> {
+        match &record_batches[..] {
             [] => Ok(MicroPartition::empty(None).into()),
             [first, ..] => {
-                let tables = Arc::new(
-                    tables
+                let record_batches = Arc::new(
+                    record_batches
                         .iter()
                         .map(|t| t.record_batch.clone())
                         .collect::<Vec<_>>(),
                 );
                 Ok(MicroPartition::new_loaded(
                     first.record_batch.schema.clone(),
-                    tables,
+                    record_batches,
                     // Don't compute statistics if data is already materialized
                     None,
                 )
@@ -849,7 +859,7 @@ impl PyMicroPartition {
         let tables = table_objs
             .into_iter()
             .map(|p| {
-                Ok(p.getattr(py, pyo3::intern!(py, "_table"))?
+                Ok(p.getattr(py, pyo3::intern!(py, "_recordbatch"))?
                     .extract::<PyRecordBatch>(py)?
                     .record_batch)
             })
@@ -876,7 +886,7 @@ impl PyMicroPartition {
             let _from_pytable = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_pyrecordbatch"))?;
 
             let pytables = tables.iter().map(|t| PyRecordBatch {
                 record_batch: t.clone(),
@@ -946,9 +956,9 @@ pub fn read_json_into_py_table(
     py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_json"))?
         .call1((uri, py_schema, storage_config, read_options))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr(pyo3::intern!(py, "_recordbatch"))?
         .extract()
 }
 
@@ -981,9 +991,9 @@ pub fn read_csv_into_py_table(
     py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_csv"))?
         .call1((uri, py_schema, storage_config, parse_options, read_options))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr(pyo3::intern!(py, "_recordbatch"))?
         .extract()
 }
 
@@ -1017,9 +1027,9 @@ pub fn read_parquet_into_py_table(
     py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_parquet"))?
         .call1((uri, py_schema, storage_config, read_options, parse_options))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr(pyo3::intern!(py, "_recordbatch"))?
         .extract()
 }
 
@@ -1053,9 +1063,9 @@ pub fn read_sql_into_py_table(
     py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_sql"))?
         .call1((sql, conn, py_schema, read_options, py_predicate))?
-        .getattr(pyo3::intern!(py, "to_table"))?
+        .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
-        .getattr(pyo3::intern!(py, "_table"))?
+        .getattr(pyo3::intern!(py, "_recordbatch"))?
         .extract()
 }
 

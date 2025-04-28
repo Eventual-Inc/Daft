@@ -1186,8 +1186,16 @@ impl Expr {
                     })
                     .collect::<Vec<_>>()
                     .join(",");
+                let frame_details = if let Some(frame) = &window_spec.frame {
+                    format!(
+                        ",frame_type={:?},start={:?},end={:?},min_periods={}",
+                        frame.frame_type, frame.start, frame.end, window_spec.min_periods
+                    )
+                } else {
+                    String::new()
+                };
 
-                FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}])"))
+                FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}]{frame_details})"))
             }
             Self::WindowFunction(window_expr) => {
                 let child_id = window_expr.semantic_id(schema);
