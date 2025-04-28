@@ -94,7 +94,7 @@ impl RecordBatch {
         &self,
         name: String,
         agg_expr: &AggExpr,
-        min_periods: i64,
+        min_periods: usize,
         dtype: &DataType,
         frame: &WindowFrame,
     ) -> DaftResult<Self> {
@@ -146,7 +146,7 @@ impl RecordBatch {
         dtype: &DataType,
         start_boundary: Option<i64>,
         end_boundary: Option<i64>,
-        min_periods: i64,
+        min_periods: usize,
         total_rows: usize,
     ) -> DaftResult<Self> {
         let null_series = Series::full_null(name, dtype, 1);
@@ -158,19 +158,23 @@ impl RecordBatch {
             // Calculate frame bounds for this row
             let frame_start = match start_boundary {
                 None => 0, // Unbounded preceding
-                Some(offset) => (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize,
+                Some(offset) => row_idx
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
             };
 
             let frame_end = match end_boundary {
                 None => total_rows, // Unbounded following
-                Some(offset) => ((row_idx + 1) as i64 + offset)
-                    .max(0)
-                    .min(total_rows as i64) as usize,
+                Some(offset) => (row_idx + 1)
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
             };
 
-            let frame_size = frame_end as i64 - frame_start as i64;
-
-            assert!(frame_size >= 0, "Negative frame size is not allowed");
+            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
+            };
 
             if frame_size < min_periods {
                 // Add a null series for this row

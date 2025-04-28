@@ -89,7 +89,7 @@ pub struct WindowSpec {
     /// Window frame specification
     pub frame: Option<WindowFrame>,
     /// Minimum number of observations required to produce a value
-    pub min_periods: i64,
+    pub min_periods: usize,
 }
 
 impl Default for WindowSpec {
@@ -136,7 +136,7 @@ impl WindowSpec {
         new_spec
     }
 
-    pub fn with_min_periods(&self, min_periods: i64) -> Self {
+    pub fn with_min_periods(&self, min_periods: usize) -> Self {
         let mut new_spec = self.clone();
         new_spec.min_periods = min_periods;
         new_spec
