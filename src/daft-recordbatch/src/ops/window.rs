@@ -163,7 +163,7 @@ impl RecordBatch {
         name: &str,
         start_boundary: Option<i64>,
         end_boundary: Option<i64>,
-        min_periods: i64,
+        min_periods: usize,
         total_rows: usize,
     ) -> DaftResult<Self> {
         // Use the optimized implementation with incremental state updates
@@ -176,26 +176,26 @@ impl RecordBatch {
         let mut prev_frame_end = 0;
 
         for row_idx in 0..total_rows {
-            // Calculate frame bounds for this row using the provided boundaries
+            // Calculate frame bounds for this row
             let frame_start = match start_boundary {
                 None => 0, // Unbounded preceding
-                Some(offset) => (row_idx as i64 + offset).max(0).min(total_rows as i64) as usize,
+                Some(offset) => row_idx
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
             };
 
             let frame_end = match end_boundary {
                 None => total_rows, // Unbounded following
-                Some(offset) => ((row_idx + 1) as i64 + offset)
-                    .max(0)
-                    .min(total_rows as i64) as usize,
+                Some(offset) => (row_idx + 1)
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
             };
 
-            let frame_size = frame_end as i64 - frame_start as i64;
-
-            if frame_size < 0 {
+            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
                 return Err(DaftError::ValueError(
                     "Negative frame size is not allowed".into(),
                 ));
-            }
+            };
 
             // Check min_periods requirement
             if frame_size >= min_periods {
