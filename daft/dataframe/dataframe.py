@@ -60,6 +60,8 @@ from daft.logical.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
+T = TypeVar("T")
+
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
     """Creates a Daft DataFrame from a single RecordBatch.
@@ -176,6 +178,54 @@ class DataFrame:
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
         )
+
+    @DataframePublicAPI
+    def pipe(
+        self,
+        func: Callable[..., T],
+        *args: object,
+        **kwargs: object,
+    ) -> T:
+        """Apply the function to this DataFrame.
+
+        Args:
+            func (Callable[..., T]): Function to apply.
+            *args (object): Positional arguments to pass to the function.
+            **kwargs (object): Keyword arguments to pass to the function.
+
+        Returns:
+            Result of applying the function on this DataFrame.
+
+        Note:
+            The `func` Callable cannot be thoroughly typed in Python 3.9,
+            please see [PEP-612](https://peps.python.org/pep-0612/) for how
+            `Concatenate` and `ParamSpec` can be used in Python >3.9.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>>
+            >>> def double(df, column: str):
+            ...     return df.select((df[column] * df[column]).alias(column))
+            >>>
+            >>> df.pipe(double, "x").show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ├╌╌╌╌╌╌╌┤
+            │ 9     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        # !! WARNING !!
+        return func(self, *args, **kwargs)
 
     @DataframePublicAPI
     def explain(
