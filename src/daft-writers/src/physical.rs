@@ -125,7 +125,7 @@ impl FileWriter for ArrowParquetWriter {
             )),
         )?;
         Ok(Some(RecordBatch::new_with_size(
-            Schema::new(vec![field])?,
+            Schema::new(vec![field]),
             vec![filename_series],
             1,
         )?))
