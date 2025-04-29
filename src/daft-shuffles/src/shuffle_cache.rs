@@ -8,6 +8,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use daft_writers::{make_ipc_writer, FileWriter, RETURN_PATHS_COLUMN_NAME};
+use itertools::Itertools;
 use tokio::sync::Mutex;
 
 // Single threaded runtime used for shuffle cache tasks, e.g. partitioner and writer tasks
@@ -26,10 +27,33 @@ pub fn get_or_init_shuffle_cache_runtime() -> &'static RuntimeRef {
     })
 }
 
+fn get_shuffle_dirs(
+    shuffle_dirs: &[String],
+    node_id: &str,
+    shuffle_stage_id: usize,
+) -> Vec<String> {
+    shuffle_dirs
+        .iter()
+        .map(|dir| {
+            format!(
+                "{}/daft_shuffle/node_{}/shuffle_stage_{}",
+                dir, node_id, shuffle_stage_id
+            )
+        })
+        .collect()
+}
+
+fn get_partition_dir(shuffle_dirs: &[String], partition_idx: usize) -> String {
+    let dir = &shuffle_dirs[partition_idx % shuffle_dirs.len()];
+    format!("{}/partition_{}", dir, partition_idx)
+}
+
 // Result of a writer task
 struct WriterTaskResult {
     schema: Option<SchemaRef>,
     bytes_per_file: Vec<usize>,
+    total_rows_written: usize,
+    total_bytes_written: usize,
     file_paths: Vec<String>,
 }
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
@@ -43,6 +67,7 @@ struct InProgressShuffleCacheState {
 
 pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
+    shuffle_dirs: Vec<String>,
     partitioner_sender_weak: async_channel::WeakSender<Arc<MicroPartition>>,
 }
 
@@ -50,12 +75,17 @@ impl InProgressShuffleCache {
     pub fn try_new(
         num_partitions: usize,
         dirs: &[String],
+        node_id: String,
+        shuffle_stage_id: usize,
         target_filesize: usize,
         compression: Option<&str>,
         partition_by: Option<Vec<ExprRef>>,
     ) -> DaftResult<Self> {
         // Create the directories
-        for dir in dirs {
+        // TODO: Add checks here, as well as periodic checks to ensure that the dirs are not too full. If so, we switch to directories with more space.
+        // And raise an error if we can't find any directories with space.
+        let shuffle_dirs = get_shuffle_dirs(dirs, &node_id, shuffle_stage_id);
+        for dir in &shuffle_dirs {
             // Check that the dir is a file
             let (source_type, _) = parse_url(dir)?;
             if source_type != SourceType::File {
@@ -75,8 +105,7 @@ impl InProgressShuffleCache {
         // Create the partition writers
         let mut writers = Vec::with_capacity(num_partitions);
         for partition_idx in 0..num_partitions {
-            let dir = &dirs[partition_idx % dirs.len()];
-            let partition_dir = format!("{}/partition_{}", dir, partition_idx);
+            let partition_dir = get_partition_dir(&shuffle_dirs, partition_idx);
             std::fs::create_dir_all(&partition_dir)?;
 
             let writer = make_ipc_writer(&partition_dir, target_filesize, compression)?;
@@ -84,13 +113,14 @@ impl InProgressShuffleCache {
         }
 
         // Create the InProgressShuffleCache with the writers
-        Self::try_new_with_writers(writers, num_partitions, partition_by)
+        Self::try_new_with_writers(writers, num_partitions, partition_by, shuffle_dirs)
     }
 
     fn try_new_with_writers(
         writers: Vec<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>>,
         num_partitions: usize,
         partition_by: Option<Vec<ExprRef>>,
+        shuffle_dirs: Vec<String>,
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
 
@@ -135,6 +165,7 @@ impl InProgressShuffleCache {
                 error: None,
             }),
             partitioner_sender_weak: weak_partitioner_sender,
+            shuffle_dirs,
         })
     }
 
@@ -192,14 +223,29 @@ impl InProgressShuffleCache {
             .unwrap_or_else(|| {
                 panic!("No schema found in shuffle cache, this should never happen")
             });
-        let (bytes_per_file_per_partition, file_paths_per_partition) = writer_results
+        let (
+            bytes_per_file_per_partition,
+            file_paths_per_partition,
+            rows_per_partition,
+            bytes_per_partition,
+        ) = writer_results
             .into_iter()
-            .map(|result| (result.bytes_per_file, result.file_paths))
-            .unzip();
+            .map(|result| {
+                (
+                    result.bytes_per_file,
+                    result.file_paths,
+                    result.total_rows_written,
+                    result.total_bytes_written,
+                )
+            })
+            .multiunzip();
         Ok(ShuffleCache::new(
             schema,
             bytes_per_file_per_partition,
             file_paths_per_partition,
+            rows_per_partition,
+            bytes_per_partition,
+            self.shuffle_dirs.clone(),
         ))
     }
 
@@ -269,10 +315,14 @@ async fn writer_task(
 ) -> DaftResult<WriterTaskResult> {
     let compute_runtime = get_compute_runtime();
     let mut schema = None;
+    let mut total_rows_written = 0;
+    let mut total_bytes_written = 0;
     while let Ok(partition) = rx.recv().await {
         if schema.is_none() {
             schema = Some(partition.schema().clone());
         }
+        total_rows_written += partition.len();
+        total_bytes_written += partition.size_bytes()?.expect("size_bytes should be Some");
         writer = compute_runtime
             .spawn(async move {
                 writer.write(partition)?;
@@ -301,6 +351,8 @@ async fn writer_task(
     Ok(WriterTaskResult {
         schema,
         bytes_per_file,
+        total_rows_written,
+        total_bytes_written,
         file_paths,
     })
 }
@@ -310,6 +362,9 @@ pub struct ShuffleCache {
     schema: SchemaRef,
     bytes_per_file_per_partition: Vec<Vec<usize>>,
     file_paths_per_partition: Vec<Vec<String>>,
+    rows_per_partition: Vec<usize>,
+    bytes_per_partition: Vec<usize>,
+    shuffle_dirs: Vec<String>,
 }
 
 impl ShuffleCache {
@@ -317,11 +372,17 @@ impl ShuffleCache {
         schema: SchemaRef,
         bytes_per_file_per_partition: Vec<Vec<usize>>,
         file_paths_per_partition: Vec<Vec<String>>,
+        rows_per_partition: Vec<usize>,
+        bytes_per_partition: Vec<usize>,
+        shuffle_dirs: Vec<String>,
     ) -> Self {
         Self {
             schema,
             bytes_per_file_per_partition,
             file_paths_per_partition,
+            rows_per_partition,
+            bytes_per_partition,
+            shuffle_dirs,
         }
     }
 
@@ -329,12 +390,33 @@ impl ShuffleCache {
         self.schema.clone()
     }
 
-    pub fn bytes_per_file(&self, partition_idx: usize) -> Vec<usize> {
+    pub fn file_paths_for_partition(&self, partition_idx: usize) -> Vec<String> {
+        self.file_paths_per_partition[partition_idx].clone()
+    }
+
+    pub fn bytes_per_file_for_partition(&self, partition_idx: usize) -> Vec<usize> {
         self.bytes_per_file_per_partition[partition_idx].clone()
     }
 
-    pub fn file_paths(&self, partition_idx: usize) -> Vec<String> {
-        self.file_paths_per_partition[partition_idx].clone()
+    pub fn rows_per_partition(&self) -> Vec<usize> {
+        self.rows_per_partition.clone()
+    }
+
+    pub fn bytes_per_partition(&self) -> Vec<usize> {
+        self.bytes_per_partition.clone()
+    }
+
+    pub fn clear_partition(&self, partition_idx: usize) -> DaftResult<()> {
+        let partition_dir = get_partition_dir(&self.shuffle_dirs, partition_idx);
+        std::fs::remove_dir_all(partition_dir)?;
+        Ok(())
+    }
+
+    pub fn clear_directories(&self) -> DaftResult<()> {
+        for dir in &self.shuffle_dirs {
+            std::fs::remove_dir_all(dir)?;
+        }
+        Ok(())
     }
 }
 
@@ -367,6 +449,7 @@ mod tests {
             writers,
             num_partitions,
             None, // No partition by expressions
+            vec![],
         )?;
 
         // Create and push some partitions
@@ -417,8 +500,12 @@ mod tests {
         .into()]);
 
         // Create the cache with dummy writers
-        let cache =
-            InProgressShuffleCache::try_new_with_writers(writers, num_partitions, partition_by)?;
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            num_partitions,
+            partition_by,
+            vec![],
+        )?;
 
         // Create and push some partitions
         let mp = make_dummy_mp(150);
@@ -450,8 +537,12 @@ mod tests {
         )))
         .into()]);
 
-        let cache =
-            InProgressShuffleCache::try_new_with_writers(writers, num_partitions, partition_by)?;
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            num_partitions,
+            partition_by,
+            vec![],
+        )?;
 
         // 1000 empty partitions
         for _ in 0..1000 {
@@ -492,6 +583,7 @@ mod tests {
             writers,
             num_partitions,
             None, // No partition by expressions
+            vec![],
         )?;
 
         let mut found_failure = false;
@@ -562,6 +654,7 @@ mod tests {
             writers,
             num_partitions,
             None, // No partition by expressions
+            vec![],
         )?;
 
         // Create and push a partition
