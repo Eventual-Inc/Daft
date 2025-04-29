@@ -12,31 +12,20 @@ will be internalized.
 * type annotated class as the schema?
 
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator
 from enum import Enum, auto
+from typing import Iterator
 
 import jsonpath_ng
 
-from daft.io.pushdowns import Pushdowns
 from daft.io._file import FileSource, FileSourceTask
+from daft.io.pushdowns import Pushdowns
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import RecordBatch
-from daft.schema import Schema, DataType, schema
-
-
-def read_json(source: str, columns: JsonColumns):
-    pass
-
-
-def read_jsons(source: str, columns: JsonColumns):
-    pass
-
-
-def read_jsonl(source: str, columns: JsonColumns):
-    pass
+from daft.schema import DataType, Schema, schema
 
 
 class JsonSource(DataSource):
@@ -61,7 +50,7 @@ class JsonSource(DataSource):
         # TODO when rust, choose task variant here
         s = self._strategy
         c = self._columns
-        return [ JsonSourceTask(f, s, c) for f in self._source.get_tasks(pushdowns) ]
+        return [JsonSourceTask(f, s, c) for f in self._source.get_tasks(pushdowns)]
 
 
 @dataclass
@@ -78,17 +67,17 @@ class JsonSourceTask(DataSourceTask):
             return self._get_batches_json()
         elif self._strategy == JsonStrategy.JSONL:
             return self._get_batches_jsonl()
-        elif self._strategy == JsonStrategy.JSONL:
+        elif self._strategy == JsonStrategy.JSONS:
             return self._get_batches_jsons()
         else:
-            raise ValueError
+            raise ValueError(f"Unknown JsonStrategy: {self._strategy}")
 
     def _get_batches_json(self) -> Iterator[RecordBatch]:
         import orjson
 
         buf = JsonBuffer(self._columns)
 
-        with open(self._file.path, 'rb') as file:
+        with open(self._file.path, "rb") as file:
             obj = orjson.loads(file.read())
             buf.append(obj)
 
@@ -99,21 +88,20 @@ class JsonSourceTask(DataSourceTask):
 
         buf = JsonBuffer(self._columns)
 
-        with open(self._file.path, 'rb') as file:
+        with open(self._file.path, "rb") as file:
             for line in file:
                 obj = orjson.loads(line)
                 buf.append(obj)
 
         yield buf.to_record_batch()
 
-
     def _get_batches_jsons(self) -> Iterator[RecordBatch]:
         import ijson
 
         buf = JsonBuffer(self._columns)
 
-        with open(self._file.path, 'rb') as file:
-            for obj in ijson.items(file, 'item'):
+        with open(self._file.path, "rb") as file:
+            for obj in ijson.items(file, "item"):
                 buf.append(obj)
 
         yield buf.to_record_batch()
@@ -122,7 +110,7 @@ class JsonSourceTask(DataSourceTask):
 class JsonBuffer:
     _columns: JsonColumns
     _paths: dict
-    _arrays: dict[str,list]
+    _arrays: dict[str, list]
 
     def __init__(self, columns: JsonColumns):
         self._columns = columns
@@ -149,19 +137,21 @@ class JsonBuffer:
 
 class JsonStrategy(Enum):
     """Defines the strategy for parsing some JSON-based file.
-    
+
     Attributes:
         JSON: Single JSON value in the entire file.
         JSONL: Newline-delimited JSON, where each line contains a complete JSON value.
         JSONS: Incrementally parsed JSON stream, allowing for parsing of large JSON files.
     """
-    JSON = auto() 
+
+    JSON = auto()
     JSONL = auto()
     JSONS = auto()
 
 
 class JsonMapping:
     _view: JsonColumns
+
 
 class JsonColumns:
     _columns: list[JsonColumn]
@@ -170,14 +160,14 @@ class JsonColumns:
         self._columns = columns
 
     def get_schema(self) -> JsonColumns:
-        return schema({ c._name : c._dtype for c in self._columns})
-    
+        return schema({c._name: c._dtype for c in self._columns})
+
     def __iter__(self):
         return iter(self._columns)
-    
+
     def __getitem__(self, index):
         return self._columns[index]
-    
+
     def __len__(self):
         return len(self._columns)
 

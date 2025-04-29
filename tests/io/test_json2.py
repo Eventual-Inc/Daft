@@ -1,29 +1,64 @@
 from daft.dataframe import dataframe
-from daft.schema import DataType, schema
 from daft.io._file import FileSource
-from daft.io._json2 import JsonSource, JsonColumn, JsonColumns, JsonStrategy
+from daft.io._json2 import JsonColumn, JsonColumns, JsonSource, JsonStrategy
+from daft.schema import DataType
 
-# read_json(..) -> DataFrame
-# json_source(..) -> JsonSource
+_RESOURCES = "tests/io/resources/test_json"
 
-def test_json2():
+_COLUMNS = JsonColumns(
+    [
+        JsonColumn.path("a", DataType.int64()),
+        JsonColumn.path("b", DataType.bool()),
+    ]
+)
 
-    path = "/Users/rch/pond/jsons/row_*.json"
+_EXPECTED = [
+    {"a": 1, "b": True},
+    {"a": 2, "b": True},
+    {"a": 3, "b": False},
+    {"a": 4, "b": False},
+]
 
-    # create a file_source from a glob path
-    file_source = FileSource(path)
 
-    # create a json_source from a file_source
+def file_source(pattern: str):
+    return FileSource(f"{_RESOURCES}/{pattern}")
+
+
+def test_read_json__row_jsonl():
+    """Single JSONL value with JSON strategy."""
     json_source = JsonSource(
-        source=file_source,
+        source=file_source("row_*.jsonl"),
         strategy=JsonStrategy.JSON,
-        columns=JsonColumns([
-            JsonColumn.path("a", DataType.int64()),
-            JsonColumn.path("b", DataType.bool()),
-        ])
+        columns=_COLUMNS,
     )
+    assert dataframe(json_source).sort("a").to_pylist() == _EXPECTED
 
-    # now we can create a dataframe from the json_source
-    print()
-    df = dataframe(json_source)
-    df.show()
+
+def test_read_json__obj_json():
+    """Single JSON object with JSON strategy."""
+    json_source = JsonSource(
+        source=FileSource("tests/io/resources/test_json/obj_*.json"),
+        strategy=JsonStrategy.JSON,
+        columns=_COLUMNS,
+    )
+    assert dataframe(json_source).sort("a").to_pylist() == _EXPECTED
+
+
+def test_read_json__rows_jsonl():
+    """Multiple JSONL objects with JSONL strategy."""
+    json_source = JsonSource(
+        source=FileSource("tests/io/resources/test_json/rows_*.jsonl"),
+        strategy=JsonStrategy.JSONL,
+        columns=_COLUMNS,
+    )
+    assert dataframe(json_source).sort("a").to_pylist() == _EXPECTED
+
+
+def test_read_json__objs_jsons():
+    """Multiple JSON objects with JSONS strategy."""
+    json_source = JsonSource(
+        source=FileSource("tests/io/resources/test_json/array_*.json"),
+        strategy=JsonStrategy.JSONS,
+        columns=_COLUMNS,
+    )
+    assert dataframe(json_source).sort("a").to_pylist() == _EXPECTED
