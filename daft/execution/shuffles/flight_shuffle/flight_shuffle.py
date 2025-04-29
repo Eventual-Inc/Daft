@@ -58,8 +58,8 @@ class ShuffleActorManager:
         self.num_output_partitions = num_output_partitions
         self.partition_by = partition_by
 
-        self.all_actors: dict[str, ShuffleActor] = {}
-        self.active_actors: dict[str, ShuffleActor] = {}
+        self.all_actors: dict[str, ray.actor.ActorHandle] = {}
+        self.active_actors: dict[str, ray.actor.ActorHandle] = {}
 
         self.fetch_partition_futures: list[ray.ObjectRef] = []
         self.clear_partition_futures: list[ray.ObjectRef] = []
@@ -70,7 +70,7 @@ class ShuffleActorManager:
                 self.get_or_create_actor(node["NodeID"])
 
     # Get or create an actor for a given node id
-    def get_or_create_actor(self, node_id: str):
+    def get_or_create_actor(self, node_id: str) -> ray.actor.ActorHandle:
         if node_id not in self.all_actors:
             num_cpus = get_node(node_id).resources_total["CPU"]
             actor = ShuffleActor.options(  # type: ignore[attr-defined]
@@ -89,19 +89,19 @@ class ShuffleActorManager:
             self.all_actors[node_id] = actor
         return self.all_actors[node_id]
 
-    def get_active_actors(self):
+    def get_active_actors(self) -> list[ray.actor.ActorHandle]:
         return list(self.active_actors.values())
 
-    def get_active_node_ids(self):
+    def get_active_node_ids(self) -> list[str]:
         return list(self.active_actors.keys())
 
-    def get_active_actor_addresses(self):
+    def get_active_actor_addresses(self) -> list[str]:
         return ray.get([self.active_actors[node_id].get_address.remote() for node_id in self.active_actors])
 
-    def get_all_actors(self):
+    def get_all_actors(self) -> list[ray.actor.ActorHandle]:
         return list(self.all_actors.values())
 
-    def get_all_node_ids(self):
+    def get_all_node_ids(self) -> list[str]:
         return list(self.all_actors.keys())
 
     def get_all_actor_addresses(self) -> list[str]:
@@ -111,7 +111,7 @@ class ShuffleActorManager:
     def _push_objects_to_actor(self, node_id: str, objects: list[ray.ObjectRef]) -> ray.ObjectRef:
         actor = self.get_or_create_actor(node_id)
         self.active_actors[node_id] = actor
-        return actor.push_partitions.remote(*objects)
+        return actor.push_partitions.remote(*objects)  # type: ignore[attr-defined]
 
     # Push a list of objects to the actors
     def push_objects(self, objects: list[ray.ObjectRef]):
@@ -137,11 +137,11 @@ class ShuffleActorManager:
         )
 
     # Wait for all shuffle actors to finish pushing objects to the cache
-    def finish_push_objects(self):
+    def finish_push_objects(self) -> list[PartitionMetadata]:
         metadatas_per_actor = []
         for actor in self.active_actors.values():
             metadatas_per_actor.append(
-                actor.finish_push_partitions.options(num_returns=self.num_output_partitions).remote()
+                actor.finish_push_partitions.options(num_returns=self.num_output_partitions).remote()  # type: ignore[attr-defined]
             )
 
         metadatas_per_actor = [ray.get(metadatas) for metadatas in metadatas_per_actor]
@@ -185,7 +185,7 @@ class ShuffleActor:
 
     def __init__(
         self,
-        shuffle_actor_manager: ShuffleActorManager,
+        shuffle_actor_manager: ray.actor.ActorHandle,
         shuffle_stage_id: int,
         storage_dirs: list[str],
         num_output_partitions: int,
@@ -199,7 +199,7 @@ class ShuffleActor:
         self.partition_by = partition_by
 
         # create a shuffle cache to store the partitions
-        self.in_progress_shuffle_cache = InProgressShuffleCache.try_new(
+        self.in_progress_shuffle_cache: Optional[InProgressShuffleCache] = InProgressShuffleCache.try_new(
             num_output_partitions,
             storage_dirs,
             self.node_id,
@@ -214,15 +214,17 @@ class ShuffleActor:
         self.server: Optional[FlightServerConnectionHandle] = None
         self.port: Optional[int] = None
 
-    def get_address(self):
+    def get_address(self) -> str:
         return f"grpc://{self.host}:{self.port}"
 
     # Push a partition to the shuffle cache asynchronously
     async def push_partitions(self, *partitions: MicroPartition):
+        assert self.in_progress_shuffle_cache is not None, "Shuffle cache not initialized"
         await self.in_progress_shuffle_cache.push_partitions([partition._micropartition for partition in partitions])
 
     # Wait for all the push partition futures to complete
-    async def finish_push_partitions(self):
+    async def finish_push_partitions(self) -> list[PartitionMetadata]:
+        assert self.in_progress_shuffle_cache is not None, "Shuffle cache not initialized"
         self.shuffle_cache = await self.in_progress_shuffle_cache.close()
         self.server = start_flight_server(self.shuffle_cache, self.host)
         self.port = self.server.port()
@@ -241,7 +243,7 @@ class ShuffleActor:
         schema = self.shuffle_cache.schema()
         self.client_manager = FlightClientManager(addresses, num_parallel_fetches, schema)
 
-    async def fetch_partition(self, partition_idx: int):
+    async def fetch_partition(self, partition_idx: int) -> tuple[MicroPartition, ray.ObjectRef]:
         assert self.client_manager is not None, "Client manager not initialized"
         py_mp = await self.client_manager.fetch_partition(partition_idx)
         clear_partition_future = self.shuffle_actor_manager.clear_partition.remote(partition_idx)  # type: ignore[attr-defined]
