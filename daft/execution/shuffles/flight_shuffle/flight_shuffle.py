@@ -105,13 +105,13 @@ class ShuffleActorManager:
         return list(self.all_actors.keys())
 
     def get_all_actor_addresses(self) -> list[str]:
-        return ray.get([self.all_actors[node_id].get_address.remote() for node_id in self.all_actors])  # type: ignore[attr-defined]
+        return ray.get([self.all_actors[node_id].get_address.remote() for node_id in self.all_actors])
 
     # Push an object to an actor
     def _push_objects_to_actor(self, node_id: str, objects: list[ray.ObjectRef]) -> ray.ObjectRef:
         actor = self.get_or_create_actor(node_id)
         self.active_actors[node_id] = actor
-        return actor.push_partitions.remote(*objects)  # type: ignore[attr-defined]
+        return actor.push_partitions.remote(*objects)
 
     # Push a list of objects to the actors
     def push_objects(self, objects: list[ray.ObjectRef]):
@@ -141,7 +141,7 @@ class ShuffleActorManager:
         metadatas_per_actor = []
         for actor in self.active_actors.values():
             metadatas_per_actor.append(
-                actor.finish_push_partitions.options(num_returns=self.num_output_partitions).remote()  # type: ignore[attr-defined]
+                actor.finish_push_partitions.options(num_returns=self.num_output_partitions).remote()
             )
 
         metadatas_per_actor = [ray.get(metadatas) for metadatas in metadatas_per_actor]
@@ -156,8 +156,7 @@ class ShuffleActorManager:
     # Clear the given partitions from the shuffle actors
     def clear_partition(self, partition_idx: int):
         self.clear_partition_futures.extend(
-            self.active_actors[node_id].clear_partition.remote(partition_idx)  # type: ignore[attr-defined]
-            for node_id in self.active_actors
+            self.active_actors[node_id].clear_partition.remote(partition_idx) for node_id in self.active_actors
         )
 
     # Shutdown the shuffle actor manager and all the shuffle actors
@@ -246,7 +245,7 @@ class ShuffleActor:
     async def fetch_partition(self, partition_idx: int) -> tuple[MicroPartition, ray.ObjectRef]:
         assert self.client_manager is not None, "Client manager not initialized"
         py_mp = await self.client_manager.fetch_partition(partition_idx)
-        clear_partition_future = self.shuffle_actor_manager.clear_partition.remote(partition_idx)  # type: ignore[attr-defined]
+        clear_partition_future = self.shuffle_actor_manager.clear_partition.remote(partition_idx)
         return MicroPartition._from_pymicropartition(py_mp), clear_partition_future
 
     # Clean up the shuffle files for the given partition
@@ -271,7 +270,7 @@ class ShuffleActor:
 def run_map_phase(
     plan: InProgressPhysicalPlan[ray.ObjectRef],
     map_stage_id: int,
-    shuffle_actor_manager: ShuffleActorManager,
+    shuffle_actor_manager: ray.actor.ActorHandle,
 ):
     # Maps tasks we have not emitted
     pending_map_tasks: deque[SingleOutputPartitionTask] = deque()
@@ -293,7 +292,7 @@ def run_map_phase(
         # If there are any map tasks that are done, push them to the actor manager
         if len(done_ids) > 0:
             done_partitions = [in_flight_map_tasks.pop(id).partition() for id in done_ids]
-            ray.get(shuffle_actor_manager.push_objects.remote(done_partitions))  # type: ignore[attr-defined]
+            ray.get(shuffle_actor_manager.push_objects.remote(done_partitions))
         # If there are no map tasks that are done, try to emit more map tasks. Else, yield None to indicate to the scheduler that we need to wait
         else:
             # Max number of maps to emit per wave
@@ -308,19 +307,19 @@ def run_map_phase(
                 yield None
 
     # Wait for all actors to complete the map phase
-    metadatas = ray.get(shuffle_actor_manager.finish_push_objects.remote())  # type: ignore[attr-defined]
+    metadatas = ray.get(shuffle_actor_manager.finish_push_objects.remote())
     return metadatas
 
 
 def run_reduce_phase(
     num_output_partitions: int,
-    shuffle_actor_manager: ShuffleActorManager,
+    shuffle_actor_manager: ray.actor.ActorHandle,
     metadatas: list[PartitionMetadata],
 ):
     # only the active actors have data from the map
-    active_actor_addresses = ray.get(shuffle_actor_manager.get_active_actor_addresses.remote())  # type: ignore[attr-defined]
+    active_actor_addresses = ray.get(shuffle_actor_manager.get_active_actor_addresses.remote())
     # but we can do reduce on all actors
-    all_actors = ray.get(shuffle_actor_manager.get_all_actors.remote())  # type: ignore[attr-defined]
+    all_actors = ray.get(shuffle_actor_manager.get_all_actors.remote())
 
     # initialize the client manager for all actors
     ray.get([actor.initialize_client_manager.remote(active_actor_addresses) for actor in all_actors])
@@ -338,7 +337,7 @@ def run_reduce_phase(
 
     # we need to wait for all the clear partition futures to complete before shutting down the actor manager
     ray.get(clear_partition_futures)
-    ray.get(shuffle_actor_manager.shutdown.remote())  # type: ignore[attr-defined]
+    ray.get(shuffle_actor_manager.shutdown.remote())
     ray.kill(shuffle_actor_manager)
 
 
