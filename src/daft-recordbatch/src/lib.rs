@@ -10,10 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::{
-    array::{to_data, Array},
-    chunk::Chunk,
-};
+use arrow2::{array::Array, chunk::Chunk};
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
@@ -977,10 +974,9 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| arrow_array::make_array(to_data(s.to_arrow().as_ref())))
+            .map(|s| s.to_arrow().into())
             .collect::<Vec<_>>();
-        Ok(Self::try_new(schema, columns)
-            .expect("Failed to convert Daft RecordBatch to Arrow RecordBatch"))
+        Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
     }
 }
 

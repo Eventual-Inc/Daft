@@ -17,6 +17,9 @@ pub enum DaftError {
     ComputeError(String),
     #[error("DaftError::ArrowError {0}")]
     ArrowError(arrow2::error::Error),
+    #[cfg(feature = "arrow")]
+    #[error("DaftError::ArrowRsError")]
+    ArrowRsError(arrow_schema::ArrowError),
     #[error("DaftError::ValueError {0}")]
     ValueError(String),
     #[cfg(feature = "python")]

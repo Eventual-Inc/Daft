@@ -5,10 +5,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use daft_core::{
-    prelude::{DataType, Field, Schema, SchemaRef},
-    series::Series,
-};
+use daft_core::{prelude::*, series::Series};
 use daft_io::{parse_url, IOStatsContext, SourceType};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;

@@ -4,7 +4,7 @@ arrow2 = {workspace = true, features = ["arrow"]}
 comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false}
+common-error = {path = "../common/error", default-features = false, features = ["arrow"]}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
