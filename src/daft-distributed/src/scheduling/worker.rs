@@ -1,11 +1,6 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 
 use super::task::{SwordfishTask, SwordfishTaskResultHandle};
-
-pub(crate) type WorkerManagerCreator =
-    Arc<dyn Fn() -> DaftResult<Box<dyn WorkerManager>> + Send + Sync>;
 
 #[allow(dead_code)]
 pub(crate) trait WorkerManager: Send + Sync {
@@ -19,4 +14,8 @@ pub(crate) trait WorkerManager: Send + Sync {
     #[allow(dead_code)]
     fn try_autoscale(&self, num_workers: usize) -> DaftResult<()>;
     fn shutdown(&self) -> DaftResult<()>;
+}
+
+pub(crate) trait WorkerManagerFactory: Send + Sync {
+    fn create_worker_manager(&self) -> DaftResult<Box<dyn WorkerManager>>;
 }

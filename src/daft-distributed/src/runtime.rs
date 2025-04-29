@@ -5,13 +5,6 @@ use tokio::runtime::Runtime;
 pub static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 pub static PYO3_RUNTIME_INITIALIZED: Once = Once::new();
 
-// Store the python task locals, namely the asyncio event loop.
-// I can see that this is going be a problem if we close and reopen a new event loop in the same python process.
-// So we should think of a way to have this on a per event loop basis.
-// It is necessary to store this somewhere where all spawned tasks from a tokio runtime can have access to it.
-#[cfg(feature = "python")]
-pub static TASK_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = OnceLock::new();
-
 pub fn get_or_init_runtime() -> &'static Runtime {
     let runtime = RUNTIME.get_or_init(|| {
         let mut runtime = tokio::runtime::Builder::new_multi_thread();
@@ -27,14 +20,6 @@ pub fn get_or_init_runtime() -> &'static Runtime {
         });
     }
     runtime
-}
-
-#[cfg(feature = "python")]
-pub fn get_or_init_task_locals(py: pyo3::Python<'_>) -> &'static pyo3_async_runtimes::TaskLocals {
-    TASK_LOCALS.get_or_init(|| {
-        pyo3_async_runtimes::tokio::get_current_locals(py)
-            .expect("Failed to get current task locals")
-    })
 }
 
 pub type JoinSet<T> = tokio::task::JoinSet<T>;

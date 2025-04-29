@@ -18,7 +18,7 @@ use crate::{
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-        worker::WorkerManagerCreator,
+        worker::WorkerManagerFactory,
     },
 };
 
@@ -40,11 +40,11 @@ impl Stage {
     pub(crate) fn run_stage(
         self,
         psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_creator: WorkerManagerCreator,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> DaftResult<RunningStage> {
-        let program = logical_plan_to_program(self.logical_plan, self.config, psets)?;
-        let mut stage_context = StageContext::try_new(worker_manager_creator)?;
-        let running_program = program.run_program(&mut stage_context);
+        let mut program = logical_plan_to_program(self.logical_plan, self.config, psets)?;
+        let mut stage_context = StageContext::try_new(worker_manager_factory)?;
+        let running_program = program.start(&mut stage_context);
         let running_stage = RunningStage::new(running_program.into_inner(), stage_context);
         Ok(running_stage)
     }
@@ -79,8 +79,8 @@ pub(crate) struct StageContext {
 }
 
 impl StageContext {
-    fn try_new(worker_manager_creator: WorkerManagerCreator) -> DaftResult<Self> {
-        let worker_manager = worker_manager_creator()?;
+    fn try_new(worker_manager_factory: Box<dyn WorkerManagerFactory>) -> DaftResult<Self> {
+        let worker_manager = worker_manager_factory.create_worker_manager()?;
         let task_dispatcher = TaskDispatcher::new(worker_manager);
         let mut joinset = JoinSet::new();
         let task_dispatcher_handle =

@@ -14,7 +14,7 @@ use futures::{Stream, StreamExt};
 use crate::{
     channel::{create_channel, Receiver, Sender},
     runtime::{get_or_init_runtime, JoinHandle},
-    scheduling::worker::WorkerManagerCreator,
+    scheduling::worker::WorkerManagerFactory,
     stage::split_at_stage_boundary,
 };
 
@@ -44,12 +44,12 @@ impl DistributedPhysicalPlan {
     async fn run_plan_loop(
         logical_plan: LogicalPlanRef,
         config: Arc<DaftExecutionConfig>,
-        worker_manager_creator: WorkerManagerCreator,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
         psets: HashMap<String, Vec<PartitionRef>>,
         result_sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
         let (stage, _remaining_plan) = split_at_stage_boundary(&logical_plan, &config)?;
-        let mut running_stage = stage.run_stage(psets, worker_manager_creator)?;
+        let mut running_stage = stage.run_stage(psets, worker_manager_factory)?;
         while let Some(result) = running_stage.next().await {
             if result_sender.send(result?).await.is_err() {
                 break;
@@ -71,7 +71,7 @@ impl DistributedPhysicalPlan {
     pub fn run_plan(
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_creator: WorkerManagerCreator,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> PlanResult {
         let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
@@ -81,7 +81,7 @@ impl DistributedPhysicalPlan {
                 .expect("Expected remaining logical plan")
                 .clone(),
             self.config.clone(),
-            worker_manager_creator,
+            worker_manager_factory,
             psets,
             result_sender,
         ));

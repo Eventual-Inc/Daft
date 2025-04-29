@@ -7,14 +7,10 @@ use common_partitioning::Partition;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
 use pyo3::prelude::*;
-use ray::{RayPartitionRef, RaySwordfishTask, RayWorkerManager};
+use ray::{RayPartitionRef, RaySwordfishTask, RayWorkerManagerFactory};
 use tokio::sync::Mutex;
 
-use crate::{
-    plan::{DistributedPhysicalPlan, PlanResult},
-    runtime::get_or_init_task_locals,
-    scheduling::worker::WorkerManager,
-};
+use crate::plan::{DistributedPhysicalPlan, PlanResult};
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
@@ -80,7 +76,6 @@ impl PyDistributedPhysicalPlan {
         psets: HashMap<String, Vec<RayPartitionRef>>,
         py: Python,
     ) -> PyResult<PythonPartitionRefStream> {
-        let _ = get_or_init_task_locals(py);
         let psets = psets
             .into_iter()
             .map(|(k, v)| {
@@ -93,11 +88,14 @@ impl PyDistributedPhysicalPlan {
             })
             .collect();
         let daft_execution_config = self.planner.execution_config().clone();
-        let worker_manager_creator = Arc::new(move || {
-            let ray_worker_manager = RayWorkerManager::try_new(daft_execution_config.clone())?;
-            Ok(Box::new(ray_worker_manager) as Box<dyn WorkerManager>)
-        });
-        let part_stream = self.planner.run_plan(psets, worker_manager_creator);
+        let worker_manager_factory = RayWorkerManagerFactory::new(
+            daft_execution_config,
+            pyo3_async_runtimes::tokio::get_current_locals(py)
+                .expect("Failed to get current task locals"),
+        );
+        let part_stream = self
+            .planner
+            .run_plan(psets, Box::new(worker_manager_factory));
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(part_stream)),
         };

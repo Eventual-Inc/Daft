@@ -21,28 +21,19 @@ mod collect;
 mod limit;
 mod translate;
 
-// A program creates tasks from a logical plan and submits them to the task dispatcher.
-#[allow(dead_code)]
-pub(crate) enum Program {
-    Collect(CollectProgram),
-    Limit(LimitProgram),
+pub(crate) trait DistributedPipelineNode: Send + Sync {
+    #[allow(dead_code)]
+    fn name(&self) -> &'static str;
+    #[allow(dead_code)]
+    fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
+    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
 }
 
-impl Program {
-    // Spawn the tasks of a program onto the joinset, and return a receiver to receive the results of the program.
-    pub fn run_program(self, stage_context: &mut StageContext) -> RunningProgram {
-        match self {
-            Self::Collect(collect_program) => collect_program.run_program(stage_context),
-            Self::Limit(limit_program) => limit_program.run_program(stage_context),
-        }
-    }
-}
-
-pub(crate) struct RunningProgram {
+pub(crate) struct RunningPipelineNode {
     result_receiver: Receiver<PartitionRef>,
 }
 
-impl RunningProgram {
+impl RunningPipelineNode {
     fn new(result_receiver: Receiver<PartitionRef>) -> Self {
         Self { result_receiver }
     }
@@ -52,11 +43,11 @@ impl RunningProgram {
     }
 }
 
-impl Stream for RunningProgram {
+impl Stream for RunningPipelineNode {
     type Item = DaftResult<PartitionRef>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("Implement stream for running program");
+        todo!("Implement stream for running pipeline node");
     }
 }
 
@@ -64,11 +55,11 @@ pub(crate) fn logical_plan_to_program(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
-) -> DaftResult<Program> {
+) -> DaftResult<Box<dyn DistributedPipelineNode>> {
     struct ProgramBoundarySplitter {
         root: LogicalPlanRef,
         psets: HashMap<String, Vec<PartitionRef>>,
-        current_programs: Vec<Program>,
+        current_programs: Vec<Box<dyn DistributedPipelineNode>>,
         config: Arc<DaftExecutionConfig>,
     }
 
@@ -86,7 +77,7 @@ pub(crate) fn logical_plan_to_program(
                     let input_programs = std::mem::take(&mut self.current_programs);
                     let translated_local_physical_plans =
                         translate_program_plan_to_local_physical_plans(node.clone(), &self.config)?;
-                    self.current_programs = vec![Program::Limit(LimitProgram::new(
+                    self.current_programs = vec![Box::new(LimitProgram::new(
                         limit.limit as usize,
                         translated_local_physical_plans,
                         input_programs,
@@ -99,7 +90,7 @@ pub(crate) fn logical_plan_to_program(
                     let input_programs = std::mem::take(&mut self.current_programs);
                     let translated_local_physical_plans =
                         translate_program_plan_to_local_physical_plans(node.clone(), &self.config)?;
-                    self.current_programs = vec![Program::Collect(CollectProgram::new(
+                    self.current_programs = vec![Box::new(CollectProgram::new(
                         translated_local_physical_plans,
                         input_programs,
                         std::mem::take(&mut self.psets),

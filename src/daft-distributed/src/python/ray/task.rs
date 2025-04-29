@@ -5,53 +5,43 @@ use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
 
-use crate::{
-    runtime::TASK_LOCALS,
-    scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
-};
+use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle};
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
-#[pyclass(module = "daft.daft")]
+#[allow(dead_code)]
 pub(crate) struct RayTaskResultHandle {
-    handle: PyObject,
+    /// The handle to the task
+    handle: Option<PyObject>,
+    /// The task locals, i.e. the asyncio event loop
+    task_locals: Option<pyo3_async_runtimes::TaskLocals>,
 }
 
-#[pymethods]
 impl RayTaskResultHandle {
-    #[new]
     /// Create a new TaskHandle from a Python RaySwordfishTaskHandle
-    pub fn new(handle: PyObject) -> Self {
-        Self { handle }
+    #[allow(dead_code)]
+    pub fn new(handle: PyObject, task_locals: pyo3_async_runtimes::TaskLocals) -> Self {
+        Self {
+            handle: Some(handle),
+            task_locals: Some(task_locals),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl SwordfishTaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
-    async fn get_result(&self) -> DaftResult<PartitionRef> {
-        // get the task locals, i.e. the asyncio event loop, and the handle to the task
-        let (task_locals, handle) = Python::with_gil(|py| {
-            let task_locals = TASK_LOCALS
-                .get()
-                .expect("Failed to get task locals")
-                .clone_ref(py);
-            let handle = self.handle.clone_ref(py);
-            (task_locals, handle)
-        });
-
-        // create a rust future that awaits the python future
-        let fut = async move {
-            let py_awaitable = Python::with_gil(|py| {
-                let coroutine = handle
-                    .call_method0(py, pyo3::intern!(py, "get_result"))?
-                    .into_bound(py);
-                pyo3_async_runtimes::tokio::into_future(coroutine)
-            })?;
-            py_awaitable.await
-        };
+    async fn get_result(&mut self) -> DaftResult<PartitionRef> {
+        let handle = self.handle.take().unwrap();
+        let coroutine = Python::with_gil(|py| {
+            let coroutine = handle
+                .call_method0(py, pyo3::intern!(py, "get_result"))?
+                .into_bound(py);
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })?;
 
         // await the rust future in the scope of the asyncio event loop
-        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, fut).await?;
+        let task_locals = self.task_locals.take().unwrap();
+        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, coroutine).await?;
 
         let ray_part_ref =
             Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
@@ -61,11 +51,13 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
 
 impl Drop for RayTaskResultHandle {
     fn drop(&mut self) {
-        Python::with_gil(|py| {
-            self.handle
-                .call_method0(py, "cancel")
-                .expect("Failed to cancel ray task")
-        });
+        if let Some(handle) = self.handle.take() {
+            Python::with_gil(|py| {
+                handle
+                    .call_method0(py, "cancel")
+                    .expect("Failed to cancel ray task")
+            });
+        }
     }
 }
 
