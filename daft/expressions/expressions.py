@@ -1635,15 +1635,41 @@ class Expression:
             window: The window specification (created using ``daft.Window``)
                 defining partitioning, ordering, and framing.
 
+        Examples:
+            >>> import daft
+            >>> from daft import Window, col
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "group": ["A", "A", "A", "B", "B", "B"],
+            ...         "date": ["2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04", "2020-01-05", "2020-01-06"],
+            ...         "value": [1, 2, 3, 4, 5, 6],
+            ...     }
+            ... )
+            >>> window_spec = Window().partition_by("group").order_by("date")
+            >>> df = df.with_column("cumulative_sum", col("value").sum().over(window_spec))
+            >>> df.sort(["group", "date"]).show()
+            ╭───────┬────────────┬───────┬────────────────╮
+            │ group ┆ date       ┆ value ┆ cumulative_sum │
+            │ ---   ┆ ---        ┆ ---   ┆ ---            │
+            │ Utf8  ┆ Utf8       ┆ Int64 ┆ Int64          │
+            ╞═══════╪════════════╪═══════╪════════════════╡
+            │ A     ┆ 2020-01-01 ┆ 1     ┆ 6              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A     ┆ 2020-01-02 ┆ 2     ┆ 6              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A     ┆ 2020-01-03 ┆ 3     ┆ 6              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B     ┆ 2020-01-04 ┆ 4     ┆ 15             │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B     ┆ 2020-01-05 ┆ 5     ┆ 15             │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B     ┆ 2020-01-06 ┆ 6     ┆ 15             │
+            ╰───────┴────────────┴───────┴────────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+
         Returns:
             Expression: The result of applying this expression as a window function.
-
-        Example:
-            >>> from daft import col, Window
-            >>> # Define a window partitioned by "group" and ordered by "date"
-            >>> window_spec = Window().partition_by("group").order_by("date")
-            >>> # Assume df is a DataFrame with columns "group", "date", and "value"
-            >>> df = df.with_column("cumulative_sum", col("value").sum().over(window_spec))
         """
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
