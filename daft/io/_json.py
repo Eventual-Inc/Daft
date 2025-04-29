@@ -11,8 +11,8 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.dataframe import DataFrame
+from daft.datatype import DataType
 from daft.io.common import get_tabular_files_scan
-from daft.schema import Schema, DataType
 
 
 @PublicAPI
@@ -76,24 +76,3 @@ def read_json(
         hive_partitioning=hive_partitioning,
     )
     return DataFrame(builder)
-
-
-def read_json2(path: str, schema: Schema):
-    pass
-
-
-
-
-class JsonSource(StreamSource):
-
-    def __init__(self):
-        raise ValueError
-
-    def name(self) -> str:
-        return "JsonSource"
-
-    def schema(self) -> Schema:
-        raise NotImplementedError
-
-    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
-        raise NotImplementedError

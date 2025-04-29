@@ -36,13 +36,13 @@ class __SourceOperatorShim(ScanOperator):
         self._source = source
 
     def schema(self) -> Schema:
-        return self._source.schema()
+        return self._source.get_schema()
 
     def name(self) -> str:
-        return self._source.name()
+        return self._source.get_name()
 
     def display_name(self) -> str:
-        return f"ReadSourceOperator({self._source.name()})"
+        return f"ReadSourceOperator({self._source.get_name()})"
 
     def partitioning_keys(self) -> list[PartitionField]:
         return []

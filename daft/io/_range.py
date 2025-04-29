@@ -192,10 +192,10 @@ class RangeSource(DataSource):
         self._step = step
         self._partitions = partitions
 
-    def name(self) -> str:
+    def get_name(self) -> str:
         return "RangeSource"
 
-    def schema(self) -> Schema:
+    def get_schema(self) -> Schema:
         return schema({"id": DataType.int64()})
 
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
@@ -216,7 +216,7 @@ class RangeSourceTask(DataSourceTask):
     _end: int
     _step: int
 
-    def schema(self) -> Schema:
+    def get_schema(self) -> Schema:
         return schema({"id": DataType.int64()})
 
     def get_batches(self) -> Iterator[RecordBatch]:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Iterator, Protocol
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from daft.io.pushdowns import Pushdowns
@@ -29,12 +29,12 @@ class DataSource(ABC):
     """
 
     @abstractmethod
-    def name(self) -> str:
+    def get_name(self) -> str:
         """Returns the source name which is useful for debugging."""
         ...
 
     @abstractmethod
-    def schema(self) -> Schema:
+    def get_schema(self) -> Schema:
         """Returns the schema shared by each task's record batches."""
         ...
 
@@ -59,7 +59,7 @@ class DataSourceTask(ABC):
     """
 
     @abstractmethod
-    def schema(self) -> Schema:
+    def get_schema(self) -> Schema:
         """Returns the schema shared by each RecordBatch."""
         ...
 
@@ -71,13 +71,3 @@ class DataSourceTask(ABC):
             An iterable of RecordBatch objects containing the data for this task.
         """
         ...
-
-
-class WithSchema(Protocol):
-    def schema(self) -> Schema: ...
-
-class DataSourceWithSchema(DataSource, WithSchema):
-    ...
-
-class DataSourceTaskWithSchema(DataSourceTask, WithSchema):
-    ...
