@@ -1,21 +1,25 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
+use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
-    error::Result, obj_already_exists_err, obj_not_found_err, options::Options, unsupported_err,
+    error::Result,
+    obj_already_exists_err, obj_not_found_err,
+    options::{IdentifierMode, Options},
+    unsupported_err,
 };
 
 /// Session holds all state for query planning and execution (e.g. connection).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Session {
     /// Session state for interior mutability
     state: Arc<RwLock<SessionState>>,
 }
 
 /// Session state is to be kept internal, consider a builder.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SessionState {
     /// Session identifier
     _id: String,
@@ -25,11 +29,35 @@ struct SessionState {
     catalogs: Bindings<CatalogRef>,
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
-    // TODO execution context
-    // TODO identifier matcher for case-insensitive matching
+    /// User defined functions
+    functions: Bindings<WrappedUDFClass>,
 }
 
 impl Session {
+    /// Creates a new session that shares the same underlying state with the original.
+    ///
+    /// This method creates a new `Session` instance that contains a clone of the `Arc`
+    /// pointer to the same `RwLock<SessionState>`, but does not clone the state itself.
+    /// This means that any changes to the state through either session will be visible
+    /// to the other session.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let original_session = Session::empty();
+    /// // ... configure original_session ...
+    ///
+    /// // Create another session that shares state with the original
+    /// let shared_session = original_session.clone_ref();
+    ///
+    /// // Changes through shared_session will be visible to original_session and vice versa
+    /// ```
+    pub fn clone_ref(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
+
     /// Creates a new empty session
     pub fn empty() -> Self {
         let state = SessionState {
@@ -37,6 +65,7 @@ impl Session {
             options: Options::default(),
             catalogs: Bindings::empty(),
             tables: Bindings::empty(),
+            functions: Bindings::empty(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -55,24 +84,24 @@ impl Session {
 
     /// Attaches a catalog to this session, err if already exists.
     pub fn attach_catalog(&self, catalog: CatalogRef, alias: String) -> Result<()> {
-        if self.state().catalogs.exists(&alias) {
+        if self.state().catalogs.contains(&alias) {
             obj_already_exists_err!("Catalog", &alias.into())
         }
         if self.state().catalogs.is_empty() {
             // use only catalog as the current catalog
             self.state_mut().options.curr_catalog = Some(alias.clone());
         }
-        self.state_mut().catalogs.insert(alias, catalog);
+        self.state_mut().catalogs.bind(alias, catalog);
         Ok(())
     }
 
     /// Attaches a table to this session, err if already exists.
     pub fn attach_table(&self, table: TableRef, alias: impl Into<String>) -> Result<()> {
         let alias = alias.into();
-        if self.state().tables.exists(&alias) {
+        if self.state().tables.contains(&alias) {
             obj_already_exists_err!("Table", &alias.into())
         }
-        self.state_mut().tables.insert(alias, table);
+        self.state_mut().tables.bind(alias, table);
         Ok(())
     }
 
@@ -90,7 +119,7 @@ impl Session {
         replace: bool,
     ) -> Result<TableRef> {
         let name = name.into();
-        if !replace && self.state().tables.exists(&name) {
+        if !replace && self.state().tables.contains(&name) {
             obj_already_exists_err!("Temporary table", &name.into())
         }
         // we don't have mutable temporary tables, only immutable views over dataframes.
@@ -98,7 +127,7 @@ impl Session {
             TableSource::Schema(_) => unsupported_err!("temporary table with schema"),
             TableSource::View(plan) => View::from(plan.clone()).arced(),
         };
-        self.state_mut().tables.insert(name, table.clone());
+        self.state_mut().tables.bind(name, table.clone());
         Ok(table)
     }
 
@@ -118,7 +147,7 @@ impl Session {
 
     /// Detaches a table from this session, err if does not exist.
     pub fn detach_table(&self, alias: &str) -> Result<()> {
-        if !self.state().tables.exists(alias) {
+        if !self.state().tables.contains(alias) {
             obj_not_found_err!("Table", &alias.into())
         }
         self.state_mut().tables.remove(alias);
@@ -127,7 +156,7 @@ impl Session {
 
     /// Detaches a catalog from this session, err if does not exist.
     pub fn detach_catalog(&self, alias: &str) -> Result<()> {
-        if !self.state().catalogs.exists(alias) {
+        if !self.state().catalogs.contains(alias) {
             obj_not_found_err!("Catalog", &alias.into())
         }
         self.state_mut().catalogs.remove(alias);
@@ -140,7 +169,7 @@ impl Session {
 
     /// Returns the catalog or an object not found error.
     pub fn get_catalog(&self, name: &str) -> Result<CatalogRef> {
-        if let Some(catalog) = self.state().catalogs.get(name) {
+        if let Some(catalog) = self.state().get_attached_catalog(name)? {
             Ok(catalog.clone())
         } else {
             obj_not_found_err!("Catalog", &name.into())
@@ -152,7 +181,7 @@ impl Session {
         //
         // Rule 0: check temp tables.
         if !name.has_qualifier() {
-            if let Some(view) = self.state().tables.get(name.name()) {
+            if let Some(view) = self.state().get_attached_table(name.name())? {
                 return Ok(view.clone());
             }
         }
@@ -192,7 +221,7 @@ impl Session {
 
     /// Returns true iff the session has access to a matching catalog.
     pub fn has_catalog(&self, name: &str) -> bool {
-        self.state().catalogs.exists(name)
+        self.state().catalogs.contains(name)
     }
 
     /// Returns true iff the session has access to a matching table.
@@ -210,7 +239,7 @@ impl Session {
         Ok(self.state().tables.list(pattern))
     }
 
-    /// Sets the current_catalog
+    /// Sets the current_catalog.
     pub fn set_catalog(&self, ident: Option<&str>) -> Result<()> {
         if let Some(ident) = ident {
             if !self.has_catalog(ident) {
@@ -223,7 +252,7 @@ impl Session {
         Ok(())
     }
 
-    /// Sets the current_namespace (consider an Into at a later time).
+    /// Sets the current_namespace.
     pub fn set_namespace(&self, ident: Option<&Identifier>) -> Result<()> {
         if let Some(ident) = ident {
             self.state_mut().options.curr_namespace = Some(ident.clone().path());
@@ -231,6 +260,85 @@ impl Session {
             self.state_mut().options.curr_namespace = None;
         }
         Ok(())
+    }
+
+    /// Returns an identifier normalization function based upon the session options.
+    pub fn normalizer(&self) -> impl Fn(&str) -> String {
+        match self.state().options.identifier_mode {
+            IdentifierMode::Insensitive => str::to_string,
+            IdentifierMode::Sensitive => str::to_string,
+            IdentifierMode::Normalize => str::to_lowercase,
+        }
+    }
+
+    pub fn attach_function(&self, function: WrappedUDFClass, alias: Option<String>) -> Result<()> {
+        #[cfg(feature = "python")]
+        {
+            let name = match alias {
+                Some(name) => name,
+                None => function.name()?,
+            };
+
+            self.state_mut().functions.bind(name, function);
+            Ok(())
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            Err(daft_catalog::error::Error::unsupported(
+                "attach_function without python",
+            ))
+        }
+    }
+
+    pub fn detach_function(&self, name: &str) -> Result<()> {
+        self.state_mut().functions.remove(name);
+        Ok(())
+    }
+
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+        self.state().get_function(name)
+    }
+}
+
+impl SessionState {
+    /// Get an attached catalog by name using the session's identifier mode.
+    pub fn get_attached_catalog(&self, name: &str) -> Result<Option<CatalogRef>> {
+        match self.catalogs.lookup(name, self.options.find_mode()) {
+            catalogs if catalogs.is_empty() => Ok(None),
+            catalogs if catalogs.len() == 1 => Ok(Some(catalogs[0].clone())),
+            _ => panic!("ambiguous catalog identifier"),
+        }
+    }
+
+    /// Get an attached table by name using the session's identifier mode.
+    pub fn get_attached_table(&self, name: &str) -> Result<Option<TableRef>> {
+        match self.tables.lookup(name, self.options.find_mode()) {
+            tables if tables.is_empty() => Ok(None),
+            tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
+            _ => panic!("ambiguous table identifier"),
+        }
+    }
+
+    #[cfg(feature = "python")]
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+        let mut items = self
+            .functions
+            .lookup(name, daft_catalog::LookupMode::Insensitive)
+            .into_iter();
+
+        if items.len() > 1 {
+            let names = items
+                .map(|i| i.name())
+                .collect::<pyo3::PyResult<Vec<_>>>()?;
+
+            crate::ambiguous_identifier_err!("Function", names);
+        }
+        Ok(items.next().cloned())
+    }
+
+    #[cfg(not(feature = "python"))]
+    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+        Ok(None)
     }
 }
 
@@ -255,13 +363,10 @@ mod tests {
     use super::*;
 
     fn mock_plan() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("text", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {

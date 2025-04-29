@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -84,12 +84,12 @@ pub struct WindowSpec {
     pub partition_by: Vec<Arc<Expr>>,
     /// Order by expressions
     pub order_by: Vec<Arc<Expr>>,
-    /// Whether each order by expression is ascending
-    pub ascending: Vec<bool>,
+    /// Whether each order by expression is descending
+    pub descending: Vec<bool>,
     /// Window frame specification
     pub frame: Option<WindowFrame>,
     /// Minimum number of observations required to produce a value
-    pub min_periods: i64,
+    pub min_periods: usize,
 }
 
 impl Default for WindowSpec {
@@ -97,7 +97,7 @@ impl Default for WindowSpec {
         Self {
             partition_by: Vec::new(),
             order_by: Vec::new(),
-            ascending: Vec::new(),
+            descending: Vec::new(),
             frame: None,
             min_periods: 1,
         }
@@ -118,15 +118,15 @@ impl WindowSpec {
         new_spec
     }
 
-    pub fn with_order_by(&self, exprs: Vec<PyExpr>, ascending: Vec<bool>) -> Self {
+    pub fn with_order_by(&self, exprs: Vec<PyExpr>, descending: Vec<bool>) -> Self {
         assert_eq!(
             exprs.len(),
-            ascending.len(),
-            "Order by expressions and ascending flags must have same length"
+            descending.len(),
+            "Order by expressions and descending flags must have same length"
         );
         let mut new_spec = self.clone();
         new_spec.order_by = exprs.into_iter().map(|e| e.expr).collect();
-        new_spec.ascending = ascending;
+        new_spec.descending = descending;
         new_spec
     }
 
@@ -136,9 +136,60 @@ impl WindowSpec {
         new_spec
     }
 
-    pub fn with_min_periods(&self, min_periods: i64) -> Self {
+    pub fn with_min_periods(&self, min_periods: usize) -> Self {
         let mut new_spec = self.clone();
         new_spec.min_periods = min_periods;
         new_spec
+    }
+}
+
+impl fmt::Display for WindowSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "window(")?;
+
+        // Write partition by
+        if !self.partition_by.is_empty() {
+            write!(f, "partition_by=[")?;
+            for (i, expr) in self.partition_by.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", expr)?;
+            }
+            write!(f, "]")?;
+        }
+
+        // Write order by
+        if !self.order_by.is_empty() {
+            if !self.partition_by.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "order_by=[")?;
+            for (i, (expr, desc)) in self.order_by.iter().zip(self.descending.iter()).enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}:{}", expr, if *desc { "desc" } else { "asc" })?;
+            }
+            write!(f, "]")?;
+        }
+
+        // Write frame if present
+        if let Some(frame) = &self.frame {
+            if !self.partition_by.is_empty() || !self.order_by.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "frame={:?}", frame)?;
+        }
+
+        // Write min_periods if not default
+        if self.min_periods != 1 {
+            if !self.partition_by.is_empty() || !self.order_by.is_empty() || self.frame.is_some() {
+                write!(f, ", ")?;
+            }
+            write!(f, "min_periods={}", self.min_periods)?;
+        }
+
+        write!(f, ")")
     }
 }

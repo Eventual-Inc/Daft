@@ -2689,6 +2689,7 @@ dependencies = [
  "common-error",
  "common-py-serde",
  "common-version",
+ "derivative",
  "derive_more",
  "html-escape",
  "indexmap 2.8.0",
@@ -2705,6 +2706,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "daft-catalog",
  "daft-core",
+ "daft-dsl",
  "daft-logical-plan",
  "pyo3",
  "uuid 1.16.0",

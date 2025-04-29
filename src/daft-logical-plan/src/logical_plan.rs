@@ -171,10 +171,8 @@ impl LogicalPlan {
                 let res = distinct
                     .input
                     .schema()
-                    .fields
-                    .iter()
-                    .map(|(name, _)| name)
-                    .cloned()
+                    .field_names()
+                    .map(ToString::to_string)
                     .collect();
                 vec![res]
             }
@@ -420,9 +418,10 @@ impl LogicalPlan {
                     Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone())),
-                Self::Window(Window { window_functions, window_spec, .. }) => Self::Window(Window::try_new(
+                Self::Window(Window { window_functions, aliases, window_spec, .. }) => Self::Window(Window::try_new(
                     input.clone(),
                     window_functions.clone(),
+                    aliases.clone(),
                     window_spec.clone(),
                 ).unwrap()),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),

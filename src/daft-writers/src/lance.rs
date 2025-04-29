@@ -56,9 +56,9 @@ impl FileWriter for LanceWriter {
                         }),
                     &self.lance_info.kwargs.clone_ref(py),
                 ))?
-                .getattr(pyo3::intern!(py, "to_table"))?
+                .getattr(pyo3::intern!(py, "to_record_batch"))?
                 .call0()?
-                .getattr(pyo3::intern!(py, "_table"))?
+                .getattr(pyo3::intern!(py, "_recordbatch"))?
                 .extract()?;
             self.results.push(written_fragments.into());
             Ok(self.bytes_written)

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def _generator_factory_function(func: Callable[[], Iterator["RecordBatch"]]) -> Iterator["PyRecordBatch"]:
     for table in func():
-        yield table._table
+        yield table._recordbatch
 
 
 def read_generator(
@@ -23,7 +23,16 @@ def read_generator(
 ) -> DataFrame:
     """Create a DataFrame from a generator function.
 
-    Example:
+    Args:
+        generator (Callable[[int, Any], Iterator[RecordBatch]]): a generator function that generates data
+        num_partitions (int): the number of partitions to generate
+        schema (Schema): the schema of the generated data
+        generator_args (Any): additional arguments to pass to the generator
+
+    Returns:
+        DataFrame: a DataFrame containing the generated data
+
+    Examples:
         >>> import daft
         >>> from daft.io._generator import read_generator
         >>> from daft.recordbatch.recordbatch import RecordBatch
@@ -51,15 +60,6 @@ def read_generator(
         ...     .repartition(100, "ints")
         ...     .collect()
         ... )
-
-    Args:
-        generator (Callable[[int, Any], Iterator[RecordBatch]]): a generator function that generates data
-        num_partitions (int): the number of partitions to generate
-        schema (Schema): the schema of the generated data
-        generator_args (Any): additional arguments to pass to the generator
-
-    Returns:
-        DataFrame: a DataFrame containing the generated data
     """
     generator_scan_operator = GeneratorScanOperator(
         generators=generators,

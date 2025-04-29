@@ -218,7 +218,9 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
                 else item_to_series(name, column)
             )
             series_dict[name] = series._series
-        return MicroPartition._from_tables([RecordBatch._from_pytable(_PyRecordBatch.from_pylist_series(series_dict))])
+        return MicroPartition._from_record_batches(
+            [RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))]
+        )
     return MicroPartition.from_arrow(arrow_table)
 
 
@@ -563,9 +565,9 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
     Used as a generator as it provides a guard against calling ray.cluster_resources()
     more than once per `ttl_seconds`.
 
-    Example:
-    >>> p = _ray_num_cpus_provider()
-    >>> next(p)
+    Examples:
+        >>> p = _ray_num_cpus_provider()
+        >>> next(p)
     """
     last_checked_time = time.time()
     last_num_cpus_queried = int(ray.cluster_resources().get("CPU", 0))

@@ -91,7 +91,7 @@ def set_runner_ray(
     return DaftContext._from_native(py_ctx)
 
 
-def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
+def set_runner_py(use_thread_pool: bool | None = None, num_threads: int | None = None) -> DaftContext:
     """Configure Daft to execute dataframes in the local Python interpreter.
 
     Args:
@@ -110,12 +110,13 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     """
     py_ctx = _set_runner_py(
         use_thread_pool=use_thread_pool,
+        num_threads=num_threads,
     )
 
     return DaftContext._from_native(py_ctx)
 
 
-def set_runner_native() -> DaftContext:
+def set_runner_native(num_threads: int | None = None) -> DaftContext:
     """Configure Daft to execute dataframes using native multi-threaded processing.
 
     This is the default execution mode for Daft.
@@ -126,7 +127,7 @@ def set_runner_native() -> DaftContext:
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
     """
-    py_ctx = _set_runner_native()
+    py_ctx = _set_runner_native(num_threads=num_threads)
 
     return DaftContext._from_native(py_ctx)
 
@@ -211,7 +212,7 @@ def set_execution_config(
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
     These configuration values
-    are used when a Dataframe is executed (e.g. calls to :meth:`DataFrame.write_*`, :meth:`DataFrame.collect()` or :meth:`DataFrame.show()`).
+    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.select)).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates

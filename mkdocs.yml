@@ -1,0 +1,232 @@
+# Documentation: https://squidfunk.github.io/mkdocs-material/
+
+# Project Information
+site_name: Daft Documentation
+site_author: Eventual
+site_url: https://www.getdaft.io/projects/docs/en/stable/
+site_description: |
+  Welcome to Daft Documentation! Daft is a unified data engine for data engineering, analytics, and ML/AI.
+copyright: '&copy; Copyright 2025, Eventual <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=2293a436-7808-4c74-9bf3-d3e86e4eed91" />'
+
+# Repository
+repo_name: Daft
+repo_url: https://github.com/Eventual-Inc/Daft
+
+# Sitemap
+nav:
+- Daft User Guide:
+  - Overview: index.md
+  - Terminology: terms.md
+  - Installation: install.md
+  - Quickstart: quickstart.md
+  - Core Concepts: core_concepts.md
+  - SQL: sql_overview.md
+  - Sessions: sessions.md
+  - Catalogs: catalogs.md
+  - Spark Connect: spark_connect.md
+  - Distributed Computing: distributed.md
+  - Advanced:
+    - Managing Memory Usage: advanced/memory.md
+    - Partitioning: advanced/partitioning.md
+    - Pushdowns: advanced/pushdowns.md
+  - Integrations:
+    - Catalogs & Tables:
+      - Apache Hudi: integrations/hudi.md
+      - Apache Iceberg: integrations/iceberg.md
+      - AWS Glue: integrations/glue.md
+      - Delta Lake: integrations/delta_lake.md
+      - S3 Tables: integrations/s3tables.md
+      - Unity Catalog: integrations/unity_catalog.md
+    - Storage:
+      - Amazon Web Services: integrations/aws.md
+      - Hugging Face Datasets: integrations/huggingface.md
+      - Microsoft Azure: integrations/azure.md
+      - SQL: integrations/sql.md
+    - Ray: integrations/ray.md
+  - Resources:
+    - Architecture: resources/architecture.md
+    - DataFrame Comparison: resources/dataframe_comparison.md
+    - Tutorials: resources/tutorials.md
+    - Benchmarks: resources/benchmarks/tpch.md # Benchmarks can expand into a folder once we have more
+    - Telemetry: resources/telemetry.md
+  - Migration Guide:
+    - Coming from Dask: migration/dask_migration.md
+- Python API:
+  - Overview: api/index.md
+  - DataFrame Creation: api/dataframe_creation.md
+  - DataFrame: api/dataframe.md
+  - Expressions: api/expressions.md
+  - Functions: api/functions.md
+  - Window Functions: api/window.md
+  - Sessions: api/sessions.md
+  - Catalogs & Tables: api/catalogs_tables.md
+  - Schema: api/schema.md
+  - DataTypes: api/datatypes.md
+  - Groupby: api/groupby.md
+  - User-Defined Functions: api/udf.md
+  - Series: api/series.md
+  - I/O: api/io.md
+  - Pushdowns: api/pushdowns.md
+  - Configuration: api/config.md
+  - Miscellaneous: api/misc.md
+- SQL Reference:
+  - Overview: sql/index.md
+  - Statements:
+    - SELECT: sql/statements/select.md
+    - SHOW: sql/statements/show.md
+    - USE: sql/statements/use.md
+  - Data Types: sql/datatypes.md
+  - Window Functions: sql/window_functions.md
+  # Disabled until identifier modes are supported.
+  # - Identifiers: sql/identifiers.md
+
+# Configuration
+theme:
+  name: material
+  locale: en
+  logo: img/daft.png
+  favicon: img/favicon.png
+  font:
+    text: Oxygen
+    code: Consolas
+  features:
+  - search.suggest
+  - search.highlight
+  - content.code.copy   # add copy button to code sections
+  - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
+  - toc.follow
+  - toc.integrate   # adds page subsections to left-hand menu (instead of right-hand menu)
+  - navigation.footer
+  - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
+  - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
+  - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
+  - navigation.top   # back-to-top button
+  - navigation.instant
+    # - navigation.sections # fixed sections
+    # - navigation.expand # drop down sections
+    # - navigation.path # breadcrumb navigation is rendered above title of each page
+    # - navigation.indexes # section header can also be a doc BUT! clashes with toc.integrate for the top-level page
+
+  palette:
+  - media: "(prefers-color-scheme)"
+    toggle:
+      icon: material/white-balance-sunny
+      name: Switch to light mode
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    primary: custom
+    accent: custom
+    toggle:
+      icon: material/weather-night
+      name: Switch to dark mode
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    primary: black
+    accent: custom
+    toggle:
+      icon: material/theme-light-dark
+      name: Switch to system preference
+  icon:
+    admonition:
+      quote: octicons/question-16
+
+# Additional Configuration
+extra:
+  analytics:
+    provider: google
+    property: G-YN4QSRPV0K
+    feedback:
+      title: Was this page helpful?
+      ratings:
+      - icon: material/emoticon-happy-outline
+        name: This page was helpful
+        data: 1
+        note: >-
+          Thanks for your feedback!
+      - icon: material/emoticon-sad-outline
+        name: This page could be improved
+        data: 0
+        note: >-
+          Thanks for your feedback! Help us improve this page by
+          <a href="https://github.com/Eventual-Inc/Daft/issues" target="_blank" rel="noopener">submitting an issue</a> on our Daft repo.
+  social:
+  - icon: fontawesome/brands/github
+    link: https://github.com/Eventual-Inc/Daft
+  - icon: fontawesome/brands/slack
+    link: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
+  - icon: fontawesome/brands/linkedin
+    link: https://www.linkedin.com/showcase/daft-dataframe/
+  - icon: fontawesome/brands/x-twitter
+    link: https://x.com/daft_dataframe
+  - icon: fontawesome/brands/youtube
+    link: https://www.youtube.com/@daftdf
+  - icon: simple/substack
+    link: https://blog.getdaft.io/
+  generator: false
+
+# Additional Style
+extra_css:
+- css/extra.css
+
+extra_javascript:
+- js/custom.js
+
+# Extensions
+markdown_extensions:
+- admonition
+- toc:
+    toc_depth: 3
+    permalink: "#"
+- pymdownx.tabbed:
+    alternate_style: true
+- pymdownx.snippets:
+    check_paths: true
+- pymdownx.superfences
+- pymdownx.details
+- attr_list
+- md_in_html
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+- pymdownx.highlight:
+    linenums: true
+
+# Plugins
+plugins:
+- markdown-exec
+- mkdocs-jupyter:
+    enable: false
+    execute: false
+    include_source: true
+- search:
+    separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- autorefs
+- minify:
+    minify_html: true
+    minify_css: true
+- mkdocstrings:
+    handlers:
+      python:
+        options:
+          docstring_style: google
+          docstring_section_style: table
+          heading_level: 2
+          line_length: 60
+          merge_init_into_class: true
+          members_order: alphabetical # or source
+          separate_signature: true
+          show_bases: false
+          show_if_no_docstring: true
+          show_root_full_path: false
+          show_root_heading: true
+          show_signature_annotations: true
+          show_source: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          unwrap_annotated: true
+          summary:
+            attributes: true
+            functions: true
+          extra:
+            trim_doctest_flags: true

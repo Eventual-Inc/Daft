@@ -1396,11 +1396,11 @@ def test_series_utf8_bad_date() -> None:
             "%Y-%m-%d %H:%M:%S %z",
             None,
             [
-                datetime.datetime(2021, 1, 1, 0, 0),
-                datetime.datetime(2021, 1, 2, 1, 7, 35),
-                datetime.datetime(2021, 1, 3, 12, 30),
+                datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+                datetime.datetime(2021, 1, 2, 0, 7, 35, tzinfo=datetime.timezone.utc),
+                datetime.datetime(2021, 1, 3, 10, 30, tzinfo=datetime.timezone.utc),
             ],
-            id="Unspecified timezone returns naive datetime",
+            id="Unspecified timezone returns datetime in utc",
         ),
     ],
 )

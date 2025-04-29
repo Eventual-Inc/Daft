@@ -8,7 +8,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_runtime::get_io_runtime;
+use common_runtime::{get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -22,10 +22,7 @@ use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
 
-use crate::{
-    sources::source::{Source, SourceStream},
-    NUM_CPUS,
-};
+use crate::sources::source::{Source, SourceStream};
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
@@ -266,7 +263,7 @@ async fn get_delete_map(
                 None,
                 io_client,
                 None,
-                *NUM_CPUS,
+                get_compute_pool_num_threads(),
                 ParquetSchemaInferenceOptions::new(None),
                 None,
                 None,
@@ -386,13 +383,7 @@ async fn stream_scan_task(
         FileFormatConfig::Csv(cfg) => {
             let schema_of_file = scan_task.schema.clone();
             let col_names = if !cfg.has_headers {
-                Some(
-                    schema_of_file
-                        .fields
-                        .values()
-                        .map(|f| f.name.as_str())
-                        .collect::<Vec<_>>(),
-                )
+                Some(schema_of_file.field_names().collect::<Vec<_>>())
             } else {
                 None
             };

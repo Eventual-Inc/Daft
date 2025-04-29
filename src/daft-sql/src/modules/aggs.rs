@@ -9,7 +9,7 @@ use crate::{
     ensure,
     error::SQLPlannerResult,
     functions::{SQLFunction, SQLFunctions},
-    normalize,
+    object_name_to_identifier,
     planner::SQLPlanner,
     table_not_found_err, unsupported_sql_err,
 };
@@ -81,21 +81,21 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
             Some(plan) => {
                 let schema = plan.schema();
-                unresolved_col(schema.fields[0].name.clone())
+                unresolved_col(schema.get_field_at_index(0)?.name.clone())
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
             None => unsupported_sql_err!("Wildcard is not supported in this context"),
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
-            let ident = normalize(name);
+            let ident = object_name_to_identifier(name);
 
             match &planner.current_plan {
                 Some(plan) => {
                     if let Some(schema) =
                         plan.plan.clone().get_schema_for_alias(&ident.to_string())?
                     {
-                        unresolved_col(schema.fields[0].name.clone())
+                        unresolved_col(schema.get_field_at_index(0)?.name.clone())
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     } else {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::Transformed;
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
@@ -37,9 +37,9 @@ impl Project {
         let fields = factored_projection
             .iter()
             .map(|expr| expr.to_field(&factored_input.schema()))
-            .collect::<DaftResult<_>>()?;
+            .collect::<DaftResult<Vec<_>>>()?;
 
-        let projected_schema = Schema::new(fields)?.into();
+        let projected_schema = Schema::new(fields).into();
 
         Ok(Self {
             plan_id: None,
@@ -86,6 +86,27 @@ impl Project {
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
     ) -> logical_plan::Result<(Arc<LogicalPlan>, Vec<ExprRef>)> {
+        // Check if projection contains any window functions, if so, return without factoring.
+        // This is because window functions may implicitly reference columns via the window spec.
+        let has_window = projection.iter().any(|expr| {
+            let mut has_window = false;
+            expr.apply(|e| {
+                if matches!(e.as_ref(), Expr::Over(..)) {
+                    has_window = true;
+                    Ok(TreeNodeRecursion::Stop)
+                } else {
+                    Ok(TreeNodeRecursion::Continue)
+                }
+            })
+            .unwrap();
+
+            has_window
+        });
+
+        if has_window {
+            return Ok((input, projection));
+        }
+
         // Given construction parameters for a projection,
         // see if we can factor out common subexpressions.
         // Returns a new set of projection parameters
@@ -238,15 +259,18 @@ fn replace_column_with_semantic_id(
                 |transformed_child| Expr::Agg(transformed_child).into(),
                 |_| e,
             ),
-            Expr::Window(inner_expr, window_spec) => {
-                replace_column_with_semantic_id(inner_expr.clone(), subexprs_to_replace, schema)
-                    .map_yes_no(
-                        |transformed_child| {
-                            Expr::Window(transformed_child, window_spec.clone()).into()
-                        },
-                        |_| e.clone(),
-                    )
+            Expr::Over(inner_expr, window_spec) => {
+                let expr_ref: ExprRef = ExprRef::from(inner_expr);
+
+                replace_column_with_semantic_id(expr_ref, subexprs_to_replace, schema).map_yes_no(
+                    |transformed_child| {
+                        Expr::Over(transformed_child.try_into().unwrap(), window_spec.clone())
+                            .into()
+                    },
+                    |_| e.clone(),
+                )
             }
+            Expr::WindowFunction(_) => Transformed::no(e),
             Expr::Alias(child, name) => {
                 replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(

@@ -1,26 +1,32 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from daft.catalog import Catalog, Identifier, Table, TableSource
+from daft.catalog import Catalog, Identifier, Table
 from daft.context import get_context
 from daft.daft import LogicalPlanBuilder as PyBuilder
-from daft.daft import PySession, sql_exec
+from daft.daft import PySession, PyTableSource, sql_exec
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
+from daft.logical.schema import Schema
+from daft.udf import UDF
 
 __all__ = [
     "Session",
     "attach",
     "attach_catalog",
+    "attach_function",
     "attach_table",
     "create_namespace",
+    "create_namespace_if_not_exists",
     "create_table",
+    "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
     "current_namespace",
     "current_session",
     "detach_catalog",
+    "detach_function",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -41,7 +47,27 @@ __all__ = [
 
 
 class Session:
-    """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs."""
+    """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs.
+
+    Examples:
+        >>> import daft
+        >>> from daft.session import Session
+        >>>
+        >>> sess = Session()
+        >>>
+        >>> # Create a temporary table from a DataFrame
+        >>> sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
+        >>>
+        >>> # Read the table as a DataFrame
+        >>> df = sess.read_table("T")
+        >>>
+        >>> # Execute an SQL query
+        >>> sess.sql("SELECT * FROM T").show()
+        >>>
+        >>> # You can also retrieve the current session without creating a new one:
+        >>> from daft.session import current_session
+        >>> sess = current_session()
+    """
 
     _session: PySession
 
@@ -92,11 +118,11 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Table, alias: str | None = None) -> None:
-        """Attaches a known attachable object like a Catalog or Table.
+    def attach(self, object: Catalog | Table | UDF, alias: str | None = None) -> None:
+        """Attaches a known attachable object like a Catalog, Table or UDF.
 
         Args:
-            object (Catalog|Table): object which is attachable to a session
+            object (Catalog|Table|UDF): object which is attachable to a session
 
         Returns:
             None
@@ -105,6 +131,8 @@ class Session:
             self.attach_catalog(object, alias)
         elif isinstance(object, Table):
             self.attach_table(object, alias)
+        elif isinstance(object, UDF):
+            self.attach_function(object, alias)
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
@@ -174,7 +202,7 @@ class Session:
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace_if_not_exists(identifier)
 
-    def create_table(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
         """Creates a table in the current catalog.
 
         If no namespace is specified, the current namespace is used.
@@ -193,12 +221,14 @@ class Session:
             if ns := self.current_namespace():
                 identifier = ns + identifier
 
-        if not isinstance(source, TableSource):
-            source = TableSource._from_obj(source)
+        return catalog.create_table(identifier, source, properties)
 
-        return catalog.create_table(identifier, source)
-
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: TableSource | object) -> Table:
+    def create_table_if_not_exists(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        **properties: Any,
+    ) -> Table:
         """Creates a table in the current catalog if it does not already exist.
 
         If no namespace is specified, the current namespace is used.
@@ -217,15 +247,19 @@ class Session:
             if ns := self.current_namespace():
                 identifier = ns + identifier
 
-        if not isinstance(source, TableSource):
-            source = TableSource._from_obj(source)
+        return catalog.create_table_if_not_exists(identifier, source, properties)
 
-        return catalog.create_table_if_not_exists(identifier, source)
-
-    def create_temp_table(self, identifier: str, source: TableSource | object = None) -> Table:
+    def create_temp_table(self, identifier: str, source: Schema | DataFrame) -> Table:
         """Creates a temp table scoped to this session's lifetime.
 
-        Example:
+        Args:
+            identifier (str): table identifier (name)
+            source (TableSource|object): table source like a schema or dataframe
+
+        Returns:
+            Table: new table instance
+
+        Examples:
             >>> import daft
             >>> from daft.session import Session
             >>> sess = Session()
@@ -236,13 +270,20 @@ class Session:
 
         Args:
             identifier (str): table identifier (name)
-            source (TableSource|object): table source like a schema or dataframe
+            source (Schema | DataFrame): table source is either a Schema or Dataframe
 
         Returns:
             Table: new table instance
         """
-        s = source if isinstance(source, TableSource) else TableSource._from_obj(source)
-        return self._session.create_temp_table(identifier, s._source, replace=True)
+        if isinstance(source, Schema):
+            py_source = PyTableSource.from_pyschema(source._schema)
+        elif isinstance(source, DataFrame):
+            py_source = PyTableSource.from_pybuilder(source._builder._builder)
+        else:
+            raise ValueError(
+                f"Unsupported create_temp_table source, {type(source)}, expected either Schema or DataFrame."
+            )
+        return self._session.create_temp_table(identifier, py_source, replace=True)
 
     ###
     # drop_*
@@ -478,6 +519,17 @@ class Session:
 
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
+    ###
+    # functions
+    ###
+    def attach_function(self, function: UDF, alias: str | None = None):
+        """Attaches a Python function as a UDF in the current session."""
+        self._session.attach_function(function, alias)
+
+    def detach_function(self, alias: str):
+        """Detaches a Python function as a UDF in the current session."""
+        self._session.detach_function(alias)
+
 
 ###
 # global active session
@@ -505,7 +557,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Table, alias: str | None = None) -> None:
+def attach(object: Catalog | Table | UDF, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -545,17 +597,17 @@ def create_namespace_if_not_exists(identifier: Identifier | str):
     return _session().create_namespace_if_not_exists(identifier)
 
 
-def create_table(identifier: Identifier | str, source: TableSource | object) -> Table:
+def create_table(identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
     """Creates a table in the current session's active catalog and namespace."""
-    return _session().create_table(identifier, source)
+    return _session().create_table(identifier, source, **properties)
 
 
-def create_table_if_not_exists(identifier: Identifier | str, source: TableSource | object) -> Table:
+def create_table_if_not_exists(identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
     """Creates a table in the current session's active catalog and namespace if it does not already exist."""
-    return _session().create_table_if_not_exists(identifier, source)
+    return _session().create_table_if_not_exists(identifier, source, **properties)
 
 
-def create_temp_table(identifier: str, source: object | TableSource = None) -> Table:
+def create_temp_table(identifier: str, source: Schema | DataFrame) -> Table:
     """Creates a temp table scoped to current session's lifetime."""
     return _session().create_temp_table(identifier, source)
 
@@ -700,3 +752,18 @@ def set_session(session: Session):
     # ```
     global _SESSION
     _SESSION = session
+
+
+###
+# functions
+###
+
+
+def attach_function(function: UDF, alias: str | None = None):
+    """Attaches a Python function as a UDF in the current session."""
+    _session().attach_function(function, alias)
+
+
+def detach_function(alias: str):
+    """Detaches a Python function as a UDF in the current session."""
+    _session().detach_function(alias)

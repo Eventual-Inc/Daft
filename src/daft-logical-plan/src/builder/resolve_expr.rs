@@ -4,6 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
+    expr::window::WindowSpec,
     functions::{struct_::StructExpr, FunctionExpr},
     has_agg, is_actor_pool_udf, left_col, resolved_col, right_col, AggExpr, Column, Expr, ExprRef,
     PlanRef, ResolvedColumn, UnresolvedColumn,
@@ -16,16 +17,16 @@ use crate::LogicalPlanRef;
 fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
     let mut wildcard_expansion = None;
 
-    fn set_wildcard_expansion(
+    fn set_wildcard_expansion<'a>(
         wildcard_expansion: &mut Option<Vec<String>>,
         expr: &Expr,
-        names: impl Iterator<Item = String>,
+        names: impl Iterator<Item = &'a str>,
     ) -> DaftResult<()> {
         if wildcard_expansion.is_some() {
             Err(DaftError::ValueError(format!(
                 "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree.")))
         } else {
-            *wildcard_expansion = Some(names.collect());
+            *wildcard_expansion = Some(names.map(ToString::to_string).collect());
 
             Ok(())
         }
@@ -45,7 +46,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                                 return Err(DaftError::ValueError(format!("Plan alias {alias} in unresolved column is not in current scope, must have schema specified.")));
                             }
                             (Some(schema), _) | (None, Some(schema)) => {
-                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.fields.keys().cloned())?;
+                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.field_names())?;
                             },
                         }
                     }
@@ -55,12 +56,12 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                                 return Err(DaftError::ValueError(format!("Plan id {id} in unresolved column is not in current scope, must have schema specified.")));
                             }
                             (Some(schema), _) | (None, Some(schema)) => {
-                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.fields.keys().cloned())?;
+                                set_wildcard_expansion(&mut wildcard_expansion, &expr, schema.field_names())?;
                             },
                         }
 
                     }
-                    PlanRef::Unqualified => set_wildcard_expansion(&mut wildcard_expansion, &expr, plan.schema().fields.keys().cloned())?,
+                    PlanRef::Unqualified => set_wildcard_expansion(&mut wildcard_expansion, &expr, plan.schema().field_names())?,
                 }
             }
             Expr::Function { func: FunctionExpr::Struct(StructExpr::Get(name)), inputs } if name == "*" => {
@@ -77,7 +78,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                     )));
                 };
 
-                set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.clone()))?;
+                set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.as_str()))?;
             }
             _ => {}
         }
@@ -308,10 +309,37 @@ impl ExprResolver<'_> {
         .map(|res| res.data)
     }
 
+    /// Resolve expressions in a window specification
+    pub fn resolve_window_spec(
+        &self,
+        window_spec: WindowSpec,
+        plan: LogicalPlanRef,
+    ) -> DaftResult<WindowSpec> {
+        let partition_by = if !window_spec.partition_by.is_empty() {
+            self.resolve(window_spec.partition_by, plan.clone())?
+        } else {
+            vec![]
+        };
+
+        let order_by = if !window_spec.order_by.is_empty() {
+            self.resolve(window_spec.order_by, plan)?
+        } else {
+            vec![]
+        };
+
+        Ok(WindowSpec {
+            partition_by,
+            order_by,
+            descending: window_spec.descending,
+            frame: window_spec.frame,
+            min_periods: window_spec.min_periods,
+        })
+    }
+
     fn validate_expr(&self, expr: ExprRef) -> DaftResult<ExprRef> {
         if has_agg(&expr) {
             return Err(DaftError::ValueError(format!(
-                "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+                "Aggregation expressions are currently only allowed in agg, pivot, and window: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
             )));
         }
 

@@ -28,7 +28,7 @@ body:
     options:
     - Expressions
     - SQL
-    - Python Runner
+    - Native Runner
     - Ray Runner
     - Parquet
     - CSV

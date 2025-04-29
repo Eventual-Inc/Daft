@@ -24,14 +24,15 @@ impl PyArrowWriter {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("ParquetFileWriter")?;
-            let _from_pytable = py
+            let _from_pyrecordbatch = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_pyrecordbatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyRecordBatch::from(pv.clone()),))?;
-                    Some(py_table)
+                    let py_recordbatch =
+                        _from_pyrecordbatch.call1((PyRecordBatch::from(pv.clone()),))?;
+                    Some(py_recordbatch)
                 }
                 None => None,
             };
@@ -62,14 +63,15 @@ impl PyArrowWriter {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("CSVFileWriter")?;
-            let _from_pytable = py
+            let _from_pyrecordbatch = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_pyrecordbatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyRecordBatch::from(pv.clone()),))?;
-                    Some(py_table)
+                    let py_recordbatch =
+                        _from_pyrecordbatch.call1((PyRecordBatch::from(pv.clone()),))?;
+                    Some(py_recordbatch)
                 }
                 None => None,
             };
@@ -101,14 +103,15 @@ impl PyArrowWriter {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("IcebergWriter")?;
-            let _from_pytable = py
+            let _from_pyrecordbatch = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_pyrecordbatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyRecordBatch::from(pv.clone()),))?;
-                    Some(py_table)
+                    let py_recordbatch =
+                        _from_pyrecordbatch.call1((PyRecordBatch::from(pv.clone()),))?;
+                    Some(py_recordbatch)
                 }
                 None => None,
             };
@@ -142,14 +145,15 @@ impl PyArrowWriter {
         Python::with_gil(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("DeltalakeWriter")?;
-            let _from_pytable = py
+            let _from_pyrecordbatch = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
-                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+                .getattr(pyo3::intern!(py, "_from_pyrecordbatch"))?;
             let partition_values = match partition_values {
                 Some(pv) => {
-                    let py_table = _from_pytable.call1((PyRecordBatch::from(pv.clone()),))?;
-                    Some(py_table)
+                    let py_recordbatch =
+                        _from_pyrecordbatch.call1((PyRecordBatch::from(pv.clone()),))?;
+                    Some(py_recordbatch)
                 }
                 None => None,
             };
@@ -206,7 +210,7 @@ impl FileWriter for PyArrowWriter {
             let result = self
                 .py_writer
                 .call_method0(py, pyo3::intern!(py, "close"))?
-                .getattr(py, pyo3::intern!(py, "_table"))?;
+                .getattr(py, pyo3::intern!(py, "_recordbatch"))?;
             Ok(Some(result.extract::<PyRecordBatch>(py)?.into()))
         })
     }

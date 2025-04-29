@@ -91,7 +91,7 @@ class HudiScanOperator(ScanOperator):
                 partition_paths = {
                     HUDI_METAFIELD_PARTITION_PATH: daft.Series.from_arrow(arrow_arr, HUDI_METAFIELD_PARTITION_PATH),
                 }
-                partition_values = daft.recordbatch.RecordBatch.from_pydict(partition_paths)._table
+                partition_values = daft.recordbatch.RecordBatch.from_pydict(partition_paths)._recordbatch
             else:
                 partition_values = None
 
@@ -115,7 +115,7 @@ class HudiScanOperator(ScanOperator):
                         type=field_type,
                     )
                 arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-            stats = daft.recordbatch.RecordBatch.from_pydict(arrays)._table
+            stats = daft.recordbatch.RecordBatch.from_pydict(arrays)._recordbatch
 
             st = ScanTask.catalog_scan_task(
                 file=path,

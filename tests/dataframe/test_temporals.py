@@ -513,7 +513,6 @@ def test_date_to_unix_epoch():
             ],
         }
     )
-
     actual = df.select(
         df["date"].dt.to_unix_epoch().alias("date_epoch"),
         df["date"].dt.to_unix_epoch("s").alias("date_epoch_s"),
@@ -538,6 +537,37 @@ def test_date_to_unix_epoch():
         "datetime_epoch_ms": [1577836800000, 1609459199000, 1640995199000],
         "datetime_epoch_us": [1577836800000000, 1609459199000000, 1640995199000000],
         "datetime_epoch_ns": [1577836800000000000, 1609459199000000000, 1640995199000000000],
+    }
+
+    assert actual == expected
+
+
+def test_date_to_string():
+    df = daft.from_pydict(
+        {
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+            "datetimes": [
+                datetime(2023, 1, 1, 12, 1),
+                datetime(2023, 1, 2, 12, 0, 0, 0),
+                datetime(2023, 1, 3, 12, 0, 0, 999_999),
+            ],
+        }
+    )
+
+    df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
+
+    actual = df.select(
+        daft.col("dates").dt.strftime().alias("iso_date"),
+        daft.col("dates").dt.strftime(format="%m/%d/%Y").alias("custom_date"),
+        daft.col("datetimes_s").dt.strftime().alias("iso_datetime"),
+        daft.col("datetimes_s").dt.strftime(format="%Y/%m/%d %H:%M:%S").alias("custom_datetime"),
+    ).to_pydict()
+
+    expected = {
+        "iso_date": ["2023-01-01", "2023-01-02", "2023-01-03"],
+        "custom_date": ["01/01/2023", "01/02/2023", "01/03/2023"],
+        "iso_datetime": ["2023-01-01T12:01:00", "2023-01-02T12:00:00", "2023-01-03T12:00:00"],
+        "custom_datetime": ["2023/01/01 12:01:00", "2023/01/02 12:00:00", "2023/01/03 12:00:00"],
     }
 
     assert actual == expected
@@ -578,3 +608,84 @@ def test_date_to_unix_epoch_invalid_timeunits(timeunit):
         pytest.fail(f"to_unix_epoch with timeunit {timeunit} did not raise an exception.")
     except ValueError:
         pass
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        ("%Y-%m-%d", ["2023-01-01", "2023-01-02", "2023-01-03"]),
+        ("%m/%d/%Y", ["01/01/2023", "01/02/2023", "01/03/2023"]),
+        ("%Y/%m/%d %H:%M:%S", ["2023/01/01 12:01:00", "2023/01/02 12:00:00", "2023/01/03 12:00:00"]),
+        ("%c", ["Sun Jan  1 12:01:00 2023", "Mon Jan  2 12:00:00 2023", "Tue Jan  3 12:00:00 2023"]),
+        ("%x", ["01/01/23", "01/02/23", "01/03/23"]),
+    ],
+)
+def test_datetime_to_string(fmt, expected):
+    df = daft.from_pydict(
+        {
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+            "datetimes": [
+                datetime(2023, 1, 1, 12, 1),
+                datetime(2023, 1, 2, 12, 0, 0, 0),
+                datetime(2023, 1, 3, 12, 0, 0, 999_999),
+            ],
+        }
+    )
+    df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
+
+    actual = df.select(
+        daft.col("datetimes").dt.strftime(fmt).alias("formatted_datetime"),
+    ).to_pydict()
+
+    expected = {
+        "formatted_datetime": expected,
+    }
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        ("%H-%M-%S", ["01-02-03", "02-03-04", "03-04-05"]),
+        ("%H:%M:%S", ["01:02:03", "02:03:04", "03:04:05"]),
+        ("H:%H, M:%M, S:%S", ["H:01, M:02, S:03", "H:02, M:03, S:04", "H:03, M:04, S:05"]),
+    ],
+)
+def test_time_to_string(fmt, expected):
+    from datetime import time
+
+    df = daft.from_pydict(
+        {
+            "times": [time(1, 2, 3), time(2, 3, 4), time(3, 4, 5)],
+        }
+    )
+
+    actual = df.select(
+        daft.col("times").dt.strftime(fmt).alias("formatted_time"),
+    ).to_pydict()
+
+    expected = {
+        "formatted_time": expected,
+    }
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        1,
+        True,
+        "foo",
+        1.0,
+        [1],
+        [True],
+        [1.0],
+    ],
+)
+def test_datetime_to_string_errors(value):
+    df = daft.from_pydict({"invalid": [value]})
+
+    with pytest.raises(daft.exceptions.DaftCoreException):
+        df.select(daft.col("invalid").dt.strftime(format="%Y-%m-%d")).to_pydict()

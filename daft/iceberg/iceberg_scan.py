@@ -71,7 +71,7 @@ def _iceberg_partition_field_to_daft_partition_field(
         tfm = PartitionTransform.day()
         # pyiceberg uses date as the result type of a day transform, which is incorrect
         # so we cannot use transform.result_type() here
-        result_type = DataType.int32()
+        result_type = DataType.date()
     elif isinstance(transform, HourTransform):
         tfm = PartitionTransform.hour()
         result_type = DataType.int32()
@@ -198,7 +198,7 @@ class IcebergScanOperator(ScanOperator):
                 size_bytes=file.file_size_in_bytes,
                 iceberg_delete_files=iceberg_delete_files,
                 pushdowns=pushdowns,
-                partition_values=pspec._table if pspec is not None else None,
+                partition_values=pspec._recordbatch if pspec is not None else None,
                 stats=None,
             )
             if st is None:

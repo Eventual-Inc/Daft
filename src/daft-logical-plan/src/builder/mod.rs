@@ -14,7 +14,9 @@ use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
-use daft_dsl::{left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn};
+use daft_dsl::{
+    left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn, WindowSpec,
+};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
@@ -186,7 +188,7 @@ impl LogicalPlanBuilder {
             if let Some(generated_fields) = scan_operator.0.generated_fields() {
                 // We use the non-distinct union here because some scan operators have table schema information that
                 // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
-                Arc::new(schema.non_distinct_union(&generated_fields))
+                Arc::new(schema.non_distinct_union(&generated_fields)?)
             } else {
                 schema
             }
@@ -196,15 +198,14 @@ impl LogicalPlanBuilder {
             columns: Some(columns),
             ..
         }) = &pushdowns
-            && columns.len() < schema_with_generated_fields.fields.len()
+            && columns.len() < schema_with_generated_fields.len()
         {
             let pruned_upstream_schema = schema_with_generated_fields
-                .fields
-                .iter()
-                .filter(|&(name, _)| columns.contains(name))
-                .map(|(_, field)| field.clone())
+                .into_iter()
+                .filter(|field| columns.contains(&field.name))
+                .cloned()
                 .collect::<Vec<_>>();
-            Arc::new(Schema::new(pruned_upstream_schema)?)
+            Arc::new(Schema::new(pruned_upstream_schema))
         } else {
             schema_with_generated_fields
         };
@@ -232,23 +233,20 @@ impl LogicalPlanBuilder {
 
         let columns = expr_resolver.resolve(columns, self.plan.clone())?;
 
-        let fields = &self.schema().fields;
-        let current_col_names = fields
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect::<HashSet<_>>();
+        let schema = self.schema();
+        let current_col_names = schema.field_names().collect::<HashSet<_>>();
         let new_col_name_and_exprs = columns
             .iter()
             .map(|e| (e.name(), e.clone()))
             .collect::<HashMap<_, _>>();
 
-        let mut exprs = fields
-            .iter()
-            .map(|(name, _)| {
+        let mut exprs = schema
+            .field_names()
+            .map(|name| {
                 new_col_name_and_exprs
-                    .get(name.as_str())
+                    .get(name)
                     .cloned()
-                    .unwrap_or_else(|| resolved_col(name.clone()))
+                    .unwrap_or_else(|| resolved_col(name))
             })
             .collect::<Vec<_>>();
 
@@ -266,15 +264,14 @@ impl LogicalPlanBuilder {
     pub fn with_columns_renamed(&self, cols_map: HashMap<String, String>) -> DaftResult<Self> {
         let exprs = self
             .schema()
-            .fields
-            .iter()
-            .map(|(name, _)| {
+            .field_names()
+            .map(|name| {
                 if let Some(new_name) = cols_map.get(name) {
                     // If the column is in the rename map, create an alias expression
-                    resolved_col(name.as_str()).alias(new_name.as_str())
+                    resolved_col(name).alias(new_name.as_str())
                 } else {
                     // Otherwise keep the original column reference
-                    resolved_col(name.as_str())
+                    resolved_col(name)
                 }
             })
             .collect::<Vec<_>>();
@@ -285,25 +282,20 @@ impl LogicalPlanBuilder {
 
     /// Returns the logical operator's columns as a Vec<ExprRef>
     pub fn columns(&self) -> Vec<ExprRef> {
-        self.schema()
-            .fields
-            .iter()
-            .map(|(name, _)| resolved_col(name.clone()))
-            .collect()
+        self.schema().field_names().map(resolved_col).collect()
     }
 
     pub fn exclude(&self, to_exclude: Vec<String>) -> DaftResult<Self> {
-        let to_exclude = HashSet::<_>::from_iter(to_exclude.iter());
+        let to_exclude = HashSet::<_>::from_iter(to_exclude.iter().map(String::as_str));
 
         let exprs = self
             .schema()
-            .fields
-            .iter()
-            .filter_map(|(name, _)| {
+            .field_names()
+            .filter_map(|name| {
                 if to_exclude.contains(name) {
                     None
                 } else {
-                    Some(resolved_col(name.clone()))
+                    Some(resolved_col(name))
                 }
             })
             .collect::<Vec<_>>();
@@ -319,6 +311,11 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn resolve_window_spec(&self, window_spec: WindowSpec) -> DaftResult<WindowSpec> {
+        let expr_resolver = ExprResolver::default();
+        expr_resolver.resolve_window_spec(window_spec, self.plan.clone())
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
@@ -352,9 +349,8 @@ impl LogicalPlanBuilder {
 
             let columns_set = self
                 .schema()
-                .fields
-                .keys()
-                .map(|name| resolved_col(name.clone()))
+                .field_names()
+                .map(resolved_col)
                 .collect::<IndexSet<_>>();
 
             columns_set.difference(&ids_set).cloned().collect()

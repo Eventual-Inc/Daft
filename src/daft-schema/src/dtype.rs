@@ -242,25 +242,13 @@ impl DataType {
                 arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
             Self::Map { key, value } => {
+                // To comply with the Arrow spec, Neither the "entries" field nor the "key" field may be nullable.
+                // See https://github.com/apache/arrow/blob/apache-arrow-20.0.0/format/Schema.fbs#L138
                 let struct_type = ArrowType::Struct(vec![
-                    // We never allow null keys in maps for several reasons:
-                    // 1. Null typically represents the absence of a value, which doesn't make sense for a key.
-                    // 2. Null comparisons can be problematic (similar to how f64::NAN != f64::NAN).
-                    // 3. It maintains consistency with common map implementations in arrow (no null keys).
-                    // 4. It simplifies map operations
-                    //
-                    // This decision aligns with the thoughts of team members like Jay and Sammy, who argue that:
-                    // - Nulls in keys could lead to unintuitive behavior
-                    // - If users need to count or group by null values, they can use other constructs like
-                    //   group_by operations on non-map types, which offer more explicit control.
-                    //
-                    // By disallowing null keys, we encourage more robust data modeling practices and
-                    // provide a clearer semantic meaning for map types in our system.
-                    arrow2::datatypes::Field::new("key", key.to_arrow()?, true),
+                    arrow2::datatypes::Field::new("key", key.to_arrow()?, false),
                     arrow2::datatypes::Field::new("value", value.to_arrow()?, true),
                 ]);
-
-                let struct_field = arrow2::datatypes::Field::new("entries", struct_type, true);
+                let struct_field = arrow2::datatypes::Field::new("entries", struct_type, false);
 
                 Ok(ArrowType::map(struct_field, false))
             }

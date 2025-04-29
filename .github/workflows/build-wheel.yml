@@ -1,4 +1,4 @@
-name: build-wheel
+name: Build Daft wheel
 run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_old_name }}'
 
 on:

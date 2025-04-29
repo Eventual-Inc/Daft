@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Iterator
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig
+from daft.daft import FileFormatConfig, FileInfos, IOConfig, set_compute_runtime_num_worker_threads
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -47,8 +47,10 @@ class NativeRunnerIO(runner_io.RunnerIO):
 class NativeRunner(Runner[MicroPartition]):
     name = "native"
 
-    def __init__(self) -> None:
+    def __init__(self, num_threads: int | None = None) -> None:
         super().__init__()
+        if num_threads is not None:
+            set_compute_runtime_num_worker_threads(num_threads)
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return LOCAL_PARTITION_SET_CACHE

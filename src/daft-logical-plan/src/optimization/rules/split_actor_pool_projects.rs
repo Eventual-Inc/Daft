@@ -466,13 +466,12 @@ fn recursive_optimize_project(
             let expr_name = expr.name().to_string();
             let projection = child
                 .schema()
-                .fields
-                .iter()
-                .filter_map(|(name, _)| {
-                    if name == &expr_name {
+                .field_names()
+                .filter_map(|name| {
+                    if name == expr_name {
                         None
                     } else {
-                        Some(resolved_col(name.clone()))
+                        Some(resolved_col(name))
                     }
                 })
                 .chain(iter::once(expr))

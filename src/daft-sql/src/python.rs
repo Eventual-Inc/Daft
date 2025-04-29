@@ -1,11 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::TableSource;
 use daft_core::python::PyDataType;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
-use daft_session::{python::PySession, Session};
+use daft_session::python::PySession;
 use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::{
@@ -45,27 +44,32 @@ pub fn sql_exec(
     session: &PySession,
     config: PyDaftPlanningConfig,
 ) -> PyResult<Option<PyObject>> {
-    if let Some(plan) = execute_statement(session.into(), sql)? {
+    if let Some(plan) = execute_statement(session.session(), sql)? {
         let builder = LogicalPlanBuilder::new(plan, Some(config.config));
         let builder = PyLogicalPlanBuilder::from(builder);
         let builder = builder.into_py_any(py)?;
-        return Ok(Some(builder));
+        Ok(Some(builder))
+    } else {
+        Ok(None)
     }
-    Ok(None)
 }
 
 #[pyfunction]
 pub fn sql(
     sql: &str,
     catalog: PyCatalog,
+    py_session: &PySession,
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
     // TODO deprecated catalog APIs #3819
-    let session = Session::empty();
+
+    let session = py_session.session();
+
+    let mut planner = SQLPlanner::new(session);
+
     for (name, view) in catalog.tables {
-        session.create_temp_table(name, &TableSource::View(view), true)?;
+        planner.bind_table(name, view.into());
     }
-    let mut planner = SQLPlanner::new(session.into());
     let plan = planner.plan_sql(sql)?;
     Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
 }

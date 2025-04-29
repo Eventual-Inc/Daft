@@ -63,5 +63,5 @@ out/**
 *.tsbuildinfo
 next-env.d.ts
 
-# added by mkdocs social cards
-.cache
+# docs build
+site

@@ -30,7 +30,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
 
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
@@ -47,21 +47,18 @@ mod tests {
 
     #[fixture]
     fn tbl_1() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("test", DataType::Utf8),
-                Field::new("utf8", DataType::Utf8),
-                Field::new("i32", DataType::Int32),
-                Field::new("i64", DataType::Int64),
-                Field::new("f32", DataType::Float32),
-                Field::new("f64", DataType::Float64),
-                Field::new("bool", DataType::Boolean),
-                Field::new("date", DataType::Date),
-                Field::new("time", DataType::Time(TimeUnit::Microseconds)),
-                Field::new("list_utf8", DataType::new_list(DataType::Utf8)),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("test", DataType::Utf8),
+            Field::new("utf8", DataType::Utf8),
+            Field::new("i32", DataType::Int32),
+            Field::new("i64", DataType::Int64),
+            Field::new("f32", DataType::Float32),
+            Field::new("f64", DataType::Float64),
+            Field::new("bool", DataType::Boolean),
+            Field::new("date", DataType::Date),
+            Field::new("time", DataType::Time(TimeUnit::Microseconds)),
+            Field::new("list_utf8", DataType::new_list(DataType::Utf8)),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -74,14 +71,11 @@ mod tests {
 
     #[fixture]
     fn tbl_2() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("text", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-                Field::new("val", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+            Field::new("val", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -94,14 +88,11 @@ mod tests {
 
     #[fixture]
     fn tbl_3() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("first_name", DataType::Utf8),
-                Field::new("last_name", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("first_name", DataType::Utf8),
+            Field::new("last_name", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -114,14 +105,23 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let session = Session::default();
+        static SESSION: LazyLock<Session> = LazyLock::new(|| {
+            let session = Session::default();
+            // construct views from the tables and attach to the session
+            session
+                .create_temp_table("tbl1", &tbl_1().into(), false)
+                .unwrap();
+            session
+                .create_temp_table("tbl2", &tbl_2().into(), false)
+                .unwrap();
+            session
+                .create_temp_table("tbl3", &tbl_3().into(), false)
+                .unwrap();
 
-        // construct views from the tables and attach to the session
-        _ = session.create_temp_table("tbl1", &tbl_1().into(), false);
-        _ = session.create_temp_table("tbl2", &tbl_2().into(), false);
-        _ = session.create_temp_table("tbl3", &tbl_3().into(), false);
+            session
+        });
 
-        SQLPlanner::new(session.into())
+        SQLPlanner::new(&SESSION)
     }
 
     #[rstest]
