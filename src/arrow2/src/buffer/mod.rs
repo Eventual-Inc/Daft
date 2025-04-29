@@ -72,7 +72,7 @@ pub(crate) fn to_buffer<T: crate::types::NativeType>(
     value: std::sync::Arc<Bytes<T>>,
 ) -> arrow_buffer::Buffer {
     // This should never panic as ForeignVec pointer must be non-null
-    let ptr = std::ptr::NonNull::new(value.as_ptr() as _).unwrap();
+    let ptr = std::ptr::NonNull::new(value.as_ptr() as _).expect("ForeignVec pointer should be non-null");
     let len = value.len() * std::mem::size_of::<T>();
     // Safety: allocation is guaranteed to be valid for `len` bytes
     unsafe { arrow_buffer::Buffer::from_custom_allocation(ptr, len, value) }
@@ -82,11 +82,12 @@ pub(crate) fn to_buffer<T: crate::types::NativeType>(
 pub(crate) fn to_bytes<T: crate::types::NativeType>(value: arrow_buffer::Buffer) -> Bytes<T> {
     let ptr = value.as_ptr();
     let align = ptr.align_offset(std::mem::align_of::<T>());
-    assert_eq!(align, 0, "not aligned");
+    assert_eq!(align, 0, "Buffer pointer is not aligned to type T's alignment requirement");
+    assert!(value.len() % std::mem::size_of::<T>() == 0, "Buffer length is not a multiple of size_of::<T>");
     let len = value.len() / std::mem::size_of::<T>();
 
     // Valid as `NativeType: Pod` and checked alignment above
-    let ptr = value.as_ptr() as *const T;
+    let ptr = ptr as *const T;
 
     let owner = crate::buffer::BytesAllocator::Arrow(value);
 

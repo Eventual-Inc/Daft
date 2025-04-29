@@ -93,7 +93,8 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
             port_tx.send(port).expect("Failed to send port");
 
             let incoming =
-                tonic::transport::server::TcpIncoming::from_listener(listener, true, None).unwrap();
+                tonic::transport::server::TcpIncoming::from_listener(listener, true, None)
+                    .expect("Failed to create TCP incoming connection from listener");
 
             tokio::select! {
                 result = Server::builder()

@@ -10,10 +10,12 @@ use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
-use tonic::transport::Channel;
+use tonic::transport::Endpoint;
 
 enum ClientState {
+    // The address of the flight server
     Uninitialized(String),
+    // The address of the flight server and the flight client
     Initialized(String, FlightClient),
 }
 
@@ -32,17 +34,17 @@ impl ShuffleFlightClient {
 
     async fn connect(&mut self) -> DaftResult<(&str, &mut FlightClient)> {
         if let ClientState::Uninitialized(address) = &mut self.inner {
-            let endpoint = Channel::from_shared(address.clone()).map_err(|e| {
-                DaftError::External(format!("Failed to create channel: {}", e).into())
+            let endpoint = Endpoint::from_shared(address.clone()).map_err(|e| {
+                DaftError::External(format!("Failed to create endpoint: {}", e).into())
             })?;
             let channel = endpoint.connect().await.map_err(|e| {
-                DaftError::External(format!("Failed to connect to channel: {}", e).into())
+                DaftError::External(format!("Failed to connect to endpoint: {}", e).into())
             })?;
             self.inner =
                 ClientState::Initialized(std::mem::take(address), FlightClient::new(channel));
         }
         match &mut self.inner {
-            ClientState::Uninitialized(_) => panic!("Client not initialized"),
+            ClientState::Uninitialized(_) => unreachable!("Client should be initialized"),
             ClientState::Initialized(address, client) => Ok((address, client)),
         }
     }
@@ -51,7 +53,7 @@ impl ShuffleFlightClient {
         &mut self,
         partition_idx: usize,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
-        let ticket = Ticket::new(format!("{}", partition_idx));
+        let ticket = Ticket::new(partition_idx.to_string());
         let (address, client) = self.connect().await?;
         let stream = client.do_get(ticket).await.map_err(|e| {
             DaftError::External(
@@ -68,8 +70,8 @@ impl ShuffleFlightClient {
             schema: self.schema.clone(),
             fields: self
                 .schema
-                .fields
-                .values()
+                .fields()
+                .iter()
                 .map(|f| Arc::new(f.clone()))
                 .collect(),
         })
