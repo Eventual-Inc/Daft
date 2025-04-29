@@ -136,8 +136,10 @@ class PreviewFormatter:
 
         if self._preview.partition is not None:
             if self._format:
-                return self._preview.partition.to_record_batch()._table.preview(self._format, self._options.serialize())
+                return self._preview.partition.to_record_batch()._recordbatch.preview(
+                    self._format, self._options.serialize()
+                )
             else:
-                return self._preview.partition.to_record_batch().__repr__()
+                return self._preview.partition.to_record_batch()._recordbatch.__repr__()
         else:
             return self._schema._truncated_table_string()

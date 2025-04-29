@@ -32,7 +32,7 @@ def test_monotonically_increasing_id_multiple_tables_in_micropartition() -> None
     table2 = RecordBatch.from_pydict({"a": [4, 5, 6]})
     table3 = RecordBatch.from_pydict({"a": [7, 8, 9]})
 
-    table = MicroPartition._from_tables([table1, table2, table3])
+    table = MicroPartition._from_record_batches([table1, table2, table3])
     table = table.add_monotonically_increasing_id(0, "id")
 
     assert len(table) == 9

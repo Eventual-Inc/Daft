@@ -5,7 +5,7 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 8.0.0, <= 16.0.0",
+  "pyarrow >= 8.0.0",
   "fsspec",
   "tqdm",
   "typing-extensions >= 4.0.0; python_version < '3.10'",
@@ -28,7 +28,7 @@ aws = ["boto3"]
 azure = []
 deltalake = ["deltalake", "packaging"]
 gcp = []
-hudi = ["pyarrow >= 8.0.0, <= 16.0.0"]
+hudi = ["pyarrow >= 8.0.0"]
 iceberg = ["pyiceberg >= 0.7.0", "packaging"]
 lance = ["pylance"]
 numpy = ["numpy"]

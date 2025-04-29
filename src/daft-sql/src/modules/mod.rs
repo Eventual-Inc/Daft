@@ -17,6 +17,7 @@ pub mod structs;
 pub mod temporal;
 pub mod uri;
 pub mod utf8;
+pub mod window;
 
 pub use aggs::SQLModuleAggs;
 pub use config::SQLModuleConfig;
@@ -33,6 +34,7 @@ pub use structs::SQLModuleStructs;
 pub use temporal::SQLModuleTemporal;
 pub use uri::SQLModuleUri;
 pub use utf8::SQLModuleUtf8;
+pub use window::SQLModuleWindow;
 
 /// A [SQLModule] is a collection of SQL functions that can be registered with a [SQLFunctions] instance.
 ///

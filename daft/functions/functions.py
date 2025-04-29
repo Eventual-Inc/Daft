@@ -199,7 +199,7 @@ def columns_max(*exprs: Expression | str) -> Expression:
 def row_number() -> Expression:
     """Return the row number of the current row (used for window functions).
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.window import Window
         >>> from daft.functions import row_number
@@ -243,7 +243,7 @@ def row_number() -> Expression:
 def rank() -> Expression:
     """Return the rank of the current row (used for window functions).
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.window import Window
         >>> from daft.functions import rank
@@ -288,7 +288,7 @@ def dense_rank() -> Expression:
 
     The dense rank is the rank of the current row without gaps.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.window import Window
         >>> from daft.functions import dense_rank
