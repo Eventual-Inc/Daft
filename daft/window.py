@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from daft.daft import WindowBoundary as _WindowBoundary
+from daft.daft import PyWindowBoundary as _PyWindowBoundary
 from daft.daft import WindowFrame as _WindowFrame
-from daft.daft import WindowFrameType as _WindowFrameType
 from daft.daft import WindowSpec as _WindowSpec
+from daft.expressions import Expression
 from daft.utils import ManyColumnsInputType, column_inputs_to_expressions
 
 
@@ -40,9 +40,9 @@ class Window:
     """
 
     # Class-level constants for frame boundaries
-    unbounded_preceding = _WindowBoundary.unbounded_preceding()
-    unbounded_following = _WindowBoundary.unbounded_following()
-    current_row = _WindowBoundary.offset(0)
+    unbounded_preceding = _PyWindowBoundary.unbounded_preceding()
+    unbounded_following = _PyWindowBoundary.unbounded_following()
+    current_row = _PyWindowBoundary.offset(0)
 
     def __init__(self):
         self._spec = _WindowSpec.new()
@@ -104,7 +104,7 @@ class Window:
     def rows_between(
         self,
         start: int | Any = unbounded_preceding,
-        end: int | Any = unbounded_following,
+        end: int | Any = current_row,
         min_periods: int = 1,
     ) -> Window:
         """Restricts each window to a row-based frame between start and end boundaries.
@@ -118,12 +118,11 @@ class Window:
             Window: A window specification with the given frame bounds.
         """
         if isinstance(start, int):
-            start = _WindowBoundary.offset(start)
+            start = _PyWindowBoundary.offset(start)
         if isinstance(end, int):
-            end = _WindowBoundary.offset(end)
+            end = _PyWindowBoundary.offset(end)
 
         frame = _WindowFrame(
-            frame_type=_WindowFrameType.Rows,
             start=start,
             end=end,
         )
@@ -134,29 +133,40 @@ class Window:
 
     def range_between(
         self,
-        start: int | Any = unbounded_preceding,
-        end: int | Any = unbounded_following,
+        start: Any = unbounded_preceding,
+        end: Any = current_row,
         min_periods: int = 1,
     ) -> Window:
         """Restricts each window to a range-based frame between start and end boundaries.
 
         Args:
-            start: Boundary definitions (unbounded_preceding, unbounded_following, current_row, or numeric/time offsets)
-            end: Boundary definitions
-            min_periods: Minimum rows required to compute a result (default = 1)
+            start: Start boundary definition relative to the current row's order-by value.
+                   Defaults to `Window.unbounded_preceding`.
+            end: End boundary definition relative to the current row's order-by value.
+                 Defaults to `Window.current_row`.
+            min_periods: Minimum number of rows required within the frame to compute a non-null result (default = 1).
+                         Applies only to aggregation functions.
 
         Returns:
             Window: A window specification with the given frame bounds.
         """
-        if isinstance(start, int):
-            start = _WindowBoundary.offset(start)
-        if isinstance(end, int):
-            end = _WindowBoundary.offset(end)
+        start_boundary: _PyWindowBoundary
+        if start is Window.unbounded_preceding or start is Window.unbounded_following or start is Window.current_row:
+            start_boundary = start
+        else:
+            start_expr = Expression._to_expression(start)
+            start_boundary = _PyWindowBoundary.range_offset(start_expr._expr)
+
+        end_boundary: _PyWindowBoundary
+        if end is Window.unbounded_preceding or end is Window.unbounded_following or end is Window.current_row:
+            end_boundary = end
+        else:
+            end_expr = Expression._to_expression(end)
+            end_boundary = _PyWindowBoundary.range_offset(end_expr._expr)
 
         frame = _WindowFrame(
-            frame_type=_WindowFrameType.Range,
-            start=start,
-            end=end,
+            start=start_boundary,
+            end=end_boundary,
         )
 
         new_window = self

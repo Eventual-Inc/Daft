@@ -3,7 +3,7 @@ use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
     prelude::*,
 };
-use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
+use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame};
 
 use crate::{
     ops::window_state::{create_window_agg_state, WindowAggStateOps},
@@ -103,19 +103,14 @@ impl RecordBatch {
         dtype: &DataType,
         frame: &WindowFrame,
     ) -> DaftResult<Self> {
-        if matches!(frame.frame_type, WindowFrameType::Range) && order_by.len() != 1 {
-            return Err(DaftError::ValueError(
-                "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
-            ));
-        }
-
         let total_rows = self.len();
 
         // Calculate boundaries within the rows_between function as they are relative
         let start_boundary = match &frame.start {
-            WindowBoundary::UnboundedPreceding() => None,
+            WindowBoundary::UnboundedPreceding => None,
             WindowBoundary::Offset(offset) => Some(*offset),
-            WindowBoundary::UnboundedFollowing() => {
+            WindowBoundary::RangeOffset(_) => unreachable!(),
+            WindowBoundary::UnboundedFollowing => {
                 return Err(DaftError::ValueError(
                     "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
                 ));
@@ -123,16 +118,25 @@ impl RecordBatch {
         };
 
         let end_boundary = match &frame.end {
-            WindowBoundary::UnboundedFollowing() => None,
+            WindowBoundary::UnboundedFollowing => None,
             WindowBoundary::Offset(offset) => Some(*offset),
-            WindowBoundary::UnboundedPreceding() => {
+            WindowBoundary::RangeOffset(_) => unreachable!(),
+            WindowBoundary::UnboundedPreceding => {
                 return Err(DaftError::ValueError(
                     "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
                 ));
             }
         };
 
-        if matches!(frame.frame_type, WindowFrameType::Range) {
+        if matches!(frame.start, WindowBoundary::RangeOffset(_))
+            || matches!(frame.end, WindowBoundary::RangeOffset(_))
+        {
+            if order_by.len() != 1 {
+                return Err(DaftError::ValueError(
+                    "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
+                ));
+            }
+
             self.window_agg_range_between(
                 agg_expr,
                 &name,

@@ -1188,8 +1188,8 @@ impl Expr {
                     .join(",");
                 let frame_details = if let Some(frame) = &window_spec.frame {
                     format!(
-                        ",frame_type={:?},start={:?},end={:?},min_periods={}",
-                        frame.frame_type, frame.start, frame.end, window_spec.min_periods
+                        ",start={:?},end={:?},min_periods={}",
+                        frame.start, frame.end, window_spec.min_periods
                     )
                 } else {
                     String::new()

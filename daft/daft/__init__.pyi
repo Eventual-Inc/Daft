@@ -70,15 +70,17 @@ class ImageMode(Enum):
         """
         ...
 
-class WindowBoundary:
+class PyWindowBoundary:
     """Represents a window frame boundary in window functions."""
 
     @staticmethod
-    def unbounded_preceding() -> WindowBoundary: ...
+    def unbounded_preceding() -> PyWindowBoundary: ...
     @staticmethod
-    def unbounded_following() -> WindowBoundary: ...
+    def unbounded_following() -> PyWindowBoundary: ...
     @staticmethod
-    def offset(n: int) -> WindowBoundary: ...
+    def offset(n: int) -> PyWindowBoundary: ...
+    @staticmethod
+    def range_offset(n: PyExpr) -> PyWindowBoundary: ...
 
 class WindowFrameType(Enum):
     """Represents the type of window frame (ROWS or RANGE)."""
@@ -91,9 +93,8 @@ class WindowFrame:
 
     def __init__(
         self,
-        frame_type: WindowFrameType,
-        start: WindowBoundary,
-        end: WindowBoundary,
+        start: PyWindowBoundary,
+        end: PyWindowBoundary,
     ) -> None: ...
 
 class WindowSpec:
