@@ -1869,13 +1869,21 @@ Here's a simple example showing these functions in action:
 
 These functions are especially useful when you need to calculate statistics across related columns or find extreme values from multiple fields in your data.
 
-### Window Specifications
+## Window Functions
 
-Daft window functions support several types of window specifications:
+Daft window functions support several types of window specifications, including:
 
-#### Partition By
+- Partition By
+- Partition By + Order By
+- Partition By + Order By + Rows Between
+- Partition By + Order By + Range Between
 
-The simplest window specification divides data into partitions:
+!!! note "Note"
+    Global partitions (window functions without PARTITION BY) are not yet supported. All window functions must specify a PARTITION BY clause.
+
+### Partition By
+
+The simplest window specification divides data into partitions with [partition_by()][daft.window.Window.partition_by]:
 
 ```python
 window_spec = Window().partition_by("department")
@@ -1884,178 +1892,305 @@ window_spec = Window().partition_by("department")
 With this specification, you can apply aggregate functions that calculate results within each partition:
 
 ```python
-df = df.with_columns({
-    "dept_total": col("salary").sum().over(window_spec),
-    "dept_avg": col("salary").mean().over(window_spec),
-    "dept_min": col("salary").min().over(window_spec),
-    "dept_max": col("salary").max().over(window_spec),
-    "dept_count": col("salary").count().over(window_spec)
-})
+df = df.with_column("dept_total", col("salary").sum().over(window_spec))
 ```
 
-#### Partition By + Order By
+### Partition By + Order By
 
-Adding ordering to a window specification enables ranking and ordered aggregations:
+Adding an ORDER BY clause with [order_by()][daft.window.Window.order_by] to a window specification allows you to define the order of rows within each partition:
 
 ```python
-window_spec = Window().partition_by("department").order_by("salary", desc=True)
+window_spec = Window().partition_by("department").order_by("salary")
 ```
 
-This enables ranking functions like:
+This is particularly useful for ranking functions and running calculations:
 
 ```python
-from daft.functions import rank, dense_rank, row_number
-
-df = df.with_columns({
-    "salary_rank": rank().over(window_spec),
-    "salary_dense_rank": dense_rank().over(window_spec),
-    "row_num": row_number().over(window_spec)
-})
+df.with_column("salary_rank", rank().over(window_spec))
 ```
 
-It also enables lead/lag functions that access data from adjacent rows:
+### Partition By + Order By + Rows Between
+
+The ROWS BETWEEN clause with [rows_between()][daft.window.Window.rows_between] allows you to define a window frame based on physical row positions:
 
 ```python
-df = df.with_column(
-    "next_salary",
-    col("salary").lead(1).over(window_spec)
+window_spec = (
+    Window()
+    .partition_by("department")
+    .order_by("date")
+    .rows_between(Window.unbounded_preceding, Window.current_row)
 )
 ```
 
-#### Partition By + Order By + Rows Between
-
-You can further refine window functions by specifying a row-based frame:
+This is useful for calculating running totals or moving averages:
 
 ```python
-# Running total of salary within each department
-running_window = Window().partition_by("department").order_by("salary").rows_between(
-    Window.unbounded_preceding, Window.current_row
-)
+df.with_column("running_total", col("sales").sum().over(window_spec))
+```
 
-df = df.with_column(
-    "running_total",
-    col("salary").sum().over(running_window)
+### Partition By + Order By + Range Between
+
+The RANGE BETWEEN clause with [range_between()][daft.window.Window.range_between] allows you to define a window frame based on logical values rather than physical rows:
+
+```python
+window_spec = (
+    Window()
+    .partition_by("car_type")
+    .order_by("price")
+    .range_between(-5000, 5000)  # Include rows with prices within ±5000 of current row
 )
 ```
 
-##### Using min_periods for Robust Calculations
-
-When working with window frames, the `min_periods` parameter specifies the minimum number of rows required in the window frame for a calculation to be performed. If there are fewer rows in the frame than `min_periods`, the result will be NULL:
+This is particularly useful when you want to analyze data within value ranges. For example, when counting how many competitors are within $5000 of each car's price point:
 
 ```python
-from daft import Window, col
-
-# Create sample data
-df = daft.from_pydict({
-    "date": ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04", "2023-01-05"],
-    "sales": [100.0, 150.0, 200.0, 150.0, 180.0]
-})
-
-# Standard 3-day moving average (default min_periods=1)
-basic_window = Window().order_by("date").rows_between(-1, 1)
-df = df.with_column("moving_avg", col("sales").mean().over(basic_window))
-
-# 3-day moving average that requires at least 3 rows in the frame
-strict_window = Window().order_by("date").rows_between(-1, 1, min_periods=3)
-df = df.with_column("strict_avg", col("sales").mean().over(strict_window))
-
-df.show()
+df.with_column("competitor_count", col("price").count().over(window_spec))
 ```
 
-In this example:
-- For the first and last rows, the window frame only contains 2 rows (edge effect)
-  - `moving_avg` will calculate an average as min_periods=1 by default
-  - `strict_avg` will return NULL as there are only 2 rows in the frame (less than min_periods=3)
-- For the middle rows, both calculations will have values since all frames contain 3 rows
+The key difference between ROWS and RANGE is that RANGE includes all rows with values within the specified range of the current row's value, while ROWS only includes the specified number of physical rows. This makes RANGE BETWEEN particularly well-suited for price-based analysis because it ensures we capture all competitors within a specific price range, regardless of how many physical rows they occupy.
 
-This parameter is particularly useful for:
-- Ensuring sufficient data points for statistical validity
-- Handling edge cases at the boundaries of your dataset
-- Setting appropriate thresholds for calculating metrics like moving averages
-- Preventing calculations based on too few data points
-
-### Supported Window Functions
+## Supported Window Functions
 
 Daft supports various window functions depending on the window specification:
 
-- **With Partition By only**: All aggregate functions (sum, mean, count, min, max, etc.)
+- **With Partition By only**: All aggregate functions ([sum()][daft.expressions.Expression.sum], [mean()][daft.expressions.Expression.mean], [count()][daft.expressions.Expression.count], [min()][daft.expressions.Expression.min], [max()][daft.expressions.Expression.max], etc.)
 - **With Partition By + Order By**:
-  - All aggregate functions
-  - Ranking functions (row_number, rank, dense_rank)
-  - Offset functions (lead, lag)
+    - All aggregate functions
+    - Ranking functions ([row_number()][daft.functions.row_number], [rank()][daft.functions.rank], [dense_rank()][daft.functions.dense_rank])
+    - Offset functions ([lag()][daft.expressions.Expression.lag], [lead()][daft.expressions.Expression.lead])
 - **With Partition By + Order By + Rows Between**: Aggregate functions only
 
-### Common Use Cases
+## Common Use Cases
 
-#### Running Totals and Cumulative Sums
+### Running Totals and Cumulative Sums
 
-```python
-from daft import Window, col
+=== "🐍 Python"
+    ```python
+    import daft
+    from daft import Window, col
 
-df = daft.from_pydict({
-    "date": ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04", "2023-01-05"],
-    "sales": [100, 150, 200, 120, 180]
-})
+    df = daft.from_pydict({
+        "region": ["East", "East", "East", "West", "West", "West"],
+        "date": ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-01", "2023-01-02", "2023-01-03"],
+        "sales": [100, 150, 200, 120, 180, 220]
+    })
 
-# Define a window specification for calculating cumulative values
-running_window = Window().order_by("date").rows_between(
-    Window.unbounded_preceding, Window.current_row
-)
+    # Define a window specification for calculating cumulative values
+    running_window = Window().partition_by("region").order_by("date").rows_between(
+        Window.unbounded_preceding, Window.current_row
+    )
 
-# Calculate running total sales
-df = df.with_column(
-    "cumulative_sales",
-    col("sales").sum().over(running_window)
-)
+    # Calculate running total sales
+    df = df.with_column(
+        "cumulative_sales",
+        col("sales").sum().over(running_window)
+    )
 
-df.show()
+    df.show()
+    ```
+
+=== "⚙️ SQL"
+    ```python
+    import daft
+
+    df = daft.from_pydict({
+        "region": ["East", "East", "East", "West", "West", "West"],
+        "date": ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-01", "2023-01-02", "2023-01-03"],
+        "sales": [100, 150, 200, 120, 180, 220]
+    })
+
+    df = daft.sql("""
+        SELECT
+            region,
+            date,
+            sales,
+            SUM(sales) OVER (
+                PARTITION BY region
+                ORDER BY date
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            ) as cumulative_sales
+        FROM df
+        ORDER BY region, date
+    """)
+
+    df.show()
+    ```
+
+```{title="Output"}
+╭────────┬────────────┬───────┬──────────────────╮
+│ region ┆ date       ┆ sales ┆ cumulative_sales │
+│ ---    ┆ ---        ┆ ---   ┆ ---              │
+│ Utf8   ┆ Utf8       ┆ Int64 ┆ Int64            │
+╞════════╪════════════╪═══════╪══════════════════╡
+│ East   ┆ 2023-01-01 ┆ 100   ┆ 100              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ East   ┆ 2023-01-02 ┆ 150   ┆ 250              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ East   ┆ 2023-01-03 ┆ 200   ┆ 450              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ West   ┆ 2023-01-01 ┆ 120   ┆ 120              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ West   ┆ 2023-01-02 ┆ 180   ┆ 300              │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ West   ┆ 2023-01-03 ┆ 220   ┆ 520              │
+╰────────┴────────────┴───────┴──────────────────╯
+
+(Showing first 6 of 6 rows)
 ```
 
-#### Ranking Within Groups
+### Ranking Within Groups
 
-```python
-from daft import Window, col, rank, dense_rank, row_number
+=== "🐍 Python"
+    ```python
+    import daft
+    from daft import Window, col
+    from daft.functions import rank, dense_rank, row_number
 
-df = daft.from_pydict({
-    "category": ["A", "A", "A", "B", "B", "C"],
-    "product": ["P1", "P2", "P3", "P4", "P5", "P6"],
-    "sales": [1000, 1500, 1000, 2000, 1800, 3000]
-})
+    df = daft.from_pydict({
+        "category": ["A", "A", "A", "B", "B", "C"],
+        "product": ["P1", "P2", "P3", "P4", "P5", "P6"],
+        "sales": [1000, 1500, 1000, 2000, 1800, 3000]
+    })
 
-# Define a window specification partitioned by category and ordered by sales
-window_spec = Window().partition_by("category").order_by("sales", desc=True)
+    # Define a window specification partitioned by category and ordered by sales
+    window_spec = Window().partition_by("category").order_by("sales", desc=True)
 
-# Add ranking columns
-df = df.with_columns({
-    "rank": rank().over(window_spec),
-    "dense_rank": dense_rank().over(window_spec),
-    "row_number": row_number().over(window_spec)
-})
+    # Add ranking columns
+    df = df.with_columns({
+        "rank": rank().over(window_spec),
+        "dense_rank": dense_rank().over(window_spec),
+        "row_number": row_number().over(window_spec)
+    })
 
-df.show()
+    df.show()
+    ```
+
+=== "⚙️ SQL"
+    ```python
+    import daft
+
+    df = daft.from_pydict({
+        "category": ["A", "A", "A", "B", "B", "C"],
+        "product": ["P1", "P2", "P3", "P4", "P5", "P6"],
+        "sales": [1000, 1500, 1000, 2000, 1800, 3000]
+    })
+
+    df = daft.sql("""
+        SELECT
+            category,
+            product,
+            sales,
+            RANK() OVER (
+                PARTITION BY category
+                ORDER BY sales DESC
+            ) as rank,
+            DENSE_RANK() OVER (
+                PARTITION BY category
+                ORDER BY sales DESC
+            ) as dense_rank,
+            ROW_NUMBER() OVER (
+                PARTITION BY category
+                ORDER BY sales DESC
+            ) as row_number
+        FROM df
+        ORDER BY category, sales DESC
+    """)
+
+    df.show()
+    ```
+
+```{title="Output"}
+╭──────────┬─────────┬───────┬────────┬────────────┬────────────╮
+│ category ┆ product ┆ sales ┆ rank   ┆ dense_rank ┆ row_number │
+│ ---      ┆ ---     ┆ ---   ┆ ---    ┆ ---        ┆ ---        │
+│ Utf8     ┆ Utf8    ┆ Int64 ┆ UInt64 ┆ UInt64     ┆ UInt64     │
+╞══════════╪═════════╪═══════╪════════╪════════════╪════════════╡
+│ C        ┆ P6      ┆ 3000  ┆ 1      ┆ 1          ┆ 1          │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ B        ┆ P4      ┆ 2000  ┆ 1      ┆ 1          ┆ 1          │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ B        ┆ P5      ┆ 1800  ┆ 2      ┆ 2          ┆ 2          │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ A        ┆ P2      ┆ 1500  ┆ 1      ┆ 1          ┆ 1          │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ A        ┆ P1      ┆ 1000  ┆ 2      ┆ 2          ┆ 2          │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ A        ┆ P3      ┆ 1000  ┆ 2      ┆ 2          ┆ 3          │
+╰──────────┴─────────┴───────┴────────┴────────────┴────────────╯
+
+(Showing first 6 of 6 rows)
 ```
 
-#### Percentage of Group Total
+### Percentage of Group Total
 
-```python
-from daft import Window, col
+=== "🐍 Python"
+    ```python
+    import daft
+    from daft import Window, col
 
-df = daft.from_pydict({
-    "region": ["East", "East", "West", "West", "North", "South"],
-    "product": ["A", "B", "A", "B", "C", "C"],
-    "sales": [100, 150, 200, 250, 300, 350]
-})
+    df = daft.from_pydict({
+        "region": ["East", "East", "West", "West", "North", "South"],
+        "product": ["A", "B", "A", "B", "C", "C"],
+        "sales": [100, 150, 200, 250, 300, 350]
+    })
 
-# Define a window specification partitioned by region
-window_spec = Window().partition_by("region")
+    # Define a window specification partitioned by region
+    window_spec = Window().partition_by("region")
 
-# Calculate percentage of total sales in each region
-df = df.with_column(
-    "pct_of_region",
-    (col("sales") * 100 / col("sales").sum().over(window_spec)).round(2)
-)
+    # Calculate percentage of total sales in each region
+    df = df.with_column(
+        "pct_of_region",
+        (col("sales") * 100 / col("sales").sum().over(window_spec)).round(2)
+    )
 
-df.show()
+    df.show()
+    ```
+
+=== "⚙️ SQL"
+    ```python
+    import daft
+
+    df = daft.from_pydict({
+        "region": ["East", "East", "West", "West", "North", "South"],
+        "product": ["A", "B", "A", "B", "C", "C"],
+        "sales": [100, 150, 200, 250, 300, 350]
+    })
+
+    df = daft.sql("""
+        SELECT
+            region,
+            product,
+            sales,
+            ROUND(
+                sales * 100.0 / SUM(sales) OVER (PARTITION BY region),
+                2
+            ) AS pct_of_region
+        FROM df
+    """)
+
+    df.show()
+    ```
+
+```{title="Output"}
+╭────────┬─────────┬───────┬───────────────╮
+│ region ┆ product ┆ sales ┆ pct_of_region │
+│ ---    ┆ ---     ┆ ---   ┆ ---           │
+│ Utf8   ┆ Utf8    ┆ Int64 ┆ Float64       │
+╞════════╪═════════╪═══════╪═══════════════╡
+│ West   ┆ A       ┆ 200   ┆ 44.44         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ West   ┆ B       ┆ 250   ┆ 55.56         │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ North  ┆ C       ┆ 300   ┆ 100           │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ East   ┆ A       ┆ 100   ┆ 40            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ East   ┆ B       ┆ 150   ┆ 60            │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ South  ┆ C       ┆ 350   ┆ 100           │
+╰────────┴─────────┴───────┴───────────────╯
+
+(Showing first 6 of 6 rows)
 ```
 
 For more detailed information on window functions, refer to the [Window Functions API Reference](api/window.md).

@@ -1629,6 +1629,22 @@ class Expression:
         return self._expr.name()
 
     def over(self, window: Window) -> Expression:
+        """Apply the expression as a window function.
+
+        Args:
+            window: The window specification (created using ``daft.Window``)
+                defining partitioning, ordering, and framing.
+
+        Returns:
+            Expression: The result of applying this expression as a window function.
+
+        Example:
+            >>> from daft import col, Window
+            >>> # Define a window partitioned by "group" and ordered by "date"
+            >>> window_spec = Window().partition_by("group").order_by("date")
+            >>> # Assume df is a DataFrame with columns "group", "date", and "value"
+            >>> df = df.with_column("cumulative_sum", col("value").sum().over(window_spec))
+        """
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 

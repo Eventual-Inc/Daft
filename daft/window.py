@@ -18,25 +18,33 @@ class Window:
 
     Basic window aggregation with a single partition column:
 
-    >>> from daft import Window, col
-    >>> # Define a window partitioned by category
-    >>> window_spec = Window().partition_by("category")
-    >>> # Apply aggregation functions
-    >>> df = df.select(
-    ...     col("value").sum().over(window_spec).alias("category_total"),
-    ...     col("value").mean().over(window_spec).alias("category_avg"),
-    ... )
+    ```python
+    from daft import Window, col
+
+    # Define a window partitioned by category
+    window_spec = Window().partition_by("category")
+    # Apply aggregation functions
+    df = df.select(
+        col("value").sum().over(window_spec).alias("category_total"),
+        col("value").mean().over(window_spec).alias("category_avg"),
+    )
+    ```
 
     Partitioning by multiple columns:
 
-    >>> # Define a window partitioned by both department and category
-    >>> window_spec = Window().partition_by(["department", "category"])
-    >>> df = df.select(col("sales").sum().over(window_spec).alias("dept_category_total"))
+    ```python
+    # Define a window partitioned by both department and category
+    window_spec = Window().partition_by(["department", "category"])
+    # Apply aggregation functions
+    df = df.select(col("sales").sum().over(window_spec).alias("dept_category_total"))
+    ```
 
     Using window aggregations in expressions:
 
-    >>> window_spec = Window().partition_by("category")
-    >>> df = df.select((col("value") / col("value").sum().over(window_spec)).alias("pct_of_category"))
+    ```python
+    window_spec = Window().partition_by("category")
+    df = df.select((col("value") / col("value").sum().over(window_spec)).alias("pct_of_category"))
+    ```
     """
 
     # Class-level constants for frame boundaries

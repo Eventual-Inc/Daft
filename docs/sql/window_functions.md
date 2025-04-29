@@ -4,7 +4,7 @@ Window functions in Daft SQL allow you to perform calculations across a set of r
 
 !!! warning "Warning"
 
-    Window function support in Daft SQL is currently limited. Full SQL window function support is under development.
+        Window function support in Daft SQL is currently limited. Full SQL window function support is under development.
 
 ## Basic Syntax
 
@@ -12,9 +12,9 @@ The general syntax for window functions in Daft is:
 
 ```sql
 function_name([expr]) OVER (
-   [PARTITION BY expr_list]
-   [ORDER BY order_list]
-   [frame_clause]
+     [PARTITION BY expr_list]
+     [ORDER BY order_list]
+     [frame_clause]
 )
 ```
 
@@ -23,8 +23,8 @@ Where:
 - `function_name` is the name of the window function
 - `PARTITION BY` divides the result set into partitions to which the window function is applied
 - `ORDER BY` defines the logical order of rows within each partition
-  - Note: NULL values are positioned at the end for ascending order (default) and at the beginning for descending order
-- `frame_clause` defines a subset of rows in the current partition (window frame)
+    - Note: NULL values are positioned at the end for ascending order (default) and at the beginning for descending order
+- `frame_clause` defines a subset of rows in the current partition (called the window frame)
 
 ## Supported Window Functions
 
@@ -34,13 +34,55 @@ The following window functions are currently supported:
 
 - `ROW_NUMBER()`: Returns the sequential row number starting from 1 within the partition.
 
-  ```sql
-  SELECT
-    category,
-    value,
-    ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) as row_num
-  FROM sales
-  ```
+    ```sql
+    SELECT
+        category,
+        value,
+        ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) as row_num
+    FROM sales
+    ```
+
+- `RANK()`: Returns the rank of the current row within a partition, with gaps in the ranking sequence when there are ties.
+
+    ```sql
+    SELECT
+        category,
+        value,
+        RANK() OVER (PARTITION BY category ORDER BY value) as rank
+    FROM sales
+    ```
+
+- `DENSE_RANK()`: Returns the rank of the current row within a partition, without gaps in the ranking sequence when there are ties.
+
+    ```sql
+    SELECT
+        category,
+        value,
+        DENSE_RANK() OVER (PARTITION BY category ORDER BY value) as dense_rank
+    FROM sales
+    ```
+
+### Offset Functions
+
+- `LAG(value [, offset [, default]])`: Returns the value from a row that is offset rows before the current row. If no such row exists, returns the default value. The offset parameter defaults to 1 if not specified.
+
+    ```sql
+    SELECT
+        date,
+        value,
+        LAG(value, 1, 0) OVER (ORDER BY date) as previous_value
+    FROM time_series
+    ```
+
+- `LEAD(value [, offset [, default]])`: Returns the value from a row that is offset rows after the current row. If no such row exists, returns the default value. The offset parameter defaults to 1 if not specified.
+
+    ```sql
+    SELECT
+        date,
+        value,
+        LEAD(value, 1, 0) OVER (ORDER BY date) as next_value
+    FROM time_series
+    ```
 
 ### Aggregate Functions
 
@@ -56,10 +98,10 @@ Example:
 
 ```sql
 SELECT
-  category,
-  value,
-  SUM(value) OVER (PARTITION BY category) as category_total,
-  AVG(value) OVER (PARTITION BY category) as category_avg
+    category,
+    value,
+    SUM(value) OVER (PARTITION BY category) as category_total,
+    AVG(value) OVER (PARTITION BY category) as category_avg
 FROM sales
 ```
 
@@ -69,10 +111,10 @@ When using aggregate functions as window functions, you can specify a window fra
 
 ```sql
 function_name([expr]) OVER (
-   [PARTITION BY expr_list]
-   [ORDER BY order_list]
-   [ROWS | RANGE]
-   BETWEEN frame_start AND frame_end
+     [PARTITION BY expr_list]
+     [ORDER BY order_list]
+     [ROWS | RANGE]
+     BETWEEN frame_start AND frame_end
 )
 ```
 
@@ -81,66 +123,40 @@ Where:
 - `ROWS` indicates that the frame is defined by physical row count
 - `RANGE` indicates that the frame is defined by logical value (not fully supported yet)
 - `frame_start` and `frame_end` can be one of:
-  - `UNBOUNDED PRECEDING`: All rows before the current row
-  - `n PRECEDING`: n rows before the current row
-  - `CURRENT ROW`: The current row
-  - `n FOLLOWING`: n rows after the current row
-  - `UNBOUNDED FOLLOWING`: All rows after the current row
+
+    - `UNBOUNDED PRECEDING`: All rows before the current row (only valid for `frame_start`)
+    - `n PRECEDING`: n rows before the current row
+    - `CURRENT ROW`: The current row
+    - `n FOLLOWING`: n rows after the current row
+    - `UNBOUNDED FOLLOWING`: All rows after the current row (only valid for `frame_end`)
 
 Examples:
 
 ```sql
 -- Running sum (includes all previous rows and current row)
 SELECT
-  category,
-  value,
-  SUM(value) OVER (
-    PARTITION BY category
-    ORDER BY value
-    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-  ) as running_sum
+    category,
+    value,
+    SUM(value) OVER (
+        PARTITION BY category
+        ORDER BY value
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) as running_sum
 FROM sales
 
 -- Moving average of current row and 2 preceding rows
 SELECT
-  date,
-  value,
-  AVG(value) OVER (
-    ORDER BY date
-    ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
-  ) as moving_avg
+    date,
+    value,
+    AVG(value) OVER (
+        ORDER BY date
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) as moving_avg
 FROM time_series
-```
-
-## Using Window Functions with Python API
-
-Daft also provides a Python API for window functions using the `Window` class:
-
-```python
-from daft import Window, col, row_number
-
-# Create window specifications
-window_spec = Window().partition_by("category").order_by("value")
-
-# Running sum window (includes all previous rows and current row)
-running_window = (
-    Window()
-    .partition_by("category")
-    .order_by("value")
-    .rows_between(Window.unbounded_preceding, Window.current_row)
-)
-
-# Apply window functions
-result_df = (
-    df
-    .with_column("row_num", row_number().over(window_spec))
-    .with_column("running_sum", col("value").sum().over(running_window))
-)
 ```
 
 ## Limitations
 
-1. `RANGE` frame type is not fully supported yet
+1. Global partitions (window functions without `PARTITION BY`) are not yet supported
 2. Named window specifications (`WINDOW` clause) are not supported
 3. `IGNORE NULLS` and `RESPECT NULLS` options are not supported
-4. Some advanced window functions like `FIRST_VALUE`, `LAST_VALUE`, `LEAD`, and `LAG` are under development
