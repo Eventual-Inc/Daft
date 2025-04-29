@@ -38,8 +38,10 @@ impl PythonPartitionRefStream {
                 let next = match next {
                     Some(result) => {
                         let result = result?;
-                        let ray_part_ref =
-                            result.as_any().downcast_ref::<RayPartitionRef>().unwrap();
+                        let ray_part_ref = result
+                            .as_any()
+                            .downcast_ref::<RayPartitionRef>()
+                            .expect("Failed to downcast to RayPartitionRef");
                         let objref = ray_part_ref.object_ref.clone_ref(py);
                         let size_bytes = ray_part_ref.size_bytes;
                         let num_rows = ray_part_ref.num_rows;
@@ -90,8 +92,11 @@ impl PyDistributedPhysicalPlan {
                 )
             })
             .collect();
-        let worker_manager_creator =
-            Arc::new(|| Box::new(RayWorkerManager::new()) as Box<dyn WorkerManager>);
+        let daft_execution_config = self.planner.execution_config().clone();
+        let worker_manager_creator = Arc::new(move || {
+            let ray_worker_manager = RayWorkerManager::try_new(daft_execution_config.clone())?;
+            Ok(Box::new(ray_worker_manager) as Box<dyn WorkerManager>)
+        });
         let part_stream = self.planner.run_plan(psets, worker_manager_creator);
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(part_stream)),

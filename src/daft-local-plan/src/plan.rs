@@ -514,7 +514,7 @@ impl LocalPhysicalPlan {
     }
 
     pub fn estimated_memory_cost(&self) -> usize {
-        todo!()
+        todo!("Implement estimated memory cost for local physical plan");
     }
 }
 

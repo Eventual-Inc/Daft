@@ -1338,11 +1338,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
-                plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
-                result_uuid = self._start_plan(
-                    plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
-                )
-                yield from self._stream_plan(result_uuid)
+                self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
                 # If plan building succeeds, execute it
                 from functools import partial
@@ -1370,15 +1366,14 @@ class RayRunner(Runner[ray.ObjectRef]):
                     )
                     yield materialized_result
         else:
-            # Finalize the logical plan and get a physical plan scheduler for translating the
-            # physical plan to executable tasks.
-            plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+            yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
 
-            result_uuid = self._start_plan(
-                plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
-            )
-
-            yield from self._stream_plan(result_uuid)
+    def _execute_plan(self, builder, daft_execution_config, results_buffer_size):
+        # Finalize the logical plan and get a physical plan scheduler for translating the
+        # physical plan to executable tasks.
+        plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+        result_uuid = self._start_plan(plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size)
+        yield from self._stream_plan(result_uuid)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

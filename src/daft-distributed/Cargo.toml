@@ -10,6 +10,7 @@ futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 tokio = {workspace = true}
+tokio-util = {workspace = true}
 
 [features]
 python = [

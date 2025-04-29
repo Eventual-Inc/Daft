@@ -140,6 +140,8 @@ class SyncFromAsyncIterator:
         self.stopped = False
 
     def __iter__(self):
+        if self.stopped:
+            raise StopIteration
         return self
 
     def __next__(self):

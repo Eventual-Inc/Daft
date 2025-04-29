@@ -7,6 +7,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     channel::{
@@ -42,7 +43,7 @@ impl TaskDispatcher {
         _dispatcher: Self,
         _task_rx: Receiver<DispatchableTask>,
     ) -> DaftResult<()> {
-        todo!()
+        todo!("Implement run dispatch loop");
     }
 }
 
@@ -61,15 +62,15 @@ impl TaskDispatcherHandle {
     #[allow(dead_code)]
     pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
         let (result_tx, result_rx) = create_oneshot_channel();
-        let (cancel_tx, cancel_rx) = create_oneshot_channel();
-        let dispatchable_task = DispatchableTask::new(task, result_tx, cancel_rx);
+        let cancel_token = CancellationToken::new();
+        let dispatchable_task = DispatchableTask::new(task, result_tx, cancel_token.clone());
 
         self.task_dispatcher_sender
             .send(dispatchable_task)
             .await
             .map_err(|e| DaftError::InternalError(e.to_string()))?;
 
-        Ok(SubmittedTask::new(result_rx, cancel_tx))
+        Ok(SubmittedTask::new(result_rx, Some(cancel_token)))
     }
 }
 
@@ -80,36 +81,36 @@ struct DispatchableTask {
     // The sender to send the result into
     result_tx: OneshotSender<DaftResult<PartitionRef>>,
     // The receiver to receive the cancel signal
-    cancel_rx: OneshotReceiver<()>,
+    cancel_token: CancellationToken,
 }
 
 impl DispatchableTask {
     fn new(
         task: SwordfishTask,
         result_tx: OneshotSender<DaftResult<PartitionRef>>,
-        cancel_rx: OneshotReceiver<()>,
+        cancel_token: CancellationToken,
     ) -> Self {
         Self {
             task,
             result_tx,
-            cancel_rx,
+            cancel_token,
         }
     }
 }
 
 pub(crate) struct SubmittedTask {
     result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
-    cancel_tx: Option<OneshotSender<()>>,
+    cancel_token: Option<CancellationToken>,
 }
 
 impl SubmittedTask {
     fn new(
         result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
-        cancel_tx: OneshotSender<()>,
+        cancel_token: Option<CancellationToken>,
     ) -> Self {
         Self {
             result_rx,
-            cancel_tx: Some(cancel_tx),
+            cancel_token,
         }
     }
 }
@@ -128,10 +129,8 @@ impl Future for SubmittedTask {
 
 impl Drop for SubmittedTask {
     fn drop(&mut self) {
-        if let Some(cancel_tx) = self.cancel_tx.take() {
-            if !cancel_tx.is_closed() {
-                let _ = cancel_tx.send(());
-            }
+        if let Some(cancel_token) = self.cancel_token.take() {
+            cancel_token.cancel();
         }
     }
 }

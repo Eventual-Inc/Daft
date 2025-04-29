@@ -8,5 +8,5 @@ pub(crate) fn translate_program_plan_to_local_physical_plans(
     _logical_plan: LogicalPlanRef,
     _execution_config: &DaftExecutionConfig,
 ) -> DaftResult<Vec<LocalPhysicalPlanRef>> {
-    todo!()
+    todo!("Implement translate program plan to local physical plans");
 }

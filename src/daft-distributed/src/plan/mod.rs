@@ -14,7 +14,7 @@ use futures::{Stream, StreamExt};
 use crate::{
     channel::{create_channel, Receiver, Sender},
     runtime::{get_or_init_runtime, JoinHandle},
-    scheduling::worker::WorkerManager,
+    scheduling::worker::WorkerManagerCreator,
     stage::split_at_stage_boundary,
 };
 
@@ -44,7 +44,7 @@ impl DistributedPhysicalPlan {
     async fn run_plan_loop(
         logical_plan: LogicalPlanRef,
         config: Arc<DaftExecutionConfig>,
-        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
+        worker_manager_creator: WorkerManagerCreator,
         psets: HashMap<String, Vec<PartitionRef>>,
         result_sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
@@ -55,7 +55,7 @@ impl DistributedPhysicalPlan {
                 break;
             }
         }
-        todo!()
+        todo!("Implement stage running loop");
     }
 
     #[allow(dead_code)]
@@ -65,18 +65,21 @@ impl DistributedPhysicalPlan {
     ) -> DaftResult<LogicalPlanRef> {
         // Update the logical plan with the results of the previous stage.
         // This is where the AQE magic happens.
-        todo!()
+        todo!("Implement plan updating and AQE");
     }
 
     pub fn run_plan(
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
+        worker_manager_creator: WorkerManagerCreator,
     ) -> PlanResult {
         let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
         let handle = runtime.spawn(Self::run_plan_loop(
-            self.remaining_logical_plan.as_ref().unwrap().clone(),
+            self.remaining_logical_plan
+                .as_ref()
+                .expect("Expected remaining logical plan")
+                .clone(),
             self.config.clone(),
             worker_manager_creator,
             psets,
@@ -84,10 +87,14 @@ impl DistributedPhysicalPlan {
         ));
         PlanResult::new(handle, result_receiver)
     }
+
+    pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
+        &self.config
+    }
 }
 
 fn can_translate_logical_plan(_plan: &LogicalPlanRef) -> bool {
-    todo!()
+    todo!("Implement logical plan translation check");
 }
 
 // This is the output of a plan, a receiver to receive the results of the plan.
@@ -110,6 +117,6 @@ impl Stream for PlanResult {
     type Item = DaftResult<PartitionRef>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!()
+        todo!("Implement stream for plan result");
     }
 }

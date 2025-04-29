@@ -18,7 +18,7 @@ use crate::{
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-        worker::WorkerManager,
+        worker::WorkerManagerCreator,
     },
 };
 
@@ -40,10 +40,10 @@ impl Stage {
     pub(crate) fn run_stage(
         self,
         psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>,
+        worker_manager_creator: WorkerManagerCreator,
     ) -> DaftResult<RunningStage> {
         let program = logical_plan_to_program(self.logical_plan, self.config, psets)?;
-        let mut stage_context = StageContext::new(worker_manager_creator);
+        let mut stage_context = StageContext::try_new(worker_manager_creator)?;
         let running_program = program.run_program(&mut stage_context);
         let running_stage = RunningStage::new(running_program.into_inner(), stage_context);
         Ok(running_stage)
@@ -69,7 +69,7 @@ impl Stream for RunningStage {
     type Item = DaftResult<PartitionRef>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!()
+        todo!("Implement stream for running stage");
     }
 }
 
@@ -79,16 +79,16 @@ pub(crate) struct StageContext {
 }
 
 impl StageContext {
-    fn new(worker_manager_creator: Arc<dyn Fn() -> Box<dyn WorkerManager> + Send + Sync>) -> Self {
-        let worker_manager = worker_manager_creator();
+    fn try_new(worker_manager_creator: WorkerManagerCreator) -> DaftResult<Self> {
+        let worker_manager = worker_manager_creator()?;
         let task_dispatcher = TaskDispatcher::new(worker_manager);
         let mut joinset = JoinSet::new();
         let task_dispatcher_handle =
             TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
-        Self {
+        Ok(Self {
             task_dispatcher_handle,
             joinset,
-        }
+        })
     }
 }
 

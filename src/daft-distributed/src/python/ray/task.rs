@@ -1,6 +1,5 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
-use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
@@ -32,7 +31,10 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
     async fn get_result(&self) -> DaftResult<PartitionRef> {
         // get the task locals, i.e. the asyncio event loop, and the handle to the task
         let (task_locals, handle) = Python::with_gil(|py| {
-            let task_locals = TASK_LOCALS.get().unwrap().clone_ref(py);
+            let task_locals = TASK_LOCALS
+                .get()
+                .expect("Failed to get task locals")
+                .clone_ref(py);
             let handle = self.handle.clone_ref(py);
             (task_locals, handle)
         });
@@ -59,7 +61,11 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
 
 impl Drop for RayTaskResultHandle {
     fn drop(&mut self) {
-        Python::with_gil(|py| self.handle.call_method0(py, "cancel").unwrap());
+        Python::with_gil(|py| {
+            self.handle
+                .call_method0(py, "cancel")
+                .expect("Failed to cancel ray task")
+        });
     }
 }
 
@@ -106,11 +112,6 @@ impl RaySwordfishTask {
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn execution_config(&self) -> PyResult<PyDaftExecutionConfig> {
-        let config = self.task.execution_config();
-        Ok(PyDaftExecutionConfig { config })
-    }
-
     fn psets(&self, py: Python) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
         let psets = self
             .task
@@ -121,7 +122,10 @@ impl RaySwordfishTask {
                     k,
                     v.into_iter()
                         .map(|v| {
-                            let v = v.as_any().downcast_ref::<RayPartitionRef>().unwrap();
+                            let v = v
+                                .as_any()
+                                .downcast_ref::<RayPartitionRef>()
+                                .expect("Failed to downcast to RayPartitionRef");
                             RayPartitionRef {
                                 object_ref: v.object_ref.clone_ref(py),
                                 num_rows: v.num_rows,

@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
+use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
+use common_error::DaftResult;
 use pyo3::prelude::*;
 
-use super::task::{RaySwordfishTask, RayTaskResultHandle};
+use super::task::*;
 use crate::scheduling::{
     task::{SwordfishTask, SwordfishTaskResultHandle},
     worker::WorkerManager,
@@ -13,19 +17,19 @@ pub(crate) struct RayWorkerManager {
 }
 
 impl RayWorkerManager {
-    pub fn new() -> Self {
-        Python::with_gil(|py| {
-            let distributed_swordfish_module =
-                py.import("daft.runners.distributed_swordfish").unwrap();
-            let ray_worker_manager_class = distributed_swordfish_module
-                .getattr("RaySwordfishWorkerManager")
-                .unwrap();
-            let instance = ray_worker_manager_class.call0().unwrap();
+    pub fn try_new(daft_execution_config: Arc<DaftExecutionConfig>) -> DaftResult<Self> {
+        let py_daft_execution_config = PyDaftExecutionConfig {
+            config: daft_execution_config,
+        };
+        let ray_worker_manager = Python::with_gil(|py| {
+            let distributed_swordfish_module = py.import("daft.runners.distributed_swordfish")?;
+            let ray_worker_manager_class =
+                distributed_swordfish_module.getattr("RaySwordfishWorkerManager")?;
+            let instance = ray_worker_manager_class.call1((py_daft_execution_config,))?;
 
-            Self {
-                ray_worker_manager: instance.into(),
-            }
-        })
+            DaftResult::Ok(instance.unbind())
+        })?;
+        Ok(Self { ray_worker_manager })
     }
 }
 
@@ -44,7 +48,7 @@ impl WorkerManager for RayWorkerManager {
                     pyo3::intern!(py, "submit_task_to_worker"),
                     (py_task, worker_id),
                 )
-                .unwrap();
+                .expect("Failed to submit task to RayWorkerManager");
             Box::new(RayTaskResultHandle::new(py_task_handle))
         })
     }
@@ -54,26 +58,29 @@ impl WorkerManager for RayWorkerManager {
             let py_worker_resources = self
                 .ray_worker_manager
                 .call_method0(py, pyo3::intern!(py, "get_worker_resources"))
-                .unwrap();
+                .expect("Failed to get worker resources from RayWorkerManager");
             py_worker_resources
                 .extract::<Vec<(String, usize, usize)>>(py)
-                .unwrap()
+                .expect("Failed to extract worker resources from RayWorkerManager")
         })
     }
 
-    fn try_autoscale(&self, num_workers: usize) {
+    fn try_autoscale(&self, num_workers: usize) -> DaftResult<()> {
         Python::with_gil(|py| {
-            self.ray_worker_manager
-                .call_method1(py, pyo3::intern!(py, "try_autoscale"), (num_workers,))
-                .unwrap();
-        });
+            self.ray_worker_manager.call_method1(
+                py,
+                pyo3::intern!(py, "try_autoscale"),
+                (num_workers,),
+            )
+        })?;
+        Ok(())
     }
 
-    fn shutdown(&self) {
+    fn shutdown(&self) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.ray_worker_manager
                 .call_method0(py, pyo3::intern!(py, "shutdown"))
-                .unwrap();
-        });
+        })?;
+        Ok(())
     }
 }

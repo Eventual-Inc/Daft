@@ -1,6 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
@@ -8,21 +7,12 @@ use daft_local_plan::LocalPhysicalPlanRef;
 #[derive(Debug)]
 pub struct SwordfishTask {
     plan: LocalPhysicalPlanRef,
-    daft_execution_config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
 }
 impl SwordfishTask {
     #[allow(dead_code)]
-    pub fn new(
-        plan: LocalPhysicalPlanRef,
-        daft_execution_config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
-    ) -> Self {
-        Self {
-            plan,
-            daft_execution_config,
-            psets,
-        }
+    pub fn new(plan: LocalPhysicalPlanRef, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
+        Self { plan, psets }
     }
 
     pub fn plan(&self) -> LocalPhysicalPlanRef {
@@ -31,10 +21,6 @@ impl SwordfishTask {
 
     pub fn estimated_memory_cost(&self) -> usize {
         self.plan.estimated_memory_cost()
-    }
-
-    pub fn execution_config(&self) -> Arc<DaftExecutionConfig> {
-        self.daft_execution_config.clone()
     }
 
     pub fn psets(&self) -> HashMap<String, Vec<PartitionRef>> {

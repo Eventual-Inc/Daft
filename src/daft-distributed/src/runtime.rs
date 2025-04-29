@@ -17,12 +17,13 @@ pub fn get_or_init_runtime() -> &'static Runtime {
         let mut runtime = tokio::runtime::Builder::new_multi_thread();
         runtime.enable_all();
         runtime.worker_threads(1);
-        runtime.build().unwrap()
+        runtime.build().expect("Failed to build runtime")
     });
     #[cfg(feature = "python")]
     {
         PYO3_RUNTIME_INITIALIZED.call_once(|| {
-            pyo3_async_runtimes::tokio::init_with_runtime(runtime).unwrap();
+            pyo3_async_runtimes::tokio::init_with_runtime(runtime)
+                .expect("Failed to initialize python runtime");
         });
     }
     runtime
@@ -30,7 +31,10 @@ pub fn get_or_init_runtime() -> &'static Runtime {
 
 #[cfg(feature = "python")]
 pub fn get_or_init_task_locals(py: pyo3::Python<'_>) -> &'static pyo3_async_runtimes::TaskLocals {
-    TASK_LOCALS.get_or_init(|| pyo3_async_runtimes::tokio::get_current_locals(py).unwrap())
+    TASK_LOCALS.get_or_init(|| {
+        pyo3_async_runtimes::tokio::get_current_locals(py)
+            .expect("Failed to get current task locals")
+    })
 }
 
 pub type JoinSet<T> = tokio::task::JoinSet<T>;

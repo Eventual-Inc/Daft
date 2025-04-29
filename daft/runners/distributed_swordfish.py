@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import AsyncGenerator, Callable, Dict, List, Tuple
 
 from daft.daft import (
@@ -10,6 +11,7 @@ from daft.daft import (
     RaySwordfishTask,
 )
 from daft.recordbatch.micropartition import MicroPartition
+from daft.runners.constants import MAX_SWORDFISH_ACTOR_RESTARTS, MAX_SWORDFISH_ACTOR_TASK_RETRIES
 from daft.runners.partitioning import PartitionMetadata
 
 try:
@@ -21,54 +23,48 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-@ray.remote(max_restarts=4, max_task_retries=4)
+@ray.remote(max_restarts=MAX_SWORDFISH_ACTOR_RESTARTS, max_task_retries=MAX_SWORDFISH_ACTOR_TASK_RETRIES)
 class RaySwordfishWorker:
     """RaySwordfishWorker is a ray actor that runs local physical plans on swordfish.
 
     It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
     """
 
-    def __init__(self):
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig):
         self.native_executor = NativeExecutor()
+        self.daft_execution_config = daft_execution_config
 
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
         psets: dict[str, list[ray.ObjectRef]],
-        daft_execution_config: PyDaftExecutionConfig,
     ) -> AsyncGenerator[MicroPartition, None]:
         """Run a plan on swordfish and yield partitions."""
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
-        async for partition in self.native_executor.run_async(plan, psets_mp, daft_execution_config):
+        async for partition in self.native_executor.run_async(plan, psets_mp, self.daft_execution_config, None):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
             yield mp
 
-    async def concat_and_get_metadata(self, *partitions: MicroPartition) -> Tuple[PartitionMetadata, MicroPartition]:
+    def concat_and_get_metadata(self, *partitions: MicroPartition) -> Tuple[PartitionMetadata, MicroPartition]:
         """Concatenate a list of partitions and return the metadata and the concatenated partition."""
         concated = MicroPartition.concat(list(partitions))
         return PartitionMetadata.from_table(concated), concated
 
 
+@dataclass
 class RaySwordfishTaskHandle:
     """RaySwordfishTaskHandle is a handle to a task that is running on a swordfish actor.
 
     It is used to asynchronously get the result of the task, cancel the task, and perform any post-task cleanup.
     """
 
-    def __init__(
-        self,
-        result_handle: ray.ObjectRef,
-        actor_handle: ray.actor.ActorHandle,
-        add_memory_callback: Callable[[int], None],
-        task_memory_cost: int,
-    ):
-        self.result_handle = result_handle
-        self.actor_handle = actor_handle
-        self.add_memory_callback = add_memory_callback
-        self.task_memory_cost = task_memory_cost
+    result_handle: ray.ObjectRef
+    actor_handle: ray.actor.ActorHandle
+    done_callback: Callable[[ray.ObjectRef], None]
+    task_memory_cost: int
 
     async def _get_result(self) -> RayPartitionRef:
         results = []
@@ -77,11 +73,11 @@ class RaySwordfishTaskHandle:
 
         metadata, result = self.actor_handle.concat_and_get_metadata.options(num_returns=2).remote(*results)
         metadata = await metadata
-        self.add_memory_callback(self.task_memory_cost)
         return RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
 
     async def get_result(self) -> RayPartitionRef:
         task = asyncio.create_task(self._get_result())
+        task.add_done_callback(self.done_callback)
         return await task
 
     def cancel(self):
@@ -125,10 +121,15 @@ class RaySwordfishWorkerHandle:
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         self.available_memory_bytes -= task.estimated_memory_cost()
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        memory_to_return = task.estimated_memory_cost()
+
+        def done_callback(_result: ray.ObjectRef):
+            self.add_back_memory(memory_to_return)
+
         return RaySwordfishTaskHandle(
-            self.actor_handle.run_plan.remote(task.plan(), psets, task.execution_config()),
+            self.actor_handle.run_plan.remote(task.plan(), psets),
             self.actor_handle,
-            self.add_back_memory,
+            done_callback,
             task.estimated_memory_cost(),
         )
 
@@ -143,8 +144,9 @@ class RaySwordfishWorkerManager:
     It is also responsible for autoscaling the number of workers.
     """
 
-    def __init__(self):
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig):
         self.workers: Dict[str, RaySwordfishWorkerHandle] = {}
+        self.daft_execution_config = daft_execution_config
         self._initialize_workers()
 
     def _initialize_workers(self):
@@ -162,7 +164,7 @@ class RaySwordfishWorkerManager:
                         node_id=node["NodeID"],
                         soft=True,
                     ),
-                ).remote()
+                ).remote(self.daft_execution_config)
                 self.workers[node["NodeID"]] = RaySwordfishWorkerHandle(
                     node["NodeID"],
                     actor,
