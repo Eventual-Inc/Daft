@@ -1678,8 +1678,11 @@ class Expression:
         """Get the value from a previous row within a window partition.
 
         Args:
-            offset: The number of rows to look backward. Must be >= 0.
+            offset: The number of rows to shift backward. Must be >= 0.
             default: Value to use when no previous row exists. Can be a column reference.
+
+        Returns:
+            Expression: Value from the row `offset` positions before the current row.
 
         Examples:
             >>> import daft
@@ -1718,9 +1721,6 @@ class Expression:
             ╰──────────┴───────┴─────────────┴────────┴─────────────────────╯
             <BLANKLINE>
             (Showing first 6 of 6 rows)
-
-        Returns:
-            Expression: Value from the row `offset` positions before the current row.
         """
         if default is not None:
             default = Expression._to_expression(default)
@@ -1731,8 +1731,11 @@ class Expression:
         """Get the value from a previous row within a window partition.
 
         Args:
-            offset: The number of rows to look backward. Must be >= 0.
+            offset: The number of rows to shift forward. Must be >= 0.
             default: Value to use when no previous row exists. Can be a column reference.
+
+        Returns:
+            Expression: Value from the row `offset` positions after the current row.
 
         Examples:
             >>> import daft
@@ -1771,9 +1774,6 @@ class Expression:
             ╰──────────┴───────┴─────────────┴───────┴───────────────────╯
             <BLANKLINE>
             (Showing first 6 of 6 rows)
-
-        Returns:
-            Expression: Value from the row `offset` positions before the current row.
         """
         if default is not None:
             default = Expression._to_expression(default)

@@ -1879,7 +1879,7 @@ Daft window functions support several types of window specifications, including:
 - Partition By + Order By + Range Between
 
 !!! note "Note"
-    Global partitions (window functions without PARTITION BY) are not yet supported. All window functions must specify a PARTITION BY clause.
+    Global partitions (window functions without `PARTITION BY`) are not yet supported. All window functions must specify a `PARTITION BY` clause.
 
 ### Partition By
 
@@ -1897,7 +1897,7 @@ df = df.with_column("dept_total", col("salary").sum().over(window_spec))
 
 ### Partition By + Order By
 
-Adding an ORDER BY clause with [order_by()][daft.window.Window.order_by] to a window specification allows you to define the order of rows within each partition:
+Adding an `ORDER BY` clause with [order_by()][daft.window.Window.order_by] to a window specification allows you to define the order of rows within each partition:
 
 ```python
 window_spec = Window().partition_by("department").order_by("salary")
@@ -1911,7 +1911,7 @@ df.with_column("salary_rank", rank().over(window_spec))
 
 ### Partition By + Order By + Rows Between
 
-The ROWS BETWEEN clause with [rows_between()][daft.window.Window.rows_between] allows you to define a window frame based on physical row positions:
+The `ROWS BETWEEN` clause with [rows_between()][daft.window.Window.rows_between] allows you to define a window frame based on physical row positions:
 
 ```python
 window_spec = (
@@ -1930,7 +1930,7 @@ df.with_column("running_total", col("sales").sum().over(window_spec))
 
 ### Partition By + Order By + Range Between
 
-The RANGE BETWEEN clause with [range_between()][daft.window.Window.range_between] allows you to define a window frame based on logical values rather than physical rows:
+The `RANGE BETWEEN` clause with [range_between()][daft.window.Window.range_between] allows you to define a window frame based on logical values rather than physical rows:
 
 ```python
 window_spec = (
@@ -1947,22 +1947,22 @@ This is particularly useful when you want to analyze data within value ranges. F
 df.with_column("competitor_count", col("price").count().over(window_spec))
 ```
 
-The key difference between ROWS and RANGE is that RANGE includes all rows with values within the specified range of the current row's value, while ROWS only includes the specified number of physical rows. This makes RANGE BETWEEN particularly well-suited for price-based analysis because it ensures we capture all competitors within a specific price range, regardless of how many physical rows they occupy.
+The key difference between `ROWS` and `RANGE` is that `RANGE` includes all rows with values within the specified range of the current row's value, while `ROWS` only includes the specified number of physical rows. This makes `RANGE BETWEEN` particularly well-suited for analysis where we wish to capture all rows within a specific range, regardless of how many physical rows they occupy.
 
-## Supported Window Functions
+### Supported Window Functions
 
 Daft supports various window functions depending on the window specification:
 
-- **With Partition By only**: All aggregate functions ([sum()][daft.expressions.Expression.sum], [mean()][daft.expressions.Expression.mean], [count()][daft.expressions.Expression.count], [min()][daft.expressions.Expression.min], [max()][daft.expressions.Expression.max], etc.)
+- **With Partition By only**: All aggregate functions ([`sum()`][daft.expressions.Expression.sum], [`mean()`][daft.expressions.Expression.mean], [`count()`][daft.expressions.Expression.count], [`min()`][daft.expressions.Expression.min], [`max()`][daft.expressions.Expression.max], etc.)
 - **With Partition By + Order By**:
     - All aggregate functions
-    - Ranking functions ([row_number()][daft.functions.row_number], [rank()][daft.functions.rank], [dense_rank()][daft.functions.dense_rank])
-    - Offset functions ([lag()][daft.expressions.Expression.lag], [lead()][daft.expressions.Expression.lead])
+    - Ranking functions ([`row_number()`][daft.functions.row_number], [`rank()`][daft.functions.rank], [`dense_rank()`][daft.functions.dense_rank])
+    - Offset functions ([`lag()`][daft.expressions.Expression.lag], [`lead()`][daft.expressions.Expression.lead])
 - **With Partition By + Order By + Rows Between**: Aggregate functions only
 
-## Common Use Cases
+### Common Use Cases
 
-### Running Totals and Cumulative Sums
+#### Running Totals and Cumulative Sums
 
 === "🐍 Python"
     ```python
@@ -2038,7 +2038,7 @@ Daft supports various window functions depending on the window specification:
 (Showing first 6 of 6 rows)
 ```
 
-### Ranking Within Groups
+#### Ranking Within Groups
 
 === "🐍 Python"
     ```python
@@ -2121,7 +2121,7 @@ Daft supports various window functions depending on the window specification:
 (Showing first 6 of 6 rows)
 ```
 
-### Percentage of Group Total
+#### Percentage of Group Total
 
 === "🐍 Python"
     ```python

@@ -4,7 +4,7 @@ Window functions in Daft SQL allow you to perform calculations across a set of r
 
 !!! warning "Warning"
 
-        Window function support in Daft SQL is currently limited. Full SQL window function support is under development.
+    Window function support in Daft SQL is currently limited. Full SQL window function support is under development.
 
 ## Basic Syntax
 
