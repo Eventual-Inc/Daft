@@ -759,7 +759,7 @@ pub struct WindowPartitionAndOrderBy {
     pub aliases: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionAndDynamicFrame {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<ExprRef>,
