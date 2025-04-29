@@ -46,6 +46,8 @@ def _s3_config_to_storage_options(s3_config: S3Config) -> dict[str, str]:
         storage_options["connect_timeout"] = str(s3_config.connect_timeout_ms) + "ms"
     if s3_config.anonymous:
         storage_options["skip_signature"] = "true"
+    if s3_config.force_virtual_addressing:
+        storage_options["virtual_hosted_style_request"] = "true"
     return storage_options
 
 

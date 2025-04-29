@@ -17,10 +17,12 @@ if TYPE_CHECKING:
 
 
 def _lancedb_table_factory_function(
-    fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
+    ds: "lance.LanceDataset", fragment_id: int, required_columns: Optional[List[str]]
 ) -> Iterator["PyRecordBatch"]:
+    fragment = ds.get_fragment(fragment_id)
+    assert fragment is not None, RuntimeError(f"Unable to find lance fragment {fragment_id}")
     return (
-        RecordBatch.from_arrow_record_batches([rb], rb.schema)._table
+        RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
         for rb in fragment.to_batches(columns=required_columns)
     )
 
@@ -131,7 +133,7 @@ class LanceDBScanOperator(ScanOperator):
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
                 func_name=_lancedb_table_factory_function.__name__,
-                func_args=(fragment, required_columns),
+                func_args=(self._ds, fragment.fragment_id, required_columns),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
                 size_bytes=size_bytes,
