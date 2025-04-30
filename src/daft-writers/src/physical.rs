@@ -1,7 +1,4 @@
-use std::{
-    io::BufWriter,
-    sync::{Arc, Mutex},
-};
+use std::{io::BufWriter, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
@@ -11,12 +8,22 @@ use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
-    arrow::ArrowWriter,
+    arrow::{
+        arrow_writer::{compute_leaves, get_column_writers, ArrowLeafColumn},
+        ArrowSchemaConverter,
+    },
     basic::Compression,
-    file::properties::{WriterProperties, WriterVersion},
+    file::{
+        properties::{WriterProperties, WriterVersion},
+        writer::SerializedFileWriter,
+    },
+    schema::types::SchemaDescriptor,
 };
 
 use crate::{FileWriter, WriterFactory};
+
+/// Default buffer size for writing to files. We choose 132MiB since row groups are best-effort kept to ~128MiB.
+const DEFAULT_WRITE_BUFFER_SIZE: usize = 132 * 1024 * 1024;
 
 /// PhysicalWriterFactory is a factory for creating physical writers, i.e. parquet, csv writers.
 pub struct PhysicalWriterFactory {
@@ -58,9 +65,28 @@ impl WriterFactory for PhysicalWriterFactory {
                 // Create the directories if they don't exist.
                 std::fs::create_dir_all(&dir)?;
                 let filename = format!("{}/{}-{}.parquet", dir, uuid::Uuid::new_v4(), file_idx);
+
+                // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
+                // could be interesting but has much less support in the ecosystem (including ourselves).
+                let writer_properties = Arc::new(
+                    WriterProperties::builder()
+                        .set_writer_version(WriterVersion::PARQUET_1_0)
+                        .set_compression(Compression::SNAPPY)
+                        .build(),
+                );
+
+                let arrow_schema = Arc::new(self.schema.to_arrow()?.into());
+
+                let parquet_schema = ArrowSchemaConverter::new()
+                    .with_coerce_types(writer_properties.coerce_types())
+                    .convert(&arrow_schema)
+                    .unwrap();
+
                 Ok(Box::new(ArrowParquetWriter {
                     filename,
-                    schema: self.schema.clone(),
+                    writer_properties,
+                    arrow_schema,
+                    parquet_schema,
                     file_writer: None,
                     partition_values: partition_values.cloned(),
                 }))
@@ -82,28 +108,28 @@ impl WriterFactory for PhysicalWriterFactory {
 
 struct ArrowParquetWriter {
     filename: String,
-    schema: SchemaRef,
-    file_writer: Option<Mutex<ArrowWriter<BufWriter<std::fs::File>>>>,
+    writer_properties: Arc<WriterProperties>,
+    arrow_schema: Arc<arrow_schema::Schema>,
+    parquet_schema: SchemaDescriptor,
+    file_writer: Option<SerializedFileWriter<BufWriter<std::fs::File>>>,
     partition_values: Option<RecordBatch>,
 }
 
 impl ArrowParquetWriter {
     fn create_writer(&mut self) -> DaftResult<()> {
-        // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
-        // could be interesting but has much less support in the ecosystem (including ourselves).
-        let writer_properties = WriterProperties::builder()
-            .set_writer_version(WriterVersion::PARQUET_1_0)
-            .set_compression(Compression::SNAPPY)
-            .build();
         let file = std::fs::File::create(&self.filename)?;
-        let bufwriter = BufWriter::new(file);
-        let arrow_rs_schema = Arc::new(self.schema.to_arrow()?.into());
-        let writer = ArrowWriter::try_new(bufwriter, arrow_rs_schema, Some(writer_properties))
-            .expect("Failed to create ArrowWriter");
-        self.file_writer = Some(Mutex::new(writer));
+        let bufwriter = BufWriter::with_capacity(DEFAULT_WRITE_BUFFER_SIZE, file);
+        let writer = SerializedFileWriter::new(
+            bufwriter,
+            self.parquet_schema.root_schema_ptr(),
+            self.writer_properties.clone(),
+        )
+        .map_err(|e| DaftError::InternalError(e.to_string()))?;
+        self.file_writer = Some(writer);
         Ok(())
     }
 }
+
 impl FileWriter for ArrowParquetWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
@@ -115,29 +141,68 @@ impl FileWriter for ArrowParquetWriter {
         let file_writer = self
             .file_writer
             .as_mut()
-            .expect("File writer should be created by now")
-            .get_mut()
-            .expect("Failed to lock file writer");
+            .expect("File writer should be created by now");
         let current_bytes_written = file_writer.bytes_written();
+        let column_writers = get_column_writers(
+            &self.parquet_schema,
+            &self.writer_properties,
+            &self.arrow_schema,
+        )
+        .unwrap();
+        let mut workers: Vec<_> = column_writers
+            .into_iter()
+            .map(|mut col_writer| {
+                let (send, recv) = std::sync::mpsc::channel::<ArrowLeafColumn>();
+                let handle = std::thread::spawn(move || {
+                    // receive Arrays to encode via the channel
+                    for col in recv {
+                        col_writer.write(&col)?;
+                    }
+                    // once the input is complete, close the writer
+                    // to return the newly created ArrowColumnChunk
+                    col_writer.close()
+                });
+                (handle, send)
+            })
+            .collect();
+        let mut row_group_writer = file_writer.next_row_group().unwrap();
+
         let record_batches =
             data.tables_or_read(IOStatsContext::new("ArrowParquetWriter::write"))?;
-        for record_batch in record_batches.iter().cloned() {
-            let _ = file_writer.write(&record_batch.try_into()?);
+        // compute_leaves(field, array)
+        for record_batch in record_batches.iter() {
+            let mut worker_iter = workers.iter_mut();
+            let arrays = record_batch.get_inner_arrow_arrays();
+            for (arr, field) in arrays.zip(&self.arrow_schema.fields) {
+                for leaves in compute_leaves(field, &arr.into()).unwrap() {
+                    worker_iter.next().unwrap().1.send(leaves).unwrap();
+                }
+            }
         }
-        // Flush the current row group.
-        file_writer.flush().unwrap();
+
+        // Wait for the workers to complete encoding, and append
+        // the resulting column chunks to the row group (and the file)
+        for (handle, send) in workers {
+            drop(send); // Drop send side to signal termination
+                        // wait for the worker to send the completed chunk
+            let chunk = handle.join().unwrap().unwrap();
+            chunk.append_to_row_group(&mut row_group_writer).unwrap();
+        }
+        // Close the row group which writes to the underlying file
+        row_group_writer.close().unwrap();
+
         let bytes_written = file_writer.bytes_written() - current_bytes_written;
         Ok(bytes_written)
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
-        let file_writer = self
-            .file_writer
-            .as_mut()
-            .expect("File writer should be created by now")
-            .get_mut()
-            .expect("Failed to lock file writer");
+        let file_writer = self.file_writer.as_mut().ok_or_else(|| {
+            DaftError::InternalError(
+                "File writer should be created if close() is called".to_string(),
+            )
+        })?;
+
         let _metadata = file_writer.finish().unwrap();
         let field = Field::new("path", DataType::Utf8);
         let filename_series = Series::from_arrow(
@@ -158,23 +223,17 @@ impl FileWriter for ArrowParquetWriter {
     }
 
     fn bytes_written(&self) -> usize {
-        let file_writer = self
-            .file_writer
+        self.file_writer
             .as_ref()
-            .expect("File writer should be created by now")
-            .lock()
-            .expect("Failed to lock file writer");
-        file_writer.bytes_written()
+            .map(|w| w.bytes_written())
+            .unwrap_or(0)
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        let file_writer = self
-            .file_writer
+        self.file_writer
             .as_ref()
-            .expect("File writer should be created by now")
-            .lock()
-            .expect("Failed to lock file writer");
-        vec![file_writer.bytes_written()]
+            .map(|w| vec![w.bytes_written()])
+            .unwrap_or_else(|| vec![0])
     }
 }
 
