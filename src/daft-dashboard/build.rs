@@ -3,6 +3,7 @@ use std::process::Command;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=frontend/src/");
     println!("cargo:rerun-if-changed=frontend/bun.lockb");
+    println!("cargo:rerun-if-changed=frontend/package-lock.json");
     let out_dir = std::env::var("OUT_DIR")?;
 
     // always set the env var so that the include_dir! macro doesn't panic
@@ -14,29 +15,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .output()
         .map(|_| true)
         .unwrap_or(false);
-
+    let mut using_bun = true;
     // if bun is not available, we can't build the frontend assets
     // so we just print a warning and return
     // but if we're in release mode, we panic
     if !bun_available {
-        if cfg!(debug_assertions) {
-            println!("cargo:warning=Bun not found, skipping dashboard frontend assets");
-            return Ok(());
+        let node_avaiable = Command::new("node")
+            .arg("--version")
+            .output()
+            .map(|_| true)
+            .unwrap_or(false);
+
+        if !node_avaiable {
+            if cfg!(debug_assertions) {
+                println!("cargo:warning=Bun/Node.js not found, skipping dashboard frontend assets");
+                return Ok(());
+            } else {
+                panic!("either Bun or Node.js is required for release builds");
+            }
         } else {
-            panic!("Bun is required for release builds");
+            using_bun = false;
         }
     }
 
+    let install_status = if using_bun {
+        Command::new("bun")
+            .current_dir("./frontend")
+            .args(["install"])
+            .status()?
+    } else {
+        Command::new("npm")
+            .current_dir("./frontend")
+            .args(["install"])
+            .status()?
+    };
     // Install dependencies
-    let install_status = Command::new("bun")
-        .current_dir("./frontend")
-        .args(["install"])
-        .status()?;
 
     assert!(install_status.success(), "Failed to install dependencies");
 
     // Run `bun run build`
-    let mut cmd = Command::new("bun");
+    let mut cmd = if using_bun {
+        Command::new("bun")
+    } else {
+        Command::new("npm")
+    };
+
     let status = cmd.current_dir("./frontend");
 
     let status = if cfg!(debug_assertions) {
