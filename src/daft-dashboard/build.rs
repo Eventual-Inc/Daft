@@ -1,5 +1,3 @@
-use std::path::Path;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::env::var("OUT_DIR")?;
 
@@ -8,14 +6,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
 
-    if !Path::new(&frontend_dir).is_dir() {
+    if !std::path::Path::new(&frontend_dir).is_dir() {
         println!("Dashboard assets not found in {frontend_dir}, skipping dashboard build.");
         println!("To build dashboard assets: `bun run build` in src/daft-dashboard/frontend.");
         return Ok(());
     }
 
     // if there's anything in the output directory, remove it
-    if Path::new(&out_dir).is_dir() {
+    if std::fs::exists(&out_dir)? {
         std::fs::remove_dir_all(&out_dir)?;
     }
 
