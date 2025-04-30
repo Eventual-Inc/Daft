@@ -171,6 +171,7 @@ pub struct BoundColumn {
     pub index: usize,
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
+    /// Should only be used for display and debugging purposes
     pub field: Field,
 }
 
