@@ -1506,7 +1506,10 @@ impl Expr {
                 if_false,
                 predicate,
             } => {
+                dbg!(&predicate);
+
                 let predicate_field = predicate.to_field(schema)?;
+                dbg!(&predicate_field);
                 if predicate_field.dtype != DataType::Boolean {
                     return Err(DaftError::TypeError(format!(
                         "Expected predicate for if_else to be boolean but received {predicate_field}",

@@ -23,6 +23,7 @@ from daft.daft import (
     CountMode,
     ImageFormat,
     ImageMode,
+    PySeries,
     ResourceRequest,
     initialize_udfs,
     resolved_col,
@@ -49,7 +50,8 @@ from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import Series, item_to_series
+
+# from daft.utils import item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -113,7 +115,7 @@ def lit(value: object) -> Expression:
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
-    elif isinstance(value, Series):
+    elif hasattr(value, "_series") and isinstance(value._series, PySeries):
         lit_value = _series_lit(value._series)
     else:
         lit_value = _lit(value)
@@ -1442,8 +1444,10 @@ class Expression:
         if isinstance(other, Collection):
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
-            series = item_to_series("items", other)
-            other = [Expression._to_expression(series)]
+            # todo
+            # series = item_to_series("items", other)
+            # other = [Expression._to_expression(series)]
+            pass
         else:
             other = [other]
 
@@ -3803,8 +3807,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
         if isinstance(patterns, str):
             patterns = [patterns]
         if not isinstance(patterns, Expression):
-            series = item_to_series("items", patterns)
-            patterns = Expression._to_expression(series)
+            # todo
+            pass
+            # series = item_to_series("items", patterns)
+            # patterns = Expression._to_expression(series)
 
         return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
 

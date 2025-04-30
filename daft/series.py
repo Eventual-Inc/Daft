@@ -3,8 +3,9 @@ from __future__ import annotations
 import warnings
 from typing import Any, Iterator, Literal, TypeVar
 
+import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, image
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -724,6 +725,23 @@ class Series:
     def _debug_bincode_deserialize(cls, b: bytes) -> Series:
         return Series._from_pyseries(PySeries._debug_bincode_deserialize(b))
 
+    def _apply_unary_expr(self, func) -> Series:
+        rb = PyRecordBatch.from_pyseries_list([self._series])
+        name = self._series.name()
+        expr = func(native.unresolved_col(name))
+        pyseries = rb.eval_expression_list([expr]).get_column(name)
+        return Series._from_pyseries(pyseries)
+
+    def _apply_binary_expr(self, other, func) -> Series:
+        name = self._series.name()
+        s = self._series
+        other_series = other._series.rename("other")
+        rb = PyRecordBatch.from_pyseries_list([s, other_series])
+        expr = func(native.unresolved_col(name), native.unresolved_col("other")).alias(name)
+        rb = rb.eval_expression_list([expr])
+        pyseries = rb.get_column(name)
+        return Series._from_pyseries(pyseries)
+
 
 def item_to_series(name: str, item: Any) -> Series:
     if isinstance(item, list):
@@ -756,22 +774,27 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
+    def _apply_unary_expr(self, func) -> Series:
+        s = Series._from_pyseries(self._series)
+        return s._apply_unary_expr(func)
+
+    def _apply_binary_expr(self, other: Series, func) -> Series:
+        s = Series._from_pyseries(self._series)
+        return s._apply_binary_expr(other, func)
+
 
 class SeriesFloatNamespace(SeriesNamespace):
     def is_nan(self) -> Series:
-        return Series._from_pyseries(self._series.is_nan())
+        return self._apply_unary_expr(native.is_nan)
 
     def is_inf(self) -> Series:
-        return Series._from_pyseries(self._series.is_inf())
+        return self._apply_unary_expr(native.is_inf)
 
     def not_nan(self) -> Series:
-        return Series._from_pyseries(self._series.not_nan())
+        return self._apply_unary_expr(native.not_nan)
 
     def fill_nan(self, fill_value: Series) -> Series:
-        if not isinstance(fill_value, Series):
-            raise ValueError(f"expected another Series but got {type(fill_value)}")
-        assert self._series is not None and fill_value._series is not None
-        return Series._from_pyseries(self._series.fill_nan(fill_value._series))
+        return self._apply_binary_expr(fill_value, native.fill_nan)
 
 
 class SeriesStringNamespace(SeriesNamespace):
