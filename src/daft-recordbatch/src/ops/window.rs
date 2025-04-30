@@ -3,7 +3,7 @@ use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
     prelude::*,
 };
-use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
+use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame};
 
 use crate::{
     ops::window_states::{create_window_agg_state, WindowAggStateOps},
@@ -101,12 +101,6 @@ impl RecordBatch {
         dtype: &DataType,
         frame: &WindowFrame,
     ) -> DaftResult<Self> {
-        if matches!(frame.frame_type, WindowFrameType::Range) {
-            return Err(DaftError::ValueError(
-                "RANGE frame type is not supported yet for window_agg_dynamic_frame".into(),
-            ));
-        }
-
         let total_rows = self.len();
 
         // Calculate boundaries within the rows_between function as they are relative
@@ -132,14 +126,14 @@ impl RecordBatch {
 
         let source = self.get_column(agg_expr.name())?;
         // Check if we can initialize an incremental state
-        if let Some(agg_state) = create_window_agg_state(source, agg_expr, total_rows) {
+        if let Ok(agg_state) = create_window_agg_state(source, agg_expr, total_rows) {
             self.window_agg_rows_incremental(
                 &name,
                 start_boundary,
                 end_boundary,
                 min_periods,
                 total_rows,
-                agg_state.unwrap(),
+                agg_state,
             )
         } else {
             // Otherwise, use the non-incremental implementation

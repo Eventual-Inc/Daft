@@ -7,7 +7,7 @@ mod sum;
 
 use std::cmp::{Eq, Ordering};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use count::CountWindowState;
 use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;
@@ -87,17 +87,20 @@ pub fn create_window_agg_state(
     source: &Series,
     agg_expr: &AggExpr,
     total_length: usize,
-) -> Option<DaftResult<Box<dyn WindowAggStateOps>>> {
+) -> DaftResult<Box<dyn WindowAggStateOps>> {
     match agg_expr {
-        AggExpr::Sum(_) => Some(sum::create_for_type(source, total_length)),
-        AggExpr::Count(_, _) => Some(Ok(Box::new(CountWindowState::new(source, total_length)))),
-        AggExpr::Min(_) => Some(Ok(Box::new(MinWindowState::new(source, total_length)))),
-        AggExpr::Max(_) => Some(Ok(Box::new(MaxWindowState::new(source, total_length)))),
-        AggExpr::CountDistinct(_) => Some(Ok(Box::new(CountDistinctWindowState::new(
+        AggExpr::Sum(_) => sum::create_for_type(source, total_length),
+        AggExpr::Count(_, _) => Ok(Box::new(CountWindowState::new(source, total_length))),
+        AggExpr::Min(_) => Ok(Box::new(MinWindowState::new(source, total_length))),
+        AggExpr::Max(_) => Ok(Box::new(MaxWindowState::new(source, total_length))),
+        AggExpr::CountDistinct(_) => Ok(Box::new(CountDistinctWindowState::new(
             source,
             total_length,
-        )))),
-        AggExpr::Mean(_) => Some(mean::create_for_type(source, total_length)),
-        _ => None,
+        ))),
+        AggExpr::Mean(_) => mean::create_for_type(source, total_length),
+        _ => Err(DaftError::NotImplemented(format!(
+            "Window aggregation state not implemented for {:?}",
+            agg_expr
+        ))),
     }
 }
