@@ -23,7 +23,6 @@ from daft.daft import (
     CountMode,
     ImageFormat,
     ImageMode,
-    PySeries,
     ResourceRequest,
     initialize_udfs,
     resolved_col,
@@ -50,7 +49,7 @@ from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import item_to_series
+from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -114,7 +113,7 @@ def lit(value: object) -> Expression:
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
-    elif hasattr(value, "_series") and isinstance(value._series, PySeries):
+    elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
     else:
         lit_value = _lit(value)
