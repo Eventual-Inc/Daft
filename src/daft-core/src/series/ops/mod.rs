@@ -29,17 +29,13 @@ pub mod not;
 pub mod null;
 pub mod partitioning;
 pub mod repeat;
-pub mod round;
 pub mod search_sorted;
 pub mod shift;
-pub mod sign;
 pub mod sketch_percentile;
 pub mod sort;
-pub mod sqrt;
 pub mod struct_;
 pub mod take;
 pub mod time;
-mod trigonometry;
 pub mod utf8;
 pub mod zip;
 
