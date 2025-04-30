@@ -7,6 +7,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -967,9 +968,9 @@ impl RecordBatch {
         chunk
     }
 
-    /// Converts a single-row RecordBatch to a Hive-style partition string.
+    /// Converts a single-row RecordBatch to a Hive-style partition path.
     ///
-    /// This method creates a string representation of partition values in the format
+    /// This method creates a PathBuf representation of partition values in the format
     /// `/key1=value1/key2=value2...` where keys are URL-encoded column names and
     /// values are URL-encoded partition values.
     ///
@@ -980,9 +981,9 @@ impl RecordBatch {
     ///
     /// # Returns
     ///
-    /// * `Ok(String)` - The partition string if successful
+    /// * `Ok(PathBuf)` - The partition path if successful
     /// * `Err(DaftError)` - If the RecordBatch has more than one row, or if we fail to downcast the partition values to UTF-8 strings.
-    pub fn to_partition_string(&self, partition_null_fallback: Option<&str>) -> DaftResult<String> {
+    pub fn to_partition_path(&self, partition_null_fallback: Option<&str>) -> DaftResult<PathBuf> {
         if self.len() != 1 {
             return Err(DaftError::InternalError(
                 "Only single row RecordBatches can be converted to partition strings".to_string(),
@@ -993,7 +994,7 @@ impl RecordBatch {
         } else {
             DEFAULT_PARTITION_VALUE.to_string().into()
         };
-        let mut partition_string = String::new();
+        let mut partition_path = PathBuf::new();
         for col in self.columns.iter() {
             let key = urlencoding::encode(col.name());
             let value = if let Some(value) = col.utf8()?.get(0) {
@@ -1001,9 +1002,9 @@ impl RecordBatch {
             } else {
                 default_partition.clone()
             };
-            partition_string.push_str(&format!("/{key}={value}"));
+            partition_path.push(format!("{key}={value}"));
         }
-        Ok(partition_string)
+        Ok(partition_path)
     }
 }
 
@@ -1183,15 +1184,15 @@ mod test {
             day_series,
             date_series,
         ])?;
-        let partition_string = batch.to_partition_string(None)?;
+        let partition_path = batch.to_partition_path(None)?;
         assert_eq!(
-            partition_string,
+            partition_path.to_string_lossy(),
             "/year=2023/month=1/day=__HIVE_DEFAULT_PARTITION__/today%27s%20date=2025%2F04%2F29"
         );
         // Test with a fallback value that includes spaces.
-        let partition_string = batch.to_partition_string(Some("unconventional fallback"))?;
+        let partition_path = batch.to_partition_path(Some("unconventional fallback"))?;
         assert_eq!(
-            partition_string,
+            partition_path.to_string_lossy(),
             "/year=2023/month=1/day=unconventional%20fallback/today%27s%20date=2025%2F04%2F29"
         );
         Ok(())
@@ -1209,7 +1210,7 @@ mod test {
         )?;
         let batch = RecordBatch::from_nonempty_columns(vec![year_series, month_series])?;
 
-        let result = batch.to_partition_string(None);
+        let result = batch.to_partition_path(None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), DaftError::InternalError(_)));
         Ok(())

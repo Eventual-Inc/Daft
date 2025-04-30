@@ -1,4 +1,8 @@
-use std::{io::BufWriter, sync::Arc};
+use std::{
+    io::BufWriter,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
@@ -51,21 +55,20 @@ impl WriterFactory for PhysicalWriterFactory {
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
-        let (source_type, _) = parse_url(&self.output_file_info.root_dir)?;
+        let (source_type, root_dir) = parse_url(&self.output_file_info.root_dir)?;
         match self.native {
             // TODO(desmond): Remote writes.
-            // TODO(desmond): Proper error handling.
             true if matches!(source_type, SourceType::File) => {
+                let root_dir = Path::new(root_dir.trim_start_matches("file://"));
                 let dir = if let Some(partition_values) = partition_values {
-                    let partition_string = partition_values.to_partition_string(None)?;
-                    format!("{}{}", self.output_file_info.root_dir, partition_string)
+                    let partition_path = partition_values.to_partition_path(None)?;
+                    root_dir.join(partition_path)
                 } else {
-                    self.output_file_info.root_dir.to_string()
+                    root_dir.to_path_buf()
                 };
                 // Create the directories if they don't exist.
                 std::fs::create_dir_all(&dir)?;
-                let filename = format!("{}/{}-{}.parquet", dir, uuid::Uuid::new_v4(), file_idx);
-
+                let filename = dir.join(format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx));
                 // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
                 // could be interesting but has much less support in the ecosystem (including ourselves).
                 let writer_properties = Arc::new(
@@ -107,7 +110,7 @@ impl WriterFactory for PhysicalWriterFactory {
 }
 
 struct ArrowParquetWriter {
-    filename: String,
+    filename: PathBuf,
     writer_properties: Arc<WriterProperties>,
     arrow_schema: Arc<arrow_schema::Schema>,
     parquet_schema: SchemaDescriptor,
@@ -124,7 +127,7 @@ impl ArrowParquetWriter {
             self.parquet_schema.root_schema_ptr(),
             self.writer_properties.clone(),
         )
-        .map_err(|e| DaftError::InternalError(e.to_string()))?;
+        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         self.file_writer = Some(writer);
         Ok(())
     }
@@ -148,7 +151,7 @@ impl FileWriter for ArrowParquetWriter {
             &self.writer_properties,
             &self.arrow_schema,
         )
-        .unwrap();
+        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         let mut workers: Vec<_> = column_writers
             .into_iter()
             .map(|mut col_writer| {
@@ -165,7 +168,9 @@ impl FileWriter for ArrowParquetWriter {
                 (handle, send)
             })
             .collect();
-        let mut row_group_writer = file_writer.next_row_group().unwrap();
+        let mut row_group_writer = file_writer
+            .next_row_group()
+            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
         let record_batches =
             data.tables_or_read(IOStatsContext::new("ArrowParquetWriter::write"))?;
@@ -174,7 +179,9 @@ impl FileWriter for ArrowParquetWriter {
             let mut worker_iter = workers.iter_mut();
             let arrays = record_batch.get_inner_arrow_arrays();
             for (arr, field) in arrays.zip(&self.arrow_schema.fields) {
-                for leaves in compute_leaves(field, &arr.into()).unwrap() {
+                for leaves in compute_leaves(field, &arr.into())
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?
+                {
                     worker_iter.next().unwrap().1.send(leaves).unwrap();
                 }
             }
@@ -185,11 +192,18 @@ impl FileWriter for ArrowParquetWriter {
         for (handle, send) in workers {
             drop(send); // Drop send side to signal termination
                         // wait for the worker to send the completed chunk
-            let chunk = handle.join().unwrap().unwrap();
-            chunk.append_to_row_group(&mut row_group_writer).unwrap();
+            let chunk = handle
+                .join()
+                .unwrap()
+                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+            chunk
+                .append_to_row_group(&mut row_group_writer)
+                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         }
         // Close the row group which writes to the underlying file
-        row_group_writer.close().unwrap();
+        row_group_writer
+            .close()
+            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
         let bytes_written = file_writer.bytes_written() - current_bytes_written;
         Ok(bytes_written)
@@ -203,13 +217,15 @@ impl FileWriter for ArrowParquetWriter {
             )
         })?;
 
-        let _metadata = file_writer.finish().unwrap();
+        let _metadata = file_writer
+            .finish()
+            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         let field = Field::new("path", DataType::Utf8);
         let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(
-                [&self.filename],
-            )),
+            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
+                .filename
+                .to_string_lossy()])),
         )?;
         let record_batch =
             RecordBatch::new_with_size(Schema::new(vec![field]), vec![filename_series], 1)?;
