@@ -40,7 +40,7 @@ impl Stage {
     pub(crate) fn run_stage(
         self,
         psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        worker_manager_factory: &dyn WorkerManagerFactory,
     ) -> DaftResult<RunningStage> {
         let mut pipeline_node =
             pipeline_node::logical_plan_to_pipeline_node(self.logical_plan, self.config, psets)?;
@@ -80,7 +80,7 @@ pub(crate) struct StageContext {
 }
 
 impl StageContext {
-    fn try_new(worker_manager_factory: Box<dyn WorkerManagerFactory>) -> DaftResult<Self> {
+    fn try_new(worker_manager_factory: &dyn WorkerManagerFactory) -> DaftResult<Self> {
         let worker_manager = worker_manager_factory.create_worker_manager()?;
         let task_dispatcher = TaskDispatcher::new(worker_manager);
         let mut joinset = JoinSet::new();
