@@ -4,13 +4,13 @@ use daft_core::prelude::*;
 
 use super::WindowAggStateOps;
 
-pub struct CountWindowStateInner {
+pub struct CountWindowState {
     source: Bitmap,
     count: usize,
     count_vec: Vec<u64>,
 }
 
-impl CountWindowStateInner {
+impl CountWindowState {
     pub fn new(source: &Series, total_length: usize) -> Self {
         let source_bitmap = source
             .validity()
@@ -24,7 +24,7 @@ impl CountWindowStateInner {
     }
 }
 
-impl WindowAggStateOps for CountWindowStateInner {
+impl WindowAggStateOps for CountWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         for i in start_idx..end_idx {
             if self.source.get_bit(i) {

@@ -1,10 +1,10 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use num_traits::Zero;
 
 use super::WindowAggStateOps;
 
-pub struct SumWindowStateInner<T>
+pub struct SumWindowState<T>
 where
     T: DaftNumericType,
 {
@@ -13,7 +13,7 @@ where
     sum_vec: Vec<T::Native>,
 }
 
-impl<T> SumWindowStateInner<T>
+impl<T> SumWindowState<T>
 where
     T: DaftNumericType,
 {
@@ -27,7 +27,7 @@ where
     }
 }
 
-impl<T> WindowAggStateOps for SumWindowStateInner<T>
+impl<T> WindowAggStateOps for SumWindowState<T>
 where
     T: DaftNumericType,
     DataArray<T>: IntoSeries,
@@ -57,5 +57,39 @@ where
 
     fn build(&self) -> DaftResult<Series> {
         Ok(DataArray::<T>::from(("", self.sum_vec.clone())).into_series())
+    }
+}
+
+pub fn create_for_type(
+    source: &Series,
+    total_length: usize,
+) -> DaftResult<Box<dyn WindowAggStateOps>> {
+    match source.data_type() {
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+            let casted = source.cast(&DataType::Int64)?;
+            Ok(Box::new(SumWindowState::<Int64Type>::new(
+                &casted,
+                total_length,
+            )))
+        }
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+            let casted = source.cast(&DataType::UInt64)?;
+            Ok(Box::new(SumWindowState::<UInt64Type>::new(
+                &casted,
+                total_length,
+            )))
+        }
+        DataType::Float32 => Ok(Box::new(SumWindowState::<Float32Type>::new(
+            source,
+            total_length,
+        ))),
+        DataType::Float64 => Ok(Box::new(SumWindowState::<Float64Type>::new(
+            source,
+            total_length,
+        ))),
+        dt => Err(DaftError::TypeError(format!(
+            "Cannot run Sum over type {}",
+            dt
+        ))),
     }
 }

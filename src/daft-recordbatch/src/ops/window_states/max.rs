@@ -6,7 +6,7 @@ use daft_core::prelude::*;
 
 use super::{IndexedValue, WindowAggStateOps};
 
-pub struct MaxWindowStateInner {
+pub struct MaxWindowState {
     source: Series,
     max_heap: BinaryHeap<IndexedValue>,
     cur_idx: usize,
@@ -14,7 +14,7 @@ pub struct MaxWindowStateInner {
     validity: MutableBitmap,
 }
 
-impl MaxWindowStateInner {
+impl MaxWindowState {
     pub fn new(source: &Series, total_length: usize) -> Self {
         Self {
             source: source.clone(),
@@ -26,7 +26,7 @@ impl MaxWindowStateInner {
     }
 }
 
-impl WindowAggStateOps for MaxWindowStateInner {
+impl WindowAggStateOps for MaxWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {

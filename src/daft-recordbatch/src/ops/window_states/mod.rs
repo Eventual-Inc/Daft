@@ -7,17 +7,16 @@ mod sum;
 
 use std::cmp::{Eq, Ordering};
 
-use common_error::{DaftError, DaftResult};
-pub use count::CountWindowStateInner;
-pub use count_distinct::CountDistinctWindowStateInner;
+use common_error::DaftResult;
+use count::CountWindowState;
+use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;
 use daft_dsl::AggExpr;
-pub use max::MaxWindowStateInner;
-pub use mean::MeanWindowStateInner;
-pub use min::MinWindowStateInner;
-pub use sum::SumWindowStateInner;
+use max::MaxWindowState;
+use min::MinWindowState;
+use sum::SumWindowState;
 
-/// Trait for window aggregation state inner implementations
+/// Trait for window aggregation state implementations
 pub trait WindowAggStateOps {
     /// Add a value to the state with index information
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()>;
@@ -90,88 +89,15 @@ pub fn create_window_agg_state(
     total_length: usize,
 ) -> Option<DaftResult<Box<dyn WindowAggStateOps>>> {
     match agg_expr {
-        AggExpr::Sum(_) => {
-            let result: DaftResult<Box<dyn WindowAggStateOps>> =
-                (|| -> DaftResult<Box<dyn WindowAggStateOps>> {
-                    match source.data_type() {
-                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                            let casted = source.cast(&DataType::Int64)?;
-                            Ok(Box::new(SumWindowStateInner::<Int64Type>::new(
-                                &casted,
-                                total_length,
-                            )))
-                        }
-                        DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64 => {
-                            let casted = source.cast(&DataType::UInt64)?;
-                            Ok(Box::new(SumWindowStateInner::<UInt64Type>::new(
-                                &casted,
-                                total_length,
-                            )))
-                        }
-                        DataType::Float32 => Ok(Box::new(SumWindowStateInner::<Float32Type>::new(
-                            source,
-                            total_length,
-                        ))),
-                        DataType::Float64 => Ok(Box::new(SumWindowStateInner::<Float64Type>::new(
-                            source,
-                            total_length,
-                        ))),
-                        dt => Err(DaftError::TypeError(format!(
-                            "Cannot run Sum over type {}",
-                            dt
-                        ))),
-                    }
-                })();
-            Some(result)
-        }
-        AggExpr::Count(_, _) => Some(Ok(Box::new(CountWindowStateInner::new(
+        AggExpr::Sum(_) => Some(sum::create_for_type(source, total_length)),
+        AggExpr::Count(_, _) => Some(Ok(Box::new(CountWindowState::new(source, total_length)))),
+        AggExpr::Min(_) => Some(Ok(Box::new(MinWindowState::new(source, total_length)))),
+        AggExpr::Max(_) => Some(Ok(Box::new(MaxWindowState::new(source, total_length)))),
+        AggExpr::CountDistinct(_) => Some(Ok(Box::new(CountDistinctWindowState::new(
             source,
             total_length,
         )))),
-        AggExpr::Min(_) => Some(Ok(Box::new(MinWindowStateInner::new(source, total_length)))),
-        AggExpr::Max(_) => Some(Ok(Box::new(MaxWindowStateInner::new(source, total_length)))),
-        AggExpr::CountDistinct(_) => Some(Ok(Box::new(CountDistinctWindowStateInner::new(
-            source,
-            total_length,
-        )))),
-        AggExpr::Mean(_) => {
-            let result: DaftResult<Box<dyn WindowAggStateOps>> =
-                (|| -> DaftResult<Box<dyn WindowAggStateOps>> {
-                    match source.data_type() {
-                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                            let casted = source.cast(&DataType::Int64)?;
-                            Ok(Box::new(MeanWindowStateInner::<Int64Type>::new(
-                                &casted,
-                                total_length,
-                            )))
-                        }
-                        DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64 => {
-                            let casted = source.cast(&DataType::UInt64)?;
-                            Ok(Box::new(MeanWindowStateInner::<UInt64Type>::new(
-                                &casted,
-                                total_length,
-                            )))
-                        }
-                        DataType::Float32 => Ok(Box::new(
-                            MeanWindowStateInner::<Float32Type>::new(source, total_length),
-                        )),
-                        DataType::Float64 => Ok(Box::new(
-                            MeanWindowStateInner::<Float64Type>::new(source, total_length),
-                        )),
-                        dt => Err(DaftError::TypeError(format!(
-                            "Cannot run Mean over type {}",
-                            dt
-                        ))),
-                    }
-                })();
-            Some(result)
-        }
+        AggExpr::Mean(_) => Some(mean::create_for_type(source, total_length)),
         _ => None,
     }
 }
