@@ -50,8 +50,7 @@ from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-
-# from daft.utils import item_to_series
+from daft.series import item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -1444,10 +1443,8 @@ class Expression:
         if isinstance(other, Collection):
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
-            # todo
-            # series = item_to_series("items", other)
-            # other = [Expression._to_expression(series)]
-            pass
+            series = item_to_series("items", other)
+            other = [Expression._to_expression(series)]
         else:
             other = [other]
 
@@ -3807,10 +3804,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         if isinstance(patterns, str):
             patterns = [patterns]
         if not isinstance(patterns, Expression):
-            # todo
-            pass
-            # series = item_to_series("items", patterns)
-            # patterns = Expression._to_expression(series)
+            series = item_to_series("items", patterns)
+            patterns = Expression._to_expression(series)
 
         return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
 
