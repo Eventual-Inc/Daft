@@ -1127,7 +1127,7 @@ mod test {
     use std::sync::Arc;
 
     use arrow2::array::Utf8Array;
-    use common_error::DaftResult;
+    use common_error::{DaftError, DaftResult};
     use daft_core::prelude::*;
     use daft_dsl::resolved_col;
 
@@ -1167,57 +1167,12 @@ mod test {
             Arc::new(Field::new("month", DataType::Utf8)),
             Box::new(Utf8Array::<i64>::from_slice(&["1"])),
         )?;
-        let batch = RecordBatch::from_nonempty_columns(vec![year_series, month_series])?;
-        let partition_string = batch.to_partition_string(None)?;
-        assert_eq!(partition_string, "/year=2023/month=1");
-        Ok(())
-    }
-
-    #[test]
-    fn test_to_partition_string_with_null() -> DaftResult<()> {
-        let year_series = Series::from_arrow(
-            Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(Utf8Array::<i64>::from_slice(&["2023"])),
-        )?;
-        let month_series = Series::from_arrow(
-            Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(Utf8Array::<i64>::from_slice(&["1"])),
-        )?;
+        // Include a column with a null value.
         let day_series = Series::from_arrow(
             Arc::new(Field::new("day", DataType::Utf8)),
             Box::new(Utf8Array::<i64>::from([None::<&str>])),
         )?;
-        let batch =
-            RecordBatch::from_nonempty_columns(vec![year_series, month_series, day_series])?;
-        let partition_string = batch.to_partition_string(None)?;
-        assert_eq!(
-            partition_string,
-            "/year=2023/month=1/day=__HIVE_DEFAULT_PARTITION__"
-        );
-        // Test with a fallback value that includes spaces.
-        let partition_string = batch.to_partition_string(Some("unconventional fallback"))?;
-        assert_eq!(
-            partition_string,
-            "/year=2023/month=1/day=unconventional%20fallback"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_to_partition_string_escape_strings() -> DaftResult<()> {
-        let year_series = Series::from_arrow(
-            Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(Utf8Array::<i64>::from_slice(&["2023"])),
-        )?;
-        let month_series = Series::from_arrow(
-            Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(Utf8Array::<i64>::from_slice(&["1"])),
-        )?;
-        let day_series = Series::from_arrow(
-            Arc::new(Field::new("day", DataType::Utf8)),
-            Box::new(Utf8Array::<i64>::from([None::<&str>])),
-        )?;
-        // Include a field with a name that needs to be URL-encoded.
+        // Include a column with a name that needs to be URL-encoded.
         let date_series = Series::from_arrow(
             Arc::new(Field::new("today's date", DataType::Utf8)),
             Box::new(Utf8Array::<i64>::from_slice(&["2025/04/29"])),
@@ -1239,6 +1194,24 @@ mod test {
             partition_string,
             "/year=2023/month=1/day=unconventional%20fallback/today%27s%20date=2025%2F04%2F29"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_partition_string_multi_row_error() -> DaftResult<()> {
+        let year_series = Series::from_arrow(
+            Arc::new(Field::new("year", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["2023", "2024"])),
+        )?;
+        let month_series = Series::from_arrow(
+            Arc::new(Field::new("month", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["1", "2"])),
+        )?;
+        let batch = RecordBatch::from_nonempty_columns(vec![year_series, month_series])?;
+
+        let result = batch.to_partition_string(None);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), DaftError::InternalError(_)));
         Ok(())
     }
 }
