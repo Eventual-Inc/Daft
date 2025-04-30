@@ -74,7 +74,7 @@ jobs:
         fi
 
     - name: Build dashboard with Bun
-      working-directory: ./src/daft-dasboard/frontend
+      working-directory: ./src/daft-dashboard/frontend
       run: |
         bun install
         bun run build
