@@ -5,15 +5,15 @@ use std::{
     task::{Context, Poll},
 };
 
-use collect::CollectProgram;
+use collect::CollectNode;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
 use futures::Stream;
-use limit::LimitProgram;
-use translate::translate_program_plan_to_local_physical_plans;
+use limit::LimitNode;
+use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{channel::Receiver, stage::StageContext};
 
@@ -51,19 +51,19 @@ impl Stream for RunningPipelineNode {
     }
 }
 
-pub(crate) fn logical_plan_to_program(
+pub(crate) fn logical_plan_to_pipeline_node(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
 ) -> DaftResult<Box<dyn DistributedPipelineNode>> {
-    struct ProgramBoundarySplitter {
+    struct PipelineNodeBoundarySplitter {
         root: LogicalPlanRef,
         psets: HashMap<String, Vec<PartitionRef>>,
-        current_programs: Vec<Box<dyn DistributedPipelineNode>>,
+        current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
         config: Arc<DaftExecutionConfig>,
     }
 
-    impl TreeNodeRewriter for ProgramBoundarySplitter {
+    impl TreeNodeRewriter for PipelineNodeBoundarySplitter {
         type Node = LogicalPlanRef;
 
         fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
@@ -74,25 +74,31 @@ pub(crate) fn logical_plan_to_program(
             let is_root = Arc::ptr_eq(&node, &self.root);
             match node.as_ref() {
                 LogicalPlan::Limit(limit) => {
-                    let input_programs = std::mem::take(&mut self.current_programs);
+                    let input_nodes = std::mem::take(&mut self.current_nodes);
                     let translated_local_physical_plans =
-                        translate_program_plan_to_local_physical_plans(node.clone(), &self.config)?;
-                    self.current_programs = vec![Box::new(LimitProgram::new(
+                        translate_pipeline_plan_to_local_physical_plans(
+                            node.clone(),
+                            &self.config,
+                        )?;
+                    self.current_nodes = vec![Box::new(LimitNode::new(
                         limit.limit as usize,
                         translated_local_physical_plans,
-                        input_programs,
+                        input_nodes,
                         std::mem::take(&mut self.psets),
                     ))];
                     // Here we will have to return a placeholder, essentially cutting off the plan
-                    todo!("Implement program boundary splitter for limit");
+                    todo!("Implement pipeline node boundary splitter for limit");
                 }
                 _ if is_root => {
-                    let input_programs = std::mem::take(&mut self.current_programs);
+                    let input_nodes = std::mem::take(&mut self.current_nodes);
                     let translated_local_physical_plans =
-                        translate_program_plan_to_local_physical_plans(node.clone(), &self.config)?;
-                    self.current_programs = vec![Box::new(CollectProgram::new(
+                        translate_pipeline_plan_to_local_physical_plans(
+                            node.clone(),
+                            &self.config,
+                        )?;
+                    self.current_nodes = vec![Box::new(CollectNode::new(
                         translated_local_physical_plans,
-                        input_programs,
+                        input_nodes,
                         std::mem::take(&mut self.psets),
                     ))];
                     Ok(Transformed::no(node))
@@ -102,17 +108,17 @@ pub(crate) fn logical_plan_to_program(
         }
     }
 
-    let mut splitter = ProgramBoundarySplitter {
+    let mut splitter = PipelineNodeBoundarySplitter {
         root: plan.clone(),
-        current_programs: vec![],
+        current_nodes: vec![],
         psets,
         config,
     };
 
     let _transformed = plan.rewrite(&mut splitter)?;
-    assert!(splitter.current_programs.len() == 1);
+    assert!(splitter.current_nodes.len() == 1);
     Ok(splitter
-        .current_programs
+        .current_nodes
         .pop()
-        .expect("Expected exactly one program"))
+        .expect("Expected exactly one node"))
 }

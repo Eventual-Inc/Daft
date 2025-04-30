@@ -12,14 +12,14 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub(crate) struct LimitProgram {
+pub(crate) struct LimitNode {
     limit: usize,
     local_physical_plans: Vec<LocalPhysicalPlanRef>,
     children: Vec<Box<dyn DistributedPipelineNode>>,
     input_psets: HashMap<String, Vec<PartitionRef>>,
 }
 
-impl LimitProgram {
+impl LimitNode {
     pub fn new(
         limit: usize,
         local_physical_plans: Vec<LocalPhysicalPlanRef>,
@@ -41,18 +41,18 @@ impl LimitProgram {
         }
     }
 
-    async fn program_loop(
+    async fn execution_loop(
         _task_dispatcher_handle: TaskDispatcherHandle,
         _local_physical_plans: Vec<LocalPhysicalPlanRef>,
         _input_node: Option<RunningPipelineNode>,
         _input_psets: HashMap<String, Vec<PartitionRef>>,
         _result_tx: Sender<PartitionRef>,
     ) -> DaftResult<()> {
-        todo!("Implement limit program loop");
+        todo!("Implement limit execution loop");
     }
 }
 
-impl DistributedPipelineNode for LimitProgram {
+impl DistributedPipelineNode for LimitNode {
     fn name(&self) -> &'static str {
         "Limit"
     }
@@ -63,22 +63,22 @@ impl DistributedPipelineNode for LimitProgram {
 
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
         let task_dispatcher_handle = stage_context.task_dispatcher_handle.clone();
-        let input_program = if let Some(mut input_program) = self.children.pop() {
+        let input_node = if let Some(mut input_node) = self.children.pop() {
             assert!(self.children.is_empty());
-            let input_running_program = input_program.start(stage_context);
-            Some(input_running_program)
+            let input_running_node = input_node.start(stage_context);
+            Some(input_running_node)
         } else {
             None
         };
         let (result_tx, result_rx) = create_channel(1);
-        let program_loop = Self::program_loop(
+        let execution_loop = Self::execution_loop(
             task_dispatcher_handle,
             std::mem::take(&mut self.local_physical_plans),
-            input_program,
+            input_node,
             std::mem::take(&mut self.input_psets),
             result_tx,
         );
-        stage_context.joinset.spawn(program_loop);
+        stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }

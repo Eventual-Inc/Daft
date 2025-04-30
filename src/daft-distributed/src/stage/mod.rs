@@ -14,7 +14,7 @@ use futures::Stream;
 
 use crate::{
     channel::Receiver,
-    program::logical_plan_to_program,
+    pipeline_node,
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
@@ -42,10 +42,11 @@ impl Stage {
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> DaftResult<RunningStage> {
-        let mut program = logical_plan_to_program(self.logical_plan, self.config, psets)?;
+        let mut pipeline_node =
+            pipeline_node::logical_plan_to_pipeline_node(self.logical_plan, self.config, psets)?;
         let mut stage_context = StageContext::try_new(worker_manager_factory)?;
-        let running_program = program.start(&mut stage_context);
-        let running_stage = RunningStage::new(running_program.into_inner(), stage_context);
+        let running_node = pipeline_node.start(&mut stage_context);
+        let running_stage = RunningStage::new(running_node.into_inner(), stage_context);
         Ok(running_stage)
     }
 }

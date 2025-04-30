@@ -1,6 +1,6 @@
 mod channel;
+mod pipeline_node;
 mod plan;
-mod program;
 #[cfg(feature = "python")]
 pub mod python;
 mod runtime;
