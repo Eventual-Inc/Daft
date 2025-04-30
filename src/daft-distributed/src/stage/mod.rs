@@ -113,7 +113,7 @@ impl Stream for RunningStage {
                     // Joinset is empty, transition to finished state
                     Poll::Ready(None) => {
                         *state = RunningStageState::Finished;
-                        Some(Poll::Ready(None))
+                        None
                     }
                     // Still waiting for a result from the joinset
                     Poll::Pending => Some(Poll::Pending),
