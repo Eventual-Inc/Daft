@@ -26,6 +26,16 @@ impl CountWindowState {
 
 impl WindowAggStateOps for CountWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        // if end_idx <= start_idx {
+        //     return Err(DaftError::ValueError(
+        //         "end_idx must be greater than start_idx".into(),
+        //     ));
+        // }
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if self.source.get_bit(i) {
                 self.count += 1;
@@ -35,6 +45,16 @@ impl WindowAggStateOps for CountWindowState {
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        // if end_idx <= start_idx {
+        //     return Err(DaftError::ValueError(
+        //         "end_idx must be greater than start_idx".into(),
+        //     ));
+        // }
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if self.source.get_bit(i) {
                 self.count -= 1;

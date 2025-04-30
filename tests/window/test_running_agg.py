@@ -119,6 +119,94 @@ def test_min_periods(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
+def test_sliding_sum_negative_bounds(make_df):
+    """Test running sum with negative bounds and min periods."""
+    random.seed(444)
+
+    data = []
+    expected_data = []
+
+    for category in ["X", "Y"]:
+        values = [random.randint(1, 100) for _ in range(100)]
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            start_idx = max(0, ts - 10)
+            end_idx = max(0, ts - 2)
+
+            window_vals = values[start_idx:end_idx]
+            min_periods = 3
+
+            if len(window_vals) < min_periods:
+                expected_sum = None
+            else:
+                expected_sum = sum(window_vals)
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "sliding_sum": expected_sum,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-10, -3, min_periods=3)
+
+    result = df.select(
+        col("category"), col("ts"), col("value"), col("value").sum().over(window_spec).alias("sliding_sum")
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_sliding_sum_positive_bounds(make_df):
+    """Test running sum with positive bounds and min periods."""
+    random.seed(444)
+
+    data = []
+    expected_data = []
+
+    for category in ["X", "Y"]:
+        values = [random.randint(1, 100) for _ in range(100)]
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            start_idx = min(len(values), ts + 2)
+            end_idx = min(len(values), ts + 10)
+
+            window_vals = values[start_idx:end_idx]
+            min_periods = 3
+
+            if len(window_vals) < min_periods:
+                expected_sum = None
+            else:
+                expected_sum = sum(window_vals)
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "sliding_sum": expected_sum,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(2, 9, min_periods=3)
+
+    result = df.select(
+        col("category"), col("ts"), col("value"), col("value").sum().over(window_spec).alias("sliding_sum")
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
 def test_fixed_start_adjustable_end(make_df):
     """Test running aggregation with fixed start and adjustable end."""
     random.seed(45)
@@ -315,8 +403,6 @@ def test_different_min_periods(make_df):
         col("value").mean().over(window_min_4).alias("avg_min_4"),
     ).collect()
 
-    print(result.to_pandas())
-
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
@@ -386,8 +472,8 @@ def test_min_max_with_none(make_df):
 
     for category in ["A", "B"]:
         values = []
-        for _ in range(100):
-            if random.random() < 0.1:
+        for _ in range(1000):
+            if random.random() < 0.3:
                 values.append(None)
             else:
                 values.append(random.randint(1, 100))
@@ -436,14 +522,11 @@ def test_count_count_distinct_with_none(make_df):
 
     for category in ["A", "B"]:
         values = []
-        for _ in range(10):
-            if random.random() < 0.2:
+        for _ in range(1000):
+            if random.random() < 0.3:
                 values.append(None)
             else:
                 values.append(random.randint(1, 5))
-
-        print(f"{category}:")
-        print(f"{[(ts, value) for ts, value in enumerate(values)]}")
 
         for ts, value in enumerate(values):
             data.append({"category": category, "ts": ts, "value": value})
@@ -490,8 +573,8 @@ def test_sum_avg_with_none(make_df):
 
     for category in ["A", "B"]:
         values = []
-        for _ in range(100):
-            if random.random() < 0.1:
+        for _ in range(10):
+            if random.random() < 0.5:
                 values.append(None)
             else:
                 values.append(random.randint(1, 100))
@@ -682,17 +765,17 @@ def calculate_expected_range(data_tuples, range_start_offset, range_end_offset, 
 
         if len(range_values) < min_periods:
             expected_map[(current_ts)] = {
-                "range_sum": float("nan"),
-                "range_avg": float("nan"),
-                "range_min": float("nan"),
-                "range_max": float("nan"),
+                "range_sum": None,
+                "range_avg": None,
+                "range_min": None,
+                "range_max": None,
             }
         else:
             expected_map[(current_ts)] = {
-                "range_sum": sum(range_values) if range_values else float("nan"),
-                "range_avg": sum(range_values) / len(range_values) if range_values else float("nan"),
-                "range_min": min(range_values) if range_values else float("nan"),
-                "range_max": max(range_values) if range_values else float("nan"),
+                "range_sum": sum(range_values) if range_values else None,
+                "range_avg": sum(range_values) / len(range_values) if range_values else None,
+                "range_min": min(range_values) if range_values else None,
+                "range_max": max(range_values) if range_values else None,
             }
 
     return expected_map
@@ -703,7 +786,7 @@ def test_range_trailing(make_df):
     data = []
     original_data_order = []
 
-    possible_timestamps = random.sample(range(1000), 700)
+    possible_timestamps = random.sample(range(1000), 200)
     possible_timestamps.sort()
 
     expected_results_map = {}

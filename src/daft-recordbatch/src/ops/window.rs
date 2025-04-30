@@ -1,3 +1,4 @@
+use arrow2::bitmap::{binary, Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
@@ -108,8 +109,7 @@ impl RecordBatch {
         // Calculate boundaries within the rows_between function as they are relative
         let start_boundary = match &frame.start {
             WindowBoundary::UnboundedPreceding => None,
-            WindowBoundary::Offset(offset) => Some(*offset),
-            WindowBoundary::RangeOffset(_) => unreachable!(),
+            WindowBoundary::Offset(_) | WindowBoundary::RangeOffset(_) => Some(frame.start.clone()),
             WindowBoundary::UnboundedFollowing => {
                 return Err(DaftError::ValueError(
                     "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
@@ -119,8 +119,7 @@ impl RecordBatch {
 
         let end_boundary = match &frame.end {
             WindowBoundary::UnboundedFollowing => None,
-            WindowBoundary::Offset(offset) => Some(*offset),
-            WindowBoundary::RangeOffset(_) => unreachable!(),
+            WindowBoundary::Offset(_) | WindowBoundary::RangeOffset(_) => Some(frame.end.clone()),
             WindowBoundary::UnboundedPreceding => {
                 return Err(DaftError::ValueError(
                     "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
@@ -128,8 +127,8 @@ impl RecordBatch {
             }
         };
 
-        if matches!(frame.start, WindowBoundary::RangeOffset(_))
-            || matches!(frame.end, WindowBoundary::RangeOffset(_))
+        if matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
+            || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
         {
             if order_by.len() != 1 {
                 return Err(DaftError::ValueError(
@@ -137,7 +136,7 @@ impl RecordBatch {
                 ));
             }
 
-            self.window_agg_range_between(
+            self.window_agg_range(
                 agg_expr,
                 &name,
                 start_boundary,
@@ -148,6 +147,16 @@ impl RecordBatch {
                 total_rows,
             )
         } else {
+            let start_boundary = match start_boundary {
+                Some(WindowBoundary::Offset(offset)) => Some(offset),
+                _ => None,
+            };
+
+            let end_boundary = match end_boundary {
+                Some(WindowBoundary::Offset(offset)) => Some(offset),
+                _ => None,
+            };
+
             let source = self.get_column(agg_expr.name())?;
             // Check if we can initialize an incremental state
             if let Ok(agg_state) = create_window_agg_state(source, agg_expr, total_rows) {
@@ -187,6 +196,7 @@ impl RecordBatch {
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
+        let mut validity = MutableBitmap::with_capacity(total_rows); // TODO: probably possible to compute directly
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
@@ -225,14 +235,23 @@ impl RecordBatch {
                 // Update previous boundaries for the next iteration
                 prev_frame_start = frame_start;
                 prev_frame_end = frame_end;
+                validity.push(true);
+            } else {
+                validity.push(false);
             }
 
             // Evaluate current state to get the result for this row
             agg_state.evaluate()?;
         }
 
+        let mut validity = Bitmap::from(validity);
+        let agg_state = agg_state.build()?.rename(name);
+        if let Some(agg_validity) = agg_state.validity() {
+            validity = binary(&validity, agg_validity, |a, b| a & b);
+        }
+
         // Build the final result series
-        let renamed_result = agg_state.build()?.rename(name);
+        let renamed_result = agg_state.with_validity(Some(validity))?;
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }
@@ -294,14 +313,14 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_range_between(
+    fn window_agg_range(
         &self,
         agg_expr: &AggExpr,
         name: &str,
-        start_boundary: Option<i64>,
-        end_boundary: Option<i64>,
+        start_boundary: Option<WindowBoundary>,
+        end_boundary: Option<WindowBoundary>,
         order_by: &ExprRef,
-        descending: bool, // TODO: finalize behavior for descending
+        _descending: bool, // TODO: finalize behavior for descending
         min_periods: usize,
         total_rows: usize,
     ) -> DaftResult<Self> {
@@ -309,75 +328,64 @@ impl RecordBatch {
         // Initialize the state for incremental aggregation
         let source = self.get_column(agg_expr.name())?;
         let order_by_col = self.eval_expression(order_by)?;
-        assert!(
-            order_by_col.data_type().is_integer(),
-            "Order by column exclusively supports integer types currently"
-        );
-        let order_by_col = order_by_col.downcast::<Int64Array>()?;
         let mut agg_state = create_window_agg_state(source, agg_expr, total_rows)?;
+        let mut validity = MutableBitmap::with_capacity(total_rows);
 
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
 
         for row_idx in 0..total_rows {
-            let current_row_order_by = order_by_col.get(row_idx).ok_or_else(|| {
-                DaftError::ValueError(format!(
-                    "Order by column cannot be null at index: {}",
-                    row_idx
-                ))
-            })?;
+            let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
 
             // Calculate frame bounds for this row using the provided boundaries
-            let frame_start = match start_boundary {
+            let frame_start = match &start_boundary {
                 None => 0, // Unbounded preceding
-                Some(start_offset) => {
-                    let mut current_start = prev_frame_start; // Start search from previous start
-                    if descending {
-                        // Descending: Find first index `i` where value <= upper bound `current_row_order_by + end_offset`.
-                        let upper_bound = end_boundary
-                            .map_or(i64::MAX, |end_offset| current_row_order_by + end_offset);
-                        while current_start < total_rows
-                            && order_by_col.get(current_start).unwrap() > upper_bound
-                        {
-                            current_start += 1;
-                        }
-                    } else {
-                        // Ascending: Find first index `i` where value >= lower bound `current_row_order_by + start_offset`.
-                        let lower_bound = current_row_order_by + start_offset;
-                        while current_start < total_rows
-                            && order_by_col.get(current_start).unwrap() < lower_bound
-                        {
-                            current_start += 1;
+                Some(WindowBoundary::Offset(offset)) => row_idx
+                    .saturating_add_signed(*offset as isize)
+                    .min(total_rows),
+                Some(WindowBoundary::RangeOffset(offset)) => {
+                    let offset = offset.to_series();
+                    let lower_bound = (current_row_order_by.clone() + offset)?;
+                    let gte = order_by_col.gte(&lower_bound)?;
+                    let mut first_true_idx = gte.len();
+                    for i in 0..gte.len() {
+                        if gte.get(i).unwrap_or(false) {
+                            first_true_idx = i;
+                            break;
                         }
                     }
-                    current_start
+                    first_true_idx
+                }
+                Some(WindowBoundary::UnboundedPreceding)
+                | Some(WindowBoundary::UnboundedFollowing) => {
+                    unreachable!()
                 }
             };
 
-            let frame_end = match end_boundary {
+            let frame_end = match &end_boundary {
                 None => total_rows, // Unbounded following
-                Some(end_offset) => {
-                    let mut current_end = prev_frame_end; // Start search from previous end
-                    if descending {
-                        // Descending: Find first index `j` where value < lower bound `current_row_order_by + start_offset`.
-                        let lower_bound = start_boundary
-                            .map_or(i64::MIN, |start_offset| current_row_order_by + start_offset);
-                        while current_end < total_rows
-                            && order_by_col.get(current_end).unwrap() >= lower_bound
-                        {
-                            current_end += 1;
-                        }
-                    } else {
-                        // Ascending: Find first index `j` where value > upper bound `current_row_order_by + end_offset`.
-                        let upper_bound = current_row_order_by + end_offset;
-                        while current_end < total_rows
-                            && order_by_col.get(current_end).unwrap() <= upper_bound
-                        {
-                            current_end += 1;
+                Some(WindowBoundary::Offset(offset)) => {
+                    (row_idx + 1) // End is exclusive, hence +1
+                        .saturating_add_signed(*offset as isize)
+                        .min(total_rows)
+                }
+                Some(WindowBoundary::RangeOffset(offset)) => {
+                    let offset = offset.to_series();
+                    let upper_bound = (current_row_order_by.clone() + offset)?;
+                    let gt = order_by_col.gt(&upper_bound)?;
+                    let mut first_true_idx = gt.len();
+                    for i in 0..gt.len() {
+                        if gt.get(i).unwrap_or(false) {
+                            first_true_idx = i;
+                            break;
                         }
                     }
-                    current_end
+                    first_true_idx
+                }
+                Some(WindowBoundary::UnboundedPreceding)
+                | Some(WindowBoundary::UnboundedFollowing) => {
+                    unreachable!()
                 }
             };
 
@@ -402,14 +410,23 @@ impl RecordBatch {
                 // Update previous boundaries for the next iteration
                 prev_frame_start = frame_start;
                 prev_frame_end = frame_end;
+                validity.push(true);
+            } else {
+                validity.push(false);
             }
 
             // Evaluate current state to get the result for this row
             agg_state.evaluate()?;
         }
 
+        let mut validity = Bitmap::from(validity);
+        let agg_state = agg_state.build()?.rename(name);
+        if let Some(agg_validity) = agg_state.validity() {
+            validity = binary(&validity, agg_validity, |a, b| a & b);
+        }
+
         // Build the final result series
-        let renamed_result = agg_state.build()?.rename(name);
+        let renamed_result = agg_state.with_validity(Some(validity))?;
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }

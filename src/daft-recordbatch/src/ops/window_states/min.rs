@@ -28,6 +28,16 @@ impl MinWindowState {
 
 impl WindowAggStateOps for MinWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        // if end_idx <= start_idx {
+        //     return Err(DaftError::ValueError(
+        //         "end_idx must be greater than start_idx".into(),
+        //     ));
+        // }
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 self.min_heap.push(Reverse(IndexedValue {
@@ -39,7 +49,17 @@ impl WindowAggStateOps for MinWindowState {
         Ok(())
     }
 
-    fn remove(&mut self, _start_idx: usize, end_idx: usize) -> DaftResult<()> {
+    fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        // if end_idx <= start_idx {
+        //     return Err(DaftError::ValueError(
+        //         "end_idx must be greater than start_idx".into(),
+        //     ));
+        // }
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         self.cur_idx = end_idx;
         Ok(())
     }
