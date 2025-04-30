@@ -13,7 +13,6 @@ pub mod cast;
 pub mod comparison;
 pub mod concat;
 pub mod downcast;
-mod exp;
 pub mod filter;
 pub mod floor;
 pub mod groups;

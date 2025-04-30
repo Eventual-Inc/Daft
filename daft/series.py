@@ -343,7 +343,7 @@ class Series:
         return self._apply_unary_expr(native.ceil)
 
     def floor(self) -> Series:
-        return Series._from_pyseries(self._series.floor())
+        return self._apply_unary_expr(native.floor)
 
     def sign(self) -> Series:
         """The sign of a numeric series."""
@@ -473,11 +473,11 @@ class Series:
 
     def exp(self) -> Series:
         """The e^self of a numeric series."""
-        return Series._from_pyseries(self._series.exp())
+        return self._apply_unary_expr(native.exp)
 
     def expm1(self) -> Series:
         """The e^self - 1 of a numeric series."""
-        return Series._from_pyseries(self._series.expm1())
+        return self._apply_unary_expr(native.expm1)
 
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
