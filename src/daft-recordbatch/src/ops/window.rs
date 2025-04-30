@@ -6,7 +6,7 @@ use daft_core::{
 use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame};
 
 use crate::{
-    ops::window_state::{create_window_agg_state, WindowAggStateOps},
+    ops::window_states::{create_window_agg_state, WindowAggStateOps},
     RecordBatch,
 };
 
@@ -148,21 +148,20 @@ impl RecordBatch {
                 total_rows,
             )
         } else {
-            match agg_expr {
-                AggExpr::Sum(_)
-                | AggExpr::Count(..)
-                | AggExpr::Mean(_)
-                | AggExpr::Min(_)
-                | AggExpr::Max(_)
-                | AggExpr::CountDistinct(_) => self.window_agg_rows_optimized(
-                    agg_expr,
+            let source = self.get_column(agg_expr.name())?;
+            // Check if we can initialize an incremental state
+            if let Ok(agg_state) = create_window_agg_state(source, agg_expr, total_rows) {
+                self.window_agg_rows_incremental(
                     &name,
                     start_boundary,
                     end_boundary,
                     min_periods,
                     total_rows,
-                ),
-                _ => self.window_agg_rows(
+                    agg_state,
+                )
+            } else {
+                // Otherwise, use the non-incremental implementation
+                self.window_agg_rows(
                     agg_expr,
                     &name,
                     dtype,
@@ -170,26 +169,21 @@ impl RecordBatch {
                     end_boundary,
                     min_periods,
                     total_rows,
-                ),
+                )
             }
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_rows_optimized(
+    fn window_agg_rows_incremental(
         &self,
-        agg_expr: &AggExpr,
         name: &str,
         start_boundary: Option<i64>,
         end_boundary: Option<i64>,
         min_periods: usize,
         total_rows: usize,
+        mut agg_state: Box<dyn WindowAggStateOps>,
     ) -> DaftResult<Self> {
-        // Use the optimized implementation with incremental state updates
-        // Initialize the state for incremental aggregation
-        let source = self.get_column(agg_expr.name())?;
-        let mut agg_state = create_window_agg_state(source, agg_expr, total_rows)?;
-
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
