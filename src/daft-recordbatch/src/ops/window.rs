@@ -317,10 +317,10 @@ impl RecordBatch {
         &self,
         agg_expr: &AggExpr,
         name: &str,
-        start_boundary: Option<WindowBoundary>,
-        end_boundary: Option<WindowBoundary>,
+        mut start_boundary: Option<WindowBoundary>,
+        mut end_boundary: Option<WindowBoundary>,
         order_by: &ExprRef,
-        _descending: bool, // TODO: finalize behavior for descending
+        descending: bool,
         min_periods: usize,
         total_rows: usize,
     ) -> DaftResult<Self> {
@@ -335,6 +335,13 @@ impl RecordBatch {
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
 
+        if descending
+            && matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
+            && matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+        {
+            std::mem::swap(&mut start_boundary, &mut end_boundary);
+        }
+
         for row_idx in 0..total_rows {
             let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
 
@@ -347,7 +354,11 @@ impl RecordBatch {
                 Some(WindowBoundary::RangeOffset(offset)) => {
                     let offset = offset.to_series();
                     let lower_bound = (current_row_order_by.clone() + offset)?;
-                    let gte = order_by_col.gte(&lower_bound)?;
+                    let gte = if descending {
+                        order_by_col.lte(&lower_bound)?
+                    } else {
+                        order_by_col.gte(&lower_bound)?
+                    };
                     let mut first_true_idx = gte.len();
                     for i in 0..gte.len() {
                         if gte.get(i).unwrap_or(false) {
@@ -373,7 +384,11 @@ impl RecordBatch {
                 Some(WindowBoundary::RangeOffset(offset)) => {
                     let offset = offset.to_series();
                     let upper_bound = (current_row_order_by.clone() + offset)?;
-                    let gt = order_by_col.gt(&upper_bound)?;
+                    let gt = if descending {
+                        order_by_col.lt(&upper_bound)?
+                    } else {
+                        order_by_col.gt(&upper_bound)?
+                    };
                     let mut first_true_idx = gt.len();
                     for i in 0..gt.len() {
                         if gt.get(i).unwrap_or(false) {
