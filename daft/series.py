@@ -340,7 +340,7 @@ class Series:
         return Series._from_pyseries(abs(self._series))
 
     def ceil(self) -> Series:
-        return Series._from_pyseries(self._series.ceil())
+        return self._apply_unary_expr(native.ceil)
 
     def floor(self) -> Series:
         return Series._from_pyseries(self._series.floor())
@@ -365,13 +365,13 @@ class Series:
         return Series._from_pyseries(self._series.round(decimal))
 
     def clip(self, min: Series, max: Series) -> Series:
-        return Series._from_pyseries(self._series.clip(min._series, max._series))
+        return self._apply_n_arity_expr([min, max], native.clip)
 
     def sqrt(self) -> Series:
         return Series._from_pyseries(self._series.sqrt())
 
     def cbrt(self) -> Series:
-        return Series._from_pyseries(self._series.cbrt())
+        return self._apply_unary_expr(native.cbrt)
 
     def sin(self) -> Series:
         """The elementwise sine of a numeric series."""
@@ -738,6 +738,25 @@ class Series:
         other_series = other._series.rename("other")
         rb = PyRecordBatch.from_pyseries_list([s, other_series])
         expr = func(native.unresolved_col(name), native.unresolved_col("other")).alias(name)
+        rb = rb.eval_expression_list([expr])
+        pyseries = rb.get_column(name)
+        return Series._from_pyseries(pyseries)
+
+    def _apply_n_arity_expr(self, others, func) -> Series:
+        name = self._series.name()
+        s = self._series
+        other_series_list = []
+        col_names = []
+        for i, other in enumerate(others):
+            col_name = f"c{i}"
+            other_series_list.append(other._series.rename(col_name))
+            col_names.append(col_name)
+
+        rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
+
+        args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
+        expr = func(*args).alias(name)
+
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(name)
         return Series._from_pyseries(pyseries)
