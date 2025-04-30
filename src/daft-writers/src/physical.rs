@@ -22,7 +22,7 @@ use crate::{FileWriter, WriterFactory};
 pub struct PhysicalWriterFactory {
     output_file_info: OutputFileInfo,
     schema: SchemaRef,
-    native: bool, // TODO: Implement native writer
+    native: bool,
 }
 
 impl PhysicalWriterFactory {
@@ -47,23 +47,23 @@ impl WriterFactory for PhysicalWriterFactory {
         let (source_type, _) = parse_url(&self.output_file_info.root_dir)?;
         match self.native {
             // TODO(desmond): Remote writes.
-            // TODO(desmond): Handle partitioned values.
             // TODO(desmond): Proper error handling.
-            true if partition_values.is_none() && matches!(source_type, SourceType::File) => {
+            true if matches!(source_type, SourceType::File) => {
                 // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
                 // could be interesting but has much less support in the ecosystem (including ourselves).
                 let writer_properties = WriterProperties::builder()
                     .set_writer_version(WriterVersion::PARQUET_1_0)
                     .set_compression(Compression::SNAPPY)
                     .build();
-                let filename = format!(
-                    "{}/{}-{}.parquet",
-                    self.output_file_info.root_dir,
-                    uuid::Uuid::new_v4(),
-                    file_idx
-                );
-                // Create the root directory if it doesn't exist.
-                std::fs::create_dir_all(&self.output_file_info.root_dir)?;
+                let dir = if let Some(partition_values) = partition_values {
+                    let partition_string = partition_values.to_partition_string(None)?;
+                    format!("{}{}", self.output_file_info.root_dir, partition_string)
+                } else {
+                    self.output_file_info.root_dir.to_string()
+                };
+                // Create the directories if they don't exist.
+                std::fs::create_dir_all(&dir)?;
+                let filename = format!("{}/{}-{}.parquet", dir, uuid::Uuid::new_v4(), file_idx);
                 let file = std::fs::File::create(&filename)?;
                 let bufwriter = BufWriter::new(file);
                 let arrow_rs_schema = Arc::new(self.schema.to_arrow()?.into());
@@ -73,6 +73,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 Ok(Box::new(ArrowParquetWriter {
                     filename,
                     file_writer: Mutex::new(writer),
+                    partition_values: partition_values.cloned(),
                 }))
             }
             _ => {
@@ -93,6 +94,7 @@ impl WriterFactory for PhysicalWriterFactory {
 struct ArrowParquetWriter {
     filename: String,
     file_writer: Mutex<ArrowWriter<BufWriter<std::fs::File>>>,
+    partition_values: Option<RecordBatch>,
 }
 
 impl FileWriter for ArrowParquetWriter {
@@ -124,11 +126,12 @@ impl FileWriter for ArrowParquetWriter {
                 [&self.filename],
             )),
         )?;
-        Ok(Some(RecordBatch::new_with_size(
-            Schema::new(vec![field]),
-            vec![filename_series],
-            1,
-        )?))
+        let mut record_batch =
+            RecordBatch::new_with_size(Schema::new(vec![field]), vec![filename_series], 1)?;
+        if let Some(partition_values) = self.partition_values.take() {
+            record_batch = record_batch.union(&partition_values)?;
+        }
+        Ok(Some(record_batch))
     }
 
     fn bytes_written(&self) -> usize {

@@ -52,6 +52,9 @@ macro_rules! value_err {
     };
 }
 
+/// The default value used by Hive for null partition values.
+pub const DEFAULT_PARTITION_VALUE: &str = "__HIVE_DEFAULT_PARTITION__";
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RecordBatch {
     pub schema: SchemaRef,
@@ -963,6 +966,45 @@ impl RecordBatch {
         let chunk = Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect());
         chunk
     }
+
+    /// Converts a single-row RecordBatch to a Hive-style partition string.
+    ///
+    /// This method creates a string representation of partition values in the format
+    /// `/key1=value1/key2=value2...` where keys are URL-encoded column names and
+    /// values are URL-encoded partition values.
+    ///
+    /// # Arguments
+    ///
+    /// * `partition_null_fallback` - Optional value to use for null partition values.
+    ///   If not provided, uses the Hive default `__HIVE_DEFAULT_PARTITION__`.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(String)` - The partition string if successful
+    /// * `Err(DaftError)` - If the RecordBatch has more than one row, or if we fail to downcast the partition values to UTF-8 strings.
+    pub fn to_partition_string(&self, partition_null_fallback: Option<&str>) -> DaftResult<String> {
+        if self.len() != 1 {
+            return Err(DaftError::InternalError(
+                "Only single row RecordBatches can be converted to partition strings".to_string(),
+            ));
+        }
+        let default_partition = if let Some(partition_null_fallback) = partition_null_fallback {
+            urlencoding::encode(partition_null_fallback)
+        } else {
+            DEFAULT_PARTITION_VALUE.to_string().into()
+        };
+        let mut partition_string = String::new();
+        for col in self.columns.iter() {
+            let key = urlencoding::encode(col.name());
+            let value = if let Some(value) = col.utf8()?.get(0) {
+                urlencoding::encode(value)
+            } else {
+                default_partition.clone()
+            };
+            partition_string.push_str(&format!("/{key}={value}"));
+        }
+        Ok(partition_string)
+    }
 }
 
 #[cfg(feature = "arrow")]
@@ -1082,6 +1124,9 @@ impl<'a> IntoIterator for &'a RecordBatch {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
+    use arrow2::array::Utf8Array;
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::resolved_col;
@@ -1109,6 +1154,91 @@ mod test {
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_partition_string() -> DaftResult<()> {
+        let year_series = Series::from_arrow(
+            Arc::new(Field::new("year", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["2023"])),
+        )?;
+        let month_series = Series::from_arrow(
+            Arc::new(Field::new("month", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["1"])),
+        )?;
+        let batch = RecordBatch::from_nonempty_columns(vec![year_series, month_series])?;
+        let partition_string = batch.to_partition_string(None)?;
+        assert_eq!(partition_string, "/year=2023/month=1");
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_partition_string_with_null() -> DaftResult<()> {
+        let year_series = Series::from_arrow(
+            Arc::new(Field::new("year", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["2023"])),
+        )?;
+        let month_series = Series::from_arrow(
+            Arc::new(Field::new("month", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["1"])),
+        )?;
+        let day_series = Series::from_arrow(
+            Arc::new(Field::new("day", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from([None::<&str>])),
+        )?;
+        let batch =
+            RecordBatch::from_nonempty_columns(vec![year_series, month_series, day_series])?;
+        let partition_string = batch.to_partition_string(None)?;
+        assert_eq!(
+            partition_string,
+            "/year=2023/month=1/day=__HIVE_DEFAULT_PARTITION__"
+        );
+        // Test with a fallback value that includes spaces.
+        let partition_string = batch.to_partition_string(Some("unconventional fallback"))?;
+        assert_eq!(
+            partition_string,
+            "/year=2023/month=1/day=unconventional%20fallback"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_partition_string_escape_strings() -> DaftResult<()> {
+        let year_series = Series::from_arrow(
+            Arc::new(Field::new("year", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["2023"])),
+        )?;
+        let month_series = Series::from_arrow(
+            Arc::new(Field::new("month", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["1"])),
+        )?;
+        let day_series = Series::from_arrow(
+            Arc::new(Field::new("day", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from([None::<&str>])),
+        )?;
+        // Include a field with a name that needs to be URL-encoded.
+        let date_series = Series::from_arrow(
+            Arc::new(Field::new("today's date", DataType::Utf8)),
+            Box::new(Utf8Array::<i64>::from_slice(&["2025/04/29"])),
+        )?;
+        let batch = RecordBatch::from_nonempty_columns(vec![
+            year_series,
+            month_series,
+            day_series,
+            date_series,
+        ])?;
+        let partition_string = batch.to_partition_string(None)?;
+        assert_eq!(
+            partition_string,
+            "/year=2023/month=1/day=__HIVE_DEFAULT_PARTITION__/today%27s%20date=2025%2F04%2F29"
+        );
+        // Test with a fallback value that includes spaces.
+        let partition_string = batch.to_partition_string(Some("unconventional fallback"))?;
+        assert_eq!(
+            partition_string,
+            "/year=2023/month=1/day=unconventional%20fallback/today%27s%20date=2025%2F04%2F29"
+        );
         Ok(())
     }
 }

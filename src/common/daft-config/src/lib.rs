@@ -140,9 +140,9 @@ impl DaftExecutionConfig {
         }
         let native_parquet_writer_env_var_name = "DAFT_NATIVE_PARQUET_WRITER";
         if let Ok(val) = std::env::var(native_parquet_writer_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+            && matches!(val.trim().to_lowercase().as_str(), "0" | "false")
         {
-            cfg.native_parquet_writer = true;
+            cfg.native_parquet_writer = false;
         }
         cfg
     }
