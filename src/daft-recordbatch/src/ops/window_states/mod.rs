@@ -161,7 +161,11 @@ pub fn create_window_agg_state<'a>(
 ) -> DaftResult<Option<Box<dyn WindowAggStateOps<'a> + 'a>>> {
     match agg_expr {
         AggExpr::Sum(_) => sum::create_for_type(source, total_length),
-        AggExpr::Count(_, _) => Ok(Some(Box::new(CountWindowState::new(source, total_length)))),
+        AggExpr::Count(_, mode) => Ok(Some(Box::new(CountWindowState::with_count_mode(
+            source,
+            total_length,
+            *mode,
+        )))),
         AggExpr::Min(_) => Ok(Some(Box::new(MinWindowState::new(source, total_length)))),
         AggExpr::Max(_) => Ok(Some(Box::new(MaxWindowState::new(source, total_length)))),
         AggExpr::CountDistinct(_) => Ok(Some(Box::new(CountDistinctWindowState::new(
