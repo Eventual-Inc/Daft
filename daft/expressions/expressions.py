@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import math
 import warnings
+from abc import ABC
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
@@ -12,9 +13,11 @@ from typing import (
     Collection,
     Iterable,
     Iterator,
-    Literal,
     TypeVar,
     overload,
+)
+from typing import (
+    Literal as Lit,
 )
 
 import daft.daft as native
@@ -57,7 +60,7 @@ if TYPE_CHECKING:
     from daft.window import Window
 
 
-def lit(value: object) -> Expression:
+def lit(value: object) -> Literal:
     """Creates an Expression representing a column with every value set to the provided value.
 
     Args:
@@ -92,35 +95,35 @@ def lit(value: object) -> Expression:
         i64_value = pa_timestamp.cast(pa.int64()).as_py()
         time_unit = TimeUnit.from_str(pa_timestamp.type.unit)._timeunit
         tz = pa_timestamp.type.tz
-        lit_value = _timestamp_lit(i64_value, time_unit, tz)
+        pyexpr = _timestamp_lit(i64_value, time_unit, tz)
     elif isinstance(value, date):
         # pyo3 date (PyDate) is not available when running in abi3 mode, workaround
         epoch_time = value - date(1970, 1, 1)
-        lit_value = _date_lit(epoch_time.days)
+        pyexpr = _date_lit(epoch_time.days)
     elif isinstance(value, time):
         # pyo3 time (PyTime) is not available when running in abi3 mode, workaround
         pa_time = pa.scalar(value)
         i64_value = pa_time.cast(pa.int64()).as_py()
         time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
-        lit_value = _time_lit(i64_value, time_unit)
+        pyexpr = _time_lit(i64_value, time_unit)
     elif isinstance(value, timedelta):
         # pyo3 timedelta (PyDelta) is not available when running in abi3 mode, workaround
         pa_duration = pa.scalar(value)
         i64_value = pa_duration.cast(pa.int64()).as_py()
         time_unit = TimeUnit.from_str(pa_duration.type.unit)._timeunit
-        lit_value = _duration_lit(i64_value, time_unit)
+        pyexpr = _duration_lit(i64_value, time_unit)
     elif isinstance(value, Decimal):
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
-        lit_value = _decimal_lit(sign == 1, digits, exponent)
+        pyexpr = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
-        lit_value = _series_lit(value._series)
+        pyexpr = _series_lit(value._series)
     else:
-        lit_value = _lit(value)
-    return Expression._from_pyexpr(lit_value)
+        pyexpr = _lit(value)
+    return pyexpr.as_literal()
 
 
-def col(name: str) -> Expression:
+def col(name: str) -> Reference:
     """Creates an Expression referring to the column with the provided name.
 
     See [Column Wildcards](https://www.getdaft.io/projects/docs/en/stable/core_concepts/#selecting-columns-using-wildcards) for details on wildcards.
@@ -151,12 +154,12 @@ def col(name: str) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._from_pyexpr(unresolved_col(name))
+    return unresolved_col(name).as_reference()
 
 
-def _resolved_col(name: str) -> Expression:
+def _resolved_col(name: str) -> Reference:
     """Creates a resolved column."""
-    return Expression._from_pyexpr(resolved_col(name))
+    return resolved_col(name).as_reference()
 
 
 def list_(*items: Expression | str):
@@ -287,11 +290,40 @@ def coalesce(*args: Expression) -> Expression:
     return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
 
 
-class Expression:
+###
+# EXPRESSIONS
+###
+
+
+class Expression(ABC):
     _expr: _PyExpr = None  # type: ignore
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
+
+    def __setattr__(self, name, value):
+        raise AttributeError("Cannot call __setattr__, expressions are immutable.")
+
+    def __delattr__(self, name) -> None:
+        raise AttributeError("Cannot call __delattr__, expressions are immutable.")
+
+    @staticmethod
+    def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
+        # TODO replace with pyexpr.as_expression()
+        expr = Expression.__new__(Expression)
+        object.__setattr__(expr, "_expr", pyexpr)
+        return expr
+
+    @staticmethod
+    def _to_expression(obj: object) -> Expression:
+        if isinstance(obj, Expression):
+            return obj
+        else:
+            return lit(obj)
+
+    ###
+    # NAMESPACES
+    ###
 
     @property
     def str(self) -> ExpressionStringNamespace:
@@ -358,19 +390,6 @@ class Expression:
         return ExpressionBinaryNamespace.from_expression(self)
 
     @staticmethod
-    def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
-        expr = Expression.__new__(Expression)
-        expr._expr = pyexpr
-        return expr
-
-    @staticmethod
-    def _to_expression(obj: object) -> Expression:
-        if isinstance(obj, Expression):
-            return obj
-        else:
-            return lit(obj)
-
-    @staticmethod
     def udf(
         name: builtins.str,
         inner: UninitializedUdf,
@@ -407,6 +426,10 @@ class Expression:
             category=DeprecationWarning,
         )
         return struct(*fields)
+
+    ###
+    # PROCEDURES
+    ###
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -973,7 +996,7 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
-    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
+    def count(self, mode: Lit["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
         Args:
@@ -1509,7 +1532,7 @@ class Expression:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
+        hash_function: Lit["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Expression:
         """Runs the MinHash algorithm on the series.
 
@@ -1535,7 +1558,7 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
-    def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def encode(self, codec: Lit["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1582,7 +1605,7 @@ class Expression:
         expr = native.encode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def decode(self, codec: Lit["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1615,12 +1638,12 @@ class Expression:
         expr = native.decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_encode(self, codec: Lit["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Encodes or returns null, see `Expression.encode`."""
         expr = native.try_encode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_decode(self, codec: Lit["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes or returns null, see `Expression.decode`."""
         expr = native.try_decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
@@ -1802,6 +1825,43 @@ class Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
 
 
+class Literal(Expression):
+    """Literal expression variant, created with the `daft.lit(..)` method."""
+
+    def __init__(self) -> None:
+        raise NotImplementedError("We do not support creating a Literal via __init__ ")
+
+    @property
+    def get_value(self) -> None:
+        if not hasattr(self, "_value"):
+            object.__setattr__(self, "_value", self._expr.get_value())
+        return self._value
+
+
+class Reference(Expression):
+    """Reference expression variant, created with the `daft.col(..)` method."""
+
+    def __init__(self) -> None:
+        raise NotImplementedError("We do not support creating a Reference via __init__ ")
+
+    @property
+    def get_path(self) -> str:
+        if not hasattr(self, "_path"):
+            object.__setattr__(self, "_path", self._expr.get_path())
+        return self._path
+
+    @property
+    def get_index(self) -> int:
+        if not hasattr(self, "_index"):
+            object.__setattr__(self, "_index", self._expr.get_index())
+        return self._index
+
+
+###
+# NAMESPACES
+###
+
+
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
 
@@ -1853,7 +1913,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     def download(
         self,
         max_connections: int = 32,
-        on_error: Literal["raise", "null"] = "raise",
+        on_error: Lit["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column.
@@ -1898,7 +1958,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         self,
         location: str | Expression,
         max_connections: int = 32,
-        on_error: Literal["raise", "null"] = "raise",
+        on_error: Lit["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
     ) -> Expression:
         """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
@@ -3858,7 +3918,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
-    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
+    def count(self, mode: Lit["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
 
         Args:
@@ -3906,7 +3966,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         idx_expr = Expression._to_expression(idx)
         default_expr = lit(default)
-        return Expression._from_pyexpr(native.list_get(self._expr, idx_expr._expr, default_expr._expr))
+        return Expression._from_pyexpr(native.list_get(self._expr, idx_expr._expr, default_expr._lit))
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list.
@@ -4330,7 +4390,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
     def decode(
         self,
-        on_error: Literal["raise", "null"] = "raise",
+        on_error: Lit["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Expression:
         """Decodes the binary data in this column into images.

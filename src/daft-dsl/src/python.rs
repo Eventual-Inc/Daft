@@ -12,12 +12,14 @@ use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
+    utils::display::display_decimal128,
 };
 use pyo3::{
-    exceptions::PyValueError,
+    exceptions::{PyAttributeError, PyValueError},
     prelude::*,
     pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
+    types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyString},
+    IntoPyObjectExt,
 };
 use serde::{Deserialize, Serialize};
 
@@ -575,6 +577,89 @@ impl PyExpr {
             })),
         })
     }
+
+    /// Cast (wrap) a rust expr to its appropriate py expression class.
+    pub fn as_expression(&self, py: Python) -> PyResult<PyObject> {
+        let module = py.import("daft.expressions.expressions")?;
+        let setattr = py
+            .import("builtins")?
+            .getattr("object")?
+            .getattr("__setattr__")?;
+        let cls = match self.expr.as_ref() {
+            Expr::Column(_) => module.getattr("Reference"),
+            Expr::Literal(_) => module.getattr("Literal"),
+            _ => panic!("Procedure not implemented"),
+        }?;
+        let expr = cls.getattr("__new__")?.call1((cls,))?;
+        let _expr = self.to_owned();
+        setattr.call1((&expr, "_expr", _expr))?;
+        Ok(expr.unbind())
+    }
+
+    /// Checked cast of a rust expr to py literal.
+    pub fn as_literal(&self, py: Python) -> PyResult<PyObject> {
+        if let Expr::Literal(_) = self.expr.as_ref() {
+            self.as_expression(py)
+        } else {
+            Err(PyValueError::new_err(format!(
+                "PyExpr is not a Literal: {}.",
+                &self.expr
+            )))
+        }
+    }
+
+    /// Checked cast of a rust expr to py reference.
+    pub fn as_reference(&self, py: Python) -> PyResult<PyObject> {
+        if let Expr::Column(_) = self.expr.as_ref() {
+            self.as_expression(py)
+        } else {
+            Err(PyValueError::new_err(format!(
+                "PyExpr is not a Reference: {}.",
+                &self.expr
+            )))
+        }
+    }
+
+    //
+    // Literal(Expression) Methods
+    //
+
+    /// Returns the LiteralValue as a python value.
+    pub fn get_value(&self, py: Python) -> PyResult<PyObject> {
+        if let Expr::Literal(lit) = self.expr.as_ref() {
+            Ok(lit.into_pyobject(py)?.unbind())
+        } else {
+            Err(PyAttributeError::new_err(
+                "Cannot call `get_value` on non-literal expression.",
+            ))
+        }
+    }
+
+    //
+    // Reference(Expression) Methods
+    //
+
+    /// Returns the reference path which is currently just the column/field name.
+    pub fn get_path(&self) -> PyResult<String> {
+        if let Expr::Column(col) = self.expr.as_ref() {
+            Ok(col.name())
+        } else {
+            Err(PyAttributeError::new_err(
+                "Cannot call `get_path` on non-reference expression.",
+            ))
+        }
+    }
+
+    /// Returns the reference index if bound to some schema.
+    pub fn get_index(&self) -> PyResult<Option<usize>> {
+        if let Expr::Column(_) = self.expr.as_ref() {
+            Ok(None) // TODO get index from bound once Kevin is ready
+        } else {
+            Err(PyAttributeError::new_err(
+                "Cannot call `get_index` on non-reference expression.",
+            ))
+        }
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);
@@ -602,5 +687,76 @@ impl From<PyExpr> for crate::ExprRef {
 impl From<&PyExpr> for crate::ExprRef {
     fn from(item: &PyExpr) -> Self {
         item.expr.clone()
+    }
+}
+
+macro_rules! into_pyany {
+    ($value:expr, $py:expr) => {{
+        let obj = $value.into_pyobject_or_pyerr($py)?;
+        let any = obj.into_any();
+        Ok(any)
+    }};
+}
+
+impl<'py> IntoPyObject<'py> for &LiteralValue {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self {
+            LiteralValue::Null => into_pyany!(py.None(), py),
+            LiteralValue::Boolean(b) => {
+                let obj = PyBool::new(py, *b).to_owned();
+                let any = obj.into_any();
+                Ok(any)
+            }
+            LiteralValue::Utf8(s) => into_pyany!(s, py),
+            LiteralValue::Int8(i) => into_pyany!(i, py),
+            LiteralValue::UInt8(i) => into_pyany!(i, py),
+            LiteralValue::Int16(i) => into_pyany!(i, py),
+            LiteralValue::UInt16(i) => into_pyany!(i, py),
+            LiteralValue::Int32(i) => into_pyany!(i, py),
+            LiteralValue::UInt32(i) => into_pyany!(i, py),
+            LiteralValue::Int64(i) => into_pyany!(i, py),
+            LiteralValue::UInt64(i) => into_pyany!(i, py),
+            LiteralValue::Binary(b) => into_pyany!(b.as_slice(), py),
+            LiteralValue::Float64(f) => into_pyany!(f, py),
+            LiteralValue::Decimal(value, precision, scale) => {
+                let decimal = display_decimal128(*value, *precision, *scale);
+                let decimal = py
+                    .import("decimal")?
+                    .getattr("Decimal")?
+                    .call1((decimal,))?;
+                Ok(decimal)
+            }
+            LiteralValue::Series(series) => {
+                let series = PySeries {
+                    series: series.clone(),
+                };
+                let series = py
+                    .import("daft.series")?
+                    .getattr("Series")?
+                    .getattr("_from_pyseries")?
+                    .call1((series,))?;
+                Ok(series)
+            }
+            LiteralValue::Python(obj) => {
+                let any = obj.0.clone_ref(py);
+                let any = any.bind(py).to_owned();
+                Ok(any)
+            }
+            LiteralValue::Struct(entries) => {
+                let dict = PyDict::new(py);
+                for (key, value) in entries {
+                    dict.set_item(&key.name, value.into_pyobject(py)?)?;
+                }
+                Ok(dict.into_any())
+            }
+            _ => Err(PyValueError::new_err(format!(
+                "Cannot convert literal to python object, `{}`",
+                self
+            ))),
+        }
     }
 }
