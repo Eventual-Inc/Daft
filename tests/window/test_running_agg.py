@@ -686,6 +686,52 @@ def test_min_max_with_none(make_df):
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
 
 
+def test_count_modes(make_df):
+    """Test all three count modes (all, valid, null)."""
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        values = [None if random.random() < 0.5 else f"val_{category}_{i}" for i in range(1000)]
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "text": value})
+
+            start_idx = max(0, ts - 3)
+            end_idx = min(ts + 1 + 3, len(values))
+            window_vals = values[start_idx:end_idx]
+
+            count_all = len(window_vals)
+            count_valid = sum(1 for v in window_vals if v is not None)
+            count_null = sum(1 for v in window_vals if v is None)
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "text": value,
+                    "count_all": count_all,
+                    "count_valid": count_valid,
+                    "count_null": count_null,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 3)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("text"),
+        col("text").count("all").over(window_spec).alias("count_all"),
+        col("text").count("valid").over(window_spec).alias("count_valid"),
+        col("text").count("null").over(window_spec).alias("count_null"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
 def test_count_count_distinct_with_none(make_df):
     """Test count and count_distinct window functions with None values."""
     random.seed(51)
