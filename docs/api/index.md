@@ -24,7 +24,7 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
     User-Defined Functions (UDFs) are a mechanism to run Python code on the data that lives in a DataFrame.
 
-- [**Windor Functions**](window.md)
+- [**Window Functions**](window.md)
 
     Window functions allow you to perform calculations across a set of rows that are related to the current row.
 
