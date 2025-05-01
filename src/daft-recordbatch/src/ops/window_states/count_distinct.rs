@@ -9,15 +9,16 @@ use daft_core::{
 
 use super::WindowAggStateOps;
 
-pub struct CountDistinctWindowState {
+pub struct CountDistinctWindowState<'a> {
     hashed: DataArray<UInt64Type>,
     counts: HashMap<IndexHash, usize, IdentityBuildHasher>,
     count_vec: Vec<u64>,
-    comparator: Box<dyn Fn(usize, usize) -> bool>,
+    comparator: Box<dyn Fn(usize, usize) -> bool + 'a>,
+    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl CountDistinctWindowState {
-    pub fn new(source: &Series, total_length: usize) -> Self {
+impl<'a> CountDistinctWindowState<'a> {
+    pub fn new(source: &'a Series, total_length: usize) -> Self {
         let hashed = source.hash_with_validity(None).unwrap();
 
         let array = source.to_arrow();
@@ -28,11 +29,12 @@ impl CountDistinctWindowState {
             counts: HashMap::with_capacity_and_hasher(total_length, Default::default()),
             count_vec: Vec::with_capacity(total_length),
             comparator: Box::new(comparator),
+            _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl WindowAggStateOps for CountDistinctWindowState {
+impl<'a> WindowAggStateOps<'a> for CountDistinctWindowState<'a> {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         // if end_idx <= start_idx {
         //     return Err(DaftError::ValueError(

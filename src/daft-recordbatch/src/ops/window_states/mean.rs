@@ -1,33 +1,34 @@
+use std::marker::PhantomData;
+
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::{try_sum_supertype, DaftPrimitiveType},
-    prelude::*,
-};
+use daft_core::{datatypes::DaftPrimitiveType, prelude::*};
 
 use super::WindowAggStateOps;
 use crate::ops::window_states::{CountWindowState, SumWindowState};
 
-pub struct MeanWindowState<T>
+pub struct MeanWindowState<'a, T>
 where
     T: DaftPrimitiveType,
 {
-    sum: SumWindowState<T>,
-    count: CountWindowState,
+    sum: SumWindowState<'a, T>,
+    count: CountWindowState<'a>,
+    _phantom: PhantomData<&'a ()>,
 }
 
-impl<T> MeanWindowState<T>
+impl<'a, T> MeanWindowState<'a, T>
 where
     T: DaftPrimitiveType,
 {
-    pub fn new(source: &Series, total_length: usize) -> Self {
-        Self {
-            sum: SumWindowState::<T>::new(source, total_length),
+    pub fn new(source: &'a Series, total_length: usize) -> DaftResult<Self> {
+        Ok(Self {
+            sum: SumWindowState::<'a, T>::new(source, total_length)?,
             count: CountWindowState::new(source, total_length),
-        }
+            _phantom: PhantomData,
+        })
     }
 }
 
-impl<T> WindowAggStateOps for MeanWindowState<T>
+impl<'a, T> WindowAggStateOps<'a> for MeanWindowState<'a, T>
 where
     T: DaftPrimitiveType,
     DataArray<T>: IntoSeries,
@@ -74,45 +75,35 @@ where
         let sum_series = self.sum.build()?;
         let count_series = self.count.build()?;
 
-        Ok((sum_series / count_series).unwrap())
+        sum_series / count_series
     }
 }
 
-pub fn create_for_type(
-    source: &Series,
+pub fn create_for_type<'a>(
+    source: &'a Series,
     total_length: usize,
-) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
+) -> DaftResult<Option<Box<dyn WindowAggStateOps<'a> + 'a>>> {
     match source.data_type() {
-        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-            let casted = source.cast(&DataType::Int64)?;
-            Ok(Some(Box::new(MeanWindowState::<Int64Type>::new(
-                &casted,
-                total_length,
-            ))))
-        }
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => Ok(Some(Box::new(
+            MeanWindowState::<'a, Int64Type>::new(source, total_length)?,
+        ))),
         DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
-            let casted = source.cast(&DataType::UInt64)?;
-            Ok(Some(Box::new(MeanWindowState::<UInt64Type>::new(
-                &casted,
+            Ok(Some(Box::new(MeanWindowState::<'a, UInt64Type>::new(
+                source,
                 total_length,
-            ))))
+            )?)))
         }
-        DataType::Float32 => Ok(Some(Box::new(MeanWindowState::<Float32Type>::new(
+        DataType::Float32 => Ok(Some(Box::new(MeanWindowState::<'a, Float32Type>::new(
             source,
             total_length,
-        )))),
-        DataType::Float64 => Ok(Some(Box::new(MeanWindowState::<Float64Type>::new(
+        )?))),
+        DataType::Float64 => Ok(Some(Box::new(MeanWindowState::<'a, Float64Type>::new(
             source,
             total_length,
-        )))),
-        DataType::Decimal128(_, _) => {
-            let target_type = try_sum_supertype(source.data_type())?;
-            let casted = source.cast(&target_type)?;
-            Ok(Some(Box::new(MeanWindowState::<Decimal128Type>::new(
-                &casted,
-                total_length,
-            ))))
-        }
+        )?))),
+        DataType::Decimal128(_, _) => Ok(Some(Box::new(
+            MeanWindowState::<'a, Decimal128Type>::new(source, total_length)?,
+        ))),
         dt => Err(DaftError::TypeError(format!(
             "Cannot run Mean over type {}",
             dt

@@ -6,18 +6,18 @@ use daft_core::prelude::*;
 
 use super::{IndexedValue, WindowAggStateOps};
 
-pub struct MinWindowState {
-    source: Series,
-    min_heap: BinaryHeap<Reverse<IndexedValue>>,
+pub struct MinWindowState<'a> {
+    source: &'a Series,
+    min_heap: BinaryHeap<Reverse<IndexedValue<'a>>>,
     cur_idx: usize,
     validity: MutableBitmap,
     min_idxs: Vec<u64>,
 }
 
-impl MinWindowState {
-    pub fn new(source: &Series, total_length: usize) -> Self {
+impl<'a> MinWindowState<'a> {
+    pub fn new(source: &'a Series, total_length: usize) -> Self {
         Self {
-            source: source.clone(),
+            source,
             min_heap: BinaryHeap::new(),
             cur_idx: 0,
             validity: MutableBitmap::with_capacity(total_length),
@@ -26,7 +26,7 @@ impl MinWindowState {
     }
 }
 
-impl WindowAggStateOps for MinWindowState {
+impl<'a> WindowAggStateOps<'a> for MinWindowState<'a> {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         // if end_idx <= start_idx {
         //     return Err(DaftError::ValueError(
@@ -41,7 +41,7 @@ impl WindowAggStateOps for MinWindowState {
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 self.min_heap.push(Reverse(IndexedValue {
-                    value: self.source.slice(i, i + 1).unwrap(),
+                    source: self.source,
                     idx: i as u64,
                 }));
             }
@@ -82,8 +82,7 @@ impl WindowAggStateOps for MinWindowState {
     fn build(&self) -> DaftResult<Series> {
         let result = self
             .source
-            .take(&DataArray::<UInt64Type>::from(("", self.min_idxs.clone())).into_series())
-            .unwrap();
+            .take(&DataArray::<UInt64Type>::from(("", self.min_idxs.clone())).into_series())?;
         result.with_validity(Some(self.validity.clone().into()))
     }
 }

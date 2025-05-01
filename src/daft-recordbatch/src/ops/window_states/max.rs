@@ -6,18 +6,18 @@ use daft_core::prelude::*;
 
 use super::{IndexedValue, WindowAggStateOps};
 
-pub struct MaxWindowState {
-    source: Series,
-    max_heap: BinaryHeap<IndexedValue>,
+pub struct MaxWindowState<'a> {
+    source: &'a Series,
+    max_heap: BinaryHeap<IndexedValue<'a>>,
     cur_idx: usize,
     max_idxs: Vec<u64>,
     validity: MutableBitmap,
 }
 
-impl MaxWindowState {
-    pub fn new(source: &Series, total_length: usize) -> Self {
+impl<'a> MaxWindowState<'a> {
+    pub fn new(source: &'a Series, total_length: usize) -> Self {
         Self {
-            source: source.clone(),
+            source,
             max_heap: BinaryHeap::new(),
             cur_idx: 0,
             max_idxs: Vec::with_capacity(total_length),
@@ -26,7 +26,7 @@ impl MaxWindowState {
     }
 }
 
-impl WindowAggStateOps for MaxWindowState {
+impl<'a> WindowAggStateOps<'a> for MaxWindowState<'a> {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         // if end_idx <= start_idx {
         //     return Err(DaftError::ValueError(
@@ -41,7 +41,7 @@ impl WindowAggStateOps for MaxWindowState {
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 self.max_heap.push(IndexedValue {
-                    value: self.source.slice(i, i + 1).unwrap(),
+                    source: self.source,
                     idx: i as u64,
                 });
             }
@@ -81,8 +81,7 @@ impl WindowAggStateOps for MaxWindowState {
     fn build(&self) -> DaftResult<Series> {
         let result = self
             .source
-            .take(&DataArray::<UInt64Type>::from(("", self.max_idxs.clone())).into_series())
-            .unwrap();
+            .take(&DataArray::<UInt64Type>::from(("", self.max_idxs.clone())).into_series())?;
         result.with_validity(Some(self.validity.clone().into()))
     }
 }

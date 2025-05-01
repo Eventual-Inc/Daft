@@ -4,14 +4,15 @@ use daft_core::prelude::*;
 
 use super::WindowAggStateOps;
 
-pub struct CountWindowState {
+pub struct CountWindowState<'a> {
     source: Bitmap,
     count: usize,
     count_vec: Vec<u64>,
+    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl CountWindowState {
-    pub fn new(source: &Series, total_length: usize) -> Self {
+impl<'a> CountWindowState<'a> {
+    pub fn new(source: &'a Series, total_length: usize) -> Self {
         let source_bitmap = source
             .validity()
             .cloned()
@@ -20,11 +21,12 @@ impl CountWindowState {
             source: source_bitmap,
             count: 0,
             count_vec: Vec::with_capacity(total_length),
+            _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl WindowAggStateOps for CountWindowState {
+impl<'a> WindowAggStateOps<'a> for CountWindowState<'a> {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         // if end_idx <= start_idx {
         //     return Err(DaftError::ValueError(
