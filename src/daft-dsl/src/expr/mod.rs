@@ -195,6 +195,8 @@ pub type ExprRef = Arc<Expr>;
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
+    #[display("{name} as {expr}")]
+    NamedExpr { name: Arc<str>, expr: ExprRef },
     #[display("{_0}")]
     Column(Column),
 
@@ -372,6 +374,16 @@ pub enum WindowExpr {
 pub enum SketchType {
     DDSketch,
     HyperLogLog,
+}
+
+/// unlike `alias`, named exprs are only used when evaluating expr arguments
+/// They have no effect on the output schema
+pub fn named_expr(name: impl Into<Arc<str>>, expr: ExprRef) -> ExprRef {
+    Expr::NamedExpr {
+        name: name.into(),
+        expr,
+    }
+    .into()
 }
 
 /// Unresolved column with no associated plan ID or schema.
@@ -1148,7 +1160,7 @@ impl Expr {
                 FieldID::new(format!("({if_true} if {predicate} else {if_false})"))
             }
             // Alias: ID does not change.
-            Self::Alias(expr, ..) => expr.semantic_id(schema),
+            Self::NamedExpr { expr, .. } | Self::Alias(expr, ..) => expr.semantic_id(schema),
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
@@ -1215,7 +1227,8 @@ impl Expr {
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
             | Self::Alias(expr, ..)
-            | Self::InSubquery(expr, _) => {
+            | Self::InSubquery(expr, _)
+            | Self::NamedExpr { expr, .. } => {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),
@@ -1257,6 +1270,10 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
+            Self::NamedExpr { name, .. } => Self::NamedExpr {
+                name: name.clone(),
+                expr: children.first().expect("Should have 1 child").clone(),
+            },
             Self::IsNull(..) => {
                 Self::IsNull(children.first().expect("Should have 1 child").clone())
             }
@@ -1350,7 +1367,9 @@ impl Expr {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
-            Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
+            Self::NamedExpr { expr, name } | Self::Alias(expr, name) => {
+                Ok(Field::new(name.as_ref(), expr.get_type(schema)?))
+            }
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
             Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
             Self::Column(Column::Unresolved(UnresolvedColumn {
@@ -1548,6 +1567,8 @@ impl Expr {
     pub fn name(&self) -> &str {
         match self {
             Self::Alias(.., name) => name.as_ref(),
+            // unlike alias, we only use the expr name here for functions,
+            Self::NamedExpr { expr, .. } => expr.name(),
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
@@ -1614,7 +1635,7 @@ impl Expr {
                     write!(buffer, "{}", name)
                 }
                 Expr::Literal(lit) => lit.display_sql(buffer),
-                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
+                Expr::Alias(expr, ..) | Expr::NamedExpr { expr, .. } => to_sql_inner(expr, buffer),
                 Expr::BinaryOp { op, left, right } => {
                     to_sql_inner(left, buffer)?;
                     let op = match op {
@@ -1710,7 +1731,7 @@ impl Expr {
             Self::IsIn(..) => true,
             Self::Between(..) => true,
             Self::BinaryOp { .. } => true,
-            Self::Alias(expr, ..) => expr.has_compute(),
+            Self::NamedExpr { expr, .. } | Self::Alias(expr, ..) => expr.has_compute(),
             Self::Cast(expr, ..) => expr.has_compute(),
             Self::Not(expr) => expr.has_compute(),
             Self::IsNull(expr) => expr.has_compute(),
@@ -1954,7 +1975,9 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
 
         // Pass through for expressions that wrap other expressions
-        Expr::Cast(expr, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
+        Expr::Cast(expr, _) | Expr::Alias(expr, _) | Expr::NamedExpr { expr, .. } => {
+            estimated_selectivity(expr, schema)
+        }
 
         // Boolean literals
         Expr::Literal(lit) => match lit {

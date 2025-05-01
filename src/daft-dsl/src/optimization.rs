@@ -19,7 +19,7 @@ pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
 pub fn requires_computation(e: &Expr) -> bool {
     // Returns whether or not this expression runs any computation on the underlying data
     match e {
-        Expr::Alias(child, _) => requires_computation(child),
+        Expr::Alias(child, _) | Expr::NamedExpr { expr: child, .. } => requires_computation(child),
         Expr::Column(..) | Expr::Literal(_) => false,
         Expr::Agg(..)
         | Expr::BinaryOp { .. }

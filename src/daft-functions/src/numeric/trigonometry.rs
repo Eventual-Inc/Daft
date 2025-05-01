@@ -5,7 +5,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,13 @@ macro_rules! trigonometry {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
+            fn evaluate(
+                &self,
+                inputs: daft_dsl::functions::FunctionArgs<Series>,
+            ) -> DaftResult<Series> {
+                let inner = inputs.into_inner();
+                self.evaluate_from_series(&inner)
+            }
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
@@ -49,7 +56,7 @@ macro_rules! trigonometry {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                 evaluate_single_numeric(inputs, |s| {
                     trigonometry(s, &TrigonometricFunction::$variant)
                 })
@@ -86,6 +93,10 @@ pub struct Atan2;
 
 #[typetag::serde]
 impl ScalarUDF for Atan2 {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -115,7 +126,7 @@ impl ScalarUDF for Atan2 {
         Ok(Field::new(field1.name, dtype))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [x, y] => atan2_impl(x, y),
             _ => Err(DaftError::SchemaMismatch(format!(

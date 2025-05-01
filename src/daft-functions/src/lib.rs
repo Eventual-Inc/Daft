@@ -23,7 +23,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use daft_dsl::functions::ScalarUDF;
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
@@ -90,3 +90,4 @@ pub static FUNCTION_REGISTRY: LazyLock<FunctionRegistry> = LazyLock::new(|| {
 
     registry
 });
+

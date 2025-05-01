@@ -6,7 +6,7 @@ use daft_core::{
     with_match_numeric_daft_types,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,10 @@ pub struct Clip;
 
 #[typetag::serde]
 impl ScalarUDF for Clip {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -44,7 +48,9 @@ impl ScalarUDF for Clip {
         Ok(Field::new(array_field.name, output_type))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    
+
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         if inputs.len() != 3 {
             return Err(DaftError::ValueError(format!(
                 "Expected 3 input arguments (array, min, max), got {}",

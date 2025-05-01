@@ -758,10 +758,10 @@ class Expression:
             max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
 
         """
-        min_expr = Expression._to_expression(min)
-        max_expr = Expression._to_expression(max)
+        min = Expression._to_expression(min)._expr
+        max = Expression._to_expression(max)._expr
         f = native.get_function_from_registry("clip")
-        return Expression._from_pyexpr(f(self._expr, min_expr._expr, max_expr._expr))
+        return Expression._from_pyexpr(f(self._expr, min, max))
 
     def sign(self) -> Expression:
         """The sign of a numeric expression."""
@@ -791,8 +791,8 @@ class Expression:
         """
         assert isinstance(decimals, int)
         f = native.get_function_from_registry("round")
-        other = Expression._to_expression(decimals)
-        return Expression._from_pyexpr(f(self._expr, other._expr))
+        decimals = Expression._to_expression(decimals)._expr
+        return Expression._from_pyexpr(f(self._expr, decimals=decimals))
 
     def sqrt(self) -> Expression:
         """The square root of a numeric expression."""

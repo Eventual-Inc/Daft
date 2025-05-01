@@ -53,8 +53,11 @@ impl ScalarUDF for BinarySlice {
             ))),
         }
     }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         let data = &inputs[0];
         let start = &inputs[1];
         let length = &inputs[2];

@@ -13,6 +13,10 @@ pub struct JsonQuery {
 
 #[typetag::serde]
 impl ScalarUDF for JsonQuery {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -20,7 +24,7 @@ impl ScalarUDF for JsonQuery {
         "json_query"
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => json_query_series(input, &self.query),
 

@@ -16,6 +16,10 @@ pub struct Sign;
 
 #[typetag::serde]
 impl ScalarUDF for Sign {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -25,7 +29,7 @@ impl ScalarUDF for Sign {
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field_single_numeric(self, inputs, schema)
     }
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         evaluate_single_numeric(inputs, |s| match s.data_type() {
             DataType::UInt8 => Ok(s.u8().unwrap().sign_unsigned()?.into_series()),
             DataType::UInt16 => Ok(s.u16().unwrap().sign_unsigned()?.into_series()),
@@ -53,6 +57,10 @@ pub struct Negative;
 
 #[typetag::serde]
 impl ScalarUDF for Negative {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -62,7 +70,7 @@ impl ScalarUDF for Negative {
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field_single_numeric(self, inputs, schema)
     }
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         evaluate_single_numeric(inputs, |s| match s.data_type() {
             DataType::UInt8 => Ok(s
                 .cast(&DataType::Int8)?

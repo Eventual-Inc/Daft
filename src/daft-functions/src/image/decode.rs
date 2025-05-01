@@ -33,6 +33,10 @@ impl Default for ImageDecode {
 
 #[typetag::serde]
 impl ScalarUDF for ImageDecode {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -59,7 +63,7 @@ impl ScalarUDF for ImageDecode {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         let raise_error_on_failure = self.raise_on_error;
         match inputs {
             [input] => daft_image::series::decode(input, raise_error_on_failure, self.mode),

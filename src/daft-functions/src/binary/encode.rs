@@ -49,7 +49,12 @@ impl ScalarUDF for Encode {
         Ok(Field::new(arg.name, DataType::Binary))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
+
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs[0].data_type() {
             DataType::Binary => {
                 let arg = inputs[0].downcast::<BinaryArray>()?;
@@ -93,6 +98,11 @@ impl ScalarUDF for TryEncode {
         "try_encode"
     }
 
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
+
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         if inputs.len() != 1 {
             invalid_argument_err!("Expected 1 argument, found {}", inputs.len())
@@ -110,7 +120,7 @@ impl ScalarUDF for TryEncode {
         Ok(Field::new(arg.name, DataType::Binary))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs[0].data_type() {
             DataType::Binary => {
                 let arg = inputs[0].downcast::<BinaryArray>()?;

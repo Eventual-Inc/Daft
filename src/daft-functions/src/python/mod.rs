@@ -27,12 +27,13 @@ mod utf8;
 use std::sync::Arc;
 
 use daft_dsl::{
+    expr::named_expr,
     functions::{ScalarFunction, ScalarUDF},
     python::PyExpr,
     ExprRef,
 };
 use pyo3::{
-    types::{PyModule, PyModuleMethods, PyTuple},
+    types::{PyDict, PyModule, PyModuleMethods, PyTuple},
     wrap_pyfunction, Bound, PyResult,
 };
 
@@ -46,12 +47,25 @@ use pyo3::prelude::*;
 
 #[pyo3::pymethods]
 impl PyScalarFunction {
-    #[pyo3(signature  = (*py_args))]
-    pub fn __call__(&self, py_args: &Bound<'_, PyTuple>) -> PyResult<PyExpr> {
-        let inputs = py_args
+    #[pyo3(signature  = (*py_args, **py_kwargs))]
+    pub fn __call__(
+        &self,
+        py_args: &Bound<'_, PyTuple>,
+        py_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyExpr> {
+        let mut inputs = py_args
             .iter()
             .map(|py| py.extract::<PyExpr>().map(|e| e.into()))
             .collect::<PyResult<Vec<_>>>()?;
+
+        if let Some(kwargs) = py_kwargs {
+            for (k, v) in kwargs {
+                let key = k.extract::<String>()?;
+                let value = v.extract::<PyExpr>()?;
+                let expr = named_expr(key, value.expr);
+                inputs.push(expr);
+            }
+        }
 
         let expr: ExprRef = ScalarFunction {
             udf: self.inner.clone(),

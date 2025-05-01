@@ -21,8 +21,9 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    functions::FunctionEvaluator, null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column,
-    Expr, ExprRef, LiteralValue, PlanRef, ResolvedColumn, SketchType, UnresolvedColumn,
+    functions::{FunctionArg, FunctionArgs, FunctionEvaluator},
+    null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
+    PlanRef, ResolvedColumn, SketchType, UnresolvedColumn,
 };
 use daft_logical_plan::FileInfos;
 use futures::{StreamExt, TryStreamExt};
@@ -581,6 +582,8 @@ impl RecordBatch {
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
+            // TODO: is this right?
+            Expr::NamedExpr{name, expr} => Ok(self.eval_expression(expr)?),
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
@@ -660,12 +663,23 @@ impl RecordBatch {
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Expr::ScalarFunction(func) => {
-                let evaluated_inputs = func
-                    .inputs
+                let evaluated_inputs = func.inputs
                     .iter()
-                    .map(|e| self.eval_expression(e))
+                    .map(|e| {
+                        if let Expr::NamedExpr {name, expr} = e.as_ref() {
+                            Ok(FunctionArg::Named {
+                                name: name.clone(),
+                                arg: self.eval_expression(&expr)?,
+                            })
+                        } else {
+                            Ok(FunctionArg::Unnamed(self.eval_expression(e)?))
+                        }
+                    })
                     .collect::<DaftResult<Vec<_>>>()?;
-                func.udf.evaluate(evaluated_inputs.as_slice())
+                let args = FunctionArgs::new(evaluated_inputs);
+
+                func.udf.evaluate(args)
+
             }
             Expr::Literal(lit_value) => Ok(lit_value.to_series()),
             Expr::IfElse {

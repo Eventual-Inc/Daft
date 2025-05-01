@@ -14,6 +14,11 @@ pub struct ListMax {}
 
 #[typetag::serde]
 impl ScalarUDF for ListMax {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -43,7 +48,7 @@ impl ScalarUDF for ListMax {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_max()?),
             _ => Err(DaftError::ValueError(format!(

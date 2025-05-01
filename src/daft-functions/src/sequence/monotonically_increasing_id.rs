@@ -11,6 +11,10 @@ pub struct MonotonicallyIncreasingId {}
 
 #[typetag::serde]
 impl ScalarUDF for MonotonicallyIncreasingId {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -29,7 +33,7 @@ impl ScalarUDF for MonotonicallyIncreasingId {
         Ok(Field::new("", DataType::UInt64))
     }
 
-    fn evaluate(&self, _inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, _inputs: &[Series]) -> DaftResult<Series> {
         Err(DaftError::NotImplemented(
             "monotonically_increasing_id should be rewritten into a separate plan step by the optimizer. If you're seeing this error, the DetectMonotonicId optimization rule may not have been applied.".to_string(),
         ))

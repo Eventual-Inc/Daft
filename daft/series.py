@@ -755,7 +755,7 @@ class Series:
         args = (
             [native.unresolved_col(name)] +
             [native.unresolved_col(col_name) for col_name in col_names] +
-            [lit(v)._expr for v  in kwargs.values()]
+            [native.named_expr(name, lit(v)._expr) for name, v in kwargs.items()]
         )
 
         f = native.get_function_from_registry(func_name)

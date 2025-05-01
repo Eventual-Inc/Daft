@@ -14,6 +14,10 @@ pub struct Utf8Find {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Find {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -43,7 +47,7 @@ impl ScalarUDF for Utf8Find {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, substr] => data.utf8_find(substr),
             _ => Err(DaftError::ValueError(format!(

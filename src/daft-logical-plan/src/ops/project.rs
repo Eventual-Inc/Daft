@@ -278,6 +278,19 @@ fn replace_column_with_semantic_id(
                         |_| e.clone(),
                     )
             }
+            Expr::NamedExpr { name, expr } => {
+                replace_column_with_semantic_id(expr.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| {
+                            Expr::NamedExpr {
+                                name: name.clone(),
+                                expr: transformed_child,
+                            }
+                            .into()
+                        },
+                        |_| e.clone(),
+                    )
+            }
             Expr::Cast(child, datatype) => {
                 replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(

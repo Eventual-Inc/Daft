@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::{Column, ExprRef, ResolvedColumn};
+use daft_dsl::{expr::named_expr, Column, ExprRef, ResolvedColumn};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -243,6 +243,10 @@ fn translate_clustering_spec_expr(
         Expr::Alias(child, name) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             Ok(newchild.alias(name.clone()))
+        }
+        Expr::NamedExpr { name, expr } => {
+            let newchild = translate_clustering_spec_expr(expr, old_colname_to_new_colname)?;
+            Ok(named_expr(name.clone(), newchild))
         }
         Expr::BinaryOp { op, left, right } => {
             let newleft = translate_clustering_spec_expr(left, old_colname_to_new_colname)?;

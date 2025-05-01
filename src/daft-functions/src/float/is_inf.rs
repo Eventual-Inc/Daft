@@ -15,6 +15,10 @@ pub struct IsInf;
 
 #[typetag::serde]
 impl ScalarUDF for IsInf {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -42,7 +46,7 @@ impl ScalarUDF for IsInf {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         use daft_core::{array::ops::DaftIsInf, series::IntoSeries};
         match inputs {
             [data] => {

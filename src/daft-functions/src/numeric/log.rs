@@ -19,6 +19,13 @@ macro_rules! log {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
+            fn evaluate(
+                &self,
+                inputs: daft_dsl::functions::FunctionArgs<Series>,
+            ) -> DaftResult<Series> {
+                let inner = inputs.into_inner();
+                self.evaluate_from_series(&inner)
+            }
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
@@ -48,7 +55,7 @@ macro_rules! log {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                 evaluate_single_numeric(inputs, Series::$name)
             }
         }
@@ -70,6 +77,10 @@ pub struct Log;
 
 #[typetag::serde]
 impl ScalarUDF for Log {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -102,7 +113,7 @@ impl ScalarUDF for Log {
         Ok(Field::new(field.name, dtype))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, "log takes two arguments");
         let input = &inputs[0];
         let base = &inputs[1];
