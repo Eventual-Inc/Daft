@@ -2507,6 +2507,15 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
+    def day_of_month(self) -> Expression:
+        """Retrieves the day of the month for a datetime column.
+
+        Returns:
+            Expression: a UInt32 expression with just the day_of_month extracted from a datetime column
+
+        """
+        return Expression._from_pyexpr(native.dt_day_of_month(self._expr))
+
     def day_of_year(self) -> Expression:
         """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
 
@@ -2541,6 +2550,15 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 4 of 4 rows)
         """
         return Expression._from_pyexpr(native.dt_day_of_year(self._expr))
+
+    def week_of_year(self) -> Expression:
+        """Retrieves the week of the year for a datetime column.
+
+        Returns:
+            Expression: a UInt32 expression with just the week_of_year extracted from a datetime column
+
+        """
+        return Expression._from_pyexpr(native.dt_week_of_year(self._expr))
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
