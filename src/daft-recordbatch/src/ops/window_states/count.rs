@@ -36,6 +36,11 @@ impl<'a> CountWindowState<'a> {
 
 impl<'a> WindowAggStateOps<'a> for CountWindowState<'a> {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         self.total_count += end_idx - start_idx;
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {
@@ -48,6 +53,11 @@ impl<'a> WindowAggStateOps<'a> for CountWindowState<'a> {
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         self.total_count -= end_idx - start_idx;
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {

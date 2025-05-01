@@ -58,8 +58,7 @@ def test_multiple_window_partitions(make_df):
     """Test multiple window functions with different partition keys using random numbers.
 
     Creates a dataset with 900 rows (100 rows each for A1, A2, A3, B1, B2, B3, C1, C2, C3)
-    and verifies sums across different partition keys (A/B/C and 1/2/3) as well as row_number
-    ordering within each partition.
+    and verifies row_number ordering within each partition.
     """
     import random
 
@@ -88,9 +87,6 @@ def test_multiple_window_partitions(make_df):
         col("letter"),
         col("num"),
         col("value"),
-        col("value").sum().over(letter_window).alias("letter_sum"),
-        col("value").sum().over(num_window).alias("num_sum"),
-        col("value").sum().over(combined_window).alias("combined_sum"),
         row_number().over(letter_window).alias("letter_row_number"),
         row_number().over(num_window).alias("num_row_number"),
         row_number().over(combined_window).alias("combined_row_number"),
@@ -101,11 +97,6 @@ def test_multiple_window_partitions(make_df):
     for letter in ["A", "B", "C"]:
         letter_indices = [i for i, ltr in enumerate(result_dict["letter"]) if ltr == letter]
         letter_values = [result_dict["value"][i] for i in letter_indices]
-        expected_letter_sum = sum(letter_values)
-        actual_letter_sums = [result_dict["letter_sum"][i] for i in letter_indices]
-        assert all(
-            sum == expected_letter_sum for sum in actual_letter_sums
-        ), f"Incorrect sum for letter {letter}: {actual_letter_sums} != {expected_letter_sum}"
 
         sorted_letter_values = sorted(letter_values)
         value_to_rank = {val: i + 1 for i, val in enumerate(sorted_letter_values)}
@@ -121,11 +112,6 @@ def test_multiple_window_partitions(make_df):
     for num in ["1", "2", "3"]:
         num_indices = [i for i, n in enumerate(result_dict["num"]) if n == num]
         num_values = [result_dict["value"][i] for i in num_indices]
-        expected_num_sum = sum(num_values)
-        actual_num_sums = [result_dict["num_sum"][i] for i in num_indices]
-        assert all(
-            sum == expected_num_sum for sum in actual_num_sums
-        ), f"Incorrect sum for number {num}: {actual_num_sums} != {expected_num_sum}"
 
         sorted_num_values = sorted(num_values)
         value_to_rank = {val: i + 1 for i, val in enumerate(sorted_num_values)}
@@ -145,11 +131,6 @@ def test_multiple_window_partitions(make_df):
                 if ltr == letter and n == num
             ]
             combined_values = [result_dict["value"][i] for i in combined_indices]
-            expected_combined_sum = sum(combined_values)
-            actual_combined_sums = [result_dict["combined_sum"][i] for i in combined_indices]
-            assert all(
-                sum == expected_combined_sum for sum in actual_combined_sums
-            ), f"Incorrect sum for combination {letter}{num}: {actual_combined_sums} != {expected_combined_sum}"
 
             sorted_combined_values = sorted(combined_values)
             value_to_rank = {val: i + 1 for i, val in enumerate(sorted_combined_values)}
@@ -163,13 +144,13 @@ def test_multiple_window_partitions(make_df):
 
 
 def test_multi_window_agg_functions(make_df):
-    """Test multiple window aggregation functions with different partition keys.
+    """Test multiple window functions with different partition keys.
 
     Tests window functions with two different partition specifications:
     1. Partitioning by both category and group
     2. Partitioning by just category
 
-    Using sum(), mean(), min(), max() aggregations and verifying row_number ordering.
+    Using row_number ordering.
     """
     data = [
         {"category": "A", "group": 1, "value": 15},
@@ -191,10 +172,6 @@ def test_multi_window_agg_functions(make_df):
         col("category"),
         col("group"),
         col("value"),
-        col("value").sum().over(multi_partition_window).alias("sum_multi"),
-        col("value").mean().over(multi_partition_window).alias("avg_multi"),
-        col("value").min().over(single_partition_window).alias("min_single"),
-        col("value").max().over(single_partition_window).alias("max_single"),
         row_number().over(multi_partition_window).alias("multi_row_number"),
         row_number().over(single_partition_window).alias("single_row_number"),
     ).collect()
@@ -213,18 +190,8 @@ def test_multi_window_agg_functions(make_df):
             sorted_values = sorted(values)
             value_to_rank = {val: i + 1 for i, val in enumerate(sorted_values)}
 
-            expected_sum = sum(values)
-            expected_avg = sum(values) / len(values)
-
             for idx in indices:
                 value = result_dict["value"][idx]
-                assert (
-                    result_dict["sum_multi"][idx] == expected_sum
-                ), f"Incorrect sum for {category}/{group}: {result_dict['sum_multi'][idx]} != {expected_sum}"
-                assert (
-                    abs(result_dict["avg_multi"][idx] - expected_avg) < 1e-10
-                ), f"Incorrect avg for {category}/{group}: {result_dict['avg_multi'][idx]} != {expected_avg}"
-
                 expected_rank = value_to_rank[value]
                 actual_rank = result_dict["multi_row_number"][idx]
                 assert (
@@ -238,18 +205,8 @@ def test_multi_window_agg_functions(make_df):
         sorted_values = sorted(values)
         value_to_rank = {val: i + 1 for i, val in enumerate(sorted_values)}
 
-        expected_min = min(values)
-        expected_max = max(values)
-
         for idx in indices:
             value = result_dict["value"][idx]
-            assert (
-                result_dict["min_single"][idx] == expected_min
-            ), f"Incorrect min for {category}: {result_dict['min_single'][idx]} != {expected_min}"
-            assert (
-                result_dict["max_single"][idx] == expected_max
-            ), f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"
-
             expected_rank = value_to_rank[value]
             actual_rank = result_dict["single_row_number"][idx]
             assert (

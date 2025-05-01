@@ -34,12 +34,22 @@ where
     DataArray<T>: IntoSeries,
 {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         self.sum.add(start_idx, end_idx)?;
         self.count.add(start_idx, end_idx)?;
         Ok(())
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         self.sum.remove(start_idx, end_idx)?;
         self.count.remove(start_idx, end_idx)?;
         Ok(())

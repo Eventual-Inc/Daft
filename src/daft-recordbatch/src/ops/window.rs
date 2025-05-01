@@ -1,3 +1,4 @@
+use arrow2::bitmap::{binary, Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
@@ -139,7 +140,7 @@ impl RecordBatch {
                 )
             }
             Ok(None) => {
-                // Not implemented for incremental, fall back to non-incremental
+                // Otherwise, use the non-incremental implementation
                 self.window_agg_rows(
                     agg_expr,
                     &name,
@@ -170,6 +171,7 @@ impl RecordBatch {
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
+        let mut validity = MutableBitmap::with_capacity(total_rows); // TODO: probably possible to compute directly
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
@@ -208,14 +210,23 @@ impl RecordBatch {
                 // Update previous boundaries for the next iteration
                 prev_frame_start = frame_start;
                 prev_frame_end = frame_end;
+                validity.push(true);
+            } else {
+                validity.push(false);
             }
 
             // Evaluate current state to get the result for this row
             agg_state.evaluate()?;
         }
 
+        let mut validity = Bitmap::from(validity);
+        let agg_state = agg_state.build()?.rename(name);
+        if let Some(agg_validity) = agg_state.validity() {
+            validity = binary(&validity, agg_validity, |a, b| a & b);
+        }
+
         // Build the final result series
-        let renamed_result = agg_state.build()?.rename(name);
+        let renamed_result = agg_state.with_validity(Some(validity))?;
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }

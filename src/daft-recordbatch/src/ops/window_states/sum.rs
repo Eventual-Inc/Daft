@@ -3,6 +3,7 @@ use std::{
     ops::{Add, Sub},
 };
 
+use arrow2::bitmap::MutableBitmap;
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::DaftPrimitiveType, prelude::*};
 use num_traits::Zero;
@@ -17,6 +18,8 @@ where
     source: DataArray<T>,
     sum: T::Native,
     sum_vec: Vec<T::Native>,
+    valid_count: usize,
+    validity: MutableBitmap,
     _phantom: PhantomData<&'a ()>,
 }
 
@@ -39,6 +42,8 @@ where
             source: source_array,
             sum: T::Native::zero(),
             sum_vec: Vec::with_capacity(total_length),
+            valid_count: 0,
+            validity: MutableBitmap::with_capacity(total_length),
             _phantom: PhantomData,
         })
     }
@@ -51,18 +56,30 @@ where
     DataArray<T>: IntoSeries,
 {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 self.sum = self.sum + self.source.get(i).unwrap();
+                self.valid_count += 1;
             }
         }
         Ok(())
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 self.sum = self.sum - self.source.get(i).unwrap();
+                self.valid_count -= 1;
             }
         }
         Ok(())
@@ -70,6 +87,7 @@ where
 
     fn evaluate(&mut self) -> DaftResult<()> {
         self.sum_vec.push(self.sum);
+        self.validity.push(self.valid_count > 0);
         Ok(())
     }
 
@@ -78,7 +96,9 @@ where
         let arrow_array = Box::new(arrow2::array::PrimitiveArray::from_vec(
             self.sum_vec.clone(),
         ));
-        Ok(DataArray::<T>::new(field.into(), arrow_array)?.into_series())
+        DataArray::<T>::new(field.into(), arrow_array)?
+            .into_series()
+            .with_validity(Some(self.validity.clone().into()))
     }
 }
 

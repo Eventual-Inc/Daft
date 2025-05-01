@@ -36,6 +36,11 @@ impl<'a> CountDistinctWindowState<'a> {
 
 impl<'a> WindowAggStateOps<'a> for CountDistinctWindowState<'a> {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if let Some(hash) = self.hashed.get(i) {
                 let index_hash = IndexHash {
@@ -63,6 +68,11 @@ impl<'a> WindowAggStateOps<'a> for CountDistinctWindowState<'a> {
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if let Some(hash) = self.hashed.get(i) {
                 let mut keys_to_remove = Vec::new();
