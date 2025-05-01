@@ -62,6 +62,15 @@ impl DaftError {
     }
 }
 
+#[macro_export]
+macro_rules! ensure {
+    ($cond:expr, $msg:expr) => {
+        if !$cond {
+            return Err(DaftError::ComputeError($msg.to_string()));
+        }
+    };
+}
+
 impl From<arrow2::error::Error> for DaftError {
     fn from(error: arrow2::error::Error) -> Self {
         match error {

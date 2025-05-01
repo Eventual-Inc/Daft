@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::NotNan;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct FillNan {}
+pub struct FillNan;
 
 #[typetag::serde]
 impl ScalarUDF for FillNan {

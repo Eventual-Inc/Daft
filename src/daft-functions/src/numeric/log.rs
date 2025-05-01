@@ -1,5 +1,4 @@
-use common_error::{DaftError, DaftResult};
-use common_hashable_float_wrapper::FloatWrapper;
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -67,7 +66,7 @@ log!(ln, Ln);
 log!(log1p, Log1p);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Log(FloatWrapper<f64>);
+pub struct Log;
 
 #[typetag::serde]
 impl ScalarUDF for Log {
@@ -80,13 +79,16 @@ impl ScalarUDF for Log {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+        ensure!(inputs.len() == 2, "log takes two arguments");
+        let field = inputs.first().unwrap().to_field(schema)?;
+        let base = inputs.get(1).unwrap().to_field(schema)?;
+        if !base.dtype.is_numeric() {
+            return Err(DaftError::TypeError(format!(
+                "Expected base to log to be numeric, got {}",
+                base.dtype
             )));
         }
-        let field = inputs.first().unwrap().to_field(schema)?;
+
         let dtype = match field.dtype {
             DataType::Float32 => DataType::Float32,
             dt if dt.is_numeric() => DataType::Float64,
@@ -101,11 +103,19 @@ impl ScalarUDF for Log {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, |x| x.log(self.0 .0))
+        ensure!(inputs.len() == 2, "log takes two arguments");
+        let input = &inputs[0];
+        let base = &inputs[1];
+        let base = {
+            ensure!(base.len() == 1, "expected scalar value");
+            let s = base.cast(&DataType::Float64)?;
+            s.f64().unwrap().get(0).unwrap()
+        };
+        input.log(base)
     }
 }
 
 #[must_use]
-pub fn log(input: ExprRef, base: f64) -> ExprRef {
-    ScalarFunction::new(Log(FloatWrapper(base)), vec![input]).into()
+pub fn log(input: ExprRef, base: ExprRef) -> ExprRef {
+    ScalarFunction::new(Log, vec![input, base]).into()
 }

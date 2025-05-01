@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::{evaluate_single_numeric, to_field_single_floating};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Sqrt {}
+pub struct Sqrt;
 
 #[typetag::serde]
 impl ScalarUDF for Sqrt {

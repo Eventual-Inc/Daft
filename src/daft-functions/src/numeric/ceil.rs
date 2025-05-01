@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::{evaluate_single_numeric, to_field_single_numeric};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Ceil {}
+pub struct Ceil;
 
 #[typetag::serde]
 impl ScalarUDF for Ceil {

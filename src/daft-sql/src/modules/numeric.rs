@@ -1,4 +1,4 @@
-use daft_dsl::{ExprRef, LiteralValue};
+use daft_dsl::{functions::ScalarFunction, ExprRef};
 use daft_functions::numeric::{
     abs::abs,
     ceil::ceil,
@@ -6,7 +6,7 @@ use daft_functions::numeric::{
     exp::{exp, expm1},
     floor::floor,
     log::{ln, log, log10, log1p, log2},
-    round::round,
+    round::Round,
     sign::{negative, sign},
     sqrt::sqrt,
     trigonometry::{
@@ -18,9 +18,8 @@ use daft_functions::numeric::{
 use super::SQLModule;
 use crate::{
     ensure,
-    error::{PlannerError, SQLPlannerResult},
+    error::SQLPlannerResult,
     functions::{SQLFunction, SQLFunctions},
-    invalid_operation_err,
 };
 
 pub struct SQLModuleNumeric;
@@ -226,25 +225,7 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
             ensure!(args.len() == 1, "negative takes exactly one argument");
             Ok(negative(args[0].clone()))
         }
-        SQLNumericExpr::Round => {
-            ensure!(
-                args.len() == 2 || args.len() == 1,
-                "round takes one or two arguments"
-            );
-            let precision = match args.get(1).and_then(|arg| arg.as_literal()) {
-                Some(LiteralValue::Int8(i)) => *i as i32,
-                Some(LiteralValue::UInt8(u)) => *u as i32,
-                Some(LiteralValue::Int16(i)) => *i as i32,
-                Some(LiteralValue::UInt16(u)) => *u as i32,
-                Some(LiteralValue::Int32(i)) => *i,
-                Some(LiteralValue::UInt32(u)) => *u as i32,
-                Some(LiteralValue::Int64(i)) => *i as i32,
-                Some(LiteralValue::UInt64(u)) => *u as i32,
-                None => 0,
-                _ => invalid_operation_err!("round precision must be an integer"),
-            };
-            Ok(round(args[0].clone(), Some(precision)))
-        }
+        SQLNumericExpr::Round => Ok(ScalarFunction::new(Round, args.to_vec()).into()),
         SQLNumericExpr::Clip => {
             ensure!(args.len() == 3, "clip takes exactly three arguments");
             Ok(clip(args[0].clone(), args[1].clone(), args[2].clone()))
@@ -331,25 +312,7 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
         }
         SQLNumericExpr::Log => {
             ensure!(args.len() == 2, "log takes exactly two arguments");
-            let base = args[1]
-                .as_literal()
-                .and_then(|lit| match lit {
-                    LiteralValue::Float64(f) => Some(*f),
-                    LiteralValue::Int8(i) => Some(f64::from(*i)),
-                    LiteralValue::UInt8(u) => Some(f64::from(*u)),
-                    LiteralValue::Int16(i) => Some(f64::from(*i)),
-                    LiteralValue::UInt16(u) => Some(f64::from(*u)),
-                    LiteralValue::Int32(i) => Some(f64::from(*i)),
-                    LiteralValue::UInt32(u) => Some(f64::from(*u)),
-                    LiteralValue::Int64(i) => Some(*i as f64),
-                    LiteralValue::UInt64(u) => Some(*u as f64),
-                    _ => None,
-                })
-                .ok_or_else(|| PlannerError::InvalidOperation {
-                    message: "log base must be a float or a number".to_string(),
-                })?;
-
-            Ok(log(args[0].clone(), base))
+            Ok(log(args[0].clone(), args[1].clone()))
         }
         SQLNumericExpr::Exp => {
             ensure!(args.len() == 1, "exp takes exactly one argument");

@@ -82,7 +82,7 @@ trigonometry!(arccosh, ArcCosh);
 trigonometry!(arcsinh, ArcSinh);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Atan2 {}
+pub struct Atan2;
 
 #[typetag::serde]
 impl ScalarUDF for Atan2 {
@@ -91,7 +91,7 @@ impl ScalarUDF for Atan2 {
     }
 
     fn name(&self) -> &'static str {
-        "atan2"
+        "arctan2"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

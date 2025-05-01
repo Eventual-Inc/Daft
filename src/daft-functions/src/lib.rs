@@ -17,7 +17,13 @@ pub mod tokenize;
 pub mod uri;
 pub mod utf8;
 
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
+
 use common_error::DaftError;
+use daft_dsl::functions::ScalarUDF;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
@@ -48,3 +54,39 @@ macro_rules! invalid_argument_err {
         return Err(common_error::DaftError::TypeError(msg).into());
     }};
 }
+
+pub struct FunctionRegistry {
+    map: HashMap<String, Arc<dyn ScalarUDF>>,
+}
+pub trait FunctionModule {
+    /// Register this module to the given [SQLFunctions] table.
+    fn register(_parent: &mut FunctionRegistry);
+}
+
+impl FunctionRegistry {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    pub fn register<Mod: FunctionModule>(&mut self) {
+        Mod::register(self);
+    }
+
+    pub fn add_fn<UDF: ScalarUDF + 'static>(&mut self, func: UDF) {
+        self.map.insert(func.name().to_string(), Arc::new(func));
+    }
+
+    pub fn get(&self, name: &str) -> Option<Arc<dyn ScalarUDF>> {
+        self.map.get(name).cloned()
+    }
+}
+
+pub static FUNCTION_REGISTRY: LazyLock<FunctionRegistry> = LazyLock::new(|| {
+    let mut registry = FunctionRegistry::new();
+    registry.register::<numeric::NumericFunctions>();
+    registry.register::<float::FloatFunctions>();
+
+    registry
+});

@@ -11,7 +11,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct NotNan {}
+pub struct NotNan;
 
 #[typetag::serde]
 impl ScalarUDF for NotNan {
