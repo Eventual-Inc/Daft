@@ -188,14 +188,14 @@ class DataFrame:
 
     def pipe(
         self,
-        func: Callable[Concatenate["DataFrame", P], T],
+        function: Callable[Concatenate["DataFrame", P], T],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
         """Apply the function to this DataFrame.
 
         Args:
-            func (Callable[Concatenate["DataFrame", P], T]): Function to apply.
+            function (Callable[Concatenate["DataFrame", P], T]): Function to apply.
             *args (P.args): Positional arguments to pass to the function.
             **kwargs (P.kwargs): Keyword arguments to pass to the function.
 
@@ -225,8 +225,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        # !! WARNING !!
-        return func(self, *args, **kwargs)
+        return function(self, *args, **kwargs)
 
     @DataframePublicAPI
     def explain(
