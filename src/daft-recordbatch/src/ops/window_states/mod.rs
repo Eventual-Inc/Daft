@@ -7,7 +7,7 @@ mod sum;
 
 use std::cmp::{Eq, Ordering};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use count::CountWindowState;
 use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;
@@ -31,6 +31,15 @@ pub trait WindowAggStateOps {
     fn build(&self) -> DaftResult<Series>;
 }
 
+/// Wrapper struct holding a Series containing a single value and its original index.
+/// Used in Min/Max window states with BinaryHeap to keep track of minimum/maximum values.
+///
+/// Note: The `Ord` implementation relies on `partial_cmp`, which uses Daft's Series comparisons.
+/// This means comparisons might yield unexpected results for non-totally-ordered values like NaN
+/// or Null. However, the Min/Max window implementations specifically handle Nulls by ignoring them.
+/// NaN values will follow standard floating-point comparison behavior (NaN is not greater than, less than,
+/// or equal to any other number, including itself). When multiple NaNs are encountered, their relative
+/// order is determined by their original index `idx`.
 #[derive(Debug, Clone)]
 pub struct IndexedValue {
     pub value: Series,
@@ -55,9 +64,41 @@ impl PartialEq for IndexedValue {
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for IndexedValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.value.data_type() == &DataType::Float64
+            && other.value.data_type() == &DataType::Float64
+        {
+            let self_val_opt = self
+                .value
+                .downcast::<Float64Array>()
+                .ok()
+                .and_then(|arr| arr.get(0));
+            let other_val_opt = other
+                .value
+                .downcast::<Float64Array>()
+                .ok()
+                .and_then(|arr| arr.get(0));
+
+            match (self_val_opt, other_val_opt) {
+                (Some(self_val), Some(other_val)) => {
+                    if self_val.is_nan() || other_val.is_nan() {
+                        return if self_val.is_nan() && other_val.is_nan() {
+                            Some(self.idx.cmp(&other.idx))
+                        } else if self_val.is_nan() {
+                            Some(Ordering::Greater)
+                        } else {
+                            Some(Ordering::Less)
+                        };
+                    }
+                }
+                (None, None) => return Some(self.idx.cmp(&other.idx)),
+                (None, Some(_)) => return Some(Ordering::Less),
+                (Some(_), None) => return Some(Ordering::Greater),
+            }
+        }
+
         match self.value.lt(&other.value) {
             Ok(result) => {
-                if result.into_iter().any(|x| x.unwrap_or(false)) {
+                if result.get(0).unwrap_or(false) {
                     return Some(Ordering::Less);
                 }
             }
@@ -66,7 +107,7 @@ impl PartialOrd for IndexedValue {
 
         match self.value.equal(&other.value) {
             Ok(result) => {
-                if result.into_iter().all(|x| x.unwrap_or(false)) {
+                if result.get(0).unwrap_or(false) {
                     return Some(self.idx.cmp(&other.idx));
                 }
             }
@@ -87,20 +128,17 @@ pub fn create_window_agg_state(
     source: &Series,
     agg_expr: &AggExpr,
     total_length: usize,
-) -> DaftResult<Box<dyn WindowAggStateOps>> {
+) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
     match agg_expr {
         AggExpr::Sum(_) => sum::create_for_type(source, total_length),
-        AggExpr::Count(_, _) => Ok(Box::new(CountWindowState::new(source, total_length))),
-        AggExpr::Min(_) => Ok(Box::new(MinWindowState::new(source, total_length))),
-        AggExpr::Max(_) => Ok(Box::new(MaxWindowState::new(source, total_length))),
-        AggExpr::CountDistinct(_) => Ok(Box::new(CountDistinctWindowState::new(
+        AggExpr::Count(_, _) => Ok(Some(Box::new(CountWindowState::new(source, total_length)))),
+        AggExpr::Min(_) => Ok(Some(Box::new(MinWindowState::new(source, total_length)))),
+        AggExpr::Max(_) => Ok(Some(Box::new(MaxWindowState::new(source, total_length)))),
+        AggExpr::CountDistinct(_) => Ok(Some(Box::new(CountDistinctWindowState::new(
             source,
             total_length,
-        ))),
+        )))),
         AggExpr::Mean(_) => mean::create_for_type(source, total_length),
-        _ => Err(DaftError::NotImplemented(format!(
-            "Window aggregation state not implemented for {:?}",
-            agg_expr
-        ))),
+        _ => Ok(None),
     }
 }

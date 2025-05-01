@@ -126,26 +126,34 @@ impl RecordBatch {
 
         let source = self.get_column(agg_expr.name())?;
         // Check if we can initialize an incremental state
-        if let Ok(agg_state) = create_window_agg_state(source, agg_expr, total_rows) {
-            self.window_agg_rows_incremental(
-                &name,
-                start_boundary,
-                end_boundary,
-                min_periods,
-                total_rows,
-                agg_state,
-            )
-        } else {
-            // Otherwise, use the non-incremental implementation
-            self.window_agg_rows(
-                agg_expr,
-                &name,
-                dtype,
-                start_boundary,
-                end_boundary,
-                min_periods,
-                total_rows,
-            )
+        match create_window_agg_state(source, agg_expr, total_rows) {
+            Ok(Some(agg_state)) => {
+                // Incremental state created successfully
+                self.window_agg_rows_incremental(
+                    &name,
+                    start_boundary,
+                    end_boundary,
+                    min_periods,
+                    total_rows,
+                    agg_state,
+                )
+            }
+            Ok(None) => {
+                // Not implemented for incremental, fall back to non-incremental
+                self.window_agg_rows(
+                    agg_expr,
+                    &name,
+                    dtype,
+                    start_boundary,
+                    end_boundary,
+                    min_periods,
+                    total_rows,
+                )
+            }
+            Err(e) => {
+                // Error during setup (e.g., type incompatibility), propagate it
+                Err(e)
+            }
         }
     }
 
