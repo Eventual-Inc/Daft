@@ -416,3 +416,137 @@ def test_row_number_and_running_sum_window_functions():
     )
 
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "value"])
+
+
+def test_range_window_sql():
+    """Test SQL window functions with range frame type."""
+    random.seed(50)
+
+    data = {"category": [], "ts": [], "value": []}
+    possible_timestamps = random.sample(range(1000), 300)
+    possible_timestamps.sort()
+
+    for category in ["A", "B"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+
+        for ts, value in zip(timestamps, values):
+            data["category"].append(category)
+            data["ts"].append(ts)
+            data["value"].append(value)
+
+    df = daft.from_pydict(data)
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            category,
+            ts,
+            value,
+            SUM(value) OVER(
+                PARTITION BY category
+                ORDER BY ts
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_sum,
+            AVG(value) OVER(
+                PARTITION BY category
+                ORDER BY ts
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_avg,
+            MIN(value) OVER(
+                PARTITION BY category
+                ORDER BY ts
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_min,
+            MAX(value) OVER(
+                PARTITION BY category
+                ORDER BY ts
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_max
+        FROM test_data
+        ORDER BY category, ts
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(-2, 2)
+
+    daft_result = (
+        df.with_column("range_sum", col("value").sum().over(window_spec))
+        .with_column("range_avg", col("value").mean().over(window_spec))
+        .with_column("range_min", col("value").min().over(window_spec))
+        .with_column("range_max", col("value").max().over(window_spec))
+        .sort(["category", "ts"])
+        .collect()
+    )
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_window_desc_sql():
+    """Test SQL window functions with range frame type and descending order."""
+    random.seed(53)
+
+    data = {"category": [], "ts": [], "value": []}
+    possible_timestamps = random.sample(range(1000), 300)
+    possible_timestamps.sort()
+
+    for category in ["A", "B"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+
+        for ts, value in zip(timestamps, values):
+            data["category"].append(category)
+            data["ts"].append(ts)
+            data["value"].append(value)
+
+    df = daft.from_pydict(data)
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            category,
+            ts,
+            value,
+            SUM(value) OVER(
+                PARTITION BY category
+                ORDER BY ts DESC
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_sum,
+            AVG(value) OVER(
+                PARTITION BY category
+                ORDER BY ts DESC
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_avg,
+            MIN(value) OVER(
+                PARTITION BY category
+                ORDER BY ts DESC
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_min,
+            MAX(value) OVER(
+                PARTITION BY category
+                ORDER BY ts DESC
+                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+            ) AS range_max
+        FROM test_data
+        ORDER BY category, ts
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=True).range_between(-2, 2)
+
+    daft_result = (
+        df.with_column("range_sum", col("value").sum().over(window_spec))
+        .with_column("range_avg", col("value").mean().over(window_spec))
+        .with_column("range_min", col("value").min().over(window_spec))
+        .with_column("range_max", col("value").max().over(window_spec))
+        .sort(["category", "ts"])
+        .collect()
+    )
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "ts"], check_dtype=False)

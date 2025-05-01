@@ -496,7 +496,6 @@ impl SQLPlanner<'_> {
 
                 if let Some(lit) = parsed_expr.as_literal() {
                     if is_range_frame {
-                        // For range frame, we'll use the literal directly
                         Ok(WindowBoundary::RangeOffset(lit.clone()))
                     } else if let Some(value) = lit.as_i64() {
                         Ok(WindowBoundary::Offset(value))
