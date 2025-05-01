@@ -28,11 +28,6 @@ impl<'a> MaxWindowState<'a> {
 
 impl<'a> WindowAggStateOps<'a> for MaxWindowState<'a> {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        // if end_idx <= start_idx {
-        //     return Err(DaftError::ValueError(
-        //         "end_idx must be greater than start_idx".into(),
-        //     ));
-        // }
         assert!(
             end_idx > start_idx,
             "end_idx must be greater than start_idx"
@@ -50,11 +45,6 @@ impl<'a> WindowAggStateOps<'a> for MaxWindowState<'a> {
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        // if end_idx <= start_idx {
-        //     return Err(DaftError::ValueError(
-        //         "end_idx must be greater than start_idx".into(),
-        //     ));
-        // }
         assert!(
             end_idx > start_idx,
             "end_idx must be greater than start_idx"
