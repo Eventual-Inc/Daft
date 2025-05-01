@@ -127,58 +127,82 @@ impl RecordBatch {
             }
         };
 
-        if matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
-            || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
-        {
-            if order_by.len() != 1 {
-                return Err(DaftError::ValueError(
-                    "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
-                ));
+        let source = self.get_column(agg_expr.name())?;
+        // Check if we can initialize an incremental state
+        match create_window_agg_state(source, agg_expr, total_rows) {
+            Ok(Some(agg_state)) => {
+                if matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
+                    || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+                {
+                    if order_by.len() != 1 {
+                        return Err(DaftError::ValueError(
+                            "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
+                        ));
+                    }
+
+                    self.window_agg_range(
+                        &name,
+                        start_boundary,
+                        end_boundary,
+                        &order_by[0],
+                        descending[0],
+                        min_periods,
+                        total_rows,
+                        agg_state,
+                    )
+                } else {
+                    let start_boundary = match start_boundary {
+                        Some(WindowBoundary::Offset(offset)) => Some(offset),
+                        _ => None,
+                    };
+
+                    let end_boundary = match end_boundary {
+                        Some(WindowBoundary::Offset(offset)) => Some(offset),
+                        _ => None,
+                    };
+
+                    // Incremental state created successfully
+                    self.window_agg_rows_incremental(
+                        &name,
+                        start_boundary,
+                        end_boundary,
+                        min_periods,
+                        total_rows,
+                        agg_state,
+                    )
+                }
             }
+            Ok(None) => {
+                if matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
+                    || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+                {
+                    todo!()
+                } else {
+                    let start_boundary = match start_boundary {
+                        Some(WindowBoundary::Offset(offset)) => Some(offset),
+                        _ => None,
+                    };
 
-            self.window_agg_range(
-                agg_expr,
-                &name,
-                start_boundary,
-                end_boundary,
-                &order_by[0],
-                descending[0],
-                min_periods,
-                total_rows,
-            )
-        } else {
-            let start_boundary = match start_boundary {
-                Some(WindowBoundary::Offset(offset)) => Some(offset),
-                _ => None,
-            };
+                    let end_boundary = match end_boundary {
+                        Some(WindowBoundary::Offset(offset)) => Some(offset),
+                        _ => None,
+                    };
 
-            let end_boundary = match end_boundary {
-                Some(WindowBoundary::Offset(offset)) => Some(offset),
-                _ => None,
-            };
-
-            let source = self.get_column(agg_expr.name())?;
-            // Check if we can initialize an incremental state
-            if let Ok(agg_state) = create_window_agg_state(source, agg_expr, total_rows) {
-                self.window_agg_rows_incremental(
-                    &name,
-                    start_boundary,
-                    end_boundary,
-                    min_periods,
-                    total_rows,
-                    agg_state,
-                )
-            } else {
-                // Otherwise, use the non-incremental implementation
-                self.window_agg_rows(
-                    agg_expr,
-                    &name,
-                    dtype,
-                    start_boundary,
-                    end_boundary,
-                    min_periods,
-                    total_rows,
-                )
+                    // Otherwise, use the non-incremental implementation
+                    self.window_agg_rows(
+                        agg_expr,
+                        &name,
+                        dtype,
+                        start_boundary,
+                        end_boundary,
+                        min_periods,
+                        total_rows,
+                    )
+                }
+            }
+            Err(e) => {
+                // Error during setup (e.g., type incompatibility), propagate it
+                Err(e)
             }
         }
     }
@@ -315,7 +339,6 @@ impl RecordBatch {
     #[allow(clippy::too_many_arguments)]
     fn window_agg_range(
         &self,
-        agg_expr: &AggExpr,
         name: &str,
         mut start_boundary: Option<WindowBoundary>,
         mut end_boundary: Option<WindowBoundary>,
@@ -323,12 +346,11 @@ impl RecordBatch {
         descending: bool,
         min_periods: usize,
         total_rows: usize,
+        mut agg_state: Box<dyn WindowAggStateOps>,
     ) -> DaftResult<Self> {
         // Use the optimized implementation with incremental state updates
         // Initialize the state for incremental aggregation
-        let source = self.get_column(agg_expr.name())?;
         let order_by_col = self.eval_expression(order_by)?;
-        let mut agg_state = create_window_agg_state(source, agg_expr, total_rows)?;
         let mut validity = MutableBitmap::with_capacity(total_rows);
 
         // Track previous window boundaries
