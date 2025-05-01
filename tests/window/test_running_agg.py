@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import random
+from decimal import Decimal
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from daft import Window, col
+from daft import DataType, Window, col
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -25,6 +27,177 @@ def test_running_sum(make_df):
         running_sum = 0
 
         for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            running_sum += value
+            expected_data.append({"category": category, "ts": ts, "value": value, "running_sum": running_sum})
+
+    df = make_df(data)
+
+    window_spec = (
+        Window()
+        .partition_by("category")
+        .order_by("ts", desc=False)
+        .rows_between(Window.unbounded_preceding, Window.current_row)
+    )
+
+    result = df.select(
+        col("category"), col("ts"), col("value"), col("value").sum().over(window_spec).alias("running_sum")
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_float32_running_sum(make_df):
+    """Test running sum over float32 values."""
+    random.seed(60)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B", "C"]:
+        values = [random.uniform(0.1, 100.0) for _ in range(10)]
+        running_sum = 0.0
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            running_sum += value
+            expected_data.append({"category": category, "ts": ts, "value": value, "running_sum": running_sum})
+
+    df = make_df(data)
+    df = df.with_column("value", col("value").cast(DataType.float32()))
+
+    window_spec = (
+        Window()
+        .partition_by("category")
+        .order_by("ts", desc=False)
+        .rows_between(Window.unbounded_preceding, Window.current_row)
+    )
+
+    result = df.select(
+        col("category"), col("ts"), col("value"), col("value").sum().over(window_spec).alias("running_sum")
+    ).collect()
+
+    expected_df = pd.DataFrame(expected_data)
+    expected_df["value"] = expected_df["value"].astype(np.float32)
+    expected_df["running_sum"] = expected_df["running_sum"].astype(np.float32)
+
+    assert_df_equals(result.to_pandas(), expected_df, sort_key=["category", "ts"], check_dtype=True)
+
+
+def test_float64_running_window(make_df):
+    """Test running window operations over float64 values."""
+    random.seed(61)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        values = [random.uniform(0.1, 100.0) for _ in range(15)]
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            start_idx = max(0, ts - 2)
+            end_idx = min(ts + 1, len(values))
+            window_vals = values[start_idx:end_idx]
+
+            window_sum = sum(window_vals)
+            window_avg = sum(window_vals) / len(window_vals)
+            window_min = min(window_vals)
+            window_max = max(window_vals)
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "window_sum": window_sum,
+                    "window_avg": window_avg,
+                    "window_min": window_min,
+                    "window_max": window_max,
+                }
+            )
+
+    df = make_df(data)
+    df = df.with_column("value", col("value").cast(DataType.float64()))
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-2, 0)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("window_sum"),
+        col("value").mean().over(window_spec).alias("window_avg"),
+        col("value").min().over(window_spec).alias("window_min"),
+        col("value").max().over(window_spec).alias("window_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+@pytest.mark.skip(
+    reason="""
+Mismatch between expected and actual Arrow types for DataArray.
+Field name: value
+Logical type: Decimal(precision=5, scale=2)
+Physical type: Decimal(precision=5, scale=2)
+Expected Arrow physical type: Decimal(5, 2)
+Actual Arrow Logical type: Decimal(32, 32)
+"""
+)
+def test_decimal_running_sum(make_df):
+    """Test running sum over decimal values."""
+    random.seed(62)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        values = [Decimal(str(round(random.uniform(0.01, 1000.0), 2))) for _ in range(10)]
+        running_sum = Decimal("0.0")
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            running_sum += value
+            expected_data.append({"category": category, "ts": ts, "value": value, "running_sum": running_sum})
+
+    df = make_df(data)
+
+    window_spec = (
+        Window()
+        .partition_by("category")
+        .order_by("ts", desc=False)
+        .rows_between(Window.unbounded_preceding, Window.current_row)
+    )
+
+    result = df.select(
+        col("category"), col("ts"), col("value"), col("value").sum().over(window_spec).alias("running_sum")
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_mixed_numeric_types(make_df):
+    """Test window operations with mixed numeric data types."""
+    random.seed(63)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        int_values = [random.randint(1, 100) for _ in range(10)]
+        float32_values = [float(random.uniform(0.1, 100.0)) for _ in range(10)]
+
+        all_values = int_values + float32_values
+        random.shuffle(all_values)
+
+        running_sum = 0.0
+
+        for ts, value in enumerate(all_values):
             data.append({"category": category, "ts": ts, "value": value})
 
             running_sum += value

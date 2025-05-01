@@ -158,14 +158,14 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_rows_incremental(
-        &self,
+    fn window_agg_rows_incremental<'a>(
+        &'a self,
         name: &str,
         start_boundary: Option<i64>,
         end_boundary: Option<i64>,
         min_periods: usize,
         total_rows: usize,
-        mut agg_state: Box<dyn WindowAggStateOps>,
+        mut agg_state: Box<dyn WindowAggStateOps<'a> + 'a>,
     ) -> DaftResult<Self> {
         // Track previous window boundaries
         let mut prev_frame_start = 0;
