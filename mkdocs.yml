@@ -57,6 +57,7 @@ nav:
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
   - Functions: api/functions.md
+  - Window Functions: api/window.md
   - Sessions: api/sessions.md
   - Catalogs & Tables: api/catalogs_tables.md
   - Schema: api/schema.md
@@ -75,6 +76,7 @@ nav:
     - SHOW: sql/statements/show.md
     - USE: sql/statements/use.md
   - Data Types: sql/datatypes.md
+  - Window Functions: sql/window_functions.md
   # Disabled until identifier modes are supported.
   # - Identifiers: sql/identifiers.md
 

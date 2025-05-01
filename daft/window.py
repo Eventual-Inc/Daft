@@ -193,9 +193,11 @@ class Window:
                 *   ``Window.current_row``: Start range at the current row's order value.
                 *   Offset value (e.g., ``-10``, ``datetime.timedelta(days=-1)``): The start of the range is defined as
                     `current_row_order_value + start`. The type of the offset must match the order-by column type.
-                    Negative values indicate offsets *before* the current row's value, when in ascending order.
+                    Negative values indicate a lower bound *less than* the current row's value. Positive values indicate a lower bound
+                    *more than* the current row's value.
             end: Boundary definition for the end of the window's range. Syntax is similar to `start`.
-                Positive values indicate offsets *more than* the current row's value.
+                Negative values indicate an upper bound *less than* the current row's value. Positive values indicate an upper bound
+                *more than* the current row's value.
             min_periods: Minimum number of rows required in the window frame to compute a result (default = 1).
                 If fewer rows exist in the frame, the function returns NULL.
 
@@ -210,7 +212,9 @@ class Window:
             >>> import datetime
             >>> # Assume df has columns 'sensor_id', 'timestamp', 'reading'
             >>> # Frame includes rows within 10 units *before* the current row's reading
-            >>> val_window = Window().partition_by("sensor_id").order_by("reading").range_between(-10, Window.current_row)
+            >>> val_window = (
+            ...     Window().partition_by("sensor_id").order_by("reading").range_between(-10, Window.current_row)
+            ... )
             >>> # Frame includes rows from 1 day before to 1 day after the current row's timestamp
             >>> time_window = (
             ...     Window()

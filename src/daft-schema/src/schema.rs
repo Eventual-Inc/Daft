@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    ops::Index,
     sync::Arc,
 };
 
@@ -68,15 +69,6 @@ impl Schema {
 
     pub fn to_struct(&self) -> DataType {
         DataType::Struct(self.fields.clone())
-    }
-
-    pub fn get_field_at_index(&self, index: usize) -> DaftResult<&Field> {
-        self.fields
-            .get(index)
-            .ok_or(DaftError::FieldNotFound(format!(
-                "Attempted to access field at out-of-bounds index {} in schema: {:?}",
-                index, self.fields
-            )))
     }
 
     pub fn fields(&self) -> &[Field] {
@@ -394,5 +386,13 @@ impl<'a> IntoIterator for &'a Schema {
 
     fn into_iter(self) -> Self::IntoIter {
         self.fields().iter()
+    }
+}
+
+impl Index<usize> for Schema {
+    type Output = Field;
+
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.fields[i]
     }
 }

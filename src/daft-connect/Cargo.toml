@@ -1,6 +1,5 @@
 [dependencies]
 arrow2 = {workspace = true}
-async-stream = "0.3.6"
 common-error = {workspace = true, optional = true, features = ["python"]}
 common-file-formats = {workspace = true, optional = true, features = [
   "python"
