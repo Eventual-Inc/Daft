@@ -139,7 +139,8 @@ jobs:
       run: |
         uv venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
     - name: Install Daft and dev dependencies
       run: |
         uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
