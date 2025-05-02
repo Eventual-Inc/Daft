@@ -1,10 +1,8 @@
-pub mod file_info;
 use std::hash::{Hash, Hasher};
 
 use common_partitioning::PartitionCacheEntry;
 use common_scan_info::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
-pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
 
 use crate::partitioning::ClusteringSpecRef;

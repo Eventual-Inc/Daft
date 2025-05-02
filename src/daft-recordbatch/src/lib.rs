@@ -24,11 +24,12 @@ use daft_dsl::{
     expr::BoundColumn, functions::FunctionEvaluator, null_lit, resolved_col, AggExpr,
     ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue, ResolvedColumn, SketchType,
 };
-use daft_logical_plan::FileInfos;
+use file_info::FileInfos;
 use futures::{StreamExt, TryStreamExt};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
+mod file_info;
 mod growable;
 mod ops;
 mod preview;
