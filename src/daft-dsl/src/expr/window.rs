@@ -77,9 +77,13 @@ impl WindowFrame {
 }
 
 impl WindowFrame {
-    pub fn from_window_boundary(start: WindowBoundary, end: WindowBoundary) -> Self {
+    pub fn from_window_boundary(
+        frame_type: WindowFrameType,
+        start: WindowBoundary,
+        end: WindowBoundary,
+    ) -> Self {
         Self {
-            frame_type: WindowFrameType::Rows,
+            frame_type,
             start,
             end,
         }

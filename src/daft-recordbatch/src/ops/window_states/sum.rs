@@ -1,16 +1,16 @@
-use std::{
-    marker::PhantomData,
-    ops::{Add, Sub},
-};
+use std::ops::{Add, Sub};
 
 use arrow2::bitmap::MutableBitmap;
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::DaftPrimitiveType, prelude::*};
-use num_traits::Zero;
+use daft_core::{
+    datatypes::{try_sum_supertype, DaftPrimitiveType},
+    prelude::*,
+};
+use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
 use super::WindowAggStateOps;
 
-pub struct SumWindowState<'a, T>
+pub struct SumWindowState<T>
 where
     T: DaftPrimitiveType,
     T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy,
@@ -19,40 +19,32 @@ where
     sum: T::Native,
     sum_vec: Vec<T::Native>,
     valid_count: usize,
+    nan_count: usize,
     validity: MutableBitmap,
-    _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a, T> SumWindowState<'a, T>
+impl<T> SumWindowState<T>
 where
     T: DaftPrimitiveType,
     T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy,
 {
-    pub fn new(source: &'a Series, total_length: usize) -> DaftResult<Self> {
-        let source_array = source.downcast::<DataArray<T>>().cloned().or_else(
-            |_| -> Result<DataArray<T>, DaftError> {
-                let target_type = T::get_dtype();
-                source
-                    .cast(&target_type)
-                    .and_then(|casted| casted.downcast::<DataArray<T>>().cloned())
-            },
-        )?; // unsure whether or_else would ever trigger
-
-        Ok(Self {
+    pub fn new(source: &Series, total_length: usize) -> Self {
+        let source_array = source.downcast::<DataArray<T>>().unwrap().clone();
+        Self {
             source: source_array,
             sum: T::Native::zero(),
             sum_vec: Vec::with_capacity(total_length),
             valid_count: 0,
+            nan_count: 0,
             validity: MutableBitmap::with_capacity(total_length),
-            _phantom: PhantomData,
-        })
+        }
     }
 }
 
-impl<'a, T> WindowAggStateOps<'a> for SumWindowState<'a, T>
+impl<T> WindowAggStateOps for SumWindowState<T>
 where
     T: DaftPrimitiveType,
-    T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy,
+    T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy + FromPrimitive,
     DataArray<T>: IntoSeries,
 {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
@@ -63,30 +55,40 @@ where
 
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
-                self.sum = self.sum + self.source.get(i).unwrap();
-                self.valid_count += 1;
+                let value = self.source.get(i).unwrap();
+                if value.to_f64().unwrap_or(0.0).is_nan() {
+                    self.nan_count += 1;
+                } else {
+                    self.sum = self.sum + value;
+                    self.valid_count += 1;
+                }
             }
         }
         Ok(())
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        assert!(
-            end_idx > start_idx,
-            "end_idx must be greater than start_idx"
-        );
-
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
-                self.sum = self.sum - self.source.get(i).unwrap();
-                self.valid_count -= 1;
+                let value = self.source.get(i).unwrap();
+                if value.to_f64().unwrap_or(0.0).is_nan() {
+                    self.nan_count -= 1;
+                } else {
+                    self.sum = self.sum - value;
+                    self.valid_count -= 1;
+                }
             }
         }
         Ok(())
     }
 
     fn evaluate(&mut self) -> DaftResult<()> {
-        self.sum_vec.push(self.sum);
+        if self.nan_count > 0 {
+            self.sum_vec
+                .push(T::Native::from_f64(f64::NAN).unwrap_or_else(T::Native::zero));
+        } else {
+            self.sum_vec.push(self.sum);
+        }
         self.validity.push(self.valid_count > 0);
         Ok(())
     }
@@ -102,28 +104,41 @@ where
     }
 }
 
-pub fn create_for_type<'a>(
-    source: &'a Series,
+pub fn create_for_type(
+    source: &Series,
     total_length: usize,
-) -> DaftResult<Option<Box<dyn WindowAggStateOps<'a> + 'a>>> {
+) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
     match source.data_type() {
-        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => Ok(Some(Box::new(
-            SumWindowState::<'a, Int64Type>::new(source, total_length)?,
-        ))),
-        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => Ok(Some(
-            Box::new(SumWindowState::<'a, UInt64Type>::new(source, total_length)?),
-        )),
-        DataType::Float32 => Ok(Some(Box::new(SumWindowState::<'a, Float32Type>::new(
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+            let casted = source.cast(&DataType::Int64)?;
+            Ok(Some(Box::new(SumWindowState::<Int64Type>::new(
+                &casted,
+                total_length,
+            ))))
+        }
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+            let casted = source.cast(&DataType::UInt64)?;
+            Ok(Some(Box::new(SumWindowState::<UInt64Type>::new(
+                &casted,
+                total_length,
+            ))))
+        }
+        DataType::Float32 => Ok(Some(Box::new(SumWindowState::<Float32Type>::new(
             source,
             total_length,
-        )?))),
-        DataType::Float64 => Ok(Some(Box::new(SumWindowState::<'a, Float64Type>::new(
+        )))),
+        DataType::Float64 => Ok(Some(Box::new(SumWindowState::<Float64Type>::new(
             source,
             total_length,
-        )?))),
-        DataType::Decimal128(_, _) => Ok(Some(Box::new(
-            SumWindowState::<'a, Decimal128Type>::new(source, total_length)?,
-        ))),
+        )))),
+        DataType::Decimal128(_, _) => {
+            let target_type = try_sum_supertype(source.data_type())?;
+            let casted = source.cast(&target_type)?;
+            Ok(Some(Box::new(SumWindowState::<Decimal128Type>::new(
+                &casted,
+                total_length,
+            ))))
+        }
         dt => Err(DaftError::TypeError(format!(
             "Cannot run Sum over type {}",
             dt

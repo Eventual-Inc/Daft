@@ -1629,6 +1629,48 @@ class Expression:
         return self._expr.name()
 
     def over(self, window: Window) -> Expression:
+        """Apply the expression as a window function.
+
+        Args:
+            window: The window specification (created using ``daft.Window``)
+                defining partitioning, ordering, and framing.
+
+        Examples:
+            >>> import daft
+            >>> from daft import Window, col
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "group": ["A", "A", "A", "B", "B", "B"],
+            ...         "date": ["2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04", "2020-01-05", "2020-01-06"],
+            ...         "value": [1, 2, 3, 4, 5, 6],
+            ...     }
+            ... )
+            >>> window_spec = Window().partition_by("group").order_by("date")
+            >>> df = df.with_column("cumulative_sum", col("value").sum().over(window_spec))
+            >>> df.sort(["group", "date"]).show()
+            ╭───────┬────────────┬───────┬────────────────╮
+            │ group ┆ date       ┆ value ┆ cumulative_sum │
+            │ ---   ┆ ---        ┆ ---   ┆ ---            │
+            │ Utf8  ┆ Utf8       ┆ Int64 ┆ Int64          │
+            ╞═══════╪════════════╪═══════╪════════════════╡
+            │ A     ┆ 2020-01-01 ┆ 1     ┆ 1              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A     ┆ 2020-01-02 ┆ 2     ┆ 3              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ A     ┆ 2020-01-03 ┆ 3     ┆ 6              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B     ┆ 2020-01-04 ┆ 4     ┆ 4              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B     ┆ 2020-01-05 ┆ 5     ┆ 9              │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ B     ┆ 2020-01-06 ┆ 6     ┆ 15             │
+            ╰───────┴────────────┴───────┴────────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+
+        Returns:
+            Expression: The result of applying this expression as a window function.
+        """
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 
@@ -1636,8 +1678,11 @@ class Expression:
         """Get the value from a previous row within a window partition.
 
         Args:
-            offset: The number of rows to look backward. Must be >= 0.
+            offset: The number of rows to shift backward. Must be >= 0.
             default: Value to use when no previous row exists. Can be a column reference.
+
+        Returns:
+            Expression: Value from the row `offset` positions before the current row.
 
         Examples:
             >>> import daft
@@ -1676,9 +1721,6 @@ class Expression:
             ╰──────────┴───────┴─────────────┴────────┴─────────────────────╯
             <BLANKLINE>
             (Showing first 6 of 6 rows)
-
-        Returns:
-            Expression: Value from the row `offset` positions before the current row.
         """
         if default is not None:
             default = Expression._to_expression(default)
@@ -1689,8 +1731,11 @@ class Expression:
         """Get the value from a previous row within a window partition.
 
         Args:
-            offset: The number of rows to look backward. Must be >= 0.
+            offset: The number of rows to shift forward. Must be >= 0.
             default: Value to use when no previous row exists. Can be a column reference.
+
+        Returns:
+            Expression: Value from the row `offset` positions after the current row.
 
         Examples:
             >>> import daft
@@ -1729,9 +1774,6 @@ class Expression:
             ╰──────────┴───────┴─────────────┴───────┴───────────────────╯
             <BLANKLINE>
             (Showing first 6 of 6 rows)
-
-        Returns:
-            Expression: Value from the row `offset` positions before the current row.
         """
         if default is not None:
             default = Expression._to_expression(default)

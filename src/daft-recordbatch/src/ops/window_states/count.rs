@@ -4,37 +4,29 @@ use daft_core::{count_mode::CountMode, prelude::*};
 
 use super::WindowAggStateOps;
 
-pub struct CountWindowState<'a> {
-    source: Bitmap,
+pub struct CountWindowState {
+    source_validity: Option<Bitmap>,
     valid_count: usize,
     total_count: usize,
     count_vec: Vec<u64>,
     count_mode: CountMode,
-    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a> CountWindowState<'a> {
-    pub fn new(source: &'a Series, total_length: usize) -> Self {
-        Self::with_count_mode(source, total_length, CountMode::Valid)
-    }
+impl CountWindowState {
+    pub fn new(source: &Series, total_length: usize, count_mode: CountMode) -> Self {
+        let source_bitmap = source.validity().cloned();
 
-    pub fn with_count_mode(source: &'a Series, total_length: usize, count_mode: CountMode) -> Self {
-        let source_bitmap = source
-            .validity()
-            .cloned()
-            .unwrap_or_else(|| Bitmap::new_constant(true, source.len()));
         Self {
-            source: source_bitmap,
+            source_validity: source_bitmap,
             valid_count: 0,
             total_count: 0,
             count_vec: Vec::with_capacity(total_length),
             count_mode,
-            _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a> WindowAggStateOps<'a> for CountWindowState<'a> {
+impl WindowAggStateOps for CountWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         assert!(
             end_idx > start_idx,
@@ -44,7 +36,9 @@ impl<'a> WindowAggStateOps<'a> for CountWindowState<'a> {
         self.total_count += end_idx - start_idx;
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {
-                if self.source.get_bit(i) {
+                if self.source_validity.is_none()
+                    || self.source_validity.as_ref().unwrap().get_bit(i)
+                {
                     self.valid_count += 1;
                 }
             }
@@ -61,7 +55,9 @@ impl<'a> WindowAggStateOps<'a> for CountWindowState<'a> {
         self.total_count -= end_idx - start_idx;
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {
-                if self.source.get_bit(i) {
+                if self.source_validity.is_none()
+                    || self.source_validity.as_ref().unwrap().get_bit(i)
+                {
                     self.valid_count -= 1;
                 }
             }

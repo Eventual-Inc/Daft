@@ -9,16 +9,15 @@ use daft_core::{
 
 use super::WindowAggStateOps;
 
-pub struct CountDistinctWindowState<'a> {
+pub struct CountDistinctWindowState {
     hashed: DataArray<UInt64Type>,
     counts: HashMap<IndexHash, usize, IdentityBuildHasher>,
     count_vec: Vec<u64>,
-    comparator: Box<dyn Fn(usize, usize) -> bool + 'a>,
-    _phantom: std::marker::PhantomData<&'a ()>,
+    comparator: Box<dyn Fn(usize, usize) -> bool>,
 }
 
-impl<'a> CountDistinctWindowState<'a> {
-    pub fn new(source: &'a Series, total_length: usize) -> Self {
+impl CountDistinctWindowState {
+    pub fn new(source: &Series, total_length: usize) -> Self {
         let hashed = source.hash_with_validity(None).unwrap();
 
         let array = source.to_arrow();
@@ -29,18 +28,12 @@ impl<'a> CountDistinctWindowState<'a> {
             counts: HashMap::with_capacity_and_hasher(total_length, Default::default()),
             count_vec: Vec::with_capacity(total_length),
             comparator: Box::new(comparator),
-            _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a> WindowAggStateOps<'a> for CountDistinctWindowState<'a> {
+impl WindowAggStateOps for CountDistinctWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        assert!(
-            end_idx > start_idx,
-            "end_idx must be greater than start_idx"
-        );
-
         for i in start_idx..end_idx {
             if let Some(hash) = self.hashed.get(i) {
                 let index_hash = IndexHash {
@@ -68,11 +61,6 @@ impl<'a> WindowAggStateOps<'a> for CountDistinctWindowState<'a> {
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        assert!(
-            end_idx > start_idx,
-            "end_idx must be greater than start_idx"
-        );
-
         for i in start_idx..end_idx {
             if let Some(hash) = self.hashed.get(i) {
                 let mut keys_to_remove = Vec::new();

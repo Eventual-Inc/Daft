@@ -4,7 +4,7 @@ use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
     prelude::*,
 };
-use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame};
+use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
 
 use crate::{
     ops::window_states::{create_window_agg_state, WindowAggStateOps},
@@ -102,6 +102,12 @@ impl RecordBatch {
         dtype: &DataType,
         frame: &WindowFrame,
     ) -> DaftResult<Self> {
+        if matches!(frame.frame_type, WindowFrameType::Range) {
+            return Err(DaftError::ValueError(
+                "Range frame type not yet supported in window aggregation".into(),
+            ));
+        }
+
         let total_rows = self.len();
 
         // Calculate boundaries within the rows_between function as they are relative
@@ -159,19 +165,19 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_rows_incremental<'a>(
-        &'a self,
+    fn window_agg_rows_incremental(
+        &self,
         name: &str,
         start_boundary: Option<i64>,
         end_boundary: Option<i64>,
         min_periods: usize,
         total_rows: usize,
-        mut agg_state: Box<dyn WindowAggStateOps<'a> + 'a>,
+        mut agg_state: Box<dyn WindowAggStateOps>,
     ) -> DaftResult<Self> {
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
-        let mut validity = MutableBitmap::with_capacity(total_rows); // TODO: probably possible to compute directly
+        let mut validity = MutableBitmap::from_len_zeroed(total_rows);
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
@@ -210,9 +216,7 @@ impl RecordBatch {
                 // Update previous boundaries for the next iteration
                 prev_frame_start = frame_start;
                 prev_frame_end = frame_end;
-                validity.push(true);
-            } else {
-                validity.push(false);
+                validity.set(row_idx, true);
             }
 
             // Evaluate current state to get the result for this row

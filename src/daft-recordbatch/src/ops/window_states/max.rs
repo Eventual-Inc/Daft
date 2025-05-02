@@ -6,37 +6,33 @@ use daft_core::prelude::*;
 
 use super::{IndexedValue, WindowAggStateOps};
 
-pub struct MaxWindowState<'a> {
-    source: &'a Series,
-    max_heap: BinaryHeap<IndexedValue<'a>>,
+pub struct MaxWindowState {
+    source: Series,
+    max_heap: BinaryHeap<IndexedValue>,
     cur_idx: usize,
     max_idxs: Vec<u64>,
     validity: MutableBitmap,
 }
 
-impl<'a> MaxWindowState<'a> {
-    pub fn new(source: &'a Series, total_length: usize) -> Self {
+#[allow(dead_code)]
+impl MaxWindowState {
+    pub fn new(source: &Series, total_length: usize) -> Self {
         Self {
-            source,
+            source: source.clone(),
             max_heap: BinaryHeap::new(),
             cur_idx: 0,
             max_idxs: Vec::with_capacity(total_length),
-            validity: MutableBitmap::with_capacity(total_length),
+            validity: MutableBitmap::from_len_zeroed(total_length),
         }
     }
 }
 
-impl<'a> WindowAggStateOps<'a> for MaxWindowState<'a> {
+impl WindowAggStateOps for MaxWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        assert!(
-            end_idx > start_idx,
-            "end_idx must be greater than start_idx"
-        );
-
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 self.max_heap.push(IndexedValue {
-                    source: self.source,
+                    value: self.source.slice(i, i + 1).unwrap(),
                     idx: i as u64,
                 });
             }
@@ -44,12 +40,7 @@ impl<'a> WindowAggStateOps<'a> for MaxWindowState<'a> {
         Ok(())
     }
 
-    fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        assert!(
-            end_idx > start_idx,
-            "end_idx must be greater than start_idx"
-        );
-
+    fn remove(&mut self, _start_idx: usize, end_idx: usize) -> DaftResult<()> {
         self.cur_idx = end_idx;
         Ok(())
     }
@@ -71,7 +62,8 @@ impl<'a> WindowAggStateOps<'a> for MaxWindowState<'a> {
     fn build(&self) -> DaftResult<Series> {
         let result = self
             .source
-            .take(&DataArray::<UInt64Type>::from(("", self.max_idxs.clone())).into_series())?;
+            .take(&DataArray::<UInt64Type>::from(("", self.max_idxs.clone())).into_series())
+            .unwrap();
         result.with_validity(Some(self.validity.clone().into()))
     }
 }

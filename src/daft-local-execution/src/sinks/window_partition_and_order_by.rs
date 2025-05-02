@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
-use daft_dsl::{resolved_col, ExprRef, WindowBoundary, WindowExpr, WindowFrame};
+use daft_dsl::{resolved_col, ExprRef, WindowBoundary, WindowExpr, WindowFrame, WindowFrameType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -172,6 +172,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                             let dtype =
                                                 agg_expr.to_field(&params.original_schema)?.dtype;
                                             let frame = WindowFrame::from_window_boundary(
+                                                WindowFrameType::Rows,
                                                 WindowBoundary::UnboundedPreceding(),
                                                 WindowBoundary::Offset(0),
                                             );
