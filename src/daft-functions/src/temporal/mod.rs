@@ -24,9 +24,7 @@ macro_rules! impl_temporal {
                     let inner = inputs.into_inner();
                     self.evaluate_from_series(&inner)
                 }
-                fn as_any(&self) -> &dyn std::any::Any {
-                    self
-                }
+
 
                 fn name(&self) -> &'static str {
                     stringify!([ < $name:snake:lower > ])
@@ -93,9 +91,6 @@ impl ScalarUDF for Time {
         let inner = inputs.into_inner();
         self.evaluate_from_series(&inner)
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 
     fn name(&self) -> &'static str {
         "time"
@@ -159,9 +154,7 @@ impl ScalarUDF for UnixTimestamp {
         let inner = inputs.into_inner();
         self.evaluate_from_series(&inner)
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+
     fn name(&self) -> &'static str {
         "to_unix_epoch"
     }
@@ -203,9 +196,6 @@ impl ScalarUDF for TemporalToString {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inner = inputs.into_inner();
         self.evaluate_from_series(&inner)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 
     fn name(&self) -> &'static str {

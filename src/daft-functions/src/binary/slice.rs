@@ -16,9 +16,6 @@ pub struct BinarySlice {}
 
 #[typetag::serde]
 impl ScalarUDF for BinarySlice {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "binary_slice"
     }

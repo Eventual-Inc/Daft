@@ -1,6 +1,4 @@
 use std::{
-    any::Any,
-    borrow::Cow,
     fmt::{Display, Formatter},
     sync::Arc,
 };
@@ -44,7 +42,6 @@ impl From<ScalarFunction> for ExprRef {
 pub enum FunctionArg<T> {
     Named {
         name: Arc<str>, // todo: use Identifier instead of String
-
         arg: T,
     },
     Unnamed(T),
@@ -83,11 +80,13 @@ impl<T> FunctionArgs<T> {
 }
 
 /// trait to look up either positional or named values
+/// We use a trait here so the user can
 pub trait FunctionArgKey: std::fmt::Debug {
     fn required<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<&'a T>;
     fn optional<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<Option<&'a T>>;
 }
 
+/// access a function arg by name
 impl FunctionArgKey for &str {
     fn required<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<&'a T> {
         let arg = args.0.iter().find(|arg| match *arg {
@@ -126,6 +125,7 @@ impl FunctionArgKey for &str {
     }
 }
 
+/// access a function arg by position
 impl FunctionArgKey for usize {
     fn required<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<&'a T> {
         match &args.0[*self] {
@@ -147,7 +147,9 @@ impl FunctionArgKey for usize {
         }
     }
 }
-
+// implemented as a utility. It allows users to get the function arg using multiple patterns
+// such as args.required((0, "my_arg"))
+// This tries the position `0` first, then if that doesn't exist, it looks for the named arg "my_arg"
 impl<F1, F2> FunctionArgKey for (F1, F2)
 where
     F1: FunctionArgKey,
@@ -162,6 +164,10 @@ where
     }
 }
 
+// implemented as a utility. It allows users to get the function arg using multiple patterns
+// such as args.required((0, "my_arg", "some_other_alias"))
+// This tries the position `0` first, then if that doesn't exist, it looks for the named arg "my_arg",
+// finally it looks for "some_other_alias"
 impl<F1, F2, F3> FunctionArgKey for (F1, F2, F3)
 where
     F1: FunctionArgKey,
@@ -183,30 +189,6 @@ where
     }
 }
 
-impl<F1, F2, F3, F4> FunctionArgKey for (F1, F2, F3, F4)
-where
-    F1: FunctionArgKey,
-    F2: FunctionArgKey,
-    F3: FunctionArgKey,
-    F4: FunctionArgKey,
-{
-    fn required<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<&'a T> {
-        self.0
-            .required(args)
-            .or_else(|_| self.1.required(args))
-            .or_else(|_| self.2.required(args))
-            .or_else(|_| self.3.required(args))
-    }
-
-    fn optional<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<Option<&'a T>> {
-        self.0
-            .optional(args)
-            .or_else(|_| self.1.optional(args))
-            .or_else(|_| self.2.optional(args))
-            .or_else(|_| self.3.optional(args))
-    }
-}
-
 impl<T> FunctionArgs<T> {
     pub fn try_new(inner: Vec<FunctionArg<T>>) -> DaftResult<Self> {
         let slf = Self(inner);
@@ -222,7 +204,7 @@ impl<T> FunctionArgs<T> {
     }
 
     /// Asserts that all unnamed args are before named args
-    pub fn assert_ordering(&self) -> DaftResult<()> {
+    fn assert_ordering(&self) -> DaftResult<()> {
         let mut has_named = false;
         for arg in &self.0 {
             if has_named && matches!(arg, FunctionArg::Unnamed(_)) {
@@ -253,32 +235,6 @@ impl<T> FunctionArgs<T> {
             ))
         })
     }
-
-    pub fn optional_with_default(
-        &self,
-        position: usize,
-        name: &str,
-        default: T,
-    ) -> DaftResult<Cow<T>>
-    where
-        T: Default + Clone,
-    {
-        if position < self.0.len() {
-            if let FunctionArg::Unnamed(value) = &self.0[position] {
-                return Ok(Cow::Borrowed(value));
-            }
-        }
-
-        for arg in &self.0 {
-            if let FunctionArg::Named { name: n, arg } = arg {
-                if n.as_ref() == name {
-                    return Ok(Cow::Borrowed(arg));
-                }
-            }
-        }
-
-        Ok(Cow::Owned(default))
-    }
 }
 
 impl<T> From<Vec<T>> for FunctionArgs<T> {
@@ -289,7 +245,6 @@ impl<T> From<Vec<T>> for FunctionArgs<T> {
 
 #[typetag::serde(tag = "type")]
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
-    fn as_any(&self) -> &dyn Any;
     fn name(&self) -> &'static str;
     fn aliases(&self) -> &'static [&'static str] {
         &[]

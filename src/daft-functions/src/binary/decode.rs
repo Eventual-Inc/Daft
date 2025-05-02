@@ -47,10 +47,6 @@ pub struct Decode {
 
 #[typetag::serde]
 impl ScalarUDF for Decode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "decode"
     }
@@ -94,10 +90,6 @@ pub struct TryDecode {
 
 #[typetag::serde]
 impl ScalarUDF for TryDecode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "try_decode"
     }

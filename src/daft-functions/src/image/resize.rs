@@ -18,9 +18,7 @@ impl ScalarUDF for ImageResize {
         let inputs = inputs.into_inner();
         self.evaluate_from_series(&inputs)
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+
     fn name(&self) -> &'static str {
         "image_resize"
     }

@@ -25,9 +25,6 @@ pub struct Encode {
 
 #[typetag::serde]
 impl ScalarUDF for Encode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "encode"
     }
@@ -91,9 +88,6 @@ pub struct TryEncode {
 
 #[typetag::serde]
 impl ScalarUDF for TryEncode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "try_encode"
     }

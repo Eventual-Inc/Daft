@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{evaluate_single_numeric, to_field_single_floating};
+use super::to_field_single_floating;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Sqrt;
@@ -17,11 +17,18 @@ pub struct Sqrt;
 #[typetag::serde]
 impl ScalarUDF for Sqrt {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+        ensure!(inputs.len() == 1, "Expected 1 argument");
+        let s = inputs.required((0, "input"))?;
+
+        let casted_dtype = s.to_floating_data_type()?;
+        let casted_self = s
+            .cast(&casted_dtype)
+            .expect("Casting numeric types to their floating point analogues should not fail");
+        match casted_dtype {
+            DataType::Float32 => Ok(casted_self.f32().unwrap().sqrt()?.into_series()),
+            DataType::Float64 => Ok(casted_self.f64().unwrap().sqrt()?.into_series()),
+            _ => unreachable!(),
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -30,20 +37,6 @@ impl ScalarUDF for Sqrt {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field_single_floating(self, inputs, schema)
-    }
-
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, |s| {
-            let casted_dtype = s.to_floating_data_type()?;
-            let casted_self = s
-                .cast(&casted_dtype)
-                .expect("Casting numeric types to their floating point analogues should not fail");
-            match casted_dtype {
-                DataType::Float32 => Ok(casted_self.f32().unwrap().sqrt()?.into_series()),
-                DataType::Float64 => Ok(casted_self.f64().unwrap().sqrt()?.into_series()),
-                _ => unreachable!(),
-            }
-        })
     }
 
     fn docstring(&self) -> &'static str {

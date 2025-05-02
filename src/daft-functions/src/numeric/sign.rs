@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{evaluate_single_numeric, to_field_single_numeric};
+use super::to_field_single_numeric;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Sign;
@@ -17,20 +17,9 @@ pub struct Sign;
 #[typetag::serde]
 impl ScalarUDF for Sign {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn name(&self) -> &'static str {
-        stringify!(sign)
-    }
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        to_field_single_numeric(self, inputs, schema)
-    }
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, |s| match s.data_type() {
+        ensure!(inputs.len() == 1, "Expected 1 argument");
+        let s = inputs.required((0, "input"))?;
+        match s.data_type() {
             DataType::UInt8 => Ok(s.u8().unwrap().sign_unsigned()?.into_series()),
             DataType::UInt16 => Ok(s.u16().unwrap().sign_unsigned()?.into_series()),
             DataType::UInt32 => Ok(s.u32().unwrap().sign_unsigned()?.into_series()),
@@ -44,7 +33,15 @@ impl ScalarUDF for Sign {
             dt => Err(DaftError::TypeError(format!(
                 "sign not implemented for {dt}"
             ))),
-        })
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        stringify!(sign)
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        to_field_single_numeric(self, inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -62,20 +59,9 @@ pub struct Negative;
 #[typetag::serde]
 impl ScalarUDF for Negative {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn name(&self) -> &'static str {
-        stringify!(negative)
-    }
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        to_field_single_numeric(self, inputs, schema)
-    }
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, |s| match s.data_type() {
+        ensure!(inputs.len() == 1, "Expected 1 argument");
+        let s = inputs.required((0, "input"))?;
+        match s.data_type() {
             DataType::UInt8 => Ok(s
                 .cast(&DataType::Int8)?
                 .i8()
@@ -110,7 +96,14 @@ impl ScalarUDF for Negative {
                 "negate not implemented for {}",
                 dt
             ))),
-        })
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        stringify!(negative)
+    }
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        to_field_single_numeric(self, inputs, schema)
     }
     fn docstring(&self) -> &'static str {
         "Returns the negative of a number."

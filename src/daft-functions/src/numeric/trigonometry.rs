@@ -27,9 +27,6 @@ macro_rules! trigonometry {
                 let inner = inputs.into_inner();
                 self.evaluate_from_series(&inner)
             }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
 
             fn name(&self) -> &'static str {
                 TrigonometricFunction::$variant.fn_name()
@@ -141,11 +138,10 @@ pub struct Atan2;
 #[typetag::serde]
 impl ScalarUDF for Atan2 {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+        let x = inputs.required((0, "x"))?;
+        let y = inputs.required((1, "y"))?;
+
+        atan2_impl(x, y)
     }
 
     fn name(&self) -> &'static str {
@@ -177,15 +173,6 @@ impl ScalarUDF for Atan2 {
         Ok(Field::new(field1.name, dtype))
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [x, y] => atan2_impl(x, y),
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
-    }
     fn docstring(&self) -> &'static str {
         "Calculates the angle between the positive x-axis and the ray from (0,0) to (x,y)."
     }

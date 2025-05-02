@@ -9,8 +9,6 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::evaluate_single_numeric;
-
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! log {
     ($name:ident, $variant:ident, $docstring:literal) => {
@@ -23,11 +21,10 @@ macro_rules! log {
                 &self,
                 inputs: daft_dsl::functions::FunctionArgs<Series>,
             ) -> DaftResult<Series> {
-                let inner = inputs.into_inner();
-                self.evaluate_from_series(&inner)
-            }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
+                ensure!(inputs.len() == 1, "Expected 1 argument");
+                let input = inputs.required((0, "input"))?;
+
+                input.$name()
             }
 
             fn name(&self) -> &'static str {
@@ -53,10 +50,6 @@ macro_rules! log {
                     }
                 };
                 Ok(Field::new(field.name, dtype))
-            }
-
-            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-                evaluate_single_numeric(inputs, Series::$name)
             }
 
             fn docstring(&self) -> &'static str {
@@ -92,9 +85,6 @@ impl ScalarUDF for Log {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inner = inputs.into_inner();
         self.evaluate_from_series(&inner)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 
     fn name(&self) -> &'static str {

@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
@@ -8,8 +8,6 @@ use daft_dsl::{
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
-
-use super::evaluate_single_numeric;
 
 macro_rules! exp {
     ($name:ident, $impl:ident, $variant:ident, $docstring:literal) => {
@@ -22,12 +20,11 @@ macro_rules! exp {
                 &self,
                 inputs: daft_dsl::functions::FunctionArgs<Series>,
             ) -> DaftResult<Series> {
-                let inner = inputs.into_inner();
-                self.evaluate_from_series(&inner)
+                ensure!(inputs.len() == 1, "expected 1 input argument");
+                let input = inputs.required((0, "input"))?;
+                $impl(input)
             }
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
+
             fn name(&self) -> &'static str {
                 stringify!($name)
             }
@@ -53,9 +50,6 @@ macro_rules! exp {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-                evaluate_single_numeric(inputs, $impl)
-            }
             fn docstring(&self) -> &'static str {
                 $docstring
             }

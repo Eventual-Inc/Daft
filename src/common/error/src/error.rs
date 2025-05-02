@@ -66,12 +66,12 @@ impl DaftError {
 macro_rules! ensure {
     ($cond:expr, $msg:expr) => {
         if !$cond {
-            return Err(DaftError::ComputeError($msg.to_string()));
+            return Err($crate::DaftError::ComputeError($msg.to_string()));
         }
     };
     ($cond:expr, $variant:ident: $($msg:tt)*) => {
         if !$cond {
-            return Err(DaftError::$variant(format!($($msg)*)));
+            return Err($crate::DaftError::$variant(format!($($msg)*)));
         }
     };
 }

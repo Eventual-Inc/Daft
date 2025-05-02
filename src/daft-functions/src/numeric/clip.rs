@@ -7,7 +7,7 @@ use daft_core::{
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
-    ExprRef, LiteralValue,
+    ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
@@ -22,24 +22,43 @@ impl ScalarUDF for Clip {
             ComputeError: "clip takes exactly two or three arguments"
         );
 
-        let null_lit = || LiteralValue::Null.into_single_value_series().unwrap();
-
         let arr = inputs.required(("input", 0))?;
+        let arr_dtype = arr.data_type();
+        let null_lit = |name: &str| Series::full_null(name, arr_dtype, 1);
+
         let min = inputs
             .optional(("min", 1))?
             .cloned()
-            .unwrap_or_else(null_lit);
+            .unwrap_or_else(|| null_lit("min"));
 
         let max = inputs
             .optional(("max", 2))?
             .cloned()
-            .unwrap_or_else(null_lit);
+            .unwrap_or_else(|| null_lit("max"));
 
-        clip_impl(arr, &min, &max)
-    }
+        let output_type = InferDataType::clip_op(
+            &InferDataType::from(arr.data_type()),
+            &InferDataType::from(min.data_type()),
+            &InferDataType::from(max.data_type()),
+        )?;
+        match &output_type {
+            output_type if output_type.is_numeric() => {
+                with_match_numeric_daft_types!(output_type, |$T| {
+                    let self_casted = arr.cast(output_type)?;
+                    let min_casted = min.cast(output_type)?;
+                    let max_casted = max.cast(output_type)?;
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+                    let self_downcasted = self_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    let min_downcasted = min_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    let max_downcasted = max_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    Ok(self_downcasted.clip(min_downcasted, max_downcasted)?.into_series())
+                })
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "clip not implemented for {}",
+                dt
+            ))),
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -72,45 +91,4 @@ impl ScalarUDF for Clip {
 #[must_use]
 pub fn clip(array: ExprRef, min: ExprRef, max: ExprRef) -> ExprRef {
     ScalarFunction::new(Clip, vec![array, min, max]).into()
-}
-
-fn clip_impl(arr: &Series, min: &Series, max: &Series) -> DaftResult<Series> {
-    let output_type = InferDataType::clip_op(
-        &InferDataType::from(arr.data_type()),
-        &InferDataType::from(min.data_type()),
-        &InferDataType::from(max.data_type()),
-    )?;
-
-    // It's possible that we pass in something like .clip(None, 2) on the Python binding side,
-    // in which case we need to cast the None to the output type.
-    let create_null_series = |name: &str| Series::full_null(name, &output_type, 1);
-    let min = if min.data_type().is_null() {
-        create_null_series(min.name())
-    } else {
-        min.clone()
-    };
-    let max = if max.data_type().is_null() {
-        create_null_series(max.name())
-    } else {
-        max.clone()
-    };
-
-    match &output_type {
-        output_type if output_type.is_numeric() => {
-            with_match_numeric_daft_types!(output_type, |$T| {
-                let self_casted = arr.cast(output_type)?;
-                let min_casted = min.cast(output_type)?;
-                let max_casted = max.cast(output_type)?;
-
-                let self_downcasted = self_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                let min_downcasted = min_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                let max_downcasted = max_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                Ok(self_downcasted.clip(min_downcasted, max_downcasted)?.into_series())
-            })
-        }
-        dt => Err(DaftError::TypeError(format!(
-            "clip not implemented for {}",
-            dt
-        ))),
-    }
 }
