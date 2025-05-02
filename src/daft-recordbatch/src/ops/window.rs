@@ -140,7 +140,7 @@ impl RecordBatch {
                         ));
                     }
 
-                    self.window_agg_range(
+                    self.window_agg_range_incremental(
                         &name,
                         start_boundary,
                         end_boundary,
@@ -176,7 +176,23 @@ impl RecordBatch {
                 if matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
                     || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
                 {
-                    todo!()
+                    if order_by.len() != 1 {
+                        return Err(DaftError::ValueError(
+                            "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
+                        ));
+                    }
+
+                    self.window_agg_range(
+                        agg_expr,
+                        &name,
+                        dtype,
+                        start_boundary,
+                        end_boundary,
+                        &order_by[0],
+                        descending[0],
+                        min_periods,
+                        total_rows,
+                    )
                 } else {
                     let start_boundary = match start_boundary {
                         Some(WindowBoundary::Offset(offset)) => Some(offset),
@@ -208,19 +224,19 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_rows_incremental<'a>(
-        &'a self,
+    fn window_agg_rows_incremental(
+        &self,
         name: &str,
         start_boundary: Option<i64>,
         end_boundary: Option<i64>,
         min_periods: usize,
         total_rows: usize,
-        mut agg_state: Box<dyn WindowAggStateOps<'a> + 'a>,
+        mut agg_state: Box<dyn WindowAggStateOps>,
     ) -> DaftResult<Self> {
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
-        let mut validity = MutableBitmap::with_capacity(total_rows); // TODO: probably possible to compute directly
+        let mut validity = MutableBitmap::from_len_zeroed(total_rows);
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
@@ -259,9 +275,7 @@ impl RecordBatch {
                 // Update previous boundaries for the next iteration
                 prev_frame_start = frame_start;
                 prev_frame_end = frame_end;
-                validity.push(true);
-            } else {
-                validity.push(false);
+                validity.set(row_idx, true);
             }
 
             // Evaluate current state to get the result for this row
@@ -337,8 +351,8 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_range<'a>(
-        &'a self,
+    fn window_agg_range_incremental(
+        &self,
         name: &str,
         mut start_boundary: Option<WindowBoundary>,
         mut end_boundary: Option<WindowBoundary>,
@@ -346,7 +360,7 @@ impl RecordBatch {
         descending: bool,
         min_periods: usize,
         total_rows: usize,
-        mut agg_state: Box<dyn WindowAggStateOps<'a> + 'a>,
+        mut agg_state: Box<dyn WindowAggStateOps>,
     ) -> DaftResult<Self> {
         // Use the optimized implementation with incremental state updates
         // Initialize the state for incremental aggregation
@@ -464,6 +478,118 @@ impl RecordBatch {
 
         // Build the final result series
         let renamed_result = agg_state.with_validity(Some(validity))?;
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_range(
+        &self,
+        agg_expr: &AggExpr,
+        name: &str,
+        dtype: &DataType,
+        mut start_boundary: Option<WindowBoundary>,
+        mut end_boundary: Option<WindowBoundary>,
+        order_by: &ExprRef,
+        descending: bool,
+        min_periods: usize,
+        total_rows: usize,
+    ) -> DaftResult<Self> {
+        let order_by_col = self.eval_expression(order_by)?;
+        let null_series = Series::full_null(name, dtype, 1);
+
+        // Use the non-optimized implementation (recalculate for each row)
+        let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
+
+        if descending
+            && matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
+            && matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+        {
+            std::mem::swap(&mut start_boundary, &mut end_boundary);
+        }
+
+        for row_idx in 0..total_rows {
+            let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
+
+            // Calculate frame bounds for this row using the provided boundaries
+            let frame_start = match &start_boundary {
+                None => 0, // Unbounded preceding
+                Some(WindowBoundary::Offset(offset)) => row_idx
+                    .saturating_add_signed(*offset as isize)
+                    .min(total_rows),
+                Some(WindowBoundary::RangeOffset(offset)) => {
+                    let offset = offset.to_series();
+                    let lower_bound = (current_row_order_by.clone() + offset)?;
+                    let gte = if descending {
+                        order_by_col.lte(&lower_bound)?
+                    } else {
+                        order_by_col.gte(&lower_bound)?
+                    };
+                    let mut first_true_idx = gte.len();
+                    for i in 0..gte.len() {
+                        if gte.get(i).unwrap_or(false) {
+                            first_true_idx = i;
+                            break;
+                        }
+                    }
+                    first_true_idx
+                }
+                Some(WindowBoundary::UnboundedPreceding)
+                | Some(WindowBoundary::UnboundedFollowing) => {
+                    unreachable!()
+                }
+            };
+
+            let frame_end = match &end_boundary {
+                None => total_rows, // Unbounded following
+                Some(WindowBoundary::Offset(offset)) => {
+                    (row_idx + 1) // End is exclusive, hence +1
+                        .saturating_add_signed(*offset as isize)
+                        .min(total_rows)
+                }
+                Some(WindowBoundary::RangeOffset(offset)) => {
+                    let offset = offset.to_series();
+                    let upper_bound = (current_row_order_by.clone() + offset)?;
+                    let gt = if descending {
+                        order_by_col.lt(&upper_bound)?
+                    } else {
+                        order_by_col.gt(&upper_bound)?
+                    };
+                    let mut first_true_idx = gt.len();
+                    for i in 0..gt.len() {
+                        if gt.get(i).unwrap_or(false) {
+                            first_true_idx = i;
+                            break;
+                        }
+                    }
+                    first_true_idx
+                }
+                Some(WindowBoundary::UnboundedPreceding)
+                | Some(WindowBoundary::UnboundedFollowing) => {
+                    unreachable!()
+                }
+            };
+
+            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
+            };
+
+            if frame_size < min_periods {
+                // Add a null series for this row
+                result_series.push(null_series.clone());
+            } else {
+                // Calculate aggregation for this frame
+                let frame_data = self.slice(frame_start, frame_end)?;
+                let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
+                result_series.push(agg_result);
+            }
+        }
+
+        // Rename the result and create the final record batch
+        let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
+        let renamed_result = final_result_series.rename(name);
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }

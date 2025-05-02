@@ -792,7 +792,7 @@ def test_sum_avg_with_none(make_df):
 
     for category in ["A", "B"]:
         values = []
-        for _ in range(10):
+        for _ in range(100):
             if random.random() < 0.5:
                 values.append(None)
             else:
@@ -1695,3 +1695,49 @@ def test_running_agg_asc_desc_windows(make_df):
     ).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_sliding_sum_with_nan_and_none(make_df):
+    """Test sliding sum over partitioned ordered windows with NaN and None values."""
+    random.seed(80)
+    np.random.seed(80)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        values = []
+        for _ in range(100):
+            r = random.random()
+            if r < 0.2:
+                values.append(None)
+            elif r < 0.4:
+                values.append(float("nan"))
+            else:
+                values.append(random.randint(1, 100))
+
+        for ts, value in enumerate(values):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            start_idx = max(0, ts - 2)
+            window_vals = values[start_idx : ts + 1]
+
+            if all(v is None for v in window_vals):
+                sliding_sum = None
+            else:
+                sliding_sum = sum(v for v in window_vals if v is not None)
+
+            expected_data.append({"category": category, "ts": ts, "value": value, "sliding_sum": sliding_sum})
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).rows_between(-2, 0)
+
+    result = df.select(
+        col("category"), col("ts"), col("value"), col("value").sum().over(window_spec).alias("sliding_sum")
+    ).collect()
+
+    result_pd = result.to_pandas()
+    expected_pd = pd.DataFrame(expected_data)
+
+    assert_df_equals(result_pd, expected_pd, sort_key=["category", "ts"], check_dtype=False)
