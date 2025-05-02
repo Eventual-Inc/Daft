@@ -141,7 +141,6 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         m.add_wrapped(wrap_pyfunction!(set_compute_runtime_num_worker_threads))?;
-        daft_image::python::register_modules(m)?;
 
         daft_dashboard::register_modules(m)?;
         daft_cli::register_modules(m)?;
