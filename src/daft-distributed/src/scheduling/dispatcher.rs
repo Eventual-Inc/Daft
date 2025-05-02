@@ -41,7 +41,7 @@ impl TaskDispatcher {
 
     async fn run_dispatch_loop(
         _dispatcher: Self,
-        _task_rx: Receiver<DispatchableTask>,
+        _task_rx: Receiver<DispatchedTask>,
     ) -> DaftResult<()> {
         todo!("Implement run dispatch loop");
     }
@@ -49,11 +49,11 @@ impl TaskDispatcher {
 
 #[derive(Clone)]
 pub(crate) struct TaskDispatcherHandle {
-    task_dispatcher_sender: Sender<DispatchableTask>,
+    task_dispatcher_sender: Sender<DispatchedTask>,
 }
 
 impl TaskDispatcherHandle {
-    fn new(task_dispatcher_sender: Sender<DispatchableTask>) -> Self {
+    fn new(task_dispatcher_sender: Sender<DispatchedTask>) -> Self {
         Self {
             task_dispatcher_sender,
         }
@@ -61,43 +61,59 @@ impl TaskDispatcherHandle {
 
     #[allow(dead_code)]
     pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
-        let (result_tx, result_rx) = create_oneshot_channel();
-        let cancel_token = CancellationToken::new();
-        let dispatchable_task = DispatchableTask::new(task, result_tx, cancel_token.clone());
-
-        self.task_dispatcher_sender
-            .send(dispatchable_task)
-            .await
-            .map_err(|e| DaftError::InternalError(e.to_string()))?;
-
-        Ok(SubmittedTask::new(result_rx, Some(cancel_token)))
+        let dispatchable_task = DispatchableTask::new(task);
+        let submitted_task = dispatchable_task
+            .dispatch(&self.task_dispatcher_sender)
+            .await?;
+        Ok(submitted_task)
     }
 }
 
 #[allow(dead_code)]
 struct DispatchableTask {
-    // The task to dispatch
     task: SwordfishTask,
-    // The sender to send the result into
-    result_tx: OneshotSender<DaftResult<PartitionRef>>,
-    // The receiver to receive the cancel signal
-    cancel_token: CancellationToken,
 }
 
 impl DispatchableTask {
+    fn new(task: SwordfishTask) -> Self {
+        Self { task }
+    }
+
+    async fn dispatch(
+        self,
+        task_dispatcher_sender: &Sender<DispatchedTask>,
+    ) -> DaftResult<SubmittedTask> {
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let cancel_token = CancellationToken::new();
+        let task = DispatchedTask::new(self.task, result_tx, cancel_token.clone());
+        task_dispatcher_sender
+            .send(task)
+            .await
+            .map_err(|e| DaftError::InternalError(e.to_string()))?;
+        Ok(SubmittedTask::new(result_rx, Some(cancel_token)))
+    }
+}
+
+#[allow(dead_code)]
+struct DispatchedTask {
+    swordfish_task: SwordfishTask,
+    result_tx: OneshotSender<DaftResult<PartitionRef>>,
+    cancel_token: CancellationToken,
+}
+
+impl DispatchedTask {
     fn new(
-        task: SwordfishTask,
+        swordfish_task: SwordfishTask,
         result_tx: OneshotSender<DaftResult<PartitionRef>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
-            task,
+            swordfish_task,
             result_tx,
             cancel_token,
         }
     }
 }
-
 pub(crate) struct SubmittedTask {
     result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
     cancel_token: Option<CancellationToken>,

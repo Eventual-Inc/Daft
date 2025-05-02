@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
     channel::{create_channel, Sender},
     scheduling::dispatcher::TaskDispatcherHandle,
@@ -42,7 +42,7 @@ impl CollectNode {
         _local_physical_plans: Vec<LocalPhysicalPlanRef>,
         _psets: HashMap<String, Vec<PartitionRef>>,
         _input_node: Option<RunningPipelineNode>,
-        _result_tx: Sender<PartitionRef>,
+        _result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
         todo!("Implement collect execution sloop");
     }

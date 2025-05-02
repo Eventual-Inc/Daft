@@ -13,8 +13,7 @@ use daft_logical_plan::LogicalPlanRef;
 use futures::Stream;
 
 use crate::{
-    channel::Receiver,
-    pipeline_node,
+    pipeline_node::{self, RunningPipelineNode},
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
@@ -46,21 +45,21 @@ impl Stage {
             pipeline_node::logical_plan_to_pipeline_node(self.logical_plan, self.config, psets)?;
         let mut stage_context = StageContext::try_new(worker_manager_factory)?;
         let running_node = pipeline_node.start(&mut stage_context);
-        let running_stage = RunningStage::new(running_node.into_inner(), stage_context);
+        let running_stage = RunningStage::new(running_node, stage_context);
         Ok(running_stage)
     }
 }
 
 #[allow(dead_code)]
 pub(crate) struct RunningStage {
-    result_receiver: Receiver<PartitionRef>,
+    running_node: RunningPipelineNode,
     stage_context: StageContext,
 }
 
 impl RunningStage {
-    fn new(result_receiver: Receiver<PartitionRef>, stage_context: StageContext) -> Self {
+    fn new(running_node: RunningPipelineNode, stage_context: StageContext) -> Self {
         Self {
-            result_receiver,
+            running_node,
             stage_context,
         }
     }

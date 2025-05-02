@@ -15,7 +15,11 @@ use futures::Stream;
 use limit::LimitNode;
 use translate::translate_pipeline_plan_to_local_physical_plans;
 
-use crate::{channel::Receiver, stage::StageContext};
+use crate::{
+    channel::Receiver,
+    scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
+    stage::StageContext,
+};
 
 mod collect;
 mod limit;
@@ -29,26 +33,35 @@ pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
 }
 
+#[allow(dead_code)]
 pub(crate) struct RunningPipelineNode {
-    result_receiver: Receiver<PartitionRef>,
+    result_receiver: Receiver<PipelineOutput>,
 }
 
 impl RunningPipelineNode {
-    fn new(result_receiver: Receiver<PartitionRef>) -> Self {
+    fn new(result_receiver: Receiver<PipelineOutput>) -> Self {
         Self { result_receiver }
     }
 
-    pub fn into_inner(self) -> Receiver<PartitionRef> {
+    #[allow(dead_code)]
+    pub fn into_inner(self) -> Receiver<PipelineOutput> {
         self.result_receiver
     }
 }
 
 impl Stream for RunningPipelineNode {
-    type Item = DaftResult<PartitionRef>;
+    type Item = DaftResult<PipelineOutput>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         todo!("Implement stream for running pipeline node");
     }
+}
+
+#[allow(dead_code)]
+pub(crate) enum PipelineOutput {
+    Materialized(PartitionRef),
+    Task(SwordfishTask),
+    Running(Box<dyn SwordfishTaskResultHandle>),
 }
 
 pub(crate) fn logical_plan_to_pipeline_node(
