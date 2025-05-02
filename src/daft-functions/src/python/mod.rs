@@ -15,7 +15,6 @@ macro_rules! simple_python_wrapper {
 mod binary;
 mod coalesce;
 mod distance;
-// mod image;
 mod list;
 mod misc;
 mod sequence;
@@ -105,12 +104,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::decode);
     add!(binary::try_encode);
     add!(binary::try_decode);
-
-    // add!(image::image_crop);
-    // add!(image::image_to_mode);
-    // add!(image::image_decode);
-    // add!(image::image_encode);
-    // add!(image::image_resize);
 
     add!(list::list_chunk);
     add!(list::list_count);
