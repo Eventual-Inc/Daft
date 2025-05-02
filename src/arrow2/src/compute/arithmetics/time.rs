@@ -579,7 +579,7 @@ pub fn sub_interval_scalar(
 /// Multiplies an interval by a factor.
 pub fn mul_interval(
     interval: &PrimitiveArray<months_days_ns>,
-    factor: &PrimitiveArray<u32>,
+    factor: &PrimitiveArray<i32>,
 ) -> Result<PrimitiveArray<months_days_ns>> {
     if factor.len() == 1 {
         let value = factor.get(0);
@@ -610,7 +610,7 @@ pub fn mul_interval(
 
 pub fn mul_interval_scalar(
     interval: &PrimitiveArray<months_days_ns>,
-    factor: &PrimitiveScalar<u32>,
+    factor: &PrimitiveScalar<i32>,
 ) -> Result<PrimitiveArray<months_days_ns>> {
     let factor = if let Some(factor) = *factor.value() {
         factor

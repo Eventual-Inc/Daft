@@ -436,7 +436,7 @@ impl TimestampArray {
 }
 
 impl IntervalArray {
-    pub fn mul(&self, factor: &UInt32Array) -> DaftResult<Self> {
+    pub fn mul(&self, factor: &Int32Array) -> DaftResult<Self> {
         let arrow_interval = self.as_arrow();
         let arrow_factor = factor.as_arrow();
         let result =

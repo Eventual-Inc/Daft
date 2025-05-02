@@ -298,13 +298,13 @@ impl Mul for &Series {
                     // Interval * numeric = Interval
                     (DataType::Interval, dt) if dt.is_numeric() => {
                         let physical_result =
-                            lhs.interval()?.mul(rhs.cast(&DataType::UInt32)?.u32()?)?;
+                            lhs.interval()?.mul(rhs.cast(&DataType::Int32)?.i32()?)?;
                         physical_result.cast(output_type)
                     }
                     // numeric * Interval = Interval
                     (dt, DataType::Interval) if dt.is_numeric() => {
                         let physical_result =
-                            rhs.interval()?.mul(lhs.cast(&DataType::UInt32)?.u32()?)?;
+                            rhs.interval()?.mul(lhs.cast(&DataType::Int32)?.i32()?)?;
                         physical_result.cast(output_type)
                     }
                     _ => {
