@@ -87,4 +87,8 @@ impl ScalarUDF for ImageDecode {
 
         Ok(Field::new(field.name, DataType::Image(image_mode)))
     }
+
+    fn docstring(&self) -> &'static str {
+        "Decodes an image from binary data. Optionally, you can specify the image mode and error handling behavior."
+    }
 }

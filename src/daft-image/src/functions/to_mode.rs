@@ -49,4 +49,7 @@ impl ScalarUDF for ImageToMode {
 
         Ok(Field::new(field.name, output_dtype))
     }
+    fn docstring(&self) -> &'static str {
+        "Converts an image to the specified mode (e.g. RGB, RGBA, Grayscale)."
+    }
 }

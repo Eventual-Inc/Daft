@@ -61,4 +61,8 @@ impl ScalarUDF for ImageEncode {
             }
         }
     }
+
+    fn docstring(&self) -> &'static str {
+        "Encodes an image into the specified image file format, returning a binary column of encoded bytes."
+    }
 }

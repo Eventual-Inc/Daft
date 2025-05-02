@@ -74,4 +74,8 @@ impl ScalarUDF for ImageCrop {
             ))),
         }
     }
+
+    fn docstring(&self) -> &'static str {
+        "Crops an image to a specified bounding box. The bounding box is specified as [x, y, width, height]."
+    }
 }

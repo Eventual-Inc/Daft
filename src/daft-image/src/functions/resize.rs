@@ -92,7 +92,7 @@ impl ScalarUDF for ImageResize {
                     DaftError::ValueError("width must be a positive integer".to_string())
                 })
         })?;
-        let output = match field.dtype {
+        match field.dtype {
             DataType::Image(mode) => match mode {
                 Some(mode) => Ok(Field::new(
                     field.name,
@@ -107,7 +107,10 @@ impl ScalarUDF for ImageResize {
             _ => Err(DaftError::TypeError(format!(
                 "ImageResize can only resize ImageArrays and FixedShapeImageArrays, got {field}"
             ))),
-        };
-        dbg!(output)
+        }
+    }
+
+    fn docstring(&self) -> &'static str {
+        "Resizes an image to the specified width and height."
     }
 }
