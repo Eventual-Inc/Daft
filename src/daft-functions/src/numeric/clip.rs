@@ -22,17 +22,17 @@ impl ScalarUDF for Clip {
             ComputeError: "clip takes exactly two or three arguments"
         );
 
-        let arr = inputs.required(("input", 0))?;
+        let arr = inputs.required((0, "input"))?;
         let arr_dtype = arr.data_type();
         let null_lit = |name: &str| Series::full_null(name, arr_dtype, 1);
 
         let min = inputs
-            .optional(("min", 1))?
+            .optional((1, "min"))?
             .cloned()
             .unwrap_or_else(|| null_lit("min"));
 
         let max = inputs
-            .optional(("max", 2))?
+            .optional((2, "max"))?
             .cloned()
             .unwrap_or_else(|| null_lit("max"));
 

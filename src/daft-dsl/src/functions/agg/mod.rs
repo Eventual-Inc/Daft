@@ -2,7 +2,6 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::FunctionArgs;
 use crate::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -21,7 +20,7 @@ impl ScalarUDF for MergeMeanFunction {
         "merge_mean"
     }
 
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: super::function_args::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         self.evaluate_from_series(&inputs)
     }
