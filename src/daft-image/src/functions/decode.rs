@@ -22,7 +22,7 @@ impl ScalarUDF for ImageDecode {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let image_mode = inputs.optional("mode")?;
-        let on_error = inputs.optional("on_error")?;
+        let on_error = inputs.optional(("on_error", "raise_on_error"))?;
 
         let image_mode: Option<ImageMode> = image_mode
             .map(|s| {
@@ -41,10 +41,15 @@ impl ScalarUDF for ImageDecode {
             .transpose()?
             .unwrap_or("raise");
 
-        let on_error = match on_error {
+        let on_error = match on_error.to_lowercase().as_str() {
             "raise" => true,
             "null" => false,
-            _ => panic!("Invalid on_error value"),
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                    "Invalid on_error value: {}",
+                    on_error
+                )))
+            }
         };
 
         crate::series::decode(input, on_error, image_mode)
@@ -56,7 +61,7 @@ impl ScalarUDF for ImageDecode {
 
     fn to_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(
-            inputs.len() >= 1 && inputs.len() <= 3,
+            !inputs.is_empty() && inputs.len() <= 3,
             "ImageDecode requires between 1 and 3 inputs"
         );
 
@@ -72,10 +77,8 @@ impl ScalarUDF for ImageDecode {
             .optional("mode")?
             .and_then(|e| e.as_literal())
             .and_then(|lit| lit.as_str())
-            .and_then(|s| Some(s.parse()))
+            .map(|s| s.parse())
             .transpose()?;
-
-        dbg!(&image_mode);
 
         if let Some(on_error) = inputs.optional("on_error")? {
             let f = on_error.to_field(schema)?;

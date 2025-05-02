@@ -37,11 +37,6 @@ impl ScalarUDF for ImageToMode {
             .ok_or_else(|| DaftError::ValueError("mode must be a string".to_string()))
             .and_then(|mode| mode.parse())?;
 
-        if !matches!(field.dtype, DataType::Binary) {
-            return Err(DaftError::TypeError(format!(
-                "ImageDecode can only decode BinaryArrays, got {field}"
-            )));
-        }
         let output_dtype = match field.dtype {
             DataType::Image(_) => DataType::Image(Some(image_mode)),
             DataType::FixedShapeImage(_, h, w) => DataType::FixedShapeImage(image_mode, h, w),

@@ -88,8 +88,9 @@ mod tests {
         ]);
 
         let fill = ListFill {};
-        let DaftError::SchemaMismatch(e) =
-            fill.to_field_deprecated(&[col0_null.clone()], &schema).unwrap_err()
+        let DaftError::SchemaMismatch(e) = fill
+            .to_field_deprecated(&[col0_null.clone()], &schema)
+            .unwrap_err()
         else {
             panic!("Expected SchemaMismatch error");
         };

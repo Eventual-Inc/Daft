@@ -5,7 +5,7 @@ from typing import Any, Iterator, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, image
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -1115,17 +1115,17 @@ class SeriesImageNamespace(SeriesNamespace):
         on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Series:
-        return self._eval_expressions('image_decode', on_error=on_error, mode = mode)
+        return self._eval_expressions("image_decode", on_error=on_error, mode=mode)
 
     def encode(self, image_format: str | ImageFormat) -> Series:
-        return self._eval_expressions('image_encode', image_format=image_format)
+        return self._eval_expressions("image_encode", image_format=image_format)
 
     def resize(self, w: int, h: int) -> Series:
-        return self._eval_expressions('image_resize', w=w, h=h)
+        return self._eval_expressions("image_resize", w=w, h=h)
 
     def to_mode(self, mode: str | ImageMode) -> Series:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return self._eval_expressions('image_to_mode', mode=mode)
+        return self._eval_expressions("to_mode", mode=mode)

@@ -251,7 +251,9 @@ mod tests {
         let expected = Field::new("s0", DataType::Int32);
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.to_field_deprecated(&[col_0, fallback], &schema).unwrap();
+        let output = coalesce
+            .to_field_deprecated(&[col_0, fallback], &schema)
+            .unwrap();
         assert_eq!(output, expected);
     }
 

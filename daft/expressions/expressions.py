@@ -116,11 +116,9 @@ def lit(value: object) -> Expression:
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
     elif isinstance(value, ImageFormat):
-        lit_value = value.name
-        lit_value = _lit(lit_value)
+        lit_value = _lit(str(value))
     elif isinstance(value, ImageMode):
-        lit_value = value.name
-        lit_value = _lit(lit_value)
+        lit_value = _lit(str(value))
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -4361,14 +4359,11 @@ class ExpressionImageNamespace(ExpressionNamespace):
         Returns:
             Expression: An Image expression represnting an image column.
         """
-
-        if mode is not None:
-            if isinstance(mode, str):
-                mode = Expression._to_expression(mode.upper())
-            if not isinstance(mode, ImageMode):
-                raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
+        image_mode = Expression._to_expression(mode)._expr
+        raise_on_error = lit(on_error)._expr
         f = native.get_function_from_registry("image_decode")
-        return f(self._expr, raise_on_error=lit(on_error)._expr, mode=mode._expr)
+
+        return Expression._from_pyexpr(f(self._expr, raise_on_error=raise_on_error, mode=image_mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
@@ -4384,8 +4379,8 @@ class ExpressionImageNamespace(ExpressionNamespace):
         if not isinstance(image_format, ImageFormat):
             raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
         f = native.get_function_from_registry("image_encode")
-        image_format = lit(image_format)._expr
-        return Expression._from_pyexpr(f(self._expr, image_format=image_format))
+        image_format_expr = lit(image_format)._expr
+        return Expression._from_pyexpr(f(self._expr, image_format=image_format_expr))
 
     def resize(self, w: int, h: int) -> Expression:
         """Resize image into the provided width and height.
@@ -4397,10 +4392,10 @@ class ExpressionImageNamespace(ExpressionNamespace):
         Returns:
             Expression: An Image expression representing an image column of the resized images.
         """
-        w = lit(w)._expr
-        h = lit(h)._expr
+        width = lit(w)._expr
+        height = lit(h)._expr
         f = native.get_function_from_registry("image_resize")
-        return Expression._from_pyexpr(f(self._expr, w=w, h=h))
+        return Expression._from_pyexpr(f(self._expr, w=width, h=height))
 
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
         """Crops images with the provided bounding box.
@@ -4428,9 +4423,9 @@ class ExpressionImageNamespace(ExpressionNamespace):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        mode = lit(mode)._expr
+        image_mode = lit(mode)._expr
         f = native.get_function_from_registry("to_mode")
-        return Expression._from_pyexpr(f(self._expr, mode))
+        return Expression._from_pyexpr(f(self._expr, mode=image_mode))
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
