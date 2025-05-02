@@ -92,7 +92,7 @@ fn materialize_stage_results(
         Ok(rx)
     }
 
-    // This task is responsible for materializing the results of submitted tasks
+    // This task is responsible for materializing the results of finalized tasks
     fn spawn_task_materializer(
         joinset: &mut JoinSet<DaftResult<()>>,
         mut finalized_tasks_receiver: Receiver<FinalizedTask>,
