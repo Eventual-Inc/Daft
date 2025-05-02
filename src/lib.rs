@@ -145,6 +145,14 @@ pub mod pylib {
 
         daft_dashboard::register_modules(m)?;
         daft_cli::register_modules(m)?;
+
+        // We need to do this here because it's the only point in the rust codebase that we have access to all crates.
+        let mut functions_registry = daft_functions::FUNCTION_REGISTRY
+            .write()
+            .expect("Failed to acquire write lock on function registry");
+
+        functions_registry.register::<daft_image::functions::ImageFunctions>();
+
         Ok(())
     }
 }

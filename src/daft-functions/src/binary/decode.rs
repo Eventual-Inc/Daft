@@ -51,7 +51,7 @@ impl ScalarUDF for Decode {
         "decode"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field(inputs, schema, self.codec.returns())
     }
 
@@ -94,7 +94,7 @@ impl ScalarUDF for TryDecode {
         "try_decode"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field(inputs, schema, self.codec.returns())
     }
 

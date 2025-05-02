@@ -2254,7 +2254,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-hash",
- "daft-image",
  "daft-io",
  "flate2",
  "futures",
@@ -2307,10 +2306,14 @@ dependencies = [
  "base64 0.22.1",
  "common-error",
  "daft-core",
+ "daft-dsl",
+ "daft-functions",
  "image",
  "log",
  "num-traits",
  "pyo3",
+ "serde",
+ "typetag",
 ]
 
 [[package]]

@@ -85,7 +85,7 @@ impl ScalarUDF for UrlUploadArgs {
         }
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, location] => {
                 let data_field = data.to_field(schema)?;

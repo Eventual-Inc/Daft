@@ -23,7 +23,7 @@ impl ScalarUDF for ListSum {
         "list_sum"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?.to_exploded_field()?;

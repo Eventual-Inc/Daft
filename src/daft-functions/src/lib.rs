@@ -4,7 +4,7 @@ pub mod count_matches;
 pub mod distance;
 pub mod float;
 pub mod hash;
-pub mod image;
+// pub mod image;
 pub mod list;
 pub mod minhash;
 pub mod numeric;
@@ -19,7 +19,7 @@ pub mod utf8;
 
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, RwLock},
 };
 
 use common_error::DaftError;
@@ -70,7 +70,6 @@ impl FunctionRegistry {
             map: HashMap::new(),
         }
     }
-
     pub fn register<Mod: FunctionModule>(&mut self) {
         Mod::register(self);
     }
@@ -93,10 +92,9 @@ impl FunctionRegistry {
     }
 }
 
-pub static FUNCTION_REGISTRY: LazyLock<FunctionRegistry> = LazyLock::new(|| {
+pub static FUNCTION_REGISTRY: LazyLock<RwLock<FunctionRegistry>> = LazyLock::new(|| {
     let mut registry = FunctionRegistry::new();
     registry.register::<numeric::NumericFunctions>();
     registry.register::<float::FloatFunctions>();
-
-    registry
+    RwLock::new(registry)
 });

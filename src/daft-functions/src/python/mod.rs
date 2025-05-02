@@ -15,7 +15,7 @@ macro_rules! simple_python_wrapper {
 mod binary;
 mod coalesce;
 mod distance;
-mod image;
+// mod image;
 mod list;
 mod misc;
 mod sequence;
@@ -79,7 +79,7 @@ impl PyScalarFunction {
 
 #[pyo3::pyfunction]
 pub fn get_function_from_registry(name: &str) -> PyResult<PyScalarFunction> {
-    let f = FUNCTION_REGISTRY.get(name);
+    let f = FUNCTION_REGISTRY.read().unwrap().get(name);
     if let Some(f) = f {
         Ok(PyScalarFunction { inner: f })
     } else {
@@ -106,11 +106,11 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::try_encode);
     add!(binary::try_decode);
 
-    add!(image::image_crop);
-    add!(image::image_to_mode);
-    add!(image::image_decode);
-    add!(image::image_encode);
-    add!(image::image_resize);
+    // add!(image::image_crop);
+    // add!(image::image_to_mode);
+    // add!(image::image_decode);
+    // add!(image::image_encode);
+    // add!(image::image_resize);
 
     add!(list::list_chunk);
     add!(list::list_count);

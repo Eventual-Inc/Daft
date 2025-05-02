@@ -27,7 +27,7 @@ impl ScalarUDF for Floor {
         "floor"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field_single_numeric(self, inputs, schema)
     }
 

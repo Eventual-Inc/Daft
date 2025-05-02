@@ -20,7 +20,7 @@ impl ScalarUDF for ListValueCountsFunction {
         "list_value_counts"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         let [data] = inputs else {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",

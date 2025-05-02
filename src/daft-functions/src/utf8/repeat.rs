@@ -23,7 +23,7 @@ impl ScalarUDF for Utf8Repeat {
         "repeat"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, ntimes] => match (data.to_field(schema), ntimes.to_field(schema)) {
                 (Ok(data_field), Ok(ntimes_field)) => {

@@ -30,7 +30,7 @@ macro_rules! impl_temporal {
                     stringify!([ < $name:snake:lower > ])
                 }
 
-                fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+                fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
                     match inputs {
                         [input] => match input.to_field(schema) {
                             Ok(field) if field.dtype.is_temporal() => {
@@ -96,7 +96,7 @@ impl ScalarUDF for Time {
         "time"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match field.dtype {
@@ -158,7 +158,7 @@ impl ScalarUDF for UnixTimestamp {
     fn name(&self) -> &'static str {
         "to_unix_epoch"
     }
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match field.dtype {
@@ -202,7 +202,7 @@ impl ScalarUDF for TemporalToString {
         "to_string"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match field.dtype {

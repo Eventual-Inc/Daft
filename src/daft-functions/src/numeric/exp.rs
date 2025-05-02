@@ -29,7 +29,7 @@ macro_rules! exp {
                 stringify!($name)
             }
 
-            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+            fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
                 if inputs.len() != 1 {
                     return Err(DaftError::SchemaMismatch(format!(
                         "Expected 1 input arg, got {}",

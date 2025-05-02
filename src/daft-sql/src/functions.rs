@@ -22,9 +22,9 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
         coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleImage, SQLModuleJson, SQLModuleList, SQLModuleMap,
-        SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs,
-        SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8, SQLModuleWindow,
+        SQLModuleConfig, SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModulePartitioning,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUri,
+        SQLModuleUtf8, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -35,7 +35,7 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleHashing>();
-    functions.register::<SQLModuleImage>();
+    // functions.register::<SQLModuleImage>();
     functions.register::<SQLModuleJson>();
     functions.register::<SQLModuleList>();
     functions.register::<SQLModuleMap>();
@@ -49,7 +49,7 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
     functions.add_fn("coalesce", SQLCoalesce {});
-    for (name, function) in FUNCTION_REGISTRY.entries() {
+    for (name, function) in FUNCTION_REGISTRY.read().unwrap().entries() {
         functions.add_fn(name, function.clone());
     }
     functions

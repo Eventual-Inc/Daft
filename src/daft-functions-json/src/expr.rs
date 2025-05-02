@@ -31,7 +31,7 @@ impl ScalarUDF for JsonQuery {
             )),
         }
     }
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let input_field = input.to_field(schema)?;

@@ -65,7 +65,7 @@ impl ScalarUDF for Clip {
         "clip"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 3,
             SchemaMismatch: "clip takes exactly three arguments (input, min, max) got {}", inputs.len()

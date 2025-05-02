@@ -22,7 +22,7 @@ impl ScalarUDF for Truncate {
         "truncate"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input, relative_to] => {
                 let input_field = input.to_field(schema)?;

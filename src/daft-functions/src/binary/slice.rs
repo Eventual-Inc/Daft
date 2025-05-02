@@ -20,7 +20,7 @@ impl ScalarUDF for BinarySlice {
         "binary_slice"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, start, length] => {
                 let data = data.to_field(schema)?;

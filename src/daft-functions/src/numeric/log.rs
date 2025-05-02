@@ -31,7 +31,7 @@ macro_rules! log {
                 stringify!($name)
             }
 
-            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+            fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
                 if inputs.len() != 1 {
                     return Err(DaftError::SchemaMismatch(format!(
                         "Expected 1 input arg, got {}",
@@ -91,7 +91,7 @@ impl ScalarUDF for Log {
         "log"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         ensure!(inputs.len() == 2, "log takes two arguments");
         let field = inputs.first().unwrap().to_field(schema)?;
         let base = inputs.get(1).unwrap().to_field(schema)?;

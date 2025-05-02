@@ -23,7 +23,7 @@ impl ScalarUDF for ListFill {
         "list_fill"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [n, elem] => {
                 let num_field = n.to_field(schema)?;
@@ -89,13 +89,13 @@ mod tests {
 
         let fill = ListFill {};
         let DaftError::SchemaMismatch(e) =
-            fill.to_field(&[col0_null.clone()], &schema).unwrap_err()
+            fill.to_field_deprecated(&[col0_null.clone()], &schema).unwrap_err()
         else {
             panic!("Expected SchemaMismatch error");
         };
         assert_eq!(e, "Expected 2 input args, got 1");
         let DaftError::TypeError(e) = fill
-            .to_field(&[col0_null.clone(), col1_str.clone()], &schema)
+            .to_field_deprecated(&[col0_null.clone(), col1_str.clone()], &schema)
             .unwrap_err()
         else {
             panic!("Expected TypeError error");
@@ -106,12 +106,12 @@ mod tests {
         );
 
         let list_of_null = fill
-            .to_field(&[col0_num.clone(), col1_null.clone()], &schema)
+            .to_field_deprecated(&[col0_num.clone(), col1_null.clone()], &schema)
             .unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Null)));
         assert_eq!(list_of_null, expected);
         let list_of_str = fill
-            .to_field(&[col0_num.clone(), col1_str.clone()], &schema)
+            .to_field_deprecated(&[col0_num.clone(), col1_str.clone()], &schema)
             .unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Utf8)));
         assert_eq!(list_of_str, expected);

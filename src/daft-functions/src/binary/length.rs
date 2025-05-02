@@ -19,7 +19,7 @@ impl ScalarUDF for BinaryLength {
         "length"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         let data = &inputs[0];
         match data.to_field(schema) {
             Ok(data_field) => match &data_field.dtype {

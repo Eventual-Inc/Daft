@@ -24,7 +24,7 @@ impl ScalarUDF for Coalesce {
         "coalesce"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [] => Err(DaftError::SchemaMismatch(
                 "Expected at least 1 input args, got 0".to_string(),
@@ -251,7 +251,7 @@ mod tests {
         let expected = Field::new("s0", DataType::Int32);
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.to_field(&[col_0, fallback], &schema).unwrap();
+        let output = coalesce.to_field_deprecated(&[col_0, fallback], &schema).unwrap();
         assert_eq!(output, expected);
     }
 
@@ -270,7 +270,7 @@ mod tests {
 
         let coalesce = super::Coalesce {};
         let output = coalesce
-            .to_field(&[col_0, col_1, fallback], &schema)
+            .to_field_deprecated(&[col_0, col_1, fallback], &schema)
             .unwrap();
         assert_eq!(output, expected);
     }
@@ -289,7 +289,7 @@ mod tests {
         let expected = "could not determine supertype of Date and Boolean".to_string();
         let coalesce = super::Coalesce {};
         let DaftError::TypeError(e) = coalesce
-            .to_field(&[col_0, col_1, col_2], &schema)
+            .to_field_deprecated(&[col_0, col_1, col_2], &schema)
             .unwrap_err()
         else {
             panic!("Expected error")

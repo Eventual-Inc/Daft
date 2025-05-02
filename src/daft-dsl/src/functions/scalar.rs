@@ -28,7 +28,21 @@ impl ScalarFunction {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf.to_field(&self.inputs, schema)
+        let inputs = self
+            .inputs
+            .iter()
+            .map(|expr| {
+                if let Expr::NamedExpr { name, expr } = &**expr {
+                    FunctionArg::named(name.clone(), expr.clone())
+                } else {
+                    FunctionArg::unnamed(expr.clone())
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let inputs = FunctionArgs::try_new(inputs)?;
+
+        self.udf.to_field(inputs, schema)
     }
 }
 
@@ -56,7 +70,24 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     }
 
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
+    fn to_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        self.to_field_deprecated(inputs.into_inner().as_slice(), schema)
+    }
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        let inputs = inputs
+            .iter()
+            .map(|expr| {
+                if let Expr::NamedExpr { name, expr } = &**expr {
+                    FunctionArg::named(name.clone(), expr.clone())
+                } else {
+                    FunctionArg::unnamed(expr.clone())
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let inputs = FunctionArgs::try_new(inputs)?;
+        self.to_field(inputs, schema)
+    }
     fn docstring(&self) -> &'static str {
         "No documentation available"
     }

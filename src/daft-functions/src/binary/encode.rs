@@ -29,7 +29,7 @@ impl ScalarUDF for Encode {
         "encode"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         if inputs.len() != 1 {
             invalid_argument_err!("Expected 1 argument, found {}", inputs.len())
         }
@@ -97,7 +97,7 @@ impl ScalarUDF for TryEncode {
         self.evaluate_from_series(&inputs)
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         if inputs.len() != 1 {
             invalid_argument_err!("Expected 1 argument, found {}", inputs.len())
         }

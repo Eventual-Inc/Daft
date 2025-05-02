@@ -36,7 +36,7 @@ impl ScalarUDF for ToStructFunction {
         Ok(series_to_struct(inputs))
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         if inputs.is_empty() {
             return Err(DaftError::ValueError(
                 "Cannot call struct with no inputs".to_string(),
