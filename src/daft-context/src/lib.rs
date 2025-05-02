@@ -276,7 +276,13 @@ fn get_runner_config_from_env() -> RunnerConfig {
     const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
     const DAFT_DEVELOPER_USE_THREAD_POOL: &str = "DAFT_DEVELOPER_USE_THREAD_POOL";
 
-    let runner_from_envvar = std::env::var(DAFT_RUNNER).unwrap_or_default();
+    let runner_from_envvar = std::env::var(DAFT_RUNNER)
+        .unwrap_or_default()
+        .to_lowercase();
+    // If the user specifies the native runner, we ignore whether ray is initialized or not and just use the native runner.
+    if runner_from_envvar == "native" {
+        return RunnerConfig::Native { num_threads: None };
+    }
     let address = std::env::var(DAFT_RAY_ADDRESS).ok();
     let address = if address.is_some() {
         log::warn!(
@@ -328,7 +334,7 @@ fn get_runner_config_from_env() -> RunnerConfig {
         Some(())
     });
 
-    match runner_from_envvar.to_lowercase().as_str() {
+    match runner_from_envvar.as_str() {
         "ray" => RunnerConfig::Ray {
             address,
             max_task_backlog,
