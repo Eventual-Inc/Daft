@@ -92,8 +92,11 @@ impl FunctionArgKey for &str {
 /// access a function arg by position
 impl FunctionArgKey for usize {
     fn required<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<&'a T> {
-        match &args.0[*self] {
-            FunctionArg::Unnamed(value) => Ok(value),
+        match &args.0.get(*self) {
+            Some(FunctionArg::Unnamed(value)) => Ok(value),
+            None => Err(DaftError::ComputeError(format!(
+                "Argument not found at position `{self:?}"
+            ))),
             _ => Err(DaftError::ComputeError(format!(
                 "Expected positional argument at position {}",
                 self
@@ -102,12 +105,9 @@ impl FunctionArgKey for usize {
     }
 
     fn optional<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<Option<&'a T>> {
-        match &args.0[*self] {
-            FunctionArg::Unnamed(value) => Ok(Some(value)),
-            _ => Err(DaftError::ComputeError(format!(
-                "Expected positional argument at position {}",
-                self
-            ))),
+        match &args.0.get(*self) {
+            Some(FunctionArg::Unnamed(value)) => Ok(Some(value)),
+            _ => Ok(None),
         }
     }
 }
@@ -170,6 +170,7 @@ impl<T> FunctionArgs<T> {
         slf.assert_ordering()?;
         Ok(slf)
     }
+
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -194,7 +195,7 @@ impl<T> FunctionArgs<T> {
         Ok(())
     }
 
-    // Get required positional argument
+    /// Get required argument
     pub fn required<Key: FunctionArgKey>(&self, position: Key) -> DaftResult<&T> {
         position.required(self).map_err(|_| {
             DaftError::ValueError(format!(
@@ -203,6 +204,7 @@ impl<T> FunctionArgs<T> {
         })
     }
 
+    /// Get optional argument
     pub fn optional<Key: FunctionArgKey>(&self, position: Key) -> DaftResult<Option<&T>> {
         position.optional(self).map_err(|_| {
             DaftError::ValueError(format!(
@@ -215,5 +217,152 @@ impl<T> FunctionArgs<T> {
 impl<T> From<Vec<T>> for FunctionArgs<T> {
     fn from(args: Vec<T>) -> Self {
         Self(args.into_iter().map(FunctionArg::from).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+
+    use crate::functions::function_args::{FunctionArg, FunctionArgs};
+    #[test]
+    fn test_function_args_ordering() {
+        let res = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(1),
+            FunctionArg::unnamed(2),
+            FunctionArg::named("arg1", 3),
+        ]);
+
+        assert!(res.is_err());
+    }
+    #[test]
+    fn test_function_args_ordering_invalid() {
+        let res = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(1),
+            FunctionArg::named("arg1", 2),
+            FunctionArg::unnamed(3),
+        ]);
+
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_lookup_simple() {
+        let args = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(1),
+            FunctionArg::unnamed(2),
+            FunctionArg::named("arg1", 2),
+        ])
+        .unwrap();
+
+        let first = args.required(0).unwrap();
+        assert_eq!(*first, 1);
+
+        let second = args.required(1).unwrap();
+        assert_eq!(*second, 2);
+        let third = args.required("arg1").unwrap();
+        assert_eq!(*third, 2);
+        // can't access it by position since it's a named argument.
+        let third = args.required(2);
+        assert!(third.is_err())
+    }
+
+    #[test]
+    fn test_lookup_multi_required() -> DaftResult<()> {
+        let args = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(100),
+            FunctionArg::unnamed(222),
+            FunctionArg::named("arg0", 123),
+            FunctionArg::named("arg1", 333),
+        ])
+        .unwrap();
+
+        // first try position 2, then try named argument "arg1"
+        let arg1 = args.required((2, "arg1"))?;
+
+        assert_eq!(*arg1, 333);
+
+        // try named "arg0", then named "arg1", then position 0
+        let arg0 = args.required(("arg0", "arg1", 0))?;
+        assert_eq!(*arg0, 123);
+
+        let arg2 = args.required(("arg2", 1))?;
+        assert_eq!(*arg2, 222);
+
+        let invalid = args.required(2);
+        assert!(invalid.is_err());
+
+        let invalid = args.required("arg2");
+        assert!(invalid.is_err());
+
+        let invalid = args.required((3, "arg2", 2));
+        assert!(invalid.is_err());
+
+        Ok(())
+    }
+    #[test]
+    fn test_lookup_multi_optional() -> DaftResult<()> {
+        let args = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(100),
+            FunctionArg::unnamed(222),
+            FunctionArg::named("arg0", 123),
+            FunctionArg::named("arg1", 333),
+        ])
+        .unwrap();
+
+        // first try position 2, then try named argument "arg1"
+        let arg1 = args.optional((2, "arg1")).unwrap();
+        assert!(arg1.is_some());
+
+        // try named "arg0", then named "arg1", then position 0
+        let arg0 = args.optional(("arg0", "arg1", 0)).unwrap();
+        assert!(arg0.is_some());
+
+        let arg2 = args.optional(("arg2", 1)).unwrap();
+        assert!(arg2.is_some());
+
+        let invalid = args.optional(2).unwrap();
+        assert!(invalid.is_none());
+
+        let invalid = args.optional("arg2").unwrap();
+        assert!(invalid.is_none());
+
+        let invalid = args.optional((3, "arg2", 2)).unwrap();
+        assert!(invalid.is_none());
+
+        Ok(())
+    }
+    #[test]
+    fn test_lookup_out_of_range() -> DaftResult<()> {
+        let args = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(100),
+            FunctionArg::unnamed(222),
+            FunctionArg::named("arg0", 123),
+            FunctionArg::named("arg1", 333),
+        ])
+        .unwrap();
+
+        let res = args.required(99);
+        assert!(res.is_err());
+        let res = args.required((99, 5));
+        assert!(res.is_err());
+
+        Ok(())
+    }
+    #[test]
+    fn test_len_and_is_empty() {
+        let args = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(100),
+            FunctionArg::unnamed(222),
+            FunctionArg::named("arg0", 123),
+            FunctionArg::named("arg1", 333),
+        ])
+        .unwrap();
+
+        assert_eq!(args.len(), 4);
+        assert!(!args.is_empty());
+        let args: FunctionArgs<usize> = FunctionArgs::try_new(Vec::new()).unwrap();
+        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 }

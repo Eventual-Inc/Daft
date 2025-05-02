@@ -23,7 +23,6 @@ impl ScalarFunction {
             inputs,
         }
     }
-
     pub fn name(&self) -> &str {
         self.udf.name()
     }
@@ -99,30 +98,5 @@ impl Display for ScalarFunction {
         }
         write!(f, ")")?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::functions::function_args::{FunctionArg, FunctionArgs};
-    #[test]
-    fn test_function_args_ordering() {
-        let res = FunctionArgs::try_new(vec![
-            FunctionArg::unnamed(1),
-            FunctionArg::unnamed(2),
-            FunctionArg::named("arg1", 3),
-        ]);
-
-        assert!(res.is_err());
-    }
-    #[test]
-    fn test_function_args_ordering_invalid() {
-        let res = FunctionArgs::try_new(vec![
-            FunctionArg::unnamed(1),
-            FunctionArg::named("arg1", 2),
-            FunctionArg::unnamed(3),
-        ]);
-
-        assert!(res.is_err());
     }
 }
