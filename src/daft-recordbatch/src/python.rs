@@ -5,12 +5,12 @@ use daft_core::{
     python::{series::PySeries, PySchema},
 };
 use daft_dsl::python::PyExpr;
-use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
     ffi,
+    file_info::{FileInfo, FileInfos},
     preview::{Preview, PreviewFormat, PreviewOptions},
     RecordBatch,
 };
@@ -556,5 +556,8 @@ impl AsRef<RecordBatch> for PyRecordBatch {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyRecordBatch>()?;
+    parent.add_class::<FileInfos>()?;
+    parent.add_class::<FileInfo>()?;
+
     Ok(())
 }

@@ -11,7 +11,7 @@ use crate::{
     array::DataArray,
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field,
-        FixedSizeBinaryArray, NullArray, Utf8Array, Utf8Type,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array, Utf8Type,
     },
 };
 
@@ -147,6 +147,15 @@ impl From<(&str, Box<arrow2::array::BooleanArray>)> for BooleanArray {
     fn from(item: (&str, Box<arrow2::array::BooleanArray>)) -> Self {
         let (name, arrow_array) = item;
         Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+    }
+}
+
+impl From<(&str, Vec<arrow2::types::months_days_ns>)> for IntervalArray {
+    fn from(item: (&str, Vec<arrow2::types::months_days_ns>)) -> Self {
+        let (name, vec) = item;
+        let arrow_array =
+            Box::new(arrow2::array::PrimitiveArray::<arrow2::types::months_days_ns>::from_vec(vec));
+        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }
 

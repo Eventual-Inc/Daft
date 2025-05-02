@@ -6,7 +6,7 @@ use daft_core::{
     datatypes::{try_sum_supertype, DaftPrimitiveType},
     prelude::*,
 };
-use num_traits::{FromPrimitive, ToPrimitive, Zero};
+use num_traits::{FromPrimitive, Zero};
 
 use super::WindowAggStateOps;
 
@@ -16,6 +16,7 @@ where
     T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy,
 {
     source: DataArray<T>,
+    is_nan: Option<DataArray<BooleanType>>,
     sum: T::Native,
     sum_vec: Vec<T::Native>,
     valid_count: usize,
@@ -30,8 +31,20 @@ where
 {
     pub fn new(source: &Series, total_length: usize) -> Self {
         let source_array = source.downcast::<DataArray<T>>().unwrap().clone();
+        let is_nan = match source.data_type() {
+            DataType::Float32 | DataType::Float64 => Some(
+                source
+                    .is_nan()
+                    .unwrap()
+                    .downcast::<DataArray<BooleanType>>()
+                    .unwrap()
+                    .clone(),
+            ),
+            _ => None,
+        };
         Self {
             source: source_array,
+            is_nan,
             sum: T::Native::zero(),
             sum_vec: Vec::with_capacity(total_length),
             valid_count: 0,
@@ -56,7 +69,9 @@ where
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 let value = self.source.get(i).unwrap();
-                if value.to_f64().unwrap_or(0.0).is_nan() {
+                if let Some(is_nan) = &self.is_nan
+                    && is_nan.get(i).unwrap()
+                {
                     self.nan_count += 1;
                 } else {
                     self.sum = self.sum + value;
@@ -76,7 +91,9 @@ where
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 let value = self.source.get(i).unwrap();
-                if value.to_f64().unwrap_or(0.0).is_nan() {
+                if let Some(is_nan) = &self.is_nan
+                    && is_nan.get(i).unwrap()
+                {
                     self.nan_count -= 1;
                 } else {
                     self.sum = self.sum - value;

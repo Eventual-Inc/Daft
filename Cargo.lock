@@ -2001,6 +2001,7 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dashboard",
+ "daft-distributed",
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
@@ -2222,6 +2223,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-distributed"
+version = "0.3.0-dev0"
+dependencies = [
+ "async-trait",
+ "common-daft-config",
+ "common-error",
+ "common-partitioning",
+ "common-treenode",
+ "daft-local-plan",
+ "daft-logical-plan",
+ "futures",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2431,6 +2450,7 @@ dependencies = [
  "num-format",
  "pin-project",
  "pyo3",
+ "pyo3-async-runtimes",
  "snafu",
  "tokio",
  "tokio-util",
@@ -2442,12 +2462,15 @@ name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-py-serde",
  "common-resource-request",
  "common-scan-info",
  "daft-core",
  "daft-dsl",
  "daft-logical-plan",
  "log",
+ "pyo3",
+ "serde",
  "strum 0.26.3",
 ]
 
@@ -2606,11 +2629,11 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
+ "common-py-serde",
  "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-image",
- "daft-logical-plan",
  "futures",
  "html-escape",
  "indexmap 2.8.0",
