@@ -758,10 +758,10 @@ class Expression:
             max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
 
         """
-        min = Expression._to_expression(min)._expr
-        max = Expression._to_expression(max)._expr
+        min_expr = Expression._to_expression(min)._expr
+        max_expr = Expression._to_expression(max)._expr
         f = native.get_function_from_registry("clip")
-        return Expression._from_pyexpr(f(self._expr, min, max))
+        return Expression._from_pyexpr(f(self._expr, min=min_expr, max=max_expr))
 
     def sign(self) -> Expression:
         """The sign of a numeric expression."""
@@ -783,7 +783,7 @@ class Expression:
         f = native.get_function_from_registry("negative")
         return Expression._from_pyexpr(f(self._expr))
 
-    def round(self, decimals: int = 0) -> Expression:
+    def round(self, decimals: int | Expression = 0) -> Expression:
         """The round of a numeric expression.
 
         Args:
@@ -791,8 +791,8 @@ class Expression:
         """
         assert isinstance(decimals, int)
         f = native.get_function_from_registry("round")
-        decimals = Expression._to_expression(decimals)._expr
-        return Expression._from_pyexpr(f(self._expr, decimals=decimals))
+        decimals_expr = Expression._to_expression(decimals)._expr
+        return Expression._from_pyexpr(f(self._expr, decimal=decimals_expr))
 
     def sqrt(self) -> Expression:
         """The square root of a numeric expression."""
@@ -916,7 +916,7 @@ class Expression:
 
         Args:
             base: The base of the logarithm. Defaults to e.
-        """''
+        """ ""
         assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
         base = lit(base)
         f = native.get_function_from_registry("log")

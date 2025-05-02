@@ -21,7 +21,7 @@ impl ScalarUDF for Round {
             "round takes one or two arguments"
         );
         let input = inputs.required((0, "input"))?;
-        let precision = inputs.required((1, "decimals", "precision"))?;
+        let precision = inputs.required((1, "decimal", "precision"))?;
         ensure!(precision.len() == 1, "expected scalar value for precision");
         let precision = precision.cast(&DataType::Int32)?;
         let precision = precision.i32().unwrap().get(0).unwrap();
