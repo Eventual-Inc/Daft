@@ -448,7 +448,7 @@ impl Mul for InferDataType<'_> {
                         Ok(DataType::Decimal128(p_prime, s_prime))
                     }
                 }
-                (DataType::Interval, other) if other.is_numeric() => Ok(DataType::Interval),
+                (DataType::Interval, other) if other.is_integer() => Ok(DataType::Interval),
                 _ => Err(DaftError::TypeError(format!(
                     "Cannot multiply types: {}, {}",
                     self, other
