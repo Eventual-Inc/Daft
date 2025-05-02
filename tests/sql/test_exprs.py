@@ -183,6 +183,36 @@ def test_is_in_edge_cases():
                     datetime.datetime(2020, 2, 29, 23, 57, 20),
                     datetime.datetime(2029, 5, 15, 12, 32, 17),
                 ],
+                "ts_add_hour_mul_2": [
+                    datetime.datetime(2022, 1, 1, 12, 0, 0),
+                    datetime.datetime(2020, 3, 1, 1, 59, 59),
+                    datetime.datetime(2029, 5, 15, 14, 34, 56),
+                ],
+                "ts_add_2_mul_hour": [
+                    datetime.datetime(2022, 1, 1, 12, 0, 0),
+                    datetime.datetime(2020, 3, 1, 1, 59, 59),
+                    datetime.datetime(2029, 5, 15, 14, 34, 56),
+                ],
+                "ts_add_hour_mul_neg_2": [
+                    datetime.datetime(2022, 1, 1, 8, 0),
+                    datetime.datetime(2020, 2, 29, 21, 59, 59),
+                    datetime.datetime(2029, 5, 15, 10, 34, 56),
+                ],
+                "ts_add_minute_mul_2": [
+                    datetime.datetime(2022, 1, 1, 10, 2, 0),
+                    datetime.datetime(2020, 3, 1, 0, 1, 59),
+                    datetime.datetime(2029, 5, 15, 12, 36, 56),
+                ],
+                "ts_add_month_mul_2": [
+                    datetime.datetime(2022, 3, 1, 10, 0, 0),
+                    datetime.datetime(2020, 4, 29, 23, 59, 59),
+                    datetime.datetime(2029, 7, 15, 12, 34, 56),
+                ],
+                "ts_add_year_mul_2": [
+                    datetime.datetime(2024, 1, 1, 10, 0, 0),
+                    datetime.datetime(2022, 3, 1, 23, 59, 59),
+                    datetime.datetime(2031, 5, 15, 12, 34, 56),
+                ],
             },
         ),
     ],
@@ -201,6 +231,12 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             (col("ts") - interval(years=1, days=0)).alias("ts_sub_year"),
             (col("ts") + interval(hours=1)).alias("ts_add_hour"),
             (col("ts") - interval(minutes=1, seconds=99)).alias("ts_sub_minute"),
+            (col("ts") + interval(hours=1) * 2).alias("ts_add_hour_mul_2"),
+            (col("ts") + 2 * interval(hours=1)).alias("ts_add_2_mul_hour"),
+            (col("ts") + interval(hours=1) * -2).alias("ts_add_hour_mul_neg_2"),
+            (col("ts") + interval(minutes=1) * 2).alias("ts_add_minute_mul_2"),
+            (col("ts") + interval(months=1) * 2).alias("ts_add_month_mul_2"),
+            (col("ts") + interval(years=1, days=0) * 2).alias("ts_add_year_mul_2"),
         )
         .collect()
         .to_pydict()
@@ -214,7 +250,13 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             date - INTERVAL '1 months' AS date_sub_month,
             ts - INTERVAL '1 year 0 days' AS ts_sub_year,
             ts + INTERVAL '1' hour AS ts_add_hour,
-            ts - INTERVAL '1 minutes 99 second' AS ts_sub_minute
+            ts - INTERVAL '1 minutes 99 second' AS ts_sub_minute,
+            ts + INTERVAL '1' hour * 2 AS ts_add_hour_mul_2,
+            ts + INTERVAL '1' hour * -2 AS ts_add_hour_mul_neg_2,
+            ts + 2 * INTERVAL '1' hour AS ts_add_2_mul_hour,
+            ts + INTERVAL '1' minute * 2 AS ts_add_minute_mul_2,
+            ts + INTERVAL '1' month * 2 AS ts_add_month_mul_2,
+            ts + INTERVAL '1' year * 2 AS ts_add_year_mul_2,
         FROM test
         """,
             catalog=catalog,

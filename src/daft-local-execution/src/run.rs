@@ -10,13 +10,14 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
-use daft_local_plan::translate;
+use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
 };
-use futures::Stream;
+use futures::{stream::BoxStream, Stream, StreamExt};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -54,6 +55,28 @@ impl LocalPartitionIterator {
     }
 }
 
+#[cfg(feature = "python")]
+#[pyclass(frozen)]
+struct LocalPartitionStream {
+    stream: Arc<Mutex<BoxStream<'static, DaftResult<PyObject>>>>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl LocalPartitionStream {
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+    fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let stream = self.stream.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut stream = stream.lock().await;
+            let part = stream.next().await;
+            Ok(part.transpose()?)
+        })
+    }
+}
+
 #[cfg_attr(
     feature = "python",
     pyclass(module = "daft.daft", name = "NativeExecutor")
@@ -79,11 +102,11 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (logical_plan_builder, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
     pub fn run<'a>(
         &self,
         py: Python<'a>,
-        logical_plan_builder: &PyLogicalPlanBuilder,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
@@ -107,7 +130,7 @@ impl PyNativeExecutor {
         let out = py.allow_threads(|| {
             self.executor
                 .run(
-                    &logical_plan_builder.builder,
+                    &local_physical_plan.plan,
                     &psets,
                     cfg.config,
                     results_buffer_size,
@@ -124,6 +147,53 @@ impl PyNativeExecutor {
         }));
         let part_iter = LocalPartitionIterator { iter };
         Ok(part_iter.into_pyobject(py)?.into_any())
+    }
+
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
+    pub fn run_async<'a>(
+        &self,
+        py: Python<'a>,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
+        psets: HashMap<String, Vec<PyMicroPartition>>,
+        cfg: PyDaftExecutionConfig,
+        results_buffer_size: Option<usize>,
+    ) -> PyResult<Bound<'a, PyAny>> {
+        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
+            .into_iter()
+            .map(|(part_id, parts)| {
+                (
+                    part_id,
+                    Arc::new(
+                        parts
+                            .into_iter()
+                            .map(std::convert::Into::into)
+                            .collect::<Vec<Arc<MicroPartition>>>()
+                            .into(),
+                    ),
+                )
+            })
+            .collect();
+        let psets = InMemoryPartitionSetCache::new(&native_psets);
+        let res = py.allow_threads(|| {
+            self.executor.run(
+                &local_physical_plan.plan,
+                &psets,
+                cfg.config,
+                results_buffer_size,
+            )
+        })?;
+        let stream = Box::pin(res.into_stream().map(|part| {
+            pyo3::Python::with_gil(|py| {
+                Ok(PyMicroPartition::from(part?)
+                    .into_pyobject(py)?
+                    .unbind()
+                    .into_any())
+            })
+        }));
+        let stream = LocalPartitionStream {
+            stream: Arc::new(Mutex::new(stream)),
+        };
+        Ok(stream.into_pyobject(py)?.into_any())
     }
 
     pub fn repr_ascii(
@@ -190,16 +260,14 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        logical_plan_builder: &LogicalPlanBuilder,
+        local_physical_plan: &LocalPhysicalPlanRef,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
-        let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan)?;
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
-        let pipeline = physical_plan_to_pipeline(&physical_plan, psets, &cfg)?;
+        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();

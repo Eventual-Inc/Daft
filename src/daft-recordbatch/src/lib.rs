@@ -21,14 +21,15 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    functions::FunctionEvaluator, null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column,
-    Expr, ExprRef, LiteralValue, PlanRef, ResolvedColumn, SketchType, UnresolvedColumn,
+    expr::BoundColumn, functions::FunctionEvaluator, null_lit, resolved_col, AggExpr,
+    ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue, ResolvedColumn, SketchType,
 };
-use daft_logical_plan::FileInfos;
+use file_info::FileInfos;
 use futures::{StreamExt, TryStreamExt};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
+mod file_info;
 mod growable;
 mod ops;
 mod preview;
@@ -381,7 +382,7 @@ impl RecordBatch {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
-            let mask = self.eval_expression(predicate.first().unwrap().as_ref())?;
+            let mask = self.eval_expression(predicate.first().unwrap())?;
             self.mask_filter(&mask)
         } else {
             let mut expr = predicate
@@ -578,16 +579,17 @@ impl RecordBatch {
         }
     }
 
-    fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
+    fn eval_expression(&self, expr: &ExprRef) -> DaftResult<Series> {
+        let expr = expr.clone().bind(&self.schema)?;
+
         let expected_field = expr.to_field(self.schema.as_ref())?;
-        let series = match expr {
+        let series = match expr.as_ref() {
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
             Expr::WindowFunction(..) => Err(DaftError::ComputeError("Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string())),
             Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
-            // TODO: remove ability to evaluate on unresolved col once we fix all tests
-            Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) | Expr::Column(Column::Unresolved(UnresolvedColumn { name, plan_ref: PlanRef::Unqualified, plan_schema: None })) => self.get_column(name).cloned(),
+            Expr::Column(Column::Bound(BoundColumn { index, .. })) => Ok(self.columns[*index].clone()),
             Expr::Not(child) => !(self.eval_expression(child)?),
             Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
             Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
@@ -692,6 +694,9 @@ impl RecordBatch {
             )),
             Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic(..))) => Err(DaftError::ComputeError(
+                "Resolved columns must be bound before execution and cannot be evaluated directly. This indicates a bug in the executor".to_string()
             )),
             Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(..))) => Err(DaftError::ComputeError(
                 format!("Column {expr} could not be resolved. This indicates either that the column is referencing a different table from the one it is being used in, or a bug in the query optimizer."),
