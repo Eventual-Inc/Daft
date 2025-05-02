@@ -600,8 +600,8 @@ pub fn mul_interval(
         interval.data_type().clone(),
         |interval, factor| {
             months_days_ns::new(
-                interval.months() * factor as i32,
-                interval.days() * factor as i32,
+                interval.months() * factor,
+                interval.days() * factor,
                 interval.ns() * factor as i64,
             )
         },
@@ -625,8 +625,8 @@ pub fn mul_interval_scalar(
         interval,
         |interval| {
             months_days_ns::new(
-                interval.months() * factor as i32,
-                interval.days() * factor as i32,
+                interval.months() * factor,
+                interval.days() * factor,
                 interval.ns() * factor as i64,
             )
         },
