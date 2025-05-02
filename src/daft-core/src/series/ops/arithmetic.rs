@@ -271,27 +271,8 @@ impl Mul for &Series {
             // ----------------
             // Temporal types
             // ----------------
-            output_type if output_type.is_interval() || output_type.is_duration() => {
+            output_type if output_type.is_interval() => {
                 match (self.data_type(), rhs.data_type()) {
-                    // ----------------
-                    // Duration
-                    // ----------------
-                    // Duration * numeric = Duration
-                    (DataType::Duration(..), dt) if dt.is_integer() => {
-                        let physical_result = lhs
-                            .duration()?
-                            .physical
-                            .mul(rhs.cast(&DataType::Int64)?.i64()?)?;
-                        physical_result.cast(output_type)
-                    }
-                    // numeric * Duration = Duration
-                    (dt, DataType::Duration(..)) if dt.is_integer() => {
-                        let physical_result = rhs
-                            .duration()?
-                            .physical
-                            .mul(lhs.cast(&DataType::Int64)?.i64()?)?;
-                        physical_result.cast(output_type)
-                    }
                     // ----------------
                     // Interval
                     // ----------------
@@ -573,24 +554,6 @@ mod tests {
         let b = Utf8Array::from(("b", str_array.as_slice()));
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Utf8);
-        Ok(())
-    }
-    #[test]
-    fn mul_duration_and_int() -> DaftResult<()> {
-        let a_raw = Int64Array::from(("a", vec![1, 2, 3]));
-        let a = DurationArray::new(
-            Field::new(
-                "a",
-                DataType::Duration(daft_schema::prelude::TimeUnit::Microseconds),
-            ),
-            a_raw,
-        );
-        let b = Int32Array::from(("b", vec![1, 2, 3]));
-        let c = a.into_series() * b.into_series();
-        assert_eq!(
-            *c?.data_type(),
-            DataType::Duration(daft_schema::prelude::TimeUnit::Microseconds)
-        );
         Ok(())
     }
     #[test]

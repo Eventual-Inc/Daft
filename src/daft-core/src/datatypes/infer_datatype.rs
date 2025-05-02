@@ -450,8 +450,6 @@ impl Mul for InferDataType<'_> {
                 }
                 (DataType::Interval, other) if other.is_integer() => Ok(DataType::Interval),
                 (other, DataType::Interval) if other.is_integer() => Ok(DataType::Interval),
-                (DataType::Duration(duration_unit), other) if other.is_integer() => Ok(DataType::Duration(*duration_unit)),
-                (other, DataType::Duration(duration_unit)) if other.is_integer() => Ok(DataType::Duration(*duration_unit)),
                 _ => Err(DaftError::TypeError(format!(
                     "Cannot multiply types: {}, {}",
                     self, other
