@@ -4,7 +4,6 @@ pub mod aggs;
 pub mod coalesce;
 pub mod config;
 pub mod hashing;
-// pub mod image;
 pub mod json;
 pub mod list;
 pub mod map;
@@ -19,7 +18,6 @@ pub mod window;
 
 pub use aggs::SQLModuleAggs;
 pub use config::SQLModuleConfig;
-// pub use image::SQLModuleImage;
 pub use json::SQLModuleJson;
 pub use list::SQLModuleList;
 pub use map::SQLModuleMap;
