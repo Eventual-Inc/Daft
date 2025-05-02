@@ -193,6 +193,11 @@ def test_is_in_edge_cases():
                     datetime.datetime(2020, 3, 1, 1, 59, 59),
                     datetime.datetime(2029, 5, 15, 14, 34, 56),
                 ],
+                "ts_add_hour_mul_neg_2": [
+                    datetime.datetime(2022, 1, 1, 8, 0),
+                    datetime.datetime(2020, 2, 29, 21, 59, 59),
+                    datetime.datetime(2029, 5, 15, 10, 34, 56),
+                ],
                 "ts_add_minute_mul_2": [
                     datetime.datetime(2022, 1, 1, 10, 2, 0),
                     datetime.datetime(2020, 3, 1, 0, 1, 59),
@@ -228,6 +233,7 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             (col("ts") - interval(minutes=1, seconds=99)).alias("ts_sub_minute"),
             (col("ts") + interval(hours=1) * 2).alias("ts_add_hour_mul_2"),
             (col("ts") + 2 * interval(hours=1)).alias("ts_add_2_mul_hour"),
+            (col("ts") + interval(hours=1) * -2).alias("ts_add_hour_mul_neg_2"),
             (col("ts") + interval(minutes=1) * 2).alias("ts_add_minute_mul_2"),
             (col("ts") + interval(months=1) * 2).alias("ts_add_month_mul_2"),
             (col("ts") + interval(years=1, days=0) * 2).alias("ts_add_year_mul_2"),
@@ -246,6 +252,7 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             ts + INTERVAL '1' hour AS ts_add_hour,
             ts - INTERVAL '1 minutes 99 second' AS ts_sub_minute,
             ts + INTERVAL '1' hour * 2 AS ts_add_hour_mul_2,
+            ts + INTERVAL '1' hour * -2 AS ts_add_hour_mul_neg_2,
             ts + 2 * INTERVAL '1' hour AS ts_add_2_mul_hour,
             ts + INTERVAL '1' minute * 2 AS ts_add_minute_mul_2,
             ts + INTERVAL '1' month * 2 AS ts_add_month_mul_2,
