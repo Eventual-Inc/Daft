@@ -296,13 +296,13 @@ impl Mul for &Series {
                     // Interval
                     // ----------------
                     // Interval * numeric = Interval
-                    (DataType::Interval, dt) if dt.is_numeric() => {
+                    (DataType::Interval, dt) if dt.is_integer() => {
                         let physical_result =
                             lhs.interval()?.mul(rhs.cast(&DataType::Int32)?.i32()?)?;
                         physical_result.cast(output_type)
                     }
                     // numeric * Interval = Interval
-                    (dt, DataType::Interval) if dt.is_numeric() => {
+                    (dt, DataType::Interval) if dt.is_integer() => {
                         let physical_result =
                             rhs.interval()?.mul(lhs.cast(&DataType::Int32)?.i32()?)?;
                         physical_result.cast(output_type)
@@ -586,6 +586,25 @@ mod tests {
         let b = Int32Array::from(("b", vec![1, 2, 3]));
         let c = a.into_series() * b.into_series();
         assert_eq!(*c?.data_type(), DataType::Interval);
+        Ok(())
+    }
+    #[test]
+    fn add_interval_and_float() -> DaftResult<()> {
+        let a = IntervalArray::from((
+            "a",
+            vec![
+                months_days_ns::new(1, 2, 3),
+                months_days_ns::new(4, 5, 6),
+                months_days_ns::new(7, 8, 9),
+            ],
+        ));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let c = a.into_series() * b.into_series();
+        assert!(c.is_err());
+        assert_eq!(
+            c.unwrap_err().to_string(),
+            "DaftError::TypeError Cannot multiply types: Interval, Float64"
+        );
         Ok(())
     }
 }
