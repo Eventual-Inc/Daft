@@ -132,6 +132,7 @@ impl ScalarUDF for Log {
         let base = {
             ensure!(base.len() == 1, "expected scalar value");
             let s = base.cast(&DataType::Float64)?;
+
             s.f64().unwrap().get(0).unwrap()
         };
         input.log(base)
