@@ -471,11 +471,14 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
+    use arrow2::types::months_days_ns;
     use common_error::DaftResult;
 
     use crate::{
         array::ops::full::FullNull,
-        datatypes::{DataType, Float32Array, Float64Array, Int32Array, Int64Array, Utf8Array},
+        datatypes::{
+            DataType, Float32Array, Float64Array, Int32Array, Int64Array, IntervalArray, Utf8Array,
+        },
         series::IntoSeries,
     };
 
@@ -568,6 +571,21 @@ mod tests {
         let b = Utf8Array::from(("b", str_array.as_slice()));
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Utf8);
+        Ok(())
+    }
+    #[test]
+    fn add_interval_and_int() -> DaftResult<()> {
+        let a = IntervalArray::from((
+            "a",
+            vec![
+                months_days_ns::new(1, 2, 3),
+                months_days_ns::new(4, 5, 6),
+                months_days_ns::new(7, 8, 9),
+            ],
+        ));
+        let b = Int32Array::from(("b", vec![1, 2, 3]));
+        let c = a.into_series() * b.into_series();
+        assert_eq!(*c?.data_type(), DataType::Interval);
         Ok(())
     }
 }
