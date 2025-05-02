@@ -271,13 +271,13 @@ impl Mul for &Series {
             // ----------------
             // Temporal types
             // ----------------
-            output_type if output_type.is_temporal() || output_type.is_interval() => {
+            output_type if output_type.is_interval() || output_type.is_duration() => {
                 match (self.data_type(), rhs.data_type()) {
                     // ----------------
                     // Duration
                     // ----------------
                     // Duration * numeric = Duration
-                    (DataType::Duration(..), dt) if dt.is_numeric() => {
+                    (DataType::Duration(..), dt) if dt.is_integer() => {
                         let physical_result = lhs
                             .duration()?
                             .physical
@@ -285,7 +285,7 @@ impl Mul for &Series {
                         physical_result.cast(output_type)
                     }
                     // numeric * Duration = Duration
-                    (dt, DataType::Duration(..)) if dt.is_numeric() => {
+                    (dt, DataType::Duration(..)) if dt.is_integer() => {
                         let physical_result = rhs
                             .duration()?
                             .physical
@@ -473,12 +473,14 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 mod tests {
     use arrow2::types::months_days_ns;
     use common_error::DaftResult;
+    use daft_schema::field::Field;
 
     use crate::{
         array::ops::full::FullNull,
         datatypes::{
             DataType, Float32Array, Float64Array, Int32Array, Int64Array, IntervalArray, Utf8Array,
         },
+        prelude::DurationArray,
         series::IntoSeries,
     };
 
@@ -574,7 +576,25 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn add_interval_and_int() -> DaftResult<()> {
+    fn mul_duration_and_int() -> DaftResult<()> {
+        let a_raw = Int64Array::from(("a", vec![1, 2, 3]));
+        let a = DurationArray::new(
+            Field::new(
+                "a",
+                DataType::Duration(daft_schema::prelude::TimeUnit::Microseconds),
+            ),
+            a_raw,
+        );
+        let b = Int32Array::from(("b", vec![1, 2, 3]));
+        let c = a.into_series() * b.into_series();
+        assert_eq!(
+            *c?.data_type(),
+            DataType::Duration(daft_schema::prelude::TimeUnit::Microseconds)
+        );
+        Ok(())
+    }
+    #[test]
+    fn mul_interval_and_int() -> DaftResult<()> {
         let a = IntervalArray::from((
             "a",
             vec![
@@ -589,7 +609,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn add_interval_and_float() -> DaftResult<()> {
+    fn mul_interval_and_float() -> DaftResult<()> {
         let a = IntervalArray::from((
             "a",
             vec![
