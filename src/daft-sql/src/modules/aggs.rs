@@ -81,7 +81,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
             Some(plan) => {
                 let schema = plan.schema();
-                unresolved_col(schema.get_field_at_index(0)?.name.clone())
+                unresolved_col(schema[0].name.clone())
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
@@ -95,7 +95,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                     if let Some(schema) =
                         plan.plan.clone().get_schema_for_alias(&ident.to_string())?
                     {
-                        unresolved_col(schema.get_field_at_index(0)?.name.clone())
+                        unresolved_col(schema[0].name.clone())
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     } else {

@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    future::Future,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -10,11 +11,11 @@ use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::LogicalPlanRef;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 
 use crate::{
-    channel::Receiver,
-    pipeline_node,
+    channel::{create_channel, Receiver, Sender},
+    pipeline_node::{self, PipelineOutput, RunningPipelineNode},
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
@@ -46,9 +47,57 @@ impl Stage {
             pipeline_node::logical_plan_to_pipeline_node(self.logical_plan, self.config, psets)?;
         let mut stage_context = StageContext::try_new(worker_manager_factory)?;
         let running_node = pipeline_node.start(&mut stage_context);
-        let running_stage = RunningStage::new(running_node.into_inner(), stage_context);
+        let materialized_results_receiver =
+            materialize_stage_results(running_node, &mut stage_context)?;
+        let running_stage = RunningStage::new(materialized_results_receiver, stage_context);
         Ok(running_stage)
     }
+}
+
+fn materialize_stage_results(
+    running_node: RunningPipelineNode,
+    stage_context: &mut StageContext,
+) -> DaftResult<Receiver<PartitionRef>> {
+    let (result_sender, result_receiver) = create_channel(1);
+    async fn materialize_stage_results(
+        result_sender: Sender<PartitionRef>,
+        mut running_node: RunningPipelineNode,
+        task_dispatcher_handle: TaskDispatcherHandle,
+    ) -> DaftResult<()> {
+        let mut tasks_to_await = Vec::new();
+        while let Some(result) = running_node.next().await {
+            let result = result?;
+            match result {
+                PipelineOutput::Materialized(partition) => {
+                    if result_sender.send(partition).await.is_err() {
+                        break;
+                    }
+                }
+                PipelineOutput::Task(task) => {
+                    let task_result_handle = task_dispatcher_handle.submit_task(task).await?;
+                    tasks_to_await.push(task_result_handle);
+                }
+                PipelineOutput::Running(running) => {
+                    tasks_to_await.push(running);
+                }
+            }
+        }
+        for task_result_handle in tasks_to_await {
+            if let Some(result) = task_result_handle.await {
+                if result_sender.send(result?).await.is_err() {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+    let task_dispatcher_handle = stage_context.get_task_dispatcher_handle();
+    stage_context.spawn_task_on_joinset(materialize_stage_results(
+        result_sender,
+        running_node,
+        task_dispatcher_handle,
+    ));
+    Ok(result_receiver)
 }
 
 enum RunningStageState {
@@ -66,9 +115,12 @@ pub(crate) struct RunningStage {
 }
 
 impl RunningStage {
-    fn new(result_receiver: Receiver<PartitionRef>, stage_context: StageContext) -> Self {
+    fn new(result_materializer: Receiver<PartitionRef>, stage_context: StageContext) -> Self {
         Self {
-            running_stage_state: RunningStageState::Running(result_receiver, Some(stage_context)),
+            running_stage_state: RunningStageState::Running(
+                result_materializer,
+                Some(stage_context),
+            ),
         }
     }
 }
@@ -149,12 +201,15 @@ impl StageContext {
         })
     }
 
-    pub fn task_dispatcher_handle(&self) -> &TaskDispatcherHandle {
-        &self.task_dispatcher_handle
+    pub fn get_task_dispatcher_handle(&self) -> TaskDispatcherHandle {
+        self.task_dispatcher_handle.clone()
     }
 
-    pub fn joinset(&mut self) -> &mut JoinSet<DaftResult<()>> {
-        &mut self.joinset
+    pub fn spawn_task_on_joinset(
+        &mut self,
+        f: impl Future<Output = DaftResult<()>> + Send + 'static,
+    ) {
+        self.joinset.spawn(f);
     }
 
     pub fn into_inner(self) -> (TaskDispatcherHandle, JoinSet<DaftResult<()>>) {
