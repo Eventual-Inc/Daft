@@ -31,6 +31,14 @@ impl TaskDispatcher {
         task_dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
     ) -> TaskDispatcherHandle {
+        // TODO: Think about what the channel buffer size should be here.
+        // In general, how much buffering of tasks can we allow
+        // for the dispatcher?
+        // To maximise throughput, we should never want the task dispatcher to have to wait for dispatchable tasks
+        // to be picked up, if it has capacity to submit more tasks.
+        // But if it does not have capacity, how much buffering should we allow?
+        // In theory, tasks simply consist of a reference to a plan, as well as a partition ref.
+        // So they should be quite lightweight, and it should be safe to buffer a lot of them.
         let (task_dispatcher_sender, task_dispatcher_receiver) = create_channel(1);
         joinset.spawn(Self::run_dispatch_loop(
             task_dispatcher,
