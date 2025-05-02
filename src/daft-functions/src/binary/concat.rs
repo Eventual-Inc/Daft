@@ -27,8 +27,6 @@ impl ScalarUDF for BinaryConcat {
         "concat"
     }
 
-    
-
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [left, right] => {

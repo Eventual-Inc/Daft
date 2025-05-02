@@ -268,3 +268,7 @@ def test_round(precision, value, expected):
     expected = {"literal": [expected]}
 
     assert actual == expected
+
+
+def test_round_arg_handling():
+    daft.sql("select round(3.14159, precision:=3)").to_pydict()

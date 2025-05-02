@@ -49,10 +49,21 @@ pub enum FunctionArg<T> {
     },
     Unnamed(T),
 }
+impl<T> FunctionArg<T> {
+    pub fn unnamed(t: T) -> Self {
+        Self::Unnamed(t)
+    }
+    pub fn named<S: Into<Arc<str>>>(name: S, arg: T) -> Self {
+        Self::Named {
+            name: name.into(),
+            arg,
+        }
+    }
+}
 
 impl<T> From<T> for FunctionArg<T> {
     fn from(arg: T) -> Self {
-        FunctionArg::Unnamed(arg)
+        Self::Unnamed(arg)
     }
 }
 
@@ -72,7 +83,7 @@ impl<T> FunctionArgs<T> {
 }
 
 /// trait to look up either positional or named values
-pub trait FunctionArgKey {
+pub trait FunctionArgKey: std::fmt::Debug {
     fn required<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<&'a T>;
     fn optional<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<Option<&'a T>>;
 }
@@ -86,12 +97,14 @@ impl FunctionArgKey for &str {
         if let Some(arg) = arg {
             match arg {
                 FunctionArg::Named { name: _, arg } => Ok(arg),
-                FunctionArg::Unnamed(_) => {
-                    Err(DaftError::ComputeError("Argument not found".to_string()))
-                }
+                FunctionArg::Unnamed(_) => Err(DaftError::ComputeError(format!(
+                    "Argument not found at position `{self:?}`"
+                ))),
             }
         } else {
-            Err(DaftError::ComputeError("Argument not found".to_string()))
+            Err(DaftError::ComputeError(format!(
+                "Argument not found at position `{self:?}`"
+            )))
         }
     }
 
@@ -103,9 +116,9 @@ impl FunctionArgKey for &str {
         if let Some(arg) = arg {
             match arg {
                 FunctionArg::Named { name: _, arg } => Ok(Some(arg)),
-                FunctionArg::Unnamed(_) => {
-                    Err(DaftError::ComputeError("Argument not found".to_string()))
-                }
+                FunctionArg::Unnamed(_) => Err(DaftError::ComputeError(format!(
+                    "Argument not found at position `{self:?}"
+                ))),
             }
         } else {
             Ok(None)
@@ -195,38 +208,50 @@ where
 }
 
 impl<T> FunctionArgs<T> {
-    pub fn new(inner: Vec<FunctionArg<T>>) -> Self {
-        FunctionArgs(inner)
+    pub fn try_new(inner: Vec<FunctionArg<T>>) -> DaftResult<Self> {
+        let slf = Self(inner);
+        slf.assert_ordering()?;
+        Ok(slf)
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    // Get required positional argument
-    pub fn required<Key: FunctionArgKey>(&self, position: Key) -> DaftResult<&T> {
-        position.required(self)
+    /// Asserts that all unnamed args are before named args
+    pub fn assert_ordering(&self) -> DaftResult<()> {
+        let mut has_named = false;
+        for arg in &self.0 {
+            if has_named && matches!(arg, FunctionArg::Unnamed(_)) {
+                return Err(DaftError::ValueError(
+                    "Unnamed arguments must come before named arguments".to_string(),
+                ));
+            }
+            if matches!(arg, FunctionArg::Named { .. }) {
+                has_named = true;
+            }
+        }
+        Ok(())
     }
 
-    pub fn optional(&self, position: usize, name: &str) -> DaftResult<Cow<T>>
-    where
-        T: Default + Clone,
-    {
-        if position < self.0.len() {
-            if let FunctionArg::Unnamed(value) = &self.0[position] {
-                return Ok(Cow::Borrowed(value));
-            }
-        }
+    // Get required positional argument
+    pub fn required<Key: FunctionArgKey>(&self, position: Key) -> DaftResult<&T> {
+        position.required(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the required argument at position `{position:?}`"
+            ))
+        })
+    }
 
-        for arg in &self.0 {
-            if let FunctionArg::Named { name: n, arg } = arg {
-                if n.as_ref() == name {
-                    return Ok(Cow::Borrowed(arg));
-                }
-            }
-        }
-
-        Ok(Cow::Owned(T::default()))
+    pub fn optional<Key: FunctionArgKey>(&self, position: Key) -> DaftResult<Option<&T>> {
+        position.optional(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the optional argument at position `{position:?}`"
+            ))
+        })
     }
 
     pub fn optional_with_default(
@@ -258,7 +283,7 @@ impl<T> FunctionArgs<T> {
 
 impl<T> From<Vec<T>> for FunctionArgs<T> {
     fn from(args: Vec<T>) -> Self {
-        FunctionArgs(args.into_iter().map(FunctionArg::from).collect())
+        Self(args.into_iter().map(FunctionArg::from).collect())
     }
 }
 
@@ -266,13 +291,18 @@ impl<T> From<Vec<T>> for FunctionArgs<T> {
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     fn as_any(&self) -> &dyn Any;
     fn name(&self) -> &'static str;
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
     fn evaluate_from_series(&self, _inputs: &[Series]) -> DaftResult<Series> {
         panic!("evaluate_from_series is deprecated")
     }
 
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
-
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
+    fn docstring(&self) -> &'static str {
+        "No documentation available"
+    }
 }
 
 pub fn scalar_function_semantic_id(func: &ScalarFunction, schema: &Schema) -> FieldID {
@@ -311,5 +341,31 @@ impl Display for ScalarFunction {
         }
         write!(f, ")")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FunctionArg;
+    use crate::functions::FunctionArgs;
+    #[test]
+    fn test_function_args_ordering() {
+        let res = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(1),
+            FunctionArg::unnamed(2),
+            FunctionArg::named("arg1", 3),
+        ]);
+
+        assert!(res.is_err());
+    }
+    #[test]
+    fn test_function_args_ordering_invalid() {
+        let res = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(1),
+            FunctionArg::named("arg1", 2),
+            FunctionArg::unnamed(3),
+        ]);
+
+        assert!(res.is_err());
     }
 }

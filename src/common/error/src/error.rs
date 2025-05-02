@@ -69,6 +69,11 @@ macro_rules! ensure {
             return Err(DaftError::ComputeError($msg.to_string()));
         }
     };
+    ($cond:expr, $variant:ident: $($msg:tt)*) => {
+        if !$cond {
+            return Err(DaftError::$variant(format!($($msg)*)));
+        }
+    };
 }
 
 impl From<arrow2::error::Error> for DaftError {

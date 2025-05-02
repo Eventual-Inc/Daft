@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::evaluate_single_numeric;
 
 macro_rules! exp {
-    ($name:ident, $impl:ident, $variant:ident) => {
+    ($name:ident, $impl:ident, $variant:ident, $docstring:literal) => {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
@@ -56,6 +56,9 @@ macro_rules! exp {
             fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                 evaluate_single_numeric(inputs, $impl)
             }
+            fn docstring(&self) -> &'static str {
+                $docstring
+            }
         }
 
         #[must_use]
@@ -65,8 +68,18 @@ macro_rules! exp {
     };
 }
 
-exp!(exp, exp_impl, Exp);
-exp!(expm1, expm1_impl, Expm1);
+exp!(
+    exp,
+    exp_impl,
+    Exp,
+    "Calculates the exponential of a number (e^x)."
+);
+exp!(
+    expm1,
+    expm1_impl,
+    Expm1,
+    "Calculates the exponential of a number minus one (e^x - 1)."
+);
 
 fn exp_impl(s: &Series) -> DaftResult<Series> {
     match s.data_type() {

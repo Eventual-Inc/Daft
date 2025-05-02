@@ -45,6 +45,10 @@ impl ScalarUDF for Sqrt {
             }
         })
     }
+
+    fn docstring(&self) -> &'static str {
+        "Returns the square root of a number."
+    }
 }
 
 #[must_use]

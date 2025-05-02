@@ -4,7 +4,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use num_traits::Pow;
@@ -16,8 +16,17 @@ pub struct Round;
 #[typetag::serde]
 impl ScalarUDF for Round {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
+        ensure!(
+            inputs.len() == 2 || inputs.len() == 1,
+            "round takes one or two arguments"
+        );
+        let input = inputs.required((0, "input"))?;
+        let precision = inputs.required((1, "decimals", "precision"))?;
+        ensure!(precision.len() == 1, "expected scalar value for precision");
+        let precision = precision.cast(&DataType::Int32)?;
+        let precision = precision.i32().unwrap().get(0).unwrap();
+
+        series_round(input, precision)
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -47,24 +56,8 @@ impl ScalarUDF for Round {
         }
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        ensure!(
-            inputs.len() == 2 || inputs.len() == 1,
-            "round takes one or two arguments"
-        );
-
-        let precision = inputs
-            .get(1)
-            .map(|s| {
-                ensure!(s.len() == 1, "expected scalar value for precision");
-                let s = s.cast(&DataType::Int32)?;
-                let precision = s.i32().unwrap().get(0).unwrap();
-                DaftResult::Ok(precision)
-            })
-            .transpose()?
-            .unwrap_or(0);
-
-        series_round(&inputs[0], precision)
+    fn docstring(&self) -> &'static str {
+        "Rounds a number to a specified number of decimal places."
     }
 }
 
@@ -72,7 +65,7 @@ impl ScalarUDF for Round {
 pub fn round(input: ExprRef, decimal: Option<ExprRef>) -> ExprRef {
     let mut inputs = vec![input];
     if let Some(decimal) = decimal {
-        inputs.push(decimal)
+        inputs.push(decimal);
     }
     ScalarFunction::new(Round {}, inputs).into()
 }

@@ -49,6 +49,9 @@ impl ScalarUDF for Ceil {
             ))),
         })
     }
+    fn docstring(&self) -> &'static str {
+        "Rounds a number up to the nearest integer."
+    }
 }
 
 #[must_use]

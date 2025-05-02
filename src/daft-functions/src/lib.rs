@@ -23,7 +23,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_dsl::functions::ScalarUDF;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
@@ -54,8 +54,9 @@ macro_rules! invalid_argument_err {
         return Err(common_error::DaftError::TypeError(msg).into());
     }};
 }
-
+#[derive(Default)]
 pub struct FunctionRegistry {
+    // Todo: Use the Bindings object instead, so we can get aliases and case handling.
     map: HashMap<String, Arc<dyn ScalarUDF>>,
 }
 pub trait FunctionModule {
@@ -75,11 +76,20 @@ impl FunctionRegistry {
     }
 
     pub fn add_fn<UDF: ScalarUDF + 'static>(&mut self, func: UDF) {
-        self.map.insert(func.name().to_string(), Arc::new(func));
+        let func = Arc::new(func);
+        // todo: use bindings instead of hashmap so we don't need duplicate entries.
+        for alias in func.aliases() {
+            self.map.insert((*alias).to_string(), func.clone());
+        }
+        self.map.insert(func.name().to_string(), func);
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn ScalarUDF>> {
         self.map.get(name).cloned()
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (&String, &Arc<dyn ScalarUDF>)> {
+        self.map.iter()
     }
 }
 
@@ -90,4 +100,3 @@ pub static FUNCTION_REGISTRY: LazyLock<FunctionRegistry> = LazyLock::new(|| {
 
     registry
 });
-

@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     array::ops::DaftNotNan,
     prelude::{DataType, Field, Schema},
@@ -16,8 +16,13 @@ pub struct NotNan;
 #[typetag::serde]
 impl ScalarUDF for NotNan {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
+        ensure!(inputs.len() == 1, ComputeError: "Expected 1 input, got {}", inputs.len());
+
+        let data = inputs.required((0, "input"))?;
+
+        with_match_float_and_null_daft_types!(data.data_type(), |$T| {
+            Ok(DaftNotNan::not_nan(data.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
+        })
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -47,18 +52,8 @@ impl ScalarUDF for NotNan {
         }
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [data] => {
-                with_match_float_and_null_daft_types!(data.data_type(), |$T| {
-                    Ok(DaftNotNan::not_nan(data.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
-                })
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+    fn docstring(&self) -> &'static str {
+        "Checks if the input expression is not NaN (Not a Number)."
     }
 }
 

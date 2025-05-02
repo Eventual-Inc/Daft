@@ -5,7 +5,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ use super::evaluate_single_numeric;
 
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! trigonometry {
-    ($name:ident, $variant:ident) => {
+    ($name:ident, $variant:ident, $docstring:literal) => {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
@@ -61,6 +61,9 @@ macro_rules! trigonometry {
                     trigonometry(s, &TrigonometricFunction::$variant)
                 })
             }
+            fn docstring(&self) -> &'static str {
+                $docstring
+            }
         }
 
         #[must_use]
@@ -70,23 +73,67 @@ macro_rules! trigonometry {
     };
 }
 
-trigonometry!(sin, Sin);
-trigonometry!(cos, Cos);
-trigonometry!(tan, Tan);
-trigonometry!(csc, Csc);
-trigonometry!(sec, Sec);
-trigonometry!(cot, Cot);
-trigonometry!(sinh, Sinh);
-trigonometry!(cosh, Cosh);
-trigonometry!(tanh, Tanh);
-trigonometry!(arcsin, ArcSin);
-trigonometry!(arccos, ArcCos);
-trigonometry!(arctan, ArcTan);
-trigonometry!(radians, Radians);
-trigonometry!(degrees, Degrees);
-trigonometry!(arctanh, ArcTanh);
-trigonometry!(arccosh, ArcCosh);
-trigonometry!(arcsinh, ArcSinh);
+trigonometry!(sin, Sin, "Calculates the sine of an angle in radians.");
+trigonometry!(cos, Cos, "Calculates the cosine of an angle in radians.");
+trigonometry!(tan, Tan, "Calculates the tangent of an angle in radians.");
+trigonometry!(csc, Csc, "Calculates the cosecant of an angle in radians.");
+trigonometry!(sec, Sec, "Calculates the secant of an angle in radians.");
+trigonometry!(cot, Cot, "Calculates the cotangent of an angle in radians.");
+trigonometry!(
+    sinh,
+    Sinh,
+    "Calculates the hyperbolic sine of an angle in radians."
+);
+trigonometry!(
+    cosh,
+    Cosh,
+    "Calculates the hyperbolic cosine of an angle in radians."
+);
+trigonometry!(
+    tanh,
+    Tanh,
+    "Calculates the hyperbolic tangent of an angle in radians."
+);
+trigonometry!(
+    arcsin,
+    ArcSin,
+    "Calculates the inverse sine (arc sine) of a number."
+);
+trigonometry!(
+    arccos,
+    ArcCos,
+    "Calculates the inverse cosine (arc cosine) of a number."
+);
+trigonometry!(
+    arctan,
+    ArcTan,
+    "Calculates the inverse tangent (arc tangent) of a number."
+);
+trigonometry!(
+    radians,
+    Radians,
+    "Converts an angle from degrees to radians."
+);
+trigonometry!(
+    degrees,
+    Degrees,
+    "Converts an angle from radians to degrees."
+);
+trigonometry!(
+    arctanh,
+    ArcTanh,
+    "Calculates the inverse hyperbolic tangent of a number."
+);
+trigonometry!(
+    arccosh,
+    ArcCosh,
+    "Calculates the inverse hyperbolic cosine of a number."
+);
+trigonometry!(
+    arcsinh,
+    ArcSinh,
+    "Calculates the inverse hyperbolic sine of a number."
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Atan2;
@@ -102,7 +149,11 @@ impl ScalarUDF for Atan2 {
     }
 
     fn name(&self) -> &'static str {
-        "arctan2"
+        "atan2"
+    }
+
+    fn aliases(&self) -> &'static [&'static str] {
+        &["arctan2"]
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -134,6 +185,9 @@ impl ScalarUDF for Atan2 {
                 inputs.len()
             ))),
         }
+    }
+    fn docstring(&self) -> &'static str {
+        "Calculates the angle between the positive x-axis and the ray from (0,0) to (x,y)."
     }
 }
 

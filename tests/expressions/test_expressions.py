@@ -149,7 +149,7 @@ def test_repr_functions_round() -> None:
     a = col("a")
     y = a.round()
     repr_out = repr(y)
-    assert repr_out == "round(col(a))"
+    assert repr_out == "round(col(a), decimals := lit(0))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -185,9 +185,9 @@ def test_repr_functions_log10() -> None:
 
 def test_repr_functions_log() -> None:
     a = col("a")
-    y = a.log()
+    y = a.log(2)
     repr_out = repr(y)
-    assert repr_out == "log(col(a))"
+    assert repr_out == "log(col(a), lit(2))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 

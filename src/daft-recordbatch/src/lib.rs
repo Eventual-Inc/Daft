@@ -582,8 +582,8 @@ impl RecordBatch {
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
-            // TODO: is this right?
-            Expr::NamedExpr{name, expr} => Ok(self.eval_expression(expr)?),
+            // For Named Exprs they dont have any impact on the output, they are only used for expr resolution in functions.
+            Expr::NamedExpr{expr, ..} => Ok(self.eval_expression(expr)?),
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
@@ -669,14 +669,14 @@ impl RecordBatch {
                         if let Expr::NamedExpr {name, expr} = e.as_ref() {
                             Ok(FunctionArg::Named {
                                 name: name.clone(),
-                                arg: self.eval_expression(&expr)?,
+                                arg: self.eval_expression(expr)?,
                             })
                         } else {
                             Ok(FunctionArg::Unnamed(self.eval_expression(e)?))
                         }
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
-                let args = FunctionArgs::new(evaluated_inputs);
+                let args = FunctionArgs::try_new(evaluated_inputs)?;
 
                 func.udf.evaluate(args)
 

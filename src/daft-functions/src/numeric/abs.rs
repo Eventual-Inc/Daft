@@ -35,6 +35,10 @@ impl ScalarUDF for Abs {
         // todo: move this into ScalarUDF. but it's currently not possible because of the `fuzzy_eq` function
         evaluate_single_numeric(inputs, Series::abs)
     }
+
+    fn docstring(&self) -> &'static str {
+        "Gets the absolute value of a number."
+    }
 }
 
 #[must_use]

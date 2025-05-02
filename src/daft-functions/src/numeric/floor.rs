@@ -36,6 +36,10 @@ impl ScalarUDF for Floor {
         // todo: can't move this one because of floor_div
         evaluate_single_numeric(inputs, Series::floor)
     }
+
+    fn docstring(&self) -> &'static str {
+        "Rounds a number down to the nearest integer."
+    }
 }
 
 #[must_use]

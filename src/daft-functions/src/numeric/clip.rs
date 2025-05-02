@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     datatypes::InferDataType,
     prelude::{Field, Schema},
@@ -6,8 +6,8 @@ use daft_core::{
     with_match_numeric_daft_types,
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
-    ExprRef,
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef, LiteralValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,9 +17,27 @@ pub struct Clip;
 #[typetag::serde]
 impl ScalarUDF for Clip {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
+        ensure!(
+            inputs.len() == 2 || inputs.len() == 3,
+            ComputeError: "clip takes exactly two or three arguments"
+        );
+
+        let null_lit = || LiteralValue::Null.into_single_value_series().unwrap();
+
+        let arr = inputs.required(("input", 0))?;
+        let min = inputs
+            .optional(("min", 1))?
+            .cloned()
+            .unwrap_or_else(null_lit);
+
+        let max = inputs
+            .optional(("max", 2))?
+            .cloned()
+            .unwrap_or_else(null_lit);
+
+        clip_impl(arr, &min, &max)
     }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -29,12 +47,11 @@ impl ScalarUDF for Clip {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        if inputs.len() != 3 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 3 input arguments (array, min, max), got {}",
-                inputs.len()
-            )));
-        }
+        ensure!(
+            inputs.len() == 3,
+            SchemaMismatch: "clip takes exactly three arguments (input, min, max) got {}", inputs.len()
+        );
+
         let array_field = inputs[0].to_field(schema)?;
         let min_field = inputs[1].to_field(schema)?;
         let max_field = inputs[2].to_field(schema)?;
@@ -47,21 +64,8 @@ impl ScalarUDF for Clip {
 
         Ok(Field::new(array_field.name, output_type))
     }
-
-    
-
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        if inputs.len() != 3 {
-            return Err(DaftError::ValueError(format!(
-                "Expected 3 input arguments (array, min, max), got {}",
-                inputs.len()
-            )));
-        }
-        let array = &inputs[0];
-        let min = &inputs[1];
-        let max = &inputs[2];
-
-        clip_impl(array, min, max)
+    fn docstring(&self) -> &'static str {
+        "Clips a number to a specified range. If left bound is None, no lower clipping is applied. If right bound is None, no upper clipping is applied. Panics if right bound < left bound."
     }
 }
 

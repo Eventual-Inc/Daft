@@ -195,7 +195,7 @@ pub type ExprRef = Arc<Expr>;
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
-    #[display("{name} as {expr}")]
+    #[display("{name} := {expr}")]
     NamedExpr { name: Arc<str>, expr: ExprRef },
     #[display("{_0}")]
     Column(Column),
@@ -1367,9 +1367,9 @@ impl Expr {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
-            Self::NamedExpr { expr, name } | Self::Alias(expr, name) => {
-                Ok(Field::new(name.as_ref(), expr.get_type(schema)?))
-            }
+            // unlike `alias`, named expr has no effect on the schema
+            Self::NamedExpr { expr, .. } => expr.to_field(schema),
+            Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
             Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
             Self::Column(Column::Unresolved(UnresolvedColumn {

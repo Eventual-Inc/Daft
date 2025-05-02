@@ -13,7 +13,7 @@ use super::evaluate_single_numeric;
 
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! log {
-    ($name:ident, $variant:ident) => {
+    ($name:ident, $variant:ident, $docstring:literal) => {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
@@ -58,6 +58,10 @@ macro_rules! log {
             fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                 evaluate_single_numeric(inputs, Series::$name)
             }
+
+            fn docstring(&self) -> &'static str {
+                $docstring
+            }
         }
 
         #[must_use]
@@ -67,10 +71,18 @@ macro_rules! log {
     };
 }
 
-log!(log2, Log2);
-log!(log10, Log10);
-log!(ln, Ln);
-log!(log1p, Log1p);
+log!(log2, Log2, "Calculates the base-2 logarithm of a number.");
+log!(
+    log10,
+    Log10,
+    "Calculates the base-10 logarithm of a number."
+);
+log!(ln, Ln, "Calculates the natural logarithm of a number.");
+log!(
+    log1p,
+    Log1p,
+    "Calculates the natural logarithm of a number plus one (ln(x + 1))."
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Log;
@@ -123,6 +135,9 @@ impl ScalarUDF for Log {
             s.f64().unwrap().get(0).unwrap()
         };
         input.log(base)
+    }
+    fn docstring(&self) -> &'static str {
+        "Calculates the first argument-based logarithm of the second argument log_x(y)."
     }
 }
 

@@ -122,6 +122,6 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(ArcTanh);
         parent.add_fn(ArcCosh);
         parent.add_fn(ArcSinh);
-        parent.add_fn(Atan2)
+        parent.add_fn(Atan2);
     }
 }

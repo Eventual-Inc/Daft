@@ -46,6 +46,10 @@ impl ScalarUDF for Sign {
             ))),
         })
     }
+
+    fn docstring(&self) -> &'static str {
+        "Returns the sign of a number (-1, 0, or 1)."
+    }
 }
 #[must_use]
 pub fn sign(input: ExprRef) -> ExprRef {
@@ -107,6 +111,9 @@ impl ScalarUDF for Negative {
                 dt
             ))),
         })
+    }
+    fn docstring(&self) -> &'static str {
+        "Returns the negative of a number."
     }
 }
 #[must_use]

@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -18,8 +18,32 @@ pub struct FillNan;
 #[typetag::serde]
 impl ScalarUDF for FillNan {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
+        ensure!(inputs.len() == 2, ComputeError: "Expected 2 input args, got {}", inputs.len());
+        let data = inputs.required((0, "input"))?;
+        let fill_value = inputs.required((1, "fill_value"))?;
+
+        if data.data_type() == &DataType::Null {
+            return Ok(Series::full_null(data.name(), data.data_type(), data.len()));
+        }
+
+        // TODO(perf): we can likely do this without fully evaluating the not_nan predicate first
+        // The original implementation also did this, but was hidden behind the series methods.
+        let predicate = NotNan {}.evaluate_from_series(&[data.clone()])?;
+        match fill_value.len() {
+            1 => {
+                let fill_value = fill_value.broadcast(data.len())?;
+                data.if_else(&fill_value, &predicate)
+
+            }
+            len if len == data.len() => {
+                data.if_else(fill_value, &predicate)
+
+            }
+            len => Err(DaftError::ValueError(format!(
+                "Expected fill_value to be a scalar or a vector of the same length as data, but received {len} and {}",
+                data.len()
+            )))
+        }
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -52,37 +76,8 @@ impl ScalarUDF for FillNan {
         }
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [data, fill_value] => {
-                if data.data_type() == &DataType::Null {
-                    return Ok(Series::full_null(data.name(), data.data_type(), data.len()));
-                }
-
-                // TODO(perf): we can likely do this without fully evaluating the not_nan predicate first
-                // The original implementation also did this, but was hidden behind the series methods.
-                let predicate = NotNan {}.evaluate_from_series(&[data.clone()])?;
-                match fill_value.len() {
-                    1 => {
-                        let fill_value = fill_value.broadcast(data.len())?;
-                        data.if_else(&fill_value, &predicate)
-
-                    }
-                    len if len == data.len() => {
-                        data.if_else(fill_value, &predicate)
-
-                    }
-                    len => Err(DaftError::ValueError(format!(
-                        "Expected fill_value to be a scalar or a vector of the same length as data, but received {len} and {}",
-                        data.len()
-                    )))
-                }
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
+    fn docstring(&self) -> &'static str {
+        "Replaces NaN values in the input expression with a specified fill value."
     }
 }
 
