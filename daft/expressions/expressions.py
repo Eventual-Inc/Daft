@@ -2527,7 +2527,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ...     }
             ... )
             >>> df.with_column("day_of_month", df["datetime"].dt.day_of_month()).collect()
-            ╭───────────────────────────────┬────────────+─╮
+            ╭───────────────────────────────┬──────────────╮
             │ datetime                      ┆ day_of_month │
             │ ---                           ┆ ---          │
             │ Timestamp(Microseconds, None) ┆ UInt32       │
