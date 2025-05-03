@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, prelude::*};
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 
 use crate::RecordBatch;
 
@@ -69,9 +69,9 @@ fn map_pivot_key_idx_to_values_indices(
 impl RecordBatch {
     pub fn pivot(
         &self,
-        group_by: &[ExprRef],
-        pivot_col: ExprRef,
-        values_col: ExprRef,
+        group_by: &[BoundExpr],
+        pivot_col: BoundExpr,
+        values_col: BoundExpr,
         names: Vec<String>,
     ) -> DaftResult<Self> {
         // This function pivots the table based on the given group_by, pivot, and values column.

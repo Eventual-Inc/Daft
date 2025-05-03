@@ -2,7 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::Schema;
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::IOStatsContext;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
@@ -36,9 +36,14 @@ impl MicroPartition {
 
         let tables = self.tables_or_read(io_stats)?;
 
+        let bound_exprs = exprs
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+            .try_collect::<Vec<_>>()?;
+
         let evaluated_tables: Vec<_> = tables
             .iter()
-            .map(|table| table.eval_expression_list(exprs))
+            .map(|table| table.eval_expression_list(&bound_exprs))
             .try_collect()?;
 
         let eval_stats = self
@@ -65,9 +70,14 @@ impl MicroPartition {
 
         let tables = self.tables_or_read(io_stats)?;
 
+        let bound_exprs = exprs
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+            .try_collect::<Vec<_>>()?;
+
         let evaluated_table_futs = tables
             .iter()
-            .map(|table| table.par_eval_expression_list(exprs, num_parallel_tasks));
+            .map(|table| table.par_eval_expression_list(&bound_exprs, num_parallel_tasks));
 
         let evaluated_tables = futures::future::try_join_all(evaluated_table_futs).await?;
 
@@ -87,10 +97,15 @@ impl MicroPartition {
     pub fn explode(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::explode");
 
+        let bound_exprs = exprs
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+            .try_collect::<Vec<_>>()?;
+
         let tables = self.tables_or_read(io_stats)?;
         let evaluated_tables = tables
             .iter()
-            .map(|t| t.explode(exprs))
+            .map(|t| t.explode(&bound_exprs))
             .collect::<DaftResult<Vec<_>>>()?;
         let expected_new_columns = infer_schema(exprs, &self.schema)?;
         let eval_stats = if let Some(stats) = &self.statistics {

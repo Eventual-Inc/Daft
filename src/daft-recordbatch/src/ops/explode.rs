@@ -7,7 +7,7 @@ use daft_core::{
     datatypes::{DataType, UInt64Array},
     series::{IntoSeries, Series},
 };
-use daft_dsl::Expr;
+use daft_dsl::{expr::bound_expr::BoundExpr, Expr};
 
 use crate::RecordBatch;
 
@@ -21,7 +21,7 @@ fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt
 }
 
 impl RecordBatch {
-    pub fn explode<E: AsRef<Expr>>(&self, exprs: &[E]) -> DaftResult<Self> {
+    pub fn explode(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         if exprs.is_empty() {
             return Err(DaftError::ValueError(format!(
                 "Explode needs at least 1 expression, received: {}",
@@ -31,16 +31,16 @@ impl RecordBatch {
 
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
         for expr in exprs {
-            match expr.as_ref() {
+            match expr.expr().as_ref() {
                 Expr::ScalarFunction(func) => {
                     if func.name() == "explode" {
                         let inputs = &func.inputs;
                         if inputs.len() != 1 {
                             return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
                         }
-                        let expr = inputs.first().unwrap();
-                        let exploded_name = expr.name();
-                        let evaluated = self.eval_expression(expr)?;
+                        let expr = BoundExpr::new_unchecked(inputs.first().unwrap().clone());
+                        let exploded_name = expr.expr().name();
+                        let evaluated = self.eval_expression(&expr)?;
                         if !matches!(
                             evaluated.data_type(),
                             DataType::List(..) | DataType::FixedSizeList(..)

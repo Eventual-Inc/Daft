@@ -454,14 +454,12 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 mod tests {
     use arrow2::types::months_days_ns;
     use common_error::DaftResult;
-    use daft_schema::field::Field;
 
     use crate::{
         array::ops::full::FullNull,
         datatypes::{
             DataType, Float32Array, Float64Array, Int32Array, Int64Array, IntervalArray, Utf8Array,
         },
-        prelude::DurationArray,
         series::IntoSeries,
     };
 

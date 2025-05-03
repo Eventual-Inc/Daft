@@ -7,7 +7,7 @@ use daft_core::{
     datatypes::UInt64Array,
     series::IntoSeries,
 };
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use rand::SeedableRng;
 
 use crate::RecordBatch;
@@ -52,7 +52,7 @@ impl RecordBatch {
 
     pub fn partition_by_hash(
         &self,
-        exprs: &[ExprRef],
+        exprs: &[BoundExpr],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
         if num_partitions == 0 {
@@ -89,7 +89,7 @@ impl RecordBatch {
 
     pub fn partition_by_range(
         &self,
-        partition_keys: &[ExprRef],
+        partition_keys: &[BoundExpr],
         boundaries: &Self,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
@@ -101,7 +101,10 @@ impl RecordBatch {
         self.partition_by_index(&targets, boundaries.len() + 1)
     }
 
-    pub fn partition_by_value(&self, partition_keys: &[ExprRef]) -> DaftResult<(Vec<Self>, Self)> {
+    pub fn partition_by_value(
+        &self,
+        partition_keys: &[BoundExpr],
+    ) -> DaftResult<(Vec<Self>, Self)> {
         let partition_key_table = self.eval_expression_list(partition_keys)?;
         let (key_idx, group_idx) = partition_key_table.make_groups()?;
         let key_idx = UInt64Array::from(("idx", key_idx)).into_series();

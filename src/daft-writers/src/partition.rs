@@ -5,7 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::{array::ops::as_arrow::AsArrow, utils::identity_hash_set::IndexHash};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -48,7 +48,12 @@ impl PartitionedWriter {
     ) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
         let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
         let table = data.first().unwrap();
-        let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
+        let partition_cols = partition_cols
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &table.schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let (split_tables, partition_values) = table.partition_by_value(&partition_cols)?;
         Ok((split_tables, partition_values))
     }
 }

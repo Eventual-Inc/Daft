@@ -14,7 +14,7 @@ use daft_core::{
     utils::arrow::cast_array_for_daft_if_needed,
 };
 use daft_decoding::deserialize::deserialize_column;
-use daft_dsl::{optimization::get_required_columns, Expr};
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt};
@@ -900,6 +900,7 @@ where
         let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
         let table = RecordBatch::new_unchecked(read_schema.clone(), chunk, num_rows);
         let table = if let Some(predicate) = &predicate {
+            let predicate = BoundExpr::try_new(predicate.clone(), &read_schema)?;
             let filtered = table.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
                 filtered.get_columns(include_columns.as_slice())?
