@@ -7,7 +7,6 @@ from daft.daft import (
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
-    RayPartitionRef,
     RaySwordfishTask,
 )
 from daft.recordbatch.micropartition import MicroPartition
@@ -52,6 +51,13 @@ class RaySwordfishWorker:
         """Concatenate a list of partitions and return the metadata and the concatenated partition."""
         concated = MicroPartition.concat(list(partitions))
         return PartitionMetadata.from_table(concated), concated
+
+
+@dataclass
+class RayPartitionRef:
+    object_ref: ray.ObjectRef
+    num_rows: int
+    size_bytes: int
 
 
 @dataclass
@@ -120,7 +126,7 @@ class RaySwordfishWorkerHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         self.available_memory_bytes -= task.estimated_memory_cost()
-        psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        psets = {k: [v["object_ref"] for v in v] for k, v in task.psets().items()}  # type: ignore
         memory_to_return = task.estimated_memory_cost()
 
         def done_callback(_result: ray.ObjectRef):

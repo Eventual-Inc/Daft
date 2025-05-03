@@ -7,6 +7,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
+use tokio_stream::{adapters::Peekable, wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -47,81 +48,123 @@ impl TaskDispatcher {
         TaskDispatcherHandle::new(task_dispatcher_sender)
     }
 
+    async fn get_next_task_and_worker_id(
+        task_stream: &mut Peekable<ReceiverStream<DispatchableTask>>,
+        worker_manager: &dyn WorkerManager,
+    ) -> Option<(DispatchableTask, String)> {
+        let worker_id = match task_stream.peek().await {
+            Some(task) => {
+                let task_memory_cost = task.task.estimated_memory_cost();
+                let available_resources = worker_manager.get_worker_resources();
+                available_resources
+                    .iter()
+                    .find(|(_, _, memory)| *memory >= task_memory_cost)
+                    .map(|(worker_id, _, _)| worker_id.clone())
+            }
+            None => None,
+        };
+        if let Some(worker_id) = worker_id {
+            let task = task_stream.next().await.unwrap();
+            Some((task, worker_id))
+        } else {
+            None
+        }
+    }
+
     async fn run_dispatch_loop(
-        _dispatcher: Self,
-        _task_rx: Receiver<DispatchedTask>,
+        dispatcher: Self,
+        task_rx: Receiver<DispatchableTask>,
     ) -> DaftResult<()> {
-        todo!("Implement run dispatch loop");
+        let mut pending_tasks = JoinSet::new();
+        let mut task_stream = ReceiverStream::new(task_rx).peekable();
+        loop {
+            let num_pending_tasks = pending_tasks.len();
+            tokio::select! {
+                biased;
+                Some((dispatchable_task, worker_id)) = Self::get_next_task_and_worker_id(&mut task_stream, &*dispatcher.worker_manager) => {
+                    let mut task_handle = dispatcher
+                        .worker_manager
+                        .submit_task_to_worker(dispatchable_task.task, worker_id);
+                    pending_tasks.spawn(async move {
+                        tokio::select! {
+                            biased;
+                            () = dispatchable_task.cancel_token.cancelled() => None,
+                            result = task_handle.get_result() => {
+                                Some((result, dispatchable_task.result_tx))
+                            }
+                        }
+                    });
+                }
+                Some(result) = pending_tasks.join_next(), if num_pending_tasks > 0 => {
+                    match result {
+                        Ok(Some((result, result_tx))) => {
+                            let _ = result_tx.send(result);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            eprintln!("Error in task: {:?}", e);
+                        }
+                    }
+                }
+                else => {
+                    break;
+                }
+            }
+        }
+        dispatcher.worker_manager.shutdown()
     }
 }
 
 #[derive(Clone)]
 pub(crate) struct TaskDispatcherHandle {
-    task_dispatcher_sender: Sender<DispatchedTask>,
+    task_dispatcher_sender: Sender<DispatchableTask>,
 }
 
 impl TaskDispatcherHandle {
-    fn new(task_dispatcher_sender: Sender<DispatchedTask>) -> Self {
+    fn new(task_dispatcher_sender: Sender<DispatchableTask>) -> Self {
         Self {
             task_dispatcher_sender,
         }
     }
 
+    async fn dispatch_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let cancel_token = CancellationToken::new();
+        let dispatchable_task = DispatchableTask::new(task, result_tx, cancel_token.clone());
+        self.task_dispatcher_sender
+            .send(dispatchable_task)
+            .await
+            .map_err(|e| DaftError::InternalError(e.to_string()))?;
+        Ok(SubmittedTask::new(result_rx, Some(cancel_token)))
+    }
+
     #[allow(dead_code)]
     pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
-        let dispatchable_task = DispatchableTask::new(task);
-        let submitted_task = dispatchable_task
-            .dispatch(&self.task_dispatcher_sender)
-            .await?;
-        Ok(submitted_task)
+        self.dispatch_task(task).await
     }
 }
 
 #[allow(dead_code)]
 struct DispatchableTask {
     task: SwordfishTask,
-}
-
-impl DispatchableTask {
-    fn new(task: SwordfishTask) -> Self {
-        Self { task }
-    }
-
-    async fn dispatch(
-        self,
-        task_dispatcher_sender: &Sender<DispatchedTask>,
-    ) -> DaftResult<SubmittedTask> {
-        let (result_tx, result_rx) = create_oneshot_channel();
-        let cancel_token = CancellationToken::new();
-        let task = DispatchedTask::new(self.task, result_tx, cancel_token.clone());
-        task_dispatcher_sender
-            .send(task)
-            .await
-            .map_err(|e| DaftError::InternalError(e.to_string()))?;
-        Ok(SubmittedTask::new(result_rx, Some(cancel_token)))
-    }
-}
-
-#[allow(dead_code)]
-struct DispatchedTask {
-    swordfish_task: SwordfishTask,
     result_tx: OneshotSender<DaftResult<PartitionRef>>,
     cancel_token: CancellationToken,
 }
 
-impl DispatchedTask {
+impl DispatchableTask {
     fn new(
-        swordfish_task: SwordfishTask,
+        task: SwordfishTask,
         result_tx: OneshotSender<DaftResult<PartitionRef>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
-            swordfish_task,
+            task,
             result_tx,
             cancel_token,
         }
     }
 }
+
 pub(crate) struct SubmittedTask {
     result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
     cancel_token: Option<CancellationToken>,

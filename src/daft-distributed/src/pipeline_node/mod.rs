@@ -50,10 +50,14 @@ impl RunningPipelineNode {
 }
 
 impl Stream for RunningPipelineNode {
-    type Item = DaftResult<PipelineOutput>;
+    type Item = PipelineOutput;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("Implement stream for running pipeline node");
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.result_receiver.poll_recv(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(result)) => Poll::Ready(Some(result)),
+            Poll::Ready(None) => Poll::Ready(None),
+        }
     }
 }
 

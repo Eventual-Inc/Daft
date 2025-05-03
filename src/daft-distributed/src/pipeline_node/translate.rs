@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::{
-    ops::{Explode, Filter, Limit, Project, Sample, Sink, Source, Unpivot},
+    ops::{Explode, Filter, Project, Sample, Sink, Source, Unpivot},
     optimization::OptimizerBuilder,
     LogicalPlan, LogicalPlanRef, SourceInfo,
 };
@@ -84,7 +84,6 @@ pub(crate) fn translate_pipeline_plan_to_local_physical_plans(
             },
             LogicalPlan::Filter(Filter { input, .. })
             | LogicalPlan::Project(Project { input, .. })
-            | LogicalPlan::Limit(Limit { input, .. })
             | LogicalPlan::Unpivot(Unpivot { input, .. })
             | LogicalPlan::Explode(Explode { input, .. })
             | LogicalPlan::Sink(Sink { input, .. })

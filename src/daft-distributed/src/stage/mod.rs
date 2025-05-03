@@ -66,8 +66,7 @@ fn materialize_stage_results(
     ) -> DaftResult<Receiver<FinalizedTask>> {
         let (tx, rx) = create_channel(1);
         joinset.spawn(async move {
-            while let Some(pipeline_result) = running_node.next().await {
-                let pipeline_output = pipeline_result?;
+            while let Some(pipeline_output) = running_node.next().await {
                 let to_send = match pipeline_output {
                     // If the pipeline output is a materialized partition, we can just send it through the channel
                     PipelineOutput::Materialized(partition) => {

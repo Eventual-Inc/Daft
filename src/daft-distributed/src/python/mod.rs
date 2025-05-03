@@ -106,6 +106,5 @@ impl PyDistributedPhysicalPlan {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<RaySwordfishTask>()?;
-    parent.add_class::<RayPartitionRef>()?;
     Ok(())
 }

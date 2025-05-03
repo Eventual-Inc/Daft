@@ -11,19 +11,21 @@ from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
-# The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
-# import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
-# serializable before importing pa from daft.dependencies.
 import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan, RayPartitionRef
+from daft.daft import DistributedPhysicalPlan
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
+
+# The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
+# import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
+# serializable before importing pa from daft.dependencies.
+from daft.runners.distributed_swordfish import RayPartitionRef
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -1340,7 +1342,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
-                self._execute_plan(builder, daft_execution_config, results_buffer_size)
+                yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
                 # If plan building succeeds, execute it
                 from functools import partial

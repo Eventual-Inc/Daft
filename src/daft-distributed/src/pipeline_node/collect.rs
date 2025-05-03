@@ -7,7 +7,7 @@ use daft_local_plan::LocalPhysicalPlanRef;
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
     channel::{create_channel, Sender},
-    scheduling::dispatcher::TaskDispatcherHandle,
+    scheduling::{dispatcher::TaskDispatcherHandle, task::SwordfishTask},
     stage::StageContext,
 };
 
@@ -39,12 +39,24 @@ impl CollectNode {
 
     async fn execution_loop(
         _task_dispatcher_handle: TaskDispatcherHandle,
-        _local_physical_plans: Vec<LocalPhysicalPlanRef>,
-        _psets: HashMap<String, Vec<PartitionRef>>,
-        _input_node: Option<RunningPipelineNode>,
-        _result_tx: Sender<PipelineOutput>,
+        local_physical_plans: Vec<LocalPhysicalPlanRef>,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        input_node: Option<RunningPipelineNode>,
+        result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
-        todo!("Implement collect execution sloop");
+        match input_node {
+            Some(_) => todo!(),
+            None => {
+                for plan in local_physical_plans {
+                    // every plan gets a copy of the psets
+                    let task = SwordfishTask::new(plan, psets.clone());
+                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 

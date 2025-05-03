@@ -8,13 +8,13 @@ from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
+from daft.runners.distributed_swordfish import RayPartitionRef
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    import ray
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -1900,13 +1900,6 @@ class DistributedPhysicalPlan:
 class LocalPhysicalPlan:
     @staticmethod
     def from_logical_plan_builder(builder: LogicalPlanBuilder) -> LocalPhysicalPlan: ...
-
-class RayPartitionRef:
-    object_ref: ray.ObjectRef
-    num_rows: int
-    size_bytes: int
-
-    def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int): ...
 
 class RaySwordfishTask:
     def plan(self) -> LocalPhysicalPlan: ...
