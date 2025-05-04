@@ -8,7 +8,8 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
-use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
+use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, LogicalPlanRef};
 use futures::{Stream, StreamExt};
 
 use crate::{
@@ -93,8 +94,23 @@ impl DistributedPhysicalPlan {
     }
 }
 
-fn can_translate_logical_plan(_plan: &LogicalPlanRef) -> bool {
-    todo!("FLOTILLA_MS1: Implement logical plan translation check");
+fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
+    let mut can_translate = true;
+    let _ = plan.apply(|node| match node.as_ref() {
+        LogicalPlan::Project(_)
+        | LogicalPlan::Limit(_)
+        | LogicalPlan::Filter(_)
+        | LogicalPlan::Source(_)
+        | LogicalPlan::Sink(_)
+        | LogicalPlan::Sample(_)
+        | LogicalPlan::Explode(_)
+        | LogicalPlan::Unpivot(_) => Ok(TreeNodeRecursion::Continue),
+        _ => {
+            can_translate = false;
+            Ok(TreeNodeRecursion::Stop)
+        }
+    });
+    can_translate
 }
 
 // This is the output of a plan, a receiver to receive the results of the plan.
