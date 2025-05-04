@@ -55,7 +55,7 @@ impl DistributedPhysicalPlan {
                 break;
             }
         }
-        todo!("Implement stage running loop");
+        todo!("FLOTILLA_MS1: Implement stage running loop");
     }
 
     #[allow(dead_code)]
@@ -65,7 +65,7 @@ impl DistributedPhysicalPlan {
     ) -> DaftResult<LogicalPlanRef> {
         // Update the logical plan with the results of the previous stage.
         // This is where the AQE magic happens.
-        todo!("Implement plan updating and AQE");
+        todo!("FLOTILLA_MS2: Implement plan updating and AQE");
     }
 
     pub fn run_plan(
@@ -94,7 +94,7 @@ impl DistributedPhysicalPlan {
 }
 
 fn can_translate_logical_plan(_plan: &LogicalPlanRef) -> bool {
-    todo!("Implement logical plan translation check");
+    todo!("FLOTILLA_MS1: Implement logical plan translation check");
 }
 
 // This is the output of a plan, a receiver to receive the results of the plan.
@@ -117,6 +117,6 @@ impl Stream for PlanResult {
     type Item = DaftResult<PartitionRef>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("Implement stream for plan result");
+        todo!("FLOTILLA_MS1: Implement stream for plan result");
     }
 }

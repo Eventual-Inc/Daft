@@ -17,6 +17,8 @@ pub(crate) struct RayWorkerManager {
     task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
+// TODO(FLOTILLA_MS1): Make Ray worker manager live for the duration of the program
+// so that we don't have to recreate it on every stage.
 impl RayWorkerManager {
     pub fn try_new(
         daft_execution_config: Arc<DaftExecutionConfig>,

@@ -44,7 +44,7 @@ impl CollectNode {
         _input_node: Option<RunningPipelineNode>,
         _result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
-        todo!("Implement collect execution sloop");
+        todo!("FLOTILLA_MS1: Implement collect execution sloop");
     }
 }
 
