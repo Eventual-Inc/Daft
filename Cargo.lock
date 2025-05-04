@@ -2823,14 +2823,17 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-file-formats",
+ "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "futures",
  "parquet",
  "pyo3",
+ "tokio",
  "uuid 1.16.0",
 ]
 

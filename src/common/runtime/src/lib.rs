@@ -124,14 +124,17 @@ impl Runtime {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
+        println!("Blocking on future");
         let (tx, rx) = oneshot::channel();
         let pool_type = self.pool_type.clone();
+        println!("Spawning task");
         let _join_handle = self.spawn(async move {
             let task_output = Self::execute_task(future, pool_type).await;
             if tx.send(task_output).is_err() {
                 log::warn!("Spawned task output ignored: receiver dropped");
             }
         });
+        println!("Waiting for task to complete");
         rx.recv().expect("Spawned task transmitter dropped")
     }
 

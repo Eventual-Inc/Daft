@@ -59,8 +59,10 @@ impl TargetFileSizeWriter {
     ) -> DaftResult<usize> {
         self.current_in_memory_bytes_written += size_bytes;
         let written_bytes = self.current_writer.write(input)?;
+        // println!("Written bytes: {}", written_bytes);
         self.total_physical_bytes_written += written_bytes;
         if self.current_in_memory_bytes_written >= self.current_in_memory_size_estimate {
+            println!("Total physical bytes written: {}; rotating writer", self.total_physical_bytes_written);
             self.rotate_writer_and_update_estimates()?;
         }
         Ok(written_bytes)
