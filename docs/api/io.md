@@ -1,31 +1,38 @@
 # I/O
 
-Daft supports diverse input sources and output sinks which are covered in [DataFrame Creation](dataframe_creation.md) —
-this page covers lower-level APIs which we are evolving for more advanced usage.
+Daft supports diverse input sources and output sinks, some of which are covered in [DataFrame Creation](dataframe_creation.md).
 
-!!! warning "Warning"
+## Input
 
-    These APIs are considered experimental.
+<!-- from_ -->
 
-## Sources
-
-::: daft.io.read_parquet
+::: daft.from_arrow
     options:
         heading_level: 3
+
+::: daft.from_dask_dataframe
+    options:
+        heading_level: 3
+
+::: daft.from_pandas
+    options:
+        heading_level: 3
+
+::: daft.from_pydict
+    options:
+        heading_level: 3
+
+::: daft.from_pylist
+    options:
+        heading_level: 3
+
+::: daft.from_ray_dataset
+    options:
+        heading_level: 3
+
+<!-- read_ -->
 
 ::: daft.io.read_csv
-    options:
-        heading_level: 3
-
-::: daft.io.read_json
-    options:
-        heading_level: 3
-
-::: daft.io.read_warc
-    options:
-        heading_level: 3
-
-::: daft.io.read_iceberg
     options:
         heading_level: 3
 
@@ -37,7 +44,11 @@ this page covers lower-level APIs which we are evolving for more advanced usage.
     options:
         heading_level: 3
 
-::: daft.io.read_sql
+::: daft.io.read_iceberg
+    options:
+        heading_level: 3
+
+::: daft.io.read_json
     options:
         heading_level: 3
 
@@ -45,22 +56,59 @@ this page covers lower-level APIs which we are evolving for more advanced usage.
     options:
         heading_level: 3
 
+::: daft.io.read_parquet
+    options:
+        heading_level: 3
 
-## Interfaces
+::: daft.io.read_sql
+    options:
+        heading_level: 3
 
-::: daft.io.source.DataSource
+::: daft.io.read_warc
+    options:
+        heading_level: 3
+
+## Output
+
+<!-- write_ -->
+
+::: daft.dataframe.DataFrame.write_csv
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_deltalake
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_iceberg
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_lance
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_parquet
+    options:
+        heading_level: 3
+
+## User-Defined
+
+!!! warning "Warning"
+
+    These APIs are considered experimental.
+
+::: daft.io.source.DataFrameSource
     options:
         filters: ["!^_"]
         heading_level: 3
 
-::: daft.io.source.DataSourceTask
+::: daft.io.source.DataFrameSourceTask
     options:
         filters: ["!^_"]
         heading_level: 3
 
 ## Pushdowns
-
-Daft has predicate, projection, and limit pushdowns with expressions being represented by *Terms*. Learn more about [Pushdowns](../advanced/pushdowns.md) in the Daft User Guide.
 
 ::: daft.io.pushdowns.Pushdowns
     options:

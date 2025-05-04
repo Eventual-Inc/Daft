@@ -23,6 +23,7 @@ nav:
   - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
+  - I/O: io.md
   - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
   - Advanced:
