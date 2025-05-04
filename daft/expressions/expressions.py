@@ -2386,17 +2386,17 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ... )
             >>>
             >>> df.select(daft.col("datetime").alias("unix_date").dt.unix_date()).show()
-            ╭────────────╮
-            │ unix_date  │
-            │ ---        │
-            │ UInt64     │
-            ╞════════════╡
-            │ 2922       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 20009      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 34699      │
-            ╰────────────╯
+            ╭───────────╮
+            │ unix_date │
+            │ ---       │
+            │ UInt64    │
+            ╞═══════════╡
+            │ 2922      │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 20009     │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 34699     │
+            ╰───────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
@@ -2496,17 +2496,17 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ... )
             >>>
             >>> df.select(daft.col("datetime").alias("unix_seconds").dt.unix_seconds()).show()
-            ╭───────────────╮
-            │ unix_seconds  │
-            │ ---           │
-            │ UInt64        │
-            ╞═══════════════╡
-            │ 252464461     │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 1728797414    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2998030830    │
-            ╰───────────────╯
+            ╭──────────────╮
+            │ unix_seconds │
+            │ ---          │
+            │ UInt64       │
+            ╞══════════════╡
+            │ 252464461    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1728797414   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2998030830   │
+            ╰──────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
