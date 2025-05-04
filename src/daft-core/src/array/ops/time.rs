@@ -10,7 +10,7 @@ use arrow2::{
     datatypes::ArrowDataType,
     types::months_days_ns,
 };
-use chrono::{Duration, NaiveDate, NaiveTime, Timelike};
+use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
@@ -81,6 +81,20 @@ impl DateArray {
             .to(arrow2::datatypes::DataType::Date32);
         let month_arr = arrow2::compute::temporal::month(&input_array)?;
         Ok((self.name(), Box::new(month_arr)).into())
+    }
+
+    pub fn quarter(&self) -> DaftResult<UInt32Array> {
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Date32);
+        let month_arr = arrow2::compute::temporal::month(&input_array)?;
+        let quarter_arr = month_arr
+            .into_iter()
+            .map(|opt_month| opt_month.map(|month_val| (month_val + 2) / 3))
+            .collect();
+        Ok((self.name(), Box::new(quarter_arr)).into())
     }
 
     pub fn year(&self) -> DaftResult<Int32Array> {
@@ -482,6 +496,118 @@ impl TimestampArray {
 
         let ordinal_day_arr = arrow2::compute::temporal::week_of_year(&input_array)?;
         Ok((self.name(), Box::new(ordinal_day_arr)).into())
+    }
+
+    pub fn unix_date(&self) -> DaftResult<UInt64Array> {
+        const UNIX_EPOCH_DATE: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
+        let (tu, tz) = match self.data_type() {
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            _ => unreachable!("TimestampArray must have Timestamp datatype"),
+        };
+        let unix_seconds_arr = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Timestamp(tu, tz));
+        let date_arrow = unix_seconds_arr
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let datetime =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc);
+                    datetime
+                        .date_naive()
+                        .signed_duration_since(UNIX_EPOCH_DATE)
+                        .num_days() as u64
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt64Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt64)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn unix_micros(&self) -> DaftResult<UInt64Array> {
+        let (tu, tz) = match self.data_type() {
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            _ => unreachable!("TimestampArray must have Timestamp datatype"),
+        };
+        let unix_seconds_arr = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Timestamp(tu, tz));
+        let date_arrow = unix_seconds_arr
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let datetime =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc);
+                    datetime.timestamp_micros() as u64
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt64Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt64)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn unix_millis(&self) -> DaftResult<UInt64Array> {
+        let (tu, tz) = match self.data_type() {
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            _ => unreachable!("TimestampArray must have Timestamp datatype"),
+        };
+        let unix_seconds_arr = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Timestamp(tu, tz));
+        let date_arrow = unix_seconds_arr
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let datetime =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc);
+                    datetime.timestamp_millis() as u64
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt64Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt64)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
+    }
+
+    pub fn unix_seconds(&self) -> DaftResult<UInt64Array> {
+        let (tu, tz) = match self.data_type() {
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            _ => unreachable!("TimestampArray must have Timestamp datatype"),
+        };
+        let unix_seconds_arr = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Timestamp(tu, tz));
+        let date_arrow = unix_seconds_arr
+            .iter()
+            .map(|ts| {
+                ts.map(|ts| {
+                    let datetime =
+                        arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &chrono::Utc);
+                    datetime.timestamp() as u64
+                })
+            })
+            .collect::<Vec<_>>();
+
+        UInt64Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt64)),
+            Box::new(PrimitiveArray::from(date_arrow)),
+        )
     }
 }
 

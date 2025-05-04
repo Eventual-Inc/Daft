@@ -80,7 +80,12 @@ impl_temporal!(Second, dt_second, "dt_second", UInt32);
 impl_temporal!(Millisecond, dt_millisecond, "dt_millisecond", UInt32);
 impl_temporal!(Microsecond, dt_microsecond, "dt_microsecond", UInt32);
 impl_temporal!(Nanosecond, dt_nanosecond, "dt_nanosecond", UInt32);
+impl_temporal!(Quarter, dt_quarter, "dt_quarter", UInt32);
 impl_temporal!(Year, dt_year, "dt_year", Int32);
+impl_temporal!(UnixDate, dt_unix_date, "dt_unix_date", UInt64);
+impl_temporal!(UnixMicros, dt_unix_micros, "dt_unix_micros", UInt64);
+impl_temporal!(UnixMillis, dt_unix_millis, "dt_unix_millis", UInt64);
+impl_temporal!(UnixSeconds, dt_unix_seconds, "dt_unix_seconds", UInt64);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Time;
@@ -267,7 +272,12 @@ mod test {
             (Arc::new(Second), "second"),
             (Arc::new(Millisecond), "millisecond"),
             (Arc::new(Nanosecond), "nanosecond"),
+            (Arc::new(UnixDate), "unix_date"),
+            (Arc::new(UnixMicros), "unix_micros"),
+            (Arc::new(UnixMillis), "unix_millis"),
+            (Arc::new(UnixSeconds), "unix_seconds"),
             (Arc::new(Time), "time"),
+            (Arc::new(Quarter), "quarter"),
             (Arc::new(Year), "year"),
             (
                 Arc::new(Truncate {

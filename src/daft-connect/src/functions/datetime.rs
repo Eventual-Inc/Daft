@@ -1,6 +1,7 @@
 use daft_core::datatypes::TimeUnit;
 use daft_functions::temporal::{
-    Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Minute, Month, Second, WeekOfYear, Year,
+    Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Minute, Month, Quarter, Second, UnixDate,
+    UnixMicros, UnixMillis, UnixSeconds, WeekOfYear, Year,
 };
 use daft_schema::dtype::DataType;
 
@@ -50,7 +51,7 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("months_between", TODO_FUNCTION);
         parent.add_fn("next_day", TODO_FUNCTION);
         parent.add_fn("now", TODO_FUNCTION);
-        parent.add_fn("quarter", TODO_FUNCTION);
+        parent.add_fn("quarter", Quarter);
         parent.add_fn("second", Second);
         parent.add_fn("session_window", TODO_FUNCTION);
         parent.add_fn("timestamp_micros", TODO_FUNCTION);
@@ -67,10 +68,10 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("to_utc_timestamp", TODO_FUNCTION);
         parent.add_fn("trunc", TODO_FUNCTION);
         parent.add_fn("try_to_timestamp", TODO_FUNCTION);
-        parent.add_fn("unix_date", TODO_FUNCTION);
-        parent.add_fn("unix_micros", TODO_FUNCTION);
-        parent.add_fn("unix_millis", TODO_FUNCTION);
-        parent.add_fn("unix_seconds", TODO_FUNCTION);
+        parent.add_fn("unix_date", UnixDate);
+        parent.add_fn("unix_micros", UnixMicros);
+        parent.add_fn("unix_millis", UnixMillis);
+        parent.add_fn("unix_seconds", UnixSeconds);
         parent.add_fn("unix_timestamp", TODO_FUNCTION);
         parent.add_fn("weekday", TODO_FUNCTION);
         parent.add_fn("weekofyear", WeekOfYear);

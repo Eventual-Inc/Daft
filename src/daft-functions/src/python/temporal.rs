@@ -15,7 +15,12 @@ simple_python_wrapper!(dt_second, crate::temporal::dt_second, [expr: PyExpr]);
 simple_python_wrapper!(dt_millisecond, crate::temporal::dt_millisecond, [expr: PyExpr]);
 simple_python_wrapper!(dt_microsecond, crate::temporal::dt_microsecond, [expr: PyExpr]);
 simple_python_wrapper!(dt_nanosecond, crate::temporal::dt_nanosecond, [expr: PyExpr]);
+simple_python_wrapper!(dt_unix_date, crate::temporal::dt_unix_date, [expr: PyExpr]);
+simple_python_wrapper!(dt_unix_micros, crate::temporal::dt_unix_micros, [expr: PyExpr]);
+simple_python_wrapper!(dt_unix_millis, crate::temporal::dt_unix_millis, [expr: PyExpr]);
+simple_python_wrapper!(dt_unix_seconds, crate::temporal::dt_unix_seconds, [expr: PyExpr]);
 simple_python_wrapper!(dt_time, crate::temporal::dt_time, [expr: PyExpr]);
+simple_python_wrapper!(dt_quarter, crate::temporal::dt_quarter, [expr: PyExpr]);
 simple_python_wrapper!(dt_year, crate::temporal::dt_year, [expr: PyExpr]);
 
 #[pyfunction]

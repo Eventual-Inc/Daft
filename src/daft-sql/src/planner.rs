@@ -1295,6 +1295,7 @@ impl SQLPlanner<'_> {
 
                 match field {
                     DateTimeField::Year => Ok(dt::dt_year(expr)),
+                    DateTimeField::Quarter => Ok(dt::dt_quarter(expr)),
                     DateTimeField::Month => Ok(dt::dt_month(expr)),
                     DateTimeField::Day => Ok(dt::dt_day(expr)),
                     DateTimeField::Custom(Ident { value, .. })
@@ -1324,6 +1325,26 @@ impl SQLPlanner<'_> {
                     DateTimeField::Millisecond => Ok(dt::dt_millisecond(expr)),
                     DateTimeField::Microsecond => Ok(dt::dt_microsecond(expr)),
                     DateTimeField::Nanosecond => Ok(dt::dt_nanosecond(expr)),
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "unix_date" =>
+                    {
+                        Ok(dt::dt_unix_date(expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "unix_micros" =>
+                    {
+                        Ok(dt::dt_unix_micros(expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "unix_millis" =>
+                    {
+                        Ok(dt::dt_unix_millis(expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "unix_seconds" =>
+                    {
+                        Ok(dt::dt_unix_seconds(expr))
+                    }
                     other => unsupported_sql_err!("EXTRACT ({other})"),
                 }
             }
