@@ -9,6 +9,7 @@ from daft.daft import (
     ScanOperatorHandle,
     ScanTask,
 )
+from daft.dataframe import DataFrame
 from daft.io.pushdowns import Pushdowns
 from daft.io.scan import ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
@@ -19,30 +20,33 @@ if TYPE_CHECKING:
     from daft.daft import (
         Pushdowns as PyPushdowns,
     )
-    from daft.io.source import DataSource, DataSourceTask
+    from daft.io.source import DataFrameSource, DataFrameSourceTask
     from daft.schema import Schema
 
 
-def _from_source_to_builder(self) -> LogicalPlanBuilder:
-    scan = __SourceOperatorShim(self)
+def _to_dataframe(self) -> DataFrame:
+    scan = __DataFrameSourceShim(self)
     handle = ScanOperatorHandle.from_python_scan_operator(scan)
-    return LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+    return DataFrame(builder)
 
 
-class __SourceOperatorShim(ScanOperator):
+class __DataFrameSourceShim(ScanOperator):
     """!! INTERNAL ONLY .. SHIM TO REUSE EXISTING BACKED WORK !!"""
 
-    def __init__(self, source: DataSource) -> None:
+    _source: DataFrameSource
+
+    def __init__(self, source: DataFrameSource) -> None:
         self._source = source
 
     def schema(self) -> Schema:
-        return self._source.schema()
+        return self._source.schema
 
     def name(self) -> str:
-        return self._source.name()
+        return self._source.name
 
     def display_name(self) -> str:
-        return f"ReadSourceOperator({self._source.name()})"
+        return f"DataFrameSource({self.name()})"
 
     def partitioning_keys(self) -> list[PartitionField]:
         return []
@@ -66,10 +70,10 @@ class __SourceOperatorShim(ScanOperator):
         pds = Pushdowns._from_pypushdowns(pushdowns, self.schema())
         for task in self._source.get_tasks(pds):
             yield ScanTask.python_factory_func_scan_task(
-                module=_get_batches.__module__,
-                func_name=_get_batches.__name__,
+                module=_get_record_batches.__module__,
+                func_name=_get_record_batches.__name__,
                 func_args=(task,),
-                schema=self.schema()._schema,
+                schema=task.schema._schema,
                 num_rows=None,
                 size_bytes=None,
                 pushdowns=pushdowns,
@@ -77,6 +81,6 @@ class __SourceOperatorShim(ScanOperator):
             )
 
 
-def _get_batches(task: DataSourceTask) -> Iterator[PyRecordBatch]:
+def _get_record_batches(task: DataFrameSourceTask) -> Iterator[PyRecordBatch]:
     """The task instance has been pickled then sent to this stateless method."""
-    return (batch._table for batch in task.get_batches())
+    return (batch._table for batch in task.get_record_batches())

@@ -20,14 +20,14 @@ from daft.io._warc import read_warc
 from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
-from daft.io.source import DataSource, DataSourceTask
+from daft.io.source import DataFrameSource, DataFrameSourceTask
 
 __all__ = [
     "AzureConfig",
     "DataCatalogTable",
     "DataCatalogType",
-    "DataSource",
-    "DataSourceTask",
+    "DataFrameSource",
+    "DataFrameSourceTask",
     "GCSConfig",
     "HTTPConfig",
     "IOConfig",

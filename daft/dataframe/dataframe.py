@@ -54,20 +54,11 @@ if TYPE_CHECKING:
     import torch
 
     from daft.io import DataCatalogTable
-    from daft.io.source import DataSource
     from daft.unity_catalog import UnityCatalogTable
 
 from daft.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
-
-
-def dataframe(source: "DataSource"):
-    """Creates a Daft DataFrame from a DataSource implementation."""
-    from daft.io.__shim import _from_source_to_builder
-
-    builder = _from_source_to_builder(source)
-    return DataFrame(builder)
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:

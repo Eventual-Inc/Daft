@@ -20,27 +20,7 @@ __all__ = [
     "DataType",
     "Field",
     "Schema",
-    "schema",
 ]
-
-
-def schema(fields: dict[str, DataType]) -> Schema:
-    """Creates a Schema from a dictionary mapping field names to data types.
-
-    Args:
-        fields: A dictionary mapping field names to their corresponding data types.
-
-    Returns:
-        A Schema object constructed from the provided field definitions.
-
-    Examples:
-        >>> from daft.schema import Schema, DataType
-        >>>
-        >>> schema = schema({"id": DataType.int64(), "name": DataType.string()})
-        >>> schema
-        Schema(fields=[Field(name=id, dtype=Int64), Field(name=name, dtype=String)])
-    """
-    return Schema._from_fields([Field.create(k, v) for k, v in fields.items()])
 
 
 class Field:
@@ -132,10 +112,6 @@ class Schema:
         s._schema = _PySchema.from_fields([f._field for f in fields])
         return s
 
-    @classmethod
-    def _from_pydict(cls, fields: dict[str, DataType]) -> Schema:
-        return cls._from_fields([Field.create(k, v) for k, v in fields.items()])
-
     def __getitem__(self, key: str) -> Field:
         assert isinstance(key, str), f"Expected str for key, but received: {type(key)}"
         if key not in self._schema.names():
@@ -186,6 +162,10 @@ class Schema:
 
     def __reduce__(self) -> tuple:
         return Schema._from_pyschema, (self._schema,)
+
+    @classmethod
+    def from_pydict(cls, fields: dict[str, DataType]) -> Schema:
+        return cls._from_fields([Field.create(k, v) for k, v in fields.items()])
 
     @classmethod
     def from_parquet(

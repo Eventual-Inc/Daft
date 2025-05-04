@@ -102,7 +102,7 @@ def test_pyexpr_predicates():
 
 
 def test_column_pushdown_binding():
-    schema = Schema._from_pydict(
+    schema = Schema.from_pydict(
         {
             "a": dt.bool(),  # 0
             "b": dt.bool(),  # 1
@@ -121,7 +121,7 @@ def test_column_pushdown_binding():
 
 
 def test_simple_predicate_pushdown():
-    schema = Schema._from_pydict(
+    schema = Schema.from_pydict(
         {
             "a": dt.bool(),  # 0
         }
@@ -136,7 +136,7 @@ def test_simple_predicate_pushdown():
 
 
 def test_complex_predicate_pushdown():
-    schema = Schema._from_pydict(
+    schema = Schema.from_pydict(
         {
             "a": dt.bool(),  # 0
             "b": dt.bool(),  # 1
@@ -153,7 +153,7 @@ def test_complex_predicate_pushdown():
 
 
 def test_limit_pushdown():
-    schema = Schema._from_pydict({"a": dt.bool()})
+    schema = Schema.from_pydict({"a": dt.bool()})
     pypushdowns = PyPushdowns(limit=1738)
     pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
 
@@ -163,7 +163,7 @@ def test_limit_pushdown():
 
 
 def test_simple_partition_pushdown():
-    schema = Schema._from_pydict(
+    schema = Schema.from_pydict(
         {
             "a": dt.bool(),  # 0
         }
@@ -178,7 +178,7 @@ def test_simple_partition_pushdown():
 
 
 def test_composite_partition_pushdown():
-    schema = Schema._from_pydict(
+    schema = Schema.from_pydict(
         {
             "a": dt.bool(),  # 0
             "b": dt.bool(),  # 1

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Iterator, overload
+from typing import TYPE_CHECKING, Iterator, overload
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -9,14 +9,13 @@ if TYPE_CHECKING:
 
 from daft import DataType
 from daft.api_annotations import PublicAPI
-from daft.dataframe import DataFrame, dataframe
-from daft.io.source import DataSource, DataSourceTask
+from daft.io.source import DataFrameSource, DataFrameSourceTask
 from daft.recordbatch.recordbatch import RecordBatch
-from daft.schema import schema
+from daft.schema import Schema
 
 if TYPE_CHECKING:
+    from daft.dataframe import DataFrame
     from daft.io.pushdowns import Pushdowns
-    from daft.schema import Schema
 
 
 @overload
@@ -135,42 +134,11 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
         start = 0
     else:
         start = start
-    source = RangeSource(start, end, step, partitions)
-    return dataframe(source)
+    return RangeSource(start, end, step, partitions).to_dataframe()
 
 
-def _range_generators(
-    start: int, end: int, step: int, partitions: int
-) -> Iterator[Callable[[], Iterator[RecordBatch]]]:
-    # TODO: Partitioning with range scan is currently untested and unused.
-    # There may be issues with balanced partitions and step size.
-
-    # Calculate partition bounds upfront
-    partition_size = (end - start) // partitions
-    partition_bounds = [
-        (start + (i * partition_size), start + ((i + 1) * partition_size) if i < partitions - 1 else end)
-        for i in range(partitions)
-    ]
-
-    def generator(partition_idx: int) -> Iterator[RecordBatch]:
-        partition_start, partition_end = partition_bounds[partition_idx]
-        values = list(range(partition_start, partition_end, step))
-        yield RecordBatch.from_pydict({"id": values})
-
-    from functools import partial
-
-    for partition_idx in range(partitions):
-        yield partial(generator, partition_idx)
-
-
-# class RangeScanOperator(GeneratorScanOperator):
-#     def __init__(self, start: int, end: int, step: int = 1, partitions: int = 1) -> None:
-#         schema = Schema._from_field_name_and_types([("id", DataType.int64())])
-
-#         super().__init__(schema=schema, generators=_range_generators(start, end, step, partitions))
-
-
-class RangeSource(DataSource):
+# TODO: consider using `from_range` and `Series.from_range` instead.
+class RangeSource(DataFrameSource):
     """RangeSource produces a DataFrame from a range with a given step size."""
 
     _start: int
@@ -192,13 +160,15 @@ class RangeSource(DataSource):
         self._step = step
         self._partitions = partitions
 
+    @property
     def name(self) -> str:
         return "RangeSource"
 
+    @property
     def schema(self) -> Schema:
-        return schema({"id": DataType.int64()})
+        return Schema.from_pydict({"id": DataType.int64()})
 
-    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
+    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataFrameSourceTask]:
         step = self._step
         size = (self._end - self._start) // self._partitions
         curr_s = self._start
@@ -211,17 +181,14 @@ class RangeSource(DataSource):
 
 
 @dataclass
-class RangeSourceTask(DataSourceTask):
+class RangeSourceTask(DataFrameSourceTask):
     _start: int
     _end: int
     _step: int
 
+    @property
     def schema(self) -> Schema:
-        return schema({"id": DataType.int64()})
+        return Schema.from_pydict({"id": DataType.int64()})
 
-    def get_batches(self) -> Iterator[RecordBatch]:
-        import pyarrow as pa
-
-        values = list(range(self._start, self._end, self._step))
-        table = pa.Table.from_arrays([pa.array(values, type=pa.int64())], names=["id"])
-        yield RecordBatch.from_arrow(table)
+    def get_record_batches(self) -> Iterator[RecordBatch]:
+        yield RecordBatch.from_pydict({"id": list(range(self._start, self._end, self._step))})
