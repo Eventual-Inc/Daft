@@ -44,6 +44,25 @@ def test_series_date_month_operation() -> None:
     assert input == months.to_pylist()
 
 
+def test_series_date_quarter_operation() -> None:
+    from datetime import date
+
+    def date_maker(m):
+        if m is None:
+            return None
+        return date(2023, m, 1)
+
+    input = list(range(1, 10)) + [None, 11, 12]
+
+    input_dates = list(map(date_maker, input))
+    s = Series.from_pylist(input_dates)
+    months = s.dt.month()
+
+    assert months.datatype() == DataType.uint32()
+
+    assert input == months.to_pylist()
+
+
 def test_series_date_year_operation() -> None:
     from datetime import date
 
@@ -245,6 +264,27 @@ def test_series_timestamp_month_operation(tz) -> None:
 
 
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
+def test_series_timestamp_quarter_operation(tz) -> None:
+    from datetime import datetime
+
+    def ts_maker(m):
+        if m is None:
+            return None
+        return datetime(2023, m, 1, 23, 1, 1)
+
+    input = list(range(1, 10)) + [None, 11, 12]
+    expected = [(m + 2) // 3 if m is not None else None for m in input]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms(), timezone=tz))
+    quarters = s.dt.quarter()
+
+    assert quarters.datatype() == DataType.uint32()
+
+    assert expected == quarters.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_year_operation(tz) -> None:
     from datetime import datetime
 
@@ -262,6 +302,78 @@ def test_series_timestamp_year_operation(tz) -> None:
     assert years.datatype() == DataType.int32()
 
     assert input == years.to_pylist()
+
+
+def test_series_timestamp_unix_date_operation() -> None:
+    from datetime import datetime
+
+    input_ts = [
+        datetime(1978, 1, 1, 1, 1, 1, 0),
+        datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        None,
+    ]
+
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    out = s.dt.unix_date()
+
+    assert out.datatype() == DataType.uint64()
+
+    assert [2922, 20009, 34699, None] == out.to_pylist()
+
+
+def test_series_timestamp_unix_micros_operation() -> None:
+    from datetime import datetime
+
+    input_ts = [
+        datetime(1978, 1, 1, 1, 1, 1, 0),
+        datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        None,
+    ]
+
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    out = s.dt.unix_micros()
+
+    assert out.datatype() == DataType.uint64()
+
+    assert [252464461000000, 1728797414500000, 2998030830060000, None] == out.to_pylist()
+
+
+def test_series_timestamp_unix_millis_operation() -> None:
+    from datetime import datetime
+
+    input_ts = [
+        datetime(1978, 1, 1, 1, 1, 1, 0),
+        datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        None,
+    ]
+
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    out = s.dt.unix_millis()
+
+    assert out.datatype() == DataType.uint64()
+
+    assert [252464461000, 1728797414500, 2998030830060, None] == out.to_pylist()
+
+
+def test_series_timestamp_unix_seconds_operation() -> None:
+    from datetime import datetime
+
+    input_ts = [
+        datetime(1978, 1, 1, 1, 1, 1, 0),
+        datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        None,
+    ]
+
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    out = s.dt.unix_seconds()
+
+    assert out.datatype() == DataType.uint64()
+
+    assert [252464461, 1728797414, 2998030830, None] == out.to_pylist()
 
 
 def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):

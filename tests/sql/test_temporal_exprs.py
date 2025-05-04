@@ -41,7 +41,12 @@ def test_temporals():
         daft.col("datetimes").dt.millisecond().alias("millisecond"),
         daft.col("datetimes").dt.microsecond().alias("microsecond"),
         daft.col("datetimes").dt.nanosecond().alias("nanosecond"),
+        daft.col("datetimes").dt.quarter().alias("quarter"),
         daft.col("datetimes").dt.year().alias("year"),
+        daft.col("datetimes").dt.unix_date().alias("unix_date"),
+        daft.col("datetimes").dt.unix_micros().alias("unix_micros"),
+        daft.col("datetimes").dt.unix_millis().alias("unix_millis"),
+        daft.col("datetimes").dt.unix_seconds().alias("unix_seconds"),
         daft.col("datetimes").dt.to_unix_epoch().alias("to_unix_epoch"),
         daft.col("datetimes").dt.to_unix_epoch("s").alias("to_unix_epoch_s"),
         daft.col("datetimes").dt.to_unix_epoch("ms").alias("to_unix_epoch_ms"),
@@ -71,7 +76,12 @@ def test_temporals():
         millisecond(datetimes) as millisecond,
         microsecond(datetimes) as microsecond,
         nanosecond(datetimes) as nanosecond,
+        quarter(datetimes) as quarter,
         year(datetimes) as year,
+        unix_date(datetimes) as unix_date,
+        unix_micros(datetimes) as unix_micros,
+        unix_millis(datetimes) as unix_millis,
+        unix_seconds(datetimes) as unix_seconds,
         to_unix_epoch(datetimes) as to_unix_epoch,
         to_unix_epoch(datetimes, 's') as to_unix_epoch_s,
         to_unix_epoch(datetimes, 'ms') as to_unix_epoch_ms,
@@ -119,7 +129,12 @@ def test_extract():
         daft.col("datetimes").dt.millisecond().alias("millisecond"),
         daft.col("datetimes").dt.microsecond().alias("microsecond"),
         daft.col("datetimes").dt.nanosecond().alias("nanosecond"),
+        daft.col("datetimes").dt.quarter().alias("quarter"),
         daft.col("datetimes").dt.year().alias("year"),
+        daft.col("datetimes").dt.unix_date().alias("unix_date"),
+        daft.col("datetimes").dt.unix_micros().alias("unix_micros"),
+        daft.col("datetimes").dt.unix_millis().alias("unix_millis"),
+        daft.col("datetimes").dt.unix_seconds().alias("unix_seconds"),
     ).collect()
 
     actual = daft.sql("""
@@ -137,7 +152,12 @@ def test_extract():
         extract(millisecond from datetimes) as millisecond,
         extract(microsecond from datetimes) as microsecond,
         extract(nanosecond from datetimes) as nanosecond,
+        extract(quarter from datetimes) as quarter,
         extract(year from datetimes) as year,
+        extract(unix_date from datetimes) as unix_date,
+        extract(unix_micros from datetimes) as unix_micros,
+        extract(unix_millis from datetimes) as unix_millis,
+        extract(unix_seconds from datetimes) as unix_seconds,
     FROM df
     """).collect()
 
