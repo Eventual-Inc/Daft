@@ -557,6 +557,8 @@ def test_range_window_desc_sql():
 
 def test_range_window_with_dates():
     """Test SQL window functions with range frame type and date/timestamp data."""
+    random.seed(54)
+
     base_date = datetime.datetime(2023, 1, 1)
     data = {"category": [], "date": [], "value": []}
 
