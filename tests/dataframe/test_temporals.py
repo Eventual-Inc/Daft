@@ -483,6 +483,46 @@ def test_date_comparison(value):
     assert actual == expected
 
 
+def test_date_and_datetime_day_of_week():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(df["date"].dt.day_of_week().alias("date_dow"), df["datetime"].dt.day_of_week().alias("datetime_dow"))
+
+    expected = {"date_dow": [2, 3, 4], "datetime_dow": [2, 3, 4]}
+
+    assert df.to_pydict() == expected
+
+
+def test_date_and_datetime_day_of_month():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(
+        df["date"].dt.day_of_month().alias("date_dom"), df["datetime"].dt.day_of_month().alias("datetime_dom")
+    )
+
+    expected = {"date_dom": [1, 31, 31], "datetime_dom": [1, 31, 31]}
+
+    assert df.to_pydict() == expected
+
+
 def test_date_and_datetime_day_of_year():
     df = daft.from_pydict(
         {
@@ -498,6 +538,27 @@ def test_date_and_datetime_day_of_year():
     df = df.select(df["date"].dt.day_of_year().alias("date_doy"), df["datetime"].dt.day_of_year().alias("datetime_doy"))
 
     expected = {"date_doy": [1, 366, 365], "datetime_doy": [1, 366, 365]}
+
+    assert df.to_pydict() == expected
+
+
+def test_date_and_datetime_week_of_year():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(
+        df["date"].dt.week_of_year().alias("date_woy"), df["datetime"].dt.week_of_year().alias("datetime_woy")
+    )
+
+    expected = {"date_woy": [1, 53, 52], "datetime_woy": [1, 53, 52]}
 
     assert df.to_pydict() == expected
 

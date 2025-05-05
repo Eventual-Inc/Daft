@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterator
 
 from daft.daft import (
+    LocalPhysicalPlan,
+)
+from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
 from daft.dataframe.display import MermaidOptions
@@ -24,7 +27,7 @@ class NativeExecutor:
 
     def run(
         self,
-        builder: LogicalPlanBuilder,
+        local_physical_plan: LocalPhysicalPlan,
         psets: dict[str, list[MaterializedResult[PartitionT]]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
@@ -36,7 +39,12 @@ class NativeExecutor:
         }
         return (
             LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-            for part in self._executor.run(builder._builder, psets_mp, daft_execution_config, results_buffer_size)
+            for part in self._executor.run(
+                local_physical_plan,
+                psets_mp,
+                daft_execution_config,
+                results_buffer_size,
+            )
         )
 
     def pretty_print(

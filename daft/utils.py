@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Union
+import asyncio
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterable, Union
 
 from daft.dependencies import pa
 
@@ -67,7 +68,7 @@ def map_operator_arrow_semantics_bool(
     right_pylist: list,
 ) -> list[bool | None]:
     return [
-        bool(operator(left, right)) if (left is not None and right is not None) else None
+        (bool(operator(left, right)) if (left is not None and right is not None) else None)
         for (left, right) in zip(left_pylist, right_pylist)
     ]
 
@@ -124,3 +125,40 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
 
     column_iter: Iterable[ColumnInputType] = [columns] if is_column_input(columns) else columns  # type: ignore
     return [col(c) if isinstance(c, str) else c for c in column_iter]
+
+
+class SyncFromAsyncIterator:
+    """Convert an async iterator to a sync iterator.
+
+    Note that the async iterator is created lazily upon first iteration.
+    """
+
+    def __init__(self, async_iter_producer: Callable[[], AsyncIterator]):
+        self.async_iter_producer = async_iter_producer
+        self.async_iter = None
+        self.loop = asyncio.new_event_loop()
+        self.stopped = False
+
+    def __iter__(self):
+        if self.stopped:
+            raise StopIteration
+        return self
+
+    def __next__(self):
+        if self.stopped:
+            raise StopIteration
+
+        try:
+            return self.loop.run_until_complete(self._get_next())
+        except StopAsyncIteration:
+            self.stopped = True
+            self.loop.close()
+            raise StopIteration
+
+    async def _get_next(self):
+        if self.async_iter is None:
+            self.async_iter = self.async_iter_producer()
+        res = await self.async_iter.__anext__()
+        if res is None:
+            raise StopAsyncIteration
+        return res

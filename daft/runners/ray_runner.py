@@ -19,6 +19,7 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
+from daft.daft import DistributedPhysicalPlan, RayPartitionRef
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
@@ -26,6 +27,7 @@ from daft.runners import ray_tracing
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
+from daft.utils import SyncFromAsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -1330,16 +1332,50 @@ class RayRunner(Runner[ray.ObjectRef]):
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
+        elif daft_execution_config.flotilla:
+            try:
+                distributed_planner = DistributedPhysicalPlan.from_logical_plan_builder(
+                    builder._builder, daft_execution_config
+                )
+            except Exception as e:
+                logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
+                # Fallback to regular execution
+                self._execute_plan(builder, daft_execution_config, results_buffer_size)
+            else:
+                # If plan building succeeds, execute it
+                from functools import partial
+
+                psets = {
+                    k: [
+                        RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0)
+                        for v in v.values()
+                    ]
+                    for k, v in self._part_set_cache.get_all_partition_sets().items()
+                }
+                # SyncFromAsyncIterator is used to convert an async iterator to a sync iterator.
+                # This is because the distributed planner returns an async iterator.
+                # Note that the async iterator is created lazily upon first iteration, this is because the `run_plan`
+                # method needs to capture the current python event loop.
+                sync_iter = SyncFromAsyncIterator(partial(distributed_planner.run_plan, psets))
+                for obj, size_bytes, num_rows in sync_iter:
+                    metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
+                        [PartitionMetadata(num_rows, size_bytes)]
+                    )
+                    materialized_result = RayMaterializedResult(
+                        partition=obj,
+                        metadatas=metadata_accessor,
+                        metadata_idx=0,
+                    )
+                    yield materialized_result
         else:
-            # Finalize the logical plan and get a physical plan scheduler for translating the
-            # physical plan to executable tasks.
-            plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+            yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
 
-            result_uuid = self._start_plan(
-                plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
-            )
-
-            yield from self._stream_plan(result_uuid)
+    def _execute_plan(self, builder, daft_execution_config, results_buffer_size):
+        # Finalize the logical plan and get a physical plan scheduler for translating the
+        # physical plan to executable tasks.
+        plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
+        result_uuid = self._start_plan(plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size)
+        yield from self._stream_plan(result_uuid)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
