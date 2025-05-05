@@ -1,8 +1,9 @@
 use daft_dsl::{
+    expr::BoundColumn,
     functions::{partitioning::PartitioningExpr, FunctionExpr},
     Column, Expr, LiteralValue, Operator, ResolvedColumn,
 };
-use daft_schema::schema::SchemaRef;
+use daft_schema::{field::Field, schema::SchemaRef};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -314,6 +315,7 @@ impl<'py> TermBuilder<'py> {
     /// Reference(<path> [, <index>])
     fn to_reference(&self, column: &Column) -> PyResult<Term> {
         // we allow unbound columns in construction.
+        // TODO: require all references to be bound
         let name = match column {
             Column::Unresolved(col) => col.name.to_string(),
             Column::Resolved(col) => match col {
@@ -325,6 +327,10 @@ impl<'py> TermBuilder<'py> {
                     )))
                 }
             },
+            Column::Bound(BoundColumn {
+                field: Field { name, .. },
+                ..
+            }) => name.to_string(),
         };
         // if we have a schema, create a bound reference by setting its index.
         let index = if let Some(schema) = &self.schema {

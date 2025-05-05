@@ -185,6 +185,12 @@ jobs:
       with:
         bun-version: latest
 
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
+
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: maturin build --release --compatibility linux --out dist
@@ -672,6 +678,11 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install -r requirements-dev.txt
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
     - name: Build Rust Library
       run: |
         source activate

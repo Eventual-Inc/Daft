@@ -5,12 +5,12 @@ use daft_core::{
     python::{series::PySeries, PySchema},
 };
 use daft_dsl::python::PyExpr;
-use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
     ffi,
+    file_info::{FileInfo, FileInfos},
     preview::{Preview, PreviewFormat, PreviewOptions},
     RecordBatch,
 };
@@ -511,17 +511,13 @@ impl PyRecordBatch {
                 record_batch: RecordBatch::empty(None)?,
             });
         }
-        let mut fields: Vec<Field> = Vec::with_capacity(pycolumns.len());
 
-        let num_rows = pycolumns.first().map(|s| s.series.len()).unwrap_or(0);
+        let num_rows = pycolumns.first().unwrap().series.len();
 
-        let mut columns = Vec::with_capacity(pycolumns.len());
-
-        for s in pycolumns {
-            let s = s.series;
-            fields.push(Field::new(s.name(), s.data_type().clone()));
-            columns.push(s);
-        }
+        let (fields, columns) = pycolumns
+            .into_iter()
+            .map(|s| (s.series.field().clone(), s.series))
+            .unzip::<_, _, Vec<Field>, Vec<Series>>();
 
         Ok(Self {
             record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
@@ -579,5 +575,8 @@ impl AsRef<RecordBatch> for PyRecordBatch {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyRecordBatch>()?;
+    parent.add_class::<FileInfos>()?;
+    parent.add_class::<FileInfo>()?;
+
     Ok(())
 }

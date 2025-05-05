@@ -73,7 +73,9 @@ impl_temporal!(Date, dt_date, "dt_date", Date);
 impl_temporal!(Day, dt_day, "dt_day", UInt32);
 impl_temporal!(Hour, dt_hour, "dt_hour", UInt32);
 impl_temporal!(DayOfWeek, dt_day_of_week, "dt_day_of_week", UInt32);
+impl_temporal!(DayOfMonth, dt_day_of_month, "dt_day_of_month", UInt32);
 impl_temporal!(DayOfYear, dt_day_of_year, "dt_day_of_year", UInt32);
+impl_temporal!(WeekOfYear, dt_week_of_year, "dt_week_of_year", UInt32);
 impl_temporal!(Minute, dt_minute, "dt_minute", UInt32);
 impl_temporal!(Month, dt_month, "dt_month", UInt32);
 impl_temporal!(Second, dt_second, "dt_second", UInt32);
@@ -263,7 +265,9 @@ mod test {
             (Arc::new(Day), "day"),
             (Arc::new(Hour), "hour"),
             (Arc::new(DayOfWeek), "day_of_week"),
+            (Arc::new(DayOfMonth), "day_of_month"),
             (Arc::new(DayOfYear), "day_of_year"),
+            (Arc::new(WeekOfYear), "week_of_year"),
             (Arc::new(Minute), "minute"),
             (Arc::new(Month), "month"),
             (Arc::new(Second), "second"),

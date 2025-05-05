@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Iterator
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
+from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
 from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
@@ -385,8 +385,9 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 logger.info("Using native executor")
 
                 executor = NativeExecutor()
+                plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
                 results_gen = executor.run(
-                    builder,
+                    plan,
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
                     daft_execution_config,
                     results_buffer_size,
