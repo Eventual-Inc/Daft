@@ -16,11 +16,11 @@ use crate::{
     channel::{create_channel, Receiver, Sender},
     runtime::{get_or_init_runtime, JoinHandle},
     scheduling::worker::WorkerManagerFactory,
-    stage::split_at_stage_boundary,
+    stage::{build_stage_plan, StagePlan, StagePlanBuilder},
 };
 
 pub struct DistributedPhysicalPlan {
-    remaining_logical_plan: Option<LogicalPlanRef>,
+    stage_plan: StagePlan,
     config: Arc<DaftExecutionConfig>,
 }
 
@@ -36,56 +36,22 @@ impl DistributedPhysicalPlan {
             ));
         }
 
-        Ok(Self {
-            remaining_logical_plan: Some(plan),
-            config,
-        })
-    }
+        let stage_plan = build_stage_plan(plan, config.clone())?;
 
-    async fn run_plan_loop(
-        logical_plan: LogicalPlanRef,
-        config: Arc<DaftExecutionConfig>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        result_sender: Sender<PartitionRef>,
-    ) -> DaftResult<()> {
-        let (stage, _remaining_plan) = split_at_stage_boundary(&logical_plan, &config)?;
-        let mut running_stage = stage.run_stage(psets, worker_manager_factory)?;
-        while let Some(result) = running_stage.next().await {
-            if result_sender.send(result?).await.is_err() {
-                break;
-            }
-        }
-        todo!("FLOTILLA_MS1: Implement stage running loop");
-    }
-
-    #[allow(dead_code)]
-    fn update_plan(
-        _plan: LogicalPlanRef,
-        _results: Vec<PartitionRef>,
-    ) -> DaftResult<LogicalPlanRef> {
-        // Update the logical plan with the results of the previous stage.
-        // This is where the AQE magic happens.
-        todo!("FLOTILLA_MS2: Implement plan updating and AQE");
+        Ok(Self { stage_plan, config })
     }
 
     pub fn run_plan(
         &self,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        _psets: HashMap<String, Vec<PartitionRef>>,
+        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> PlanResult {
-        let (result_sender, result_receiver) = create_channel(1);
+        let (_result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
-        let handle = runtime.spawn(Self::run_plan_loop(
-            self.remaining_logical_plan
-                .as_ref()
-                .expect("Expected remaining logical plan")
-                .clone(),
-            self.config.clone(),
-            worker_manager_factory,
-            psets,
-            result_sender,
-        ));
+        let handle = runtime.spawn(async move {
+            // TODO: FLOTILLA_MS1: Implement plan running loop
+            todo!()
+        });
         PlanResult::new(handle, result_receiver)
     }
 

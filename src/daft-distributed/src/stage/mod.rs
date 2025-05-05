@@ -1,19 +1,20 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
-use daft_logical_plan::LogicalPlanRef;
+use daft_dsl::ExprRef;
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_logical_plan::{
+    partitioning::ClusteringSpecRef,
+    stats::{ApproxStats, StatsState},
+    JoinType, LogicalPlanRef,
+};
+use daft_schema::schema::SchemaRef;
 use futures::Stream;
 
 use crate::{
-    pipeline_node::{self, RunningPipelineNode},
+    pipeline_node::PipelineOutput,
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
@@ -21,56 +22,92 @@ use crate::{
     },
 };
 
-pub(crate) struct Stage {
-    logical_plan: LogicalPlanRef,
-    config: Arc<DaftExecutionConfig>,
+struct StageID(usize);
+struct ChannelID(usize);
+
+struct DataChannel {
+    schema: SchemaRef,
+    clustering_spec: Option<ClusteringSpecRef>,
+    stats: Option<ApproxStats>,
+    // ordering: Option<ExprRef>,
 }
 
-impl Stage {
-    fn new(logical_plan: LogicalPlanRef, config: Arc<DaftExecutionConfig>) -> Self {
+struct InputChannel {
+    from_stage: StageID,
+    channel_id: ChannelID,
+    data_channel: DataChannel,
+}
+
+struct OutputChannel {
+    to_stages: Vec<StageID>,
+    data_channel: DataChannel,
+}
+
+struct Stage {
+    stage_id: StageID,
+    stage_type: StageType,
+    input_channels: Vec<InputChannel>,
+    output_channels: Vec<OutputChannel>,
+}
+
+enum StageType {
+    MapPipeline {
+        plan: LocalPhysicalPlanRef,
+    },
+    HashJoin {
+        plan: LocalPhysicalPlanRef,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+        null_equals_null: Option<Vec<bool>>,
+        join_type: JoinType,
+    },
+    // SortMergeJoin {
+    //     plan: LocalPhysicalPlanRef,
+    // },
+    HashAggregate {
+        plan: LocalPhysicalPlanRef,
+        aggregations: Vec<ExprRef>,
+        group_by: Vec<ExprRef>,
+    },
+    Broadcast,
+    Exchange {
+        clustering_spec: ClusteringSpecRef,
+    },
+}
+
+pub(crate) struct StagePlan {
+    stages: HashMap<StageID, Stage>,
+    root_stage: StageID,
+}
+
+pub(crate) struct StagePlanBuilder {
+    stages: HashMap<StageID, Stage>,
+    id_counter: usize,
+}
+
+impl StagePlanBuilder {
+    pub fn new() -> Self {
         Self {
-            logical_plan,
-            config,
+            stages: HashMap::new(),
+            id_counter: 0,
+        }
+    }
+
+    pub fn build(self) -> StagePlan {
+        StagePlan {
+            stages: self.stages,
+            root_stage: StageID(self.id_counter),
         }
     }
 }
 
-impl Stage {
-    pub(crate) fn run_stage(
-        self,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
-    ) -> DaftResult<RunningStage> {
-        let mut pipeline_node =
-            pipeline_node::logical_plan_to_pipeline_node(self.logical_plan, self.config, psets)?;
-        let mut stage_context = StageContext::try_new(worker_manager_factory)?;
-        let running_node = pipeline_node.start(&mut stage_context);
-        let running_stage = RunningStage::new(running_node, stage_context);
-        Ok(running_stage)
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) struct RunningStage {
-    running_node: RunningPipelineNode,
-    stage_context: StageContext,
-}
-
-impl RunningStage {
-    fn new(running_node: RunningPipelineNode, stage_context: StageContext) -> Self {
-        Self {
-            running_node,
-            stage_context,
-        }
-    }
-}
-
-impl Stream for RunningStage {
-    type Item = DaftResult<PartitionRef>;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for running stage");
-    }
+pub(crate) fn build_stage_plan(
+    _logical_plan: LogicalPlanRef,
+    _config: Arc<DaftExecutionConfig>,
+) -> DaftResult<StagePlan> {
+    let stage_plan_builder = StagePlanBuilder::new();
+    let stage_plan = stage_plan_builder.build();
+    Ok(stage_plan)
 }
 
 pub(crate) struct StageContext {
@@ -89,47 +126,5 @@ impl StageContext {
             task_dispatcher_handle,
             joinset,
         })
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) fn split_at_stage_boundary(
-    plan: &LogicalPlanRef,
-    config: &Arc<DaftExecutionConfig>,
-) -> DaftResult<(Stage, Option<LogicalPlanRef>)> {
-    struct StageBoundarySplitter {
-        next_stage: Option<Stage>,
-        _config: Arc<DaftExecutionConfig>,
-    }
-
-    impl TreeNodeRewriter for StageBoundarySplitter {
-        type Node = LogicalPlanRef;
-
-        fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            Ok(Transformed::no(node))
-        }
-
-        fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            // TODO: Implement stage boundary splitting. Stage boundaries will be defined by the presence of a repartition, or the root of the plan.
-            // If it is the root of the plan, we will return a collect stage.
-            // If it is a repartition, we will return a shuffle map stage.
-            Ok(Transformed::no(node))
-        }
-    }
-
-    let mut splitter = StageBoundarySplitter {
-        next_stage: None,
-        _config: config.clone(),
-    };
-
-    let transformed = plan.clone().rewrite(&mut splitter)?;
-
-    if let Some(next_stage) = splitter.next_stage {
-        Ok((next_stage, Some(transformed.data)))
-    } else {
-        // make collect stage
-        let plan = transformed.data;
-        let stage = Stage::new(plan, config.clone());
-        Ok((stage, None))
     }
 }
