@@ -103,6 +103,16 @@ impl DateArray {
         Ok((self.name(), Box::new(day_arr.sub(&1))).into())
     }
 
+    pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Date32);
+        let day_arr = arrow2::compute::temporal::day_of_month(&input_array)?;
+        Ok((self.name(), Box::new(day_arr)).into())
+    }
+
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
@@ -111,6 +121,16 @@ impl DateArray {
             .to(arrow2::datatypes::DataType::Date32);
         let ordinal_day_arr = arrow2::compute::temporal::day_of_year(&input_array)?;
         Ok((self.name(), Box::new(ordinal_day_arr)).into())
+    }
+
+    pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Date32);
+        let day_arr = arrow2::compute::temporal::week_of_year(&input_array)?;
+        Ok((self.name(), Box::new(day_arr)).into())
     }
 }
 
@@ -419,6 +439,21 @@ impl TimestampArray {
         ))
     }
 
+    pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
+        let (tu, tz) = match self.data_type() {
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            _ => unreachable!("TimestampArray must have Timestamp datatype"),
+        };
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Timestamp(tu, tz));
+
+        let ordinal_day_arr = arrow2::compute::temporal::day_of_month(&input_array)?;
+        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+    }
+
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
         let (tu, tz) = match self.data_type() {
             DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
@@ -432,6 +467,31 @@ impl TimestampArray {
 
         let ordinal_day_arr = arrow2::compute::temporal::day_of_year(&input_array)?;
         Ok((self.name(), Box::new(ordinal_day_arr)).into())
+    }
+
+    pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
+        let (tu, tz) = match self.data_type() {
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            _ => unreachable!("TimestampArray must have Timestamp datatype"),
+        };
+        let input_array = self
+            .physical
+            .as_arrow()
+            .clone()
+            .to(arrow2::datatypes::DataType::Timestamp(tu, tz));
+
+        let ordinal_day_arr = arrow2::compute::temporal::week_of_year(&input_array)?;
+        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+    }
+}
+
+impl IntervalArray {
+    pub fn mul(&self, factor: &Int32Array) -> DaftResult<Self> {
+        let arrow_interval = self.as_arrow();
+        let arrow_factor = factor.as_arrow();
+        let result =
+            arrow2::compute::arithmetics::time::mul_interval(arrow_interval, arrow_factor)?;
+        Self::new(self.field.clone(), Box::new(result))
     }
 }
 

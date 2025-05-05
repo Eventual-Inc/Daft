@@ -2521,8 +2521,49 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
+    def day_of_month(self) -> Expression:
+        """Retrieves the day of the month for a datetime column.
+
+        Returns:
+            Expression: a UInt32 expression with just the day_of_month extracted from a datetime column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime(2024, 2, 1, 0, 0, 0),
+            ...             datetime(2024, 12, 31, 0, 0, 0),
+            ...             datetime(2023, 12, 31, 0, 0, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("day_of_month", df["datetime"].dt.day_of_month()).collect()
+            ╭───────────────────────────────┬──────────────╮
+            │ datetime                      ┆ day_of_month │
+            │ ---                           ┆ ---          │
+            │ Timestamp(Microseconds, None) ┆ UInt32       │
+            ╞═══════════════════════════════╪══════════════╡
+            │ 2024-01-01 00:00:00           ┆ 1            │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-02-01 00:00:00           ┆ 1            │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-12-31 00:00:00           ┆ 31           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2023-12-31 00:00:00           ┆ 31           │
+            ╰───────────────────────────────┴──────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.dt_day_of_month(self._expr))
+
     def day_of_year(self) -> Expression:
         """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
+
+        Returns:
+            Expression: a UInt32 expression with just the day_of_year extracted from a datetime column
 
         Examples:
             >>> import daft
@@ -2555,6 +2596,44 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 4 of 4 rows)
         """
         return Expression._from_pyexpr(native.dt_day_of_year(self._expr))
+
+    def week_of_year(self) -> Expression:
+        """Retrieves the week of the year for a datetime column.
+
+        Returns:
+            Expression: a UInt32 expression with just the week_of_year extracted from a datetime column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime(2024, 2, 1, 0, 0, 0),
+            ...             datetime(2024, 12, 31, 0, 0, 0),  # part of week 1 of 2025 according to ISO 8601 standard
+            ...             datetime(2023, 12, 31, 0, 0, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("week_of_year", df["datetime"].dt.week_of_year()).collect()
+            ╭───────────────────────────────┬──────────────╮
+            │ datetime                      ┆ week_of_year │
+            │ ---                           ┆ ---          │
+            │ Timestamp(Microseconds, None) ┆ UInt32       │
+            ╞═══════════════════════════════╪══════════════╡
+            │ 2024-01-01 00:00:00           ┆ 1            │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-02-01 00:00:00           ┆ 5            │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2024-12-31 00:00:00           ┆ 1            │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2023-12-31 00:00:00           ┆ 52           │
+            ╰───────────────────────────────┴──────────────╯
+            <BLANKLINE>
+            (Showing first 4 of 4 rows)
+        """
+        return Expression._from_pyexpr(native.dt_week_of_year(self._expr))
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.

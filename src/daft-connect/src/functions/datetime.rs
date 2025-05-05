@@ -1,5 +1,7 @@
 use daft_core::datatypes::TimeUnit;
-use daft_functions::temporal::{Day, DayOfWeek, DayOfYear, Hour, Minute, Month, Second, Year};
+use daft_functions::temporal::{
+    Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Minute, Month, Second, WeekOfYear, Year,
+};
 use daft_schema::dtype::DataType;
 
 use super::{FunctionModule, UnaryFunction, TODO_FUNCTION};
@@ -26,7 +28,7 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("datediff", TODO_FUNCTION);
         parent.add_fn("datepart", TODO_FUNCTION);
         parent.add_fn("day", Day);
-        parent.add_fn("dayofmonth", TODO_FUNCTION);
+        parent.add_fn("dayofmonth", DayOfMonth);
         parent.add_fn("dayofweek", DayOfWeek);
 
         parent.add_fn("dayofyear", DayOfYear);
@@ -71,7 +73,7 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("unix_seconds", TODO_FUNCTION);
         parent.add_fn("unix_timestamp", TODO_FUNCTION);
         parent.add_fn("weekday", TODO_FUNCTION);
-        parent.add_fn("weekofyear", TODO_FUNCTION);
+        parent.add_fn("weekofyear", WeekOfYear);
         parent.add_fn("window", TODO_FUNCTION);
         parent.add_fn("window_time", TODO_FUNCTION);
         parent.add_fn("year", Year);

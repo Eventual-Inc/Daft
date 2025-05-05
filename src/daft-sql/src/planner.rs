@@ -1303,9 +1303,19 @@ impl SQLPlanner<'_> {
                         Ok(dt::dt_day_of_week(expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "day_of_month" =>
+                    {
+                        Ok(dt::dt_day_of_month(expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_year" =>
                     {
                         Ok(dt::dt_day_of_year(expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "week_of_year" =>
+                    {
+                        Ok(dt::dt_week_of_year(expr))
                     }
                     DateTimeField::Date => Ok(dt::dt_date(expr)),
                     DateTimeField::Hour => Ok(dt::dt_hour(expr)),
