@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
@@ -63,10 +64,10 @@ struct Stage {
 #[derive(Debug)]
 enum StageType {
     MapPipeline {
-        plan: LocalPhysicalPlanRef,
+        plan: LogicalPlanRef,
     },
     HashJoin {
-        plan: LocalPhysicalPlanRef,
+        plan: LogicalPlanRef,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
         null_equals_null: Option<Vec<bool>>,
@@ -76,7 +77,7 @@ enum StageType {
     //     plan: LocalPhysicalPlanRef,
     // },
     HashAggregate {
-        plan: LocalPhysicalPlanRef,
+        plan: LogicalPlanRef,
         aggregations: Vec<ExprRef>,
         group_by: Vec<ExprRef>,
     },
@@ -85,6 +86,21 @@ enum StageType {
         clustering_spec: ClusteringSpecRef,
     },
 }
+
+impl StageType {
+    fn name(&self) -> &str {
+        let name = match self {
+            StageType::MapPipeline { .. } => "MapPipeline",
+            StageType::HashJoin { .. } => "HashJoin",
+            StageType::HashAggregate { .. } => "HashAggregate",
+            StageType::Broadcast => "Broadcast",
+            StageType::Exchange { .. } => "Exchange",
+        };
+        name
+    }
+}
+
+
 #[derive(Debug)]
 pub(crate) struct StagePlan {
     stages: HashMap<StageID, Stage>,
@@ -100,6 +116,23 @@ impl StagePlan {
             stages: builder.stages,
             root_stage: root_stage_id,
         })
+    }
+
+    pub(crate) fn print_plan(&self) {
+        let mut stack = vec![(0, self.root_stage.clone())];
+        while !stack.is_empty() {
+            let (depth, curr) = stack.pop().expect("should have value");
+            let stage = self.stages.get(&curr).expect("expect this stage id to be in stages");
+            let name = stage.stage_type.name();
+            for _ in 0..depth {
+                print!("  ");
+            }
+            print!("Stage {}: {}\n", curr.0, name);
+            stage.input_channels.iter().enumerate().for_each(|(i, c)| {
+                stack.push((depth + i, c.from_stage.clone()));
+            });
+
+        }
     }
 }
 
@@ -132,41 +165,63 @@ impl StagePlanBuilder {
     fn build_stages_from_plan(&mut self, plan: LogicalPlanRef) -> DaftResult<StageID> {
         // Match on the type of the logical plan node
         match plan.as_ref() {
-            //     // For a HashJoin, create a separate stage
-            //     LogicalPlan::Join(join) => {
-            //         // Recursively build stages for left and right inputs
-            //         let left_stage_id = self.build_stages_from_plan(join.left.clone())?;
-            //         let right_stage_id = self.build_stages_from_plan(join.right.clone())?;
+                // For a HashJoin, create a separate stage
+                LogicalPlan::Join(join) => {
+                    // Recursively build stages for left and right inputs
+                    let left_stage_id = self.build_stages_from_plan(join.left.clone())?;
+                    let right_stage_id = self.build_stages_from_plan(join.right.clone())?;
 
-            //         // Create a new HashJoin stage
-            //         let stage_id = self.next_id();
-            //         let physical_plan = op.to_local_physical_plan()?;
+                    // Create a new HashJoin stage
+                    let stage_id = self.next_stage_id();
 
-            //         let (remaining_on, left_on, right_on, null_equals_null) = join.on.split_eq_preds();
+                    let left_child = {
+                        let ph = PlaceHolderInfo::new(
+                            join.left.schema(),
+                            Arc::new(ClusteringSpec::unknown()),
+                        );
+                        LogicalPlan::Source(Source::new(
+                            join.left.schema(),
+                            SourceInfo::PlaceHolder(ph).into(),
+                        )).arced()
+                    };
 
-            //         if !remaining_on.is_empty() {
-            //             return Err(DaftError::not_implemented("Execution of non-equality join"));
-            //         }
+                    let right_child = {
+                        let ph = PlaceHolderInfo::new(
+                            join.right.schema(),
+                            Arc::new(ClusteringSpec::unknown()),
+                        );
+                        LogicalPlan::Source(Source::new(
+                            join.right.schema(),
+                            SourceInfo::PlaceHolder(ph).into(),
+                        )).arced()
+                    };
 
-            //         let stage = Stage {
-            //             stage_id: stage_id.clone(),
-            //             stage_type: StageType::HashJoin {
-            //                 plan: Arc::new(physical_plan),
-            //                 left_on,
-            //                 right_on,
-            //                 null_equals_null: Some(null_equals_null),
-            //                 join_type: join.join_type
-            //             },
-            //             input_channels: vec![
-            //                 self.create_input_channel(left_stage_id, 0)?,
-            //                 self.create_input_channel(right_stage_id, 0)?,
-            //             ],
-            //             output_channels: vec![self.create_output_channel(op.schema(), None)?],
-            //         };
+                    let plan = plan.with_new_children(&[left_child, right_child]).arced();
 
-            //         self.stages.insert(stage_id.clone(), stage);
-            //         Ok(stage_id)
-            //     },
+                    let (remaining_on, left_on, right_on, null_equals_null) = join.on.split_eq_preds();
+
+                    if !remaining_on.is_empty() {
+                        return Err(DaftError::not_implemented("Execution of non-equality join"));
+                    }
+                    let schema = plan.schema();
+                    let stage = Stage {
+                        stage_id: stage_id.clone(),
+                        stage_type: StageType::HashJoin {
+                            plan: plan,
+                            left_on,
+                            right_on,
+                            null_equals_null: Some(null_equals_null),
+                            join_type: join.join_type
+                        },
+                        input_channels: vec![
+                            self.create_input_channel(left_stage_id, 0)?,
+                            self.create_input_channel(right_stage_id, 0)?,
+                        ],
+                        output_channels: vec![self.create_output_channel(schema, None)?],
+                    };
+                    self.stages.insert(stage_id.clone(), stage);
+                    Ok(stage_id)
+                },
             // For other operations, group into a MapPipeline stage
             _ => {
                 struct MapPipelineBuilder {
@@ -223,17 +278,16 @@ impl StagePlanBuilder {
                 } else {
                     vec![]
                 };
-
+                let schema = new_plan.schema();
                 // Create a MapPipeline stage
                 let stage_id = self.next_stage_id();
-                let physical_plan = daft_local_plan::translate(&new_plan)?;
                 let stage = Stage {
                     stage_id: stage_id.clone(),
                     stage_type: StageType::MapPipeline {
-                        plan: physical_plan,
+                        plan: new_plan,
                     },
                     input_channels,
-                    output_channels: vec![self.create_output_channel(new_plan.schema(), None)?],
+                    output_channels: vec![self.create_output_channel(schema, None)?],
                 };
 
                 // TODO: Add upstream stage to output channel stages
