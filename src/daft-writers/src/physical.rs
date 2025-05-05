@@ -40,11 +40,36 @@ pub struct PhysicalWriterFactory {
 }
 
 impl PhysicalWriterFactory {
+    fn native_available(file_schema: &SchemaRef) -> bool {
+        let writer_properties = Arc::new(
+            WriterProperties::builder()
+                .set_writer_version(WriterVersion::PARQUET_1_0)
+                .set_compression(Compression::SNAPPY)
+                .build(),
+        );
+        let arrow_schema = match file_schema.to_arrow() {
+            Ok(schema) => {
+                for field in &schema.fields {
+                    if field.data_type().has_non_arrow_rs_convertible_type() {
+                        // TODO(desmond): Support extension and timestamp types.
+                        return false;
+                    }
+                }
+                Arc::new(schema.into())
+            }
+            Err(_) => return false,
+        };
+        let parquet_schema = ArrowSchemaConverter::new()
+            .with_coerce_types(writer_properties.coerce_types())
+            .convert(&arrow_schema);
+        parquet_schema.is_ok()
+    }
+
     pub fn new(output_file_info: OutputFileInfo, file_schema: &SchemaRef, native: bool) -> Self {
         Self {
             output_file_info,
             schema: file_schema.clone(),
-            native,
+            native: native && Self::native_available(file_schema),
         }
     }
 }
@@ -86,7 +111,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 let parquet_schema = ArrowSchemaConverter::new()
                     .with_coerce_types(writer_properties.coerce_types())
                     .convert(&arrow_schema)
-                    .unwrap();
+                    .expect("By this point we should have verified that the schema is convertible");
 
                 Ok(Box::new(ArrowParquetWriter::new(
                     filename,

@@ -212,6 +212,21 @@ impl DataType {
             _ => {} // Other types don't have child data types
         }
     }
+
+    /// Returns whether this datatype or any of its children contains a type that is currently unsupported in arrow-rs.
+    pub fn has_non_arrow_rs_convertible_type(&self) -> bool {
+        match self {
+            DataType::Extension(_, _, _) => true,
+            DataType::Timestamp(_, tz) => tz.is_some(),
+            _ => {
+                let mut has_extension = false;
+                self.direct_children(|child| {
+                    has_extension = has_extension || child.has_non_arrow_rs_convertible_type();
+                });
+                has_extension
+            }
+        }
+    }
 }
 
 #[cfg(feature = "arrow")]
