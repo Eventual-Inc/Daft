@@ -5,7 +5,7 @@ use daft_core::prelude::*;
 
 use super::WindowAggStateOps;
 
-pub struct DequeWindowState {
+pub struct MinMaxWindowState {
     source: Series,
     deque: VecDeque<usize>,
     cur_idx: usize,
@@ -14,7 +14,7 @@ pub struct DequeWindowState {
     is_min: bool,
 }
 
-impl DequeWindowState {
+impl MinMaxWindowState {
     #[allow(dead_code)]
     pub fn new(source: &Series, total_length: usize, is_min: bool) -> Self {
         Self {
@@ -52,7 +52,7 @@ impl DequeWindowState {
     }
 }
 
-impl WindowAggStateOps for DequeWindowState {
+impl WindowAggStateOps for MinMaxWindowState {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         for i in start_idx..end_idx {
             if !self.source.is_valid(i) {
