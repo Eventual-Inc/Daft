@@ -10,10 +10,10 @@ use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, LogicalPlanRef};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 
 use crate::{
-    channel::{create_channel, Receiver},
+    channel::{create_channel, Receiver, Sender},
     runtime::{get_or_init_runtime, JoinHandle},
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
