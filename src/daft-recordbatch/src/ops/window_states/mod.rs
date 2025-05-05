@@ -1,8 +1,7 @@
 mod count;
 mod count_distinct;
-mod max;
+mod deque;
 mod mean;
-mod min;
 mod sum;
 
 use std::cmp::{Eq, Ordering};
@@ -135,8 +134,8 @@ pub fn create_window_agg_state(
             *mode,
         )))),
         // TODO: Implement once proper behavior regarding NaNs is decided
-        // AggExpr::Min(_) => Ok(Some(Box::new(MinWindowState::new(source, total_length)))),
-        // AggExpr::Max(_) => Ok(Some(Box::new(MaxWindowState::new(source, total_length)))),
+        // AggExpr::Min(_) => Ok(Some(Box::new(DequeWindowState::new(source, total_length, true)))),
+        // AggExpr::Max(_) => Ok(Some(Box::new(DequeWindowState::new(source, total_length, false)))),
         AggExpr::CountDistinct(_) => Ok(Some(Box::new(CountDistinctWindowState::new(
             source,
             total_length,
