@@ -1,23 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
-use common_partitioning::PartitionRef;
+use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_dsl::ExprRef;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::LocalPhysicalPlanRef;
 use daft_logical_plan::{
     ops::Source,
     partitioning::ClusteringSpecRef,
     source_info::PlaceHolderInfo,
-    stats::{ApproxStats, StatsState},
+    stats::ApproxStats,
     ClusteringSpec, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
 };
 use daft_schema::schema::SchemaRef;
-use futures::Stream;
 
 use crate::{
-    pipeline_node::PipelineOutput,
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
@@ -96,7 +92,7 @@ impl StagePlan {
         let mut builder = StagePlanBuilder::new();
         let root_stage_id = builder.build_stages_from_plan(plan)?;
 
-        Ok(StagePlan {
+        Ok(Self {
             stages: builder.stages,
             root_stage: root_stage_id,
         })
