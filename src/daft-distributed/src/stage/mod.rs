@@ -80,34 +80,39 @@ pub(crate) struct StagePlan {
     root_stage: StageID,
 }
 
-pub(crate) struct StagePlanBuilder {
+impl StagePlan {
+    pub(crate) fn from_logical_plan(plan: LogicalPlanRef) -> DaftResult<Self> {
+        let builder = StagePlanBuilder::new();
+
+        unimplemented!()
+    }
+}
+
+struct StagePlanBuilder {
     stages: HashMap<StageID, Stage>,
     id_counter: usize,
 }
 
 impl StagePlanBuilder {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             stages: HashMap::new(),
             id_counter: 0,
         }
     }
 
-    pub fn build(self) -> StagePlan {
+    fn next_id(&mut self) -> StageID {
+        let curr = self.id_counter;
+        self.id_counter += 1;
+        StageID(curr)
+    }
+
+    fn build(self) -> StagePlan {
         StagePlan {
             stages: self.stages,
             root_stage: StageID(self.id_counter),
         }
     }
-}
-
-pub(crate) fn build_stage_plan(
-    _logical_plan: LogicalPlanRef,
-    _config: Arc<DaftExecutionConfig>,
-) -> DaftResult<StagePlan> {
-    let stage_plan_builder = StagePlanBuilder::new();
-    let stage_plan = stage_plan_builder.build();
-    Ok(stage_plan)
 }
 
 pub(crate) struct StageContext {

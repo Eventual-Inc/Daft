@@ -16,7 +16,7 @@ use crate::{
     channel::{create_channel, Receiver, Sender},
     runtime::{get_or_init_runtime, JoinHandle},
     scheduling::worker::WorkerManagerFactory,
-    stage::{build_stage_plan, StagePlan, StagePlanBuilder},
+    stage::StagePlan,
 };
 
 pub struct DistributedPhysicalPlan {
@@ -36,8 +36,7 @@ impl DistributedPhysicalPlan {
             ));
         }
 
-        let stage_plan = build_stage_plan(plan, config.clone())?;
-
+        let stage_plan = StagePlan::from_logical_plan(plan)?;
         Ok(Self { stage_plan, config })
     }
 
