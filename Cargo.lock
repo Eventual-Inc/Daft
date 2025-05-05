@@ -2005,6 +2005,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-functions-utf8",
  "daft-hash",
  "daft-image",
  "daft-io",
@@ -2304,6 +2305,18 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-utf8"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "pyo3",
+ "serde",
  "typetag",
 ]
 
