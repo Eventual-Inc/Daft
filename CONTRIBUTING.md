@@ -117,7 +117,7 @@ This file is usually found in the `.vscode` folder of your project root. See the
 
 2. Set breakpoints in any `.rs` or `.py` file.
 
-3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on top and click the `Start Debugging` button.
+3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on top and click the `Start Debugging` button. This will start a debugging session using the file that is currently opened in the VSCode editor.
 
 At this point, your debugger should stop on breakpoints in any .rs file located within the codebase.
 
