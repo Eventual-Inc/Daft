@@ -26,6 +26,7 @@ impl ScalarUDF for Round {
         let precision = precision.cast(&DataType::Int32)?;
         let precision = precision.i32().unwrap().get(0).unwrap();
 
+        ensure!(precision >= 0, ValueError: "decimal can not be negative: {precision}");
         series_round(input, precision)
     }
 
