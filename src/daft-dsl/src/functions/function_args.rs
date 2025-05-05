@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 
+/// Wrapper around T to hold either a named or an unnamed argument.
 #[derive(Debug, Clone)]
 pub enum FunctionArg<T> {
     Named {
@@ -14,6 +15,7 @@ impl<T> FunctionArg<T> {
     pub fn unnamed(t: T) -> Self {
         Self::Unnamed(t)
     }
+
     pub fn named<S: Into<Arc<str>>>(name: S, arg: T) -> Self {
         Self::Named {
             name: name.into(),
@@ -21,17 +23,69 @@ impl<T> FunctionArg<T> {
         }
     }
 }
-
+// any T can be converted to an Unnamed FunctionArg
 impl<T> From<T> for FunctionArg<T> {
     fn from(arg: T) -> Self {
         Self::Unnamed(arg)
     }
 }
 
+/// FunctionArgs is a wrapper around a Vec<T> where T can either be a named or an unnamed argument.
+/// FunctionArgs handles the following
+/// 1. ensure that all unnamed arguments are before named arguments
+/// 2. provide a structured way for accessing either named or unnamed arguments.
+///
+/// The reason FunctionArgs is needed is that different frontends have flexible ways of calling the functions.
+/// Instead of delegating that logic to the frontend, and thus duplicating it, FunctionArgs provides a structured way to handle arguments for all frontends.
+///
+/// Let's take a look at SQL to get a better understanding
+/// All of these are valid sql:
+/// - `select round(2)`                           -> [unnamed(lit(2))]
+/// - `select round(input:=3.14159, decimal:= 2)` -> [named("input", lit(3.14159)), named("decimal", lit(2))]
+/// - `select round(decimal:=2, input:=3.14159)`  -> [named("decimal", lit(2)), named("input", lit(3.14159))]
+/// - `select round(3.14159, decimal:=2)`         -> [unnamed(lit(3.14159)), named("decimal", lit(2))]
+/// - `select round(3.14159, 2)`                  -> [unnamed(lit(3.14159)), unnamed(lit(2))]
+///
+/// But this is not valid:
+/// - `select round(2, 3.14159)`
+/// - `select round(2, input:=3.14159)`
+/// - `select round(decimal:=2, 3.14159)`
+///
+/// The 2 main types this will act on are:
+/// - `Vec<Series>` for execution in `ScalarUDF::evaluate`
+/// - `Vec<ExprRef>` for planning in `ScalarUDF::to_field`
+///
+/// Example usage:
+///
+/// let's look at round's function signature:
+/// `round(input: Column, decimal: i32)`
+///
+/// for planning this would be:      `round(input: Expr, decimal: Expr)`
+/// and for execution this would be: `round(input: Series, decimal: Series)`
+///
+/// we can extract `input` either as position 0
+/// ```rs, no_run
+/// let args: FunctionArgs<ExprRef> = FunctionArgs::try_new(vec![unnamed(col("foo"))])?;
+/// let input: &ExprRef = args.required(0)?;
+/// let decimal: ExprRef = args.optional(1)?.cloned().unwrap_or(lit(0));
+/// ```
+///
+/// or by name of "input"
+/// ```rs, no_run
+/// let args = vec![
+///   unnamed(col("foo")),
+///   named("decimal", lit(1)),
+/// ];
+/// let args: FunctionArgs<ExprRef> = FunctionArgs::try_new(args)?;
+/// let input: &ExprRef = args.required(0)?;
+/// let decimal: ExprRef = args.optional("decimal")?.cloned().unwrap_or(lit(0));
+///
+/// ```
 #[derive(Debug)]
 pub struct FunctionArgs<T>(Vec<FunctionArg<T>>);
 
 impl<T> FunctionArgs<T> {
+    /// Extract the inner `Vec<T>` values
     pub fn into_inner(self) -> Vec<T> {
         self.0
             .into_iter()
@@ -44,7 +98,8 @@ impl<T> FunctionArgs<T> {
 }
 
 /// trait to look up either positional or named values
-/// We use a trait here so the user can
+/// We use a trait here so the user can access function args by different values such as by name (str), or by position (usize),
+/// or by a combination, (position, name), (name, fallback_name), (position, name, fallback_name)
 pub trait FunctionArgKey: std::fmt::Debug {
     fn required<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<&'a T>;
     fn optional<'a, T>(&self, args: &'a FunctionArgs<T>) -> DaftResult<Option<&'a T>>;
@@ -165,6 +220,13 @@ where
 }
 
 impl<T> FunctionArgs<T> {
+    /// Tries to create a new instance of FunctionArgs.
+    /// This method will error if named arguments come before any unnamed arguments
+    /// ex: `[unnamed, unnamed, named]` -> Ok
+    /// ex: `[named, named, named]` -> Ok
+    /// ex: `[unnamed, unnamed, unnamed]` -> Ok
+    /// ex: `[named, unnamed, unnamed]` -> Err
+    /// ex: `[unnamed, named, unnamed]` -> Err
     pub fn try_new(inner: Vec<FunctionArg<T>>) -> DaftResult<Self> {
         let slf = Self(inner);
         slf.assert_ordering()?;
@@ -196,6 +258,19 @@ impl<T> FunctionArgs<T> {
     }
 
     /// Get required argument
+    /// ex:
+    /// ```rs, no_run
+    /// let args = FunctionArgs::try_new(vec![unnamed("foo"), unnamed("bar"), named("arg1", "baz")]).unwrap();
+    /// let foo = args.required(0).unwrap();
+    /// let bar = args.required(1).unwrap();
+    /// let baz = args.required("arg1").unwrap();
+    /// assert!(foo == "foo");
+    /// assert!(bar == "bar");
+    /// assert!(baz == "baz");
+    /// let other = args.optional("arg2").unwrap();
+    /// assert!(other.is_none())
+    /// ```
+    ///
     pub fn required<Key: FunctionArgKey>(&self, position: Key) -> DaftResult<&T> {
         position.required(self).map_err(|_| {
             DaftError::ValueError(format!(
@@ -205,6 +280,18 @@ impl<T> FunctionArgs<T> {
     }
 
     /// Get optional argument
+    /// ex:
+    /// ```rs, no_run
+    /// let args = FunctionArgs::try_new(vec![unnamed("foo"), unnamed("bar"), named("arg1", "baz")]).unwrap();
+    /// let foo = args.required(0).unwrap();
+    /// let bar = args.required(1).unwrap();
+    /// let baz = args.required("arg1").unwrap();
+    /// assert!(foo == "foo");
+    /// assert!(bar == "bar");
+    /// assert!(baz == "baz");
+    /// let other = args.optional("arg2").unwrap();
+    /// assert!(other.is_none())
+    /// ```
     pub fn optional<Key: FunctionArgKey>(&self, position: Key) -> DaftResult<Option<&T>> {
         position.optional(self).map_err(|_| {
             DaftError::ValueError(format!(
