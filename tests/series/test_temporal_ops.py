@@ -376,6 +376,30 @@ def test_series_timestamp_unix_seconds_operation() -> None:
     assert [252464461, 1728797414, 2998030830, None] == out.to_pylist()
 
 
+@pytest.mark.parametrize("fun", ["unix_date", "unix_micros", "unix_millis", "unix_seconds"])
+def test_series_unix_function_date_input_error(fun) -> None:
+    import re
+    from datetime import date
+
+    input_dates = [date(1978, 1, 1), date(2024, 10, 13), date(2065, 1, 1), None]
+    s = Series.from_pylist(input_dates).cast(DataType.date())
+    expected_error = f"DaftError::ComputeError Can only run {fun}() operation on timestamp types, got Date"
+    with pytest.raises(Exception, match=re.escape(expected_error)):
+        getattr(s.dt, fun)()
+
+
+@pytest.mark.parametrize("fun", ["unix_date", "unix_micros", "unix_millis", "unix_seconds"])
+def test_series_unix_function_time_input_error(fun) -> None:
+    import re
+    from datetime import time
+
+    input_times = [time(12, 30, 0), time(23, 59, 59), time(0, 0, 0), None]
+    s = Series.from_pylist(input_times).cast(DataType.time("ns"))
+    expected_error = f"DaftError::ComputeError Can only run {fun}() operation on timestamp types, got Time"
+    with pytest.raises(Exception, match=re.escape(expected_error)):
+        getattr(s.dt, fun)()
+
+
 def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):
     from datetime import datetime, timedelta, timezone
 

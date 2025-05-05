@@ -187,7 +187,7 @@ impl Series {
                 Ok(ts_array.unix_micros()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run unix_micros() operation on temporal types, got {}",
+                "Can only run unix_micros() operation on timestamp types, got {}",
                 self.data_type()
             ))),
         }
@@ -200,7 +200,7 @@ impl Series {
                 Ok(ts_array.unix_millis()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run unix_millis() operation on temporal types, got {}",
+                "Can only run unix_millis() operation on timestamp types, got {}",
                 self.data_type()
             ))),
         }
@@ -213,7 +213,7 @@ impl Series {
                 Ok(ts_array.unix_seconds()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run unix_seconds() operation on temporal types, got {}",
+                "Can only run unix_seconds() operation on timestamp types, got {}",
                 self.data_type()
             ))),
         }
