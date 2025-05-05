@@ -2091,6 +2091,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-utf8",
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
@@ -2315,7 +2316,9 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "itertools 0.11.0",
  "pyo3",
+ "regex",
  "serde",
  "typetag",
 ]

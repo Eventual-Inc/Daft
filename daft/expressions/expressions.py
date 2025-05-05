@@ -2861,8 +2861,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        suffix_expr = Expression._to_expression(suffix)
-        return Expression._from_pyexpr(native.utf8_endswith(self._expr, suffix_expr._expr))
+        suffix_expr = Expression._to_expression(suffix)._expr
+        f = native.get_function_from_registry("ends_with")
+
+        return Expression._from_pyexpr(f(self._expr, suffix_expr))
 
     def startswith(self, prefix: str | Expression) -> Expression:
         """Checks whether each string starts with the given pattern in a string column.
@@ -2892,8 +2894,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        prefix_expr = Expression._to_expression(prefix)
-        return Expression._from_pyexpr(native.utf8_startswith(self._expr, prefix_expr._expr))
+        prefix_expr = Expression._to_expression(prefix)._expr
+        f = native.get_function_from_registry("starts_with")
+
+        return Expression._from_pyexpr(f(self._expr, prefix_expr))
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
         r"""Splits each string on the given literal or regex pattern, into a list of strings.
@@ -3038,7 +3042,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             [extract_all](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_extract(self._expr, pattern_expr._expr, index))
+        index = Expression._to_expression(index)
+        f = native.get_function_from_registry("regexp_extract")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, index._expr))
 
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
@@ -3378,7 +3384,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        f = native.get_function_registry("capitalize")
+        f = native.get_function_from_registry("capitalize")
         return Expression._from_pyexpr(f(self._expr))
 
     def left(self, nchars: int | Expression) -> Expression:

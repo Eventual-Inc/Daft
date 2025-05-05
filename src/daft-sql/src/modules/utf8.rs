@@ -152,7 +152,6 @@ impl SQLModule for SQLModuleUtf8 {
         // TODO add split variants
         // parent.add("split", f(Split(false)));
         parent.add_fn("regexp_match", SQLUtf8RegexpMatch);
-        parent.add_fn("regexp_extract", SQLUtf8RegexpExtract);
         parent.add_fn("regexp_extract_all", SQLUtf8RegexpExtractAll);
         parent.add_fn("regexp_replace", SQLUtf8RegexpReplace);
         parent.add_fn("regexp_split", SQLUtf8RegexpSplit);
@@ -335,42 +334,6 @@ utf8_function!(
     "string_input",
     "count"
 );
-
-pub struct SQLUtf8RegexpExtract;
-
-impl SQLFunction for SQLUtf8RegexpExtract {
-    fn to_expr(
-        &self,
-        inputs: &[sqlparser::ast::FunctionArg],
-        planner: &crate::planner::SQLPlanner,
-    ) -> SQLPlannerResult<ExprRef> {
-        match inputs {
-            [input, pattern] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
-                Ok(daft_functions::utf8::extract(input, pattern, 0))
-            }
-            [input, pattern, idx] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
-                let idx = planner.plan_function_arg(idx)?.as_literal().and_then(LiteralValue::as_i64).ok_or_else(|| {
-                    PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {idx:?}"))
-                })? as usize;
-                Ok(daft_functions::utf8::extract(input, pattern, idx))
-            }
-            _ => invalid_operation_err!("regexp_extract takes exactly two or three arguments"),
-        }
-    }
-
-    fn docstrings(&self, _alias: &str) -> String {
-        "Extracts the first substring that matches the specified regular expression pattern"
-            .to_string()
-    }
-
-    fn arg_names(&self) -> &'static [&'static str] {
-        &["string_input", "pattern"]
-    }
-}
 
 pub struct SQLUtf8RegexpExtractAll;
 

@@ -14,13 +14,12 @@ pub struct Capitalize;
 
 #[typetag::serde]
 impl ScalarUDF for Capitalize {
+    fn name(&self) -> &'static str {
+        "capitalize"
+    }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         series_capitalize(input)
-    }
-
-    fn name(&self) -> &'static str {
-        "capitalize"
     }
 
     fn function_args_to_field(
@@ -32,7 +31,7 @@ impl ScalarUDF for Capitalize {
         let input = inputs.required((0, "input"))?.to_field(schema)?;
         ensure!(
             input.dtype == DataType::Utf8,
-            TypeError: "Expects input to capitalize to be utf8, but recieved {}", input.dtype
+            TypeError: "Expects input to capitalize to be utf8, but received {}", input.dtype
         );
 
         Ok(Field::new(input.name, DataType::Utf8))

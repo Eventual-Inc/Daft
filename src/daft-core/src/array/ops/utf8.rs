@@ -153,35 +153,6 @@ fn split_array_on_regex<'a>(
     Ok(())
 }
 
-fn regex_extract_first_match<'a>(
-    arr_iter: impl Iterator<Item = Option<&'a str>>,
-    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
-    index: usize,
-    name: &str,
-) -> DaftResult<Utf8Array> {
-    let arrow_result = arr_iter
-        .zip(regex_iter)
-        .map(|(val, re)| match (val, re) {
-            (Some(val), Some(re)) => {
-                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures
-                // regex::find is faster than regex::captures but only returns the full match, not the capture groups.
-                // So, use regex::find if index == 0, otherwise use regex::captures.
-                if index == 0 {
-                    Ok(re?.find(val).map(|m| m.as_str()))
-                } else {
-                    Ok(re?
-                        .captures(val)
-                        .and_then(|captures| captures.get(index))
-                        .map(|m| m.as_str()))
-                }
-            }
-            _ => Ok(None),
-        })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
-
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
-}
-
 fn regex_extract_all_matches<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
@@ -470,35 +441,6 @@ impl Utf8Array {
             offsets,
             validity,
         );
-        assert_eq!(result.len(), expected_size);
-        Ok(result)
-    }
-
-    pub fn extract(&self, pattern: &Self, index: usize) -> DaftResult<Self> {
-        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
-            .map_err(|e| DaftError::ValueError(format!("Error in extract: {e}")))?;
-        if is_full_null {
-            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
-        }
-        if expected_size == 0 {
-            return Ok(Self::empty(self.name(), &DataType::Utf8));
-        }
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match pattern.len() {
-            1 => {
-                let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
-                regex_extract_first_match(self_iter, regex_iter, index, self.name())?
-            }
-            _ => {
-                let regex_iter = pattern
-                    .as_arrow()
-                    .iter()
-                    .map(|pat| pat.map(regex::Regex::new));
-                regex_extract_first_match(self_iter, regex_iter, index, self.name())?
-            }
-        };
         assert_eq!(result.len(), expected_size);
         Ok(result)
     }

@@ -1,4 +1,4 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
@@ -19,8 +19,9 @@ pub fn endswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
 #[typetag::serde]
 impl ScalarUDF for EndsWith {
     fn name(&self) -> &'static str {
-        "endswith"
+        "ends_with"
     }
+
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;

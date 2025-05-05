@@ -1,8 +1,7 @@
 use daft_dsl::LiteralValue;
 use daft_functions::utf8::{
-    extract, extract_all, Utf8Endswith, Utf8Ilike, Utf8Left, Utf8Length, Utf8LengthBytes, Utf8Like,
-    Utf8Lower, Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split, Utf8Startswith, Utf8Substr,
-    Utf8Upper,
+    extract_all, Utf8Ilike, Utf8Left, Utf8Length, Utf8LengthBytes, Utf8Like, Utf8Lower, Utf8Lpad,
+    Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split, Utf8Startswith, Utf8Substr, Utf8Upper,
 };
 use spark_connect::Expression;
 
@@ -24,11 +23,11 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("character_length", Utf8Length {});
         parent.add_fn("char_length", Utf8Length {});
         parent.add_fn("concat_ws", TODO_FUNCTION);
-        parent.add_fn("contains", daft_functions::utf8::Utf8Contains {});
+        parent.add_fn("contains", daft_functions_utf8::Contains);
         parent.add_fn("decode", TODO_FUNCTION);
         parent.add_fn("elt", TODO_FUNCTION);
-        parent.add_fn("encode", Utf8Endswith {});
-        parent.add_fn("endswith", TODO_FUNCTION);
+        parent.add_fn("encode", TODO_FUNCTION);
+        parent.add_fn("endswith", daft_functions_utf8::EndsWith);
         parent.add_fn("find_in_set", TODO_FUNCTION);
         parent.add_fn("format_number", TODO_FUNCTION);
         parent.add_fn("format_string", TODO_FUNCTION);
@@ -53,7 +52,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("regexp", TODO_FUNCTION);
         parent.add_fn("regexp_like", TODO_FUNCTION);
         parent.add_fn("regexp_count", TODO_FUNCTION);
-        parent.add_fn("regexp_extract", RegexpExtract);
+        parent.add_fn("regexp_extract", daft_functions_utf8::RegexpExtract);
         parent.add_fn("regexp_extract_all", RegexpExtractAll);
         parent.add_fn("regexp_replace", Utf8Replace { regex: true });
         parent.add_fn("regexp_substr", TODO_FUNCTION);
@@ -83,33 +82,6 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("upper", Utf8Upper {});
         parent.add_fn("url_decode", TODO_FUNCTION);
         parent.add_fn("url_encode", TODO_FUNCTION);
-    }
-}
-
-struct RegexpExtract;
-impl SparkFunction for RegexpExtract {
-    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
-        let args = args
-            .iter()
-            .map(analyze_expr)
-            .collect::<ConnectResult<Vec<_>>>()?;
-
-        let [input, pattern, idx] = args.as_slice() else {
-            invalid_argument_err!("regexp_extract requires exactly 3 arguments");
-        };
-
-        let idx = match idx.as_ref().as_literal() {
-            Some(LiteralValue::Int8(i)) => *i as usize,
-            Some(LiteralValue::UInt8(u)) => *u as usize,
-            Some(LiteralValue::Int16(i)) => *i as usize,
-            Some(LiteralValue::UInt16(u)) => *u as usize,
-            Some(LiteralValue::Int32(i)) => *i as usize,
-            Some(LiteralValue::UInt32(u)) => *u as usize,
-            Some(LiteralValue::Int64(i)) => *i as usize,
-            Some(LiteralValue::UInt64(u)) => *u as usize,
-            _ => invalid_argument_err!("regexp_extract index must be a number"),
-        };
-        Ok(extract(input.clone(), pattern.clone(), idx))
     }
 }
 

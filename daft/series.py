@@ -806,22 +806,13 @@ class SeriesFloatNamespace(SeriesNamespace):
 
 class SeriesStringNamespace(SeriesNamespace):
     def endswith(self, suffix: Series) -> Series:
-        if not isinstance(suffix, Series):
-            raise ValueError(f"expected another Series but got {type(suffix)}")
-        assert self._series is not None and suffix._series is not None
-        return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
+        return self._eval_expressions("ends_with", suffix)
 
     def startswith(self, prefix: Series) -> Series:
-        if not isinstance(prefix, Series):
-            raise ValueError(f"expected another Series but got {type(prefix)}")
-        assert self._series is not None and prefix._series is not None
-        return Series._from_pyseries(self._series.utf8_startswith(prefix._series))
+        return self._eval_expressions("starts_with", prefix)
 
     def contains(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_contains(pattern._series))
+        return self._eval_expressions("utf8_contains", pattern)
 
     def match(self, pattern: Series) -> Series:
         if not isinstance(pattern, Series):
@@ -842,10 +833,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series) + other
 
     def extract(self, pattern: Series, index: int = 0) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_extract(pattern._series, index))
+        return self._eval_expressions("regexp_extract", pattern, index=index)
 
     def extract_all(self, pattern: Series, index: int = 0) -> Series:
         if not isinstance(pattern, Series):
@@ -890,7 +878,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.utf8_reverse())
 
     def capitalize(self) -> Series:
-        return self._eval_expressions('capitalize')
+        return self._eval_expressions("capitalize")
 
     def left(self, nchars: Series) -> Series:
         if not isinstance(nchars, Series):

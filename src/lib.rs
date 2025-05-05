@@ -153,6 +153,7 @@ pub mod pylib {
             .expect("Failed to acquire write lock on function registry");
 
         functions_registry.register::<daft_image::functions::ImageFunctions>();
+        functions_registry.register::<daft_functions_utf8::Utf8Functions>();
 
         Ok(())
     }

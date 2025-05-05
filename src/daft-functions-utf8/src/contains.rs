@@ -65,6 +65,10 @@ impl ScalarUDF for Contains {
         "contains"
     }
 
+    fn aliases(&self) -> &'static [&'static str] {
+        &["utf8_contains"]
+    }
+
     fn docstring(&self) -> &'static str {
         "Returns a boolean indicating whether each string contains the specified pattern."
     }
