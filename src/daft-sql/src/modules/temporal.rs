@@ -1,8 +1,9 @@
 use daft_core::prelude::TimeUnit;
 use daft_dsl::ExprRef;
 use daft_functions::temporal::{
-    dt_date, dt_day, dt_day_of_week, dt_day_of_year, dt_hour, dt_microsecond, dt_millisecond,
-    dt_minute, dt_month, dt_nanosecond, dt_second, dt_strftime, dt_time, dt_to_unix_epoch, dt_year,
+    dt_date, dt_day, dt_day_of_month, dt_day_of_week, dt_day_of_year, dt_hour, dt_microsecond,
+    dt_millisecond, dt_minute, dt_month, dt_nanosecond, dt_second, dt_strftime, dt_time,
+    dt_to_unix_epoch, dt_week_of_year, dt_year,
 };
 use sqlparser::ast::FunctionArg;
 
@@ -28,7 +29,9 @@ impl SQLModule for SQLModuleTemporal {
             },
         );
         parent.add_fn("day_of_week", SQLDayOfWeek);
+        parent.add_fn("day_of_month", SQLDayOfMonth);
         parent.add_fn("day_of_year", SQLDayOfYear);
+        parent.add_fn("week_of_year", SQLWeekOfYear);
         parent.add_fn("hour", SQLHour);
         parent.add_fn("minute", SQLMinute);
         parent.add_fn("month", SQLMonth);
@@ -85,7 +88,9 @@ macro_rules! temporal {
 temporal!(SQLDate, dt_date);
 temporal!(SQLDay, dt_day);
 temporal!(SQLDayOfWeek, dt_day_of_week);
+temporal!(SQLDayOfMonth, dt_day_of_month);
 temporal!(SQLDayOfYear, dt_day_of_year);
+temporal!(SQLWeekOfYear, dt_week_of_year);
 temporal!(SQLHour, dt_hour);
 temporal!(SQLMinute, dt_minute);
 temporal!(SQLMonth, dt_month);

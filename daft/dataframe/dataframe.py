@@ -8,6 +8,7 @@ import io
 import multiprocessing
 import os
 import pathlib
+import sys
 import typing
 import warnings
 from dataclasses import dataclass
@@ -56,9 +57,17 @@ if TYPE_CHECKING:
     from daft.io import DataCatalogTable
     from daft.unity_catalog import UnityCatalogTable
 
+if sys.version_info < (3, 10):
+    from typing_extensions import Concatenate, ParamSpec
+else:
+    from typing import Concatenate, ParamSpec
+
 from daft.logical.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
+
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -176,6 +185,47 @@ class DataFrame:
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
         )
+
+    def pipe(
+        self,
+        function: Callable[Concatenate["DataFrame", P], T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Apply the function to this DataFrame.
+
+        Args:
+            function (Callable[Concatenate["DataFrame", P], T]): Function to apply.
+            *args (P.args): Positional arguments to pass to the function.
+            **kwargs (P.kwargs): Keyword arguments to pass to the function.
+
+        Returns:
+            Result of applying the function on this DataFrame.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>>
+            >>> def double(df, column: str):
+            ...     return df.select((df[column] * df[column]).alias(column))
+            >>>
+            >>> df.pipe(double, "x").show()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 1     │
+            ├╌╌╌╌╌╌╌┤
+            │ 4     │
+            ├╌╌╌╌╌╌╌┤
+            │ 9     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        return function(self, *args, **kwargs)
 
     @DataframePublicAPI
     def explain(
