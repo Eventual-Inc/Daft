@@ -51,6 +51,11 @@ impl<T> From<T> for FunctionArg<T> {
 /// - `select round(2, input:=3.14159)`
 /// - `select round(decimal:=2, 3.14159)`
 ///
+/// Similarly, in python:
+/// - `lit(3.14159).round()`          -> [unnamed(lit(3.14159))]
+/// - `lit(3.14159).round(2)`         -> [unnamed(lit(3.14159)), unnamed(lit(2))]
+/// - `lit(3.14159).round(decimal=2)` -> [unnamed(lit(3.14159)), named("decimal", lit(2))]
+///
 /// The 2 main types this will act on are:
 /// - `Vec<Series>` for execution in `ScalarUDF::evaluate`
 /// - `Vec<ExprRef>` for planning in `ScalarUDF::to_field`
