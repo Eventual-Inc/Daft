@@ -18,7 +18,6 @@ pub mod concat;
 pub mod downcast;
 mod exp;
 pub mod filter;
-pub mod float;
 pub mod floor;
 pub mod groups;
 pub mod hash;

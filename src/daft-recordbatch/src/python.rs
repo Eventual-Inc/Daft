@@ -504,6 +504,25 @@ impl PyRecordBatch {
             record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
         })
     }
+    #[staticmethod]
+    pub fn from_pyseries_list(pycolumns: Vec<PySeries>) -> PyResult<Self> {
+        if pycolumns.is_empty() {
+            return Ok(Self {
+                record_batch: RecordBatch::empty(None)?,
+            });
+        }
+
+        let num_rows = pycolumns.first().unwrap().series.len();
+
+        let (fields, columns) = pycolumns
+            .into_iter()
+            .map(|s| (s.series.field().clone(), s.series))
+            .unzip::<_, _, Vec<Field>, Vec<Series>>();
+
+        Ok(Self {
+            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
+        })
+    }
 
     pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
