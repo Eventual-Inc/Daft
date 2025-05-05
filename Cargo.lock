@@ -2228,11 +2228,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
  "common-daft-config",
- "common-display",
  "common-error",
  "common-partitioning",
- "common-runtime",
- "common-scan-info",
  "common-treenode",
  "daft-dsl",
  "daft-local-plan",

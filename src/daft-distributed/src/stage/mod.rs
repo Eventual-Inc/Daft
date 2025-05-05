@@ -45,6 +45,20 @@ struct OutputChannel {
     to_stages: Vec<StageID>,
     data_channel: DataChannel,
 }
+
+// THIS CODE IS SUBJECT TO CHANGE
+// Tentatively: A stage represents a fragment of a logical plan that can be run from start to finish
+// The boundaries of stages are determined based on whether or not data has to be moved between workers
+// For example, a grouped aggregate will be split up into a map stage, an exchange stage, and a hash aggregate stage.
+// Stages cannot produce unmaterialized results. The results of stages must be materialized before they can be used as input to other stages.
+//
+// KEY POINTS FOR CONSIDERATION (Whatever we end up doing here, we need to make sure that):
+// - Our design must be evolvable, meaning we should be able to make modifications as and when new requirements / problems arise.
+// - Reliable and scalable is the first priority.
+// - It should be easy to understand the stages and what they do.
+// - We must be able to do re-planning based on new statistics.
+// - We must allow for potential concurrent execution of stages.
+
 #[derive(Debug)]
 #[allow(dead_code)]
 struct Stage {

@@ -8,7 +8,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_logical_plan::LogicalPlanBuilder;
+use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use futures::Stream;
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
 
 pub struct DistributedPhysicalPlan {
     #[allow(dead_code)]
-    stage_plan: StagePlan,
+    logical_plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
 }
 
@@ -30,22 +30,33 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let plan = builder.build();
-        let stage_plan = StagePlan::from_logical_plan(plan)?;
-        Ok(Self { stage_plan, config })
+
+        Ok(Self {
+            logical_plan: plan,
+            config,
+        })
+    }
+
+    async fn execute_stages(
+        _stage_plan: StagePlan,
+        _psets: HashMap<String, Vec<PartitionRef>>,
+        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
+    ) -> DaftResult<()> {
+        todo!("FLOTILLA_MS1: Implement execute stages");
     }
 
     pub fn run_plan(
         &self,
-        _psets: HashMap<String, Vec<PartitionRef>>,
-        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
-    ) -> PlanResult {
+        psets: HashMap<String, Vec<PartitionRef>>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+    ) -> DaftResult<PlanResult> {
         let (_result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
+        let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
         let handle = runtime.spawn(async move {
-            // TODO: FLOTILLA_MS1: Implement plan running loop
-            todo!()
+            Self::execute_stages(stage_plan, psets, worker_manager_factory).await
         });
-        PlanResult::new(handle, result_receiver)
+        Ok(PlanResult::new(handle, result_receiver))
     }
 
     pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
