@@ -1002,12 +1002,12 @@ impl RecordBatch {
         let mut partition_path = PathBuf::new();
         for col in self.columns.iter() {
             let key = urlencoding::encode(col.name());
-            let value = if let Some(value) = col.utf8()?.get(0) {
-                urlencoding::encode(value)
+            if col.inner.validity().is_none_or(|v| v.get_bit(0)) {
+                let value = col.inner.str_value(0)?;
+                partition_path.push(format!("{}={}", key, urlencoding::encode(&value)));
             } else {
-                default_partition.clone()
-            };
-            partition_path.push(format!("{key}={value}"));
+                partition_path.push(format!("{}={}", key, default_partition));
+            }
         }
         Ok(partition_path)
     }
@@ -1192,13 +1192,13 @@ mod test {
         let partition_path = batch.to_partition_path(None)?;
         assert_eq!(
             partition_path.to_string_lossy(),
-            "/year=2023/month=1/day=__HIVE_DEFAULT_PARTITION__/today%27s%20date=2025%2F04%2F29"
+            "year=2023/month=1/day=__HIVE_DEFAULT_PARTITION__/today%27s%20date=2025%2F04%2F29"
         );
         // Test with a fallback value that includes spaces.
         let partition_path = batch.to_partition_path(Some("unconventional fallback"))?;
         assert_eq!(
             partition_path.to_string_lossy(),
-            "/year=2023/month=1/day=unconventional%20fallback/today%27s%20date=2025%2F04%2F29"
+            "year=2023/month=1/day=unconventional%20fallback/today%27s%20date=2025%2F04%2F29"
         );
         Ok(())
     }
