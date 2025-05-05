@@ -8,10 +8,9 @@ use daft_dsl::{
         named_expr,
         window::{WindowBoundary, WindowFrame, WindowFrameType},
     },
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
     Expr, ExprRef, WindowExpr, WindowSpec,
 };
-use daft_functions::FUNCTION_REGISTRY;
 use daft_session::Session;
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,

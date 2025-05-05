@@ -1,4 +1,4 @@
-use daft_functions::FunctionModule;
+use daft_dsl::functions::FunctionModule;
 
 pub mod crop;
 pub mod decode;
@@ -9,7 +9,7 @@ pub mod to_mode;
 pub struct ImageFunctions;
 
 impl FunctionModule for ImageFunctions {
-    fn register(parent: &mut daft_functions::FunctionRegistry) {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(crop::ImageCrop);
         parent.add_fn(decode::ImageDecode);
         parent.add_fn(encode::ImageEncode);
