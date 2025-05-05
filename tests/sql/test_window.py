@@ -608,4 +608,6 @@ def test_range_window_with_dates():
         .collect()
     )
 
-    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "date"], check_dtype=False)
+    assert_df_equals(
+        sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "date", "value"], check_dtype=False
+    )

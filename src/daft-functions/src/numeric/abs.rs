@@ -28,6 +28,7 @@ impl ScalarUDF for Abs {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        // todo: move this into ScalarUDF. but it's currently not possible because of the `fuzzy_eq` function
         evaluate_single_numeric(inputs, Series::abs)
     }
 }
