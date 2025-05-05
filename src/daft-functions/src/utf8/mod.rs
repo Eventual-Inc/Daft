@@ -1,6 +1,3 @@
-mod capitalize;
-mod contains;
-mod endswith;
 mod extract;
 mod extract_all;
 mod find;
@@ -27,9 +24,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use capitalize::{utf8_capitalize as capitalize, Utf8Capitalize};
-pub use contains::{utf8_contains as contains, Utf8Contains};
-pub use endswith::{utf8_endswith as endswith, Utf8Endswith};
 pub use extract::{utf8_extract as extract, Utf8Extract};
 pub use extract_all::{utf8_extract_all as extract_all, Utf8ExtractAll};
 pub use find::{utf8_find as find, Utf8Find};

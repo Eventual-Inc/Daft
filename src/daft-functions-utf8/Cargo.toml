@@ -2,11 +2,12 @@
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-functions = 
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 typetag = {workspace = true}
 
+[dev-dependencies]
+arrow2 = {workspace = true}
 [features]
 python = [
   "dep:pyo3",

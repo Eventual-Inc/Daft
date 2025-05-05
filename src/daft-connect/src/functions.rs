@@ -31,6 +31,19 @@ pub(crate) static CONNECT_FUNCTIONS: LazyLock<SparkFunctions> = LazyLock::new(||
     functions
 });
 
+impl SparkFunction for Arc<dyn ScalarUDF> {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
+        let sf = ScalarFunction {
+            udf: self.clone(),
+            inputs: args
+                .iter()
+                .map(analyze_expr)
+                .collect::<ConnectResult<Vec<_>>>()?,
+        };
+        Ok(sf.into())
+    }
+}
+
 pub trait SparkFunction: Send + Sync {
     fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef>;
 }
@@ -71,21 +84,6 @@ pub trait FunctionModule {
 
 struct UnaryFunction(fn(ExprRef) -> ExprRef);
 struct BinaryFunction(fn(ExprRef, ExprRef) -> ExprRef);
-
-impl<T> SparkFunction for T
-where
-    T: ScalarUDF + 'static + Clone,
-{
-    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
-        let sf = ScalarFunction::new(
-            self.clone(),
-            args.iter()
-                .map(analyze_expr)
-                .collect::<ConnectResult<Vec<_>>>()?,
-        );
-        Ok(sf.into())
-    }
-}
 
 impl SparkFunction for UnaryFunction {
     fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {

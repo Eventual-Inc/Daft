@@ -2311,6 +2311,7 @@ dependencies = [
 name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2508,6 +2509,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-utf8",
  "daft-schema",
  "derivative",
  "indexmap 2.8.0",

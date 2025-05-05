@@ -345,16 +345,8 @@ impl PySeries {
         Ok(self.series.data_type().clone().into())
     }
 
-    pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_endswith(&pattern.series)?.into())
-    }
-
     pub fn utf8_startswith(&self, pattern: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_startswith(&pattern.series)?.into())
-    }
-
-    pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_contains(&pattern.series)?.into())
     }
 
     pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
@@ -406,10 +398,6 @@ impl PySeries {
 
     pub fn utf8_reverse(&self) -> PyResult<Self> {
         Ok(self.series.utf8_reverse()?.into())
-    }
-
-    pub fn utf8_capitalize(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_capitalize()?.into())
     }
 
     pub fn utf8_left(&self, nchars: &Self) -> PyResult<Self> {

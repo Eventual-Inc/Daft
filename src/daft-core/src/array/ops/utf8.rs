@@ -358,27 +358,11 @@ pub struct Utf8NormalizeOptions {
 }
 
 impl Utf8Array {
-    pub fn endswith(&self, pattern: &Self) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(
-            pattern,
-            |data: &str, pat: &str| Ok(data.ends_with(pat)),
-            "endswith",
-        )
-    }
-
     pub fn startswith(&self, pattern: &Self) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(
             pattern,
             |data: &str, pat: &str| Ok(data.starts_with(pat)),
             "startswith",
-        )
-    }
-
-    pub fn contains(&self, pattern: &Self) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(
-            pattern,
-            |data: &str, pat: &str| Ok(data.contains(pat)),
-            "contains",
         )
     }
 
@@ -634,22 +618,6 @@ impl Utf8Array {
 
     pub fn reverse(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.chars().rev().collect::<String>().into())
-    }
-
-    pub fn capitalize(&self) -> DaftResult<Self> {
-        self.unary_broadcasted_op(|val| {
-            let mut chars = val.chars();
-            match chars.next() {
-                None => "".into(),
-                Some(first) => {
-                    let first_char_uppercased = first.to_uppercase();
-                    let mut res = String::with_capacity(val.len());
-                    res.extend(first_char_uppercased);
-                    res.extend(chars.flat_map(|c| c.to_lowercase()));
-                    res.into()
-                }
-            }
-        })
     }
 
     pub fn find(&self, substr: &Self) -> DaftResult<Int64Array> {
@@ -1301,7 +1269,7 @@ impl Utf8Array {
         Ok(result)
     }
 
-    fn binary_broadcasted_compare<ScalarKernel>(
+    pub fn binary_broadcasted_compare<ScalarKernel>(
         &self,
         other: &Self,
         operation: ScalarKernel,
@@ -1433,7 +1401,7 @@ impl Utf8Array {
         ))
     }
 
-    fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Self>
+    pub fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Self>
     where
         ScalarKernel: Fn(&str) -> Cow<'_, str>,
     {
@@ -1482,58 +1450,5 @@ impl Utf8Array {
         Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
         todo!("try_encode")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn check_endswith_utf_arrays_broadcast() -> DaftResult<()> {
-        let data = Utf8Array::from((
-            "data",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
-                "x_foo".into(),
-                "y_foo".into(),
-                "z_bar".into(),
-            ])),
-        ));
-        let pattern = Utf8Array::from((
-            "pattern",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec!["foo".into()])),
-        ));
-        let result = &data.endswith(&pattern)?;
-        assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(result.as_arrow().value(1));
-        assert!(!result.as_arrow().value(2));
-        Ok(())
-    }
-
-    #[test]
-    fn check_endswith_utf_arrays() -> DaftResult<()> {
-        let data = Utf8Array::from((
-            "data",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
-                "x_foo".into(),
-                "y_foo".into(),
-                "z_bar".into(),
-            ])),
-        ));
-        let pattern = Utf8Array::from((
-            "pattern",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
-                "foo".into(),
-                "wrong".into(),
-                "bar".into(),
-            ])),
-        ));
-        let result = &data.endswith(&pattern)?;
-        assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(!result.as_arrow().value(1));
-        assert!(result.as_arrow().value(2));
-        Ok(())
     }
 }

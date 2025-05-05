@@ -18,21 +18,9 @@ impl Series {
         }
     }
 
-    pub fn utf8_endswith(&self, pattern: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| Ok(arr.endswith(pattern_arr)?.into_series()))
-        })
-    }
-
     pub fn utf8_startswith(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.startswith(pattern_arr)?.into_series()))
-        })
-    }
-
-    pub fn utf8_contains(&self, pattern: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| Ok(arr.contains(pattern_arr)?.into_series()))
         })
     }
 
@@ -106,10 +94,6 @@ impl Series {
 
     pub fn utf8_reverse(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.reverse()?.into_series()))
-    }
-
-    pub fn utf8_capitalize(&self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.capitalize()?.into_series()))
     }
 
     pub fn utf8_left(&self, nchars: &Self) -> DaftResult<Self> {

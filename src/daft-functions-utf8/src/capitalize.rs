@@ -1,7 +1,7 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
-    series::Series,
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{
     functions::{FunctionArgs, ScalarFunction, ScalarUDF},
@@ -10,13 +10,13 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Utf8Capitalize;
+pub struct Capitalize;
 
 #[typetag::serde]
-impl ScalarUDF for Utf8Capitalize {
+impl ScalarUDF for Capitalize {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
-        input.utf8_capitalize()
+        series_capitalize(input)
     }
 
     fn name(&self) -> &'static str {
@@ -43,7 +43,24 @@ impl ScalarUDF for Utf8Capitalize {
     }
 }
 
-#[must_use]
-pub fn utf8_capitalize(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Utf8Capitalize, vec![input]).into()
+pub fn capitalize(e: ExprRef) -> ExprRef {
+    ScalarFunction::new(Capitalize, vec![e]).into()
+}
+pub fn series_capitalize(s: &Series) -> DaftResult<Series> {
+    s.with_utf8_array(|u| {
+        u.unary_broadcasted_op(|val| {
+            let mut chars = val.chars();
+            match chars.next() {
+                None => "".into(),
+                Some(first) => {
+                    let first_char_uppercased = first.to_uppercase();
+                    let mut res = String::with_capacity(val.len());
+                    res.extend(first_char_uppercased);
+                    res.extend(chars.flat_map(|c| c.to_lowercase()));
+                    res.into()
+                }
+            }
+        })
+        .map(IntoSeries::into_series)
+    })
 }

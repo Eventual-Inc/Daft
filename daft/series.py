@@ -890,8 +890,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.utf8_reverse())
 
     def capitalize(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_capitalize())
+        return self._eval_expressions('capitalize')
 
     def left(self, nchars: Series) -> Series:
         if not isinstance(nchars, Series):

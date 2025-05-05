@@ -35,7 +35,7 @@ mod test {
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col};
-    use daft_functions::utf8::{endswith, startswith};
+    use daft_functions_utf8::{endswith, startswith};
     use pretty_assertions::assert_eq;
 
     use crate::{

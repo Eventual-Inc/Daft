@@ -62,6 +62,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
         let inputs = FunctionArgs::try_new(
             inputs
                 .iter()
+                 
                 .map(|s| FunctionArg::unnamed(s.clone()))
                 .collect(),
         )?;

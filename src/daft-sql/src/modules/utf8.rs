@@ -147,9 +147,7 @@ pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        parent.add_fn("ends_with", SQLUtf8EndsWith);
         parent.add_fn("starts_with", SQLUtf8StartsWith);
-        parent.add_fn("contains", SQLUtf8Contains);
         parent.add_fn("split", SQLUtf8Split);
         // TODO add split variants
         // parent.add("split", f(Split(false)));
@@ -167,7 +165,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("lstrip", SQLUtf8Lstrip);
         parent.add_fn("rstrip", SQLUtf8Rstrip);
         parent.add_fn("reverse", SQLUtf8Reverse);
-        parent.add_fn("capitalize", SQLUtf8Capitalize);
         parent.add_fn("left", SQLUtf8Left);
         parent.add_fn("right", SQLUtf8Right);
         parent.add_fn("find", SQLUtf8Find);
@@ -186,28 +183,10 @@ impl SQLModule for SQLModuleUtf8 {
 }
 
 utf8_function!(
-    SQLUtf8EndsWith,
-    "ends_with",
-    daft_functions::utf8::endswith,
-    "Returns true if the string ends with the specified substring",
-    "string_input",
-    "substring"
-);
-
-utf8_function!(
     SQLUtf8StartsWith,
     "starts_with",
     daft_functions::utf8::startswith,
     "Returns true if the string starts with the specified substring",
-    "string_input",
-    "substring"
-);
-
-utf8_function!(
-    SQLUtf8Contains,
-    "contains",
-    daft_functions::utf8::contains,
-    "Returns true if the string contains the specified substring",
     "string_input",
     "substring"
 );
@@ -302,14 +281,6 @@ utf8_function!(
     "reverse",
     daft_functions::utf8::reverse,
     "Reverses the order of characters in the string",
-    "string_input"
-);
-
-utf8_function!(
-    SQLUtf8Capitalize,
-    "capitalize",
-    daft_functions::utf8::capitalize,
-    "Capitalizes the first character of the string",
     "string_input"
 );
 

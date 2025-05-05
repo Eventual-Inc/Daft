@@ -2798,8 +2798,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(native.utf8_contains(self._expr, substr_expr._expr))
+        substr_expr = Expression._to_expression(substr)._expr
+        f = native.get_function_from_registry("utf8_contains")
+        return Expression._from_pyexpr(f(self._expr, substr_expr))
 
     def match(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given regular expression pattern in a string column.
@@ -3377,7 +3378,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_capitalize(self._expr))
+        f = native.get_function_registry("capitalize")
+        return Expression._from_pyexpr(f(self._expr))
 
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
