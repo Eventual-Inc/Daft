@@ -129,7 +129,7 @@ impl StagePlan {
             }
             print!("Stage {}: {}\n", curr.0, name);
             stage.input_channels.iter().enumerate().for_each(|(i, c)| {
-                stack.push((depth + i, c.from_stage.clone()));
+                stack.push((depth + ((i != 0) as usize), c.from_stage.clone()));
             });
 
         }
