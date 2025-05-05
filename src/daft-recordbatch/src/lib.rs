@@ -84,6 +84,28 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
+/// Ensures that the schema matches the columns and also ensures that all values are either a scalar value, or a series of matching length.
+#[inline]
+fn validate_lengths_and_schema(
+    schema: &Schema,
+    columns: &[Series],
+    num_rows: usize,
+) -> DaftResult<()> {
+    if schema.len() != columns.len() {
+        return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.len(), columns.len())));
+    }
+    for (field, series) in schema.into_iter().zip(columns.iter()) {
+        if &field.dtype != series.data_type() {
+            return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
+        }
+        if (series.len() != 1) && (series.len() != num_rows) {
+            return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
+        }
+    }
+
+    Ok(())
+}
+
 impl RecordBatch {
     /// Create a new [`RecordBatch`] and handle broadcasting of any unit-length columns
     ///
@@ -101,14 +123,7 @@ impl RecordBatch {
         num_rows: usize,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
-        validate_schema(schema.as_ref(), columns.as_slice())?;
-
-        // Validate Series lengths against provided num_rows
-        for (field, series) in schema.into_iter().zip(columns.iter()) {
-            if (series.len() != 1) && (series.len() != num_rows) {
-                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
-            }
-        }
+        validate_lengths_and_schema(schema.as_ref(), columns.as_slice(), num_rows)?;
 
         // Broadcast any unit-length Series
         let columns: DaftResult<Vec<Series>> = columns

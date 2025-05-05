@@ -103,8 +103,16 @@ pub fn weekday(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
     date_like!(u32_weekday, array, DataType::UInt32)
 }
 
+pub fn day_of_month(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+    date_like!(day, array, DataType::UInt32)
+}
+
 pub fn day_of_year(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
     date_like!(ordinal, array, DataType::UInt32)
+}
+
+pub fn week_of_year(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+    date_like!(u32_iso_week, array, DataType::UInt32)
 }
 
 /// Extracts ISO week of a temporal array as [`PrimitiveArray<u32>`]

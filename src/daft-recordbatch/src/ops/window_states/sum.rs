@@ -3,6 +3,7 @@ use std::ops::{Add, Sub};
 use arrow2::bitmap::MutableBitmap;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
+    array::ops::DaftIsNan,
     datatypes::{try_sum_supertype, DaftPrimitiveType},
     prelude::*,
 };
@@ -32,14 +33,14 @@ where
     pub fn new(source: &Series, total_length: usize) -> Self {
         let source_array = source.downcast::<DataArray<T>>().unwrap().clone();
         let is_nan = match source.data_type() {
-            DataType::Float32 | DataType::Float64 => Some(
-                source
-                    .is_nan()
-                    .unwrap()
-                    .downcast::<DataArray<BooleanType>>()
-                    .unwrap()
-                    .clone(),
-            ),
+            DataType::Float32 => {
+                let float_array = source.downcast::<DataArray<Float32Type>>().unwrap();
+                Some(DaftIsNan::is_nan(float_array).unwrap())
+            }
+            DataType::Float64 => {
+                let float_array = source.downcast::<DataArray<Float64Type>>().unwrap();
+                Some(DaftIsNan::is_nan(float_array).unwrap())
+            }
             _ => None,
         };
         Self {

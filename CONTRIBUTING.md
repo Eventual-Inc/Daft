@@ -25,7 +25,7 @@ When proposing features, please include:
 
 To set up your development environment:
 
-1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.11)
+1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.12)
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
 3. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
 4. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
@@ -117,7 +117,7 @@ This file is usually found in the `.vscode` folder of your project root. See the
 
 2. Set breakpoints in any `.rs` or `.py` file.
 
-3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on top and click the `Start Debugging` button.
+3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on top and click the `Start Debugging` button. This will start a debugging session using the file that is currently opened in the VSCode editor.
 
 At this point, your debugger should stop on breakpoints in any .rs file located within the codebase.
 
