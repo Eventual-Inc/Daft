@@ -194,31 +194,32 @@ impl FileWriter for ArrowParquetWriter {
             .as_ref()
             .expect("Compute runtime should be created by now");
         let starting_bytes_written = self.bytes_written();
+        let record_batches =
+            data.tables_or_read(IOStatsContext::new("ArrowParquetWriter::write"))?;
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,
             &self.arrow_schema,
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        let record_batches =
-            data.tables_or_read(IOStatsContext::new("ArrowParquetWriter::write"))?;
         let mut column_writer_worker_threads: Vec<_> = column_writers
             .into_iter()
             .map(|mut col_writer| {
                 let (send, mut recv) =
                     tokio::sync::mpsc::channel::<ArrowLeafColumn>(record_batches.len());
                 let handle = compute_runtime.spawn(async move {
-                    // receive Arrays to encode via the channel
                     while let Some(col) = recv.recv().await {
                         col_writer.write(&col)?;
                     }
-                    // Once the input is complete, close the writer to return the newly created ArrowColumnChunk
+                    // Once we have processed all the input, close the writer to return the newly created ArrowColumnChunk.
                     col_writer.close()
                 });
                 (handle, send)
             })
             .collect();
 
+        // Send the record batches to the column writer worker threads, wait for them to complete encoding,
+        // then flush their results as a new row group.
         let file_writer = self.file_writer.clone();
         let fields = self.arrow_schema.fields.clone();
         compute_runtime.block_on(async move {
