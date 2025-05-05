@@ -23,7 +23,7 @@ impl ScalarUDF for Utf8Rpad {
         "rpad"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, length, pad] => {
                 let data = data.to_field(schema)?;

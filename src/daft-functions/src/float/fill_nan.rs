@@ -50,7 +50,7 @@ impl ScalarUDF for FillNan {
         "fill_nan"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, fill_value] => match (data.to_field(schema), fill_value.to_field(schema)) {
                 (Ok(data_field), Ok(fill_value_field)) => {

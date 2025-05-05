@@ -40,7 +40,7 @@ impl ScalarUDF for Sign {
         stringify!(sign)
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field_single_numeric(self, inputs, schema)
     }
 
@@ -102,7 +102,7 @@ impl ScalarUDF for Negative {
     fn name(&self) -> &'static str {
         stringify!(negative)
     }
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field_single_numeric(self, inputs, schema)
     }
     fn docstring(&self) -> &'static str {

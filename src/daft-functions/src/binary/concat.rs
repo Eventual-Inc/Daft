@@ -25,7 +25,7 @@ impl ScalarUDF for BinaryConcat {
         "concat"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [left, right] => {
                 let left_field = left.to_field(schema)?;

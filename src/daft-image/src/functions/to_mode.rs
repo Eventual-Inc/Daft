@@ -26,7 +26,11 @@ impl ScalarUDF for ImageToMode {
         "to_mode"
     }
 
-    fn to_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(inputs.len() == 2, "ImageToMode requires exactly 2 inputs");
 
         let field = inputs.required((0, "input"))?.to_field(schema)?;

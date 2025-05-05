@@ -17,7 +17,7 @@ impl ScalarUDF for ImageCrop {
         "image_crop"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input, bbox] => {
                 let input_field = input.to_field(schema)?;

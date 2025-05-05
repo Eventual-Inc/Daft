@@ -53,7 +53,7 @@ impl ScalarUDF for MergeMeanFunction {
         }
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [sum, counts] => {
                 let count_field = counts.to_field(schema)?;

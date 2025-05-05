@@ -40,7 +40,11 @@ impl ScalarUDF for ImageResize {
         "image_resize"
     }
 
-    fn to_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         let input = inputs.required((0, "input"))?;
         let field = input.to_field(schema)?;
         let width = inputs.required(("w", "width")).and_then(|e| {

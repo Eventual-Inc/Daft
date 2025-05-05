@@ -20,7 +20,7 @@ impl ScalarUDF for MonotonicallyIncreasingId {
         "monotonically_increasing_id"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], _schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], _schema: &Schema) -> DaftResult<Field> {
         if !inputs.is_empty() {
             return Err(DaftError::ValueError(format!(
                 "Expected 0 input args, got {}",

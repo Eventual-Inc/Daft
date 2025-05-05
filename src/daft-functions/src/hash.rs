@@ -55,7 +55,7 @@ impl ScalarUDF for HashFunction {
         }
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] | [input, _] => match input.to_field(schema) {
                 Ok(field) => Ok(Field::new(field.name, DataType::UInt64)),

@@ -33,7 +33,7 @@ impl ScalarUDF for Round {
         "round"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 2 || inputs.len() == 1,
             "round takes one or two arguments"

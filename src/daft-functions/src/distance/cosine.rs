@@ -141,7 +141,7 @@ impl ScalarUDF for CosineDistanceFunction {
         }
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [source, query] => {
                 let source = source.to_field(schema)?;

@@ -52,7 +52,7 @@ impl ScalarUDF for MinHashFunction {
         }
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(field) => match &field.dtype {

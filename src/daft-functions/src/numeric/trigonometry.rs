@@ -32,11 +32,7 @@ macro_rules! trigonometry {
                 TrigonometricFunction::$variant.fn_name()
             }
 
-            fn to_field_deprecated(
-                &self,
-                inputs: &[ExprRef],
-                schema: &Schema,
-            ) -> DaftResult<Field> {
+            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
                 if inputs.len() != 1 {
                     return Err(DaftError::SchemaMismatch(format!(
                         "Expected 1 input arg, got {}",
@@ -156,7 +152,7 @@ impl ScalarUDF for Atan2 {
         &["arctan2"]
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         if inputs.len() != 2 {
             return Err(DaftError::SchemaMismatch(format!(
                 "Expected 2 input args, got {}",

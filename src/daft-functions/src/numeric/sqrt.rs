@@ -35,7 +35,7 @@ impl ScalarUDF for Sqrt {
         "sqrt"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         to_field_single_floating(self, inputs, schema)
     }
 

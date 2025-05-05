@@ -24,7 +24,7 @@ impl ScalarUDF for ListMean {
         "list_mean"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let inner_field = input.to_field(schema)?.to_exploded_field()?;

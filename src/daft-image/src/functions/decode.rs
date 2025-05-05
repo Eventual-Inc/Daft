@@ -59,7 +59,11 @@ impl ScalarUDF for ImageDecode {
         "image_decode"
     }
 
-    fn to_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(
             !inputs.is_empty() && inputs.len() <= 3,
             "ImageDecode requires between 1 and 3 inputs"

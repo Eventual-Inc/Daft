@@ -20,7 +20,7 @@ impl ScalarUDF for ListSort {
         "list_sort"
     }
 
-    fn to_field_deprecated(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, desc, _nulls_first] => match (data.to_field(schema), desc.to_field(schema)) {
                 (Ok(field), Ok(desc_field)) => match (&field.dtype, &desc_field.dtype) {

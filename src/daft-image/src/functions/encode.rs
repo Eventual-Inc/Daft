@@ -39,7 +39,11 @@ impl ScalarUDF for ImageEncode {
         "image_encode"
     }
 
-    fn to_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         ensure!(inputs.len() == 2, "image_encode requires 2 arguments");
 
         let input = inputs.required((0, "input"))?;
