@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import random
 from decimal import Decimal
 
@@ -1741,3 +1742,54 @@ def test_sliding_sum_with_nan_and_none(make_df):
     expected_pd = pd.DataFrame(expected_data)
 
     assert_df_equals(result_pd, expected_pd, sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_window_with_timestamp(make_df):
+    """Test window operations with date/timestamp ranges using the API."""
+    random.seed(81)
+
+    base_date = datetime.datetime(2023, 1, 1)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        dates = sorted([random.randint(0, 1000) for _ in range(700)])
+        values = random.sample(range(1, 1000), 700)
+        dates = [base_date + datetime.timedelta(days=date) for date in dates]
+
+        for date, value in zip(dates, values):
+            data.append({"category": category, "date": date, "value": value})
+
+            three_day_window_values = []
+            for other_date, other_value in zip(dates, values):
+                if abs((date - other_date).days) <= 3:
+                    three_day_window_values.append(other_value)
+
+            window_sum = sum(three_day_window_values)
+            window_avg = (window_sum / len(three_day_window_values)) if len(three_day_window_values) > 0 else None
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "date": date,
+                    "value": value,
+                    "window_sum": window_sum,
+                    "window_avg": window_avg,
+                }
+            )
+
+    df = make_df(data)
+
+    three_days = datetime.timedelta(days=3)
+    window_spec = Window().partition_by("category").order_by("date").range_between(-three_days, three_days)
+
+    result = df.select(
+        col("category"),
+        col("date"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("window_sum"),
+        col("value").mean().over(window_spec).alias("window_avg"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date"], check_dtype=False)

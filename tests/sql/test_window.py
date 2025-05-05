@@ -1,9 +1,12 @@
+import datetime
 import random
 
+import pandas as pd
 import pytest
 
 import daft
 from daft import Window, col
+from daft.expressions import interval
 from daft.functions import dense_rank, rank, row_number
 from daft.sql.sql import SQLCatalog
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
@@ -448,22 +451,22 @@ def test_range_window_sql():
             SUM(value) OVER(
                 PARTITION BY category
                 ORDER BY ts
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_sum,
             AVG(value) OVER(
                 PARTITION BY category
                 ORDER BY ts
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_avg,
             MIN(value) OVER(
                 PARTITION BY category
                 ORDER BY ts
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_min,
             MAX(value) OVER(
                 PARTITION BY category
                 ORDER BY ts
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_max
         FROM test_data
         ORDER BY category, ts
@@ -515,22 +518,22 @@ def test_range_window_desc_sql():
             SUM(value) OVER(
                 PARTITION BY category
                 ORDER BY ts DESC
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_sum,
             AVG(value) OVER(
                 PARTITION BY category
                 ORDER BY ts DESC
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_avg,
             MIN(value) OVER(
                 PARTITION BY category
                 ORDER BY ts DESC
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_min,
             MAX(value) OVER(
                 PARTITION BY category
                 ORDER BY ts DESC
-                RANGE BETWEEN -2 PRECEDING AND 2 FOLLOWING
+                RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING
             ) AS range_max
         FROM test_data
         ORDER BY category, ts
@@ -550,3 +553,57 @@ def test_range_window_desc_sql():
     )
 
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_window_with_dates():
+    """Test SQL window functions with range frame type and date/timestamp data."""
+    base_date = datetime.datetime(2023, 1, 1)
+    data = {"category": [], "date": [], "value": []}
+
+    for category in ["A", "B"]:
+        dates = sorted([random.randint(0, 1000) for _ in range(700)])
+        values = random.sample(range(1, 1000), 700)
+        dates = [base_date + datetime.timedelta(days=date) for date in dates]
+
+        for date, value in zip(dates, values):
+            data["category"].append(category)
+            data["date"].append(date)
+            data["value"].append(value)
+
+    pdf = pd.DataFrame(data)
+    df = daft.from_pandas(pdf)
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            category,
+            date,
+            value,
+            SUM(value) OVER(
+                PARTITION BY category
+                ORDER BY date
+                RANGE BETWEEN INTERVAL '3' DAY PRECEDING AND INTERVAL '3' DAY FOLLOWING
+            ) AS date_range_sum,
+            AVG(value) OVER(
+                PARTITION BY category
+                ORDER BY date
+                RANGE BETWEEN INTERVAL '3' DAY PRECEDING AND INTERVAL '3' DAY FOLLOWING
+            ) AS date_range_avg
+        FROM test_data
+        ORDER BY category, date
+        """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().partition_by("category").order_by("date").range_between(interval(days=-3), interval(days=3))
+
+    daft_result = (
+        df.with_column("date_range_sum", col("value").sum().over(window_spec))
+        .with_column("date_range_avg", col("value").mean().over(window_spec))
+        .sort(["category", "date"])
+        .collect()
+    )
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "date"], check_dtype=False)

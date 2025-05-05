@@ -223,24 +223,44 @@ impl Add for InferDataType<'_> {
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
                 // --- Timestamp + Duration = Timestamp ---
                 (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
-                | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz))
-                    if t_unit == d_unit => Ok(DataType::Timestamp(*t_unit, tz.clone())),
-                    (ts @ DataType::Timestamp(..), du @ DataType::Duration(..))
-                    | (du @ DataType::Duration(..), ts @ DataType::Timestamp(..)) => Err(DaftError::TypeError(
-                    format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
-                )),
+                | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz)) => {
+                    let result_unit = match (t_unit, d_unit) {
+                        (tu, du) if tu == du => *tu,
+                        // If units differ, use the higher precision one
+                        (tu, du) => {
+                            use crate::datatypes::TimeUnit::*;
+                            match (tu, du) {
+                                (Nanoseconds, _) => Nanoseconds,
+                                (_, Nanoseconds) => Nanoseconds,
+                                (Microseconds, _) => Microseconds,
+                                (_, Microseconds) => Microseconds,
+                                (Milliseconds, _) => Milliseconds,
+                                (_, Milliseconds) => Milliseconds,
+                                _ => Seconds,
+                            }
+                        }
+                    };
+                    Ok(DataType::Timestamp(result_unit, tz.clone()))
+                },
                 // --- Date & Duration = Date ---
                 (DataType::Date, DataType::Duration(..)) | (DataType::Duration(..), DataType::Date) => Ok(DataType::Date),
                 // --- Duration + Duration = Duration ---
-                (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) if d_unit_self == d_unit_other => {
-                    Ok(DataType::Duration(*d_unit_self))
+                (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) => {
+                    let result_unit = match (d_unit_self, d_unit_other) {
+                        (tu, du) if tu == du => *tu,
+                        // If units differ, use the higher precision one
+                        _ => {
+                            use crate::datatypes::TimeUnit::*;
+                            match (d_unit_self, d_unit_other) {
+                                (Nanoseconds, _) | (_, Nanoseconds) => Nanoseconds,
+                                (Microseconds, _) | (_, Microseconds) => Microseconds,
+                                (Milliseconds, _) | (_, Milliseconds) => Milliseconds,
+                                _ => Seconds,
+                            }
+                        }
+                    };
+                    Ok(DataType::Duration(result_unit))
                 },
-                // --------
-                // Duration + other
-                // --------
-                (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
-                    format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
-                )),
                 // --------
                 // Nulls + other
                 // --------
@@ -317,24 +337,65 @@ impl Sub for InferDataType<'_> {
             match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
-                (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
-                    if t_unit == d_unit => Ok(DataType::Timestamp(*t_unit, tz.clone())),
-                    (ts @ DataType::Timestamp(..), du @ DataType::Duration(..)) => Err(DaftError::TypeError(
-                    format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
-                )),
-                    (DataType::Timestamp(t_unit_self, tz_self), DataType::Timestamp(t_unit_other, tz_other))
-                    if t_unit_self == t_unit_other && tz_self == tz_other => Ok(DataType::Duration(*t_unit_self)),
+                (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit)) => {
+                    let result_unit = match (t_unit, d_unit) {
+                        (tu, du) if tu == du => *tu,
+                        // If units differ, use the higher precision one
+                        (tu, du) => {
+                            use crate::datatypes::TimeUnit::*;
+                            match (tu, du) {
+                                (Nanoseconds, _) => Nanoseconds,
+                                (_, Nanoseconds) => Nanoseconds,
+                                (Microseconds, _) => Microseconds,
+                                (_, Microseconds) => Microseconds,
+                                (Milliseconds, _) => Milliseconds,
+                                (_, Milliseconds) => Milliseconds,
+                                _ => Seconds,
+                            }
+                        }
+                    };
+                    Ok(DataType::Timestamp(result_unit, tz.clone()))
+                },
+                (DataType::Timestamp(t_unit_self, tz_self), DataType::Timestamp(t_unit_other, tz_other))
+                    if tz_self == tz_other => {
+                    let result_unit = match (t_unit_self, t_unit_other) {
+                        (tu, du) if tu == du => *tu,
+                        // If units differ, use the higher precision one
+                        _ => {
+                            use crate::datatypes::TimeUnit::*;
+                            match (t_unit_self, t_unit_other) {
+                                (Nanoseconds, _) | (_, Nanoseconds) => Nanoseconds,
+                                (Microseconds, _) | (_, Microseconds) => Microseconds,
+                                (Milliseconds, _) | (_, Milliseconds) => Milliseconds,
+                                _ => Seconds,
+                            }
+                        }
+                    };
+                    Ok(DataType::Duration(result_unit))
+                },
                 (ts @ DataType::Timestamp(..), ts_other @ DataType::Timestamp(..)) => Err(DaftError::TypeError(
-                    format!("Cannot subtract due to differing precision or timezone: {}, {}. Please explicitly cast to the precision or timezone you wish to add in.", ts, ts_other)
+                    format!("Cannot subtract timestamps with different timezones: {}, {}. Please explicitly cast to the same timezone first.", ts, ts_other)
                 )),
                 (DataType::Date, DataType::Duration(..)) => Ok(DataType::Date),
                 (DataType::Date, DataType::Date) => Ok(DataType::Duration(crate::datatypes::TimeUnit::Seconds)),
-                (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) if d_unit_self == d_unit_other => {
-                    Ok(DataType::Duration(*d_unit_self))
+                (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) => {
+                    // Always use the higher precision time unit
+                    let result_unit = match (d_unit_self, d_unit_other) {
+                        (tu, du) if tu == du => *tu,
+                        // If units differ, use the higher precision one
+                        _ => {
+                            use crate::datatypes::TimeUnit::*;
+                            match (d_unit_self, d_unit_other) {
+                                (Nanoseconds, _) | (_, Nanoseconds) => Nanoseconds,
+                                (Microseconds, _) | (_, Microseconds) => Microseconds,
+                                (Milliseconds, _) | (_, Milliseconds) => Milliseconds,
+                                // Both must be seconds at this point
+                                _ => Seconds,
+                            }
+                        }
+                    };
+                    Ok(DataType::Duration(result_unit))
                 },
-                (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
-                    format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
-                )),
                 (DataType::Decimal128(..), other) if other.is_integer() => self.sub(InferDataType::from(&integer_to_decimal128(other)?)),
                 (left, DataType::Decimal128(..)) if left.is_integer() => InferDataType::from(&integer_to_decimal128(left)?).sub(other),
                 (DataType::Decimal128(..), DataType::Float32 | DataType::Float64 ) | (DataType::Float32 | DataType::Float64, DataType::Decimal128(..)) => Ok(DataType::Float64),

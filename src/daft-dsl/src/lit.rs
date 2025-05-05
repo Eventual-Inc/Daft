@@ -224,6 +224,48 @@ impl LiteralValue {
         }
     }
 
+    pub fn neg(&self) -> Self {
+        match self {
+            Self::Int8(v) => Self::Int8(-v),
+            Self::Int16(v) => Self::Int16(-v),
+            Self::Int32(v) => Self::Int32(-v),
+            Self::Int64(v) => Self::Int64(-v),
+            Self::UInt8(v) => {
+                if *v > 0 {
+                    Self::Int16(-(*v as i16))
+                } else {
+                    self.clone()
+                }
+            }
+            Self::UInt16(v) => {
+                if *v > 0 {
+                    Self::Int32(-(*v as i32))
+                } else {
+                    self.clone()
+                }
+            }
+            Self::UInt32(v) => {
+                if *v > 0 {
+                    Self::Int64(-(*v as i64))
+                } else {
+                    self.clone()
+                }
+            }
+            Self::UInt64(v) => {
+                if *v > 0 {
+                    Self::Int64(-(*v as i64))
+                } else {
+                    self.clone()
+                }
+            }
+            Self::Float64(v) => Self::Float64(-v),
+            Self::Decimal(v, precision, scale) => Self::Decimal(-v, *precision, *scale),
+            Self::Duration(v, tu) => Self::Duration(-v, *tu),
+            Self::Interval(v) => Self::Interval(-v),
+            _ => panic!("Cannot negate literal: {:?}", self),
+        }
+    }
+
     pub fn to_series(&self) -> Series {
         match self {
             Self::Null => NullArray::full_null("literal", &DataType::Null, 1).into_series(),
