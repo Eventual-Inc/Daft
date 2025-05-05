@@ -2268,7 +2268,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "common-error",
- "common-hashable-float-wrapper",
  "common-runtime",
  "daft-core",
  "daft-dsl",
