@@ -17,7 +17,7 @@ use daft_physical_plan::{
     ops::{
         ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
         InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
-        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet,
+        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, TopN,
         Unpivot,
     },
     PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
@@ -493,6 +493,34 @@ fn physical_plan_to_partition_tasks(
                     *num_partitions,
                 ))?;
             Ok(py_iter.into())
+        }
+        PhysicalPlan::TopN(TopN {
+            input,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
+            num_partitions,
+        }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let py_physical_plan = py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
+
+            let sort_by_pyexprs: Vec<PyExpr> = sort_by
+                .iter()
+                .map(|expr| PyExpr::from(expr.clone()))
+                .collect();
+            let global_limit_iter = py_physical_plan
+                .getattr(pyo3::intern!(py, "top_n"))?
+                .call1((
+                    upstream_iter,
+                    sort_by_pyexprs,
+                    descending.clone(),
+                    nulls_first.clone(),
+                    *limit,
+                    *num_partitions,
+                ))?;
+            Ok(global_limit_iter.into())
         }
         PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy }) => {
             let upstream_iter =

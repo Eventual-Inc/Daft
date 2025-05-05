@@ -23,6 +23,7 @@ pub enum LocalPhysicalPlan {
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
+    TopN(TopN),
     // Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
@@ -76,6 +77,7 @@ impl LocalPhysicalPlan {
             | Self::Explode(Explode { stats_state, .. })
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
+            | Self::TopN(TopN { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
@@ -373,6 +375,27 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn top_n(
+        input: LocalPhysicalPlanRef,
+        sort_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+        limit: i64,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::TopN(TopN {
+            input,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub(crate) fn sample(
         input: LocalPhysicalPlanRef,
         fraction: f64,
@@ -526,6 +549,7 @@ impl LocalPhysicalPlan {
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Pivot(Pivot { schema, .. })
             | Self::Sort(Sort { schema, .. })
+            | Self::TopN(TopN { schema, .. })
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
@@ -618,6 +642,17 @@ pub struct Sort {
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TopN {
+    pub input: LocalPhysicalPlanRef,
+    pub sort_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub nulls_first: Vec<bool>,
+    pub limit: i64,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

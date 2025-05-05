@@ -5,7 +5,7 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Source},
+    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -109,6 +109,31 @@ impl PushDownLimit {
                             new_limit as i64,
                             new_eager,
                         )));
+                        // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
+                        let optimized = self
+                            .try_optimize_node(new_plan.clone())?
+                            .or(Transformed::yes(new_plan))
+                            .data;
+                        Ok(Transformed::yes(optimized))
+                    }
+                    // Combine Limit with Sort into TopN
+                    //
+                    // Limit-Sort -> TopN
+                    LogicalPlan::Sort(LogicalSort {
+                        input,
+                        sort_by,
+                        descending,
+                        nulls_first,
+                        ..
+                    }) => {
+                        let new_plan = Arc::new(LogicalPlan::TopN(LogicalTopN::try_new(
+                            input.clone(),
+                            sort_by.clone(),
+                            descending.clone(),
+                            nulls_first.clone(),
+                            limit as i64,
+                        )?));
+
                         // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
                         let optimized = self
                             .try_optimize_node(new_plan.clone())?
