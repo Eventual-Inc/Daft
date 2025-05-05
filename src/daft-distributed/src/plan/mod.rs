@@ -47,6 +47,7 @@ impl DistributedPhysicalPlan {
     ) -> PlanResult {
         let (_result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
+        println!("Stage:\n{:?}", self.stage_plan);
         let handle = runtime.spawn(async move {
             // TODO: FLOTILLA_MS1: Implement plan running loop
             todo!()
