@@ -30,6 +30,7 @@ pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn name(&self) -> &'static str;
     #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
+    #[allow(dead_code)]
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
 }
 
@@ -39,6 +40,7 @@ pub(crate) struct RunningPipelineNode {
 }
 
 impl RunningPipelineNode {
+    #[allow(dead_code)]
     fn new(result_receiver: Receiver<PipelineOutput>) -> Self {
         Self { result_receiver }
     }
@@ -64,6 +66,7 @@ pub(crate) enum PipelineOutput {
     Running(Box<dyn SwordfishTaskResultHandle>),
 }
 
+#[allow(dead_code)]
 pub(crate) fn logical_plan_to_pipeline_node(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,

@@ -6,20 +6,20 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, LogicalPlanRef};
-use futures::{Stream, StreamExt};
+use daft_logical_plan::LogicalPlanBuilder;
+use futures::Stream;
 
 use crate::{
-    channel::{create_channel, Receiver, Sender},
+    channel::{create_channel, Receiver},
     runtime::{get_or_init_runtime, JoinHandle},
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
 };
 
 pub struct DistributedPhysicalPlan {
+    #[allow(dead_code)]
     stage_plan: StagePlan,
     config: Arc<DaftExecutionConfig>,
 }
@@ -30,14 +30,7 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let plan = builder.build();
-        // if !can_translate_logical_plan(&plan) {
-        //     return Err(DaftError::InternalError(
-        //         "Cannot run this physical plan on distributed swordfish yet".to_string(),
-        //     ));
-        // }
-
         let stage_plan = StagePlan::from_logical_plan(plan)?;
-
         Ok(Self { stage_plan, config })
     }
 
@@ -48,7 +41,6 @@ impl DistributedPhysicalPlan {
     ) -> PlanResult {
         let (_result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
-        self.stage_plan.print_plan();
         let handle = runtime.spawn(async move {
             // TODO: FLOTILLA_MS1: Implement plan running loop
             todo!()
@@ -59,25 +51,6 @@ impl DistributedPhysicalPlan {
     pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
         &self.config
     }
-}
-
-fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
-    let mut can_translate = true;
-    let _ = plan.apply(|node| match node.as_ref() {
-        LogicalPlan::Project(_)
-        | LogicalPlan::Limit(_)
-        | LogicalPlan::Filter(_)
-        | LogicalPlan::Source(_)
-        | LogicalPlan::Sink(_)
-        | LogicalPlan::Sample(_)
-        | LogicalPlan::Explode(_)
-        | LogicalPlan::Unpivot(_) => Ok(TreeNodeRecursion::Continue),
-        _ => {
-            can_translate = false;
-            Ok(TreeNodeRecursion::Stop)
-        }
-    });
-    can_translate
 }
 
 // This is the output of a plan, a receiver to receive the results of the plan.
