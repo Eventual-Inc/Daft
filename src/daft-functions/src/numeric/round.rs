@@ -21,10 +21,16 @@ impl ScalarUDF for Round {
             "round takes one or two arguments"
         );
         let input = inputs.required((0, "input"))?;
-        let precision = inputs.required((1, "decimal", "precision"))?;
-        ensure!(precision.len() == 1, "expected scalar value for precision");
-        let precision = precision.cast(&DataType::Int32)?;
-        let precision = precision.i32().unwrap().get(0).unwrap();
+        let precision = if let Some(precision) = inputs.optional((1, "decimal", "precision"))? {
+            ensure!(precision.len() == 1, "expected scalar value for precision");
+            let precision = precision.cast(&DataType::Int32)?;
+            let precision = precision.i32().unwrap().get(0).unwrap();
+
+            ensure!(precision >= 0, ValueError: "decimal can not be negative: {precision}");
+            precision
+        } else {
+            0
+        };
 
         series_round(input, precision)
     }

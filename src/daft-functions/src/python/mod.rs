@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use daft_dsl::{
     expr::named_expr,
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
     python::PyExpr,
     ExprRef,
 };
@@ -35,8 +35,6 @@ use pyo3::{
     types::{PyDict, PyModule, PyModuleMethods, PyTuple},
     wrap_pyfunction, Bound, PyResult,
 };
-
-use crate::FUNCTION_REGISTRY;
 
 #[pyo3::pyclass]
 pub struct PyScalarFunction {
