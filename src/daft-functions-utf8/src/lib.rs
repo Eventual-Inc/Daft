@@ -6,6 +6,7 @@ mod extract_all;
 mod find;
 mod ilike;
 mod left;
+mod length;
 mod startswith;
 pub(crate) mod utils;
 
@@ -17,6 +18,7 @@ pub use extract_all::*;
 pub use find::*;
 pub use ilike::*;
 pub use left::*;
+pub use length::*;
 pub use startswith::*;
 
 pub struct Utf8Functions;
@@ -31,6 +33,8 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Find);
         parent.add_fn(ILike);
         parent.add_fn(Left);
+        parent.add_fn(Length);
+
         parent.add_fn(StartsWith);
     }
 }

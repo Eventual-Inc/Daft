@@ -4,11 +4,11 @@ common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 itertools = {workspace = true}
+num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
-num-traits = {workspace = true}
 
 [dev-dependencies]
 arrow2 = {workspace = true}

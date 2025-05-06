@@ -156,7 +156,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(uri::url_download);
     add!(uri::url_upload);
 
-    add!(utf8::utf8_length);
     add!(utf8::utf8_length_bytes);
     add!(utf8::utf8_like);
     add!(utf8::utf8_lower);

@@ -156,7 +156,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("regexp_split", SQLUtf8RegexpSplit);
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
-        parent.add_fn("length", SQLUtf8Length);
         parent.add_fn("length_bytes", SQLUtf8LengthBytes);
         parent.add_fn("lower", SQLUtf8Lower);
         parent.add_fn("upper", SQLUtf8Upper);
@@ -222,14 +221,6 @@ utf8_function!(
     "Splits the string by the specified delimiter and returns an array of substrings",
     "string_input",
     "delimiter"
-);
-
-utf8_function!(
-    SQLUtf8Length,
-    "length",
-    daft_functions::utf8::length,
-    "Returns the length of the string",
-    "string_input"
 );
 
 utf8_function!(

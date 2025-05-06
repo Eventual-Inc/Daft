@@ -849,8 +849,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.utf8_replace(pattern._series, replacement._series, regex))
 
     def length(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_length())
+        return self._eval_expressions("length")
 
     def length_bytes(self) -> Series:
         assert self._series is not None

@@ -3190,7 +3190,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_length(self._expr))
+        f = native.get_function_from_registry("length")
+        return Expression._from_pyexpr(f(self._expr))
 
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.

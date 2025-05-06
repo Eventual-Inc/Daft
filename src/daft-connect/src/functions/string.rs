@@ -1,6 +1,6 @@
 use daft_functions::utf8::{
-    Utf8Length, Utf8LengthBytes, Utf8Like, Utf8Lower, Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad,
-    Utf8Split, Utf8Startswith, Utf8Substr, Utf8Upper,
+    Utf8LengthBytes, Utf8Like, Utf8Lower, Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split,
+    Utf8Startswith, Utf8Substr, Utf8Upper,
 };
 
 use super::{FunctionModule, TODO_FUNCTION};
@@ -15,8 +15,8 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("bit_length", TODO_FUNCTION);
         parent.add_fn("btrim", TODO_FUNCTION);
         parent.add_fn("char", TODO_FUNCTION);
-        parent.add_fn("character_length", Utf8Length {});
-        parent.add_fn("char_length", Utf8Length {});
+        parent.add_fn("character_length", daft_functions_utf8::Length);
+        parent.add_fn("char_length", daft_functions_utf8::Length);
         parent.add_fn("concat_ws", TODO_FUNCTION);
         parent.add_fn("contains", daft_functions_utf8::Contains);
         parent.add_fn("decode", TODO_FUNCTION);
