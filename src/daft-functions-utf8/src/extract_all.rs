@@ -62,7 +62,10 @@ impl ScalarUDF for RegexpExtractAll {
             ensure!(index.dtype.is_numeric() && !index.dtype.is_floating(), TypeError: "Expects 'index' to be numeric, but received {}", index.dtype);
         }
 
-        Ok(Field::new(input.name, DataType::Utf8))
+        Ok(Field::new(
+            input.name,
+            DataType::List(Box::new(DataType::Utf8)),
+        ))
     }
 
     fn docstring(&self) -> &'static str {

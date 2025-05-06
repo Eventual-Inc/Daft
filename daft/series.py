@@ -734,6 +734,8 @@ class Series:
         col_names = []
         for i, other in enumerate(others):
             col_name = f"c{i}"
+            if not isinstance(other, Series):
+                raise ValueError(f"expected another Series but got {type(other)}")
             other_series_list.append(other._series.rename(col_name))
             col_names.append(col_name)
 
@@ -836,6 +838,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("regexp_extract", pattern, index=index)
 
     def extract_all(self, pattern: Series, index: int = 0) -> Series:
+
         return self._eval_expressions("regexp_extract", pattern, index=index)
 
     def replace(self, pattern: Series, replacement: Series, regex: bool = False) -> Series:

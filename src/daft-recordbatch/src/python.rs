@@ -512,7 +512,7 @@ impl PyRecordBatch {
             });
         }
 
-        let num_rows = pycolumns.first().unwrap().series.len();
+        let num_rows = pycolumns.iter().map(|c| c.series.len()).max().unwrap();
 
         let (fields, columns) = pycolumns
             .into_iter()

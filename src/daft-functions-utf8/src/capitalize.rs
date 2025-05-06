@@ -19,6 +19,13 @@ impl ScalarUDF for Capitalize {
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
+        if input.data_type().is_null() {
+            return Ok(Series::full_null(
+                input.name(),
+                &DataType::Null,
+                input.len(),
+            ));
+        }
         series_capitalize(input)
     }
 
@@ -29,12 +36,13 @@ impl ScalarUDF for Capitalize {
     ) -> DaftResult<Field> {
         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
         let input = inputs.required((0, "input"))?.to_field(schema)?;
+
         ensure!(
-            input.dtype == DataType::Utf8,
+            matches!(input.dtype, DataType::Utf8 | DataType::Null),
             TypeError: "Expects input to capitalize to be utf8, but received {}", input.dtype
         );
 
-        Ok(Field::new(input.name, DataType::Utf8))
+        Ok(Field::new(input.name, input.dtype))
     }
 
     fn docstring(&self) -> &'static str {
