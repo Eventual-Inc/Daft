@@ -862,8 +862,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.utf8_rstrip())
 
     def reverse(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_reverse())
+        return self._eval_expressions("reverse")
 
     def capitalize(self) -> Series:
         return self._eval_expressions("capitalize")

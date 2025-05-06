@@ -31,10 +31,6 @@ impl Series {
         self.with_utf8_array(|arr| Ok(arr.rstrip()?.into_series()))
     }
 
-    pub fn utf8_reverse(&self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.reverse()?.into_series()))
-    }
-
     pub fn utf8_right(&self, nchars: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {

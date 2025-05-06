@@ -132,7 +132,6 @@ impl SQLModule for SQLModuleUtf8 {
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("upper", SQLUtf8Upper);
         parent.add_fn("rstrip", SQLUtf8Rstrip);
-        parent.add_fn("reverse", SQLUtf8Reverse);
         parent.add_fn("right", SQLUtf8Right);
 
         parent.add_fn("to_date", SQLUtf8ToDate);
@@ -175,14 +174,6 @@ utf8_function!(
     "rstrip",
     daft_functions::utf8::rstrip,
     "Removes trailing whitespace from the string",
-    "string_input"
-);
-
-utf8_function!(
-    SQLUtf8Reverse,
-    "reverse",
-    daft_functions::utf8::reverse,
-    "Reverses the order of characters in the string",
     "string_input"
 );
 

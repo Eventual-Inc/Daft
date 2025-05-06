@@ -3366,7 +3366,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_reverse(self._expr))
+        f = native.get_function_from_registry("reverse")
+        return Expression._from_pyexpr(f(self._expr))
 
     def capitalize(self) -> Expression:
         """Capitalize a UTF-8 string.

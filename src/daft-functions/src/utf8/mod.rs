@@ -1,4 +1,3 @@
-mod reverse;
 mod right;
 mod rstrip;
 mod split;
@@ -7,7 +6,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use reverse::{utf8_reverse as reverse, Utf8Reverse};
 pub use right::{utf8_right as right, Utf8Right};
 pub use rstrip::{utf8_rstrip as rstrip, Utf8Rstrip};
 pub use split::{utf8_split as split, Utf8Split};
