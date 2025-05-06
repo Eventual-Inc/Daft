@@ -49,28 +49,6 @@ fn utf8_binary(
     }
 }
 
-fn utf8_ternary(
-    func: impl Fn(ExprRef, ExprRef, ExprRef) -> ExprRef,
-    sql_name: &str,
-    arg_name_1: &str,
-    arg_name_2: &str,
-    arg_name_3: &str,
-    inputs: &[sqlparser::ast::FunctionArg],
-    planner: &crate::planner::SQLPlanner,
-) -> SQLPlannerResult<ExprRef> {
-    match inputs {
-        [input1, input2, input3] => {
-            let input1 = planner.plan_function_arg(input1)?;
-            let input2 = planner.plan_function_arg(input2)?;
-            let input3 = planner.plan_function_arg(input3)?;
-            Ok(func(input1, input2, input3))
-        },
-        _ => invalid_operation_err!(
-            "invalid arguments for {sql_name}. Expected {sql_name}({arg_name_1}, {arg_name_2}, {arg_name_3})",
-        ),
-    }
-}
-
 macro_rules! utf8_function {
     ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name:expr) => {
         pub struct $name;
@@ -149,7 +127,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("split", SQLUtf8Split);
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("regexp_replace", SQLUtf8RegexpReplace);
         parent.add_fn("regexp_split", SQLUtf8RegexpSplit);
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
@@ -174,16 +151,6 @@ utf8_function!(
     "Splits the string by the specified delimiter and returns an array of substrings",
     "string_input",
     "delimiter"
-);
-
-utf8_function!(
-    SQLUtf8RegexpReplace,
-    "regexp_replace",
-    |input, pattern, replacement| daft_functions::utf8::replace(input, pattern, replacement, true),
-    "Replaces all occurrences of a substring with a new string",
-    "string_input",
-    "pattern",
-    "replacement"
 );
 
 utf8_function!(

@@ -3161,9 +3161,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         replacement_expr = Expression._to_expression(replacement)
-        return Expression._from_pyexpr(
-            native.utf8_replace(self._expr, pattern_expr._expr, replacement_expr._expr, regex)
-        )
+        if regex:
+            f_name = "regexp_replace"
+        else:
+            f_name = "replace"
+        f = native.get_function_from_registry(f_name)
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, replacement_expr._expr))
 
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column.

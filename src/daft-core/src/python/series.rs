@@ -349,13 +349,6 @@ impl PySeries {
         Ok(self.series.utf8_split(&pattern.series, regex)?.into())
     }
 
-    pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_replace(&pattern.series, &replacement.series, regex)?
-            .into())
-    }
-
     pub fn utf8_upper(&self) -> PyResult<Self> {
         Ok(self.series.utf8_upper()?.into())
     }

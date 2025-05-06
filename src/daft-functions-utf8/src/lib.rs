@@ -15,6 +15,7 @@ mod regexp_extract;
 mod regexp_extract_all;
 mod regexp_match;
 mod repeat;
+mod replace;
 
 //
 pub(crate) mod pad;
@@ -41,6 +42,7 @@ pub use regexp_extract::*;
 pub use regexp_extract_all::*;
 pub use regexp_match::*;
 pub use repeat::*;
+pub use replace::*;
 //
 pub use rpad::*;
 pub use startswith::*;
@@ -66,6 +68,8 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(RegexpExtractAll);
         parent.add_fn(RegexpMatch);
         parent.add_fn(Repeat);
+        parent.add_fn(Replace);
+        parent.add_fn(RegexpReplace);
 
         parent.add_fn(RPad);
         parent.add_fn(StartsWith);

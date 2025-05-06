@@ -151,42 +151,6 @@ fn split_array_on_regex<'a>(
     Ok(())
 }
 
-fn regex_replace<'a>(
-    arr_iter: impl Iterator<Item = Option<&'a str>>,
-    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
-    replacement_iter: impl Iterator<Item = Option<&'a str>>,
-    name: &str,
-) -> DaftResult<Utf8Array> {
-    let arrow_result = arr_iter
-        .zip(regex_iter)
-        .zip(replacement_iter)
-        .map(|((val, re), replacement)| match (val, re, replacement) {
-            (Some(val), Some(re), Some(replacement)) => Ok(Some(re?.replace_all(val, replacement))),
-            _ => Ok(None),
-        })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
-
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
-}
-
-fn replace_on_literal<'a>(
-    arr_iter: impl Iterator<Item = Option<&'a str>>,
-    pattern_iter: impl Iterator<Item = Option<&'a str>>,
-    replacement_iter: impl Iterator<Item = Option<&'a str>>,
-    name: &str,
-) -> DaftResult<Utf8Array> {
-    let arrow_result = arr_iter
-        .zip(pattern_iter)
-        .zip(replacement_iter)
-        .map(|((val, pat), replacement)| match (val, pat, replacement) {
-            (Some(val), Some(pat), Some(replacement)) => Ok(Some(val.replace(pat, replacement))),
-            _ => Ok(None),
-        })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
-
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
-}
-
 fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {
     let mut char_indices = s.char_indices();
 
@@ -333,41 +297,6 @@ impl Utf8Array {
             offsets,
             validity,
         );
-        assert_eq!(result.len(), expected_size);
-        Ok(result)
-    }
-
-    pub fn replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> DaftResult<Self> {
-        let (is_full_null, expected_size) = parse_inputs(self, &[pattern, replacement])
-            .map_err(|e| DaftError::ValueError(format!("Error in replace: {e}")))?;
-        if is_full_null {
-            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
-        }
-        if expected_size == 0 {
-            return Ok(Self::empty(self.name(), &DataType::Utf8));
-        }
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let replacement_iter = create_broadcasted_str_iter(replacement, expected_size);
-
-        let result = match (regex, pattern.len()) {
-            (true, 1) => {
-                let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
-                regex_replace(self_iter, regex_iter, replacement_iter, self.name())?
-            }
-            (true, _) => {
-                let regex_iter = pattern
-                    .as_arrow()
-                    .iter()
-                    .map(|pat| pat.map(regex::Regex::new));
-                regex_replace(self_iter, regex_iter, replacement_iter, self.name())?
-            }
-            (false, _) => {
-                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-                replace_on_literal(self_iter, pattern_iter, replacement_iter, self.name())?
-            }
-        };
         assert_eq!(result.len(), expected_size);
         Ok(result)
     }

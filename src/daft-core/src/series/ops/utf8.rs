@@ -23,23 +23,6 @@ impl Series {
         })
     }
 
-    pub fn utf8_replace(
-        &self,
-        pattern: &Self,
-        replacement: &Self,
-        regex: bool,
-    ) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| {
-                replacement.with_utf8_array(|replacement_arr| {
-                    Ok(arr
-                        .replace(pattern_arr, replacement_arr, regex)?
-                        .into_series())
-                })
-            })
-        })
-    }
-
     pub fn utf8_upper(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.upper()?.into_series()))
     }
