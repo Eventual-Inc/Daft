@@ -1,29 +1,35 @@
 use std::sync::{Once, OnceLock};
 
-use tokio::runtime::Runtime;
+use common_runtime::{PoolType, Runtime, RuntimeRef};
 
-pub static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+pub static RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 pub static PYO3_RUNTIME_INITIALIZED: Once = Once::new();
 
 pub fn get_or_init_runtime() -> &'static Runtime {
-    let runtime = RUNTIME.get_or_init(|| {
-        let mut runtime = tokio::runtime::Builder::new_multi_thread();
-        runtime.enable_all();
-        runtime.worker_threads(1);
-        runtime.build().expect("Failed to build runtime")
+    let runtime_ref = RUNTIME.get_or_init(|| {
+        let mut tokio_runtime_builder = tokio::runtime::Builder::new_multi_thread();
+        tokio_runtime_builder.enable_all();
+        tokio_runtime_builder.worker_threads(1);
+        tokio_runtime_builder.thread_name_fn(move || "Daft-Scheduler".to_string());
+        let tokio_runtime = tokio_runtime_builder
+            .build()
+            .expect("Failed to build runtime");
+        Runtime::new(
+            tokio_runtime,
+            PoolType::Custom("daft-scheduler".to_string()),
+        )
     });
     #[cfg(feature = "python")]
     {
         PYO3_RUNTIME_INITIALIZED.call_once(|| {
-            pyo3_async_runtimes::tokio::init_with_runtime(runtime)
+            pyo3_async_runtimes::tokio::init_with_runtime(&runtime_ref.runtime)
                 .expect("Failed to initialize python runtime");
         });
     }
-    runtime
+    runtime_ref
 }
 
 pub type JoinSet<T> = tokio::task::JoinSet<T>;
-pub type JoinHandle<T> = tokio::task::JoinHandle<T>;
 
 #[allow(dead_code)]
 pub fn create_join_set<T>() -> JoinSet<T> {
