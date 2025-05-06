@@ -1,4 +1,4 @@
-use arrow2::bitmap::{binary, Bitmap, MutableBitmap};
+use arrow2::bitmap::{Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
@@ -127,6 +127,136 @@ impl RecordBatch {
         (start, end)
     }
 
+    // Helper method to calculate row-based frame boundaries
+    fn calculate_row_frame_bounds(
+        row_idx: usize,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
+        total_rows: usize,
+    ) -> DaftResult<(usize, usize)> {
+        let frame_start = match start_boundary {
+            None => 0, // Unbounded preceding
+            Some(offset) => row_idx
+                .saturating_add_signed(offset as isize)
+                .min(total_rows),
+        };
+
+        let frame_end = match end_boundary {
+            None => total_rows, // Unbounded following
+            Some(offset) => (row_idx + 1)
+                .saturating_add_signed(offset as isize)
+                .min(total_rows),
+        };
+
+        if frame_end < frame_start {
+            return Err(DaftError::ValueError(
+                "Negative frame size is not allowed".into(),
+            ));
+        }
+
+        Ok((frame_start, frame_end))
+    }
+
+    // Helper method to calculate range-based frame boundaries
+    fn calculate_range_frame_bounds(
+        row_idx: usize,
+        start_boundary: Option<&WindowBoundary>,
+        end_boundary: Option<&WindowBoundary>,
+        order_by_col: &Series,
+        current_row_order_by: Series,
+        descending: bool,
+        total_rows: usize,
+    ) -> DaftResult<(usize, usize)> {
+        let frame_start = match start_boundary {
+            None => 0, // Unbounded preceding
+            Some(WindowBoundary::Offset(offset)) => row_idx
+                .saturating_add_signed(*offset as isize)
+                .min(total_rows),
+            Some(WindowBoundary::RangeOffset(offset)) => {
+                let offset = offset.to_series();
+                let lower_bound = (current_row_order_by.clone() + offset)?;
+                let gte = if descending {
+                    order_by_col.lte(&lower_bound)?
+                } else {
+                    order_by_col.gte(&lower_bound)?
+                };
+                let mut first_true_idx = gte.len();
+                for i in 0..gte.len() {
+                    if gte.get(i).unwrap_or(false) {
+                        first_true_idx = i;
+                        break;
+                    }
+                }
+                first_true_idx
+            }
+            Some(WindowBoundary::UnboundedPreceding) | Some(WindowBoundary::UnboundedFollowing) => {
+                unreachable!()
+            }
+        };
+
+        let frame_end = match end_boundary {
+            None => total_rows, // Unbounded following
+            Some(WindowBoundary::Offset(offset)) => {
+                (row_idx + 1) // End is exclusive, hence +1
+                    .saturating_add_signed(*offset as isize)
+                    .min(total_rows)
+            }
+            Some(WindowBoundary::RangeOffset(offset)) => {
+                let offset = offset.to_series();
+                let upper_bound = (current_row_order_by + offset)?;
+                let gt = if descending {
+                    order_by_col.lt(&upper_bound)?
+                } else {
+                    order_by_col.gt(&upper_bound)?
+                };
+                let mut first_true_idx = gt.len();
+                for i in 0..gt.len() {
+                    if gt.get(i).unwrap_or(false) {
+                        first_true_idx = i;
+                        break;
+                    }
+                }
+                first_true_idx
+            }
+            Some(WindowBoundary::UnboundedPreceding) | Some(WindowBoundary::UnboundedFollowing) => {
+                unreachable!()
+            }
+        };
+
+        if frame_end < frame_start {
+            return Err(DaftError::ValueError(
+                "Negative frame size is not allowed".into(),
+            ));
+        }
+
+        Ok((frame_start, frame_end))
+    }
+
+    // Helper to update incremental state
+    fn update_incremental_state(
+        prev_frame_start: &mut usize,
+        prev_frame_end: &mut usize,
+        frame_start: usize,
+        frame_end: usize,
+        agg_state: &mut Box<dyn WindowAggStateOps>,
+    ) -> DaftResult<()> {
+        // Remove values that left the window (values that were in the previous window but not in the current one)
+        if frame_start > *prev_frame_start {
+            agg_state.remove(*prev_frame_start, frame_start)?;
+        }
+
+        // Add new values that entered the window (values that are in the current window but weren't in the previous)
+        if frame_end > *prev_frame_end {
+            agg_state.add(*prev_frame_end, frame_end)?;
+        }
+
+        // Update previous boundaries for the next iteration
+        *prev_frame_start = frame_start;
+        *prev_frame_end = frame_end;
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn window_agg_dynamic_frame(
         &self,
@@ -236,41 +366,24 @@ impl RecordBatch {
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
-            let frame_start = match start_boundary {
-                None => 0, // Unbounded preceding
-                Some(offset) => row_idx
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
+            let (frame_start, frame_end) = Self::calculate_row_frame_bounds(
+                row_idx,
+                start_boundary,
+                end_boundary,
+                total_rows,
+            )?;
 
-            let frame_end = match end_boundary {
-                None => total_rows, // Unbounded following
-                Some(offset) => (row_idx + 1)
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
-
-            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            };
+            let frame_size = frame_end - frame_start;
 
             // Check min_periods requirement
             if frame_size >= min_periods {
-                // Remove values that left the window (values that were in the previous window but not in the current one)
-                if frame_start > prev_frame_start {
-                    agg_state.remove(prev_frame_start, frame_start)?;
-                }
-
-                // Add new values that entered the window (values that are in the current window but weren't in the previous)
-                if frame_end > prev_frame_end {
-                    agg_state.add(prev_frame_end, frame_end)?;
-                }
-
-                // Update previous boundaries for the next iteration
-                prev_frame_start = frame_start;
-                prev_frame_end = frame_end;
+                Self::update_incremental_state(
+                    &mut prev_frame_start,
+                    &mut prev_frame_end,
+                    frame_start,
+                    frame_end,
+                    &mut agg_state,
+                )?;
                 validity.set(row_idx, true);
             }
 
@@ -281,7 +394,7 @@ impl RecordBatch {
         let mut validity = Bitmap::from(validity);
         let agg_state = agg_state.build()?.rename(name);
         if let Some(agg_validity) = agg_state.validity() {
-            validity = binary(&validity, agg_validity, |a, b| a & b);
+            validity = arrow2::bitmap::and(&validity, agg_validity);
         }
 
         // Build the final result series
@@ -308,25 +421,14 @@ impl RecordBatch {
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
-            let frame_start = match start_boundary {
-                None => 0, // Unbounded preceding
-                Some(offset) => row_idx
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
+            let (frame_start, frame_end) = Self::calculate_row_frame_bounds(
+                row_idx,
+                start_boundary,
+                end_boundary,
+                total_rows,
+            )?;
 
-            let frame_end = match end_boundary {
-                None => total_rows, // Unbounded following
-                Some(offset) => (row_idx + 1)
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
-
-            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            };
+            let frame_size = frame_end - frame_start;
 
             if frame_size < min_periods {
                 // Add a null series for this row
@@ -378,85 +480,27 @@ impl RecordBatch {
             let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
 
             // Calculate frame bounds for this row using the provided boundaries
-            let frame_start = match &start_boundary {
-                None => 0, // Unbounded preceding
-                Some(WindowBoundary::Offset(offset)) => row_idx
-                    .saturating_add_signed(*offset as isize)
-                    .min(total_rows),
-                Some(WindowBoundary::RangeOffset(offset)) => {
-                    let offset = offset.to_series();
-                    let lower_bound = (current_row_order_by.clone() + offset)?;
-                    let gte = if descending {
-                        order_by_col.lte(&lower_bound)?
-                    } else {
-                        order_by_col.gte(&lower_bound)?
-                    };
-                    let mut first_true_idx = gte.len();
-                    for i in 0..gte.len() {
-                        if gte.get(i).unwrap_or(false) {
-                            first_true_idx = i;
-                            break;
-                        }
-                    }
-                    first_true_idx
-                }
-                Some(WindowBoundary::UnboundedPreceding)
-                | Some(WindowBoundary::UnboundedFollowing) => {
-                    unreachable!()
-                }
-            };
+            let (frame_start, frame_end) = Self::calculate_range_frame_bounds(
+                row_idx,
+                start_boundary.as_ref(),
+                end_boundary.as_ref(),
+                &order_by_col,
+                current_row_order_by,
+                descending,
+                total_rows,
+            )?;
 
-            let frame_end = match &end_boundary {
-                None => total_rows, // Unbounded following
-                Some(WindowBoundary::Offset(offset)) => {
-                    (row_idx + 1) // End is exclusive, hence +1
-                        .saturating_add_signed(*offset as isize)
-                        .min(total_rows)
-                }
-                Some(WindowBoundary::RangeOffset(offset)) => {
-                    let offset = offset.to_series();
-                    let upper_bound = (current_row_order_by.clone() + offset)?;
-                    let gt = if descending {
-                        order_by_col.lt(&upper_bound)?
-                    } else {
-                        order_by_col.gt(&upper_bound)?
-                    };
-                    let mut first_true_idx = gt.len();
-                    for i in 0..gt.len() {
-                        if gt.get(i).unwrap_or(false) {
-                            first_true_idx = i;
-                            break;
-                        }
-                    }
-                    first_true_idx
-                }
-                Some(WindowBoundary::UnboundedPreceding)
-                | Some(WindowBoundary::UnboundedFollowing) => {
-                    unreachable!()
-                }
-            };
-
-            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            };
+            let frame_size = frame_end - frame_start;
 
             // Check min_periods requirement
             if frame_size >= min_periods {
-                // Remove values that left the window (values that were in the previous window but not in the current one)
-                if frame_start > prev_frame_start {
-                    agg_state.remove(prev_frame_start, frame_start)?;
-                }
-
-                // Add new values that entered the window (values that are in the current window but weren't in the previous)
-                if frame_end > prev_frame_end {
-                    agg_state.add(prev_frame_end, frame_end)?;
-                }
-
-                // Update previous boundaries for the next iteration
-                prev_frame_start = frame_start;
-                prev_frame_end = frame_end;
+                Self::update_incremental_state(
+                    &mut prev_frame_start,
+                    &mut prev_frame_end,
+                    frame_start,
+                    frame_end,
+                    &mut agg_state,
+                )?;
                 validity.push(true);
             } else {
                 validity.push(false);
@@ -469,7 +513,7 @@ impl RecordBatch {
         let mut validity = Bitmap::from(validity);
         let agg_state = agg_state.build()?.rename(name);
         if let Some(agg_validity) = agg_state.validity() {
-            validity = binary(&validity, agg_validity, |a, b| a & b);
+            validity = arrow2::bitmap::and(&validity, agg_validity);
         }
 
         // Build the final result series
@@ -508,69 +552,17 @@ impl RecordBatch {
             let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
 
             // Calculate frame bounds for this row using the provided boundaries
-            let frame_start = match &start_boundary {
-                None => 0, // Unbounded preceding
-                Some(WindowBoundary::Offset(offset)) => row_idx
-                    .saturating_add_signed(*offset as isize)
-                    .min(total_rows),
-                Some(WindowBoundary::RangeOffset(offset)) => {
-                    let offset = offset.to_series();
-                    let lower_bound = (current_row_order_by.clone() + offset)?;
-                    let gte = if descending {
-                        order_by_col.lte(&lower_bound)?
-                    } else {
-                        order_by_col.gte(&lower_bound)?
-                    };
-                    let mut first_true_idx = gte.len();
-                    for i in 0..gte.len() {
-                        if gte.get(i).unwrap_or(false) {
-                            first_true_idx = i;
-                            break;
-                        }
-                    }
-                    first_true_idx
-                }
-                Some(WindowBoundary::UnboundedPreceding)
-                | Some(WindowBoundary::UnboundedFollowing) => {
-                    unreachable!()
-                }
-            };
+            let (frame_start, frame_end) = Self::calculate_range_frame_bounds(
+                row_idx,
+                start_boundary.as_ref(),
+                end_boundary.as_ref(),
+                &order_by_col,
+                current_row_order_by,
+                descending,
+                total_rows,
+            )?;
 
-            let frame_end = match &end_boundary {
-                None => total_rows, // Unbounded following
-                Some(WindowBoundary::Offset(offset)) => {
-                    (row_idx + 1) // End is exclusive, hence +1
-                        .saturating_add_signed(*offset as isize)
-                        .min(total_rows)
-                }
-                Some(WindowBoundary::RangeOffset(offset)) => {
-                    let offset = offset.to_series();
-                    let upper_bound = (current_row_order_by.clone() + offset)?;
-                    let gt = if descending {
-                        order_by_col.lt(&upper_bound)?
-                    } else {
-                        order_by_col.gt(&upper_bound)?
-                    };
-                    let mut first_true_idx = gt.len();
-                    for i in 0..gt.len() {
-                        if gt.get(i).unwrap_or(false) {
-                            first_true_idx = i;
-                            break;
-                        }
-                    }
-                    first_true_idx
-                }
-                Some(WindowBoundary::UnboundedPreceding)
-                | Some(WindowBoundary::UnboundedFollowing) => {
-                    unreachable!()
-                }
-            };
-
-            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            };
+            let frame_size = frame_end - frame_start;
 
             if frame_size < min_periods {
                 // Add a null series for this row
