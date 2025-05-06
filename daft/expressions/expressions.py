@@ -1653,15 +1653,15 @@ class Expression:
             │ ---   ┆ ---        ┆ ---   ┆ ---            │
             │ Utf8  ┆ Utf8       ┆ Int64 ┆ Int64          │
             ╞═══════╪════════════╪═══════╪════════════════╡
-            │ A     ┆ 2020-01-01 ┆ 1     ┆ 6              │
+            │ A     ┆ 2020-01-01 ┆ 1     ┆ 1              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A     ┆ 2020-01-02 ┆ 2     ┆ 6              │
+            │ A     ┆ 2020-01-02 ┆ 2     ┆ 3              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ A     ┆ 2020-01-03 ┆ 3     ┆ 6              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B     ┆ 2020-01-04 ┆ 4     ┆ 15             │
+            │ B     ┆ 2020-01-04 ┆ 4     ┆ 4              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B     ┆ 2020-01-05 ┆ 5     ┆ 15             │
+            │ B     ┆ 2020-01-05 ┆ 5     ┆ 9              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ B     ┆ 2020-01-06 ┆ 6     ┆ 15             │
             ╰───────┴────────────┴───────┴────────────────╯
@@ -1728,11 +1728,11 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def lead(self, offset: int = 1, default: Any | None = None) -> Expression:
-        """Get the value from a previous row within a window partition.
+        """Get the value from a future row within a window partition.
 
         Args:
             offset: The number of rows to shift forward. Must be >= 0.
-            default: Value to use when no previous row exists. Can be a column reference.
+            default: Value to use when no future row exists. Can be a column reference.
 
         Returns:
             Expression: Value from the row `offset` positions after the current row.

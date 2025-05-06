@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
-use daft_dsl::{resolved_col, ExprRef, WindowExpr};
+use daft_dsl::{resolved_col, ExprRef, WindowBoundary, WindowExpr, WindowFrame, WindowFrameType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -169,7 +169,21 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 {
                                     *partition = match window_expr {
                                         WindowExpr::Agg(agg_expr) => {
-                                            partition.window_agg(agg_expr, name.clone())?
+                                            let dtype =
+                                                agg_expr.to_field(&params.original_schema)?.dtype;
+                                            // Default for aggregate functions in partition by + order by: rows from start of partition to current row
+                                            let frame = WindowFrame {
+                                                frame_type: WindowFrameType::Rows,
+                                                start: WindowBoundary::UnboundedPreceding(),
+                                                end: WindowBoundary::Offset(0),
+                                            };
+                                            partition.window_agg_dynamic_frame(
+                                                name.clone(),
+                                                agg_expr,
+                                                1,
+                                                &dtype,
+                                                &frame,
+                                            )?
                                         }
                                         WindowExpr::RowNumber => {
                                             partition.window_row_number(name.clone())?
