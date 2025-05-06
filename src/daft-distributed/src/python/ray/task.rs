@@ -3,7 +3,7 @@ use std::{any::Any, collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
-use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
+use pyo3::{pyclass, pymethods, FromPyObject, IntoPyObject, PyObject, PyResult, Python};
 
 use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle};
 
@@ -32,16 +32,21 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
     async fn get_result(&mut self) -> DaftResult<PartitionRef> {
         let handle = self.handle.take().unwrap();
-        let coroutine = Python::with_gil(|py| {
-            let coroutine = handle
-                .call_method0(py, pyo3::intern!(py, "get_result"))?
-                .into_bound(py);
-            pyo3_async_runtimes::tokio::into_future(coroutine)
-        })?;
 
-        // await the rust future in the scope of the asyncio event loop
+        let py_fut = async move {
+            let result = Python::with_gil(|py| {
+                let coroutine = handle
+                    .call_method0(py, pyo3::intern!(py, "get_result"))?
+                    .into_bound(py);
+                pyo3_async_runtimes::tokio::into_future(coroutine)
+            })?
+            .await?;
+            DaftResult::Ok(result)
+        };
+
+        // await the future in the scope of the asyncio event loop
         let task_locals = self.task_locals.take().unwrap();
-        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, coroutine).await?;
+        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, py_fut).await?;
 
         let ray_part_ref =
             Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
@@ -61,8 +66,7 @@ impl Drop for RayTaskResultHandle {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef")]
-#[derive(Debug, FromPyObject)]
+#[derive(Debug, FromPyObject, IntoPyObject)]
 pub(crate) struct RayPartitionRef {
     pub object_ref: PyObject,
     pub num_rows: usize,
