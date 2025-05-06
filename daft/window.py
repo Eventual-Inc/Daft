@@ -240,6 +240,6 @@ class Window:
             end=end_boundary,
         )
 
-        new_window = self
+        new_window = Window()
         new_window._spec = self._spec.with_frame(frame).with_min_periods(min_periods)
         return new_window
