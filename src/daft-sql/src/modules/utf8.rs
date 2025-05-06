@@ -1,4 +1,3 @@
-use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_dsl::{binary_op, ExprRef, Operator};
 use daft_functions::{
     count_matches::{utf8_count_matches, CountMatchesFunction},
@@ -163,7 +162,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("to_date", SQLUtf8ToDate);
         parent.add_fn("to_datetime", SQLUtf8ToDatetime);
         parent.add_fn("count_matches", SQLCountMatches);
-        parent.add_fn("normalize", SQLNormalize);
         parent.add_fn("tokenize_encode", SQLTokenizeEncode);
         parent.add_fn("tokenize_decode", SQLTokenizeDecode);
         parent.add_fn("concat", SQLConcat);
@@ -373,67 +371,6 @@ impl SQLFunction for SQLCountMatches {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["input", "pattern", "whole_words", "case_sensitive"]
-    }
-}
-
-pub struct SQLNormalize;
-
-impl TryFrom<SQLFunctionArguments> for Utf8NormalizeOptions {
-    type Error = PlannerError;
-
-    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
-        let remove_punct = args.try_get_named("remove_punct")?.unwrap_or(false);
-        let lowercase = args.try_get_named("lowercase")?.unwrap_or(false);
-        let nfd_unicode = args.try_get_named("nfd_unicode")?.unwrap_or(false);
-        let white_space = args.try_get_named("white_space")?.unwrap_or(false);
-
-        Ok(Self {
-            remove_punct,
-            lowercase,
-            nfd_unicode,
-            white_space,
-        })
-    }
-}
-
-impl SQLFunction for SQLNormalize {
-    fn to_expr(
-        &self,
-        inputs: &[sqlparser::ast::FunctionArg],
-        planner: &crate::planner::SQLPlanner,
-    ) -> SQLPlannerResult<ExprRef> {
-        match inputs {
-            [input] => {
-                let input = planner.plan_function_arg(input)?;
-                Ok(daft_functions::utf8::normalize(
-                    input,
-                    Utf8NormalizeOptions::default(),
-                ))
-            }
-            [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
-                let args: Utf8NormalizeOptions = planner.plan_function_args(
-                    args,
-                    &["remove_punct", "lowercase", "nfd_unicode", "white_space"],
-                    0,
-                )?;
-                Ok(daft_functions::utf8::normalize(input, args))
-            }
-            _ => invalid_operation_err!("Invalid arguments for normalize"),
-        }
-    }
-    fn docstrings(&self, _: &str) -> String {
-        "Normalizes a string for more useful deduplication and data cleaning.".to_string()
-    }
-
-    fn arg_names(&self) -> &'static [&'static str] {
-        &[
-            "input",
-            "remove_punct",
-            "lowercase",
-            "nfd_unicode",
-            "white_space",
-        ]
     }
 }
 

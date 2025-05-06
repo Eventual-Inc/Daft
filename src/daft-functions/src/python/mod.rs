@@ -164,7 +164,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(utf8::utf8_split);
     add!(utf8::utf8_substr);
     add!(utf8::utf8_upper);
-    add!(utf8::utf8_normalize);
     add!(utf8::utf8_to_date);
     add!(utf8::utf8_to_datetime);
 

@@ -2831,7 +2831,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_match(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("regexp_match")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
         """Checks whether each string ends with the given pattern in a string column.
@@ -3812,8 +3813,19 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
+        remove_punct_expr = Expression._to_expression(remove_punct)._expr
+        lowercase_expr = Expression._to_expression(lowercase)._expr
+        nfd_unicode_expr = Expression._to_expression(nfd_unicode)._expr
+        white_space_expr = Expression._to_expression(white_space)._expr
+        f = native.get_function_from_registry("normalize")
         return Expression._from_pyexpr(
-            native.utf8_normalize(self._expr, remove_punct, lowercase, nfd_unicode, white_space)
+            f(
+                self._expr,
+                remove_punct=remove_punct_expr,
+                lowercase=lowercase_expr,
+                nfd_unicode=nfd_unicode_expr,
+                white_space=white_space_expr,
+            )
         )
 
     def tokenize_encode(

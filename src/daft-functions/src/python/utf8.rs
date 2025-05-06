@@ -1,4 +1,3 @@
-use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
@@ -10,26 +9,6 @@ simple_python_wrapper!(utf8_rstrip, crate::utf8::rstrip, [input: PyExpr]);
 simple_python_wrapper!(utf8_split, crate::utf8::split, [input: PyExpr, pattern: PyExpr, regex: bool]);
 simple_python_wrapper!(utf8_substr, crate::utf8::substr, [input: PyExpr, start: PyExpr, length: PyExpr]);
 simple_python_wrapper!(utf8_upper, crate::utf8::upper, [input: PyExpr]);
-
-#[pyfunction]
-pub fn utf8_normalize(
-    expr: PyExpr,
-    remove_punct: bool,
-    lowercase: bool,
-    nfd_unicode: bool,
-    white_space: bool,
-) -> PyResult<PyExpr> {
-    Ok(crate::utf8::normalize(
-        expr.into(),
-        Utf8NormalizeOptions {
-            remove_punct,
-            lowercase,
-            nfd_unicode,
-            white_space,
-        },
-    )
-    .into())
-}
 
 #[pyfunction]
 pub fn utf8_to_date(expr: PyExpr, format: &str) -> PyResult<PyExpr> {

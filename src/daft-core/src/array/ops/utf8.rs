@@ -16,8 +16,6 @@ use common_error::{DaftError, DaftResult};
 use daft_schema::time_unit::format_string_has_offset;
 use itertools::Itertools;
 use num_traits::NumCast;
-use serde::{Deserialize, Serialize};
-use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
 
 use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
@@ -256,14 +254,6 @@ where
         .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
     Ok(Utf8Array::from((name, Box::new(arrow_result))))
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
-pub struct Utf8NormalizeOptions {
-    pub remove_punct: bool,
-    pub lowercase: bool,
-    pub nfd_unicode: bool,
-    pub white_space: bool,
 }
 
 impl Utf8Array {
@@ -767,51 +757,6 @@ impl Utf8Array {
         let result = BooleanArray::from((self.name(), arrow_result?));
         assert_eq!(result.len(), expected_size);
         Ok(result)
-    }
-
-    pub fn normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Self> {
-        Ok(Self::from_iter(
-            self.name(),
-            self.as_arrow().iter().map(|maybe_s| {
-                if let Some(s) = maybe_s {
-                    let mut s = if opts.white_space {
-                        s.trim().to_string()
-                    } else {
-                        s.to_string()
-                    };
-
-                    let mut prev_white = true;
-                    s = s
-                        .chars()
-                        .filter_map(|c| {
-                            if !(opts.remove_punct && c.is_ascii_punctuation()
-                                || opts.white_space && c.is_whitespace())
-                            {
-                                prev_white = false;
-                                Some(c)
-                            } else if prev_white || (opts.remove_punct && c.is_ascii_punctuation())
-                            {
-                                None
-                            } else {
-                                prev_white = true;
-                                Some(' ')
-                            }
-                        })
-                        .collect();
-
-                    if opts.lowercase {
-                        s = s.to_lowercase();
-                    }
-
-                    if opts.nfd_unicode && is_nfd_quick(s.chars()) != IsNormalized::Yes {
-                        s = s.nfd().collect();
-                    }
-                    Some(s)
-                } else {
-                    None
-                }
-            }),
-        ))
     }
 
     // Uses the Aho-Corasick algorithm to count occurrences of a number of patterns.

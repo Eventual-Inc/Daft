@@ -1,4 +1,3 @@
-mod normalize;
 mod repeat;
 mod replace;
 mod reverse;
@@ -10,7 +9,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use normalize::{utf8_normalize as normalize, Utf8Normalize};
 pub use repeat::{utf8_repeat as repeat, Utf8Repeat};
 pub use replace::{utf8_replace as replace, Utf8Replace};
 pub use reverse::{utf8_reverse as reverse, Utf8Reverse};

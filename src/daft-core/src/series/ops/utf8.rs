@@ -1,7 +1,6 @@
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::ops::Utf8NormalizeOptions,
     datatypes::*,
     series::{array_impl::IntoSeries, Series},
     with_match_integer_daft_types,
@@ -121,10 +120,6 @@ impl Series {
 
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.to_datetime(format, timezone)?.into_series()))
-    }
-
-    pub fn utf8_normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.normalize(opts)?.into_series()))
     }
 
     pub fn utf8_count_matches(

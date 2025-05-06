@@ -817,10 +817,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("utf8_contains", pattern)
 
     def match(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_match(pattern._series))
+        return self._eval_expressions("regexp_match", pattern)
 
     def split(self, pattern: Series, regex: bool = False) -> Series:
         if not isinstance(pattern, Series):
@@ -938,16 +935,13 @@ class SeriesStringNamespace(SeriesNamespace):
         nfd_unicode: bool = False,
         white_space: bool = False,
     ) -> Series:
-        if not isinstance(remove_punct, bool):
-            raise ValueError(f"expected bool for remove_punct but got {type(remove_punct)}")
-        if not isinstance(lowercase, bool):
-            raise ValueError(f"expected bool for lowercase but got {type(lowercase)}")
-        if not isinstance(nfd_unicode, bool):
-            raise ValueError(f"expected bool for nfd_unicode but got {type(nfd_unicode)}")
-        if not isinstance(white_space, bool):
-            raise ValueError(f"expected bool for white_space but got {type(white_space)}")
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
+        return self._eval_expressions(
+            "normalize",
+            remove_punct=remove_punct,
+            lowercase=lowercase,
+            nfd_unicode=nfd_unicode,
+            white_space=white_space,
+        )
 
     def count_matches(self, patterns: Series, whole_words: bool = False, case_sensitive: bool = True) -> Series:
         if not isinstance(patterns, Series):
