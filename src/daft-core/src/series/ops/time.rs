@@ -180,45 +180,6 @@ impl Series {
         }
     }
 
-    pub fn dt_unix_micros(&self) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::Timestamp(_, _) => {
-                let ts_array = self.timestamp()?;
-                Ok(ts_array.unix_micros()?.into_series())
-            }
-            _ => Err(DaftError::ComputeError(format!(
-                "Can only run unix_micros() operation on timestamp types, got {}",
-                self.data_type()
-            ))),
-        }
-    }
-
-    pub fn dt_unix_millis(&self) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::Timestamp(_, _) => {
-                let ts_array = self.timestamp()?;
-                Ok(ts_array.unix_millis()?.into_series())
-            }
-            _ => Err(DaftError::ComputeError(format!(
-                "Can only run unix_millis() operation on timestamp types, got {}",
-                self.data_type()
-            ))),
-        }
-    }
-
-    pub fn dt_unix_seconds(&self) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::Timestamp(_, _) => {
-                let ts_array = self.timestamp()?;
-                Ok(ts_array.unix_seconds()?.into_series())
-            }
-            _ => Err(DaftError::ComputeError(format!(
-                "Can only run unix_seconds() operation on timestamp types, got {}",
-                self.data_type()
-            ))),
-        }
-    }
-
     pub fn dt_time(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Timestamp(tu, _) => {

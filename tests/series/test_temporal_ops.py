@@ -322,82 +322,26 @@ def test_series_timestamp_unix_date_operation() -> None:
     assert [2922, 20009, 34699, None] == out.to_pylist()
 
 
-def test_series_timestamp_unix_micros_operation() -> None:
-    from datetime import datetime
-
-    input_ts = [
-        datetime(1978, 1, 1, 1, 1, 1, 0),
-        datetime(2024, 10, 13, 5, 30, 14, 500_000),
-        datetime(2065, 1, 1, 10, 20, 30, 60_000),
-        None,
-    ]
-
-    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
-    out = s.dt.unix_micros()
-
-    assert out.datatype() == DataType.uint64()
-
-    assert [252464461000000, 1728797414500000, 2998030830060000, None] == out.to_pylist()
-
-
-def test_series_timestamp_unix_millis_operation() -> None:
-    from datetime import datetime
-
-    input_ts = [
-        datetime(1978, 1, 1, 1, 1, 1, 0),
-        datetime(2024, 10, 13, 5, 30, 14, 500_000),
-        datetime(2065, 1, 1, 10, 20, 30, 60_000),
-        None,
-    ]
-
-    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
-    out = s.dt.unix_millis()
-
-    assert out.datatype() == DataType.uint64()
-
-    assert [252464461000, 1728797414500, 2998030830060, None] == out.to_pylist()
-
-
-def test_series_timestamp_unix_seconds_operation() -> None:
-    from datetime import datetime
-
-    input_ts = [
-        datetime(1978, 1, 1, 1, 1, 1, 0),
-        datetime(2024, 10, 13, 5, 30, 14, 500_000),
-        datetime(2065, 1, 1, 10, 20, 30, 60_000),
-        None,
-    ]
-
-    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
-    out = s.dt.unix_seconds()
-
-    assert out.datatype() == DataType.uint64()
-
-    assert [252464461, 1728797414, 2998030830, None] == out.to_pylist()
-
-
-@pytest.mark.parametrize("fun", ["unix_date", "unix_micros", "unix_millis", "unix_seconds"])
-def test_series_unix_function_date_input_error(fun) -> None:
+def test_series_unix_date_input_date_error() -> None:
     import re
     from datetime import date
 
     input_dates = [date(1978, 1, 1), date(2024, 10, 13), date(2065, 1, 1), None]
     s = Series.from_pylist(input_dates).cast(DataType.date())
-    expected_error = f"DaftError::ComputeError Can only run {fun}() operation on timestamp types, got Date"
+    expected_error = "DaftError::ComputeError Can only run unix_date() operation on timestamp types, got Date"
     with pytest.raises(Exception, match=re.escape(expected_error)):
-        getattr(s.dt, fun)()
+        s.dt.unix_date()
 
 
-@pytest.mark.parametrize("fun", ["unix_date", "unix_micros", "unix_millis", "unix_seconds"])
-def test_series_unix_function_time_input_error(fun) -> None:
+def test_series_unix_date_input_time_error() -> None:
     import re
     from datetime import time
 
     input_times = [time(12, 30, 0), time(23, 59, 59), time(0, 0, 0), None]
     s = Series.from_pylist(input_times).cast(DataType.time("ns"))
-    expected_error = f"DaftError::ComputeError Can only run {fun}() operation on timestamp types, got Time"
+    expected_error = "DaftError::ComputeError Can only run unix_date() operation on timestamp types, got Time"
     with pytest.raises(Exception, match=re.escape(expected_error)):
-        getattr(s.dt, fun)()
+        s.dt.unix_date()
 
 
 def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):

@@ -1,7 +1,7 @@
 use daft_core::datatypes::TimeUnit;
 use daft_functions::temporal::{
     Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Minute, Month, Quarter, Second, UnixDate,
-    UnixMicros, UnixMillis, UnixSeconds, WeekOfYear, Year,
+    WeekOfYear, Year,
 };
 use daft_schema::dtype::DataType;
 
@@ -69,9 +69,6 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("trunc", TODO_FUNCTION);
         parent.add_fn("try_to_timestamp", TODO_FUNCTION);
         parent.add_fn("unix_date", UnixDate);
-        parent.add_fn("unix_micros", UnixMicros);
-        parent.add_fn("unix_millis", UnixMillis);
-        parent.add_fn("unix_seconds", UnixSeconds);
         parent.add_fn("unix_timestamp", TODO_FUNCTION);
         parent.add_fn("weekday", TODO_FUNCTION);
         parent.add_fn("weekofyear", WeekOfYear);

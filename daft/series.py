@@ -998,15 +998,6 @@ class SeriesDateNamespace(SeriesNamespace):
     def unix_date(self) -> Series:
         return Series._from_pyseries(self._series.dt_unix_date())
 
-    def unix_micros(self) -> Series:
-        return Series._from_pyseries(self._series.dt_unix_micros())
-
-    def unix_millis(self) -> Series:
-        return Series._from_pyseries(self._series.dt_unix_millis())
-
-    def unix_seconds(self) -> Series:
-        return Series._from_pyseries(self._series.dt_unix_seconds())
-
     def time(self) -> Series:
         return Series._from_pyseries(self._series.dt_time())
 

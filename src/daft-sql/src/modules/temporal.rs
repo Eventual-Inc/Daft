@@ -3,8 +3,7 @@ use daft_dsl::ExprRef;
 use daft_functions::temporal::{
     dt_date, dt_day, dt_day_of_month, dt_day_of_week, dt_day_of_year, dt_hour, dt_microsecond,
     dt_millisecond, dt_minute, dt_month, dt_nanosecond, dt_quarter, dt_second, dt_strftime,
-    dt_time, dt_to_unix_epoch, dt_unix_date, dt_unix_micros, dt_unix_millis, dt_unix_seconds,
-    dt_week_of_year, dt_year,
+    dt_time, dt_to_unix_epoch, dt_unix_date, dt_week_of_year, dt_year,
 };
 use sqlparser::ast::FunctionArg;
 
@@ -41,9 +40,6 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("microsecond", SQLMicrosecond);
         parent.add_fn("nanosecond", SQLNanosecond);
         parent.add_fn("unix_date", SQLUnixDate);
-        parent.add_fn("unix_micros", SQLUnixMicros);
-        parent.add_fn("unix_millis", SQLUnixMillis);
-        parent.add_fn("unix_seconds", SQLUnixSeconds);
         parent.add_fn("year", SQLYear);
         parent.add_fn("quarter", SQLQuarter);
         parent.add_fn("time", SQLTime);
@@ -106,9 +102,6 @@ temporal!(SQLMicrosecond, dt_microsecond);
 temporal!(SQLNanosecond, dt_nanosecond);
 temporal!(SQLQuarter, dt_quarter);
 temporal!(SQLUnixDate, dt_unix_date);
-temporal!(SQLUnixMicros, dt_unix_micros);
-temporal!(SQLUnixMillis, dt_unix_millis);
-temporal!(SQLUnixSeconds, dt_unix_seconds);
 temporal!(SQLYear, dt_year);
 temporal!(SQLTime, dt_time);
 

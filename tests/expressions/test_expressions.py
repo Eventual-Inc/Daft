@@ -304,33 +304,6 @@ def test_repr_functions_unix_date() -> None:
     assert repr_out == repr(copied)
 
 
-def test_repr_functions_unix_micros() -> None:
-    a = col("a")
-    y = a.dt.unix_micros()
-    repr_out = repr(y)
-    assert repr_out == "unix_micros(col(a))"
-    copied = copy.deepcopy(y)
-    assert repr_out == repr(copied)
-
-
-def test_repr_functions_unix_millis() -> None:
-    a = col("a")
-    y = a.dt.unix_millis()
-    repr_out = repr(y)
-    assert repr_out == "unix_millis(col(a))"
-    copied = copy.deepcopy(y)
-    assert repr_out == repr(copied)
-
-
-def test_repr_functions_unix_seconds() -> None:
-    a = col("a")
-    y = a.dt.unix_seconds()
-    repr_out = repr(y)
-    assert repr_out == "unix_seconds(col(a))"
-    copied = copy.deepcopy(y)
-    assert repr_out == repr(copied)
-
-
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()

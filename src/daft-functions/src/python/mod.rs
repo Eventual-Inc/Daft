@@ -136,9 +136,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(temporal::dt_microsecond);
     add!(temporal::dt_nanosecond);
     add!(temporal::dt_unix_date);
-    add!(temporal::dt_unix_micros);
-    add!(temporal::dt_unix_millis);
-    add!(temporal::dt_unix_seconds);
     add!(temporal::dt_time);
     add!(temporal::dt_year);
     add!(temporal::dt_truncate);

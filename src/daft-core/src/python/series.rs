@@ -717,18 +717,6 @@ impl PySeries {
         Ok(self.series.dt_unix_date()?.into())
     }
 
-    pub fn dt_unix_micros(&self) -> PyResult<Self> {
-        Ok(self.series.dt_unix_micros()?.into())
-    }
-
-    pub fn dt_unix_millis(&self) -> PyResult<Self> {
-        Ok(self.series.dt_unix_millis()?.into())
-    }
-
-    pub fn dt_unix_seconds(&self) -> PyResult<Self> {
-        Ok(self.series.dt_unix_seconds()?.into())
-    }
-
     pub fn dt_time(&self) -> PyResult<Self> {
         Ok(self.series.dt_time()?.into())
     }

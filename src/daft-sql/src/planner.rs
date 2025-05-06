@@ -1330,21 +1330,6 @@ impl SQLPlanner<'_> {
                     {
                         Ok(dt::dt_unix_date(expr))
                     }
-                    DateTimeField::Custom(Ident { value, .. })
-                        if value.to_lowercase().as_str() == "unix_micros" =>
-                    {
-                        Ok(dt::dt_unix_micros(expr))
-                    }
-                    DateTimeField::Custom(Ident { value, .. })
-                        if value.to_lowercase().as_str() == "unix_millis" =>
-                    {
-                        Ok(dt::dt_unix_millis(expr))
-                    }
-                    DateTimeField::Custom(Ident { value, .. })
-                        if value.to_lowercase().as_str() == "unix_seconds" =>
-                    {
-                        Ok(dt::dt_unix_seconds(expr))
-                    }
                     other => unsupported_sql_err!("EXTRACT ({other})"),
                 }
             }
