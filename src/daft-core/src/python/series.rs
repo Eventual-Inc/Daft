@@ -345,10 +345,6 @@ impl PySeries {
         Ok(self.series.data_type().clone().into())
     }
 
-    pub fn utf8_startswith(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_startswith(&pattern.series)?.into())
-    }
-
     pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_match(&pattern.series)?.into())
     }
@@ -362,10 +358,6 @@ impl PySeries {
             .series
             .utf8_replace(&pattern.series, &replacement.series, regex)?
             .into())
-    }
-
-    pub fn utf8_length_bytes(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_length_bytes()?.into())
     }
 
     pub fn utf8_lower(&self) -> PyResult<Self> {

@@ -1,4 +1,4 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
@@ -43,16 +43,6 @@ impl ScalarUDF for StartsWith {
     }
     fn docstring(&self) -> &'static str {
         "Returns a boolean indicating whether each string starts with the specified pattern"
-    }
-
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [data, pattern] => data.utf8_startswith(pattern),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
     }
 }
 

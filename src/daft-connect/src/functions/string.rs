@@ -1,6 +1,6 @@
 use daft_functions::utf8::{
-    Utf8LengthBytes, Utf8Like, Utf8Lower, Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split,
-    Utf8Startswith, Utf8Substr, Utf8Upper,
+    Utf8Like, Utf8Lower, Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split, Utf8Substr,
+    Utf8Upper,
 };
 
 use super::{FunctionModule, TODO_FUNCTION};
@@ -30,7 +30,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("initcap", TODO_FUNCTION);
         parent.add_fn("instr", TODO_FUNCTION);
         parent.add_fn("lcase", TODO_FUNCTION);
-        parent.add_fn("length", Utf8LengthBytes {});
+        parent.add_fn("length", daft_functions_utf8::LengthBytes);
         parent.add_fn("like", Utf8Like {});
         parent.add_fn("lower", Utf8Lower {});
         parent.add_fn("left", daft_functions_utf8::Left);
@@ -62,7 +62,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("soundex", TODO_FUNCTION);
         parent.add_fn("split", Utf8Split { regex: false });
         parent.add_fn("split_part", TODO_FUNCTION);
-        parent.add_fn("startswith", Utf8Startswith {});
+        parent.add_fn("startswith", daft_functions_utf8::StartsWith);
         parent.add_fn("substr", Utf8Substr {});
         parent.add_fn("substring", Utf8Substr {});
         parent.add_fn("substring_index", TODO_FUNCTION);

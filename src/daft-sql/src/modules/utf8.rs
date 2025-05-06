@@ -147,7 +147,6 @@ pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        parent.add_fn("starts_with", SQLUtf8StartsWith);
         parent.add_fn("split", SQLUtf8Split);
         // TODO add split variants
         // parent.add("split", f(Split(false)));
@@ -156,7 +155,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("regexp_split", SQLUtf8RegexpSplit);
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
-        parent.add_fn("length_bytes", SQLUtf8LengthBytes);
         parent.add_fn("lower", SQLUtf8Lower);
         parent.add_fn("upper", SQLUtf8Upper);
         parent.add_fn("lstrip", SQLUtf8Lstrip);
@@ -176,15 +174,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("concat", SQLConcat);
     }
 }
-
-utf8_function!(
-    SQLUtf8StartsWith,
-    "starts_with",
-    daft_functions::utf8::startswith,
-    "Returns true if the string starts with the specified substring",
-    "string_input",
-    "substring"
-);
 
 utf8_function!(
     SQLUtf8Split,
@@ -221,14 +210,6 @@ utf8_function!(
     "Splits the string by the specified delimiter and returns an array of substrings",
     "string_input",
     "delimiter"
-);
-
-utf8_function!(
-    SQLUtf8LengthBytes,
-    "length_bytes",
-    daft_functions::utf8::length_bytes,
-    "Returns the length of the string in bytes",
-    "string_input"
 );
 
 utf8_function!(

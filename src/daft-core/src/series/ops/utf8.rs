@@ -18,12 +18,6 @@ impl Series {
         }
     }
 
-    pub fn utf8_startswith(&self, pattern: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| Ok(arr.startswith(pattern_arr)?.into_series()))
-        })
-    }
-
     pub fn utf8_match(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.match_(pattern_arr)?.into_series()))
@@ -51,10 +45,6 @@ impl Series {
                 })
             })
         })
-    }
-
-    pub fn utf8_length_bytes(&self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.length_bytes()?.into_series()))
     }
 
     pub fn utf8_lower(&self) -> DaftResult<Self> {

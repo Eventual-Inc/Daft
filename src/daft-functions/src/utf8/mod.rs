@@ -1,4 +1,3 @@
-mod length_bytes;
 mod like;
 mod lower;
 mod lpad;
@@ -12,13 +11,11 @@ mod right;
 mod rpad;
 mod rstrip;
 mod split;
-mod startswith;
 mod substr;
 mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use length_bytes::{utf8_length_bytes as length_bytes, Utf8LengthBytes};
 pub use like::{utf8_like as like, Utf8Like};
 pub use lower::{utf8_lower as lower, Utf8Lower};
 pub use lpad::{utf8_lpad as lpad, Utf8Lpad};
@@ -32,7 +29,6 @@ pub use right::{utf8_right as right, Utf8Right};
 pub use rpad::{utf8_rpad as rpad, Utf8Rpad};
 pub use rstrip::{utf8_rstrip as rstrip, Utf8Rstrip};
 pub use split::{utf8_split as split, Utf8Split};
-pub use startswith::{utf8_startswith as startswith, Utf8Startswith};
 pub use substr::{utf8_substr as substr, Utf8Substr};
 pub use to_date::{utf8_to_date as to_date, Utf8ToDate};
 pub use to_datetime::{utf8_to_datetime as to_datetime, Utf8ToDatetime};
