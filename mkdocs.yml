@@ -54,7 +54,6 @@ nav:
     - Coming from Dask: migration/dask_migration.md
 - Python API:
   - Overview: api/index.md
-  - DataFrame Creation: api/dataframe_creation.md
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
   - Functions:
@@ -68,7 +67,6 @@ nav:
   - Aggregations: api/aggregations.md
   - Series: api/series.md
   - I/O: api/io.md
-  - Pushdowns: api/pushdowns.md
   - Configuration: api/config.md
   - Miscellaneous: api/misc.md
 - SQL Reference:
@@ -232,3 +230,6 @@ plugins:
             functions: true
           extra:
             trim_doctest_flags: true
+- redirects:
+    redirect_maps:
+      "api/dataframe_creation.md": "api/io.md"

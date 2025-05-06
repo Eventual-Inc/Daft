@@ -1,7 +1,5 @@
 # I/O
 
-Daft supports diverse input sources and output sinks, some of which are covered in [DataFrame Creation](dataframe_creation.md).
-
 ## Input
 
 <!-- from_ -->
@@ -32,39 +30,39 @@ Daft supports diverse input sources and output sinks, some of which are covered 
 
 <!-- read_ -->
 
-::: daft.io.read_csv
+::: daft.read_csv
     options:
         heading_level: 3
 
-::: daft.io.read_deltalake
+::: daft.read_deltalake
     options:
         heading_level: 3
 
-::: daft.io.read_hudi
+::: daft.read_hudi
     options:
         heading_level: 3
 
-::: daft.io.read_iceberg
+::: daft.read_iceberg
     options:
         heading_level: 3
 
-::: daft.io.read_json
+::: daft.read_json
     options:
         heading_level: 3
 
-::: daft.io.read_lance
+::: daft.read_lance
     options:
         heading_level: 3
 
-::: daft.io.read_parquet
+::: daft.read_parquet
     options:
         heading_level: 3
 
-::: daft.io.read_sql
+::: daft.read_sql
     options:
         heading_level: 3
 
-::: daft.io.read_warc
+::: daft.read_warc
     options:
         heading_level: 3
 

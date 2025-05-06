@@ -52,11 +52,11 @@ class DataFrameSource(ABC):
         """
         ...
 
-    def to_dataframe(self) -> DataFrame:
-        """Creates a Daft DataFrame from this DataFrameSource."""
-        from daft.io.__shim import _to_dataframe
+    def read(self) -> DataFrame:
+        """Reads this source into a DataFrame."""
+        from daft.io.__shim import _read
 
-        return _to_dataframe(self)
+        return _read(self)
 
 
 class DataFrameSourceTask(ABC):

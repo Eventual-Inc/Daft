@@ -24,8 +24,9 @@ if TYPE_CHECKING:
     from daft.schema import Schema
 
 
-def _to_dataframe(self) -> DataFrame:
-    scan = __DataFrameSourceShim(self)
+def _read(source: DataFrameSource) -> DataFrame:
+    """Reads a DataFrameSource as a DataFrame reusing ScanOperator."""
+    scan = __DataFrameSourceShim(source)
     handle = ScanOperatorHandle.from_python_scan_operator(scan)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)

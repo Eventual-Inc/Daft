@@ -134,7 +134,7 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
         start = 0
     else:
         start = start
-    return RangeSource(start, end, step, partitions).to_dataframe()
+    return RangeSource(start, end, step, partitions).read()
 
 
 # TODO: consider using `from_range` and `Series.from_range` instead.
