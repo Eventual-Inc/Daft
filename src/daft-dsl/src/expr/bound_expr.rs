@@ -10,9 +10,16 @@ use super::{
 };
 
 #[derive(Clone, Display)]
+/// A simple newtype around ExprRef that ensures that all of the columns in the held expression are bound.
+///
+/// We have several column variants: unresolved, resolved, and bound.
+/// Resolved columns are being phased out in favor of bound columns, and `BoundExpr` serves two purposes in this process:
+/// 1. To hold the logic for conversion from other column variants to the bound variant (a.k.a column binding)
+/// 2. Th use Rust's type checker to enforce the boundary between unbound and bound columns in the code.
 pub struct BoundExpr(ExprRef);
 
 impl BoundExpr {
+    /// Create a BoundExpr by attempting to bind all unbound columns.
     pub fn try_new(expr: ExprRef, schema: &Schema) -> DaftResult<Self> {
         expr.transform(|e| {
             if let Expr::Column(column) = e.as_ref() {
@@ -58,7 +65,13 @@ impl BoundExpr {
         Self(expr)
     }
 
-    pub fn expr(&self) -> &ExprRef {
+    pub fn inner(&self) -> &ExprRef {
+        &self.0
+    }
+}
+
+impl AsRef<Expr> for BoundExpr {
+    fn as_ref(&self) -> &Expr {
         &self.0
     }
 }
@@ -66,13 +79,15 @@ impl BoundExpr {
 macro_rules! impl_bound_wrapper {
     ($name:ident, $inner:ty, $expr_variant:ident) => {
         #[derive(Clone, Display)]
+        /// See [`BoundExpr`] for details about how this newtype pattern.
         pub struct $name($inner);
 
         impl $name {
+            /// Create a bound expression by attempting to bind all unbound columns.
             pub fn try_new(inner: $inner, schema: &Schema) -> DaftResult<Self> {
                 let bound_expr = BoundExpr::try_new(Arc::new(Expr::$expr_variant(inner)), schema)?;
 
-                let Expr::$expr_variant(bound_inner) = bound_expr.expr().as_ref() else {
+                let Expr::$expr_variant(bound_inner) = bound_expr.as_ref() else {
                     unreachable!()
                 };
 
@@ -92,8 +107,10 @@ macro_rules! impl_bound_wrapper {
 
                 Self(inner)
             }
+        }
 
-            pub fn expr(&self) -> &$inner {
+        impl AsRef<$inner> for $name {
+            fn as_ref(&self) -> &$inner {
                 &self.0
             }
         }

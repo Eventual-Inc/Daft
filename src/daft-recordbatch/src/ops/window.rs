@@ -26,7 +26,7 @@ impl RecordBatch {
         let agg_exprs = to_agg.to_vec();
 
         if let [agg_expr] = agg_exprs.as_slice()
-            && matches!(agg_expr.expr(), AggExpr::MapGroups { .. })
+            && matches!(agg_expr.as_ref(), AggExpr::MapGroups { .. })
         {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
@@ -78,7 +78,7 @@ impl RecordBatch {
     }
 
     pub fn window_agg(&self, to_agg: &BoundAggExpr, name: String) -> DaftResult<Self> {
-        if matches!(to_agg.expr(), AggExpr::MapGroups { .. }) {
+        if matches!(to_agg.as_ref(), AggExpr::MapGroups { .. }) {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
             ));

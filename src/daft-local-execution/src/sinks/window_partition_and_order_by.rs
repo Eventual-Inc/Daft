@@ -189,7 +189,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 for (window_expr, name) in
                                     window_exprs.iter().zip(params.aliases.iter())
                                 {
-                                    *partition = match window_expr.expr() {
+                                    *partition = match window_expr.as_ref() {
                                         WindowExpr::Agg(agg_expr) => partition.window_agg(
                                             &BoundAggExpr::new_unchecked(agg_expr.clone()),
                                             name.clone(),

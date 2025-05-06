@@ -393,12 +393,12 @@ impl RecordBatch {
             let mut expr = predicate
                 .first()
                 .unwrap()
-                .expr()
+                .inner()
                 .clone()
-                .and(predicate.get(1).unwrap().expr().clone());
+                .and(predicate.get(1).unwrap().inner().clone());
             for i in 2..predicate.len() {
                 let next = predicate.get(i).unwrap();
-                expr = expr.and(next.expr().clone());
+                expr = expr.and(next.inner().clone());
             }
             let mask = self.eval_expression(&BoundExpr::new_unchecked(expr))?;
             self.mask_filter(&mask)
@@ -520,9 +520,7 @@ impl RecordBatch {
         agg_expr: &BoundAggExpr,
         groups: Option<&GroupIndices>,
     ) -> DaftResult<Series> {
-        let agg_expr = agg_expr.expr();
-
-        match agg_expr {
+        match agg_expr.as_ref() {
             &AggExpr::Count(ref expr, mode) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .count(groups, mode),
@@ -616,9 +614,7 @@ impl RecordBatch {
     }
 
     fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
-        let expr = expr.expr();
-
-        let expected_field = expr.to_field(self.schema.as_ref())?;
+        let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
             Expr::Alias(child, name) => Ok(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None),
@@ -647,7 +643,7 @@ impl RecordBatch {
             }
             Expr::List(items) => {
                 // compute list type to determine each child cast
-                let field = expr.to_field(&self.schema)?;
+                let field = expr.inner().to_field(&self.schema)?;
                 // extract list child type (could be de-duped with zip and moved to impl DataType)
                 let dtype = if let DataType::List(dtype) = &field.dtype {
                     dtype
@@ -775,7 +771,7 @@ impl RecordBatch {
             .iter()
             .cloned()
             .enumerate()
-            .partition(|(_, e)| e.expr().has_compute());
+            .partition(|(_, e)| e.inner().has_compute());
 
         // Evaluate non-compute expressions
         let non_compute_results = non_compute_exprs
@@ -831,9 +827,7 @@ impl RecordBatch {
 
         let new_schema = Schema::new(fields);
 
-        let has_agg_expr = exprs
-            .iter()
-            .any(|e| matches!(e.expr().as_ref(), Expr::Agg(..)));
+        let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
         let num_rows = match (has_agg_expr, self.len()) {
             // "Normal" case: the final cardinality is the max(*results_lens, self.len())
             // This correctly accounts for broadcasting of literals, which can have unit length

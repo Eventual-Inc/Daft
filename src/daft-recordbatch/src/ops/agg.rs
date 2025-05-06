@@ -24,7 +24,7 @@ impl RecordBatch {
     pub fn agg_groupby(&self, to_agg: &[BoundExpr], group_by: &[BoundExpr]) -> DaftResult<Self> {
         let agg_exprs = to_agg
             .iter()
-            .map(|e| match e.expr().as_ref() {
+            .map(|e| match e.as_ref() {
                 Expr::Agg(e) => Ok(BoundAggExpr::new_unchecked(e.clone())),
                 _ => Err(DaftError::ValueError(format!(
                     "Trying to run non-Agg expression in Grouped Agg! {e}"
@@ -34,7 +34,7 @@ impl RecordBatch {
 
         #[cfg(feature = "python")]
         if let [agg_expr] = &agg_exprs[..]
-            && let AggExpr::MapGroups { func, inputs } = agg_expr.expr()
+            && let AggExpr::MapGroups { func, inputs } = agg_expr.as_ref()
         {
             return self.map_groups(
                 func,

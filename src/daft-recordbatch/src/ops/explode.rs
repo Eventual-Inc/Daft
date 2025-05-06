@@ -31,7 +31,7 @@ impl RecordBatch {
 
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
         for expr in exprs {
-            match expr.expr().as_ref() {
+            match expr.as_ref() {
                 Expr::ScalarFunction(func) => {
                     if func.name() == "explode" {
                         let inputs = &func.inputs;
@@ -39,7 +39,7 @@ impl RecordBatch {
                             return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
                         }
                         let expr = BoundExpr::new_unchecked(inputs.first().unwrap().clone());
-                        let exploded_name = expr.expr().name();
+                        let exploded_name = expr.inner().name();
                         let evaluated = self.eval_expression(&expr)?;
                         if !matches!(
                             evaluated.data_type(),

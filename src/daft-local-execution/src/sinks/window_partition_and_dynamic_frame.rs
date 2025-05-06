@@ -186,7 +186,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                                 *partition = partition.sort(&order_by, &params.descending, &params.descending)?;
 
                                 for (agg_expr, name) in aggregations.iter().zip(params.aliases.iter()) {
-                                    let dtype = agg_expr.expr().to_field(&params.original_schema)?.dtype;
+                                    let dtype = agg_expr.as_ref().to_field(&params.original_schema)?.dtype;
                                     *partition = partition.window_agg_dynamic_frame(name.clone(), agg_expr, params.min_periods, &dtype, &params.frame)?;
                                 }
                             }
