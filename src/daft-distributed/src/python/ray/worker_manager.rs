@@ -73,6 +73,20 @@ impl WorkerManager for RayWorkerManager {
         })
     }
 
+    fn get_idle_workers(&self) -> std::collections::HashSet<String> {
+        Python::with_gil(|py| {
+            let py_idle_workers = self
+                .ray_worker_manager
+                .call_method0(py, pyo3::intern!(py, "get_idle_workers"))
+                .expect("Failed to get idle workers from RayWorkerManager");
+            py_idle_workers
+                .extract::<Vec<String>>(py)
+                .expect("Failed to extract idle workers from RayWorkerManager")
+                .into_iter()
+                .collect()
+        })
+    }
+
     fn try_autoscale(&self, num_workers: usize) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.ray_worker_manager.call_method1(

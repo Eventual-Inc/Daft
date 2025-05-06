@@ -1,12 +1,14 @@
 use std::{
+    collections::HashSet,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -31,6 +33,14 @@ impl TaskDispatcher {
         task_dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
     ) -> TaskDispatcherHandle {
+        // TODO: Think about what the channel buffer size should be here.
+        // In general, how much buffering of tasks can we allow
+        // for the dispatcher?
+        // To maximise throughput, we should never want the task dispatcher to have to wait for dispatchable tasks
+        // to be picked up, if it has capacity to submit more tasks.
+        // But if it does not have capacity, how much buffering should we allow?
+        // In theory, tasks simply consist of a reference to a plan, as well as a partition ref.
+        // So they should be quite lightweight, and it should be safe to buffer a lot of them.
         let (task_dispatcher_sender, task_dispatcher_receiver) = create_channel(1);
         joinset.spawn(Self::run_dispatch_loop(
             task_dispatcher,
@@ -39,21 +49,154 @@ impl TaskDispatcher {
         TaskDispatcherHandle::new(task_dispatcher_sender)
     }
 
-    async fn run_dispatch_loop(
-        _dispatcher: Self,
-        _task_rx: Receiver<DispatchedTask>,
-    ) -> DaftResult<()> {
-        todo!("Implement run dispatch loop");
+    // Determine which tasks can be scheduled on which workers
+    // Returns a list of (task_idx, worker_id) tuples
+    fn get_schedulable_task_and_worker_ids(
+        queued_tasks: &mut [DispatchableTask],
+        worker_manager: &dyn WorkerManager,
+    ) -> Vec<(usize, String)> {
+        // Sort tasks by estimated memory cost in ascending order
+        // This should allow us to schedule tasks with the least memory requirements first,
+        // which should help prevent resource fragmentation and improve throughput.
+        queued_tasks.sort_by_key(|task| task.task.estimated_memory_cost());
+
+        // Get worker resources and idle workers
+        let worker_resources = worker_manager.get_worker_resources();
+        let idle_workers = worker_manager.get_idle_workers();
+
+        let mut assigned_workers = HashSet::new();
+        let mut schedulable_task_and_worker_ids = Vec::new();
+
+        for (i, task) in queued_tasks.iter().enumerate() {
+            let task_memory = task.task.estimated_memory_cost();
+
+            // Find best available worker that can handle this task
+            if let Some((idx, (worker_id, _, _))) = worker_resources
+                .iter()
+                .enumerate()
+                .filter(|(idx, (worker_id, _, worker_memory))| {
+                    // Worker must not already be assigned in this batch
+                    if assigned_workers.contains(idx) {
+                        return false;
+                    }
+
+                    // If worker has enough memory, it can always accept the task
+                    if *worker_memory >= task_memory {
+                        return true;
+                    }
+
+                    // If worker doesn't have enough memory, it can only accept task if it's idle
+                    idle_workers.contains(worker_id)
+                })
+                .min_by(|(_, (_, _, worker_memory1)), (_, (_, _, worker_memory2))| {
+                    // Case 1: Both workers have sufficient memory
+                    // Choose the one with the least excess (best fit)
+                    if *worker_memory1 >= task_memory && *worker_memory2 >= task_memory {
+                        return (*worker_memory1).cmp(worker_memory2);
+                    }
+
+                    // Case 2: Only first worker has sufficient memory
+                    // First worker wins (sufficient always beats insufficient)
+                    if *worker_memory1 >= task_memory {
+                        return std::cmp::Ordering::Less;
+                    }
+
+                    // Case 3: Only second worker has sufficient memory
+                    // Second worker wins (sufficient always beats insufficient)
+                    if *worker_memory2 >= task_memory {
+                        return std::cmp::Ordering::Greater;
+                    }
+
+                    // Case 4: Neither has sufficient memory
+                    // Compare by smallest deficit (closest to requirement)
+                    let deficit1 = task_memory - *worker_memory1;
+                    let deficit2 = task_memory - *worker_memory2;
+                    deficit1.cmp(&deficit2)
+                })
+            {
+                // We found a worker, mark it as assigned
+                assigned_workers.insert(idx);
+                schedulable_task_and_worker_ids.push((i, worker_id.clone()));
+            }
+        }
+
+        schedulable_task_and_worker_ids
     }
+
+    async fn run_dispatch_loop(
+        dispatcher: Self,
+        task_rx: Receiver<DispatchableTask>,
+    ) -> DaftResult<()> {
+        let mut pending_tasks = JoinSet::new();
+        let mut task_stream = ReceiverStream::new(task_rx);
+        let mut queued_tasks: Vec<DispatchableTask> = Vec::new();
+
+        loop {
+            // Get schedulable tasks
+            let schedulable_task_and_worker_ids = Self::get_schedulable_task_and_worker_ids(
+                &mut queued_tasks,
+                &*dispatcher.worker_manager,
+            );
+
+            // Schedule the tasks we found workers for (in reverse order to maintain indices, because we do swap_remove)
+            for (task_idx, worker_id) in schedulable_task_and_worker_ids.into_iter().rev() {
+                let task = queued_tasks.swap_remove(task_idx);
+                let mut task_handle = dispatcher
+                    .worker_manager
+                    .submit_task_to_worker(task.task, worker_id);
+
+                pending_tasks.spawn(async move {
+                    tokio::select! {
+                        biased;
+                        () = task.cancel_token.cancelled() => None,
+                        result = task_handle.get_result() => {
+                            Some((result, task.result_tx))
+                        }
+                    }
+                });
+            }
+
+            let num_pending_tasks = pending_tasks.len();
+
+            tokio::select! {
+                biased;
+                Some(result) = pending_tasks.join_next(), if num_pending_tasks > 0 => {
+                    match result {
+                        Ok(Some((result, result_tx))) => {
+                            let _ = result_tx.send(result);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            eprintln!("Error in task: {:?}", e);
+                        }
+                    }
+                }
+                Some(new_task) = task_stream.next() => {
+                    queued_tasks.push(new_task);
+                }
+                else => {
+                    break;
+                }
+            }
+        }
+
+        dispatcher.worker_manager.shutdown()
+    }
+}
+
+struct DispatchableTask {
+    task: SwordfishTask,
+    result_tx: OneshotSender<DaftResult<PartitionRef>>,
+    cancel_token: CancellationToken,
 }
 
 #[derive(Clone)]
 pub(crate) struct TaskDispatcherHandle {
-    task_dispatcher_sender: Sender<DispatchedTask>,
+    task_dispatcher_sender: Sender<DispatchableTask>,
 }
 
 impl TaskDispatcherHandle {
-    fn new(task_dispatcher_sender: Sender<DispatchedTask>) -> Self {
+    fn new(task_dispatcher_sender: Sender<DispatchableTask>) -> Self {
         Self {
             task_dispatcher_sender,
         }
@@ -61,59 +204,38 @@ impl TaskDispatcherHandle {
 
     #[allow(dead_code)]
     pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
-        let dispatchable_task = DispatchableTask::new(task);
-        let submitted_task = dispatchable_task
-            .dispatch(&self.task_dispatcher_sender)
-            .await?;
+        let unsubmitted_task = UnsubmittedTask::new(task);
+        let submitted_task = unsubmitted_task
+            .submit_task(&self.task_dispatcher_sender)
+            .await;
         Ok(submitted_task)
     }
 }
 
 #[allow(dead_code)]
-struct DispatchableTask {
+struct UnsubmittedTask {
     task: SwordfishTask,
 }
 
-impl DispatchableTask {
+impl UnsubmittedTask {
     fn new(task: SwordfishTask) -> Self {
         Self { task }
     }
 
-    async fn dispatch(
-        self,
-        task_dispatcher_sender: &Sender<DispatchedTask>,
-    ) -> DaftResult<SubmittedTask> {
+    async fn submit_task(self, task_dispatcher_sender: &Sender<DispatchableTask>) -> SubmittedTask {
         let (result_tx, result_rx) = create_oneshot_channel();
         let cancel_token = CancellationToken::new();
-        let task = DispatchedTask::new(self.task, result_tx, cancel_token.clone());
-        task_dispatcher_sender
-            .send(task)
-            .await
-            .map_err(|e| DaftError::InternalError(e.to_string()))?;
-        Ok(SubmittedTask::new(result_rx, Some(cancel_token)))
+        let _ = task_dispatcher_sender
+            .send(DispatchableTask {
+                task: self.task,
+                result_tx,
+                cancel_token: cancel_token.clone(),
+            })
+            .await;
+        SubmittedTask::new(result_rx, Some(cancel_token))
     }
 }
 
-#[allow(dead_code)]
-struct DispatchedTask {
-    swordfish_task: SwordfishTask,
-    result_tx: OneshotSender<DaftResult<PartitionRef>>,
-    cancel_token: CancellationToken,
-}
-
-impl DispatchedTask {
-    fn new(
-        swordfish_task: SwordfishTask,
-        result_tx: OneshotSender<DaftResult<PartitionRef>>,
-        cancel_token: CancellationToken,
-    ) -> Self {
-        Self {
-            swordfish_task,
-            result_tx,
-            cancel_token,
-        }
-    }
-}
 pub(crate) struct SubmittedTask {
     result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
     cancel_token: Option<CancellationToken>,

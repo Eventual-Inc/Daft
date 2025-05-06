@@ -14,6 +14,9 @@ pub(crate) trait WorkerManager: Send + Sync {
     #[allow(dead_code)]
     fn try_autoscale(&self, num_workers: usize) -> DaftResult<()>;
     fn shutdown(&self) -> DaftResult<()>;
+
+    // Returns a set of worker IDs that are currently idle (not running any tasks)
+    fn get_idle_workers(&self) -> std::collections::HashSet<String>;
 }
 
 pub(crate) trait WorkerManagerFactory: Send + Sync {

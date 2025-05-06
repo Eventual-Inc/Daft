@@ -102,6 +102,7 @@ class RaySwordfishWorkerHandle:
         self.num_cpus = num_cpus
         self.total_memory_bytes = total_memory_bytes
         self.available_memory_bytes = total_memory_bytes
+        self.active_tasks = 0  # Track number of active tasks
 
     def get_actor_node_id(self) -> str:
         return self.actor_node_id
@@ -115,16 +116,23 @@ class RaySwordfishWorkerHandle:
     def get_available_memory_bytes(self) -> int:
         return self.available_memory_bytes
 
+    def is_idle(self) -> bool:
+        """Return True if the worker is not running any tasks."""
+        return self.active_tasks == 0
+
     def add_back_memory(self, memory_bytes: int):
         self.available_memory_bytes += memory_bytes
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         self.available_memory_bytes -= task.estimated_memory_cost()
+        self.active_tasks += 1  # Increment active tasks count
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
         memory_to_return = task.estimated_memory_cost()
+        worker_handle = self  # Capture self for the callback
 
         def done_callback(_result: ray.ObjectRef):
-            self.add_back_memory(memory_to_return)
+            worker_handle.add_back_memory(memory_to_return)
+            worker_handle.active_tasks -= 1  # Decrement active tasks count when task completes
 
         return RaySwordfishTaskHandle(
             self.actor_handle.run_plan.remote(task.plan(), psets),
@@ -184,6 +192,10 @@ class RaySwordfishWorkerManager:
             )
             for worker in self.workers.values()
         ]
+
+    def get_idle_workers(self) -> List[str]:
+        """Return a list of worker IDs that are currently idle (not running any tasks)."""
+        return [worker.get_actor_node_id() for worker in self.workers.values() if worker.is_idle()]
 
     def try_autoscale(self, num_workers: int):
         """Try to autoscale the number of workers. this is a hint to the autoscaler to add more workers if needed."""
