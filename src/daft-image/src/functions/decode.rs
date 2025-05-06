@@ -27,7 +27,6 @@ impl ScalarUDF for ImageDecode {
         let image_mode: Option<ImageMode> = image_mode
             .map(|s| {
                 ensure!(s.len() == 1, "ImageMode must be a scalar value");
-
                 let value = s.utf8()?.get(0).unwrap();
                 value.parse()
             })
