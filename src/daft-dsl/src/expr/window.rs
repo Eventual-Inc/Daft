@@ -76,20 +76,6 @@ impl WindowFrame {
     }
 }
 
-impl WindowFrame {
-    pub fn from_window_boundary(
-        frame_type: WindowFrameType,
-        start: WindowBoundary,
-        end: WindowBoundary,
-    ) -> Self {
-        Self {
-            frame_type,
-            start,
-            end,
-        }
-    }
-}
-
 /// Represents a window specification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
