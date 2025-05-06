@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr},
-    resolved_col, AggExpr, ExprRef,
+    AggExpr, ExprRef,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -140,12 +140,6 @@ impl BlockingSink for WindowPartitionOnlySink {
                             .map(|expr| BoundAggExpr::try_new(expr.clone(), input_schema))
                             .collect::<DaftResult<Vec<_>>>()?;
 
-                        let all_projections = params
-                            .original_schema
-                            .field_names()
-                            .map(|name| BoundExpr::try_new(resolved_col(name), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
                         per_partition_tasks.spawn(async move {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
@@ -155,9 +149,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                                 &partition_by,
                             )?;
 
-                            let final_result = result.eval_expression_list(&all_projections)?;
-
-                            Ok(final_result)
+                            Ok(result)
                         });
                     }
 

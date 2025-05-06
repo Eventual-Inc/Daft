@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    resolved_col, ExprRef, WindowExpr,
+    ExprRef, WindowExpr,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -152,12 +152,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             .map(|expr| BoundWindowExpr::try_new(expr.clone(), input_schema))
                             .collect::<DaftResult<Vec<_>>>()?;
 
-                        let all_projections = params
-                            .original_schema
-                            .field_names()
-                            .map(|name| BoundExpr::try_new(resolved_col(name), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
                         if partition_by.is_empty() {
                             return Err(DaftError::ValueError(
                                 "Partition by cannot be empty for window functions".into(),
@@ -224,8 +218,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             }
 
                             let final_result = RecordBatch::concat(&partitions)?;
-                            let final_result =
-                                final_result.eval_expression_list(&all_projections)?;
                             Ok(final_result)
                         });
                     }

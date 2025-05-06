@@ -81,7 +81,7 @@ impl MicroPartition {
                     .try_collect::<Vec<_>>()?;
                 let right_on = right_on
                     .iter()
-                    .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+                    .map(|expr| BoundExpr::try_new(expr.clone(), &right.schema))
                     .try_collect::<Vec<_>>()?;
 
                 let joined_table = table_join(lt, rt, &left_on, &right_on, how)?;
