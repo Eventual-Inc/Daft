@@ -158,8 +158,11 @@ impl RecordBatch {
     }
 
     // Helper method to calculate range-based frame boundaries
+    #[allow(clippy::too_many_arguments)]
     fn calculate_range_frame_bounds(
         row_idx: usize,
+        prev_frame_start: usize,
+        prev_frame_end: usize,
         start_boundary: Option<&WindowBoundary>,
         end_boundary: Option<&WindowBoundary>,
         order_by_col: &Series,
@@ -173,21 +176,34 @@ impl RecordBatch {
                 .saturating_add_signed(*offset as isize)
                 .min(total_rows),
             Some(WindowBoundary::RangeOffset(offset)) => {
-                let offset = offset.to_series();
-                let lower_bound = (current_row_order_by.clone() + offset)?;
-                let gte = if descending {
-                    order_by_col.lte(&lower_bound)?
-                } else {
-                    order_by_col.gte(&lower_bound)?
+                let lower_bound = (current_row_order_by.clone() + offset.to_series())?;
+                let cmp = |i: usize| -> bool {
+                    if descending {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .lte(&lower_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    } else {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .gte(&lower_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    }
                 };
-                let mut first_true_idx = gte.len();
-                for i in 0..gte.len() {
-                    if gte.get(i).unwrap_or(false) {
-                        first_true_idx = i;
+                let mut idx = prev_frame_start;
+                while idx < total_rows {
+                    if cmp(idx) {
                         break;
                     }
+                    idx += 1;
                 }
-                first_true_idx
+                idx
             }
             Some(WindowBoundary::UnboundedPreceding) | Some(WindowBoundary::UnboundedFollowing) => {
                 unreachable!()
@@ -202,21 +218,34 @@ impl RecordBatch {
                     .min(total_rows)
             }
             Some(WindowBoundary::RangeOffset(offset)) => {
-                let offset = offset.to_series();
-                let upper_bound = (current_row_order_by + offset)?;
-                let gt = if descending {
-                    order_by_col.lt(&upper_bound)?
-                } else {
-                    order_by_col.gt(&upper_bound)?
+                let upper_bound = (current_row_order_by + offset.to_series())?;
+                let cmp = |i: usize| -> bool {
+                    if descending {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .lt(&upper_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    } else {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .gt(&upper_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    }
                 };
-                let mut first_true_idx = gt.len();
-                for i in 0..gt.len() {
-                    if gt.get(i).unwrap_or(false) {
-                        first_true_idx = i;
+                let mut idx = prev_frame_end;
+                while idx < total_rows {
+                    if cmp(idx) {
                         break;
                     }
+                    idx += 1;
                 }
-                first_true_idx
+                idx
             }
             Some(WindowBoundary::UnboundedPreceding) | Some(WindowBoundary::UnboundedFollowing) => {
                 unreachable!()
@@ -482,6 +511,8 @@ impl RecordBatch {
             // Calculate frame bounds for this row using the provided boundaries
             let (frame_start, frame_end) = Self::calculate_range_frame_bounds(
                 row_idx,
+                prev_frame_start,
+                prev_frame_end,
                 start_boundary.as_ref(),
                 end_boundary.as_ref(),
                 &order_by_col,
@@ -548,12 +579,17 @@ impl RecordBatch {
             std::mem::swap(&mut start_boundary, &mut end_boundary);
         }
 
+        let mut prev_frame_start = 0;
+        let mut prev_frame_end = 0;
+
         for row_idx in 0..total_rows {
             let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
 
             // Calculate frame bounds for this row using the provided boundaries
             let (frame_start, frame_end) = Self::calculate_range_frame_bounds(
                 row_idx,
+                prev_frame_start,
+                prev_frame_end,
                 start_boundary.as_ref(),
                 end_boundary.as_ref(),
                 &order_by_col,
@@ -561,6 +597,9 @@ impl RecordBatch {
                 descending,
                 total_rows,
             )?;
+
+            prev_frame_start = frame_start;
+            prev_frame_end = frame_end;
 
             let frame_size = frame_end - frame_start;
 
