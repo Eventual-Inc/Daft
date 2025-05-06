@@ -1,8 +1,10 @@
-use common_error::DaftResult;
+use common_error::{ensure, DaftResult};
 use daft_core::{
     array::DataArray,
-    prelude::{AsArrow, DaftPhysicalType, Utf8Array},
+    prelude::{AsArrow, DaftPhysicalType, DataType, Field, Schema, Utf8Array},
+    series::Series,
 };
+use daft_dsl::{functions::FunctionArgs, ExprRef};
 use itertools::Itertools;
 
 pub(crate) enum BroadcastedStrIter<'a> {
@@ -84,31 +86,74 @@ where
     Ok((false, result_len))
 }
 
-pub(crate) fn regex_extract_first_match<'a>(
-    arr_iter: impl Iterator<Item = Option<&'a str>>,
-    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
-    index: usize,
-    name: &str,
-) -> DaftResult<Utf8Array> {
-    let arrow_result = arr_iter
-        .zip(regex_iter)
-        .map(|(val, re)| match (val, re) {
-            (Some(val), Some(re)) => {
-                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures
-                // regex::find is faster than regex::captures but only returns the full match, not the capture groups.
-                // So, use regex::find if index == 0, otherwise use regex::captures.
-                if index == 0 {
-                    Ok(re?.find(val).map(|m| m.as_str()))
-                } else {
-                    Ok(re?
-                        .captures(val)
-                        .and_then(|captures| captures.get(index))
-                        .map(|m| m.as_str()))
-                }
-            }
-            _ => Ok(None),
-        })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+pub(crate) fn binary_utf8_evaluate(
+    inputs: daft_dsl::functions::FunctionArgs<Series>,
+    arg_name: &'static str,
+    f: impl Fn(&Series, &Series) -> DaftResult<Series>,
+) -> DaftResult<Series> {
+    let input = inputs.required((0, "input"))?;
+    if input.data_type().is_null() {
+        return Ok(Series::full_null(
+            input.name(),
+            &DataType::Null,
+            input.len(),
+        ));
+    }
+    let arg1 = inputs.required((1, arg_name))?;
+    f(input, arg1)
+}
+pub(crate) fn unary_utf8_evaluate(
+    inputs: daft_dsl::functions::FunctionArgs<Series>,
+    f: impl Fn(&Series) -> DaftResult<Series>,
+) -> DaftResult<Series> {
+    let input = inputs.required((0, "input"))?;
+    if input.data_type().is_null() {
+        return Ok(Series::full_null(
+            input.name(),
+            &DataType::Null,
+            input.len(),
+        ));
+    }
+    f(input)
+}
+pub(crate) fn unary_utf8_to_field(
+    inputs: FunctionArgs<ExprRef>,
+    schema: &Schema,
+    fn_name: &'static str,
+    return_dtype: DataType,
+) -> DaftResult<Field> {
+    ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
+    let input = inputs.required((0, "input"))?.to_field(schema)?;
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+    if input.dtype.is_null() {
+        Ok(Field::new(input.name, DataType::Null))
+    } else {
+        ensure!(
+            input.dtype.is_string(),
+            TypeError: "Expects input to '{fn_name}' to be utf8, but received {}", input.dtype
+        );
+
+        Ok(Field::new(input.name, return_dtype))
+    }
+}
+
+pub(crate) fn binary_utf8_to_field(
+    inputs: FunctionArgs<ExprRef>,
+    schema: &Schema,
+    arg_name: &'static str,
+    fn_name: &'static str,
+    return_dtype: DataType,
+) -> DaftResult<Field> {
+    ensure!(inputs.len() == 2, SchemaMismatch: "'{fn_name}' expects 2 arguments");
+
+    let input = inputs.required((0, "input"))?.to_field(schema)?;
+
+    ensure!(input.dtype == DataType::Utf8, TypeError: "input must be of type Utf8");
+
+    let pattern = inputs.required((1, arg_name))?.to_field(schema)?;
+    ensure!(
+        pattern.dtype == DataType::Utf8,
+        TypeError: "{arg_name} must be of type Utf8"
+    );
+    Ok(Field::new(input.name, return_dtype))
 }

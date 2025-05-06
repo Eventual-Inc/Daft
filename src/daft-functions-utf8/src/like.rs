@@ -1,4 +1,4 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{BooleanArray, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
@@ -9,7 +9,9 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{create_broadcasted_str_iter, parse_inputs};
+use crate::utils::{
+    binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Like;
@@ -21,9 +23,7 @@ impl ScalarUDF for Like {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let pattern = inputs.required((1, "pattern"))?;
-        series_like(input, pattern)
+        binary_utf8_evaluate(inputs, "pattern", series_like)
     }
 
     fn function_args_to_field(
@@ -31,18 +31,11 @@ impl ScalarUDF for Like {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(inputs.len() == 2, SchemaMismatch: "like expects 2 arguments");
+        binary_utf8_to_field(inputs, schema, "pattern", self.name(), DataType::Boolean)
+    }
 
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
-
-        ensure!(input.dtype == DataType::Utf8, TypeError: "input must be of type Utf8");
-
-        let pattern = inputs.required((1, "pattern"))?.to_field(schema)?;
-        ensure!(
-            pattern.dtype == DataType::Utf8,
-            TypeError: "pattern must be of type Utf8"
-        );
-        Ok(Field::new(input.name, DataType::Boolean))
+    fn docstring(&self) -> &'static str {
+        "Returns a boolean indicating whether string matches the given pattern. (case-sensitive)"
     }
 }
 

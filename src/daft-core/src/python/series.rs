@@ -345,10 +345,6 @@ impl PySeries {
         Ok(self.series.data_type().clone().into())
     }
 
-    pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_match(&pattern.series)?.into())
-    }
-
     pub fn utf8_split(&self, pattern: &Self, regex: bool) -> PyResult<Self> {
         Ok(self.series.utf8_split(&pattern.series, regex)?.into())
     }
@@ -362,10 +358,6 @@ impl PySeries {
 
     pub fn utf8_upper(&self) -> PyResult<Self> {
         Ok(self.series.utf8_upper()?.into())
-    }
-
-    pub fn utf8_lstrip(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_lstrip()?.into())
     }
 
     pub fn utf8_rstrip(&self) -> PyResult<Self> {

@@ -1,4 +1,4 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, FullNull, Int64Array, Schema, Utf8Array},
     series::{IntoSeries, Series},
@@ -9,7 +9,9 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{create_broadcasted_str_iter, parse_inputs};
+use crate::utils::{
+    binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Find;
@@ -21,9 +23,7 @@ impl ScalarUDF for Find {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let substr = inputs.required((1, "substr"))?;
-        series_find(input, substr)
+        binary_utf8_evaluate(inputs, "substr", series_find)
     }
 
     fn function_args_to_field(
@@ -31,18 +31,7 @@ impl ScalarUDF for Find {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(inputs.len() == 2, SchemaMismatch: "find expects 2 arguments");
-
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
-
-        ensure!(input.dtype == DataType::Utf8, TypeError: "input must be of type Utf8");
-
-        let substr = inputs.required((1, "pattern"))?.to_field(schema)?;
-        ensure!(
-            substr.dtype == DataType::Utf8,
-            TypeError: "substr must be of type Utf8"
-        );
-        Ok(Field::new(input.name, DataType::Int64))
+        binary_utf8_to_field(inputs, schema, "substr", self.name(), DataType::Int64)
     }
 
     fn docstring(&self) -> &'static str {

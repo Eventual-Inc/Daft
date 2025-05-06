@@ -267,42 +267,6 @@ pub struct Utf8NormalizeOptions {
 }
 
 impl Utf8Array {
-    pub fn startswith(&self, pattern: &Self) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(
-            pattern,
-            |data: &str, pat: &str| Ok(data.starts_with(pat)),
-            "startswith",
-        )
-    }
-
-    pub fn match_(&self, pattern: &Self) -> DaftResult<BooleanArray> {
-        if pattern.len() == 1 {
-            let pattern_scalar_value = pattern.get(0);
-            return match pattern_scalar_value {
-                None => Ok(BooleanArray::full_null(
-                    self.name(),
-                    &DataType::Boolean,
-                    self.len(),
-                )),
-                Some(pattern_v) => {
-                    let re = regex::Regex::new(pattern_v)?;
-                    let arrow_result: arrow2::array::BooleanArray = self
-                        .as_arrow()
-                        .into_iter()
-                        .map(|self_v| Some(re.is_match(self_v?)))
-                        .collect();
-                    Ok(BooleanArray::from((self.name(), arrow_result)))
-                }
-            };
-        }
-
-        self.binary_broadcasted_compare(
-            pattern,
-            |data: &str, pat: &str| Ok(regex::Regex::new(pat)?.is_match(data)),
-            "match",
-        )
-    }
-
     pub fn split(&self, pattern: &Self, regex: bool) -> DaftResult<ListArray> {
         let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
             .map_err(|e| DaftError::ValueError(format!("Error in split: {e}")))?;

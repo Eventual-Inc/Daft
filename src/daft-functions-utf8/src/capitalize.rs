@@ -1,4 +1,4 @@
-use common_error::{ensure, DaftResult};
+use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
@@ -9,6 +9,8 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::utils::{unary_utf8_evaluate, unary_utf8_to_field};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Capitalize;
 
@@ -18,15 +20,7 @@ impl ScalarUDF for Capitalize {
         "capitalize"
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        if input.data_type().is_null() {
-            return Ok(Series::full_null(
-                input.name(),
-                &DataType::Null,
-                input.len(),
-            ));
-        }
-        series_capitalize(input)
+        unary_utf8_evaluate(inputs, series_capitalize)
     }
 
     fn function_args_to_field(
@@ -34,15 +28,7 @@ impl ScalarUDF for Capitalize {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
-
-        ensure!(
-            matches!(input.dtype, DataType::Utf8 | DataType::Null),
-            TypeError: "Expects input to capitalize to be utf8, but received {}", input.dtype
-        );
-
-        Ok(Field::new(input.name, input.dtype))
+        unary_utf8_to_field(inputs, schema, self.name(), DataType::Utf8)
     }
 
     fn docstring(&self) -> &'static str {

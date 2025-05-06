@@ -12,16 +12,16 @@ use serde::{Deserialize, Serialize};
 use crate::utils::{unary_utf8_evaluate, unary_utf8_to_field};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Lower;
+pub struct LStrip;
 
 #[typetag::serde]
-impl ScalarUDF for Lower {
+impl ScalarUDF for LStrip {
     fn name(&self) -> &'static str {
-        "lower"
+        "lstrip"
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_lower)
+        unary_utf8_evaluate(inputs, series_lstrip)
     }
 
     fn function_args_to_field(
@@ -33,19 +33,18 @@ impl ScalarUDF for Lower {
     }
 
     fn docstring(&self) -> &'static str {
-        "Converts a string to lowercase."
+        "Removes leading whitespace from the string"
     }
 }
 
 #[must_use]
-pub fn lower(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Lower, vec![input]).into()
+pub fn lstrip(input: ExprRef) -> ExprRef {
+    ScalarFunction::new(LStrip {}, vec![input]).into()
 }
 
-pub fn series_lower(s: &Series) -> DaftResult<Series> {
+fn series_lstrip(s: &Series) -> DaftResult<Series> {
     s.with_utf8_array(|arr| {
-        Ok(arr
-            .unary_broadcasted_op(|val| val.to_lowercase().into())?
-            .into_series())
+        arr.unary_broadcasted_op(|val| val.trim_start().into())
+            .map(IntoSeries::into_series)
     })
 }

@@ -18,12 +18,6 @@ impl Series {
         }
     }
 
-    pub fn utf8_match(&self, pattern: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| Ok(arr.match_(pattern_arr)?.into_series()))
-        })
-    }
-
     pub fn utf8_split(&self, pattern: &Self, regex: bool) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.split(pattern_arr, regex)?.into_series()))
@@ -49,10 +43,6 @@ impl Series {
 
     pub fn utf8_upper(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.upper()?.into_series()))
-    }
-
-    pub fn utf8_lstrip(&self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.lstrip()?.into_series()))
     }
 
     pub fn utf8_rstrip(&self) -> DaftResult<Self> {

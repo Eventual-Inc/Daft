@@ -1,5 +1,3 @@
-mod lstrip;
-mod match_;
 mod normalize;
 mod repeat;
 mod replace;
@@ -12,8 +10,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use lstrip::{utf8_lstrip as lstrip, Utf8Lstrip};
-pub use match_::{utf8_match as match_, Utf8Match};
 pub use normalize::{utf8_normalize as normalize, Utf8Normalize};
 pub use repeat::{utf8_repeat as repeat, Utf8Repeat};
 pub use replace::{utf8_replace as replace, Utf8Replace};

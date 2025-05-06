@@ -3305,7 +3305,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_lstrip(self._expr))
+        f = native.get_function_from_registry("lstrip")
+        return Expression._from_pyexpr(f(self._expr))
 
     def rstrip(self) -> Expression:
         """Strip whitespace from the right side of a UTF-8 string.

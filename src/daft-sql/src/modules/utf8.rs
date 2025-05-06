@@ -150,13 +150,11 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("split", SQLUtf8Split);
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("regexp_match", SQLUtf8RegexpMatch);
         parent.add_fn("regexp_replace", SQLUtf8RegexpReplace);
         parent.add_fn("regexp_split", SQLUtf8RegexpSplit);
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("upper", SQLUtf8Upper);
-        parent.add_fn("lstrip", SQLUtf8Lstrip);
         parent.add_fn("rstrip", SQLUtf8Rstrip);
         parent.add_fn("reverse", SQLUtf8Reverse);
         parent.add_fn("right", SQLUtf8Right);
@@ -179,15 +177,6 @@ utf8_function!(
     "Splits the string by the specified delimiter and returns an array of substrings",
     "string_input",
     "delimiter"
-);
-
-utf8_function!(
-    SQLUtf8RegexpMatch,
-    "regexp_match",
-    daft_functions::utf8::match_,
-    "Returns true if the string matches the specified regular expression pattern",
-    "string_input",
-    "pattern"
 );
 
 utf8_function!(
@@ -214,14 +203,6 @@ utf8_function!(
     "upper",
     daft_functions::utf8::upper,
     "Converts the string to uppercase",
-    "string_input"
-);
-
-utf8_function!(
-    SQLUtf8Lstrip,
-    "lstrip",
-    daft_functions::utf8::lstrip,
-    "Removes leading whitespace from the string",
     "string_input"
 );
 

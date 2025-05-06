@@ -1,8 +1,6 @@
 mod capitalize;
 mod contains;
 mod endswith;
-mod extract;
-mod extract_all;
 mod find;
 mod ilike;
 mod left;
@@ -11,6 +9,10 @@ mod length_bytes;
 mod like;
 mod lower;
 mod lpad;
+mod lstrip;
+mod regexp_extract;
+mod regexp_extract_all;
+mod regexp_match;
 
 pub(crate) mod pad;
 
@@ -22,8 +24,6 @@ pub(crate) mod utils;
 pub use capitalize::*;
 pub use contains::*;
 pub use endswith::*;
-pub use extract::*;
-pub use extract_all::*;
 pub use find::*;
 pub use ilike::*;
 pub use left::*;
@@ -32,6 +32,10 @@ pub use length_bytes::*;
 pub use like::*;
 pub use lower::*;
 pub use lpad::*;
+pub use lstrip::*;
+pub use regexp_extract::*;
+pub use regexp_extract_all::*;
+pub use regexp_match::*;
 pub use rpad::*;
 pub use startswith::*;
 
@@ -42,8 +46,6 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Capitalize);
         parent.add_fn(Contains);
         parent.add_fn(EndsWith);
-        parent.add_fn(RegexpExtract);
-        parent.add_fn(RegexpExtractAll);
         parent.add_fn(Find);
         parent.add_fn(ILike);
         parent.add_fn(Left);
@@ -52,8 +54,12 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Like);
         parent.add_fn(Lower);
         parent.add_fn(LPad);
-        parent.add_fn(RPad);
+        parent.add_fn(LStrip);
+        parent.add_fn(RegexpExtract);
+        parent.add_fn(RegexpExtractAll);
+        parent.add_fn(RegexpMatch);
 
+        parent.add_fn(RPad);
         parent.add_fn(StartsWith);
     }
 }

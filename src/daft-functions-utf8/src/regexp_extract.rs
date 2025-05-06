@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{create_broadcasted_str_iter, parse_inputs, regex_extract_first_match};
+use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpExtract;
@@ -111,4 +111,33 @@ fn extract(s: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8A
     };
     assert_eq!(result.len(), expected_size);
     Ok(result)
+}
+
+fn regex_extract_first_match<'a>(
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
+    index: usize,
+    name: &str,
+) -> DaftResult<Utf8Array> {
+    let arrow_result = arr_iter
+        .zip(regex_iter)
+        .map(|(val, re)| match (val, re) {
+            (Some(val), Some(re)) => {
+                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures
+                // regex::find is faster than regex::captures but only returns the full match, not the capture groups.
+                // So, use regex::find if index == 0, otherwise use regex::captures.
+                if index == 0 {
+                    Ok(re?.find(val).map(|m| m.as_str()))
+                } else {
+                    Ok(re?
+                        .captures(val)
+                        .and_then(|captures| captures.get(index))
+                        .map(|m| m.as_str()))
+                }
+            }
+            _ => Ok(None),
+        })
+        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
 }
