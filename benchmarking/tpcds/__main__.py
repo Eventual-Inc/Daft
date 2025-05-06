@@ -7,14 +7,11 @@ from pathlib import Path
 from typing import Optional
 
 import duckdb
-import numpy as np
-import pandas as pd
-import pyarrow.parquet as pq
 import ray
 
 import daft
 from benchmarking.tpcds.datagen import gen_tpcds
-from benchmarking.tpcds.helpers import convert_all_tpcds_decimals
+from benchmarking.tpcds.helpers import parse_questions_str
 
 from ..tpch import __main__ as tpch
 from ..tpch import ray_job_runner
@@ -25,17 +22,6 @@ logger = logging.getLogger(__name__)
 SQL_QUERIES_PATH = Path(__file__).parent / "queries"
 
 
-def print_table_schemas(data_dir: Path):
-    """Print available tables and their columns using pyarrow."""
-    logger.info("Available tables and their columns:")
-    for parquet_file in data_dir.glob("*.parquet"):
-        table_name = parquet_file.stem
-        logger.info("\nTable: %s", table_name)
-        schema = pq.read_schema(parquet_file)
-        for field in schema:
-            logger.info("  - %s: %s", field.name, field.type)
-
-
 @dataclass
 class ParsedArgs:
     tpcds_gen_folder: Path
@@ -43,9 +29,8 @@ class ParsedArgs:
     questions: str
     ray_address: Optional[str]
     dry_run: bool
-    convert_decimals: bool
     validate: bool
-    print_schema: bool
+    cast_decimals: bool
 
 
 @dataclass
@@ -55,7 +40,6 @@ class RunArgs:
     ray_address: Optional[str]
     dry_run: bool
     validate: bool
-    print_schema: bool
 
 
 @dataclass
@@ -83,53 +67,68 @@ class Result:
 
 
 def setup_duckdb_catalog(data_dir: Path) -> duckdb.DuckDBPyConnection:
-    """Setup DuckDB connection with the same data files."""
-    conn = duckdb.connect(database=":memory:")
-
-    for parquet_file in data_dir.glob("*.parquet"):
-        table_name = parquet_file.stem
-        conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet('{parquet_file}')")
-
-    return conn
+    """Setup DuckDB connection using the existing database file."""
+    return duckdb.connect(str(data_dir / "tpcds.db"))
 
 
-def validate_query_results(daft_df: pd.DataFrame, query: str, data_dir: Path) -> tuple[bool, Optional[str]]:
+def validate_query_results(daft_results, query: str, data_dir: Path) -> tuple[bool, Optional[str]]:
     """Compare Daft results with DuckDB results for validation."""
     try:
         conn = setup_duckdb_catalog(data_dir)
 
-        duckdb_result = conn.execute(query).fetchdf()
+        # Get Daft results as PyArrow
+        daft_arrow = daft_results.to_arrow()
 
-        if len(daft_df) != len(duckdb_result):
-            return False, f"Row count mismatch: Daft={len(daft_df)}, DuckDB={len(duckdb_result)}"
+        # Get DuckDB results as PyArrow
+        duckdb_arrow = conn.execute(query).arrow()
 
-        daft_df.columns = [col.lower() for col in daft_df.columns]
-        duckdb_result.columns = [col.lower() for col in duckdb_result.columns]
-
-        if set(daft_df.columns) != set(duckdb_result.columns):
-            return False, f"Column mismatch: Daft={daft_df.columns}, DuckDB={duckdb_result.columns}"
-
-        daft_df = daft_df.sort_values(by=list(daft_df.columns)).reset_index(drop=True)
-        duckdb_result = duckdb_result.sort_values(by=list(duckdb_result.columns)).reset_index(drop=True)
-
-        for col in daft_df.columns:
-            if pd.api.types.is_numeric_dtype(daft_df[col]) and pd.api.types.is_numeric_dtype(duckdb_result[col]):
-                if not np.allclose(
-                    daft_df[col].fillna(0).to_numpy(),
-                    duckdb_result[col].fillna(0).to_numpy(),
-                    rtol=1e-5,
-                    atol=1e-8,
-                    equal_nan=True,
-                ):
-                    return False, f"Numeric values differ in column {col}"
-            else:
-                if not daft_df[col].equals(duckdb_result[col]):
-                    return False, f"Values differ in column {col}"
+        # Compare the two PyArrow tables
+        if daft_arrow != duckdb_arrow:
+            return False, "Results differ from DuckDB reference implementation"
 
         return True, None
 
     except Exception as e:
         return False, f"Validation error: {e!s}"
+
+
+# def validate_query_results(daft_df: pd.DataFrame, query: str, data_dir: Path) -> tuple[bool, Optional[str]]:
+#     """Compare Daft results with DuckDB results for validation."""
+#     try:
+#         conn = setup_duckdb_catalog(data_dir)
+
+#         duckdb_result = conn.execute(query).fetchdf()
+
+#         if len(daft_df) != len(duckdb_result):
+#             return False, f"Row count mismatch: Daft={len(daft_df)}, DuckDB={len(duckdb_result)}"
+
+#         daft_df.columns = [col.lower() for col in daft_df.columns]
+#         duckdb_result.columns = [col.lower() for col in duckdb_result.columns]
+
+#         if set(daft_df.columns) != set(duckdb_result.columns):
+#             return False, f"Column mismatch: Daft={daft_df.columns}, DuckDB={duckdb_result.columns}"
+
+#         daft_df = daft_df.sort_values(by=list(daft_df.columns)).reset_index(drop=True)
+#         duckdb_result = duckdb_result.sort_values(by=list(duckdb_result.columns)).reset_index(drop=True)
+
+#         for col in daft_df.columns:
+#             if pd.api.types.is_numeric_dtype(daft_df[col]) and pd.api.types.is_numeric_dtype(duckdb_result[col]):
+#                 if not np.allclose(
+#                     daft_df[col].fillna(0).to_numpy(),
+#                     duckdb_result[col].fillna(0).to_numpy(),
+#                     rtol=1e-5,
+#                     atol=1e-8,
+#                     equal_nan=True,
+#                 ):
+#                     return False, f"Numeric values differ in column {col}"
+#             else:
+#                 if not daft_df[col].equals(duckdb_result[col]):
+#                     return False, f"Values differ in column {col}"
+
+#         return True, None
+
+#     except Exception as e:
+#         return False, f"Validation error: {e!s}"
 
 
 def run_query_on_ray(
@@ -177,9 +176,6 @@ def run_query_on_ray(
 def run_query_on_local(
     run_args: RunArgs,
 ) -> list[Result]:
-    if run_args.print_schema:
-        print_table_schemas(run_args.scaled_tpcds_gen_folder)
-
     catalog = helpers.generate_catalog(run_args.scaled_tpcds_gen_folder)
     results = []
 
@@ -200,11 +196,9 @@ def run_query_on_local(
             if not run_args.dry_run:
                 daft_results = daft.sql(query, catalog=catalog).collect()
 
-                daft_df = daft_results.to_pandas()
-
                 if run_args.validate and not run_args.dry_run:
                     is_correct, validation_error = validate_query_results(
-                        daft_df, query, run_args.scaled_tpcds_gen_folder
+                        daft_results, query, run_args.scaled_tpcds_gen_folder
                     )
                     if is_correct:
                         logger.info("Query %s results validated successfully", query_index)
@@ -254,10 +248,8 @@ def run_benchmarks(
 
 def main(args: ParsedArgs):
     scaled_tpcds_gen_folder = args.tpcds_gen_folder / str(args.scale_factor)
-    gen_tpcds(scaled_tpcds_gen_folder, args.scale_factor)
-    query_indices = helpers.parse_questions_str(args.questions)
-    if args.convert_decimals:
-        convert_all_tpcds_decimals(scaled_tpcds_gen_folder)
+    gen_tpcds(scaled_tpcds_gen_folder, args.scale_factor, cast_decimal=args.cast_decimals)
+    query_indices = parse_questions_str(args.questions)
     results = run_benchmarks(
         RunArgs(
             scaled_tpcds_gen_folder=scaled_tpcds_gen_folder,
@@ -265,7 +257,6 @@ def main(args: ParsedArgs):
             ray_address=args.ray_address,
             dry_run=args.dry_run,
             validate=args.validate,
-            print_schema=args.print_schema,
         )
     )
 
@@ -292,14 +283,9 @@ if __name__ == "__main__":
         help="Whether to run in dry-run mode; if true, only the plan will be printed, but no query will be executed",
     )
     parser.add_argument(
-        "--print-schema",
-        action="store_false",
-        help="Print the schema of the tables in the TPC-DS dataset",
-    )
-    parser.add_argument(
-        "--convert-decimals",
+        "--cast-decimals",
         action="store_true",
-        help="Convert decimal columns to float64 before running queries",
+        help="Cast decimal columns to float64 before running queries",
     )
     parser.add_argument(
         "--validate",
@@ -318,8 +304,7 @@ if __name__ == "__main__":
             questions=args.questions,
             ray_address=args.ray_address,
             dry_run=args.dry_run,
-            convert_decimals=args.convert_decimals,
             validate=args.validate,
-            print_schema=args.print_schema,
+            cast_decimals=args.cast_decimals,
         )
     )
