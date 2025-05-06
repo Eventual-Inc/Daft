@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub};
+use std::ops::{AddAssign, SubAssign};
 
 use arrow2::bitmap::MutableBitmap;
 use common_error::{DaftError, DaftResult};
@@ -14,7 +14,7 @@ use super::WindowAggStateOps;
 pub struct SumWindowState<T>
 where
     T: DaftPrimitiveType,
-    T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy,
+    T::Native: Zero + AddAssign + SubAssign + Copy,
 {
     source: DataArray<T>,
     is_nan: Option<DataArray<BooleanType>>,
@@ -28,7 +28,7 @@ where
 impl<T> SumWindowState<T>
 where
     T: DaftPrimitiveType,
-    T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy,
+    T::Native: Zero + AddAssign + SubAssign + Copy,
 {
     pub fn new(source: &Series, total_length: usize) -> Self {
         let source_array = source.downcast::<DataArray<T>>().unwrap().clone();
@@ -58,7 +58,7 @@ where
 impl<T> WindowAggStateOps for SumWindowState<T>
 where
     T: DaftPrimitiveType,
-    T::Native: Zero + Add<Output = T::Native> + Sub<Output = T::Native> + Copy + FromPrimitive,
+    T::Native: Zero + AddAssign + SubAssign + Copy + FromPrimitive,
     DataArray<T>: IntoSeries,
 {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
@@ -75,7 +75,7 @@ where
                 {
                     self.nan_count += 1;
                 } else {
-                    self.sum = self.sum + value;
+                    self.sum += value;
                     self.valid_count += 1;
                 }
             }
@@ -92,7 +92,7 @@ where
                 {
                     self.nan_count -= 1;
                 } else {
-                    self.sum = self.sum - value;
+                    self.sum -= value;
                     self.valid_count -= 1;
                 }
             }
