@@ -150,7 +150,8 @@ pub mod pylib {
         let mut functions_registry = daft_dsl::functions::FUNCTION_REGISTRY
             .write()
             .expect("Failed to acquire write lock on function registry");
-
+        functions_registry.register::<daft_functions::numeric::NumericFunctions>();
+        functions_registry.register::<daft_functions::float::FloatFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
 
