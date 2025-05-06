@@ -1,4 +1,3 @@
-mod left;
 mod length;
 mod length_bytes;
 mod like;
@@ -20,7 +19,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use left::{utf8_left as left, Utf8Left};
 pub use length::{utf8_length as length, Utf8Length};
 pub use length_bytes::{utf8_length_bytes as length_bytes, Utf8LengthBytes};
 pub use like::{utf8_like as like, Utf8Like};

@@ -392,10 +392,6 @@ impl PySeries {
         Ok(self.series.utf8_reverse()?.into())
     }
 
-    pub fn utf8_left(&self, nchars: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_left(&nchars.series)?.into())
-    }
-
     pub fn utf8_right(&self, nchars: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_right(&nchars.series)?.into())
     }

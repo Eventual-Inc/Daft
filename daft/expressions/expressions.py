@@ -3416,7 +3416,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(native.utf8_left(self._expr, nchars_expr._expr))
+        f = native.get_function_from_registry("left")
+        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
     def right(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) right-most characters of each string.

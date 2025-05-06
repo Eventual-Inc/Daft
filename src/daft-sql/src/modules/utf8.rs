@@ -163,7 +163,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("lstrip", SQLUtf8Lstrip);
         parent.add_fn("rstrip", SQLUtf8Rstrip);
         parent.add_fn("reverse", SQLUtf8Reverse);
-        parent.add_fn("left", SQLUtf8Left);
         parent.add_fn("right", SQLUtf8Right);
         parent.add_fn("rpad", SQLUtf8Rpad);
         parent.add_fn("lpad", SQLUtf8Lpad);
@@ -279,15 +278,6 @@ utf8_function!(
     daft_functions::utf8::reverse,
     "Reverses the order of characters in the string",
     "string_input"
-);
-
-utf8_function!(
-    SQLUtf8Left,
-    "left",
-    daft_functions::utf8::left,
-    "Returns the specified number of leftmost characters from the string",
-    "string_input",
-    "length"
 );
 
 utf8_function!(

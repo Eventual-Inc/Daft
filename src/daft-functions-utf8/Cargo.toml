@@ -8,6 +8,7 @@ pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
+num-traits = {workspace = true}
 
 [dev-dependencies]
 arrow2 = {workspace = true}

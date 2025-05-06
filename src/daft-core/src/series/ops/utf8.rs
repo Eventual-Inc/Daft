@@ -81,23 +81,6 @@ impl Series {
         self.with_utf8_array(|arr| Ok(arr.reverse()?.into_series()))
     }
 
-    pub fn utf8_left(&self, nchars: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            if nchars.data_type().is_integer() {
-                with_match_integer_daft_types!(nchars.data_type(), |$T| {
-                    Ok(arr.left(nchars.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
-                })
-            } else if nchars.data_type().is_null() {
-                Ok(self.clone())
-            } else {
-                Err(DaftError::TypeError(format!(
-                    "Left not implemented for nchar type {}",
-                    nchars.data_type()
-                )))
-            }
-        })
-    }
-
     pub fn utf8_right(&self, nchars: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {
