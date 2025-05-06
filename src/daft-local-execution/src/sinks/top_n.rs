@@ -25,20 +25,31 @@ enum TopNStatus {
 }
 
 struct TopNState {
-    top_values: Arc<MicroPartition>,
+    top_values: Option<Arc<MicroPartition>>,
     status: TopNStatus,
 }
 
 impl TopNState {
     fn push(&mut self, part: Arc<MicroPartition>, params: &TopNParams) {
         if matches!(self.status, TopNStatus::Building) {
-            let concatenated = MicroPartition::concat([self.top_values.clone(), part]).unwrap();
+            let top_rows_partition = part
+                .sort(&params.sort_by, &params.descending, &params.nulls_first)
+                .unwrap()
+                .slice(0, params.limit)
+                .unwrap();
+
+            let concat = if self.top_values.is_some() {
+                MicroPartition::concat([self.top_values.as_ref().unwrap(), &top_rows_partition])
+                    .unwrap()
+            } else {
+                top_rows_partition
+            };
             let sorted = Arc::new(
-                concatenated
+                concat
                     .sort(&params.sort_by, &params.descending, &params.nulls_first)
                     .unwrap(),
             );
-            self.top_values = sorted.slice(0, params.limit).unwrap().into();
+            self.top_values = Some(sorted.slice(0, params.limit).unwrap().into());
         } else {
             panic!("TopNSink should be in Building state");
         }
@@ -46,12 +57,12 @@ impl TopNState {
 
     fn finalize(&mut self) -> Arc<MicroPartition> {
         let res = if matches!(self.status, TopNStatus::Building) {
-            self.top_values.clone()
+            self.top_values.as_ref().unwrap()
         } else {
             panic!("TopNSink should be in Building state");
         };
         self.status = TopNStatus::Done;
-        res
+        res.clone()
     }
 }
 
@@ -160,7 +171,7 @@ impl BlockingSink for TopNSink {
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         Ok(Box::new(TopNState {
-            top_values: Arc::new(MicroPartition::empty(None)),
+            top_values: None,
             status: TopNStatus::Building,
         }))
     }
