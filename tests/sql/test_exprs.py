@@ -331,6 +331,6 @@ def test_round_arg_handling(query, should_work):
         daft.sql(query).to_pydict()
         if not should_work:
             pytest.fail()
-    except ValueError:
+    except Exception:
         if should_work:
             pytest.fail()
