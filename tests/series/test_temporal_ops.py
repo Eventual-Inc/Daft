@@ -462,24 +462,42 @@ def test_series_to_unix_epoch(timeunit, expected):
     assert expected_series.to_pylist() == actual_series.to_pylist()
 
 
-def test_series_day_of_year():
+@pytest.mark.parametrize(
+    ("fun", "expected"),
+    [
+        ("day_of_week", 0),
+        ("day_of_month", 1),
+        ("day_of_year", 1),
+        ("week_of_year", 1),
+    ],
+)
+def test_series_day_of_year(fun, expected):
     from datetime import datetime
 
     input_series = Series.from_pylist([datetime(2024, 1, 1, 1)])
-    expected_series = Series.from_pylist([1])
+    expected_series = Series.from_pylist([expected])
 
-    day_of_year = input_series.dt.day_of_year()
-    assert expected_series.to_pylist() == day_of_year.to_pylist()
+    series = getattr(input_series.dt, fun)()
+    assert expected_series.to_pylist() == series.to_pylist()
 
 
-def test_series_date_day_of_year():
+@pytest.mark.parametrize(
+    ("fun", "expected"),
+    [
+        ("day_of_week", 0),
+        ("day_of_month", 1),
+        ("day_of_year", 1),
+        ("week_of_year", 1),
+    ],
+)
+def test_series_date_day_of_year(fun, expected):
     from datetime import date
 
     input_series = Series.from_pylist([date(2024, 1, 1)])
-    expected_series = Series.from_pylist([1])
+    expected_series = Series.from_pylist([expected])
 
-    day_of_year = input_series.dt.day_of_year()
-    assert expected_series.to_pylist() == day_of_year.to_pylist()
+    series = getattr(input_series.dt, fun)()
+    assert expected_series.to_pylist() == series.to_pylist()
 
 
 # just a sanity check, more robust tests are in tests/dataframe/test_temporals.py

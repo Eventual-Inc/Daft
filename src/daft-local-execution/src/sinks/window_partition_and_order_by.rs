@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    ExprRef, WindowExpr,
+    ExprRef, WindowBoundary, WindowExpr, WindowFrame, WindowFrameType,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -190,10 +190,23 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                     window_exprs.iter().zip(params.aliases.iter())
                                 {
                                     *partition = match window_expr.as_ref() {
-                                        WindowExpr::Agg(agg_expr) => partition.window_agg(
-                                            &BoundAggExpr::new_unchecked(agg_expr.clone()),
-                                            name.clone(),
-                                        )?,
+                                        WindowExpr::Agg(agg_expr) => {
+                                            let dtype =
+                                                agg_expr.to_field(&params.original_schema)?.dtype;
+                                            // Default for aggregate functions in partition by + order by: rows from start of partition to current row
+                                            let frame = WindowFrame {
+                                                frame_type: WindowFrameType::Rows,
+                                                start: WindowBoundary::UnboundedPreceding(),
+                                                end: WindowBoundary::Offset(0),
+                                            };
+                                            partition.window_agg_dynamic_frame(
+                                                name.clone(),
+                                                &BoundAggExpr::new_unchecked(agg_expr.clone()),
+                                                1,
+                                                &dtype,
+                                                &frame,
+                                            )?
+                                        }
                                         WindowExpr::RowNumber => {
                                             partition.window_row_number(name.clone())?
                                         }

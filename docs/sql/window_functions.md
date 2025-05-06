@@ -105,6 +105,9 @@ SELECT
 FROM sales
 ```
 
+!!! note "Note"
+    When using aggregate functions with both `PARTITION BY` and `ORDER BY`, the default window frame includes all rows from the start of the partition up to the current row — equivalent to `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
+
 ## Window Frame Specification
 
 When using aggregate functions as window functions, you can specify a window frame to define which rows to include in the aggregation:
