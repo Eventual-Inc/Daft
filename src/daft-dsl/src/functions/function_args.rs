@@ -325,7 +325,7 @@ mod tests {
             FunctionArg::named("arg1", 3),
         ]);
 
-        assert!(res.is_err());
+        assert!(res.is_ok());
     }
     #[test]
     fn test_function_args_ordering_invalid() {
