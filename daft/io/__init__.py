@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from daft.api_annotations import PublicAPI
 from daft.daft import (
     AzureConfig,
     GCSConfig,
@@ -24,10 +21,6 @@ from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 from daft.io.source import DataFrameSource, DataFrameSourceTask
-
-
-if TYPE_CHECKING:
-    from daft.dataframe import DataFrame
 
 
 __all__ = [

@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING
 
 from daft.daft import Pushdowns as PyPushdowns
 from daft.expressions import col, lit
-from daft.io.pushdowns import Expr, Literal, Reference, Term
-from daft.io.scan import ScanPushdowns
+from daft.io.pushdowns import Expr, Literal, Pushdowns, Reference, Term
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
 
@@ -110,7 +109,7 @@ def test_column_pushdown_binding():
         }
     )
     pypushdowns = PyPushdowns(columns=["c", "b", "a"])  # !! reverse order on purpose !!
-    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+    pushdowns = Pushdowns._from_pypushdowns(pypushdowns, schema)
 
     assert pushdowns.projections
     assert pushdowns.projections[0] == Reference("c", 2)
@@ -128,7 +127,7 @@ def test_simple_predicate_pushdown():
     )
     predicate = col("a") == lit(1)  # (= a 1)
     pypushdowns = PyPushdowns(filters=predicate._expr)
-    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+    pushdowns = Pushdowns._from_pypushdowns(pypushdowns, schema)
 
     assert pushdowns.projections is None
     assert pushdowns.predicate == Expr("=", Reference("a", 0), 1)
@@ -145,7 +144,7 @@ def test_complex_predicate_pushdown():
     )
     predicate = col("a") == (col("b") + col("c"))  # (= a (+ b c))
     pypushdowns = PyPushdowns(filters=predicate._expr)
-    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+    pushdowns = Pushdowns._from_pypushdowns(pypushdowns, schema)
 
     assert pushdowns.projections is None
     assert pushdowns.predicate == Expr("=", Reference("a", 0), Expr("+", Reference("b", 1), Reference("c", 2)))
@@ -155,7 +154,7 @@ def test_complex_predicate_pushdown():
 def test_limit_pushdown():
     schema = Schema.from_pydict({"a": dt.bool()})
     pypushdowns = PyPushdowns(limit=1738)
-    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+    pushdowns = Pushdowns._from_pypushdowns(pypushdowns, schema)
 
     assert pushdowns.projections is None
     assert pushdowns.predicate is None
@@ -170,7 +169,7 @@ def test_simple_partition_pushdown():
     )
     predicate = col("a") == lit(1)  # (= a 1)
     pypushdowns = PyPushdowns(partition_filters=predicate._expr)
-    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+    pushdowns = Pushdowns._from_pypushdowns(pypushdowns, schema)
 
     assert pushdowns.projections is None
     assert pushdowns.predicate == Expr("=", Reference("a", 0), 1)
@@ -189,7 +188,7 @@ def test_composite_partition_pushdown():
     filters = col("a") == lit(1)  # (= a 1)
     partition_filters = col("b") > lit(2)  # (> b 2)
     pypushdowns = PyPushdowns(filters=filters._expr, partition_filters=partition_filters._expr)
-    pushdowns = ScanPushdowns._from_pypushdowns(pypushdowns, schema)
+    pushdowns = Pushdowns._from_pypushdowns(pypushdowns, schema)
 
     # translation should combine them.
     p1 = Expr("=", Reference("a", 0), 1)
