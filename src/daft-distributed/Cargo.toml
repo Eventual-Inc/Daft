@@ -1,0 +1,34 @@
+[dependencies]
+async-trait = {workspace = true}
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+common-partitioning = {path = "../common/partitioning", default-features = false}
+common-treenode = {path = "../common/treenode", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-local-plan = {path = "../daft-local-plan", default-features = false}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+futures = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+pyo3-async-runtimes = {workspace = true, optional = true}
+tokio = {workspace = true}
+tokio-util = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "dep:pyo3-async-runtimes",
+  "common-daft-config/python",
+  "common-error/python",
+  "common-treenode/python",
+  "daft-logical-plan/python",
+  "daft-local-plan/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-distributed"
+version = {workspace = true}

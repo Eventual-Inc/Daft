@@ -1,16 +1,17 @@
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::*;
-use daft_dsl::{AggExpr, ExprRef, WindowExpr};
+use daft_dsl::{AggExpr, ExprRef, WindowExpr, WindowFrame};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
 };
+use serde::{Deserialize, Serialize};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
-#[derive(Debug, strum::IntoStaticStr)]
+#[derive(Debug, strum::IntoStaticStr, Serialize, Deserialize)]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
@@ -48,6 +49,7 @@ pub enum LocalPhysicalPlan {
     LanceWrite(LanceWrite),
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
+    WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
 }
 
 impl LocalPhysicalPlan {
@@ -84,9 +86,11 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
-            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. }) => {
-                stats_state
-            }
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
+            | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                stats_state,
+                ..
+            }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
@@ -272,6 +276,34 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             functions,
+            aliases,
+        })
+        .arced()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn window_partition_and_dynamic_frame(
+        input: LocalPhysicalPlanRef,
+        partition_by: Vec<ExprRef>,
+        order_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        frame: WindowFrame,
+        min_periods: usize,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        aggregations: Vec<AggExpr>,
+        aliases: Vec<String>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+            input,
+            partition_by,
+            order_by,
+            descending,
+            frame,
+            min_periods,
+            schema,
+            stats_state,
+            aggregations,
             aliases,
         })
         .arced()
@@ -500,26 +532,33 @@ impl LocalPhysicalPlan {
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
-            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => schema,
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. })
+            | Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. })
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
+            | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                schema, ..
+            }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
-            Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
-            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
+    }
+
+    pub fn estimated_memory_cost(&self) -> usize {
+        todo!("Implement estimated memory cost for local physical plan");
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InMemoryScan {
     pub info: InMemoryInfo,
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     pub pushdowns: Pushdowns,
@@ -527,13 +566,13 @@ pub struct PhysicalScan {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
@@ -541,7 +580,7 @@ pub struct Project {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
@@ -549,7 +588,7 @@ pub struct ActorPoolProject {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: ExprRef,
@@ -557,7 +596,7 @@ pub struct Filter {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
     pub num_rows: i64,
@@ -565,7 +604,7 @@ pub struct Limit {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<ExprRef>,
@@ -573,7 +612,7 @@ pub struct Explode {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,
@@ -583,7 +622,7 @@ pub struct Sort {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
     pub fraction: f64,
@@ -593,7 +632,7 @@ pub struct Sample {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
     pub column_name: String,
@@ -601,7 +640,7 @@ pub struct MonotonicallyIncreasingId {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<ExprRef>,
@@ -609,7 +648,7 @@ pub struct UnGroupedAggregate {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<ExprRef>,
@@ -618,7 +657,7 @@ pub struct HashAggregate {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Unpivot {
     pub input: LocalPhysicalPlanRef,
     pub ids: Vec<ExprRef>,
@@ -629,7 +668,7 @@ pub struct Unpivot {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Pivot {
     pub input: LocalPhysicalPlanRef,
     pub group_by: Vec<ExprRef>,
@@ -641,7 +680,7 @@ pub struct Pivot {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -653,7 +692,7 @@ pub struct HashJoin {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -661,7 +700,7 @@ pub struct CrossJoin {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
     pub other: LocalPhysicalPlanRef,
@@ -669,7 +708,7 @@ pub struct Concat {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalWrite {
     pub input: LocalPhysicalPlanRef,
     pub data_schema: SchemaRef,
@@ -679,7 +718,7 @@ pub struct PhysicalWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CatalogWrite {
     pub input: LocalPhysicalPlanRef,
     pub catalog_type: daft_logical_plan::CatalogType,
@@ -689,7 +728,7 @@ pub struct CatalogWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LanceWrite {
     pub input: LocalPhysicalPlanRef,
     pub lance_info: daft_logical_plan::LanceCatalogInfo,
@@ -698,7 +737,7 @@ pub struct LanceWrite {
     pub stats_state: StatsState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionOnly {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<ExprRef>,
@@ -708,7 +747,7 @@ pub struct WindowPartitionOnly {
     pub aliases: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionAndOrderBy {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<ExprRef>,
@@ -717,5 +756,19 @@ pub struct WindowPartitionAndOrderBy {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub functions: Vec<WindowExpr>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowPartitionAndDynamicFrame {
+    pub input: LocalPhysicalPlanRef,
+    pub partition_by: Vec<ExprRef>,
+    pub order_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub frame: WindowFrame,
+    pub min_periods: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub aggregations: Vec<AggExpr>,
     pub aliases: Vec<String>,
 }

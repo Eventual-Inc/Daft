@@ -29,6 +29,7 @@ impl ScalarUDF for Floor {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        // todo: can't move this one because of floor_div
         evaluate_single_numeric(inputs, Series::floor)
     }
 }

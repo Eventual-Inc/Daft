@@ -21,14 +21,15 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    functions::FunctionEvaluator, null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column,
-    Expr, ExprRef, LiteralValue, PlanRef, ResolvedColumn, SketchType, UnresolvedColumn,
+    expr::BoundColumn, functions::FunctionEvaluator, null_lit, resolved_col, AggExpr,
+    ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue, ResolvedColumn, SketchType,
 };
-use daft_logical_plan::FileInfos;
+use file_info::FileInfos;
 use futures::{StreamExt, TryStreamExt};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
+mod file_info;
 mod growable;
 mod ops;
 mod preview;
@@ -83,6 +84,28 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
+/// Ensures that the schema matches the columns and also ensures that all values are either a scalar value, or a series of matching length.
+#[inline]
+fn validate_lengths_and_schema(
+    schema: &Schema,
+    columns: &[Series],
+    num_rows: usize,
+) -> DaftResult<()> {
+    if schema.len() != columns.len() {
+        return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.len(), columns.len())));
+    }
+    for (field, series) in schema.into_iter().zip(columns.iter()) {
+        if &field.dtype != series.data_type() {
+            return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
+        }
+        if (series.len() != 1) && (series.len() != num_rows) {
+            return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
+        }
+    }
+
+    Ok(())
+}
+
 impl RecordBatch {
     /// Create a new [`RecordBatch`] and handle broadcasting of any unit-length columns
     ///
@@ -100,14 +123,7 @@ impl RecordBatch {
         num_rows: usize,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
-        validate_schema(schema.as_ref(), columns.as_slice())?;
-
-        // Validate Series lengths against provided num_rows
-        for (field, series) in schema.into_iter().zip(columns.iter()) {
-            if (series.len() != 1) && (series.len() != num_rows) {
-                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
-            }
-        }
+        validate_lengths_and_schema(schema.as_ref(), columns.as_slice(), num_rows)?;
 
         // Broadcast any unit-length Series
         let columns: DaftResult<Vec<Series>> = columns
@@ -381,7 +397,7 @@ impl RecordBatch {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
-            let mask = self.eval_expression(predicate.first().unwrap().as_ref())?;
+            let mask = self.eval_expression(predicate.first().unwrap())?;
             self.mask_filter(&mask)
         } else {
             let mut expr = predicate
@@ -578,16 +594,17 @@ impl RecordBatch {
         }
     }
 
-    fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
+    fn eval_expression(&self, expr: &ExprRef) -> DaftResult<Series> {
+        let expr = expr.clone().bind(&self.schema)?;
+
         let expected_field = expr.to_field(self.schema.as_ref())?;
-        let series = match expr {
+        let series = match expr.as_ref() {
             Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
             Expr::WindowFunction(..) => Err(DaftError::ComputeError("Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string())),
             Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
-            // TODO: remove ability to evaluate on unresolved col once we fix all tests
-            Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) | Expr::Column(Column::Unresolved(UnresolvedColumn { name, plan_ref: PlanRef::Unqualified, plan_schema: None })) => self.get_column(name).cloned(),
+            Expr::Column(Column::Bound(BoundColumn { index, .. })) => Ok(self.columns[*index].clone()),
             Expr::Not(child) => !(self.eval_expression(child)?),
             Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
             Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
@@ -692,6 +709,9 @@ impl RecordBatch {
             )),
             Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic(..))) => Err(DaftError::ComputeError(
+                "Resolved columns must be bound before execution and cannot be evaluated directly. This indicates a bug in the executor".to_string()
             )),
             Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(..))) => Err(DaftError::ComputeError(
                 format!("Column {expr} could not be resolved. This indicates either that the column is referencing a different table from the one it is being used in, or a bug in the query optimizer."),

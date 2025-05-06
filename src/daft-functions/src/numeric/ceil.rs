@@ -1,7 +1,7 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{Field, Schema},
-    series::Series,
+    prelude::{DataType, Field, Schema},
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -28,7 +28,22 @@ impl ScalarUDF for Ceil {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, Series::ceil)
+        evaluate_single_numeric(inputs, |s| match s.data_type() {
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64 => Ok(s.clone()),
+            DataType::Float32 => Ok(s.f32().unwrap().ceil()?.into_series()),
+            DataType::Float64 => Ok(s.f64().unwrap().ceil()?.into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "ceil not implemented for {}",
+                dt
+            ))),
+        })
     }
 }
 

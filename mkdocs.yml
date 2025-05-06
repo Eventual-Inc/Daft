@@ -57,13 +57,15 @@ nav:
   - DataFrame Creation: api/dataframe_creation.md
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
-  - Functions: api/functions.md
+  - Functions:
+    - Scalar Functions: api/functions.md   # column_ are scalar functions
+    - User-Defined Functions: api/udf.md
+    - Window Functions: api/window.md
   - Sessions: api/sessions.md
   - Catalogs & Tables: api/catalogs_tables.md
   - Schema: api/schema.md
-  - DataTypes: api/datatypes.md
-  - Groupby: api/groupby.md
-  - User-Defined Functions: api/udf.md
+  - Data Types: api/datatypes.md
+  - Aggregations: api/aggregations.md
   - Series: api/series.md
   - I/O: api/io.md
   - Pushdowns: api/pushdowns.md
@@ -76,6 +78,7 @@ nav:
     - SHOW: sql/statements/show.md
     - USE: sql/statements/use.md
   - Data Types: sql/datatypes.md
+  - Window Functions: sql/window_functions.md
   # Disabled until identifier modes are supported.
   # - Identifiers: sql/identifiers.md
 

@@ -3,7 +3,7 @@ use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
     prelude::*,
 };
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
 
 use crate::RecordBatch;
 
@@ -12,11 +12,11 @@ impl RecordBatch {
         &self,
         to_agg: &[AggExpr],
         aliases: &[String],
-        group_by: &[ExprRef],
+        partition_by: &[ExprRef],
     ) -> DaftResult<Self> {
-        if group_by.is_empty() {
+        if partition_by.is_empty() {
             return Err(DaftError::ValueError(
-                "Group by cannot be empty for window aggregation".into(),
+                "Partition by cannot be empty for window aggregation".into(),
             ));
         }
 
@@ -28,41 +28,37 @@ impl RecordBatch {
             ));
         }
 
-        // Table with just the groupby columns.
-        let groupby_table = self.eval_expression_list(group_by)?;
+        let partitionby_table = self.eval_expression_list(partition_by)?;
+        let (_, partitionvals_indices) = partitionby_table.make_groups()?;
 
-        // Get the grouped values (by indices, one array of indices per group).
-        let (_, groupvals_indices) = groupby_table.make_groups()?;
-
-        let mut row_to_group_mapping = vec![0; self.len()];
-        for (group_idx, indices) in groupvals_indices.iter().enumerate() {
+        let mut row_to_partition_mapping = vec![0; self.len()];
+        for (partition_idx, indices) in partitionvals_indices.iter().enumerate() {
             for &row_idx in indices {
-                row_to_group_mapping[row_idx as usize] = group_idx;
+                row_to_partition_mapping[row_idx as usize] = partition_idx;
             }
         }
 
-        // Take fast path short circuit if there is only 1 group
-        let group_idx_input = if groupvals_indices.len() == 1 {
+        // Take fast path short circuit if there is only 1 partition
+        let partition_idx_input = if partitionvals_indices.len() == 1 {
             None
         } else {
-            Some(&groupvals_indices)
+            Some(&partitionvals_indices)
         };
 
-        let grouped_cols = agg_exprs
+        let partitioned_cols = agg_exprs
             .iter()
-            .map(|e| self.eval_agg_expression(e, group_idx_input))
+            .map(|e| self.eval_agg_expression(e, partition_idx_input))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        // Instead of returning grouped keys + aggregated columns like agg,
+        // Instead of returning partitioned keys + aggregated columns like agg,
         // broadcast the aggregated values back to the original row indices
-        let window_cols = grouped_cols
+        let window_cols = partitioned_cols
             .into_iter()
             .zip(aliases)
             .map(|(agg_col, name)| {
-                // Create a Series of indices to use with take()
                 let take_indices = UInt64Array::from((
-                    "row_to_group_mapping",
-                    row_to_group_mapping
+                    "row_to_partition_mapping",
+                    row_to_partition_mapping
                         .iter()
                         .map(|&idx| idx as u64)
                         .collect::<Vec<_>>(),
@@ -72,10 +68,7 @@ impl RecordBatch {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        // Create a new RecordBatch with just the window columns (no group keys)
         let window_result = Self::from_nonempty_columns(window_cols)?;
-
-        // Union the original data with the window result
         self.union(&window_result)
     }
 
@@ -86,29 +79,126 @@ impl RecordBatch {
             ));
         }
 
-        // Since this is a single partition, we can just evaluate the aggregation expression directly
         let agg_result = self.eval_agg_expression(to_agg, None)?;
         let window_col = agg_result.rename(&name);
 
         // Broadcast the aggregation result to match the length of the partition
         let broadcast_result = window_col.broadcast(self.len())?;
 
-        // Create a new RecordBatch with just the window column
         let window_result = Self::from_nonempty_columns(vec![broadcast_result])?;
-
-        // Union the original data with the window result
         self.union(&window_result)
     }
 
-    pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
-        // Create a sequence of row numbers (1-based)
-        let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
+    #[allow(clippy::too_many_arguments)]
+    pub fn window_agg_dynamic_frame(
+        &self,
+        name: String,
+        agg_expr: &AggExpr,
+        min_periods: usize,
+        dtype: &DataType,
+        frame: &WindowFrame,
+    ) -> DaftResult<Self> {
+        if matches!(frame.frame_type, WindowFrameType::Range) {
+            return Err(DaftError::ValueError(
+                "RANGE frame type is not supported yet for window_agg_dynamic_frame".into(),
+            ));
+        }
 
-        // Create a Series from the row numbers
+        let total_rows = self.len();
+
+        // Convert WindowBoundary to Option<i64>
+        let start_boundary = match &frame.start {
+            WindowBoundary::UnboundedPreceding() => None,
+            WindowBoundary::Offset(offset) => Some(*offset),
+            WindowBoundary::UnboundedFollowing() => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
+                ));
+            }
+        };
+
+        let end_boundary = match &frame.end {
+            WindowBoundary::UnboundedFollowing() => None,
+            WindowBoundary::Offset(offset) => Some(*offset),
+            WindowBoundary::UnboundedPreceding() => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
+                ));
+            }
+        };
+
+        self.window_agg_rows_between(
+            agg_expr,
+            &name,
+            dtype,
+            start_boundary,
+            end_boundary,
+            min_periods,
+            total_rows,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_rows_between(
+        &self,
+        agg_expr: &AggExpr,
+        name: &str,
+        dtype: &DataType,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
+        min_periods: usize,
+        total_rows: usize,
+    ) -> DaftResult<Self> {
+        let null_series = Series::full_null(name, dtype, 1);
+
+        // Use the non-optimized implementation (recalculate for each row)
+        let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
+
+        for row_idx in 0..total_rows {
+            // Calculate frame bounds for this row
+            let frame_start = match start_boundary {
+                None => 0, // Unbounded preceding
+                Some(offset) => row_idx
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
+            };
+
+            let frame_end = match end_boundary {
+                None => total_rows, // Unbounded following
+                Some(offset) => (row_idx + 1)
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
+            };
+
+            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
+            };
+
+            if frame_size < min_periods {
+                // Add a null series for this row
+                result_series.push(null_series.clone());
+            } else {
+                // Calculate aggregation for this frame
+                let frame_data = self.slice(frame_start, frame_end)?;
+                let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
+                result_series.push(agg_result);
+            }
+        }
+
+        // Rename the result and create the final record batch
+        let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
+        let renamed_result = final_result_series.rename(name);
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
+    }
+
+    pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
+        let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
         let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
         let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
 
-        // Union the original data with the row number column
         self.union(&row_number_batch)
     }
 
@@ -158,11 +248,94 @@ impl RecordBatch {
             }))
             .collect();
 
-        // Create a Series from the rank numbers
         let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
         let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
 
-        // Union the original data with the rank column
         self.union(&rank_batch)
+    }
+
+    pub fn window_offset(
+        &self,
+        name: String,
+        expr: ExprRef,
+        offset: isize,
+        default: Option<ExprRef>,
+    ) -> DaftResult<Self> {
+        // Short-circuit if offset is 0 - just return the value itself
+        if offset == 0 {
+            let expr_col = self.eval_expression(&expr)?;
+            let renamed_col = expr_col.rename(&name);
+            let result_batch = Self::from_nonempty_columns(vec![renamed_col])?;
+            return self.union(&result_batch);
+        }
+
+        let expr_col = self.eval_expression(&expr)?;
+        let abs_offset = offset.unsigned_abs();
+
+        let process_default = |default_opt: &Option<ExprRef>,
+                               target_type: &DataType,
+                               slice_start: usize,
+                               slice_end: usize,
+                               target_length: usize|
+         -> DaftResult<Series> {
+            if let Some(default_expr) = default_opt {
+                // Only evaluate on the slice we need for efficiency
+                let default_slice = self.slice(slice_start, slice_end)?;
+                let def_col = default_slice.eval_expression(default_expr)?;
+
+                let def_col = if def_col.data_type() != target_type {
+                    def_col.cast(target_type)?
+                } else {
+                    def_col
+                };
+
+                if def_col.len() != target_length {
+                    def_col.broadcast(target_length)
+                } else {
+                    Ok(def_col)
+                }
+            } else {
+                // Otherwise, create a column of nulls
+                Ok(Series::full_null(
+                    expr_col.name(),
+                    target_type,
+                    target_length,
+                ))
+            }
+        };
+
+        let mut result_col = if self.is_empty() || abs_offset >= self.len() {
+            // Special case: empty array or offset exceeds array length
+            process_default(&default, expr_col.data_type(), 0, self.len(), self.len())?
+        } else if offset > 0 {
+            // LEAD: shift values ahead by offset
+            let source_values = expr_col.slice(abs_offset, self.len())?;
+            let default_values = process_default(
+                &default,
+                expr_col.data_type(),
+                self.len() - abs_offset,
+                self.len(),
+                abs_offset,
+            )?;
+
+            // Construct result by concatenating source and default values
+            let cols = vec![&source_values, &default_values];
+            Series::concat(&cols)?
+        } else {
+            // LAG: shift values back by offset
+            let default_values =
+                process_default(&default, expr_col.data_type(), 0, abs_offset, abs_offset)?;
+
+            let source_values = expr_col.slice(0, self.len() - abs_offset)?;
+
+            // Construct result by concatenating default and source values
+            let cols = vec![&default_values, &source_values];
+            Series::concat(&cols)?
+        };
+
+        result_col = result_col.rename(&name);
+        let offset_batch = Self::from_nonempty_columns(vec![result_col])?;
+
+        self.union(&offset_batch)
     }
 }

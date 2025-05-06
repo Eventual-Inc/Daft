@@ -23,6 +23,10 @@ mod mutable_values;
 pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
+
+#[cfg(feature = "arrow")]
+mod data;
+
 /// A [`BinaryArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<Vec<u8>>>`.
 /// It implements [`Array`].
 ///

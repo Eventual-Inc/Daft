@@ -72,39 +72,29 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
     info!("Daft-Connect server listening on {addr}");
     let addr = util::parse_spark_connect_address(addr).whatever_context("Invalid address")?;
 
-    let listener =
-        std::net::TcpListener::bind(addr).whatever_context("unable to bind to address")?;
-    let port = listener
-        .local_addr()
-        .whatever_context("no local_addr")?
-        .port();
-
     let service = DaftSparkConnectService::default();
 
     info!("Daft-Connect server listening on {addr}");
 
     let (shutdown_signal, shutdown_receiver) = tokio::sync::oneshot::channel();
+    let (port_tx, port_rx) = tokio::sync::oneshot::channel();
 
-    let handle = ConnectionHandle {
-        shutdown_signal: Some(shutdown_signal),
-        port,
-    };
     let runtime = common_runtime::get_io_runtime(true);
 
     std::thread::spawn(move || {
         let result = runtime.block_on_current_thread(async {
-            let incoming = {
-                let listener = tokio::net::TcpListener::from_std(listener).expect("from_std");
+            let listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .expect("Failed to bind to port");
+            let port = listener
+                .local_addr()
+                .expect("Failed to get local address")
+                .port();
+            port_tx.send(port).expect("Failed to send port");
 
-                async_stream::stream! {
-                    loop {
-                        match listener.accept().await {
-                            Ok((stream, _)) => yield Ok(stream),
-                            Err(e) => yield Err(e),
-                        }
-                    }
-                }
-            };
+            let incoming =
+                tonic::transport::server::TcpIncoming::from_listener(listener, true, None)
+                    .expect("Failed to create TCP incoming connection from listener");
 
             tokio::select! {
                 result = Server::builder()
@@ -126,6 +116,12 @@ pub fn start(addr: &str) -> Result<ConnectionHandle, Whatever> {
         Ok::<_, error::ConnectError>(())
     });
 
+    let port = port_rx.blocking_recv().expect("Failed to receive port");
+
+    let handle = ConnectionHandle {
+        shutdown_signal: Some(shutdown_signal),
+        port,
+    };
     Ok(handle)
 }
 

@@ -5,12 +5,12 @@ use daft_core::{
     python::{series::PySeries, PySchema},
 };
 use daft_dsl::python::PyExpr;
-use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
     ffi,
+    file_info::{FileInfo, FileInfos},
     preview::{Preview, PreviewFormat, PreviewOptions},
     RecordBatch,
 };
@@ -504,6 +504,25 @@ impl PyRecordBatch {
             record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
         })
     }
+    #[staticmethod]
+    pub fn from_pyseries_list(pycolumns: Vec<PySeries>) -> PyResult<Self> {
+        if pycolumns.is_empty() {
+            return Ok(Self {
+                record_batch: RecordBatch::empty(None)?,
+            });
+        }
+
+        let num_rows = pycolumns.first().unwrap().series.len();
+
+        let (fields, columns) = pycolumns
+            .into_iter()
+            .map(|s| (s.series.field().clone(), s.series))
+            .unzip::<_, _, Vec<Field>, Vec<Series>>();
+
+        Ok(Self {
+            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
+        })
+    }
 
     pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
@@ -556,5 +575,8 @@ impl AsRef<RecordBatch> for PyRecordBatch {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyRecordBatch>()?;
+    parent.add_class::<FileInfos>()?;
+    parent.add_class::<FileInfo>()?;
+
     Ok(())
 }

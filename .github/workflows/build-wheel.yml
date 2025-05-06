@@ -44,7 +44,6 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-      if: ${{ (inputs.os == 'macos') || (inputs.os == 'windows') }} # bun installed on linux in container during build step
     - run: pip install uv
     - run: uv pip install twine yq setuptools_scm
 
@@ -74,6 +73,12 @@ jobs:
           echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe -mtune=skylake" >> $GITHUB_ENV
         fi
 
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
+
     - name: Build wheels - Mac and Windows x86
       if: ${{ ((inputs.os == 'macos') || (inputs.os == 'windows')) && (inputs.arch == 'x86_64')  }}
       uses: PyO3/maturin-action@v1
@@ -86,28 +91,19 @@ jobs:
       uses: PyO3/maturin-action@v1
       with:
         target: x86_64
-        manylinux: 2_28
+        manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
-        before-script-linux: |
-          dnf install -y perl-IPC-Cmd
-          curl -fsSL https://bun.sh/install | bash
-          export BUN_INSTALL="$HOME/.bun"
-          export PATH="$BUN_INSTALL/bin:$PATH"
 
     - name: Build wheels - Linux aarch64
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'aarch64') }}
       uses: PyO3/maturin-action@v1
       with:
         target: aarch64-unknown-linux-gnu
-        manylinux: 2_28
-        args: --profile release-lto --out dist
-        before-script-linux: |
-          export JEMALLOC_SYS_WITH_LG_PAGE=16
-          apt install -y unzip
-          curl -fsSL https://bun.sh/install | bash
-          export BUN_INSTALL="$HOME/.bun"
-          export PATH="$BUN_INSTALL/bin:$PATH"
+        manylinux: 2_24
+        # only produce sdist for linux x86 to avoid multiple copies
+        args: --profile release-lto --out dist --sdist
+        before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
 
     - name: Build wheels - Mac aarch64
       if: ${{ (inputs.os == 'macos') && (inputs.arch == 'aarch64')  }}

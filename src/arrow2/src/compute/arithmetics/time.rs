@@ -575,3 +575,61 @@ pub fn sub_interval_scalar(
         )),
     }
 }
+
+/// Multiplies an interval by a factor.
+pub fn mul_interval(
+    interval: &PrimitiveArray<months_days_ns>,
+    factor: &PrimitiveArray<i32>,
+) -> Result<PrimitiveArray<months_days_ns>> {
+    if factor.len() == 1 {
+        let value = factor.get(0);
+        let dtype = factor.data_type().clone();
+        let scalar = PrimitiveScalar::new(dtype, value);
+        return mul_interval_scalar(interval, &scalar);
+    }
+
+    if interval.len() != factor.len() {
+        return Err(Error::InvalidArgumentError(
+            "Interval and factor arrays must have the same length".to_string(),
+        ));
+    }
+
+    Ok(binary(
+        interval,
+        factor,
+        interval.data_type().clone(),
+        |interval, factor| {
+            months_days_ns::new(
+                interval.months() * factor,
+                interval.days() * factor,
+                interval.ns() * factor as i64,
+            )
+        },
+    ))
+}
+
+pub fn mul_interval_scalar(
+    interval: &PrimitiveArray<months_days_ns>,
+    factor: &PrimitiveScalar<i32>,
+) -> Result<PrimitiveArray<months_days_ns>> {
+    let factor = if let Some(factor) = *factor.value() {
+        factor
+    } else {
+        return Ok(PrimitiveArray::<months_days_ns>::new_null(
+            interval.data_type().clone(),
+            interval.len(),
+        ));
+    };
+
+    Ok(unary(
+        interval,
+        |interval| {
+            months_days_ns::new(
+                interval.months() * factor,
+                interval.days() * factor,
+                interval.ns() * factor as i64,
+            )
+        },
+        interval.data_type().clone(),
+    ))
+}

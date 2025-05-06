@@ -177,6 +177,7 @@ mod tests {
     #[case::cte("with cte as (select * from tbl1) select * from cte")]
     #[case::double_alias("select * from tbl1 as tbl2, tbl2 as tbl1")]
     #[case::double_alias_qualified("select tbl1.val from tbl1 as tbl2, tbl2 as tbl1")]
+    #[case::interval_arithmetic("select interval '1 day' * 3 from tbl1")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
