@@ -157,7 +157,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("rstrip", SQLUtf8Rstrip);
         parent.add_fn("reverse", SQLUtf8Reverse);
         parent.add_fn("right", SQLUtf8Right);
-        parent.add_fn("repeat", SQLUtf8Repeat);
 
         parent.add_fn("to_date", SQLUtf8ToDate);
         parent.add_fn("to_datetime", SQLUtf8ToDatetime);
@@ -227,15 +226,6 @@ utf8_function!(
     "Returns the specified number of rightmost characters from the string",
     "string_input",
     "length"
-);
-
-utf8_function!(
-    SQLUtf8Repeat,
-    "repeat",
-    daft_functions::utf8::repeat,
-    "Repeats the string the specified number of times",
-    "string_input",
-    "count"
 );
 
 pub struct SQLUtf8ToDate;

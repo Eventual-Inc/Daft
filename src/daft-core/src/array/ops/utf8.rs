@@ -550,59 +550,6 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn repeat<I>(&self, n: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: Ord,
-    {
-        let (is_full_null, expected_size) = parse_inputs(self, &[n])
-            .map_err(|e| DaftError::ValueError(format!("Error in repeat: {e}")))?;
-        if is_full_null {
-            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
-        }
-
-        if expected_size == 0 {
-            return Ok(Self::empty(self.name(), &DataType::Utf8));
-        }
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result: Self = match n.len() {
-            1 => {
-                let n = n.get(0).unwrap();
-                let n: usize = NumCast::from(n).ok_or_else(|| {
-                    DaftError::ComputeError(format!(
-                        "Error in repeat: failed to cast rhs as usize {n}"
-                    ))
-                })?;
-                let arrow_result = self_iter
-                    .map(|val| Some(val?.repeat(n)))
-                    .collect::<arrow2::array::Utf8Array<i64>>();
-                Self::from((self.name(), Box::new(arrow_result)))
-            }
-            _ => {
-                let arrow_result = self_iter
-                    .zip(n.as_arrow().iter())
-                    .map(|(val, n)| match (val, n) {
-                        (Some(val), Some(n)) => {
-                            let n: usize = NumCast::from(*n).ok_or_else(|| {
-                                DaftError::ComputeError(format!(
-                                    "Error in repeat: failed to cast rhs as usize {n}"
-                                ))
-                            })?;
-                            Ok(Some(val.repeat(n)))
-                        }
-                        _ => Ok(None),
-                    })
-                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
-
-                Self::from((self.name(), Box::new(arrow_result)))
-            }
-        };
-
-        assert_eq!(result.len(), expected_size);
-        Ok(result)
-    }
-
     pub fn substr<I, J>(
         &self,
         start: &DataArray<I>,

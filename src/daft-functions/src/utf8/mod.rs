@@ -1,4 +1,3 @@
-mod repeat;
 mod replace;
 mod reverse;
 mod right;
@@ -9,7 +8,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use repeat::{utf8_repeat as repeat, Utf8Repeat};
 pub use replace::{utf8_replace as replace, Utf8Replace};
 pub use reverse::{utf8_reverse as reverse, Utf8Reverse};
 pub use right::{utf8_right as right, Utf8Right};

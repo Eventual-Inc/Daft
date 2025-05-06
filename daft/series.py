@@ -891,10 +891,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("lpad", length, pad)
 
     def repeat(self, n: Series) -> Series:
-        if not isinstance(n, Series):
-            raise ValueError(f"expected another Series but got {type(n)}")
-        assert self._series is not None and n._series is not None
-        return Series._from_pyseries(self._series.utf8_repeat(n._series))
+        return self._eval_expressions("repeat", n)
 
     def like(self, pattern: Series) -> Series:
         return self._eval_expressions("like", pattern)

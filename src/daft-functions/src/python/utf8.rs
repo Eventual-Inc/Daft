@@ -1,7 +1,6 @@
 use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
-simple_python_wrapper!(utf8_repeat, crate::utf8::repeat, [input: PyExpr, ntimes: PyExpr]);
 simple_python_wrapper!(utf8_replace, crate::utf8::replace, [input: PyExpr, pattern: PyExpr, replacement: PyExpr, regex: bool]);
 simple_python_wrapper!(utf8_reverse, crate::utf8::reverse, [input: PyExpr]);
 simple_python_wrapper!(utf8_right, crate::utf8::right, [input: PyExpr, nchars: PyExpr]);

@@ -69,23 +69,6 @@ impl Series {
         })
     }
 
-    pub fn utf8_repeat(&self, n: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            if n.data_type().is_integer() {
-                with_match_integer_daft_types!(n.data_type(), |$T| {
-                    Ok(arr.repeat(n.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
-                })
-            } else if n.data_type().is_null() {
-                Ok(self.clone())
-            } else {
-                Err(DaftError::TypeError(format!(
-                    "Repeat not implemented for nchar type {}",
-                    n.data_type()
-                )))
-            }
-        })
-    }
-
     pub fn utf8_substr(&self, start: &Self, length: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if start.data_type().is_integer() {
