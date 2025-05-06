@@ -171,10 +171,11 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                         WindowExpr::Agg(agg_expr) => {
                                             let dtype =
                                                 agg_expr.to_field(&params.original_schema)?.dtype;
-                                            let frame = WindowFrame::from_window_boundary(
-                                                WindowBoundary::UnboundedPreceding,
-                                                WindowBoundary::Offset(0),
-                                            );
+                                            // Default for aggregate functions in partition by + order by: rows from start of partition to current row
+                                            let frame = WindowFrame {
+                                                start: WindowBoundary::UnboundedPreceding,
+                                                end: WindowBoundary::Offset(0),
+                                            };
                                             partition.window_agg_dynamic_frame(
                                                 name.clone(),
                                                 agg_expr,

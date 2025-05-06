@@ -93,6 +93,40 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
+    fn is_range_frame(
+        start_boundary: Option<&WindowBoundary>,
+        end_boundary: Option<&WindowBoundary>,
+    ) -> bool {
+        matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
+            || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+    }
+
+    fn validate_range_frame_order_by(order_by: &[ExprRef]) -> DaftResult<()> {
+        if order_by.len() != 1 {
+            return Err(DaftError::ValueError(
+                "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn extract_row_offsets(
+        start_boundary: Option<WindowBoundary>,
+        end_boundary: Option<WindowBoundary>,
+    ) -> (Option<i64>, Option<i64>) {
+        let start = match start_boundary {
+            Some(WindowBoundary::Offset(offset)) => Some(offset),
+            _ => None,
+        };
+
+        let end = match end_boundary {
+            Some(WindowBoundary::Offset(offset)) => Some(offset),
+            _ => None,
+        };
+
+        (start, end)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn window_agg_dynamic_frame(
         &self,
@@ -129,17 +163,10 @@ impl RecordBatch {
 
         let source = self.get_column(agg_expr.name())?;
         // Check if we can initialize an incremental state
-        match create_window_agg_state(source, agg_expr, total_rows) {
-            Ok(Some(agg_state)) => {
-                if matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
-                    || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
-                {
-                    if order_by.len() != 1 {
-                        return Err(DaftError::ValueError(
-                            "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
-                        ));
-                    }
-
+        match create_window_agg_state(source, agg_expr, total_rows)? {
+            Some(agg_state) => {
+                if Self::is_range_frame(start_boundary.as_ref(), end_boundary.as_ref()) {
+                    Self::validate_range_frame_order_by(order_by)?;
                     self.window_agg_range_incremental(
                         &name,
                         start_boundary,
@@ -151,37 +178,20 @@ impl RecordBatch {
                         agg_state,
                     )
                 } else {
-                    let start_boundary = match start_boundary {
-                        Some(WindowBoundary::Offset(offset)) => Some(offset),
-                        _ => None,
-                    };
-
-                    let end_boundary = match end_boundary {
-                        Some(WindowBoundary::Offset(offset)) => Some(offset),
-                        _ => None,
-                    };
-
-                    // Incremental state created successfully
+                    let (start, end) = Self::extract_row_offsets(start_boundary, end_boundary);
                     self.window_agg_rows_incremental(
                         &name,
-                        start_boundary,
-                        end_boundary,
+                        start,
+                        end,
                         min_periods,
                         total_rows,
                         agg_state,
                     )
                 }
             }
-            Ok(None) => {
-                if matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
-                    || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
-                {
-                    if order_by.len() != 1 {
-                        return Err(DaftError::ValueError(
-                            "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
-                        ));
-                    }
-
+            None => {
+                if Self::is_range_frame(start_boundary.as_ref(), end_boundary.as_ref()) {
+                    Self::validate_range_frame_order_by(order_by)?;
                     self.window_agg_range(
                         agg_expr,
                         &name,
@@ -194,31 +204,17 @@ impl RecordBatch {
                         total_rows,
                     )
                 } else {
-                    let start_boundary = match start_boundary {
-                        Some(WindowBoundary::Offset(offset)) => Some(offset),
-                        _ => None,
-                    };
-
-                    let end_boundary = match end_boundary {
-                        Some(WindowBoundary::Offset(offset)) => Some(offset),
-                        _ => None,
-                    };
-
-                    // Otherwise, use the non-incremental implementation
+                    let (start, end) = Self::extract_row_offsets(start_boundary, end_boundary);
                     self.window_agg_rows(
                         agg_expr,
                         &name,
                         dtype,
-                        start_boundary,
-                        end_boundary,
+                        start,
+                        end,
                         min_periods,
                         total_rows,
                     )
                 }
-            }
-            Err(e) => {
-                // Error during setup (e.g., type incompatibility), propagate it
-                Err(e)
             }
         }
     }
