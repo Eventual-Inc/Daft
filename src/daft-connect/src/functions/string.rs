@@ -46,9 +46,10 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("regexp_count", TODO_FUNCTION);
         parent.add_fn("regexp_extract", daft_functions_utf8::RegexpExtract);
         parent.add_fn("regexp_extract_all", daft_functions_utf8::RegexpExtractAll);
+        parent.add_fn("regexp_replace", daft_functions_utf8::RegexpReplace);
         parent.add_fn("regexp_substr", TODO_FUNCTION);
         parent.add_fn("regexp_instr", TODO_FUNCTION);
-        // parent.add_fn("replace", Utf8Replace { regex: false });
+        parent.add_fn("replace", daft_functions_utf8::Replace);
         parent.add_fn("right", Utf8Right {});
         parent.add_fn("ucase", TODO_FUNCTION);
         parent.add_fn("unbase64", TODO_FUNCTION);
