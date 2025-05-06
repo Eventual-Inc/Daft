@@ -554,17 +554,11 @@ def test_different_min_periods(make_df):
 
     df = make_df(data)
 
-    # TODO: would like to support this syntax as well
-    # base_window = Window().partition_by("category").order_by("ts", desc=False)
-    # window_no_min = base_window.rows_between(-3, 0, min_periods=1)
-    # window_min_2 = base_window.rows_between(-3, 0, min_periods=2)
-    # window_min_3 = base_window.rows_between(-3, 0, min_periods=3)
-    # window_min_4 = base_window.rows_between(-3, 0, min_periods=4)
-
-    window_no_min = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=1)
-    window_min_2 = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=2)
-    window_min_3 = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=3)
-    window_min_4 = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=4)
+    base_window = Window().partition_by("category").order_by("ts", desc=False)
+    window_no_min = base_window.rows_between(-3, 0, min_periods=1)
+    window_min_2 = base_window.rows_between(-3, 0, min_periods=2)
+    window_min_3 = base_window.rows_between(-3, 0, min_periods=3)
+    window_min_4 = base_window.rows_between(-3, 0, min_periods=4)
 
     result = df.select(
         col("category"),
