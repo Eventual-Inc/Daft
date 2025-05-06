@@ -836,10 +836,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("regexp_extract", pattern, index=index)
 
     def extract_all(self, pattern: Series, index: int = 0) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_extract_all(pattern._series, index))
+        return self._eval_expressions("regexp_extract", pattern, index=index)
 
     def replace(self, pattern: Series, replacement: Series, regex: bool = False) -> Series:
         if not isinstance(pattern, Series):
