@@ -3248,7 +3248,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_lower(self._expr))
+        f = native.get_function_from_registry("lower")
+        return Expression._from_pyexpr(f(self._expr))
 
     def upper(self) -> Expression:
         """Convert UTF-8 string to all upper.

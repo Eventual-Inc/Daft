@@ -1,5 +1,5 @@
 use daft_functions::utf8::{
-    Utf8Lower, Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split, Utf8Substr, Utf8Upper,
+    Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split, Utf8Substr, Utf8Upper,
 };
 
 use super::{FunctionModule, TODO_FUNCTION};
@@ -31,7 +31,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("lcase", TODO_FUNCTION);
         parent.add_fn("length", daft_functions_utf8::LengthBytes);
         parent.add_fn("like", daft_functions_utf8::Like);
-        parent.add_fn("lower", Utf8Lower {});
+        parent.add_fn("lower", daft_functions_utf8::Lower);
         parent.add_fn("left", daft_functions_utf8::Left);
         parent.add_fn("levenshtein", TODO_FUNCTION);
         parent.add_fn("locate", TODO_FUNCTION);

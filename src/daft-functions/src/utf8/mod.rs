@@ -1,4 +1,3 @@
-mod lower;
 mod lpad;
 mod lstrip;
 mod match_;
@@ -15,7 +14,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use lower::{utf8_lower as lower, Utf8Lower};
 pub use lpad::{utf8_lpad as lpad, Utf8Lpad};
 pub use lstrip::{utf8_lstrip as lstrip, Utf8Lstrip};
 pub use match_::{utf8_match as match_, Utf8Match};

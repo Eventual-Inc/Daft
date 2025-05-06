@@ -360,10 +360,6 @@ impl PySeries {
             .into())
     }
 
-    pub fn utf8_lower(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_lower()?.into())
-    }
-
     pub fn utf8_upper(&self) -> PyResult<Self> {
         Ok(self.series.utf8_upper()?.into())
     }

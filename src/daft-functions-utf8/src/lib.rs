@@ -9,6 +9,7 @@ mod left;
 mod length;
 mod length_bytes;
 mod like;
+mod lower;
 mod startswith;
 pub(crate) mod utils;
 
@@ -23,6 +24,7 @@ pub use left::*;
 pub use length::*;
 pub use length_bytes::*;
 pub use like::*;
+pub use lower::*;
 pub use startswith::*;
 
 pub struct Utf8Functions;
@@ -40,6 +42,7 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Length);
         parent.add_fn(LengthBytes);
         parent.add_fn(Like);
+        parent.add_fn(Lower);
 
         parent.add_fn(StartsWith);
     }

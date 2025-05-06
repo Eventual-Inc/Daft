@@ -855,8 +855,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("length_bytes")
 
     def lower(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_lower())
+        return self._eval_expressions("lower")
 
     def upper(self) -> Series:
         assert self._series is not None

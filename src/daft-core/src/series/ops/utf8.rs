@@ -47,10 +47,6 @@ impl Series {
         })
     }
 
-    pub fn utf8_lower(&self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.lower()?.into_series()))
-    }
-
     pub fn utf8_upper(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.upper()?.into_series()))
     }

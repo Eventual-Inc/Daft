@@ -424,10 +424,6 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn lower(&self) -> DaftResult<Self> {
-        self.unary_broadcasted_op(|val| val.to_lowercase().into())
-    }
-
     pub fn upper(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.to_uppercase().into())
     }
