@@ -36,14 +36,6 @@ impl Series {
         })
     }
 
-    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| {
-                Ok(arr.extract_all(pattern_arr, index)?.into_series())
-            })
-        })
-    }
-
     pub fn utf8_replace(
         &self,
         pattern: &Self,

@@ -2,6 +2,7 @@ mod capitalize;
 mod contains;
 mod endswith;
 mod extract;
+mod extract_all;
 mod startswith;
 pub(crate) mod utils;
 
@@ -9,6 +10,7 @@ pub use capitalize::*;
 pub use contains::*;
 pub use endswith::*;
 pub use extract::*;
+pub use extract_all::*;
 pub use startswith::*;
 
 pub struct Utf8Functions;
@@ -19,6 +21,7 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Contains);
         parent.add_fn(EndsWith);
         parent.add_fn(RegexpExtract);
+        parent.add_fn(RegexpExtractAll);
         parent.add_fn(StartsWith);
     }
 }

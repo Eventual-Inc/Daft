@@ -68,7 +68,7 @@ impl ScalarUDF for RegexpExtract {
 }
 
 #[must_use]
-pub fn utf8_extract(input: ExprRef, pattern: ExprRef, index: ExprRef) -> ExprRef {
+pub fn regexp_extract(input: ExprRef, pattern: ExprRef, index: ExprRef) -> ExprRef {
     ScalarFunction::new(RegexpExtract, vec![input, pattern, index]).into()
 }
 

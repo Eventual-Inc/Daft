@@ -153,62 +153,6 @@ fn split_array_on_regex<'a>(
     Ok(())
 }
 
-fn regex_extract_all_matches<'a>(
-    arr_iter: impl Iterator<Item = Option<&'a str>>,
-    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
-    index: usize,
-    len: usize,
-    name: &str,
-) -> DaftResult<ListArray> {
-    let mut matches = arrow2::array::MutableUtf8Array::new();
-    let mut offsets = arrow2::offset::Offsets::new();
-    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(len);
-
-    for (val, re) in arr_iter.zip(regex_iter) {
-        let mut num_matches = 0i64;
-        match (val, re) {
-            (Some(val), Some(re)) => {
-                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures_iter
-                // regex::find_iter is faster than regex::captures_iter but only returns the full match, not the capture groups.
-                // So, use regex::find_iter if index == 0, otherwise use regex::captures.
-                if index == 0 {
-                    for m in re?.find_iter(val) {
-                        matches.push(Some(m.as_str()));
-                        num_matches += 1;
-                    }
-                } else {
-                    for captures in re?.captures_iter(val) {
-                        if let Some(capture) = captures.get(index) {
-                            matches.push(Some(capture.as_str()));
-                            num_matches += 1;
-                        }
-                    }
-                }
-                validity.push(true);
-            }
-            (_, _) => {
-                validity.push(false);
-            }
-        }
-        offsets.try_push(num_matches)?;
-    }
-
-    let matches: arrow2::array::Utf8Array<i64> = matches.into();
-    let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
-    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-        0 => None,
-        _ => Some(validity.into()),
-    };
-    let flat_child = Series::try_from(("matches", matches.to_boxed()))?;
-
-    Ok(ListArray::new(
-        Field::new(name, DataType::List(Box::new(DataType::Utf8))),
-        flat_child,
-        offsets,
-        validity,
-    ))
-}
-
 fn regex_replace<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
@@ -441,42 +385,6 @@ impl Utf8Array {
             offsets,
             validity,
         );
-        assert_eq!(result.len(), expected_size);
-        Ok(result)
-    }
-
-    pub fn extract_all(&self, pattern: &Self, index: usize) -> DaftResult<ListArray> {
-        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
-            .map_err(|e| DaftError::ValueError(format!("Error in extract_all: {e}")))?;
-        if is_full_null {
-            return Ok(ListArray::full_null(
-                self.name(),
-                &DataType::List(Box::new(DataType::Utf8)),
-                expected_size,
-            ));
-        }
-        if expected_size == 0 {
-            return Ok(ListArray::empty(
-                self.name(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ));
-        }
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result = match pattern.len() {
-            1 => {
-                let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
-                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())?
-            }
-            _ => {
-                let regex_iter = pattern
-                    .as_arrow()
-                    .iter()
-                    .map(|pat| pat.map(regex::Regex::new));
-                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())?
-            }
-        };
         assert_eq!(result.len(), expected_size);
         Ok(result)
     }

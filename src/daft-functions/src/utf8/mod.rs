@@ -1,4 +1,3 @@
-mod extract_all;
 mod find;
 mod ilike;
 mod left;
@@ -23,7 +22,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use extract_all::{utf8_extract_all as extract_all, Utf8ExtractAll};
 pub use find::{utf8_find as find, Utf8Find};
 pub use ilike::{utf8_ilike as ilike, Utf8Ilike};
 pub use left::{utf8_left as left, Utf8Left};

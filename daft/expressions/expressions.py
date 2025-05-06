@@ -3042,9 +3042,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             [extract_all](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
         """
         pattern_expr = Expression._to_expression(pattern)
-        index = Expression._to_expression(index)
+        idx = Expression._to_expression(index)
         f = native.get_function_from_registry("regexp_extract")
-        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, index._expr))
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
@@ -3100,7 +3100,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             [extract](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_extract_all(self._expr, pattern_expr._expr, index))
+        idx = Expression._to_expression(index)
+        f = native.get_function_from_registry("regexp_extract_all")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
     def replace(
         self,
