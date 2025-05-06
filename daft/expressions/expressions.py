@@ -765,7 +765,7 @@ class Expression:
         min_expr = Expression._to_expression(min)._expr
         max_expr = Expression._to_expression(max)._expr
         f = native.get_function_from_registry("clip")
-        return Expression._from_pyexpr(f(self._expr, min=min_expr, max=max_expr))
+        return Expression._from_pyexpr(f(self._expr, min_expr, max_expr))
 
     def sign(self) -> Expression:
         """The sign of a numeric expression."""
