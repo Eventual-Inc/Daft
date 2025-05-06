@@ -3610,7 +3610,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_like(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("like")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def ilike(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case insensitive.

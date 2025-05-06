@@ -2,7 +2,6 @@ use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
-simple_python_wrapper!(utf8_like, crate::utf8::like, [input: PyExpr, pattern: PyExpr]);
 simple_python_wrapper!(utf8_lower, crate::utf8::lower, [input: PyExpr]);
 simple_python_wrapper!(utf8_lpad, crate::utf8::lpad, [input: PyExpr, length: PyExpr, pad: PyExpr]);
 simple_python_wrapper!(utf8_lstrip, crate::utf8::lstrip, [input: PyExpr]);

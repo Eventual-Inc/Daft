@@ -139,12 +139,6 @@ impl Series {
         })
     }
 
-    pub fn utf8_like(&self, pattern: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| Ok(arr.like(pattern_arr)?.into_series()))
-        })
-    }
-
     pub fn utf8_substr(&self, start: &Self, length: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if start.data_type().is_integer() {

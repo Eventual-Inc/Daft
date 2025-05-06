@@ -1,4 +1,3 @@
-mod like;
 mod lower;
 mod lpad;
 mod lstrip;
@@ -16,7 +15,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use like::{utf8_like as like, Utf8Like};
 pub use lower::{utf8_lower as lower, Utf8Lower};
 pub use lpad::{utf8_lpad as lpad, Utf8Lpad};
 pub use lstrip::{utf8_lstrip as lstrip, Utf8Lstrip};
