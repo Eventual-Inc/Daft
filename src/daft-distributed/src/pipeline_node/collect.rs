@@ -11,6 +11,7 @@ use crate::{
     stage::StageContext,
 };
 
+#[allow(dead_code)]
 pub(crate) struct CollectNode {
     local_physical_plans: Vec<LocalPhysicalPlanRef>,
     children: Vec<Box<dyn DistributedPipelineNode>>,
@@ -18,6 +19,7 @@ pub(crate) struct CollectNode {
 }
 
 impl CollectNode {
+    #[allow(dead_code)]
     pub fn new(
         local_physical_plans: Vec<LocalPhysicalPlanRef>,
         children: Vec<Box<dyn DistributedPipelineNode>>,
@@ -37,6 +39,7 @@ impl CollectNode {
         }
     }
 
+    #[allow(dead_code)]
     async fn execution_loop(
         _task_dispatcher_handle: TaskDispatcherHandle,
         _local_physical_plans: Vec<LocalPhysicalPlanRef>,
@@ -44,7 +47,7 @@ impl CollectNode {
         _input_node: Option<RunningPipelineNode>,
         _result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
-        todo!("Implement collect execution sloop");
+        todo!("FLOTILLA_MS1: Implement collect execution sloop");
     }
 }
 

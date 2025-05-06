@@ -30,6 +30,7 @@ pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn name(&self) -> &'static str;
     #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
+    #[allow(dead_code)]
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
 }
 
@@ -39,6 +40,7 @@ pub(crate) struct RunningPipelineNode {
 }
 
 impl RunningPipelineNode {
+    #[allow(dead_code)]
     fn new(result_receiver: Receiver<PipelineOutput>) -> Self {
         Self { result_receiver }
     }
@@ -53,7 +55,7 @@ impl Stream for RunningPipelineNode {
     type Item = DaftResult<PipelineOutput>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("Implement stream for running pipeline node");
+        todo!("FLOTILLA_MS1: Implement stream for running pipeline node");
     }
 }
 
@@ -64,6 +66,7 @@ pub(crate) enum PipelineOutput {
     Running(Box<dyn SwordfishTaskResultHandle>),
 }
 
+#[allow(dead_code)]
 pub(crate) fn logical_plan_to_pipeline_node(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
@@ -100,7 +103,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
                         std::mem::take(&mut self.psets),
                     ))];
                     // Here we will have to return a placeholder, essentially cutting off the plan
-                    todo!("Implement pipeline node boundary splitter for limit");
+                    todo!("FLOTILLA_MS1: Implement pipeline node boundary splitter for limit");
                 }
                 _ if is_root => {
                     let input_nodes = std::mem::take(&mut self.current_nodes);
