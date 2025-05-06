@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftError;
 use daft_core::{
     join::JoinType,
@@ -512,12 +514,20 @@ impl PyRecordBatch {
             });
         }
 
+        let first = pycolumns.first().unwrap().series.len();
+
         let num_rows = pycolumns.iter().map(|c| c.series.len()).max().unwrap();
 
         let (fields, columns) = pycolumns
             .into_iter()
             .map(|s| (s.series.field().clone(), s.series))
             .unzip::<_, _, Vec<Field>, Vec<Series>>();
+
+        if first == 0 {
+            return Ok(Self {
+                record_batch: RecordBatch::empty(Some(Arc::new(Schema::new(fields)))).unwrap(),
+            });
+        }
 
         Ok(Self {
             record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,

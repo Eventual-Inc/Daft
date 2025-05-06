@@ -165,7 +165,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("reverse", SQLUtf8Reverse);
         parent.add_fn("left", SQLUtf8Left);
         parent.add_fn("right", SQLUtf8Right);
-        parent.add_fn("find", SQLUtf8Find);
         parent.add_fn("rpad", SQLUtf8Rpad);
         parent.add_fn("lpad", SQLUtf8Lpad);
         parent.add_fn("repeat", SQLUtf8Repeat);
@@ -298,15 +297,6 @@ utf8_function!(
     "Returns the specified number of rightmost characters from the string",
     "string_input",
     "length"
-);
-
-utf8_function!(
-    SQLUtf8Find,
-    "find",
-    daft_functions::utf8::find,
-    "Returns the index of the first occurrence of a substring within the string",
-    "string_input",
-    "substring"
 );
 
 utf8_function!(

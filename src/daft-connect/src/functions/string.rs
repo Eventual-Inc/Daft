@@ -1,6 +1,6 @@
 use daft_functions::utf8::{
-    Utf8Ilike, Utf8Left, Utf8Length, Utf8LengthBytes, Utf8Like, Utf8Lower, Utf8Lpad, Utf8Replace,
-    Utf8Right, Utf8Rpad, Utf8Split, Utf8Startswith, Utf8Substr, Utf8Upper,
+    Utf8Left, Utf8Length, Utf8LengthBytes, Utf8Like, Utf8Lower, Utf8Lpad, Utf8Replace, Utf8Right,
+    Utf8Rpad, Utf8Split, Utf8Startswith, Utf8Substr, Utf8Upper,
 };
 
 use super::{FunctionModule, TODO_FUNCTION};
@@ -26,7 +26,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("find_in_set", TODO_FUNCTION);
         parent.add_fn("format_number", TODO_FUNCTION);
         parent.add_fn("format_string", TODO_FUNCTION);
-        parent.add_fn("ilike", Utf8Ilike {});
+        parent.add_fn("ilike", daft_functions_utf8::ILike);
         parent.add_fn("initcap", TODO_FUNCTION);
         parent.add_fn("instr", TODO_FUNCTION);
         parent.add_fn("lcase", TODO_FUNCTION);

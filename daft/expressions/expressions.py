@@ -3477,7 +3477,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(native.utf8_find(self._expr, substr_expr._expr))
+        f = native.get_function_from_registry("find")
+        return Expression._from_pyexpr(f(self._expr, substr_expr._expr))
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Right-pads each string by truncating or padding with the character.
@@ -3638,7 +3639,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_ilike(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("ilike")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
         """Extract a substring from a string, starting at a specified index and extending for a given length.

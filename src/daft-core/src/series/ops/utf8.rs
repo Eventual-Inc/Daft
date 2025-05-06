@@ -115,12 +115,6 @@ impl Series {
         })
     }
 
-    pub fn utf8_find(&self, substr: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            substr.with_utf8_array(|substr_arr| Ok(arr.find(substr_arr)?.into_series()))
-        })
-    }
-
     pub fn utf8_lpad(&self, length: &Self, pad: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pad.with_utf8_array(|pad_arr| {
@@ -179,12 +173,6 @@ impl Series {
     pub fn utf8_like(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.like(pattern_arr)?.into_series()))
-        })
-    }
-
-    pub fn utf8_ilike(&self, pattern: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| Ok(arr.ilike(pattern_arr)?.into_series()))
         })
     }
 

@@ -400,10 +400,6 @@ impl PySeries {
         Ok(self.series.utf8_right(&nchars.series)?.into())
     }
 
-    pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_find(&substr.series)?.into())
-    }
-
     pub fn utf8_rpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
         Ok(self
             .series
@@ -424,10 +420,6 @@ impl PySeries {
 
     pub fn utf8_like(&self, pattern: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_like(&pattern.series)?.into())
-    }
-
-    pub fn utf8_ilike(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_ilike(&pattern.series)?.into())
     }
 
     pub fn utf8_substr(&self, start: &Self, length: &Self) -> PyResult<Self> {

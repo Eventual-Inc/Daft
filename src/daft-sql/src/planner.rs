@@ -15,8 +15,9 @@ use daft_dsl::{
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
-    utf8::{ilike, like, to_date, to_datetime},
+    utf8::{like, to_date, to_datetime},
 };
+use daft_functions_utf8::ilike;
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
