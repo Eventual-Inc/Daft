@@ -28,6 +28,7 @@ use std::sync::Arc;
 use daft_dsl::{
     expr::named_expr,
     functions::{ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
+    null_lit,
     python::PyExpr,
     ExprRef,
 };
@@ -59,8 +60,11 @@ impl PyScalarFunction {
             for (k, v) in kwargs {
                 let key = k.extract::<String>()?;
                 let value = v.extract::<PyExpr>()?;
-                let expr = named_expr(key, value.expr);
-                inputs.push(expr);
+                // we can skip adding null args
+                if value.expr != null_lit() {
+                    let expr = named_expr(key, value.expr);
+                    inputs.push(expr);
+                }
             }
         }
 
