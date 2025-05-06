@@ -1,4 +1,3 @@
-mod lpad;
 mod lstrip;
 mod match_;
 mod normalize;
@@ -6,7 +5,6 @@ mod repeat;
 mod replace;
 mod reverse;
 mod right;
-mod rpad;
 mod rstrip;
 mod split;
 mod substr;
@@ -14,7 +12,6 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
-pub use lpad::{utf8_lpad as lpad, Utf8Lpad};
 pub use lstrip::{utf8_lstrip as lstrip, Utf8Lstrip};
 pub use match_::{utf8_match as match_, Utf8Match};
 pub use normalize::{utf8_normalize as normalize, Utf8Normalize};
@@ -22,7 +19,6 @@ pub use repeat::{utf8_repeat as repeat, Utf8Repeat};
 pub use replace::{utf8_replace as replace, Utf8Replace};
 pub use reverse::{utf8_reverse as reverse, Utf8Reverse};
 pub use right::{utf8_right as right, Utf8Right};
-pub use rpad::{utf8_rpad as rpad, Utf8Rpad};
 pub use rstrip::{utf8_rstrip as rstrip, Utf8Rstrip};
 pub use split::{utf8_split as split, Utf8Split};
 pub use substr::{utf8_substr as substr, Utf8Substr};

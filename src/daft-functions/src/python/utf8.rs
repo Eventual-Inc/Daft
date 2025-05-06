@@ -2,14 +2,12 @@ use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
-simple_python_wrapper!(utf8_lpad, crate::utf8::lpad, [input: PyExpr, length: PyExpr, pad: PyExpr]);
 simple_python_wrapper!(utf8_lstrip, crate::utf8::lstrip, [input: PyExpr]);
 simple_python_wrapper!(utf8_match, crate::utf8::match_, [input: PyExpr, pattern: PyExpr]);
 simple_python_wrapper!(utf8_repeat, crate::utf8::repeat, [input: PyExpr, ntimes: PyExpr]);
 simple_python_wrapper!(utf8_replace, crate::utf8::replace, [input: PyExpr, pattern: PyExpr, replacement: PyExpr, regex: bool]);
 simple_python_wrapper!(utf8_reverse, crate::utf8::reverse, [input: PyExpr]);
 simple_python_wrapper!(utf8_right, crate::utf8::right, [input: PyExpr, nchars: PyExpr]);
-simple_python_wrapper!(utf8_rpad, crate::utf8::rpad, [input: PyExpr, length: PyExpr, pad: PyExpr]);
 simple_python_wrapper!(utf8_rstrip, crate::utf8::rstrip, [input: PyExpr]);
 simple_python_wrapper!(utf8_split, crate::utf8::split, [input: PyExpr, pattern: PyExpr, regex: bool]);
 simple_python_wrapper!(utf8_substr, crate::utf8::substr, [input: PyExpr, start: PyExpr, length: PyExpr]);

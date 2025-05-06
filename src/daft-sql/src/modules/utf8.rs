@@ -160,8 +160,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("rstrip", SQLUtf8Rstrip);
         parent.add_fn("reverse", SQLUtf8Reverse);
         parent.add_fn("right", SQLUtf8Right);
-        parent.add_fn("rpad", SQLUtf8Rpad);
-        parent.add_fn("lpad", SQLUtf8Lpad);
         parent.add_fn("repeat", SQLUtf8Repeat);
 
         parent.add_fn("to_date", SQLUtf8ToDate);
@@ -250,22 +248,6 @@ utf8_function!(
     "Returns the specified number of rightmost characters from the string",
     "string_input",
     "length"
-);
-
-utf8_function!(
-    SQLUtf8Rpad,
-    "rpad",
-    daft_functions::utf8::rpad,
-    "Pads the string on the right side with the specified string until it reaches the specified length",
-    "string_input", "length", "pad"
-);
-
-utf8_function!(
-    SQLUtf8Lpad,
-    "lpad",
-    daft_functions::utf8::lpad,
-    "Pads the string on the left side with the specified string until it reaches the specified length",
-    "string_input", "length", "pad"
 );
 
 utf8_function!(

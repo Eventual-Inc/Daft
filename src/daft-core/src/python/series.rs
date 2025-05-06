@@ -380,20 +380,6 @@ impl PySeries {
         Ok(self.series.utf8_right(&nchars.series)?.into())
     }
 
-    pub fn utf8_rpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_rpad(&length.series, &character.series)?
-            .into())
-    }
-
-    pub fn utf8_lpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_lpad(&length.series, &character.series)?
-            .into())
-    }
-
     pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
         Ok(self.series.utf8_repeat(&n.series)?.into())
     }

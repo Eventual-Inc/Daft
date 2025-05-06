@@ -3516,7 +3516,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(native.utf8_rpad(self._expr, length_expr._expr, pad_expr._expr))
+        f = native.get_function_from_registry("rpad")
+
+        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Left-pads each string by truncating on the right or padding with the character.
@@ -3550,7 +3552,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(native.utf8_lpad(self._expr, length_expr._expr, pad_expr._expr))
+        f = native.get_function_from_registry("lpad")
+        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
     def repeat(self, n: int | Expression) -> Expression:
         """Repeats each string n times.

@@ -10,7 +10,13 @@ mod length;
 mod length_bytes;
 mod like;
 mod lower;
+mod lpad;
+
+pub(crate) mod pad;
+
+mod rpad;
 mod startswith;
+
 pub(crate) mod utils;
 
 pub use capitalize::*;
@@ -25,6 +31,8 @@ pub use length::*;
 pub use length_bytes::*;
 pub use like::*;
 pub use lower::*;
+pub use lpad::*;
+pub use rpad::*;
 pub use startswith::*;
 
 pub struct Utf8Functions;
@@ -43,6 +51,8 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(LengthBytes);
         parent.add_fn(Like);
         parent.add_fn(Lower);
+        parent.add_fn(LPad);
+        parent.add_fn(RPad);
 
         parent.add_fn(StartsWith);
     }

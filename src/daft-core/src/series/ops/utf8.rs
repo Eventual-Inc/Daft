@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::ops::{PadPlacement, Utf8NormalizeOptions},
+    array::ops::Utf8NormalizeOptions,
     datatypes::*,
     series::{array_impl::IntoSeries, Series},
     with_match_integer_daft_types,
@@ -77,44 +77,6 @@ impl Series {
                     nchars.data_type()
                 )))
             }
-        })
-    }
-
-    pub fn utf8_lpad(&self, length: &Self, pad: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pad.with_utf8_array(|pad_arr| {
-                if length.data_type().is_integer() {
-                    with_match_integer_daft_types!(length.data_type(), |$T| {
-                        Ok(arr.pad(length.downcast::<<$T as DaftDataType>::ArrayType>()?, pad_arr, PadPlacement::Left)?.into_series())
-                    })
-                } else if length.data_type().is_null() {
-                    Ok(self.clone())
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Lpad not implemented for length type {}",
-                        length.data_type()
-                    )))
-                }
-            })
-        })
-    }
-
-    pub fn utf8_rpad(&self, length: &Self, pad: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pad.with_utf8_array(|pad_arr| {
-                if length.data_type().is_integer() {
-                    with_match_integer_daft_types!(length.data_type(), |$T| {
-                        Ok(arr.pad(length.downcast::<<$T as DaftDataType>::ArrayType>()?, pad_arr, PadPlacement::Right)?.into_series())
-                    })
-                } else if length.data_type().is_null() {
-                    Ok(self.clone())
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Rpad not implemented for length type {}",
-                        length.data_type()
-                    )))
-                }
-            })
         })
     }
 

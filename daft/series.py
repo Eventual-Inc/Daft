@@ -889,20 +889,10 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("find", substr)
 
     def rpad(self, length: Series, pad: Series) -> Series:
-        if not isinstance(length, Series):
-            raise ValueError(f"expected another Series but got {type(length)}")
-        if not isinstance(pad, Series):
-            raise ValueError(f"expected another Series but got {type(pad)}")
-        assert self._series is not None and length._series is not None and pad._series is not None
-        return Series._from_pyseries(self._series.utf8_rpad(length._series, pad._series))
+        return self._eval_expressions("rpad", length, pad)
 
     def lpad(self, length: Series, pad: Series) -> Series:
-        if not isinstance(length, Series):
-            raise ValueError(f"expected another Series but got {type(length)}")
-        if not isinstance(pad, Series):
-            raise ValueError(f"expected another Series but got {type(pad)}")
-        assert self._series is not None and length._series is not None and pad._series is not None
-        return Series._from_pyseries(self._series.utf8_lpad(length._series, pad._series))
+        return self._eval_expressions("lpad", length, pad)
 
     def repeat(self, n: Series) -> Series:
         if not isinstance(n, Series):

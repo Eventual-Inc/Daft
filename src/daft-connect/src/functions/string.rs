@@ -1,6 +1,4 @@
-use daft_functions::utf8::{
-    Utf8Lpad, Utf8Replace, Utf8Right, Utf8Rpad, Utf8Split, Utf8Substr, Utf8Upper,
-};
+use daft_functions::utf8::{Utf8Replace, Utf8Right, Utf8Split, Utf8Substr, Utf8Upper};
 
 use super::{FunctionModule, TODO_FUNCTION};
 
@@ -35,7 +33,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("left", daft_functions_utf8::Left);
         parent.add_fn("levenshtein", TODO_FUNCTION);
         parent.add_fn("locate", TODO_FUNCTION);
-        parent.add_fn("lpad", Utf8Lpad {});
+        parent.add_fn("lpad", daft_functions_utf8::LPad);
         parent.add_fn("ltrim", TODO_FUNCTION);
         parent.add_fn("mask", TODO_FUNCTION);
         parent.add_fn("octet_length", TODO_FUNCTION);
@@ -55,7 +53,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("right", Utf8Right {});
         parent.add_fn("ucase", TODO_FUNCTION);
         parent.add_fn("unbase64", TODO_FUNCTION);
-        parent.add_fn("rpad", Utf8Rpad {});
+        parent.add_fn("rpad", daft_functions_utf8::RPad);
         parent.add_fn("repeat", TODO_FUNCTION);
         parent.add_fn("rtrim", TODO_FUNCTION);
         parent.add_fn("soundex", TODO_FUNCTION);
