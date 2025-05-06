@@ -17,7 +17,7 @@ use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
     channel::Receiver,
-    scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
+    scheduling::{dispatcher::SubmittedTask, task::SwordfishTask},
     stage::StageContext,
 };
 
@@ -63,7 +63,7 @@ impl Stream for RunningPipelineNode {
 pub(crate) enum PipelineOutput {
     Materialized(PartitionRef),
     Task(SwordfishTask),
-    Running(Box<dyn SwordfishTaskResultHandle>),
+    Running(SubmittedTask),
 }
 
 #[allow(dead_code)]

@@ -64,7 +64,7 @@ impl DistributedPipelineNode for LimitNode {
     }
 
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let task_dispatcher_handle = stage_context.task_dispatcher_handle.clone();
+        let task_dispatcher_handle = stage_context.get_task_dispatcher_handle();
         let input_node = if let Some(mut input_node) = self.children.pop() {
             assert!(self.children.is_empty());
             let input_running_node = input_node.start(stage_context);
@@ -80,7 +80,7 @@ impl DistributedPipelineNode for LimitNode {
             std::mem::take(&mut self.input_psets),
             result_tx,
         );
-        stage_context.joinset.spawn(execution_loop);
+        stage_context.spawn_task_on_joinset(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }
