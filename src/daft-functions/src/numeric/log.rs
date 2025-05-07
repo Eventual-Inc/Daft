@@ -20,10 +20,6 @@ macro_rules! log {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-
             fn name(&self) -> &'static str {
                 stringify!($name)
             }
@@ -49,7 +45,7 @@ macro_rules! log {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                 evaluate_single_numeric(inputs, Series::$name)
             }
         }
@@ -71,10 +67,6 @@ pub struct Log(FloatWrapper<f64>);
 
 #[typetag::serde]
 impl ScalarUDF for Log {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "log"
     }
@@ -100,7 +92,7 @@ impl ScalarUDF for Log {
         Ok(Field::new(field.name, dtype))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         evaluate_single_numeric(inputs, |x| x.log(self.0 .0))
     }
 }

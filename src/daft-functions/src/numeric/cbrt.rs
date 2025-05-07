@@ -13,10 +13,6 @@ pub struct Cbrt;
 
 #[typetag::serde]
 impl ScalarUDF for Cbrt {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "cbrt"
     }
@@ -25,7 +21,7 @@ impl ScalarUDF for Cbrt {
         to_field_single_floating(self, inputs, schema)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         evaluate_single_numeric(inputs, |s| {
             let casted_dtype = s.to_floating_data_type()?;
             let casted_self = s

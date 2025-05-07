@@ -14,9 +14,6 @@ pub struct Utf8Length {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Length {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "length"
     }
@@ -39,7 +36,7 @@ impl ScalarUDF for Utf8Length {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => data.utf8_length(),
             _ => Err(DaftError::ValueError(format!(

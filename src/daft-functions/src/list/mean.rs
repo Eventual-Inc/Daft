@@ -15,10 +15,6 @@ pub struct ListMean {}
 
 #[typetag::serde]
 impl ScalarUDF for ListMean {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_mean"
     }
@@ -39,7 +35,7 @@ impl ScalarUDF for ListMean {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_mean()?),
             _ => Err(DaftError::ValueError(format!(

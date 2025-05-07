@@ -14,10 +14,6 @@ pub struct ListFill {}
 
 #[typetag::serde]
 impl ScalarUDF for ListFill {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_fill"
     }
@@ -42,7 +38,7 @@ impl ScalarUDF for ListFill {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [num, elem] => {
                 let num = num.cast(&DataType::Int64)?;
@@ -125,7 +121,7 @@ mod tests {
         )
         .into_series();
 
-        let error = fill.evaluate(&[num.clone()]).unwrap_err();
+        let error = fill.evaluate_from_series(&[num.clone()]).unwrap_err();
         assert_eq!(
             error.to_string(),
             "DaftError::ValueError Expected 2 input args, got 1"
@@ -143,7 +139,8 @@ mod tests {
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
         let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            fill.evaluate(&[num.clone(), str.clone()]).unwrap()
+            fill.evaluate_from_series(&[num.clone(), str.clone()])
+                .unwrap()
         }));
         assert!(error.is_err());
     }
@@ -158,7 +155,7 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let result = fill.evaluate(&[num.clone(), str.clone()])?;
+        let result = fill.evaluate_from_series(&[num.clone(), str.clone()])?;
         // the expected result should be a list of strings: [[None], [], ["world", "world", "world"]]
         let flat_child = Utf8Array::from_iter(
             "s2",

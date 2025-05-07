@@ -16,10 +16,6 @@ pub struct Clip;
 
 #[typetag::serde]
 impl ScalarUDF for Clip {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "clip"
     }
@@ -44,7 +40,7 @@ impl ScalarUDF for Clip {
         Ok(Field::new(array_field.name, output_type))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         if inputs.len() != 3 {
             return Err(DaftError::ValueError(format!(
                 "Expected 3 input arguments (array, min, max), got {}",

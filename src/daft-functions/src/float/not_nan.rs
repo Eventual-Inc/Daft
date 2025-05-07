@@ -15,9 +15,6 @@ pub struct NotNan {}
 
 #[typetag::serde]
 impl ScalarUDF for NotNan {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "not_nan"
     }
@@ -43,7 +40,7 @@ impl ScalarUDF for NotNan {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => {
                 with_match_float_and_null_daft_types!(data.data_type(), |$T| {

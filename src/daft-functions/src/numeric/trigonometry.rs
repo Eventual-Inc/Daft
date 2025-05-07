@@ -20,10 +20,6 @@ macro_rules! trigonometry {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-
             fn name(&self) -> &'static str {
                 TrigonometricFunction::$variant.fn_name()
             }
@@ -49,7 +45,7 @@ macro_rules! trigonometry {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                 evaluate_single_numeric(inputs, |s| {
                     trigonometry(s, &TrigonometricFunction::$variant)
                 })
@@ -86,10 +82,6 @@ pub struct Atan2 {}
 
 #[typetag::serde]
 impl ScalarUDF for Atan2 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "atan2"
     }
@@ -115,7 +107,7 @@ impl ScalarUDF for Atan2 {
         Ok(Field::new(field1.name, dtype))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [x, y] => atan2_impl(x, y),
             _ => Err(DaftError::SchemaMismatch(format!(

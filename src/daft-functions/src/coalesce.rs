@@ -15,10 +15,6 @@ pub struct Coalesce {}
 
 #[typetag::serde]
 impl ScalarUDF for Coalesce {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "coalesce"
     }
@@ -52,7 +48,7 @@ impl ScalarUDF for Coalesce {
     ///  > the <result> of the first (leftmost) <searched when clause> whose <search
     ///  > condition> evaluates to True, cast as the declared type of the <case
     ///  > specification>.
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs.len() {
             0 => Err(DaftError::ComputeError("No inputs provided".to_string())),
             1 => Ok(inputs[0].clone()),
@@ -130,7 +126,7 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate(&[s0, s1, s2]).unwrap();
+        let output = coalesce.evaluate_from_series(&[s0, s1, s2]).unwrap();
         let actual = output.i8().unwrap();
         let expected = Int8Array::from_iter(
             Field::new("s0", DataType::Int8),
@@ -155,7 +151,7 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate(&[s0, s1]).unwrap();
+        let output = coalesce.evaluate_from_series(&[s0, s1]).unwrap();
         let actual = output.i8().unwrap();
         let expected = Int8Array::from_iter(
             Field::new("s0", DataType::Int8),
@@ -168,7 +164,7 @@ mod tests {
     #[test]
     fn test_coalesce_no_args() {
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate(&[]);
+        let output = coalesce.evaluate_from_series(&[]);
 
         assert!(output.is_err());
     }
@@ -182,7 +178,7 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate(&[s0.clone()]).unwrap();
+        let output = coalesce.evaluate_from_series(&[s0.clone()]).unwrap();
         // can't directly compare as null != null
         let output = output.i8().unwrap();
         let s0 = s0.i8().unwrap();
@@ -196,7 +192,7 @@ mod tests {
         let s2 = Series::full_null("s2", &DataType::Utf8, 100);
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate(&[s0, s1, s2]).unwrap();
+        let output = coalesce.evaluate_from_series(&[s0, s1, s2]).unwrap();
         let actual = output.utf8().unwrap();
         let expected = Utf8Array::full_null("s0", &DataType::Utf8, 100);
 
@@ -229,7 +225,7 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate(&[s0, s1, s2]);
+        let output = coalesce.evaluate_from_series(&[s0, s1, s2]);
 
         let expected = Utf8Array::from_iter(
             "s2",

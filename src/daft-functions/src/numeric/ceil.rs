@@ -16,9 +16,6 @@ pub struct Ceil {}
 
 #[typetag::serde]
 impl ScalarUDF for Ceil {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "ceil"
     }
@@ -27,7 +24,7 @@ impl ScalarUDF for Ceil {
         to_field_single_numeric(self, inputs, schema)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         evaluate_single_numeric(inputs, |s| match s.data_type() {
             DataType::Int8
             | DataType::Int16

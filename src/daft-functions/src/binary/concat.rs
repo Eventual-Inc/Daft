@@ -16,9 +16,6 @@ pub struct BinaryConcat {}
 
 #[typetag::serde]
 impl ScalarUDF for BinaryConcat {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "concat"
     }
@@ -60,7 +57,7 @@ impl ScalarUDF for BinaryConcat {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         let result_name = inputs[0].name();
         match (inputs[0].data_type(), inputs[1].data_type()) {
             (DataType::Binary, DataType::Binary) => {

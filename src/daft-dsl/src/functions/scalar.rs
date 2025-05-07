@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     fmt::{Display, Formatter},
     sync::Arc,
 };
@@ -8,6 +7,7 @@ use common_error::DaftResult;
 use daft_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use super::function_args::{FunctionArg, FunctionArgs};
 use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +23,6 @@ impl ScalarFunction {
             inputs,
         }
     }
-
     pub fn name(&self) -> &str {
         self.udf.name()
     }
@@ -41,10 +40,28 @@ impl From<ScalarFunction> for ExprRef {
 
 #[typetag::serde(tag = "type")]
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
-    fn as_any(&self) -> &dyn Any;
     fn name(&self) -> &'static str;
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series>;
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
+        let inputs = FunctionArgs::try_new(
+            inputs
+                .iter()
+                .map(|s| FunctionArg::unnamed(s.clone()))
+                .collect(),
+        )?;
+
+        self.evaluate(inputs)
+    }
+
+    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        self.evaluate_from_series(inputs.into_inner().as_slice())
+    }
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
+    fn docstring(&self) -> &'static str {
+        "No documentation available"
+    }
 }
 
 pub fn scalar_function_semantic_id(func: &ScalarFunction, schema: &Schema) -> FieldID {

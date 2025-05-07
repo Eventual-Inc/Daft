@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
@@ -16,10 +14,6 @@ pub struct ListCountDistinct;
 
 #[typetag::serde]
 impl ScalarUDF for ListCountDistinct {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_count_distinct"
     }
@@ -37,7 +31,7 @@ impl ScalarUDF for ListCountDistinct {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input.list_count_distinct(),
             _ => Err(DaftError::SchemaMismatch(format!(

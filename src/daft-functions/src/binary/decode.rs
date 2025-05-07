@@ -47,10 +47,6 @@ pub struct Decode {
 
 #[typetag::serde]
 impl ScalarUDF for Decode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "decode"
     }
@@ -59,7 +55,7 @@ impl ScalarUDF for Decode {
         to_field(inputs, schema, self.codec.returns())
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match &inputs[0].data_type() {
             DataType::Binary => {
                 let arg = inputs[0].downcast::<BinaryArray>()?;
@@ -89,10 +85,6 @@ pub struct TryDecode {
 
 #[typetag::serde]
 impl ScalarUDF for TryDecode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "try_decode"
     }
@@ -101,7 +93,7 @@ impl ScalarUDF for TryDecode {
         to_field(inputs, schema, self.codec.returns())
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs[0].data_type() {
             DataType::Binary => {
                 let arg = inputs[0].downcast::<BinaryArray>()?;

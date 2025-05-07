@@ -16,9 +16,6 @@ pub struct Utf8Extract {
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Extract {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "extract"
     }
@@ -45,7 +42,7 @@ impl ScalarUDF for Utf8Extract {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => data.utf8_extract(pattern, self.index),
             _ => Err(DaftError::ValueError(format!(

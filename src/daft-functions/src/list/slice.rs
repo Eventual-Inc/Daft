@@ -14,10 +14,6 @@ pub struct ListSlice {}
 
 #[typetag::serde]
 impl ScalarUDF for ListSlice {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_slice"
     }
@@ -51,7 +47,7 @@ impl ScalarUDF for ListSlice {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input, start, end] => Ok(input.list_slice(start, end)?),
             _ => Err(DaftError::ValueError(format!(

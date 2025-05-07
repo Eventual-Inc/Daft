@@ -15,9 +15,6 @@ pub struct IsNan {}
 
 #[typetag::serde]
 impl ScalarUDF for IsNan {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "is_nan"
     }
@@ -43,7 +40,7 @@ impl ScalarUDF for IsNan {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         use daft_core::{array::ops::DaftIsNan, series::IntoSeries};
 
         match inputs {

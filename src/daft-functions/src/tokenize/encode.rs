@@ -80,10 +80,6 @@ pub struct TokenizeEncodeFunction {
 
 #[typetag::serde]
 impl ScalarUDF for TokenizeEncodeFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "tokenize_encode"
     }
@@ -109,7 +105,7 @@ impl ScalarUDF for TokenizeEncodeFunction {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => tokenize_encode_series(
                 data,

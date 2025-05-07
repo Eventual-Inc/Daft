@@ -16,9 +16,6 @@ pub struct Utf8ToDate {
 
 #[typetag::serde]
 impl ScalarUDF for Utf8ToDate {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "to_date"
     }
@@ -41,7 +38,7 @@ impl ScalarUDF for Utf8ToDate {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => data.utf8_to_date(&self.format),
             _ => Err(DaftError::ValueError(format!(

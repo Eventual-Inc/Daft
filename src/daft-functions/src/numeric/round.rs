@@ -18,10 +18,6 @@ pub struct Round {
 
 #[typetag::serde]
 impl ScalarUDF for Round {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "round"
     }
@@ -30,7 +26,7 @@ impl ScalarUDF for Round {
         to_field_single_numeric(self, inputs, schema)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         if self.decimal < 0 {
             return Err(DaftError::ComputeError(format!(
                 "decimal value can not be negative: {}",

@@ -11,10 +11,6 @@ pub struct ListSort {}
 
 #[typetag::serde]
 impl ScalarUDF for ListSort {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_sort"
     }
@@ -40,7 +36,7 @@ impl ScalarUDF for ListSort {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, desc, nulls_first] => data.list_sort(desc, nulls_first),
             _ => Err(DaftError::ValueError(format!(

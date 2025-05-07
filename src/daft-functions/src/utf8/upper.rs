@@ -14,9 +14,6 @@ pub struct Utf8Upper {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Upper {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "upper"
     }
@@ -39,7 +36,7 @@ impl ScalarUDF for Utf8Upper {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => data.utf8_upper(),
             _ => Err(DaftError::ValueError(format!(

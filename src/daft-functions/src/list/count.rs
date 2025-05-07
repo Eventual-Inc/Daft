@@ -16,10 +16,6 @@ pub struct ListCount {
 
 #[typetag::serde]
 impl ScalarUDF for ListCount {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "count"
     }
@@ -46,7 +42,7 @@ impl ScalarUDF for ListCount {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_count(self.mode)?.into_series()),
             _ => Err(DaftError::ValueError(format!(

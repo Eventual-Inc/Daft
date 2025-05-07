@@ -18,9 +18,6 @@ macro_rules! exp {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
             fn name(&self) -> &'static str {
                 stringify!($name)
             }
@@ -46,7 +43,7 @@ macro_rules! exp {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                 evaluate_single_numeric(inputs, $impl)
             }
         }

@@ -14,9 +14,6 @@ pub struct Utf8Lpad {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Lpad {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "lpad"
     }
@@ -45,7 +42,7 @@ impl ScalarUDF for Utf8Lpad {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, length, pad] => data.utf8_lpad(length, pad),
             _ => Err(DaftError::ValueError(format!(

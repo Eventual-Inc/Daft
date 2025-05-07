@@ -49,15 +49,11 @@ impl Default for UrlUploadArgs {
 
 #[typetag::serde]
 impl ScalarUDF for UrlUploadArgs {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "upload"
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         let Self {
             max_connections,
             raise_error_on_failure,

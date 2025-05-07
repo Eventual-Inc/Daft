@@ -16,15 +16,11 @@ impl MergeMeanFunction {
 
 #[typetag::serde]
 impl ScalarUDF for MergeMeanFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "merge_mean"
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [sum, counts] => {
                 if !matches!(counts.data_type(), DataType::UInt64) {

@@ -11,10 +11,6 @@ struct ListValueCountsFunction;
 
 #[typetag::serde]
 impl ScalarUDF for ListValueCountsFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_value_counts"
     }
@@ -48,7 +44,7 @@ impl ScalarUDF for ListValueCountsFunction {
         Ok(Field::new(data_field.name, map_type))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         let [data] = inputs else {
             return Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

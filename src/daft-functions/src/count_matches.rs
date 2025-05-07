@@ -14,10 +14,6 @@ pub struct CountMatchesFunction {
 
 #[typetag::serde]
 impl ScalarUDF for CountMatchesFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "count_matches"
     }
@@ -40,7 +36,7 @@ impl ScalarUDF for CountMatchesFunction {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, patterns] => {
                 data.utf8_count_matches(patterns, self.whole_words, self.case_sensitive)

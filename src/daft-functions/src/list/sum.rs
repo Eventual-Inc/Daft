@@ -14,10 +14,6 @@ pub struct ListSum {}
 
 #[typetag::serde]
 impl ScalarUDF for ListSum {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_sum"
     }
@@ -43,7 +39,7 @@ impl ScalarUDF for ListSum {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_sum()?),
             _ => Err(DaftError::ValueError(format!(

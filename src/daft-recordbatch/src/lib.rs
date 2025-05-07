@@ -711,7 +711,7 @@ impl RecordBatch {
                 let args = FunctionArgs::try_new(evaluated_inputs)?;
 
                 // todo:
-                func.udf.evaluate(args.into_inner().as_slice())
+                func.udf.evaluate(args)
             }
             Expr::Literal(lit_value) => Ok(lit_value.to_series()),
             Expr::IfElse {

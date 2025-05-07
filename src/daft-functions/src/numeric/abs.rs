@@ -16,9 +16,6 @@ pub struct Abs {}
 
 #[typetag::serde]
 impl ScalarUDF for Abs {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "abs"
     }
@@ -27,7 +24,7 @@ impl ScalarUDF for Abs {
         to_field_single_numeric(self, inputs, schema)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         // todo: move this into ScalarUDF. but it's currently not possible because of the `fuzzy_eq` function
         evaluate_single_numeric(inputs, Series::abs)
     }

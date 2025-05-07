@@ -14,9 +14,6 @@ pub struct Utf8Startswith {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Startswith {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "startswith"
     }
@@ -43,7 +40,7 @@ impl ScalarUDF for Utf8Startswith {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => data.utf8_startswith(pattern),
             _ => Err(DaftError::ValueError(format!(

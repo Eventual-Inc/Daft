@@ -14,10 +14,6 @@ pub struct Explode {}
 
 #[typetag::serde]
 impl ScalarUDF for Explode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "explode"
     }
@@ -35,7 +31,7 @@ impl ScalarUDF for Explode {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input.explode(),
             _ => Err(DaftError::ValueError(format!(

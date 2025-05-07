@@ -14,9 +14,6 @@ pub struct Utf8Endswith {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Endswith {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "endswith"
     }
@@ -43,7 +40,7 @@ impl ScalarUDF for Utf8Endswith {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => data.utf8_endswith(pattern),
             _ => Err(DaftError::ValueError(format!(

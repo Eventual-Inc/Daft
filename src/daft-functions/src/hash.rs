@@ -11,15 +11,11 @@ pub(super) struct HashFunction;
 
 #[typetag::serde]
 impl ScalarUDF for HashFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "hash"
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input.hash(None).map(|arr| arr.into_series()),
             [input, seed] => {

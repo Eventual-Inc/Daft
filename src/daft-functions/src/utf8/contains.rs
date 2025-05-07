@@ -14,9 +14,6 @@ pub struct Utf8Contains {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Contains {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "contains"
     }
@@ -43,7 +40,7 @@ impl ScalarUDF for Utf8Contains {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, pattern] => data.utf8_contains(pattern),
             _ => Err(DaftError::ValueError(format!(

@@ -13,10 +13,6 @@ pub struct ImageToMode {
 
 #[typetag::serde]
 impl ScalarUDF for ImageToMode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "to_mode"
     }
@@ -45,7 +41,7 @@ impl ScalarUDF for ImageToMode {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => daft_image::series::to_mode(input, self.mode),
             _ => Err(DaftError::ValueError(format!(

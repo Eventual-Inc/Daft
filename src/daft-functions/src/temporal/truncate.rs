@@ -13,10 +13,6 @@ pub struct Truncate {
 
 #[typetag::serde]
 impl ScalarUDF for Truncate {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "truncate"
     }
@@ -44,7 +40,7 @@ impl ScalarUDF for Truncate {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input, relative_to] => input.dt_truncate(&self.interval, relative_to),
             _ => Err(DaftError::ValueError(format!(

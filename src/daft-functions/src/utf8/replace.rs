@@ -16,9 +16,6 @@ pub struct Utf8Replace {
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Replace {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "replace"
     }
@@ -49,7 +46,7 @@ impl ScalarUDF for Utf8Replace {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, pattern, replacement] => data.utf8_replace(pattern, replacement, self.regex),
             _ => Err(DaftError::ValueError(format!(

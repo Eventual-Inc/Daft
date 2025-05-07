@@ -14,10 +14,6 @@ pub struct ListBoolOr;
 
 #[typetag::serde]
 impl ScalarUDF for ListBoolOr {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_bool_or"
     }
@@ -38,7 +34,7 @@ impl ScalarUDF for ListBoolOr {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_bool_or()?),
             _ => Err(DaftError::ValueError(format!(

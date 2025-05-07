@@ -17,9 +17,6 @@ pub struct FillNan {}
 
 #[typetag::serde]
 impl ScalarUDF for FillNan {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "fill_nan"
     }
@@ -48,7 +45,7 @@ impl ScalarUDF for FillNan {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, fill_value] => {
                 if data.data_type() == &DataType::Null {
@@ -57,7 +54,7 @@ impl ScalarUDF for FillNan {
 
                 // TODO(perf): we can likely do this without fully evaluating the not_nan predicate first
                 // The original implementation also did this, but was hidden behind the series methods.
-                let predicate = NotNan {}.evaluate(&[data.clone()])?;
+                let predicate = NotNan {}.evaluate_from_series(&[data.clone()])?;
                 match fill_value.len() {
                     1 => {
                         let fill_value = fill_value.broadcast(data.len())?;

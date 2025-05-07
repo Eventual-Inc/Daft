@@ -14,10 +14,6 @@ pub struct ListBoolAnd;
 
 #[typetag::serde]
 impl ScalarUDF for ListBoolAnd {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "list_bool_and"
     }
@@ -38,7 +34,7 @@ impl ScalarUDF for ListBoolAnd {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => Ok(input.list_bool_and()?),
             _ => Err(DaftError::ValueError(format!(
