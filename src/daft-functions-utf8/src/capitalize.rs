@@ -20,7 +20,7 @@ impl ScalarUDF for Capitalize {
         "capitalize"
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_capitalize)
+        unary_utf8_evaluate(inputs, capitalize_impl)
     }
 
     fn function_args_to_field(
@@ -39,7 +39,8 @@ impl ScalarUDF for Capitalize {
 pub fn capitalize(e: ExprRef) -> ExprRef {
     ScalarFunction::new(Capitalize, vec![e]).into()
 }
-pub fn series_capitalize(s: &Series) -> DaftResult<Series> {
+
+fn capitalize_impl(s: &Series) -> DaftResult<Series> {
     s.with_utf8_array(|u| {
         u.unary_broadcasted_op(|val| {
             let mut chars = val.chars();

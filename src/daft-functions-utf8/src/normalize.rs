@@ -24,7 +24,7 @@ pub struct NormalizeOptions {
 #[typetag::serde]
 impl ScalarUDF for Normalize {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
+        let s = inputs.required((0, "input"))?;
         let remove_punct = evaluate_helper(&inputs, "remove_punct")?;
         let lowercase = evaluate_helper(&inputs, "lowercase")?;
         let nfd_unicode = evaluate_helper(&inputs, "nfd_unicode")?;
@@ -37,7 +37,7 @@ impl ScalarUDF for Normalize {
             white_space,
         };
 
-        series_normalize(input, dbg!(options))
+        s.with_utf8_array(|arr| Ok(normalize_impl(arr, options)?.into_series()))
     }
 
     fn name(&self) -> &'static str {
@@ -106,10 +106,6 @@ fn evaluate_helper(args: &FunctionArgs<Series>, arg_name: &'static str) -> DaftR
         })
         .transpose()
         .map(|v| v.unwrap_or(false))
-}
-
-pub fn series_normalize(s: &Series, opts: NormalizeOptions) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| Ok(normalize_impl(arr, opts)?.into_series()))
 }
 
 fn normalize_impl(arr: &Utf8Array, opts: NormalizeOptions) -> DaftResult<Utf8Array> {

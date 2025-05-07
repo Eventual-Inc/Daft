@@ -21,7 +21,12 @@ impl ScalarUDF for LStrip {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_lstrip)
+        unary_utf8_evaluate(inputs, |s| {
+            s.with_utf8_array(|arr| {
+                arr.unary_broadcasted_op(|val| val.trim_start().into())
+                    .map(IntoSeries::into_series)
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -39,12 +44,5 @@ impl ScalarUDF for LStrip {
 
 #[must_use]
 pub fn lstrip(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(LStrip {}, vec![input]).into()
-}
-
-fn series_lstrip(s: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        arr.unary_broadcasted_op(|val| val.trim_start().into())
-            .map(IntoSeries::into_series)
-    })
+    ScalarFunction::new(LStrip, vec![input]).into()
 }

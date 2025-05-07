@@ -21,7 +21,13 @@ impl ScalarUDF for Upper {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_upper)
+        unary_utf8_evaluate(inputs, |s| {
+            s.with_utf8_array(|arr| {
+                Ok(arr
+                    .unary_broadcasted_op(|val| val.to_uppercase().into())?
+                    .into_series())
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -40,12 +46,4 @@ impl ScalarUDF for Upper {
 #[must_use]
 pub fn upper(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Upper {}, vec![input]).into()
-}
-
-fn series_upper(s: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        Ok(arr
-            .unary_broadcasted_op(|val| val.to_uppercase().into())?
-            .into_series())
-    })
 }

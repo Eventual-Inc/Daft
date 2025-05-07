@@ -20,7 +20,13 @@ impl ScalarUDF for Reverse {
         "reverse"
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_reverse)
+        unary_utf8_evaluate(inputs, |s| {
+            s.with_utf8_array(|arr| {
+                Ok(arr
+                    .unary_broadcasted_op(|val| val.chars().rev().collect::<String>().into())?
+                    .into_series())
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -37,14 +43,6 @@ impl ScalarUDF for Reverse {
 }
 
 #[must_use]
-pub fn utf8_reverse(input: ExprRef) -> ExprRef {
+pub fn reverse(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Reverse {}, vec![input]).into()
-}
-
-pub fn series_reverse(s: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        Ok(arr
-            .unary_broadcasted_op(|val| val.chars().rev().collect::<String>().into())?
-            .into_series())
-    })
 }

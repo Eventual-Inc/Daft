@@ -21,7 +21,18 @@ impl ScalarUDF for StartsWith {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "pattern", series_startswith)
+        binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
+            s.with_utf8_array(|arr| {
+                pattern.with_utf8_array(|pattern_arr| {
+                    arr.binary_broadcasted_compare(
+                        pattern_arr,
+                        |data: &str, pat: &str| Ok(data.starts_with(pat)),
+                        "startswith",
+                    )
+                    .map(IntoSeries::into_series)
+                })
+            })
+        })
     }
     fn function_args_to_field(
         &self,
@@ -45,17 +56,4 @@ impl ScalarUDF for StartsWith {
 #[must_use]
 pub fn startswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(StartsWith {}, vec![input, pattern]).into()
-}
-
-pub fn series_startswith(s: &Series, pattern: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        pattern.with_utf8_array(|pattern_arr| {
-            arr.binary_broadcasted_compare(
-                pattern_arr,
-                |data: &str, pat: &str| Ok(data.starts_with(pat)),
-                "startswith",
-            )
-            .map(IntoSeries::into_series)
-        })
-    })
 }

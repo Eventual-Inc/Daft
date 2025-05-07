@@ -20,7 +20,9 @@ impl ScalarUDF for Length {
         "length"
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_length)
+        unary_utf8_evaluate(inputs, |s| {
+            s.with_utf8_array(|arr| Ok(length_impl(arr)?.into_series()))
+        })
     }
 
     fn function_args_to_field(
@@ -39,10 +41,6 @@ impl ScalarUDF for Length {
 #[must_use]
 pub fn length(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Length, vec![input]).into()
-}
-
-pub fn series_length(s: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| Ok(length_impl(arr)?.into_series()))
 }
 
 fn length_impl(arr: &Utf8Array) -> DaftResult<UInt64Array> {

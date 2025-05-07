@@ -38,7 +38,32 @@ impl ScalarUDF for Substr {
             .optional((2, "length"))?
             .cloned()
             .unwrap_or_else(|| Series::full_null("length", &DataType::Null, data.len()));
-        series_substr(data, start, &length)
+
+        data.with_utf8_array(|arr| {
+                if start.data_type().is_integer() {
+                    with_match_integer_daft_types!(start.data_type(), |$T| {
+                        if length.data_type().is_integer() {
+                            with_match_integer_daft_types!(length.data_type(), |$U| {
+                                Ok(substr_impl(arr, start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
+                            })
+                        } else if length.data_type().is_null() {
+                            Ok(substr_impl(arr, start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
+                        } else {
+                            Err(DaftError::TypeError(format!(
+                                "Substr not implemented for length type {}",
+                                length.data_type()
+                            )))
+                        }
+                })
+                } else if start.data_type().is_null() {
+                    Ok(data.clone())
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Substr not implemented for start type {}",
+                        start.data_type()
+                    )))
+                }
+            })
     }
 
     fn function_args_to_field(
@@ -71,33 +96,6 @@ impl ScalarUDF for Substr {
 #[must_use]
 pub fn substr(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
     ScalarFunction::new(Substr {}, vec![input, start, length]).into()
-}
-pub fn series_substr(s: &Series, start: &Series, length: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-            if start.data_type().is_integer() {
-                with_match_integer_daft_types!(start.data_type(), |$T| {
-                    if length.data_type().is_integer() {
-                        with_match_integer_daft_types!(length.data_type(), |$U| {
-                            Ok(substr_impl(arr, start.downcast::<<$T as DaftDataType>::ArrayType>()?, Some(length.downcast::<<$U as DaftDataType>::ArrayType>()?))?.into_series())
-                        })
-                    } else if length.data_type().is_null() {
-                        Ok(substr_impl(arr, start.downcast::<<$T as DaftDataType>::ArrayType>()?, None::<&DataArray<Int8Type>>)?.into_series())
-                    } else {
-                        Err(DaftError::TypeError(format!(
-                            "Substr not implemented for length type {}",
-                            length.data_type()
-                        )))
-                    }
-            })
-            } else if start.data_type().is_null() {
-                Ok(s.clone())
-            } else {
-                Err(DaftError::TypeError(format!(
-                    "Substr not implemented for start type {}",
-                    start.data_type()
-                )))
-            }
-        })
 }
 
 fn substr_impl<I, J>(

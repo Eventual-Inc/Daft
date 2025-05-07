@@ -39,7 +39,11 @@ impl ScalarUDF for RegexpExtract {
             0
         };
 
-        series_extract(input, pattern, index as _)
+        input.with_utf8_array(|arr| {
+            pattern.with_utf8_array(|pattern_arr| {
+                extract_impl(arr, pattern_arr, index as _).map(IntoSeries::into_series)
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -72,15 +76,7 @@ pub fn regexp_extract(input: ExprRef, pattern: ExprRef, index: ExprRef) -> ExprR
     ScalarFunction::new(RegexpExtract, vec![input, pattern, index]).into()
 }
 
-pub fn series_extract(input: &Series, pattern: &Series, index: usize) -> DaftResult<Series> {
-    input.with_utf8_array(|arr| {
-        pattern.with_utf8_array(|pattern_arr| {
-            extract(arr, pattern_arr, index).map(IntoSeries::into_series)
-        })
-    })
-}
-
-fn extract(s: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
+fn extract_impl(s: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
     let (is_full_null, expected_size) = parse_inputs(s, &[pattern])
         .map_err(|e| DaftError::ValueError(format!("Error in extract: {e}")))?;
     if is_full_null {

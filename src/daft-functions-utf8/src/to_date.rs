@@ -27,7 +27,7 @@ impl ScalarUDF for ToDate {
         let pattern = inputs.required((1, "format"))?;
         ensure!(pattern.len() == 1, ValueError: "Expected scalar value for pattern, got {}", pattern.len());
         let pattern = pattern.utf8()?.get(0).unwrap();
-        series_to_date(input, pattern)
+        input.with_utf8_array(|arr| Ok(to_date_impl(arr, pattern)?.into_series()))
     }
 
     fn function_args_to_field(
@@ -53,10 +53,6 @@ impl ScalarUDF for ToDate {
 #[must_use]
 pub fn to_date(input: ExprRef, format: ExprRef) -> ExprRef {
     ScalarFunction::new(ToDate, vec![input, format]).into()
-}
-
-pub fn series_to_date(s: &Series, format: &str) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| Ok(to_date_impl(arr, format)?.into_series()))
 }
 
 fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {

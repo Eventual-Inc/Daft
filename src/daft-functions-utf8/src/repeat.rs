@@ -26,9 +26,23 @@ impl ScalarUDF for Repeat {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
+        let s = inputs.required((0, "input"))?;
         let n = inputs.required((1, "n"))?;
-        series_repeat(input, n)
+
+        s.with_utf8_array(|arr| {
+            if n.data_type().is_integer() {
+                with_match_integer_daft_types!(n.data_type(), |$T| {
+                    Ok(repeat_impl(arr, n.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
+                })
+            } else if n.data_type().is_null() {
+                Ok(s.clone())
+            } else {
+                Err(DaftError::TypeError(format!(
+                    "Repeat not implemented for nchar type {}",
+                    n.data_type()
+                )))
+            }
+        })
     }
 
     fn function_args_to_field(
@@ -61,22 +75,7 @@ impl ScalarUDF for Repeat {
 pub fn utf8_repeat(input: ExprRef, ntimes: ExprRef) -> ExprRef {
     ScalarFunction::new(Repeat {}, vec![input, ntimes]).into()
 }
-pub fn series_repeat(s: &Series, n: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        if n.data_type().is_integer() {
-            with_match_integer_daft_types!(n.data_type(), |$T| {
-                Ok(repeat_impl(arr, n.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
-            })
-        } else if n.data_type().is_null() {
-            Ok(s.clone())
-        } else {
-            Err(DaftError::TypeError(format!(
-                "Repeat not implemented for nchar type {}",
-                n.data_type()
-            )))
-        }
-    })
-}
+
 fn repeat_impl<I>(arr: &Utf8Array, n: &DataArray<I>) -> DaftResult<Utf8Array>
 where
     I: DaftIntegerType,

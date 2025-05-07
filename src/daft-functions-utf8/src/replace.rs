@@ -70,12 +70,7 @@ impl ScalarUDF for Replace {
 }
 
 #[must_use]
-pub fn utf8_replace(
-    input: ExprRef,
-    pattern: ExprRef,
-    replacement: ExprRef,
-    regex: bool,
-) -> ExprRef {
+pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bool) -> ExprRef {
     ScalarFunction {
         udf: if regex {
             Arc::new(RegexpReplace) as _
@@ -108,7 +103,7 @@ fn function_args_to_field_impl(
     Ok(input)
 }
 
-pub fn series_replace(
+fn series_replace(
     s: &Series,
     pattern: &Series,
     replacement: &Series,
@@ -123,7 +118,7 @@ pub fn series_replace(
     })
 }
 
-pub fn replace_impl(
+fn replace_impl(
     arr: &Utf8Array,
     pattern: &Utf8Array,
     replacement: &Utf8Array,

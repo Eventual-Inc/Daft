@@ -21,7 +21,13 @@ impl ScalarUDF for Lower {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_lower)
+        unary_utf8_evaluate(inputs, |s| {
+            s.with_utf8_array(|arr| {
+                Ok(arr
+                    .unary_broadcasted_op(|val| val.to_lowercase().into())?
+                    .into_series())
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -40,12 +46,4 @@ impl ScalarUDF for Lower {
 #[must_use]
 pub fn lower(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Lower, vec![input]).into()
-}
-
-fn series_lower(s: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        Ok(arr
-            .unary_broadcasted_op(|val| val.to_lowercase().into())?
-            .into_series())
-    })
 }

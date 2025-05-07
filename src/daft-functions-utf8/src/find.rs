@@ -23,7 +23,13 @@ impl ScalarUDF for Find {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "substr", series_find)
+        binary_utf8_evaluate(inputs, "substr", |s, substr| {
+            s.with_utf8_array(|arr| {
+                substr.with_utf8_array(|substr_arr| {
+                    find_impl(arr, substr_arr).map(IntoSeries::into_series)
+                })
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -49,12 +55,6 @@ impl ScalarUDF for Find {
 #[must_use]
 pub fn find(input: ExprRef, substr: ExprRef) -> ExprRef {
     ScalarFunction::new(Find {}, vec![input, substr]).into()
-}
-
-pub fn series_find(s: &Series, substr: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        substr.with_utf8_array(|substr_arr| find_impl(arr, substr_arr).map(IntoSeries::into_series))
-    })
 }
 
 fn find_impl(arr: &Utf8Array, substr: &Utf8Array) -> DaftResult<Int64Array> {

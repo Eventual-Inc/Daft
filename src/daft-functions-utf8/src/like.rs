@@ -23,7 +23,12 @@ impl ScalarUDF for Like {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "pattern", series_like)
+        binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
+            s.with_utf8_array(|arr| {
+                pattern
+                    .with_utf8_array(|pattern_arr| Ok(like_impl(arr, pattern_arr)?.into_series()))
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -49,12 +54,6 @@ impl ScalarUDF for Like {
 #[must_use]
 pub fn like(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(Like {}, vec![input, pattern]).into()
-}
-
-pub fn series_like(s: &Series, pattern: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        pattern.with_utf8_array(|pattern_arr| Ok(like_impl(arr, pattern_arr)?.into_series()))
-    })
 }
 
 fn like_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {

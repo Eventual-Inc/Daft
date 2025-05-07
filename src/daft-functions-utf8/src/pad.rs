@@ -18,7 +18,7 @@ pub enum PadPlacement {
     Right,
 }
 
-pub fn series_pad(
+pub(crate) fn series_pad(
     s: &Series,
     length: &Series,
     pad: &Series,

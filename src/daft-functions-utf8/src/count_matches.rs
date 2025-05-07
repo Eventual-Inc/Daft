@@ -32,7 +32,14 @@ impl ScalarUDF for CountMatches {
             Ok(s.bool().unwrap().get(0).unwrap())
         }).transpose()?.unwrap_or(CASE_SENSITIVE_DEFAULT_VALUE);
 
-        series_count_matches(input, patterns, whole_words, case_sensitive)
+        input.with_utf8_array(|arr| {
+            patterns.with_utf8_array(|pattern_arr| {
+                Ok(
+                    count_matches_impl(arr, pattern_arr, whole_words, case_sensitive)?
+                        .into_series(),
+                )
+            })
+        })
     }
 
     fn function_args_to_field(
@@ -64,10 +71,14 @@ impl ScalarUDF for CountMatches {
 
         Ok(Field::new(input.name, DataType::UInt64))
     }
+
+    fn docstring(&self) -> &'static str {
+        "Count the number of matches for each string in the input array."
+    }
 }
 
 #[must_use]
-pub fn utf8_count_matches(
+pub fn count_matches(
     input: ExprRef,
     patterns: ExprRef,
     whole_words: bool,
@@ -78,19 +89,6 @@ pub fn utf8_count_matches(
         vec![input, patterns, lit(whole_words), lit(case_sensitive)],
     )
     .into()
-}
-
-fn series_count_matches(
-    s: &Series,
-    patterns: &Series,
-    whole_word: bool,
-    case_sensitive: bool,
-) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        patterns.with_utf8_array(|pattern_arr| {
-            Ok(count_matches_impl(arr, pattern_arr, whole_word, case_sensitive)?.into_series())
-        })
-    })
 }
 
 fn count_matches_impl(

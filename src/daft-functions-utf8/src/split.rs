@@ -81,7 +81,7 @@ impl ScalarUDF for RegexpSplit {
 }
 
 #[must_use]
-pub fn utf8_split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
+pub fn split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
     ScalarFunction {
         udf: if regex {
             Arc::new(RegexpSplit) as _
@@ -93,7 +93,7 @@ pub fn utf8_split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
     .into()
 }
 
-pub fn series_split(s: &Series, pattern: &Series, regex: bool) -> DaftResult<Series> {
+fn series_split(s: &Series, pattern: &Series, regex: bool) -> DaftResult<Series> {
     s.with_utf8_array(|arr| {
         pattern
             .with_utf8_array(|pattern_arr| Ok(split_impl(arr, pattern_arr, regex)?.into_series()))

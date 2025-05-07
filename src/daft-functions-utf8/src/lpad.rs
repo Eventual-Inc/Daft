@@ -16,6 +16,9 @@ pub struct LPad;
 
 #[typetag::serde]
 impl ScalarUDF for LPad {
+    fn name(&self) -> &'static str {
+        "lpad"
+    }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 3, SchemaMismatch: "Expected 3 inputs, but received {}", inputs.len());
         let data = inputs.required((0, "input"))?;
@@ -41,10 +44,6 @@ impl ScalarUDF for LPad {
             TypeError: "Expects inputs to lpad to be utf8, integer and utf8, but received {}, {}, and {}", data.dtype, length.dtype, pad.dtype
         );
         Ok(data)
-    }
-
-    fn name(&self) -> &'static str {
-        "lpad"
     }
 
     fn docstring(&self) -> &'static str {

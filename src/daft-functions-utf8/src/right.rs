@@ -28,7 +28,22 @@ impl ScalarUDF for Right {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "n", series_right)
+        binary_utf8_evaluate(inputs, "n", |s, nchars| {
+            s.with_utf8_array(|arr| {
+            if nchars.data_type().is_integer() {
+                with_match_integer_daft_types!(nchars.data_type(), |$T| {
+                    Ok(right_impl(arr, nchars.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
+                })
+            } else if nchars.data_type().is_null() {
+                Ok(s.clone())
+            } else {
+                Err(DaftError::TypeError(format!(
+                    "Left not implemented for nchar type {}",
+                    nchars.data_type()
+                )))
+            }
+        })
+        })
     }
 
     fn function_args_to_field(
@@ -54,23 +69,6 @@ impl ScalarUDF for Right {
 #[must_use]
 pub fn right(input: ExprRef, nchars: ExprRef) -> ExprRef {
     ScalarFunction::new(Right {}, vec![input, nchars]).into()
-}
-
-pub fn series_right(s: &Series, nchars: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        if nchars.data_type().is_integer() {
-            with_match_integer_daft_types!(nchars.data_type(), |$T| {
-                Ok(right_impl(arr, nchars.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
-            })
-        } else if nchars.data_type().is_null() {
-            Ok(s.clone())
-        } else {
-            Err(DaftError::TypeError(format!(
-                "Left not implemented for nchar type {}",
-                nchars.data_type()
-            )))
-        }
-    })
 }
 
 fn right_impl<I>(arr: &Utf8Array, nchars: &DataArray<I>) -> DaftResult<Utf8Array>

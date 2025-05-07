@@ -17,7 +17,7 @@ pub struct Contains;
 #[typetag::serde]
 impl ScalarUDF for Contains {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "pattern", series_contains)
+        binary_utf8_evaluate(inputs, "pattern", contains_impl)
     }
 
     fn function_args_to_field(
@@ -51,7 +51,8 @@ impl ScalarUDF for Contains {
 pub fn contains(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(Contains, vec![input, pattern]).into()
 }
-pub fn series_contains(s: &Series, pattern: &Series) -> DaftResult<Series> {
+
+fn contains_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {
     s.with_utf8_array(|arr| {
         pattern.with_utf8_array(|pattern| {
             arr.binary_broadcasted_compare(

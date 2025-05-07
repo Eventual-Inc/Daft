@@ -21,7 +21,7 @@ impl ScalarUDF for EndsWith {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "pattern", series_endswith)
+        binary_utf8_evaluate(inputs, "pattern", endswith_impl)
     }
     fn function_args_to_field(
         &self,
@@ -46,7 +46,7 @@ pub fn endswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(EndsWith, vec![input, pattern]).into()
 }
 
-pub fn series_endswith(s: &Series, pattern: &Series) -> DaftResult<Series> {
+fn endswith_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {
     s.with_utf8_array(|arr| {
         pattern.with_utf8_array(|pattern_arr| {
             arr.binary_broadcasted_compare(
@@ -83,7 +83,7 @@ mod tests {
             Box::new(arrow2::array::Utf8Array::<i64>::from(vec!["foo".into()])),
         ))
         .into_series();
-        let result = super::series_endswith(&data, &pattern)?;
+        let result = super::endswith_impl(&data, &pattern)?;
         let result = result.bool()?;
 
         assert_eq!(result.len(), 3);
@@ -113,7 +113,7 @@ mod tests {
             ])),
         ))
         .into_series();
-        let result = super::series_endswith(&data, &pattern)?;
+        let result = super::endswith_impl(&data, &pattern)?;
 
         let result = result.bool()?;
 
