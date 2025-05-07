@@ -100,14 +100,23 @@ impl BlockingSink for TopNSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        _spawner: &ExecutionTaskSpawner,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        state
-            .as_any_mut()
-            .downcast_mut::<TopNState>()
-            .expect("TopNSink should have top_n state")
-            .push(input, &self.params);
-        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
+        let params = self.params.clone();
+
+        spawner
+            .spawn(
+                async move {
+                    let top_n_state = state
+                        .as_any_mut()
+                        .downcast_mut::<TopNState>()
+                        .expect("TopNSink should have top_n state");
+                    top_n_state.push(input, &params);
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
+            .into()
     }
 
     #[instrument(skip_all, name = "TopNSink::finalize")]
