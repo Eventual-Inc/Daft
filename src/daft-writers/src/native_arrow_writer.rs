@@ -180,16 +180,17 @@ impl ArrowParquetWriter {
         &self,
         channel_size: usize,
     ) -> DaftResult<(Vec<ColumnWriterHandle>, Vec<Sender<ArrowLeafColumn>>)> {
+        let compute_runtime = self
+            .compute_runtime
+            .as_ref()
+            .expect("Compute runtime should be created by now");
+
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,
             &self.arrow_schema,
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        let compute_runtime = self
-            .compute_runtime
-            .as_ref()
-            .expect("Compute runtime should be created by now");
         let (handles, senders): (Vec<_>, Vec<_>) = column_writers
             .into_iter()
             .map(|mut writer| {
@@ -207,6 +208,7 @@ impl ArrowParquetWriter {
                 (handle, send)
             })
             .unzip();
+
         Ok((handles, senders))
     }
 
