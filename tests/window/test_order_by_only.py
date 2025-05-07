@@ -43,11 +43,17 @@ def test_order_by_only_row_number(make_df, repartition_nparts):
     random.seed(42)
 
     data = []
-    values = list(range(1, 1000))
-    xs = list(range(1, 1000))
-    ys = list(range(1, 1000))
+    n = 1000000
+    total = n + 1
+
+    xs = list(range(1, n + 1))
+    ys = list(range(1, n + 1))
+    values = list(range(1, n + 1))
+
     random.shuffle(xs)
     random.shuffle(ys)
+    random.shuffle(values)
+
     for x, y, value in zip(xs, ys, values):
         data.append({"x": x, "y": y, "value": value})
 
@@ -80,70 +86,22 @@ def test_order_by_only_row_number(make_df, repartition_nparts):
 
     result_df = result.to_pandas()
 
-    expected_order_x_asc = result_df.sort_values("x").reset_index(drop=True)
-    expected_row_numbers = list(range(1, len(result_df) + 1))
-    actual_row_numbers = result_df.sort_values("row_by_x_asc")["row_by_x_asc"].tolist()
-    assert actual_row_numbers == expected_row_numbers, "row_number for x ascending is incorrect"
-
-    for i, row in expected_order_x_asc.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_x_asc"]
+    for _, row in result_df.iterrows():
+        assert row["row_by_x_asc"] == row["x"], f"row_by_x_asc {row['row_by_x_asc']} should equal x {row['x']}"
+        assert row["row_by_y_asc"] == row["y"], f"row_by_y_asc {row['row_by_y_asc']} should equal y {row['y']}"
         assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for x={row['x']}"
+            row["row_by_value_asc"] == row["value"]
+        ), f"row_by_value_asc {row['row_by_value_asc']} should equal value {row['value']}"
 
-    expected_order_y_asc = result_df.sort_values("y").reset_index(drop=True)
-    for i, row in expected_order_y_asc.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_y_asc"]
         assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for y={row['y']}"
+            row["row_by_x_desc"] == total - row["x"]
+        ), f"row_by_x_desc {row['row_by_x_desc']} should equal {total} - x {row['x']}"
+        assert (
+            row["row_by_y_desc"] == total - row["y"]
+        ), f"row_by_y_desc {row['row_by_y_desc']} should equal {total} - y {row['y']}"
+        assert (
+            row["row_by_value_desc"] == total - row["value"]
+        ), f"row_by_value_desc {row['row_by_value_desc']} should equal {total} - value {row['value']}"
 
-    expected_order_value_asc = result_df.sort_values("value").reset_index(drop=True)
-    for i, row in expected_order_value_asc.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_value_asc"]
-        assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for value={row['value']}"
-
-    expected_order_x_desc = result_df.sort_values("x", ascending=False).reset_index(drop=True)
-    for i, row in expected_order_x_desc.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_x_desc"]
-        assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for x={row['x']} (desc)"
-
-    expected_order_y_desc = result_df.sort_values("y", ascending=False).reset_index(drop=True)
-    for i, row in expected_order_y_desc.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_y_desc"]
-        assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for y={row['y']} (desc)"
-
-    expected_order_value_desc = result_df.sort_values("value", ascending=False).reset_index(drop=True)
-    for i, row in expected_order_value_desc.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_value_desc"]
-        assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for value={row['value']} (desc)"
-
-    expected_order_xy_asc = result_df.sort_values(["x", "y"]).reset_index(drop=True)
-    for i, row in expected_order_xy_asc.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_xy_asc"]
-        assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for x={row['x']}, y={row['y']}"
-
-    expected_order_xy_mixed = result_df.sort_values(["x", "y"], ascending=[True, False]).reset_index(drop=True)
-    for i, row in expected_order_xy_mixed.iterrows():
-        expected_row_num = i + 1
-        actual_row_num = row["row_by_xy_mixed"]
-        assert (
-            expected_row_num == actual_row_num
-        ), f"Expected row {expected_row_num}, got {actual_row_num} for x={row['x']}, y={row['y']} (mixed)"
+        assert row["row_by_xy_asc"] == row["x"], f"row_by_xy_asc {row['row_by_xy_asc']} should equal x {row['x']}"
+        assert row["row_by_xy_mixed"] == row["x"], f"row_by_xy_mixed {row['row_by_xy_mixed']} should equal x {row['x']}"

@@ -34,6 +34,7 @@ use crate::{
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
         project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
+        window_order_by_only::WindowOrderByOnlyOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -49,7 +50,6 @@ use crate::{
         pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
-        window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
         window_partition_and_order_by::WindowPartitionAndOrderBySink,
         window_partition_only::WindowPartitionOnlySink,
@@ -220,14 +220,14 @@ pub fn physical_plan_to_pipeline(
             aliases,
         }) => {
             let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let window_order_by_only_sink =
-                WindowOrderByOnlySink::new(functions, aliases, order_by, descending, schema)
+            let window_order_by_only_op =
+                WindowOrderByOnlyOperator::new(functions, aliases, order_by, descending, schema)
                     .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),
                     })?;
-            BlockingSinkNode::new(
-                Arc::new(window_order_by_only_sink),
-                input_node,
+            IntermediateNode::new(
+                Arc::new(window_order_by_only_op),
+                vec![input_node],
                 stats_state.clone(),
             )
             .boxed()
