@@ -6,20 +6,21 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-use futures::{Stream, StreamExt};
+use futures::Stream;
 
 use crate::{
-    channel::{create_channel, Receiver, Sender},
+    channel::{create_channel, Receiver},
     runtime::{get_or_init_runtime, JoinHandle},
     scheduling::worker::WorkerManagerFactory,
-    stage::split_at_stage_boundary,
+    stage::StagePlan,
 };
 
 pub struct DistributedPhysicalPlan {
-    remaining_logical_plan: Option<LogicalPlanRef>,
+    #[allow(dead_code)]
+    logical_plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
 }
 
@@ -29,72 +30,38 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let plan = builder.build();
-        if !can_translate_logical_plan(&plan) {
-            return Err(DaftError::InternalError(
-                "Cannot run this physical plan on distributed swordfish yet".to_string(),
-            ));
-        }
 
         Ok(Self {
-            remaining_logical_plan: Some(plan),
+            logical_plan: plan,
             config,
         })
     }
 
-    async fn run_plan_loop(
-        logical_plan: LogicalPlanRef,
-        config: Arc<DaftExecutionConfig>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        result_sender: Sender<PartitionRef>,
+    async fn execute_stages(
+        _stage_plan: StagePlan,
+        _psets: HashMap<String, Vec<PartitionRef>>,
+        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> DaftResult<()> {
-        let (stage, _remaining_plan) = split_at_stage_boundary(&logical_plan, &config)?;
-        let mut running_stage = stage.run_stage(psets, worker_manager_factory)?;
-        while let Some(result) = running_stage.next().await {
-            if result_sender.send(result?).await.is_err() {
-                break;
-            }
-        }
-        todo!("Implement stage running loop");
-    }
-
-    #[allow(dead_code)]
-    fn update_plan(
-        _plan: LogicalPlanRef,
-        _results: Vec<PartitionRef>,
-    ) -> DaftResult<LogicalPlanRef> {
-        // Update the logical plan with the results of the previous stage.
-        // This is where the AQE magic happens.
-        todo!("Implement plan updating and AQE");
+        todo!("FLOTILLA_MS1: Implement execute stages");
     }
 
     pub fn run_plan(
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_factory: Box<dyn WorkerManagerFactory>,
-    ) -> PlanResult {
-        let (result_sender, result_receiver) = create_channel(1);
+    ) -> DaftResult<PlanResult> {
+        let (_result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
-        let handle = runtime.spawn(Self::run_plan_loop(
-            self.remaining_logical_plan
-                .as_ref()
-                .expect("Expected remaining logical plan")
-                .clone(),
-            self.config.clone(),
-            worker_manager_factory,
-            psets,
-            result_sender,
-        ));
-        PlanResult::new(handle, result_receiver)
+        let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
+        let handle = runtime.spawn(async move {
+            Self::execute_stages(stage_plan, psets, worker_manager_factory).await
+        });
+        Ok(PlanResult::new(handle, result_receiver))
     }
 
     pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
         &self.config
     }
-}
-
-fn can_translate_logical_plan(_plan: &LogicalPlanRef) -> bool {
-    todo!("Implement logical plan translation check");
 }
 
 // This is the output of a plan, a receiver to receive the results of the plan.
@@ -117,6 +84,6 @@ impl Stream for PlanResult {
     type Item = DaftResult<PartitionRef>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("Implement stream for plan result");
+        todo!("FLOTILLA_MS1: Implement stream for plan result");
     }
 }
