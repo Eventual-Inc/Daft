@@ -2343,7 +2343,6 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "daft-functions",
  "image",
  "log",
  "num-traits",
