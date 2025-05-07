@@ -23,6 +23,7 @@ mod rpad;
 mod rstrip;
 mod split;
 mod startswith;
+mod substr;
 pub(crate) mod utils;
 
 pub use capitalize::*;
@@ -49,7 +50,7 @@ pub use rpad::*;
 pub use rstrip::*;
 pub use split::*;
 pub use startswith::*;
-
+pub use substr::*;
 pub struct Utf8Functions;
 
 impl daft_dsl::functions::FunctionModule for Utf8Functions {
@@ -80,5 +81,6 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Split);
         parent.add_fn(RegexpSplit);
         parent.add_fn(StartsWith);
+        parent.add_fn(Substr);
     }
 }

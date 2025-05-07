@@ -3692,7 +3692,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(native.utf8_substr(self._expr, start_expr._expr, length_expr._expr))
+        f = native.get_function_from_registry("substr")
+        return Expression._from_pyexpr(f(self._expr, start_expr._expr, length_expr._expr))
 
     def to_date(self, format: str) -> Expression:
         """Converts a string to a date using the specified format.

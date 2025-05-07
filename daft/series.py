@@ -725,7 +725,7 @@ class Series:
     def _debug_bincode_deserialize(cls, b: bytes) -> Series:
         return Series._from_pyseries(PySeries._debug_bincode_deserialize(b))
 
-    def _eval_expressions(self, func_name, *others: Series, **kwargs) -> Series:
+    def _eval_expressions(self, func_name, *others: Series | None, **kwargs) -> Series:
         from daft.expressions.expressions import lit
 
         name = self._series.name()
@@ -734,6 +734,9 @@ class Series:
         col_names = []
         for i, other in enumerate(others):
             col_name = f"c{i}"
+
+            if other is None:
+                continue
             if not isinstance(other, Series):
                 raise ValueError(f"expected another Series but got {type(other)}")
             other_series_list.append(other._series.rename(col_name))
@@ -787,7 +790,7 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
-    def _eval_expressions(self, func_name: str, *others: Series, **kwargs) -> Series:
+    def _eval_expressions(self, func_name: str, *others: Series | None, **kwargs) -> Series:
         s = Series._from_pyseries(self._series)
         return s._eval_expressions(func_name, *others, **kwargs)
 
@@ -903,15 +906,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.utf8_to_datetime(format, timezone))
 
     def substr(self, start: Series, length: Series | None = None) -> Series:
-        if not isinstance(start, Series):
-            raise ValueError(f"expected another Series but got {type(start)}")
-        if length is not None and not isinstance(length, Series):
-            raise ValueError(f"expected another Series but got {type(length)}")
-        if length is None:
-            length = Series.from_arrow(pa.array([None]))
-
-        assert self._series is not None and start._series is not None
-        return Series._from_pyseries(self._series.utf8_substr(start._series, length._series))
+        return self._eval_expressions("substr", start, length)
 
     def normalize(
         self,

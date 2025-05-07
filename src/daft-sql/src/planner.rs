@@ -1349,7 +1349,7 @@ impl SQLPlanner<'_> {
                 // SQL substring is one indexed
                 let start = start.sub(lit(1));
 
-                Ok(daft_functions::utf8::substr(expr, start, length))
+                Ok(daft_functions_utf8::substr(expr, start, length))
             }
             SQLExpr::Substring { special: false, .. } => {
                 unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
