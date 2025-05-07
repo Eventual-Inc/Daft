@@ -1,6 +1,5 @@
 pub mod binary;
 pub mod coalesce;
-pub mod count_matches;
 pub mod distance;
 pub mod float;
 pub mod hash;

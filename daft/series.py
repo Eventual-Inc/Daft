@@ -894,7 +894,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("to_date", format=format)
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Series:
-        return self._eval_expressions("to_date", format=format, timezone=timezone)
+        return self._eval_expressions("to_datetime", format=format, timezone=timezone)
 
     def substr(self, start: Series, length: Series | None = None) -> Series:
         return self._eval_expressions("substr", start, length)
@@ -915,15 +915,13 @@ class SeriesStringNamespace(SeriesNamespace):
             white_space=white_space,
         )
 
-    def count_matches(self, patterns: Series, whole_words: bool = False, case_sensitive: bool = True) -> Series:
-        if not isinstance(patterns, Series):
-            raise ValueError(f"expected another Series but got {type(patterns)}")
-        if not isinstance(whole_words, bool):
-            raise ValueError(f"expected bool for whole_word but got {type(whole_words)}")
-        if not isinstance(case_sensitive, bool):
-            raise ValueError(f"expected bool for case_sensitive but got {type(case_sensitive)}")
-        assert self._series is not None and patterns._series is not None
-        return Series._from_pyseries(self._series.utf8_count_matches(patterns._series, whole_words, case_sensitive))
+    def count_matches(self, patterns: Series, *, whole_words: bool = False, case_sensitive: bool = True) -> Series:
+        return self._eval_expressions(
+            "count_matches",
+            patterns=patterns,
+            whole_words=whole_words,
+            case_sensitive=case_sensitive,
+        )
 
 
 class SeriesDateNamespace(SeriesNamespace):

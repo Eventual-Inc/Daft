@@ -1,7 +1,6 @@
 use daft_dsl::{binary_op, ExprRef, Operator};
-use daft_functions::{
-    count_matches::{utf8_count_matches, CountMatchesFunction},
-    tokenize::{tokenize_decode, tokenize_encode, TokenizeDecodeFunction, TokenizeEncodeFunction},
+use daft_functions::tokenize::{
+    tokenize_decode, tokenize_encode, TokenizeDecodeFunction, TokenizeEncodeFunction,
 };
 
 use super::SQLModule;
@@ -15,67 +14,9 @@ pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        parent.add_fn("count_matches", SQLCountMatches);
         parent.add_fn("tokenize_encode", SQLTokenizeEncode);
         parent.add_fn("tokenize_decode", SQLTokenizeDecode);
         parent.add_fn("concat", SQLConcat);
-    }
-}
-
-pub struct SQLCountMatches;
-
-impl TryFrom<SQLFunctionArguments> for CountMatchesFunction {
-    type Error = PlannerError;
-
-    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
-        let whole_words = args.try_get_named("whole_words")?.unwrap_or(false);
-        let case_sensitive = args.try_get_named("case_sensitive")?.unwrap_or(true);
-
-        Ok(Self {
-            whole_words,
-            case_sensitive,
-        })
-    }
-}
-
-impl SQLFunction for SQLCountMatches {
-    fn to_expr(
-        &self,
-        inputs: &[sqlparser::ast::FunctionArg],
-        planner: &crate::planner::SQLPlanner,
-    ) -> SQLPlannerResult<ExprRef> {
-        match inputs {
-            [input, pattern] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
-                Ok(utf8_count_matches(input, pattern, false, true))
-            }
-            [input, pattern, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
-                let args: CountMatchesFunction =
-                    planner.plan_function_args(args, &["whole_words", "case_sensitive"], 0)?;
-
-                Ok(utf8_count_matches(
-                    input,
-                    pattern,
-                    args.whole_words,
-                    args.case_sensitive,
-                ))
-            }
-            _ => Err(PlannerError::invalid_operation(format!(
-                "Invalid arguments for count_matches: '{inputs:?}'"
-            ))),
-        }
-    }
-
-    fn docstrings(&self, _: &str) -> String {
-        "Counts the number of times a pattern, or multiple patterns, appears in the input."
-            .to_string()
-    }
-
-    fn arg_names(&self) -> &'static [&'static str] {
-        &["input", "pattern", "whole_words", "case_sensitive"]
     }
 }
 

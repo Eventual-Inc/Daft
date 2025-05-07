@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field};
+use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, Utf8ArrayUtils};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StartsWith;

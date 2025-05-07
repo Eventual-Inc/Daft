@@ -345,18 +345,6 @@ impl PySeries {
         Ok(self.series.data_type().clone().into())
     }
 
-    pub fn utf8_count_matches(
-        &self,
-        patterns: &Self,
-        whole_word: bool,
-        case_sensitive: bool,
-    ) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_count_matches(&patterns.series, whole_word, case_sensitive)?
-            .into())
-    }
-
     pub fn dt_date(&self) -> PyResult<Self> {
         Ok(self.series.dt_date()?.into())
     }

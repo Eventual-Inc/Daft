@@ -44,7 +44,6 @@ from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
-from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
@@ -3919,6 +3918,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def count_matches(
         self,
         patterns: Any,
+        *,
         whole_words: bool = False,
         case_sensitive: bool = True,
     ):
@@ -3948,7 +3948,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
             series = item_to_series("items", patterns)
             patterns = Expression._to_expression(series)
 
-        return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
+        whole_words_expr = Expression._to_expression(whole_words)._expr
+        case_sensitive_expr = Expression._to_expression(case_sensitive)._expr
+        f = native.get_function_from_registry("count_matches")
+
+        return Expression._from_pyexpr(
+            f(self._expr, patterns._expr, whole_words=whole_words_expr, case_sensitive=case_sensitive_expr)
+        )
 
 
 class ExpressionListNamespace(ExpressionNamespace):

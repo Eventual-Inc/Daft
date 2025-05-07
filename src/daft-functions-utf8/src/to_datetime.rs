@@ -15,6 +15,9 @@ pub struct ToDatetime;
 
 #[typetag::serde]
 impl ScalarUDF for ToDatetime {
+    fn name(&self) -> &'static str {
+        "to_datetime"
+    }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
         let format = inputs.required((1, "format"))?;
@@ -32,16 +35,12 @@ impl ScalarUDF for ToDatetime {
         data.with_utf8_array(|arr| Ok(to_datetime_impl(arr, format, tz)?.into_series()))
     }
 
-    fn name(&self) -> &'static str {
-        "to_datetime"
-    }
-
     fn function_args_to_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(inputs.len() == 1 || inputs.len() == 2, SchemaMismatch: "Expected 1 or 2 arguments, got {}", inputs.len());
+        ensure!(!inputs.is_empty() && inputs.len() <= 3, SchemaMismatch: "Expected between 1 and 3 arguments, got {}", inputs.len());
         let data_field = inputs.required((0, "input"))?.to_field(schema)?;
         let format_expr = inputs.required((1, "format"))?;
         let format = format_expr

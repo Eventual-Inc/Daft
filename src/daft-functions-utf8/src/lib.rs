@@ -1,5 +1,6 @@
 mod capitalize;
 mod contains;
+mod count_matches;
 mod endswith;
 mod find;
 mod ilike;
@@ -31,6 +32,7 @@ pub(crate) mod utils;
 
 pub use capitalize::*;
 pub use contains::*;
+pub use count_matches::*;
 pub use endswith::*;
 pub use find::*;
 pub use ilike::*;
@@ -64,6 +66,7 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(Capitalize);
         parent.add_fn(Contains);
+        parent.add_fn(CountMatches);
         parent.add_fn(EndsWith);
         parent.add_fn(Find);
         parent.add_fn(ILike);

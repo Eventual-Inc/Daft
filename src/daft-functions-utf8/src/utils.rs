@@ -1,7 +1,11 @@
-use common_error::{ensure, DaftResult};
+use std::borrow::Cow;
+
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
-    prelude::{AsArrow, DaftPhysicalType, DataType, Field, Schema, Utf8Array},
+    prelude::{
+        AsArrow, BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array,
+    },
     series::Series,
 };
 use daft_dsl::{functions::FunctionArgs, ExprRef};
@@ -34,6 +38,72 @@ pub(crate) fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> Broadc
         BroadcastedStrIter::Repeat(std::iter::repeat_n(arr.get(0), len))
     } else {
         BroadcastedStrIter::NonRepeat(arr.as_arrow().iter())
+    }
+}
+
+pub(crate) trait Utf8ArrayUtils {
+    fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Utf8Array>
+    where
+        ScalarKernel: Fn(&str) -> Cow<'_, str>;
+
+    fn binary_broadcasted_compare<ScalarKernel>(
+        &self,
+        other: &Self,
+        operation: ScalarKernel,
+        op_name: &str,
+    ) -> DaftResult<BooleanArray>
+    where
+        ScalarKernel: Fn(&str, &str) -> DaftResult<bool>;
+}
+
+impl Utf8ArrayUtils for Utf8Array {
+    fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Self>
+    where
+        ScalarKernel: Fn(&str) -> Cow<'_, str>,
+    {
+        let self_arrow = self.as_arrow();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| Some(operation(val?)))
+            .collect::<arrow2::array::Utf8Array<i64>>()
+            .with_validity(self_arrow.validity().cloned());
+        Ok(Self::from((self.name(), Box::new(arrow_result))))
+    }
+    fn binary_broadcasted_compare<ScalarKernel>(
+        &self,
+        other: &Self,
+        operation: ScalarKernel,
+        op_name: &str,
+    ) -> DaftResult<BooleanArray>
+    where
+        ScalarKernel: Fn(&str, &str) -> DaftResult<bool>,
+    {
+        let (is_full_null, expected_size) = parse_inputs(self, &[other])
+            .map_err(|e| DaftError::ValueError(format!("Error in {op_name}: {e}")))?;
+        if is_full_null {
+            return Ok(BooleanArray::full_null(
+                self.name(),
+                &DataType::Boolean,
+                expected_size,
+            ));
+        }
+        if expected_size == 0 {
+            return Ok(BooleanArray::empty(self.name(), &DataType::Boolean));
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let other_iter = create_broadcasted_str_iter(other, expected_size);
+        let arrow_result = self_iter
+            .zip(other_iter)
+            .map(|(self_v, other_v)| match (self_v, other_v) {
+                (Some(self_v), Some(other_v)) => operation(self_v, other_v).map(Some),
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<arrow2::array::BooleanArray>>();
+
+        let result = BooleanArray::from((self.name(), arrow_result?));
+        assert_eq!(result.len(), expected_size);
+        Ok(result)
     }
 }
 

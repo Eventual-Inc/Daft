@@ -124,7 +124,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(list::list_bool_or);
 
     add!(misc::to_struct);
-    add!(misc::utf8_count_matches);
     add!(misc::hash);
     add!(misc::minhash);
 
