@@ -103,7 +103,7 @@ from daft.io import (
     DataCatalogTable,
     DataCatalogType,
     from_glob_path,
-    _range as range,
+    # _range as range,
     read_csv,
     read_deltalake,
     read_hudi,
