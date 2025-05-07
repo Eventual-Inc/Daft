@@ -7,8 +7,8 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
+    expr::bound_expr::BoundExpr,
     join::{get_common_join_cols, infer_join_schema},
-    ExprRef,
 };
 
 use super::{add_non_join_key_columns, match_types_for_tables};
@@ -16,8 +16,8 @@ use crate::RecordBatch;
 pub(super) fn hash_inner_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
 ) -> DaftResult<RecordBatch> {
     let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Inner)?;
@@ -101,8 +101,8 @@ pub(super) fn hash_inner_join(
 pub(super) fn hash_left_right_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
     left_side: bool,
 ) -> DaftResult<RecordBatch> {
@@ -211,8 +211,8 @@ pub(super) fn hash_left_right_join(
 pub(super) fn hash_semi_anti_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
     is_anti: bool,
 ) -> DaftResult<RecordBatch> {
@@ -272,8 +272,8 @@ pub(super) fn hash_semi_anti_join(
 pub(super) fn hash_outer_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
 ) -> DaftResult<RecordBatch> {
     let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Outer)?;

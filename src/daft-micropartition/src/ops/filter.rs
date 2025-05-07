@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::IOStatsContext;
 use daft_stats::TruthValue;
 use snafu::ResultExt;
@@ -25,11 +25,17 @@ impl MicroPartition {
                 return Ok(Self::empty(Some(self.schema.clone())));
             }
         }
+
+        let predicate = predicate
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+            .try_collect::<Vec<_>>()?;
+
         // TODO figure out deferred IOStats
         let tables = self
             .tables_or_read(io_stats)?
             .iter()
-            .map(|t| t.filter(predicate))
+            .map(|t| t.filter(&predicate))
             .collect::<DaftResult<Vec<_>>>()
             .context(DaftCoreComputeSnafu)?;
 

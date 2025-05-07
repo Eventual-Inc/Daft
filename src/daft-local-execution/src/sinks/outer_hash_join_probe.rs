@@ -7,7 +7,7 @@ use daft_core::{
     series::{IntoSeries, Series},
     utils::supertype::try_get_supertype,
 };
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState, RecordBatch};
@@ -216,7 +216,7 @@ impl OuterHashJoinProbeSink {
         bitmap_builder: &mut IndexBitmapBuilder,
         probe_state: &ProbeState,
         join_type: JoinType,
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         common_join_cols: &[String],
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
@@ -283,7 +283,7 @@ impl OuterHashJoinProbeSink {
         input: &Arc<MicroPartition>,
         probe_state: &ProbeState,
         join_type: JoinType,
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         common_join_cols: &[String],
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
@@ -353,7 +353,7 @@ impl OuterHashJoinProbeSink {
         input: &Arc<MicroPartition>,
         probe_state: &ProbeState,
         bitmap_builder: &mut IndexBitmapBuilder,
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         common_join_cols: &[String],
         outer_common_col_schema: &SchemaRef,
         left_non_join_columns: &[String],
@@ -589,6 +589,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
                         .downcast_mut::<OuterHashJoinState>()
                         .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
                     let probe_state = outer_join_state.get_or_build_probe_state().await;
+
+                    let probe_on = params
+                        .probe_on
+                        .iter()
+                        .map(|expr| BoundExpr::try_new(expr.clone(), &input.schema()))
+                        .collect::<DaftResult<Vec<_>>>()?;
+
                     let out = match params.join_type {
                         JoinType::Left | JoinType::Right if needs_bitmap => {
                             Self::probe_left_right_with_bitmap(
@@ -600,7 +607,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                                     .expect("bitmap should be set"),
                                 &probe_state,
                                 params.join_type,
-                                &params.probe_on,
+                                &probe_on,
                                 &params.common_join_cols,
                                 &params.left_non_join_columns,
                                 &params.right_non_join_columns,
@@ -610,7 +617,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                             &input,
                             &probe_state,
                             params.join_type,
-                            &params.probe_on,
+                            &probe_on,
                             &params.common_join_cols,
                             &params.left_non_join_columns,
                             &params.right_non_join_columns,
@@ -625,7 +632,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                                 &input,
                                 &probe_state,
                                 bitmap_builder,
-                                &params.probe_on,
+                                &probe_on,
                                 &params.common_join_cols,
                                 &params.outer_common_col_schema,
                                 &params.left_non_join_columns,

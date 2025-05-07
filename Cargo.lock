@@ -2663,6 +2663,7 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-decoding",
+ "daft-dsl",
  "daft-io",
  "daft-json",
  "daft-logical-plan",
@@ -2841,6 +2842,7 @@ name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "async-trait",
  "common-daft-config",
  "common-error",
  "common-file-formats",
@@ -2851,6 +2853,7 @@ dependencies = [
  "daft-micropartition",
  "daft-recordbatch",
  "pyo3",
+ "tokio",
 ]
 
 [[package]]
