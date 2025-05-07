@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
-use common_tracing::{init_otlp_metrics_provider, init_otlp_trace_provider, refresh_chrome_trace};
+use common_tracing::{flush_opentelemetry_providers, refresh_chrome_trace};
 use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -266,8 +266,6 @@ impl NativeExecutor {
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
         refresh_chrome_trace();
-        let metrics_provider = init_otlp_metrics_provider();
-        let trace_provider = init_otlp_trace_provider();
         let cancel = self.cancel.clone();
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
@@ -332,12 +330,7 @@ impl NativeExecutor {
                         )
                     )?;
                 }
-                if let Some(metrics_provider) = metrics_provider {
-                    let _ = metrics_provider.shutdown();
-                }
-                if let Some(trace_provider) = trace_provider {
-                    let _ = trace_provider.shutdown();
-                }
+                flush_opentelemetry_providers();
                 Ok(())
             };
 

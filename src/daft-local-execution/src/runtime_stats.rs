@@ -24,9 +24,13 @@ pub struct RuntimeStatsContext {
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
     name: String,
-    rows_received_counter: Option<Counter<u64>>,
-    rows_emitted_counter: Option<Counter<u64>>,
-    cpu_us_counter: Option<Counter<u64>>,
+    stats: Option<RuntimeStatsMeter>,
+}
+
+struct RuntimeStatsMeter {
+    rows_received: Counter<u64>,
+    rows_emitted: Counter<u64>,
+    cpu_us: Counter<u64>,
 }
 
 #[derive(Debug)]
@@ -72,21 +76,29 @@ impl RuntimeStats {
 
 impl RuntimeStatsContext {
     pub(crate) fn new(name: &str) -> Arc<Self> {
-        let meter = global::meter("runtime_stats");
-        let rows_received_counter = meter
-            .u64_counter("daft.runtime_stats.rows_received")
-            .build();
-        let rows_emitted_counter = meter.u64_counter("daft.runtime_stats.rows_emitted").build();
-        let cpu_us_counter = meter.u64_counter("daft.runtime_stats.cpu_us").build();
+        let stats_meter = if std::env::var("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+            let meter = global::meter("runtime_stats");
+            let rows_received = meter
+                .u64_counter("daft.runtime_stats.rows_received")
+                .build();
+            let rows_emitted = meter.u64_counter("daft.runtime_stats.rows_emitted").build();
+            let cpu_us = meter.u64_counter("daft.runtime_stats.cpu_us").build();
+
+            Some(RuntimeStatsMeter {
+                rows_received,
+                rows_emitted,
+                cpu_us,
+            })
+        } else {
+            None
+        };
 
         Arc::new(Self {
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
             name: name.to_string(),
-            rows_received_counter: Some(rows_received_counter),
-            rows_emitted_counter: Some(rows_emitted_counter),
-            cpu_us_counter: Some(cpu_us_counter),
+            stats: stats_meter,
         })
     }
     pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
@@ -94,8 +106,8 @@ impl RuntimeStatsContext {
             elapsed.as_micros() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
-        if let Some(counter) = self.cpu_us_counter.as_ref() {
-            counter.add(
+        if let Some(stats) = self.stats.as_ref() {
+            stats.cpu_us.add(
                 elapsed.as_micros() as u64,
                 &[KeyValue::new("context", self.name.clone())],
             );
@@ -105,16 +117,20 @@ impl RuntimeStatsContext {
     pub(crate) fn mark_rows_received(&self, rows: u64) {
         self.rows_received
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-        if let Some(counter) = self.rows_received_counter.as_ref() {
-            counter.add(rows, &[KeyValue::new("context", self.name.clone())]);
+        if let Some(stats) = self.stats.as_ref() {
+            stats
+                .rows_received
+                .add(rows, &[KeyValue::new("context", self.name.clone())]);
         }
     }
 
     pub(crate) fn mark_rows_emitted(&self, rows: u64) {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-        if let Some(counter) = self.rows_emitted_counter.as_ref() {
-            counter.add(rows, &[KeyValue::new("context", self.name.clone())]);
+        if let Some(stats) = self.stats.as_ref() {
+            stats
+                .rows_emitted
+                .add(rows, &[KeyValue::new("context", self.name.clone())]);
         }
     }
 

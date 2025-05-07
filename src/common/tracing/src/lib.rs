@@ -16,74 +16,97 @@ use opentelemetry_sdk::{
 static CHROME_GUARD_HANDLE: LazyLock<Mutex<Option<tracing_chrome::FlushGuard>>> =
     LazyLock::new(|| Mutex::new(None));
 
-pub fn init_otlp_metrics_provider() -> Option<opentelemetry_sdk::metrics::SdkMeterProvider> {
+static GLOBAL_TRACER_PROVIDER: LazyLock<
+    Mutex<Option<opentelemetry_sdk::trace::SdkTracerProvider>>,
+> = LazyLock::new(|| Mutex::new(None));
+
+static GLOBAL_METER_PROVIDER: LazyLock<
+    Mutex<Option<opentelemetry_sdk::metrics::SdkMeterProvider>>,
+> = LazyLock::new(|| Mutex::new(None));
+
+pub fn init_opentelemetry_providers() {
     let otlp_endpoint = match std::env::var("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT") {
         Ok(endpoint) => endpoint,
-        Err(_) => return None,
+        Err(_) => return,
     };
 
     let ioruntime = get_io_runtime(true);
     ioruntime.block_on_current_thread(async {
-        let resource = Resource::builder()
-            .with_attribute(KeyValue::new("service.name", "daft"))
-            .build();
-
-        let metrics_exporter = opentelemetry_otlp::MetricExporter::builder()
-            .with_tonic()
-            .with_endpoint(otlp_endpoint)
-            .with_timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to build OTLP metric exporter for tracing");
-
-        let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
-            .with_periodic_exporter(metrics_exporter) // To customize the export interval, set the **"OTEL_METRIC_EXPORT_INTERVAL"** environment variable (in milliseconds).
-            .with_resource(resource)
-            .build();
-
-        global::set_meter_provider(metrics_provider.clone());
-
-        Some(metrics_provider)
-    })
+        init_otlp_metrics_provider(&otlp_endpoint).await;
+        init_otlp_tracer_provider(&otlp_endpoint).await;
+    });
 }
 
-pub fn init_otlp_trace_provider() -> Option<opentelemetry_sdk::trace::SdkTracerProvider> {
-    let otlp_endpoint = match std::env::var("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT") {
-        Ok(endpoint) => endpoint,
-        Err(_) => return None,
-    };
+pub fn flush_opentelemetry_providers() {
+    let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
+    if let Some(meter_provider) = mg.as_ref() {
+        if let Err(e) = meter_provider.force_flush() {
+            println!("Failed to flush OTLP metrics provider: {}", e);
+        }
+    }
+    let mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
+    if let Some(tracer_provider) = mg.as_ref() {
+        if let Err(e) = tracer_provider.force_flush() {
+            println!("Failed to flush OTLP tracer provider: {}", e);
+        }
+    }
+}
 
-    let ioruntime = get_io_runtime(true);
-    ioruntime.block_on_current_thread(async {
-        let resource = Resource::builder()
-            .with_attribute(KeyValue::new("service.name", "daft"))
-            .build();
+async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
+    let mut mg = GLOBAL_METER_PROVIDER.lock().unwrap();
+    assert!(mg.is_none(), "Expected meter provider to be None on init");
 
-        let exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_tonic()
-            .with_endpoint(otlp_endpoint)
-            .with_timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to build OTLP span exporter for tracing");
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new("service.name", "daft"))
+        .build();
 
-        let tracer_provider: SdkTracerProvider =
-            opentelemetry_sdk::trace::SdkTracerProvider::builder()
-                .with_batch_exporter(exporter)
-                .with_resource(resource)
-                .with_sampler(Sampler::AlwaysOn)
-                .build();
+    let metrics_exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_endpoint(otlp_endpoint)
+        .with_timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build OTLP metric exporter for tracing");
 
-        let tracer = tracer_provider.tracer("daft-otel-tracer");
-        let telemetry_layer = tracing_opentelemetry::layer()
-            .with_tracer(tracer)
-            .with_filter(tracing::level_filters::LevelFilter::INFO);
+    let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+        .with_periodic_exporter(metrics_exporter) // To customize the export interval, set the **"OTEL_METRIC_EXPORT_INTERVAL"** environment variable (in milliseconds).
+        .with_resource(resource)
+        .build();
 
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::registry().with(telemetry_layer),
-        )
+    global::set_meter_provider(metrics_provider.clone());
+
+    *mg = Some(metrics_provider);
+}
+
+async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
+    let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
+    assert!(mg.is_none(), "Expected tracer provider to be None on init");
+
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new("service.name", "daft"))
+        .build();
+
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(otlp_endpoint)
+        .with_timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build OTLP span exporter for tracing");
+
+    let tracer_provider: SdkTracerProvider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(resource)
+        .with_sampler(Sampler::AlwaysOn)
+        .build();
+
+    let tracer = tracer_provider.tracer("daft-otel-tracer");
+    let telemetry_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(tracing::level_filters::LevelFilter::INFO);
+
+    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(telemetry_layer))
         .unwrap();
 
-        Some(tracer_provider)
-    })
+    *mg = Some(tracer_provider);
 }
 
 pub fn init_tracing(enable_chrome_trace: bool) {

@@ -239,6 +239,9 @@ mur3 = "0.1.0"
 num-derive = "0.3.3"
 num-format = "0.4.4"
 num-traits = "0.2"
+opentelemetry = {version = "0.29", features = ["trace", "metrics"]}
+opentelemetry-otlp = {version = "0.29", features = ["grpc-tonic"]}
+opentelemetry_sdk = "0.29"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.5.0"
