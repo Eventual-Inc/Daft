@@ -2,7 +2,7 @@
 arrow2 = {workspace = true, features = [
   "io_ipc_compression"
 ]}
-async-trait = "0.1.79"
+async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
