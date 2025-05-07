@@ -95,7 +95,7 @@ impl PyDistributedPhysicalPlan {
         );
         let part_stream = self
             .planner
-            .run_plan(psets, Box::new(worker_manager_factory));
+            .run_plan(psets, Box::new(worker_manager_factory))?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(part_stream)),
         };

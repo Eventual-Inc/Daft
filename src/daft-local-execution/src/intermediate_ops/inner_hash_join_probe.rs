@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState};
 use indexmap::IndexSet;
@@ -111,6 +111,11 @@ impl InnerHashJoinProbeOperator {
 
         let input_tables = input.get_tables()?;
 
+        let probe_on = probe_on
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &input.schema()))
+            .collect::<DaftResult<Vec<_>>>()?;
+
         let mut probe_side_growable = GrowableRecordBatch::new(
             &input_tables.iter().collect::<Vec<_>>(),
             false,
@@ -122,7 +127,7 @@ impl InnerHashJoinProbeOperator {
             let _loop = info_span!("InnerHashJoinOperator::eval_and_probe").entered();
             for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                 // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(probe_on)?;
+                let join_keys = table.eval_expression_list(&probe_on)?;
                 let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
                 for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {

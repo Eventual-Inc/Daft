@@ -21,10 +21,13 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    expr::BoundColumn,
+    expr::{
+        bound_expr::{BoundAggExpr, BoundExpr},
+        BoundColumn,
+    },
     functions::{FunctionArg, FunctionArgs, FunctionEvaluator},
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
-    ResolvedColumn, SketchType,
+    SketchType,
 };
 use file_info::FileInfos;
 use futures::{StreamExt, TryStreamExt};
@@ -380,7 +383,7 @@ impl RecordBatch {
         Ok(column_sizes?.iter().sum())
     }
 
-    pub fn filter(&self, predicate: &[ExprRef]) -> DaftResult<Self> {
+    pub fn filter(&self, predicate: &[BoundExpr]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
@@ -390,13 +393,14 @@ impl RecordBatch {
             let mut expr = predicate
                 .first()
                 .unwrap()
+                .inner()
                 .clone()
-                .and(predicate.get(1).unwrap().clone());
+                .and(predicate.get(1).unwrap().inner().clone());
             for i in 2..predicate.len() {
                 let next = predicate.get(i).unwrap();
-                expr = expr.and(next.clone());
+                expr = expr.and(next.inner().clone());
             }
-            let mask = self.eval_expression(&expr)?;
+            let mask = self.eval_expression(&BoundExpr::new_unchecked(expr))?;
             self.mask_filter(&mask)
         }
     }
@@ -513,25 +517,33 @@ impl RecordBatch {
 
     fn eval_agg_expression(
         &self,
-        agg_expr: &AggExpr,
+        agg_expr: &BoundAggExpr,
         groups: Option<&GroupIndices>,
     ) -> DaftResult<Series> {
-        match agg_expr {
-            &AggExpr::Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
-            AggExpr::CountDistinct(expr) => self.eval_expression(expr)?.count_distinct(groups),
-            AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
+        match agg_expr.as_ref() {
+            &AggExpr::Count(ref expr, mode) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .count(groups, mode),
+            AggExpr::CountDistinct(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .count_distinct(groups),
+            AggExpr::Sum(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .sum(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
                 ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
-                self.eval_expression(expr)?
+                self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                     .approx_sketch(groups)?
                     .sketch_percentile(&percentiles, force_list_output)
             }
             AggExpr::ApproxCountDistinct(expr) => {
-                let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
+                let hashed = self
+                    .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                    .hash_with_validity(None)?;
                 let series = groups
                     .map_or_else(
                         || hashed.approx_count_distinct(),
@@ -541,11 +553,13 @@ impl RecordBatch {
                 Ok(series)
             }
             &AggExpr::ApproxSketch(ref expr, sketch_type) => {
-                let evaled = self.eval_expression(expr)?;
+                let evaled = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
                 match sketch_type {
                     SketchType::DDSketch => evaled.approx_sketch(groups),
                     SketchType::HyperLogLog => {
-                        let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
+                        let hashed = self
+                            .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                            .hash_with_validity(None)?;
                         let series = groups
                             .map_or_else(
                                 || hashed.hll_sketch(),
@@ -557,64 +571,80 @@ impl RecordBatch {
                 }
             }
             &AggExpr::MergeSketch(ref expr, sketch_type) => {
-                let evaled = self.eval_expression(expr)?;
+                let evaled = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
                 match sketch_type {
                     SketchType::DDSketch => evaled.merge_sketch(groups),
                     SketchType::HyperLogLog => evaled.hll_merge(groups),
                 }
             }
-            AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
-            AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
-            AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
-            AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
-            AggExpr::BoolAnd(expr) => self.eval_expression(expr)?.bool_and(groups),
-            AggExpr::BoolOr(expr) => self.eval_expression(expr)?.bool_or(groups),
-            &AggExpr::AnyValue(ref expr, ignore_nulls) => {
-                self.eval_expression(expr)?.any_value(groups, ignore_nulls)
-            }
-            AggExpr::List(expr) => self.eval_expression(expr)?.agg_list(groups),
-            AggExpr::Set(expr) => self.eval_expression(expr)?.agg_set(groups),
-            AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
+            AggExpr::Mean(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .mean(groups),
+            AggExpr::Stddev(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .stddev(groups),
+            AggExpr::Min(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .min(groups),
+            AggExpr::Max(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .max(groups),
+            AggExpr::BoolAnd(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .bool_and(groups),
+            AggExpr::BoolOr(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .bool_or(groups),
+            &AggExpr::AnyValue(ref expr, ignore_nulls) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .any_value(groups, ignore_nulls),
+            AggExpr::List(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .agg_list(groups),
+            AggExpr::Set(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .agg_set(groups),
+            AggExpr::Concat(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .agg_concat(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
         }
     }
 
-    fn eval_expression(&self, expr: &ExprRef) -> DaftResult<Series> {
-        let expr = expr.clone().bind(&self.schema)?;
-
-        let expected_field = expr.to_field(self.schema.as_ref())?;
+    fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
+        let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
-            Expr::NamedExpr {expr, ..} => Ok(self.eval_expression(expr)?),
-            Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
-            Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
+            Expr::NamedExpr {expr, ..} => Ok(self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?),
+            Expr::Alias(child, name) => Ok(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.rename(name)),
+            Expr::Agg(agg_expr) => self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
             Expr::WindowFunction(..) => Err(DaftError::ComputeError("Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string())),
-            Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
+            Expr::Cast(child, dtype) => self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.cast(dtype),
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => Ok(self.columns[*index].clone()),
-            Expr::Not(child) => !(self.eval_expression(child)?),
-            Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
-            Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
+            Expr::Not(child) => !(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?),
+            Expr::IsNull(child) => self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.is_null(),
+            Expr::NotNull(child) => self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.not_null(),
             Expr::FillNull(child, fill_value) => {
-                let fill_value = self.eval_expression(fill_value)?;
-                self.eval_expression(child)?.fill_null(&fill_value)
+                let fill_value = self.eval_expression(&BoundExpr::new_unchecked(fill_value.clone()))?;
+                self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.fill_null(&fill_value)
             }
             Expr::IsIn(child, items) => {
                 if items.is_empty() {
                     return BooleanArray::from_iter(child.name(), std::iter::once(Some(false))).into_series().broadcast(self.len());
                 }
-                let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
+                let items = items.iter().map(|i| self.eval_expression(&BoundExpr::new_unchecked(i.clone()))).collect::<DaftResult<Vec<_>>>()?;
 
                 let items = items.iter().collect::<Vec<&Series>>();
                 let s = Series::concat(items.as_slice())?;
                 self
-                .eval_expression(child)?
+                .eval_expression(&BoundExpr::new_unchecked(child.clone()))?
                 .is_in(&s)
             }
             Expr::List(items) => {
                 // compute list type to determine each child cast
-                let field = expr.to_field(&self.schema)?;
+                let field = expr.inner().to_field(&self.schema)?;
                 // extract list child type (could be de-duped with zip and moved to impl DataType)
                 let dtype = if let DataType::List(dtype) = &field.dtype {
                     dtype
@@ -623,17 +653,17 @@ impl RecordBatch {
                 };
                 // compute child series with explicit casts to the supertype
                 let items = items.iter().map(|i| i.clone().cast(dtype)).collect::<Vec<_>>();
-                let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
+                let items = items.iter().map(|i| self.eval_expression(&BoundExpr::new_unchecked(i.clone()))).collect::<DaftResult<Vec<_>>>()?;
                 let items = items.iter().collect::<Vec<&Series>>();
                 // zip the series into a single series of lists
                 Series::zip(field, items.as_slice())
             }
             Expr::Between(child, lower, upper) => self
-                .eval_expression(child)?
-                .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),
+                .eval_expression(&BoundExpr::new_unchecked(child.clone()))?
+                .between(&self.eval_expression(&BoundExpr::new_unchecked(lower.clone()))?, &self.eval_expression(&BoundExpr::new_unchecked(upper.clone()))?),
             Expr::BinaryOp { op, left, right } => {
-                let lhs = self.eval_expression(left)?;
-                let rhs = self.eval_expression(right)?;
+                let lhs = self.eval_expression(&BoundExpr::new_unchecked(left.clone()))?;
+                let rhs = self.eval_expression(&BoundExpr::new_unchecked(right.clone()))?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
                 use daft_dsl::Operator::*;
                 match op {
@@ -660,7 +690,7 @@ impl RecordBatch {
             Expr::Function { func, inputs } => {
                 let evaluated_inputs = inputs
                     .iter()
-                    .map(|e| self.eval_expression(e))
+                    .map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
@@ -671,10 +701,10 @@ impl RecordBatch {
                         if let Expr::NamedExpr {name, expr} = e.as_ref() {
                             Ok(FunctionArg::Named {
                                 name: name.clone(),
-                                arg: self.eval_expression(expr)?,
+                                arg: self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                             })
                         } else {
-                            Ok(FunctionArg::Unnamed(self.eval_expression(e)?))
+                            Ok(FunctionArg::Unnamed(self.eval_expression(&BoundExpr::new_unchecked(e.clone()))?))
                         }
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
@@ -688,14 +718,14 @@ impl RecordBatch {
                 if_false,
                 predicate,
             } => match predicate.as_ref() {
-                Expr::Literal(LiteralValue::Boolean(true)) => self.eval_expression(if_true),
+                Expr::Literal(LiteralValue::Boolean(true)) => self.eval_expression(&BoundExpr::new_unchecked(if_true.clone())),
                 Expr::Literal(LiteralValue::Boolean(false)) => {
-                    Ok(self.eval_expression(if_false)?.rename(if_true.name()))
+                    Ok(self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?.rename(if_true.name()))
                 }
                 _ => {
-                    let if_true_series = self.eval_expression(if_true)?;
-                    let if_false_series = self.eval_expression(if_false)?;
-                    let predicate_series = self.eval_expression(predicate)?;
+                    let if_true_series = self.eval_expression(&BoundExpr::new_unchecked(if_true.clone()))?;
+                    let if_false_series = self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?;
+                    let predicate_series = self.eval_expression(&BoundExpr::new_unchecked(predicate.clone()))?;
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
@@ -708,18 +738,7 @@ impl RecordBatch {
             Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
-            Expr::Column(Column::Resolved(ResolvedColumn::Basic(..))) => Err(DaftError::ComputeError(
-                "Resolved columns must be bound before execution and cannot be evaluated directly. This indicates a bug in the executor".to_string()
-            )),
-            Expr::Column(Column::Resolved(ResolvedColumn::OuterRef(..))) => Err(DaftError::ComputeError(
-                format!("Column {expr} could not be resolved. This indicates either that the column is referencing a different table from the one it is being used in, or a bug in the query optimizer."),
-            )),
-            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(..))) => Err(DaftError::ComputeError(
-                "Join side columns cannot be evaluated directly. This indicates a bug in the executor.".to_string(),
-            )),
-            Expr::Column(Column::Unresolved(..)) => Err(DaftError::ComputeError(
-                "Unresolved columns should be resolved before evaluation.".to_string(),
-            )),
+            Expr::Column(_) => unreachable!("bound expressions should not have unbound columns"),
         }?;
 
         if expected_field.name != series.field().name {
@@ -744,7 +763,7 @@ impl RecordBatch {
         Ok(series)
     }
 
-    pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
+    pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
@@ -755,7 +774,7 @@ impl RecordBatch {
 
     pub async fn par_eval_expression_list(
         &self,
-        exprs: &[ExprRef],
+        exprs: &[BoundExpr],
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
         // Partition the expressions into compute and non-compute
@@ -763,7 +782,7 @@ impl RecordBatch {
             .iter()
             .cloned()
             .enumerate()
-            .partition(|(_, e)| e.has_compute());
+            .partition(|(_, e)| e.inner().has_compute());
 
         // Evaluate non-compute expressions
         let non_compute_results = non_compute_exprs
@@ -800,7 +819,7 @@ impl RecordBatch {
 
     fn process_eval_results(
         &self,
-        exprs: &[ExprRef],
+        exprs: &[BoundExpr],
         result_series: Vec<Series>,
     ) -> DaftResult<Self> {
         let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
@@ -854,6 +873,7 @@ impl RecordBatch {
         self.cast_to_schema_with_fill(schema, None)
     }
 
+    // TODO: reconsider if we should even have a function like this
     pub fn cast_to_schema_with_fill(
         &self,
         schema: &Schema,
@@ -879,7 +899,8 @@ impl RecordBatch {
                         .cast(&field.dtype)
                 }
             })
-            .collect();
+            .map(|expr| BoundExpr::try_new(expr, &self.schema))
+            .try_collect()?;
         self.eval_expression_list(&exprs)
     }
 
@@ -1086,7 +1107,7 @@ impl<'a> IntoIterator for &'a RecordBatch {
 mod test {
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::resolved_col;
+    use daft_dsl::{expr::bound_expr::BoundExpr, resolved_col};
 
     use crate::RecordBatch;
 
@@ -1100,14 +1121,14 @@ mod test {
         ]);
         let table = RecordBatch::from_nonempty_columns(vec![a, b])?;
         let e1 = resolved_col("a").add(resolved_col("b"));
-        let result = table.eval_expression(&e1)?;
+        let result = table.eval_expression(&BoundExpr::try_new(e1, &table.schema)?)?;
         assert_eq!(*result.data_type(), DataType::Float64);
         assert_eq!(result.len(), 3);
 
         let e2 = resolved_col("a")
             .add(resolved_col("b"))
             .cast(&DataType::Int64);
-        let result = table.eval_expression(&e2)?;
+        let result = table.eval_expression(&&BoundExpr::try_new(e2, &table.schema)?)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
 

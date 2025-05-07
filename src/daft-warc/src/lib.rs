@@ -7,7 +7,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::SchemaRef, series::Series};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
@@ -553,7 +553,9 @@ pub async fn stream_warc(
     let warc_stream_task = compute_runtime.spawn(async move {
         let filtered_stream = stream.map(move |table| {
             if let Some(predicate) = &predicate {
-                let filtered = table?.filter(&[predicate.clone()])?;
+                let table = table?;
+                let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+                let filtered = table.filter(&[predicate])?;
                 if let Some(include_columns) = &include_columns {
                     filtered.get_columns(include_columns.as_slice())
                 } else {
