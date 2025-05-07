@@ -1195,7 +1195,7 @@ class DataFrame:
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Note:
-            write_lance` requires python 3.9 or higher
+            `write_lance` requires python 3.9 or higher
 
         Examples:
             >>> import daft
@@ -1210,6 +1210,7 @@ class DataFrame:
             ╰───────────────┴──────────────────┴─────────────────┴─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
+            <BLANKLINE>
             >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
             ╭───────╮
             │ a     │
@@ -1226,6 +1227,7 @@ class DataFrame:
             ╰───────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
+            <BLANKLINE>
             >>> # Pass additional keyword arguments to the Lance writer
             >>> # All additional keyword arguments are passed to `lance.write_fragments`
             >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
