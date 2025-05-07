@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{prelude::SchemaRef, series::IntoSeries};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState, Probeable, RecordBatch};
@@ -90,7 +90,7 @@ impl AntiSemiProbeSink {
     // This function performs probing for anti-semi joins when the side to keep is the probe side, i.e. we built the probe table
     // on the right side and are streaming the left side.
     fn probe_anti_semi(
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         probe_set: &Arc<dyn Probeable>,
         input: &Arc<MicroPartition>,
         is_semi: bool,
@@ -136,7 +136,7 @@ impl AntiSemiProbeSink {
     // on the left side and we are streaming the right side. In this case, we use a bitmap index to track matches, and only
     // emit a final result at the end.
     fn probe_anti_semi_with_bitmap(
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         probe_set: &Arc<dyn Probeable>,
         bitmap_builder: &mut IndexBitmapBuilder,
         input: &Arc<MicroPartition>,
@@ -247,9 +247,16 @@ impl StreamingSink for AntiSemiProbeSink {
                         .expect("AntiSemiProbeState should be used with AntiSemiProbeSink");
                     let (ps, bitmap_builder) =
                         probe_state.get_or_await_probe_state(build_on_left).await;
+
+                    let probe_on = params
+                        .probe_on
+                        .iter()
+                        .map(|expr| BoundExpr::try_new(expr.clone(), &input.schema()))
+                        .collect::<DaftResult<Vec<_>>>()?;
+
                     if let Some(bm_builder) = bitmap_builder {
                         Self::probe_anti_semi_with_bitmap(
-                            &params.probe_on,
+                            &probe_on,
                             ps.get_probeable(),
                             bm_builder,
                             &input,
@@ -257,7 +264,7 @@ impl StreamingSink for AntiSemiProbeSink {
                         Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                     } else {
                         let res = Self::probe_anti_semi(
-                            &params.probe_on,
+                            &probe_on,
                             ps.get_probeable(),
                             &input,
                             params.is_semi,

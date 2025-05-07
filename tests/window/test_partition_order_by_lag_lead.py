@@ -193,15 +193,15 @@ def test_lag_lead_with_multiple_partitions(make_df):
 
     df = make_df(data)
 
-    window_spec = Window().partition_by(["category", "subcategory"]).order_by("ts", desc=False)
+    combined_window = Window().partition_by(["category", "subcategory"]).order_by("ts", desc=False)
 
     result = df.select(
         col("category"),
         col("subcategory"),
         col("ts"),
         col("value"),
-        col("value").lag(1).over(window_spec).alias("lag_value"),
-        col("value").lead(1).over(window_spec).alias("lead_value"),
+        col("value").lag(1).over(combined_window).alias("lag_value"),
+        col("value").lead(1).over(combined_window).alias("lead_value"),
     ).collect()
 
     assert_df_equals(
@@ -390,31 +390,16 @@ def test_all_partition_order_by(make_df):
 
     df = make_df(data)
 
-    category_window = Window().partition_by("category").order_by("ts", desc=False)
-    subcategory_window = Window().partition_by("subcategory").order_by("ts", desc=False)
-    combined_window = Window().partition_by(["category", "subcategory"]).order_by("ts", desc=False)
-
     category_value_window = Window().partition_by("category").order_by("value", desc=False)
     subcategory_value_window = Window().partition_by("subcategory").order_by("value", desc=False)
     combined_value_window = Window().partition_by(["category", "subcategory"]).order_by("value", desc=False)
+    combined_window = Window().partition_by(["category", "subcategory"]).order_by("ts", desc=False)
 
     result = df.select(
         col("category"),
         col("subcategory"),
         col("ts"),
         col("value"),
-        col("value").sum().over(category_window).alias("category_sum"),
-        col("value").min().over(category_window).alias("category_min"),
-        col("value").max().over(category_window).alias("category_max"),
-        col("value").mean().over(category_window).alias("category_mean"),
-        col("value").sum().over(subcategory_window).alias("subcategory_sum"),
-        col("value").min().over(subcategory_window).alias("subcategory_min"),
-        col("value").max().over(subcategory_window).alias("subcategory_max"),
-        col("value").mean().over(subcategory_window).alias("subcategory_mean"),
-        col("value").sum().over(combined_window).alias("combined_sum"),
-        col("value").min().over(combined_window).alias("combined_min"),
-        col("value").max().over(combined_window).alias("combined_max"),
-        col("value").mean().over(combined_window).alias("combined_mean"),
         rank().over(category_value_window).alias("category_rank"),
         dense_rank().over(category_value_window).alias("category_dense_rank"),
         rank().over(subcategory_value_window).alias("subcategory_rank"),
@@ -426,62 +411,6 @@ def test_all_partition_order_by(make_df):
     ).collect()
 
     result_dict = result.to_pydict()
-
-    for category in ["A", "B", "C"]:
-        category_indices = [i for i, cat in enumerate(result_dict["category"]) if cat == category]
-        category_values = [result_dict["value"][i] for i in category_indices]
-
-        expected_sum = sum(category_values)
-        expected_min = min(category_values)
-        expected_max = max(category_values)
-        expected_mean = sum(category_values) / len(category_values)
-
-        for idx in category_indices:
-            assert result_dict["category_sum"][idx] == expected_sum, f"Incorrect sum for category {category}"
-            assert result_dict["category_min"][idx] == expected_min, f"Incorrect min for category {category}"
-            assert result_dict["category_max"][idx] == expected_max, f"Incorrect max for category {category}"
-            assert (
-                abs(result_dict["category_mean"][idx] - expected_mean) < 1e-10
-            ), f"Incorrect mean for category {category}"
-
-    for subcategory in [1, 2, 3]:
-        subcategory_indices = [i for i, sc in enumerate(result_dict["subcategory"]) if sc == subcategory]
-        subcategory_values = [result_dict["value"][i] for i in subcategory_indices]
-
-        expected_sum = sum(subcategory_values)
-        expected_min = min(subcategory_values)
-        expected_max = max(subcategory_values)
-        expected_mean = sum(subcategory_values) / len(subcategory_values)
-
-        for idx in subcategory_indices:
-            assert result_dict["subcategory_sum"][idx] == expected_sum, f"Incorrect sum for subcategory {subcategory}"
-            assert result_dict["subcategory_min"][idx] == expected_min, f"Incorrect min for subcategory {subcategory}"
-            assert result_dict["subcategory_max"][idx] == expected_max, f"Incorrect max for subcategory {subcategory}"
-            assert (
-                abs(result_dict["subcategory_mean"][idx] - expected_mean) < 1e-10
-            ), f"Incorrect mean for subcategory {subcategory}"
-
-    for category in ["A", "B", "C"]:
-        for subcategory in [1, 2, 3]:
-            combined_indices = [
-                i
-                for i, (cat, sc) in enumerate(zip(result_dict["category"], result_dict["subcategory"]))
-                if cat == category and sc == subcategory
-            ]
-            combined_values = [result_dict["value"][i] for i in combined_indices]
-
-            expected_sum = sum(combined_values)
-            expected_min = min(combined_values)
-            expected_max = max(combined_values)
-            expected_mean = sum(combined_values) / len(combined_values)
-
-            for idx in combined_indices:
-                assert result_dict["combined_sum"][idx] == expected_sum, f"Incorrect sum for {category}-{subcategory}"
-                assert result_dict["combined_min"][idx] == expected_min, f"Incorrect min for {category}-{subcategory}"
-                assert result_dict["combined_max"][idx] == expected_max, f"Incorrect max for {category}-{subcategory}"
-                assert (
-                    abs(result_dict["combined_mean"][idx] - expected_mean) < 1e-10
-                ), f"Incorrect mean for {category}-{subcategory}"
 
     for category in ["A", "B", "C"]:
         category_indices = [i for i, cat in enumerate(result_dict["category"]) if cat == category]

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::IOStatsContext;
 
 use crate::micropartition::MicroPartition;
@@ -45,7 +45,17 @@ impl MicroPartition {
                 Ok(Self::empty(Some(Arc::new(Schema::new(fields)))))
             }
             [t] => {
-                let unpivoted = t.unpivot(ids, values, variable_name, value_name)?;
+                let ids = ids
+                    .iter()
+                    .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+                    .try_collect::<Vec<_>>()?;
+
+                let values = values
+                    .iter()
+                    .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+                    .try_collect::<Vec<_>>()?;
+
+                let unpivoted = t.unpivot(&ids, &values, variable_name, value_name)?;
                 Ok(Self::new_loaded(
                     unpivoted.schema.clone(),
                     vec![unpivoted].into(),
