@@ -7,7 +7,7 @@ use daft_io::{parse_url, SourceType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use daft_writers::{make_ipc_writer, FileWriter, RETURN_PATHS_COLUMN_NAME};
+use daft_writers::{make_ipc_writer, FileWriter};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
@@ -337,8 +337,9 @@ async fn writer_task(
         .map(|file_path_table| {
             assert!(file_path_table.num_columns() > 0);
             assert!(file_path_table.num_rows() == 1);
+            // IPC writer should always return a RecordBatch of one path column
             let path = file_path_table
-                .get_column(RETURN_PATHS_COLUMN_NAME)?
+                .get_column(0)
                 .utf8()?
                 .get(0)
                 .expect("path column should have one path");

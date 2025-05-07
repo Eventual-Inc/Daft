@@ -262,10 +262,11 @@ mod tests {
         let res = writer.close().unwrap();
 
         assert!(res.is_some());
+        let res = res.unwrap();
+        let write_count_index = res.schema.get_index("write_count").unwrap();
+
         let write_count = res
-            .unwrap()
-            .get_column("write_count")
-            .unwrap()
+            .get_column(write_count_index)
             .u64()
             .unwrap()
             .get(0)
@@ -289,10 +290,11 @@ mod tests {
         let res = writer.close().unwrap();
 
         assert!(res.is_some());
+        let res = res.unwrap();
+        let write_count_index = res.schema.get_index("write_count").unwrap();
+
         let write_count = res
-            .unwrap()
-            .get_column("write_count")
-            .unwrap()
+            .get_column(write_count_index)
             .u64()
             .unwrap()
             .get(0)
@@ -314,10 +316,11 @@ mod tests {
         let res = writer.close().unwrap();
 
         assert!(res.is_some());
+        let res = res.unwrap();
+        let write_count_index = res.schema.get_index("write_count").unwrap();
+
         let write_count = res
-            .unwrap()
-            .get_column("write_count")
-            .unwrap()
+            .get_column(write_count_index)
             .u64()
             .unwrap()
             .get(0)

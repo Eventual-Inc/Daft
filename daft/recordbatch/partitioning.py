@@ -24,15 +24,13 @@ def partition_values_to_str_mapping(
     null_part = Series.from_pylist(
         [None]
     )  # This is to ensure that the null values are replaced with the default_partition_fallback value
-    pkey_names = partition_values.column_names()
 
     partition_strings = {}
 
-    for c in pkey_names:
-        column = partition_values.get_column(c)
+    for column in partition_values.columns():
         string_names = column._to_str_values()
         null_filled = column.is_null().if_else(null_part, string_names)
-        partition_strings[c] = null_filled
+        partition_strings[column.name()] = null_filled
 
     return partition_strings
 

@@ -923,8 +923,20 @@ fn read_delete_files(
     for table in &tables {
         // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
         // https://iceberg.apache.org/spec/#position-delete-files
-        let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-        let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+        let get_column_by_name = |name| {
+            if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
+                Ok(table.get_column(idx))
+            } else {
+                Err(DaftError::SchemaMismatch(format!(
+                    "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",
+                    table.schema
+                )))
+            }
+        };
+
+        let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
+        let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
         for i in 0..table.len() {
             let file = file_paths.get(i);

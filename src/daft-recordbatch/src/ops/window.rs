@@ -9,6 +9,7 @@ use daft_dsl::{
     AggExpr, WindowBoundary, WindowFrame, WindowFrameType,
 };
 
+use super::joins::get_column_by_name;
 use crate::{
     ops::window_states::{create_window_agg_state, WindowAggStateOps},
     RecordBatch,
@@ -136,7 +137,7 @@ impl RecordBatch {
             }
         };
 
-        let source = self.get_column(agg_expr.as_ref().name())?;
+        let source = get_column_by_name(self, agg_expr.as_ref().name())?;
         // Check if we can initialize an incremental state
         match create_window_agg_state(source, agg_expr, total_rows)? {
             Some(agg_state) => {

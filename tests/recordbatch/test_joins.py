@@ -109,11 +109,11 @@ def test_table_join_single_column(join_impl, dtype, data, null_safe_equal) -> No
 
     result_pairs = list(zip(result_table.get_column("x_ind").to_pylist(), result_table.get_column("y_ind").to_pylist()))
     assert sorted(expected_pairs) == sorted(result_pairs)
-    casted_l = left_table.get_column("x").to_pylist()
+    casted_l = left_table.get_column_by_name("x").to_pylist()
     result_l = [casted_l[idx] for idx, _ in result_pairs]
     assert result_table.get_column("x").to_pylist() == result_l
 
-    casted_r = right_table.get_column("y").to_pylist()
+    casted_r = right_table.get_column_by_name("y").to_pylist()
     result_r = [casted_r[idx] for _, idx in result_pairs]
     assert result_table.get_column("y").to_pylist() == result_r
 
@@ -126,11 +126,11 @@ def test_table_join_single_column(join_impl, dtype, data, null_safe_equal) -> No
 
     result_pairs = list(zip(result_table.get_column("x_ind").to_pylist(), result_table.get_column("y_ind").to_pylist()))
     assert sorted(expected_pairs) == sorted(result_pairs)
-    casted_l = left_table.get_column("x").to_pylist()
+    casted_l = left_table.get_column_by_name("x").to_pylist()
     result_l = [casted_l[idx] for idx, _ in result_pairs]
     assert result_table.get_column("x").to_pylist() == result_l
 
-    casted_r = right_table.get_column("y").to_pylist()
+    casted_r = right_table.get_column_by_name("y").to_pylist()
     result_r = [casted_r[idx] for _, idx in result_pairs]
     assert result_table.get_column("y").to_pylist() == result_r
 
@@ -337,7 +337,7 @@ def test_table_join_anti() -> None:
     result_table = left_table.hash_join(right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti)
     assert result_table.column_names() == ["x", "y"]
     result_sorted = result_table.sort([col("x")])
-    assert result_sorted.get_column("y").to_pylist() == [3, 6]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [3, 6]
 
 
 def test_table_join_anti_different_names() -> None:
@@ -347,4 +347,4 @@ def test_table_join_anti_different_names() -> None:
     result_table = left_table.hash_join(right_table, left_on=[col("x")], right_on=[col("z")], how=JoinType.Anti)
     assert result_table.column_names() == ["x", "y"]
     result_sorted = result_table.sort([col("x")])
-    assert result_sorted.get_column("y").to_pylist() == [3, 6]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [3, 6]

@@ -40,7 +40,7 @@ def test_make_lit(data, expected_dtype) -> None:
     assert literal.name() == "literal"
     empty_table = MicroPartition.empty()
     lit_table = empty_table.eval_expression_list([literal])
-    series = lit_table.get_column("literal")
+    series = lit_table.get_column_by_name("literal")
     assert series.datatype() == expected_dtype
     repr_out = repr(literal)
 
@@ -584,7 +584,7 @@ def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
     pa_table = pa.table({"dt": pa_array})
     mp = MicroPartition.from_arrow(pa_table)
 
-    series = mp.get_column("dt")
+    series = mp.get_column_by_name("dt")
     output = repr(series)
 
     # Series repr is very long, so we just check the last line which contains the timestamp

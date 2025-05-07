@@ -11,7 +11,9 @@ use daft_dsl::{
     join::{get_common_join_cols, infer_join_schema},
 };
 
-use super::{add_non_join_key_columns, match_types_for_tables};
+use super::{
+    add_non_join_key_columns, get_column_by_name, get_columns_by_name, match_types_for_tables,
+};
 use crate::RecordBatch;
 pub(super) fn hash_inner_join(
     left: &RecordBatch,
@@ -84,7 +86,7 @@ pub(super) fn hash_inner_join(
     let common_cols: Vec<_> = get_common_join_cols(&left.schema, &right.schema).collect();
 
     let mut join_series = Arc::unwrap_or_clone(
-        left.get_columns(common_cols.as_slice())?
+        get_columns_by_name(left, &common_cols)?
             .take(&lidx)?
             .columns,
     );
@@ -193,8 +195,7 @@ pub(super) fn hash_left_right_join(
     };
 
     let mut join_series = Arc::unwrap_or_clone(
-        common_cols_tbl
-            .get_columns(&common_cols)?
+        get_columns_by_name(common_cols_tbl, &common_cols)?
             .take(common_cols_idx)?
             .columns,
     );
@@ -394,10 +395,10 @@ pub(super) fn hash_outer_join(
         common_cols
             .into_iter()
             .map(|name| {
-                let lcol = left.get_column(name)?.take(&lidx)?;
-                let rcol = right.get_column(name)?.take(&ridx)?;
+                let lcol = get_column_by_name(left, name)?;
+                let rcol = get_column_by_name(right, name)?;
 
-                lcol.if_else(&rcol, &take_from_left)
+                lcol.if_else(rcol, &take_from_left)
             })
             .collect::<DaftResult<Vec<_>>>()?
     };

@@ -155,10 +155,8 @@ pub(crate) fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBa
     let new_series = (0..num_columns)
         .into_par_iter()
         .map(|i| {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
+            let series_to_cat: Vec<&Series> =
+                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -243,11 +241,20 @@ async fn read_json_single_into_table(
         .map(|expr| BoundExpr::try_new(expr, &daft_schema))
         .transpose()?;
 
+    let include_column_indices = include_columns
+        .map(|include_columns| {
+            include_columns
+                .iter()
+                .map(|name| daft_schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()
+        })
+        .transpose()?;
+
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
             let filtered = table?.filter(&[predicate.clone()])?;
-            if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+            if let Some(include_column_indices) = &include_column_indices {
+                Ok(filtered.get_columns(include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -359,7 +366,12 @@ pub async fn stream_json(
 
             let filtered = table.filter(&[predicate])?;
             if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+                let include_column_indices = include_columns
+                    .iter()
+                    .map(|name| table.schema.get_index(name))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                Ok(filtered.get_columns(&include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -648,7 +660,7 @@ mod tests {
         let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
         assert_eq!(out.schema.to_arrow().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column_by_index(i).unwrap().to_arrow())
+            .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -1014,7 +1026,7 @@ mod tests {
             ])
             .into(),
         );
-        let null_column = table.get_column("petalLength")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1071,7 +1083,7 @@ mod tests {
             ])
             .into(),
         );
-        let null_column = table.get_column("petalLength")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1128,7 +1140,7 @@ mod tests {
             ])
             .into(),
         );
-        let null_column = table.get_column("petalLength")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Float64);
         assert_eq!(null_column.len(), 6);
         assert_eq!(null_column.to_arrow().null_count(), 6);
@@ -1167,7 +1179,7 @@ mod tests {
         assert_eq!(num_rows, 20);
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
-            let column = table.get_column_by_index(idx)?;
+            let column = table.get_column(idx);
             assert_eq!(column.to_arrow().null_count(), num_rows);
         }
 

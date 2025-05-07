@@ -729,7 +729,7 @@ class Series:
         rb = PyRecordBatch.from_pyseries_list([self._series])
         name = self._series.name()
         expr = func(native.unresolved_col(name), **kwargs)
-        pyseries = rb.eval_expression_list([expr]).get_column(name)
+        pyseries = rb.eval_expression_list([expr]).get_column(0)
         return Series._from_pyseries(pyseries)
 
     def _apply_binary_expr(self, other, func, **kwargs) -> Series:
@@ -739,7 +739,7 @@ class Series:
         rb = PyRecordBatch.from_pyseries_list([s, other_series])
         expr = func(native.unresolved_col(name), native.unresolved_col("other"), **kwargs).alias(name)
         rb = rb.eval_expression_list([expr])
-        pyseries = rb.get_column(name)
+        pyseries = rb.get_column(0)
         return Series._from_pyseries(pyseries)
 
     def _apply_n_arity_expr(self, others, func, **kwargs) -> Series:
@@ -758,7 +758,7 @@ class Series:
         expr = func(*args, **kwargs).alias(name)
 
         rb = rb.eval_expression_list([expr])
-        pyseries = rb.get_column(name)
+        pyseries = rb.get_column(0)
         return Series._from_pyseries(pyseries)
 
 
