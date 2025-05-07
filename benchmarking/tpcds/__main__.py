@@ -4,9 +4,12 @@ import typing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import duckdb
+import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
 import ray
 
 import daft
@@ -31,6 +34,7 @@ class ParsedArgs:
     dry_run: bool
     validate: bool
     cast_decimals: bool
+    save_csv_on_failure: bool
 
 
 @dataclass
@@ -40,6 +44,7 @@ class RunArgs:
     ray_address: Optional[str]
     dry_run: bool
     validate: bool
+    save_csv_on_failure: bool
 
 
 @dataclass
@@ -71,64 +76,138 @@ def setup_duckdb_catalog(data_dir: Path) -> duckdb.DuckDBPyConnection:
     return duckdb.connect(str(data_dir / "tpcds.db"))
 
 
-def validate_query_results(daft_results, query: str, data_dir: Path) -> tuple[bool, Optional[str]]:
-    """Compare Daft results with DuckDB results for validation."""
+def _is_string(tp: pa.DataType) -> bool:
+    return pa.types.is_string(tp) or pa.types.is_large_string(tp)
+
+
+def _is_numeric(tp: pa.DataType) -> bool:
+    return pa.types.is_floating(tp) or pa.types.is_decimal(tp) or pa.types.is_integer(tp)
+
+
+def _types_compatible(t1: pa.DataType, t2: pa.DataType) -> bool:
+    """Decide whether two Arrow data types should be considered the same."""
+    if t1.equals(t2):
+        return True
+
+    if _is_string(t1) and _is_string(t2):
+        return True
+
+    if _is_numeric(t1) and _is_numeric(t2):
+        return True
+
+    return False
+
+
+def _arrays_equal(
+    lhs: pa.ChunkedArray,
+    rhs: pa.ChunkedArray,
+    *,
+    rtol: float,
+    atol: float,
+) -> bool:
+    """Return True if two ChunkedArrays are equal within tolerance."""
+    lhs = lhs.combine_chunks()
+    rhs = rhs.combine_chunks()
+
+    if pc.any(pc.xor(pc.is_null(lhs), pc.is_null(rhs))).as_py():
+        return False
+
+    t1, t2 = lhs.type, rhs.type
+
+    if _is_numeric(t1) and _is_numeric(t2):
+        lhs_f = pc.cast(lhs, pa.float64(), safe=False)
+        rhs_f = pc.cast(rhs, pa.float64(), safe=False)
+
+        mask = pc.invert(pc.is_null(lhs_f))
+        lhs_np = lhs_f.filter(mask).to_numpy()
+        rhs_np = rhs_f.filter(mask).to_numpy()
+
+        return np.allclose(lhs_np, rhs_np, rtol=rtol, atol=atol)
+
+    if _is_string(t1) and _is_string(t2):
+        lhs_casted = pc.cast(lhs, pa.large_string(), safe=False)
+        rhs_casted = pc.cast(rhs, pa.large_string(), safe=False)
+        return lhs_casted.equals(rhs_casted)
+
+    return lhs.equals(rhs)
+
+
+def validate_query_results(
+    daft_results,
+    query: str,
+    data_dir: Path,
+    *,
+    rtol: float = 1e-3,
+    atol: float = 1e-3,
+    save_csv_on_failure: bool = False,
+    query_index: Optional[int] = None,
+) -> Tuple[bool, Optional[str]]:
+    """Compare Daft and DuckDB results."""
     try:
         conn = setup_duckdb_catalog(data_dir)
+        daft_tbl = daft_results.to_arrow()
+        duck_tbl = conn.execute(query).arrow()
 
-        # Get Daft results as PyArrow
-        daft_arrow = daft_results.to_arrow()
+        daft_csv_name = f"daft_q{query_index}_results.csv" if query_index is not None else "daft_results.csv"
+        duckdb_csv_name = f"duckdb_q{query_index}_results.csv" if query_index is not None else "duckdb_results.csv"
 
-        # Get DuckDB results as PyArrow
-        duckdb_arrow = conn.execute(query).arrow()
+        csv_saved_message = f" Results saved to {daft_csv_name} and {duckdb_csv_name}." if save_csv_on_failure else ""
 
-        # Compare the two PyArrow tables
-        if daft_arrow != duckdb_arrow:
-            return False, "Results differ from DuckDB reference implementation"
+        if daft_tbl.num_rows != duck_tbl.num_rows:
+            if save_csv_on_failure:
+                daft_tbl.to_pandas().to_csv(daft_csv_name, index=False)
+                duck_tbl.to_pandas().to_csv(duckdb_csv_name, index=False)
+            return (
+                False,
+                f"Row counts differ: Daft has {daft_tbl.num_rows} rows, DuckDB has {duck_tbl.num_rows} rows.{csv_saved_message}",
+            )
+
+        if daft_tbl.schema.names != duck_tbl.schema.names:
+            if save_csv_on_failure:
+                daft_tbl.to_pandas().to_csv(daft_csv_name, index=False)
+                duck_tbl.to_pandas().to_csv(duckdb_csv_name, index=False)
+            return (
+                False,
+                f"Column name order differs.\\nDaft column names: {daft_tbl.schema.names}\\nDuckDB column names: {duck_tbl.schema.names}.{csv_saved_message}",
+            )
+
+        for field_daft, field_duck in zip(daft_tbl.schema, duck_tbl.schema):
+            name = field_daft.name
+            type_daft = field_daft.type
+            type_duck = field_duck.type
+
+            if not _types_compatible(type_daft, type_duck):
+                if save_csv_on_failure:
+                    daft_tbl.to_pandas().to_csv(daft_csv_name, index=False)
+                    duck_tbl.to_pandas().to_csv(duckdb_csv_name, index=False)
+                return (
+                    False,
+                    f"Incompatible types for column '{name}': Daft type is {type_daft}, DuckDB type is {type_duck}.{csv_saved_message}",
+                )
+
+            lhs_arr = daft_tbl.column(name)
+            rhs_arr = duck_tbl.column(name)
+
+            if not _arrays_equal(lhs_arr, rhs_arr, rtol=rtol, atol=atol):
+                if save_csv_on_failure:
+                    daft_tbl.to_pandas().to_csv(daft_csv_name, index=False)
+                    duck_tbl.to_pandas().to_csv(duckdb_csv_name, index=False)
+                if _is_string(type_daft) and _is_string(type_duck):
+                    return (
+                        False,
+                        f"Column '{name}' (types: Daft={type_daft}, DuckDB={type_duck}) differs.{csv_saved_message}",
+                    )
+                else:
+                    return (
+                        False,
+                        f"Column '{name}' (types: Daft={type_daft}, DuckDB={type_duck}) differs beyond tolerance "
+                        f"(rtol={rtol}, atol={atol}).{csv_saved_message}",
+                    )
 
         return True, None
 
     except Exception as e:
-        return False, f"Validation error: {e!s}"
-
-
-# def validate_query_results(daft_df: pd.DataFrame, query: str, data_dir: Path) -> tuple[bool, Optional[str]]:
-#     """Compare Daft results with DuckDB results for validation."""
-#     try:
-#         conn = setup_duckdb_catalog(data_dir)
-
-#         duckdb_result = conn.execute(query).fetchdf()
-
-#         if len(daft_df) != len(duckdb_result):
-#             return False, f"Row count mismatch: Daft={len(daft_df)}, DuckDB={len(duckdb_result)}"
-
-#         daft_df.columns = [col.lower() for col in daft_df.columns]
-#         duckdb_result.columns = [col.lower() for col in duckdb_result.columns]
-
-#         if set(daft_df.columns) != set(duckdb_result.columns):
-#             return False, f"Column mismatch: Daft={daft_df.columns}, DuckDB={duckdb_result.columns}"
-
-#         daft_df = daft_df.sort_values(by=list(daft_df.columns)).reset_index(drop=True)
-#         duckdb_result = duckdb_result.sort_values(by=list(duckdb_result.columns)).reset_index(drop=True)
-
-#         for col in daft_df.columns:
-#             if pd.api.types.is_numeric_dtype(daft_df[col]) and pd.api.types.is_numeric_dtype(duckdb_result[col]):
-#                 if not np.allclose(
-#                     daft_df[col].fillna(0).to_numpy(),
-#                     duckdb_result[col].fillna(0).to_numpy(),
-#                     rtol=1e-5,
-#                     atol=1e-8,
-#                     equal_nan=True,
-#                 ):
-#                     return False, f"Numeric values differ in column {col}"
-#             else:
-#                 if not daft_df[col].equals(duckdb_result[col]):
-#                     return False, f"Values differ in column {col}"
-
-#         return True, None
-
-#     except Exception as e:
-#         return False, f"Validation error: {e!s}"
+        return False, f"Validation error during comparison process: {e!s}"
 
 
 def run_query_on_ray(
@@ -198,7 +277,11 @@ def run_query_on_local(
 
                 if run_args.validate and not run_args.dry_run:
                     is_correct, validation_error = validate_query_results(
-                        daft_results, query, run_args.scaled_tpcds_gen_folder
+                        daft_results,
+                        query,
+                        run_args.scaled_tpcds_gen_folder,
+                        save_csv_on_failure=run_args.save_csv_on_failure,
+                        query_index=query_index,
                     )
                     if is_correct:
                         logger.info("Query %s results validated successfully", query_index)
@@ -257,6 +340,7 @@ def main(args: ParsedArgs):
             ray_address=args.ray_address,
             dry_run=args.dry_run,
             validate=args.validate,
+            save_csv_on_failure=args.save_csv_on_failure,
         )
     )
 
@@ -292,6 +376,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Validate query results against DuckDB reference implementation",
     )
+    parser.add_argument(
+        "--save-csv-on-failure",
+        action="store_true",
+        dest="save_csv_on_failure",
+        help="Save Daft and DuckDB results to CSV if validation fails (default: False)",
+    )
     args = parser.parse_args()
 
     tpcds_gen_folder: Path = args.tpcds_gen_folder
@@ -306,5 +396,6 @@ if __name__ == "__main__":
             dry_run=args.dry_run,
             validate=args.validate,
             cast_decimals=args.cast_decimals,
+            save_csv_on_failure=args.save_csv_on_failure,
         )
     )
