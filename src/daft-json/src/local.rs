@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::Expr;
+use daft_dsl::{expr::bound_expr::BoundExpr, Expr};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
@@ -232,7 +232,8 @@ impl<'a> JsonReader<'a> {
         let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
 
         if let Some(pred) = &self.predicate {
-            tbl.filter(&[pred.clone()])
+            let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;
+            tbl.filter(&[pred])
         } else {
             Ok(tbl)
         }

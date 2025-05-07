@@ -949,11 +949,17 @@ class SeriesDateNamespace(SeriesNamespace):
     def nanosecond(self) -> Series:
         return Series._from_pyseries(self._series.dt_nanosecond())
 
+    def unix_date(self) -> Series:
+        return Series._from_pyseries(self._series.dt_unix_date())
+
     def time(self) -> Series:
         return Series._from_pyseries(self._series.dt_time())
 
     def month(self) -> Series:
         return Series._from_pyseries(self._series.dt_month())
+
+    def quarter(self) -> Series:
+        return Series._from_pyseries(self._series.dt_quarter())
 
     def year(self) -> Series:
         return Series._from_pyseries(self._series.dt_year())

@@ -20,6 +20,7 @@ pub(crate) struct LimitNode {
 }
 
 impl LimitNode {
+    #[allow(dead_code)]
     pub fn new(
         limit: usize,
         local_physical_plans: Vec<LocalPhysicalPlanRef>,
@@ -41,6 +42,7 @@ impl LimitNode {
         }
     }
 
+    #[allow(dead_code)]
     async fn execution_loop(
         _task_dispatcher_handle: TaskDispatcherHandle,
         _local_physical_plans: Vec<LocalPhysicalPlanRef>,
@@ -48,7 +50,7 @@ impl LimitNode {
         _input_psets: HashMap<String, Vec<PartitionRef>>,
         _result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
-        todo!("Implement limit execution loop");
+        todo!("FLOTILLA_MS1: Implement limit execution loop");
     }
 }
 
