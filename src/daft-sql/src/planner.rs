@@ -118,7 +118,7 @@ pub struct SQLPlanner<'sess> {
     right_side_plan: Option<LogicalPlanBuilder>,
     /// Aliases from selection that can be used in other clauses
     /// but may not yet be in the schema of `current_relation`.
-    bound_columns: Bindings<ExprRef>,
+    select_aliases: Bindings<ExprRef>,
     session: &'sess Session,
 }
 
@@ -132,7 +132,7 @@ impl<'a> SQLPlanner<'a> {
             parent: Some(self),
             current_plan: None,
             right_side_plan: None,
-            bound_columns: Bindings::default(),
+            select_aliases: Bindings::default(),
             session: self.session,
         }
     }
@@ -148,7 +148,7 @@ impl<'sess> SQLPlanner<'sess> {
             parent: None,
             current_plan: None,
             right_side_plan: None,
-            bound_columns: Bindings::default(),
+            select_aliases: Bindings::default(),
             session,
         }
     }
@@ -166,7 +166,7 @@ impl SQLPlanner<'_> {
             parent: None,
             current_plan: None,
             right_side_plan: None,
-            bound_columns: Bindings::default(),
+            select_aliases: Bindings::default(),
             session: self.session,
         }
     }
@@ -967,7 +967,7 @@ impl SQLPlanner<'_> {
         let schema = current_plan.plan.schema();
 
         if let Some(expr) =
-            expr_from_idents(schema, &self.bound_columns, idents, PlanRef::Unqualified)
+            expr_from_idents(schema, &self.select_aliases, idents, PlanRef::Unqualified)
         {
             return Ok(expr);
         }
@@ -975,7 +975,7 @@ impl SQLPlanner<'_> {
         if let Some(right_plan) = &self.right_side_plan
             && let Some(expr) = expr_from_idents(
                 right_plan.schema(),
-                &self.bound_columns,
+                &self.select_aliases,
                 idents,
                 PlanRef::Unqualified,
             )
@@ -1004,7 +1004,7 @@ impl SQLPlanner<'_> {
                 (Some(schema), None) | (None, Some(schema)) => {
                     if let Some(expr) = expr_from_idents(
                         schema,
-                        &self.bound_columns,
+                        &self.select_aliases,
                         &idents[1..],
                         PlanRef::Alias(alias.clone().into()),
                     ) {
@@ -1041,10 +1041,10 @@ impl SQLPlanner<'_> {
 
         match item {
             SelectItem::ExprWithAlias { expr, alias } => {
-                let expr = self.plan_expr(expr)?;
                 let alias = alias.value.to_string();
-                self.bound_columns.insert(alias.clone(), expr.clone());
-                Ok(vec![expr.alias(alias)])
+                let expr = self.plan_expr(expr)?.alias(alias.clone());
+                self.select_aliases.insert(alias, expr.clone());
+                Ok(vec![expr])
             }
             SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
 
