@@ -31,23 +31,6 @@ impl Series {
         self.with_utf8_array(|arr| Ok(arr.rstrip()?.into_series()))
     }
 
-    pub fn utf8_right(&self, nchars: &Self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            if nchars.data_type().is_integer() {
-                with_match_integer_daft_types!(nchars.data_type(), |$T| {
-                    Ok(arr.right(nchars.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
-                })
-            } else if nchars.data_type().is_null() {
-                Ok(self.clone())
-            } else {
-                Err(DaftError::TypeError(format!(
-                    "Right not implemented for nchar type {}",
-                    nchars.data_type()
-                )))
-            }
-        })
-    }
-
     pub fn utf8_substr(&self, start: &Self, length: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if start.data_type().is_integer() {

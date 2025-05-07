@@ -871,10 +871,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("left", nchars)
 
     def right(self, nchars: Series) -> Series:
-        if not isinstance(nchars, Series):
-            raise ValueError(f"expected another Series but got {type(nchars)}")
-        assert self._series is not None and nchars._series is not None
-        return Series._from_pyseries(self._series.utf8_right(nchars._series))
+        return self._eval_expressions("right", nchars)
 
     def find(self, substr: Series) -> Series:
         return self._eval_expressions("find", substr)

@@ -3455,7 +3455,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(native.utf8_right(self._expr, nchars_expr._expr))
+        f = native.get_function_from_registry("right")
+        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string.

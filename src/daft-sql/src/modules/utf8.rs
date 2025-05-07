@@ -132,7 +132,6 @@ impl SQLModule for SQLModuleUtf8 {
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("upper", SQLUtf8Upper);
         parent.add_fn("rstrip", SQLUtf8Rstrip);
-        parent.add_fn("right", SQLUtf8Right);
 
         parent.add_fn("to_date", SQLUtf8ToDate);
         parent.add_fn("to_datetime", SQLUtf8ToDatetime);
@@ -175,15 +174,6 @@ utf8_function!(
     daft_functions::utf8::rstrip,
     "Removes trailing whitespace from the string",
     "string_input"
-);
-
-utf8_function!(
-    SQLUtf8Right,
-    "right",
-    daft_functions::utf8::right,
-    "Returns the specified number of rightmost characters from the string",
-    "string_input",
-    "length"
 );
 
 pub struct SQLUtf8ToDate;

@@ -30,7 +30,14 @@ impl ScalarUDF for ILike {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        binary_utf8_to_field(inputs, schema, "pattern", self.name(), DataType::Boolean)
+        binary_utf8_to_field(
+            inputs,
+            schema,
+            "pattern",
+            DataType::is_string,
+            self.name(),
+            DataType::Boolean,
+        )
     }
 
     fn docstring(&self) -> &'static str {

@@ -28,7 +28,14 @@ impl ScalarUDF for EndsWith {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        binary_utf8_to_field(inputs, schema, "pattern", self.name(), DataType::Boolean)
+        binary_utf8_to_field(
+            inputs,
+            schema,
+            "pattern",
+            DataType::is_string,
+            self.name(),
+            DataType::Boolean,
+        )
     }
     fn docstring(&self) -> &'static str {
         "Returns a boolean indicating whether each string ends with the specified pattern"

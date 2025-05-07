@@ -317,66 +317,6 @@ impl Utf8Array {
         self.unary_broadcasted_op(|val| val.chars().rev().collect::<String>().into())
     }
 
-    pub fn right<I>(&self, nchars: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: Ord,
-    {
-        let (is_full_null, expected_size) = parse_inputs(self, &[nchars])
-            .map_err(|e| DaftError::ValueError(format!("Error in right: {e}")))?;
-        if is_full_null {
-            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
-        }
-        if expected_size == 0 {
-            return Ok(Self::empty(self.name(), &DataType::Utf8));
-        }
-
-        fn right_most_chars(val: &str, nchar: usize) -> &str {
-            if nchar == 0 || val.is_empty() {
-                ""
-            } else {
-                let skip = val.chars().count().saturating_sub(nchar);
-                val.char_indices().nth(skip).map_or(val, |(i, _)| &val[i..])
-            }
-        }
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result: Self = match nchars.len() {
-            1 => {
-                let n = nchars.get(0).unwrap();
-                let n: usize = NumCast::from(n).ok_or_else(|| {
-                    DaftError::ComputeError(format!(
-                        "Error in right: failed to cast rhs as usize {n}"
-                    ))
-                })?;
-                let arrow_result = self_iter
-                    .map(|val| Some(right_most_chars(val?, n)))
-                    .collect::<arrow2::array::Utf8Array<i64>>();
-                Self::from((self.name(), Box::new(arrow_result)))
-            }
-            _ => {
-                let arrow_result = self_iter
-                    .zip(nchars.as_arrow().iter())
-                    .map(|(val, n)| match (val, n) {
-                        (Some(val), Some(nchar)) => {
-                            let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
-                                DaftError::ComputeError(format!(
-                                    "Error in right: failed to cast rhs as usize {nchar}"
-                                ))
-                            })?;
-                            Ok(Some(right_most_chars(val, nchar)))
-                        }
-                        _ => Ok(None),
-                    })
-                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
-
-                Self::from((self.name(), Box::new(arrow_result)))
-            }
-        };
-        assert_eq!(result.len(), expected_size);
-        Ok(result)
-    }
-
     pub fn to_date(&self, format: &str) -> DaftResult<DateArray> {
         let len = self.len();
         let self_iter = self.as_arrow().iter();

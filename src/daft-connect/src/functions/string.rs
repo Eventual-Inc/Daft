@@ -1,4 +1,4 @@
-use daft_functions::utf8::{Utf8Right, Utf8Split, Utf8Substr, Utf8Upper};
+use daft_functions::utf8::{Utf8Split, Utf8Substr, Utf8Upper};
 
 use super::{FunctionModule, TODO_FUNCTION};
 
@@ -50,7 +50,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("regexp_substr", TODO_FUNCTION);
         parent.add_fn("regexp_instr", TODO_FUNCTION);
         parent.add_fn("replace", daft_functions_utf8::Replace);
-        parent.add_fn("right", Utf8Right {});
+        parent.add_fn("right", daft_functions_utf8::Right);
         parent.add_fn("ucase", TODO_FUNCTION);
         parent.add_fn("unbase64", TODO_FUNCTION);
         parent.add_fn("rpad", daft_functions_utf8::RPad);

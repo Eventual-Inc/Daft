@@ -357,10 +357,6 @@ impl PySeries {
         Ok(self.series.utf8_rstrip()?.into())
     }
 
-    pub fn utf8_right(&self, nchars: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_right(&nchars.series)?.into())
-    }
-
     pub fn utf8_substr(&self, start: &Self, length: &Self) -> PyResult<Self> {
         Ok(self
             .series

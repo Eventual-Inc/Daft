@@ -31,7 +31,14 @@ impl ScalarUDF for Find {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        binary_utf8_to_field(inputs, schema, "substr", self.name(), DataType::Int64)
+        binary_utf8_to_field(
+            inputs,
+            schema,
+            "substr",
+            DataType::is_string,
+            self.name(),
+            DataType::Int64,
+        )
     }
 
     fn docstring(&self) -> &'static str {

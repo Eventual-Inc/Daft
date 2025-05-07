@@ -19,16 +19,16 @@ use crate::utils::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Left;
+pub struct Right;
 
 #[typetag::serde]
-impl ScalarUDF for Left {
+impl ScalarUDF for Right {
     fn name(&self) -> &'static str {
-        "left"
+        "right"
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "n", series_left)
+        binary_utf8_evaluate(inputs, "n", series_right)
     }
 
     fn function_args_to_field(
@@ -47,20 +47,20 @@ impl ScalarUDF for Left {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the leftmost n characters of each string in the input series."
+        "Returns the rightmost n characters of each string in the input series."
     }
 }
 
 #[must_use]
-pub fn left(input: ExprRef, nchars: ExprRef) -> ExprRef {
-    ScalarFunction::new(Left {}, vec![input, nchars]).into()
+pub fn right(input: ExprRef, nchars: ExprRef) -> ExprRef {
+    ScalarFunction::new(Right {}, vec![input, nchars]).into()
 }
 
-pub fn series_left(s: &Series, nchars: &Series) -> DaftResult<Series> {
+pub fn series_right(s: &Series, nchars: &Series) -> DaftResult<Series> {
     s.with_utf8_array(|arr| {
         if nchars.data_type().is_integer() {
             with_match_integer_daft_types!(nchars.data_type(), |$T| {
-                Ok(left_impl(arr, nchars.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
+                Ok(right_impl(arr, nchars.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
             })
         } else if nchars.data_type().is_null() {
             Ok(s.clone())
@@ -73,13 +73,13 @@ pub fn series_left(s: &Series, nchars: &Series) -> DaftResult<Series> {
     })
 }
 
-fn left_impl<I>(arr: &Utf8Array, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
+fn right_impl<I>(arr: &Utf8Array, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
 where
     I: DaftIntegerType,
     <I as DaftNumericType>::Native: Ord,
 {
     let (is_full_null, expected_size) = parse_inputs(arr, &[nchars])
-        .map_err(|e| DaftError::ValueError(format!("Error in left: {e}")))?;
+        .map_err(|e| DaftError::ValueError(format!("Error in right: {e}")))?;
     if is_full_null {
         return Ok(Utf8Array::full_null(
             arr.name(),
@@ -91,37 +91,38 @@ where
         return Ok(Utf8Array::empty(arr.name(), &DataType::Utf8));
     }
 
-    fn left_most_chars(val: &str, n: usize) -> &str {
-        if n == 0 || val.is_empty() {
+    fn right_most_chars(val: &str, nchar: usize) -> &str {
+        if nchar == 0 || val.is_empty() {
             ""
         } else {
-            val.char_indices().nth(n).map_or(val, |(i, _)| &val[..i])
+            let skip = val.chars().count().saturating_sub(nchar);
+            val.char_indices().nth(skip).map_or(val, |(i, _)| &val[i..])
         }
     }
 
-    let self_iter = create_broadcasted_str_iter(arr, expected_size);
+    let arr_iter = create_broadcasted_str_iter(arr, expected_size);
     let result: Utf8Array = match nchars.len() {
         1 => {
             let n = nchars.get(0).unwrap();
             let n: usize = NumCast::from(n).ok_or_else(|| {
-                DaftError::ComputeError(format!("Error in left: failed to cast rhs as usize {n}"))
+                DaftError::ComputeError(format!("Error in right: failed to cast rhs as usize {n}"))
             })?;
-            let arrow_result = self_iter
-                .map(|val| Some(left_most_chars(val?, n)))
+            let arrow_result = arr_iter
+                .map(|val| Some(right_most_chars(val?, n)))
                 .collect::<arrow2::array::Utf8Array<i64>>();
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
         _ => {
-            let arrow_result = self_iter
+            let arrow_result = arr_iter
                 .zip(nchars.as_arrow().iter())
                 .map(|(val, n)| match (val, n) {
                     (Some(val), Some(nchar)) => {
                         let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
                             DaftError::ComputeError(format!(
-                                "Error in left: failed to cast rhs as usize {nchar}"
+                                "Error in right: failed to cast rhs as usize {nchar}"
                             ))
                         })?;
-                        Ok(Some(left_most_chars(val, nchar)))
+                        Ok(Some(right_most_chars(val, nchar)))
                     }
                     _ => Ok(None),
                 })

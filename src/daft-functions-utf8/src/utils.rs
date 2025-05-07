@@ -141,6 +141,7 @@ pub(crate) fn binary_utf8_to_field(
     inputs: FunctionArgs<ExprRef>,
     schema: &Schema,
     arg_name: &'static str,
+    arg_dtype_pattern: impl Fn(&DataType) -> bool,
     fn_name: &'static str,
     return_dtype: DataType,
 ) -> DaftResult<Field> {
@@ -152,8 +153,8 @@ pub(crate) fn binary_utf8_to_field(
 
     let pattern = inputs.required((1, arg_name))?.to_field(schema)?;
     ensure!(
-        pattern.dtype == DataType::Utf8,
-        TypeError: "{arg_name} must be of type Utf8"
+        arg_dtype_pattern(&pattern.dtype),
+        TypeError: "invalid argument type for '{fn_name}'"
     );
     Ok(Field::new(input.name, return_dtype))
 }
