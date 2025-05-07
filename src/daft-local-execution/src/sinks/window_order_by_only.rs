@@ -2,7 +2,7 @@ use std::{any::Any, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{resolved_col, ExprRef, WindowExpr};
+use daft_dsl::{ExprRef, WindowExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -152,14 +152,7 @@ impl BlockingSink for WindowOrderByOnlySink {
 
                         row_offset += current_batch.len() as u64;
 
-                        let all_projections = params
-                            .original_schema
-                            .field_names()
-                            .map(resolved_col)
-                            .collect::<Vec<_>>();
-
-                        let final_batch = current_batch.eval_expression_list(&all_projections)?;
-                        results.push(final_batch);
+                        results.push(current_batch);
                     }
 
                     if results.is_empty() {

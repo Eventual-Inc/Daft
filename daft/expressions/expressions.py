@@ -2362,8 +2362,46 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╰───────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
+
         """
         return Expression._from_pyexpr(native.dt_nanosecond(self._expr))
+
+    def unix_date(self) -> Expression:
+        """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
+
+        Returns:
+            Expression: a UInt64 expression
+
+        Examples:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+            ...         ]
+            ...     }
+            ... )
+            >>>
+            >>> df.select(daft.col("datetime").alias("unix_date").dt.unix_date()).show()
+            ╭───────────╮
+            │ unix_date │
+            │ ---       │
+            │ UInt64    │
+            ╞═══════════╡
+            │ 2922      │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 20009     │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 34699     │
+            ╰───────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return Expression._from_pyexpr(native.dt_unix_date(self._expr))
 
     def time(self) -> Expression:
         """Retrieves the time for a datetime column.
@@ -2436,6 +2474,41 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_month(self._expr))
 
+    def quarter(self) -> Expression:
+        """Retrieves the quarter for a datetime column.
+
+        Returns:
+            Expression: a UInt32 expression with just the quarter extracted from a datetime column
+
+        Examples:
+            >>> import daft, datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime.datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime.datetime(2023, 7, 4, 0, 0, 0),
+            ...             datetime.datetime(2022, 12, 5, 0, 0, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("quarter", df["datetime"].dt.quarter()).collect()
+            ╭───────────────────────────────┬─────────╮
+            │ datetime                      ┆ quarter │
+            │ ---                           ┆ ---     │
+            │ Timestamp(Microseconds, None) ┆ UInt32  │
+            ╞═══════════════════════════════╪═════════╡
+            │ 2024-01-01 00:00:00           ┆ 1       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 2023-07-04 00:00:00           ┆ 3       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 2022-12-05 00:00:00           ┆ 4       │
+            ╰───────────────────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return Expression._from_pyexpr(native.dt_quarter(self._expr))
+
     def year(self) -> Expression:
         """Retrieves the year for a datetime column.
 
@@ -2467,7 +2540,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╰───────────────────────────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-
 
         """
         return Expression._from_pyexpr(native.dt_year(self._expr))

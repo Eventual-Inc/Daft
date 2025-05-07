@@ -76,6 +76,7 @@ pub mod pylib {
         python::pylib::{PyPartitionField, PyPushdowns},
         PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
     };
+    use daft_dsl::expr::bound_expr::BoundExpr;
     use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
     use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
@@ -376,7 +377,9 @@ pub mod pylib {
                     pushdowns.as_ref().map(|p| &p.0.partition_filters)
             {
                 let table = &pvalues.record_batch;
-                let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
+                let partition_filters =
+                    BoundExpr::try_new(partition_filters.clone(), &table.schema)?;
+                let eval_pred = table.eval_expression_list(&[partition_filters])?;
                 assert_eq!(eval_pred.num_columns(), 1);
                 let series = eval_pred.get_column_by_index(0)?;
                 assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);

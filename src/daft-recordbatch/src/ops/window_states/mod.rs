@@ -8,7 +8,7 @@ use common_error::DaftResult;
 use count::CountWindowState;
 use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;
-use daft_dsl::AggExpr;
+use daft_dsl::{expr::bound_expr::BoundAggExpr, AggExpr};
 use sum::SumWindowState;
 
 /// Trait for window aggregation state implementations
@@ -28,10 +28,10 @@ pub trait WindowAggStateOps {
 
 pub fn create_window_agg_state(
     source: &Series,
-    agg_expr: &AggExpr,
+    agg_expr: &BoundAggExpr,
     total_length: usize,
 ) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
-    match agg_expr {
+    match agg_expr.as_ref() {
         AggExpr::Sum(_) => sum::create_for_type(source, total_length),
         AggExpr::Count(_, mode) => Ok(Some(Box::new(CountWindowState::new(
             source,
