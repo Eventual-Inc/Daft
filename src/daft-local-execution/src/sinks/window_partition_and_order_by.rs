@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
-use daft_dsl::{resolved_col, ExprRef, WindowExpr};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    ExprRef, WindowBoundary, WindowExpr, WindowFrame, WindowFrameType,
+};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -127,9 +130,29 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             continue;
                         }
 
+                        let input_schema = &all_partitions[0].schema;
+
                         let params = params.clone();
 
-                        if params.partition_by.is_empty() {
+                        let partition_by = params
+                            .partition_by
+                            .iter()
+                            .map(|expr| BoundExpr::try_new(expr.clone(), input_schema))
+                            .collect::<DaftResult<Vec<_>>>()?;
+
+                        let order_by = params
+                            .order_by
+                            .iter()
+                            .map(|expr| BoundExpr::try_new(expr.clone(), input_schema))
+                            .collect::<DaftResult<Vec<_>>>()?;
+
+                        let window_exprs = params
+                            .window_exprs
+                            .iter()
+                            .map(|expr| BoundWindowExpr::try_new(expr.clone(), input_schema))
+                            .collect::<DaftResult<Vec<_>>>()?;
+
+                        if partition_by.is_empty() {
                             return Err(DaftError::ValueError(
                                 "Partition by cannot be empty for window functions".into(),
                             ));
@@ -142,8 +165,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 return RecordBatch::empty(Some(params.original_schema.clone()));
                             }
 
-                            let groupby_table =
-                                input_data.eval_expression_list(&params.partition_by)?;
+                            let groupby_table = input_data.eval_expression_list(&partition_by)?;
                             let (_, groupvals_indices) = groupby_table.make_groups()?;
 
                             let mut partitions = groupvals_indices
@@ -159,54 +181,56 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                             for partition in &mut partitions {
                                 // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
                                 *partition = partition.sort(
-                                    &params.order_by,
+                                    &order_by,
                                     &params.descending,
                                     &params.descending,
                                 )?;
 
                                 for (window_expr, name) in
-                                    params.window_exprs.iter().zip(params.aliases.iter())
+                                    window_exprs.iter().zip(params.aliases.iter())
                                 {
-                                    *partition = match window_expr {
+                                    *partition = match window_expr.as_ref() {
                                         WindowExpr::Agg(agg_expr) => {
-                                            partition.window_agg(agg_expr, name.clone())?
+                                            let dtype =
+                                                agg_expr.to_field(&params.original_schema)?.dtype;
+                                            // Default for aggregate functions in partition by + order by: rows from start of partition to current row
+                                            let frame = WindowFrame {
+                                                frame_type: WindowFrameType::Rows,
+                                                start: WindowBoundary::UnboundedPreceding(),
+                                                end: WindowBoundary::Offset(0),
+                                            };
+                                            partition.window_agg_dynamic_frame(
+                                                name.clone(),
+                                                &BoundAggExpr::new_unchecked(agg_expr.clone()),
+                                                1,
+                                                &dtype,
+                                                &frame,
+                                            )?
                                         }
                                         WindowExpr::RowNumber => {
                                             partition.window_row_number(name.clone())?
                                         }
-                                        WindowExpr::Rank => partition.window_rank(
-                                            name.clone(),
-                                            &params.order_by,
-                                            false,
-                                        )?,
-                                        WindowExpr::DenseRank => partition.window_rank(
-                                            name.clone(),
-                                            &params.order_by,
-                                            true,
-                                        )?,
+                                        WindowExpr::Rank => {
+                                            partition.window_rank(name.clone(), &order_by, false)?
+                                        }
+                                        WindowExpr::DenseRank => {
+                                            partition.window_rank(name.clone(), &order_by, true)?
+                                        }
                                         WindowExpr::Offset {
                                             input,
                                             offset,
                                             default,
                                         } => partition.window_offset(
                                             name.clone(),
-                                            input.clone(),
+                                            BoundExpr::new_unchecked(input.clone()),
                                             *offset,
-                                            default.clone(),
+                                            default.clone().map(BoundExpr::new_unchecked),
                                         )?,
                                     }
                                 }
                             }
 
-                            let all_projections = params
-                                .original_schema
-                                .field_names()
-                                .map(resolved_col)
-                                .collect::<Vec<_>>();
-
                             let final_result = RecordBatch::concat(&partitions)?;
-                            let final_result =
-                                final_result.eval_expression_list(&all_projections)?;
                             Ok(final_result)
                         });
                     }

@@ -1883,7 +1883,7 @@ Daft window functions support several types of window specifications, including:
 
 ### Partition By
 
-The simplest window specification divides data into partitions with [partition_by()][daft.window.Window.partition_by]:
+The simplest window specification divides data into partitions with [`partition_by`][daft.window.Window.partition_by]:
 
 ```python
 window_spec = Window().partition_by("department")
@@ -1897,7 +1897,7 @@ df = df.with_column("dept_total", col("salary").sum().over(window_spec))
 
 ### Partition By + Order By
 
-Adding an `ORDER BY` clause with [order_by()][daft.window.Window.order_by] to a window specification allows you to define the order of rows within each partition:
+Adding an `ORDER BY` clause with [`order_by`][daft.window.Window.order_by] to a window specification allows you to define the order of rows within each partition:
 
 ```python
 window_spec = Window().partition_by("department").order_by("salary")
@@ -1911,7 +1911,7 @@ df.with_column("salary_rank", rank().over(window_spec))
 
 ### Partition By + Order By + Rows Between
 
-The `ROWS BETWEEN` clause with [rows_between()][daft.window.Window.rows_between] allows you to define a window frame based on physical row positions:
+The `ROWS BETWEEN` clause with [`rows_between`][daft.window.Window.rows_between] allows you to define a window frame based on physical row positions:
 
 ```python
 window_spec = (
@@ -1930,7 +1930,7 @@ df.with_column("running_total", col("sales").sum().over(window_spec))
 
 ### Partition By + Order By + Range Between
 
-The `RANGE BETWEEN` clause with [range_between()][daft.window.Window.range_between] allows you to define a window frame based on logical values rather than physical rows:
+The `RANGE BETWEEN` clause with [`range_between`][daft.window.Window.range_between] allows you to define a window frame based on logical values rather than physical rows:
 
 ```python
 window_spec = (
@@ -1953,12 +1953,16 @@ The key difference between `ROWS` and `RANGE` is that `RANGE` includes all rows 
 
 Daft supports various window functions depending on the window specification:
 
-- **With Partition By only**: All aggregate functions ([`sum()`][daft.expressions.Expression.sum], [`mean()`][daft.expressions.Expression.mean], [`count()`][daft.expressions.Expression.count], [`min()`][daft.expressions.Expression.min], [`max()`][daft.expressions.Expression.max], etc.)
+- **With Partition By only**: All aggregate functions ([`sum`][daft.expressions.Expression.sum], [`mean`][daft.expressions.Expression.mean], [`count`][daft.expressions.Expression.count], [`min`][daft.expressions.Expression.min], [`max`][daft.expressions.Expression.max], etc.)
 - **With Partition By + Order By**:
-    - All aggregate functions
-    - Ranking functions ([`row_number()`][daft.functions.row_number], [`rank()`][daft.functions.rank], [`dense_rank()`][daft.functions.dense_rank])
-    - Offset functions ([`lag()`][daft.expressions.Expression.lag], [`lead()`][daft.expressions.Expression.lead])
+    - All aggregate functions.
+    - Ranking functions ([`row_number`][daft.functions.row_number], [`rank`][daft.functions.rank], [`dense_rank`][daft.functions.dense_rank])
+    - Offset functions ([`lag`][daft.expressions.Expression.lag], [`lead`][daft.expressions.Expression.lead])
 - **With Partition By + Order By + Rows Between**: Aggregate functions only
+- **With Partition By + Order By + Range Between**: Aggregate functions only
+
+!!! note "Note"
+    When using aggregate functions with both partitioning and ordering but no explicit window frame, the default behavior is to compute a running aggregate from the start of the partition up to the current row.
 
 ### Common Use Cases
 

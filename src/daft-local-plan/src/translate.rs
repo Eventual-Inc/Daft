@@ -172,7 +172,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     ))
                 }
                 _ => Err(DaftError::not_implemented(
-                    "Window with order by or frame not yet implemented",
+                    "Window without partition by not yet implemented",
                 )),
             }
         }

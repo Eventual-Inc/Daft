@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema, UInt64Array, UInt8Array, Utf8Array},
@@ -9,7 +10,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
-    FileWriter, TargetFileSizeWriterFactory, TargetInMemorySizeBytesCalculator, WriterFactory,
+    AsyncFileWriter, TargetFileSizeWriterFactory, TargetInMemorySizeBytesCalculator, WriterFactory,
     RETURN_PATHS_COLUMN_NAME,
 };
 
@@ -23,7 +24,7 @@ impl WriterFactory for DummyWriterFactory {
         &self,
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(DummyWriter {
             file_idx: file_idx.to_string(),
             partition_values: partition_values.cloned(),
@@ -31,7 +32,7 @@ impl WriterFactory for DummyWriterFactory {
             byte_count: 0,
         })
             as Box<
-                dyn FileWriter<Input = Self::Input, Result = Self::Result>,
+                dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,
             >)
     }
 }
@@ -43,11 +44,12 @@ pub struct DummyWriter {
     pub byte_count: usize,
 }
 
-impl FileWriter for DummyWriter {
+#[async_trait]
+impl AsyncFileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
         self.write_count += 1;
         let size_bytes = input.size_bytes()?.unwrap();
         self.byte_count += size_bytes;
@@ -62,7 +64,7 @@ impl FileWriter for DummyWriter {
         vec![self.byte_count]
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         let path_series = Utf8Array::from_values(
             RETURN_PATHS_COLUMN_NAME,
             std::iter::once(self.file_idx.clone()),
@@ -117,7 +119,7 @@ impl WriterFactory for FailingWriterFactory {
         &self,
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(FailingWriter {
             file_idx: file_idx.to_string(),
             partition_values: partition_values.cloned(),
@@ -127,7 +129,7 @@ impl WriterFactory for FailingWriterFactory {
             fail_on_close: self.fail_on_close,
         })
             as Box<
-                dyn FileWriter<Input = Self::Input, Result = Self::Result>,
+                dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,
             >)
     }
 }
@@ -141,11 +143,12 @@ pub struct FailingWriter {
     pub fail_on_close: bool,
 }
 
-impl FileWriter for FailingWriter {
+#[async_trait]
+impl AsyncFileWriter for FailingWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
         if self.fail_on_write {
             return Err(common_error::DaftError::ValueError(
                 "Intentional failure in FailingWriter::write".to_string(),
@@ -166,7 +169,7 @@ impl FileWriter for FailingWriter {
         vec![self.byte_count]
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         if self.fail_on_close {
             return Err(common_error::DaftError::ValueError(
                 "Intentional failure in FailingWriter::close".to_string(),
