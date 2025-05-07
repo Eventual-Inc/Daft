@@ -9,11 +9,13 @@ use collect::CollectNode;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
+use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
 use futures::Stream;
 use limit::LimitNode;
-use translate::translate_pipeline_plan_to_local_physical_plans;
+use source::SourceNode;
+use translate::translate_logical_plan_to_pipeline_plan;
 
 use crate::{
     channel::Receiver,
@@ -23,6 +25,7 @@ use crate::{
 
 mod collect;
 mod limit;
+mod source;
 mod translate;
 
 pub(crate) trait DistributedPipelineNode: Send + Sync {
@@ -54,8 +57,12 @@ impl RunningPipelineNode {
 impl Stream for RunningPipelineNode {
     type Item = DaftResult<PipelineOutput>;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for running pipeline node");
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.result_receiver.poll_recv(cx) {
+            Poll::Ready(Some(result)) => Poll::Ready(Some(Ok(result))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -64,6 +71,20 @@ pub(crate) enum PipelineOutput {
     Materialized(PartitionRef),
     Task(SwordfishTask),
     Running(SubmittedTask),
+}
+
+#[derive(Clone)]
+enum PipelineInput {
+    InMemorySource {
+        cache_key: String,
+        partition_refs: Vec<PartitionRef>,
+    },
+    ScanTasks {
+        source_id: usize,
+        pushdowns: Pushdowns,
+        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    },
+    Intermediate,
 }
 
 #[allow(dead_code)]
@@ -91,32 +112,35 @@ pub(crate) fn logical_plan_to_pipeline_node(
             match node.as_ref() {
                 LogicalPlan::Limit(limit) => {
                     let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let translated_local_physical_plans =
-                        translate_pipeline_plan_to_local_physical_plans(
-                            node.clone(),
-                            &self.config,
-                        )?;
+                    let pipeline_plan = translate_logical_plan_to_pipeline_plan(
+                        &node,
+                        &self.config,
+                        std::mem::take(&mut self.psets),
+                    )?;
                     self.current_nodes = vec![Box::new(LimitNode::new(
                         limit.limit as usize,
-                        translated_local_physical_plans,
+                        pipeline_plan,
                         input_nodes,
-                        std::mem::take(&mut self.psets),
                     ))];
                     // Here we will have to return a placeholder, essentially cutting off the plan
                     todo!("FLOTILLA_MS1: Implement pipeline node boundary splitter for limit");
                 }
                 _ if is_root => {
-                    let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let translated_local_physical_plans =
-                        translate_pipeline_plan_to_local_physical_plans(
-                            node.clone(),
-                            &self.config,
-                        )?;
-                    self.current_nodes = vec![Box::new(CollectNode::new(
-                        translated_local_physical_plans,
-                        input_nodes,
+                    let pipeline_plan = translate_logical_plan_to_pipeline_plan(
+                        &node,
+                        &self.config,
                         std::mem::take(&mut self.psets),
-                    ))];
+                    )?;
+                    let input_nodes = std::mem::take(&mut self.current_nodes);
+                    if input_nodes.is_empty() {
+                        self.current_nodes = vec![Box::new(SourceNode::new(
+                            pipeline_plan.local_plan,
+                            pipeline_plan.input,
+                        ))];
+                    } else {
+                        self.current_nodes =
+                            vec![Box::new(CollectNode::new(pipeline_plan, input_nodes))];
+                    }
                     Ok(Transformed::no(node))
                 }
                 _ => Ok(Transformed::no(node)),
