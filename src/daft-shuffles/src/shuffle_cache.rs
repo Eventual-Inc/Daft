@@ -7,7 +7,7 @@ use daft_io::{parse_url, SourceType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use daft_writers::{make_ipc_writer, FileWriter};
+use daft_writers::{make_ipc_writer, AsyncFileWriter};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
@@ -117,7 +117,9 @@ impl InProgressShuffleCache {
     }
 
     fn try_new_with_writers(
-        writers: Vec<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>>,
+        writers: Vec<
+            Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        >,
         num_partitions: usize,
         partition_by: Option<Vec<ExprRef>>,
         shuffle_dirs: Vec<String>,
@@ -311,7 +313,7 @@ async fn partitioner_task(
 // Writer task that takes partitions from the partitioner sender, writes them to a file, and returns the schema and file paths
 async fn writer_task(
     rx: async_channel::Receiver<Arc<MicroPartition>>,
-    mut writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    mut writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
     let compute_runtime = get_compute_runtime();
     let mut schema = None;
@@ -325,12 +327,12 @@ async fn writer_task(
         total_bytes_written += partition.size_bytes()?.expect("size_bytes should be Some");
         writer = compute_runtime
             .spawn(async move {
-                writer.write(partition)?;
+                writer.write(partition).await?;
                 DaftResult::Ok(writer)
             })
             .await??;
     }
-    let file_path_tables = writer.close()?;
+    let file_path_tables = writer.close().await?;
 
     let file_paths = file_path_tables
         .into_iter()

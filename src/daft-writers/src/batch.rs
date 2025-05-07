@@ -4,11 +4,12 @@ use std::{
     sync::Arc,
 };
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
+use crate::{AsyncFileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 
 // SizeBasedBuffer is a buffer that stores tables and their sizes in bytes.
 // It produces Micropartitions that are within a certain size range.
@@ -121,7 +122,7 @@ impl SizeBasedBuffer {
 // a row group at a time.
 pub struct TargetBatchWriter {
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     buffer: SizeBasedBuffer,
     is_closed: bool,
 }
@@ -133,7 +134,7 @@ impl TargetBatchWriter {
 
     pub fn new(
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+        writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     ) -> Self {
         Self {
             size_calculator,
@@ -143,23 +144,24 @@ impl TargetBatchWriter {
         }
     }
 
-    fn write_and_update_inflation_factor(
+    async fn write_and_update_inflation_factor(
         &mut self,
         input: Arc<MicroPartition>,
         in_memory_size_bytes: usize,
     ) -> DaftResult<usize> {
-        let bytes_written = self.writer.write(input)?;
+        let bytes_written = self.writer.write(input).await?;
         self.size_calculator
             .record_and_update_inflation_factor(bytes_written, in_memory_size_bytes);
         Ok(bytes_written)
     }
 }
 
-impl FileWriter for TargetBatchWriter {
+#[async_trait]
+impl AsyncFileWriter for TargetBatchWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
+    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetBatchWriter"
@@ -177,7 +179,9 @@ impl FileWriter for TargetBatchWriter {
             (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
         let mut bytes_written = 0;
         while let Some(mp) = self.buffer.pop(min_size_bytes, max_size_bytes)? {
-            bytes_written += self.write_and_update_inflation_factor(mp, target_size_bytes)?;
+            bytes_written += self
+                .write_and_update_inflation_factor(mp, target_size_bytes)
+                .await?;
             target_size_bytes = self.size_calculator.calculate_target_in_memory_size_bytes();
             min_size_bytes = (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
             max_size_bytes = (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
@@ -194,12 +198,12 @@ impl FileWriter for TargetBatchWriter {
         self.writer.bytes_per_file()
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         if let Some(leftovers) = self.buffer.pop_all()? {
-            self.writer.write(leftovers)?;
+            self.writer.write(leftovers).await?;
         }
         self.is_closed = true;
-        self.writer.close()
+        self.writer.close().await
     }
 }
 
@@ -231,7 +235,7 @@ impl WriterFactory for TargetBatchWriterFactory {
         &self,
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         let writer = self
             .writer_factory
             .create_writer(file_idx, partition_values)?;
@@ -248,8 +252,8 @@ mod tests {
     use super::*;
     use crate::test::{make_dummy_mp, DummyWriterFactory};
 
-    #[test]
-    fn test_target_batch_writer_exact_batch() {
+    #[tokio::test]
+    async fn test_target_batch_writer_exact_batch() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(1, 1.0));
         let mut writer = TargetBatchWriter::new(
@@ -258,8 +262,8 @@ mod tests {
         );
 
         let mp = make_dummy_mp(1);
-        writer.write(mp).unwrap();
-        let res = writer.close().unwrap();
+        writer.write(mp).await.unwrap();
+        let res = writer.close().await.unwrap();
 
         assert!(res.is_some());
         let res = res.unwrap();
@@ -274,8 +278,8 @@ mod tests {
         assert_eq!(write_count, 1);
     }
 
-    #[test]
-    fn test_target_batch_writer_small_batches() {
+    #[tokio::test]
+    async fn test_target_batch_writer_small_batches() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer = TargetBatchWriter::new(
@@ -285,9 +289,9 @@ mod tests {
 
         for _ in 0..8 {
             let mp = make_dummy_mp(1);
-            writer.write(mp).unwrap();
+            writer.write(mp).await.unwrap();
         }
-        let res = writer.close().unwrap();
+        let res = writer.close().await.unwrap();
 
         assert!(res.is_some());
         let res = res.unwrap();
@@ -302,8 +306,8 @@ mod tests {
         assert_eq!(write_count, 3);
     }
 
-    #[test]
-    fn test_target_batch_writer_big_batch() {
+    #[tokio::test]
+    async fn test_target_batch_writer_big_batch() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer = TargetBatchWriter::new(
@@ -312,8 +316,8 @@ mod tests {
         );
 
         let mp = make_dummy_mp(10);
-        writer.write(mp).unwrap();
-        let res = writer.close().unwrap();
+        writer.write(mp).await.unwrap();
+        let res = writer.close().await.unwrap();
 
         assert!(res.is_some());
         let res = res.unwrap();
