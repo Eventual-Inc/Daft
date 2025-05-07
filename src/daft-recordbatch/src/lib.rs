@@ -25,7 +25,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
         BoundColumn,
     },
-    functions::FunctionEvaluator,
+    functions::{FunctionArg, FunctionArgs, FunctionEvaluator},
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
     SketchType,
 };
@@ -89,28 +89,6 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
-/// Ensures that the schema matches the columns and also ensures that all values are either a scalar value, or a series of matching length.
-#[inline]
-fn validate_lengths_and_schema(
-    schema: &Schema,
-    columns: &[Series],
-    num_rows: usize,
-) -> DaftResult<()> {
-    if schema.len() != columns.len() {
-        return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the number of fields did not match between the schema and the input columns.\n {:?}\n vs\n {:?}", schema.len(), columns.len())));
-    }
-    for (field, series) in schema.into_iter().zip(columns.iter()) {
-        if &field.dtype != series.data_type() {
-            return Err(DaftError::SchemaMismatch(format!("While building a RecordBatch, we found that the Schema Field and the Series Field  did not match. schema field: {field} vs series field: {}", series.field())));
-        }
-        if (series.len() != 1) && (series.len() != num_rows) {
-            return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
-        }
-    }
-
-    Ok(())
-}
-
 impl RecordBatch {
     /// Create a new [`RecordBatch`] and handle broadcasting of any unit-length columns
     ///
@@ -128,7 +106,14 @@ impl RecordBatch {
         num_rows: usize,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
-        validate_lengths_and_schema(schema.as_ref(), columns.as_slice(), num_rows)?;
+        validate_schema(schema.as_ref(), columns.as_slice())?;
+
+        // Validate Series lengths against provided num_rows
+        for (field, series) in schema.into_iter().zip(columns.iter()) {
+            if (series.len() != 1) && (series.len() != num_rows) {
+                return Err(DaftError::ValueError(format!("While building a RecordBatch with RecordBatch::new_with_broadcast, we found that the Series lengths did not match and could not be broadcasted. Series named: {} had length: {} vs the specified RecordBatch length: {}", field.name, series.len(), num_rows)));
+            }
+        }
 
         // Broadcast any unit-length Series
         let columns: DaftResult<Vec<Series>> = columns
@@ -631,6 +616,7 @@ impl RecordBatch {
     fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
+            Expr::NamedExpr {expr, ..} => Ok(self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?),
             Expr::Alias(child, name) => Ok(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
@@ -709,12 +695,23 @@ impl RecordBatch {
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Expr::ScalarFunction(func) => {
-                let evaluated_inputs = func
-                    .inputs
+                let evaluated_inputs = func.inputs
                     .iter()
-                    .map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
+                    .map(|e| {
+                        if let Expr::NamedExpr {name, expr} = e.as_ref() {
+                            Ok(FunctionArg::Named {
+                                name: name.clone(),
+                                arg: self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                            })
+                        } else {
+                            Ok(FunctionArg::Unnamed(self.eval_expression(&BoundExpr::new_unchecked(e.clone()))?))
+                        }
+                    })
                     .collect::<DaftResult<Vec<_>>>()?;
-                func.udf.evaluate(evaluated_inputs.as_slice())
+                let args = FunctionArgs::try_new(evaluated_inputs)?;
+
+                // todo:
+                func.udf.evaluate(args.into_inner().as_slice())
             }
             Expr::Literal(lit_value) => Ok(lit_value.to_series()),
             Expr::IfElse {
