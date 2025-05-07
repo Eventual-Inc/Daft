@@ -403,6 +403,7 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let sink = TopNSink::new(
+                input.schema(),
                 sort_by.clone(),
                 descending.clone(),
                 nulls_first.clone(),
