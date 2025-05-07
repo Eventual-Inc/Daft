@@ -295,6 +295,15 @@ def test_repr_functions_arcsinh() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_unix_date() -> None:
+    a = col("a")
+    y = a.dt.unix_date()
+    repr_out = repr(y)
+    assert repr_out == "unix_date(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()
@@ -309,6 +318,15 @@ def test_repr_functions_month() -> None:
     y = a.dt.month()
     repr_out = repr(y)
     assert repr_out == "month(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_quarter() -> None:
+    a = col("a")
+    y = a.dt.quarter()
+    repr_out = repr(y)
+    assert repr_out == "quarter(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
