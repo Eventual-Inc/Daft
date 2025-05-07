@@ -73,7 +73,9 @@ impl Stream for RunningStage {
                 RunningStageState::Finishing(joinset) => match joinset.poll_join_next(cx) {
                     // Received a result from the joinset
                     Poll::Ready(Some(result)) => match result {
-                        Ok(Ok(())) => Some(Poll::Ready(None)),
+                        // Joinset finished a task successfully, return None to poll again
+                        Ok(Ok(())) => None,
+                        // Joinset finished a task with an error, return the error
                         Ok(Err(e)) => Some(Poll::Ready(Some(Err(e)))),
                         Err(e) => Some(Poll::Ready(Some(Err(DaftError::External(e.into()))))),
                     },
