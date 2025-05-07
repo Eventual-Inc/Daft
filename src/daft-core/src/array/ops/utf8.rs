@@ -7,9 +7,7 @@ use std::{
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{
     array::BinaryArray as ArrowBinaryArray, datatypes::DataType as ArrowType, offset::Offsets,
-    temporal_conversions,
 };
-use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
 use daft_schema::time_unit::format_string_has_offset;
 use itertools::Itertools;
@@ -103,32 +101,6 @@ impl Utf8Array {
 
     pub fn reverse(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.chars().rev().collect::<String>().into())
-    }
-
-    pub fn to_date(&self, format: &str) -> DaftResult<DateArray> {
-        let len = self.len();
-        let self_iter = self.as_arrow().iter();
-
-        let arrow_result = self_iter
-            .map(|val| match val {
-                Some(val) => {
-                    let date = chrono::NaiveDate::parse_from_str(val, format).map_err(|e| {
-                        DaftError::ComputeError(format!(
-                            "Error in to_date: failed to parse date {val} with format {format} : {e}"
-                        ))
-                    })?;
-                    Ok(Some(
-                        date.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE,
-                    ))
-                }
-                _ => Ok(None),
-            })
-            .collect::<DaftResult<arrow2::array::Int32Array>>()?;
-
-        let result = Int32Array::from((self.name(), Box::new(arrow_result)));
-        let result = DateArray::new(Field::new(self.name(), DataType::Date), result);
-        assert_eq!(result.len(), len);
-        Ok(result)
     }
 
     pub fn to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<TimestampArray> {

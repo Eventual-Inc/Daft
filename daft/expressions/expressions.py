@@ -3724,7 +3724,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_to_date(self._expr, format))
+        format_expr = Expression._to_expression(format)._expr
+        f = native.get_function_from_registry("to_date")
+        return Expression._from_pyexpr(f(self._expr, format=format_expr))
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
         """Converts a string to a datetime using the specified format and timezone.

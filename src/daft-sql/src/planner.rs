@@ -15,9 +15,9 @@ use daft_dsl::{
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
-    utf8::{to_date, to_datetime},
+    utf8::to_datetime,
 };
-use daft_functions_utf8::{ilike, like};
+use daft_functions_utf8::{ilike, like, to_date};
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
@@ -1360,7 +1360,7 @@ impl SQLPlanner<'_> {
             SQLExpr::Nested(e) => self.plan_expr(e),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
             SQLExpr::TypedString { data_type, value } => match data_type {
-                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
+                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), lit("%Y-%m-%d"))),
                 sqlparser::ast::DataType::Timestamp(None, TimezoneInfo::None)
                 | sqlparser::ast::DataType::Datetime(None) => Ok(to_datetime(
                     lit(value.as_str()),

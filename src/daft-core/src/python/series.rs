@@ -349,10 +349,6 @@ impl PySeries {
         Ok(self.series.utf8_upper()?.into())
     }
 
-    pub fn utf8_to_date(&self, format: &str) -> PyResult<Self> {
-        Ok(self.series.utf8_to_date(format)?.into())
-    }
-
     #[pyo3(signature = (format, timezone=None))]
     pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
         Ok(self.series.utf8_to_datetime(format, timezone)?.into())

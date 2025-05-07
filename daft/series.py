@@ -892,10 +892,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("ilike", pattern)
 
     def to_date(self, format: str) -> Series:
-        if not isinstance(format, str):
-            raise ValueError(f"expected str for format but got {type(format)}")
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_to_date(format))
+        return self._eval_expressions("to_date", format=format)
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Series:
         if not isinstance(format, str):
