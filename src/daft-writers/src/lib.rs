@@ -3,6 +3,7 @@
 mod batch;
 mod file;
 mod ipc;
+mod native_arrow_writer;
 mod partition;
 mod physical;
 #[cfg(test)]
