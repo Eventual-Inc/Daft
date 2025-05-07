@@ -97,7 +97,12 @@ code.doc-symbol-method::after {
   display: none;
 }
 
-/* display width */
+/* table display width */
 .md-grid {
   max-width: 70rem;
+}
+
+/* spacing between slack & github icon in header*/
+[dir=ltr] .md-header__source {
+  margin-left: 0.3rem;
 }

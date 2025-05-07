@@ -128,8 +128,10 @@ theme:
       icon: material/theme-light-dark
       name: Switch to system preference
   icon:
+    repo: fontawesome/brands/github
     admonition:
       quote: octicons/question-16
+  custom_dir: docs/overrides
 
 # Additional Configuration
 extra:
