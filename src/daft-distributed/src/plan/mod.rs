@@ -8,12 +8,13 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
+use common_runtime::RuntimeTask;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-use futures::{Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt};
 
 use crate::{
     channel::{create_channel, Receiver, Sender},
-    runtime::{get_or_init_runtime, JoinHandle},
+    runtime::get_or_init_runtime,
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
 };
@@ -87,15 +88,15 @@ impl DistributedPhysicalPlan {
 // This is the output of a plan, a receiver to receive the results of the plan.
 // And the join handle to the task that runs the plan.
 pub struct PlanResult {
-    _handle: Option<JoinHandle<DaftResult<()>>>,
-    _rx: Receiver<PartitionRef>,
+    task: Option<RuntimeTask<DaftResult<()>>>,
+    rx: Receiver<PartitionRef>,
 }
 
 impl PlanResult {
-    fn new(handle: JoinHandle<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
+    fn new(task: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
         Self {
-            _handle: Some(handle),
-            _rx: rx,
+            task: Some(task),
+            rx,
         }
     }
 }
@@ -103,7 +104,26 @@ impl PlanResult {
 impl Stream for PlanResult {
     type Item = DaftResult<PartitionRef>;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for plan result");
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.task.is_none() {
+            return Poll::Ready(None);
+        }
+
+        match self.rx.poll_recv(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(result)) => Poll::Ready(Some(Ok(result))),
+            Poll::Ready(None) => {
+                if let Some(mut handle) = self.task.take() {
+                    let result = handle.poll_unpin(cx);
+                    match result {
+                        Poll::Pending => Poll::Pending,
+                        Poll::Ready(Ok(Ok(()))) => Poll::Ready(None),
+                        Poll::Ready(Ok(Err(e))) | Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+                    }
+                } else {
+                    Poll::Ready(None)
+                }
+            }
+        }
     }
 }
