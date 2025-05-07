@@ -40,7 +40,11 @@ pub struct PhysicalWriterFactory {
 }
 
 impl PhysicalWriterFactory {
-    fn native_available(file_schema: &SchemaRef) -> bool {
+    fn native_available(file_format: FileFormat, file_schema: &SchemaRef) -> bool {
+        // TODO(desmond): Currently we only support native parquet writes.
+        if !matches!(file_format, FileFormat::Parquet) {
+            return false;
+        }
         let writer_properties = Arc::new(
             WriterProperties::builder()
                 .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -66,10 +70,12 @@ impl PhysicalWriterFactory {
     }
 
     pub fn new(output_file_info: OutputFileInfo, file_schema: &SchemaRef, native: bool) -> Self {
+        let native_available =
+            native && Self::native_available(output_file_info.file_format, file_schema);
         Self {
             output_file_info,
             schema: file_schema.clone(),
-            native: native && Self::native_available(file_schema),
+            native: native_available,
         }
     }
 }
