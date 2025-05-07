@@ -5,22 +5,41 @@ use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 
 #[derive(Debug)]
-pub struct SwordfishTask {
+pub(crate) enum SchedulingStrategy {
+    Spread,
+    #[allow(dead_code)]
+    NodeAffinity {
+        node_id: String,
+        soft: bool,
+    },
+}
+
+#[derive(Debug)]
+pub(crate) struct SwordfishTask {
     plan: LocalPhysicalPlanRef,
     psets: HashMap<String, Vec<PartitionRef>>,
+    strategy: SchedulingStrategy,
 }
 impl SwordfishTask {
     #[allow(dead_code)]
-    pub fn new(plan: LocalPhysicalPlanRef, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
-        Self { plan, psets }
+    pub fn new(
+        plan: LocalPhysicalPlanRef,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        strategy: SchedulingStrategy,
+    ) -> Self {
+        Self {
+            plan,
+            psets,
+            strategy,
+        }
+    }
+
+    pub fn strategy(&self) -> &SchedulingStrategy {
+        &self.strategy
     }
 
     pub fn plan(&self) -> LocalPhysicalPlanRef {
         self.plan.clone()
-    }
-
-    pub fn estimated_memory_cost(&self) -> usize {
-        self.plan.estimated_memory_cost()
     }
 
     pub fn psets(&self) -> HashMap<String, Vec<PartitionRef>> {

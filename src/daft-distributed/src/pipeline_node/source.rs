@@ -1,21 +1,17 @@
 use std::collections::HashMap;
 
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{
-    stats::{ApproxStats, PlanStats, StatsState},
-    InMemoryInfo,
-};
+use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 
-use super::{
-    translate::PipelinePlan, DistributedPipelineNode, PipelineInput, PipelineOutput,
-    RunningPipelineNode,
-};
+use super::{DistributedPipelineNode, PipelineInput, PipelineOutput, RunningPipelineNode};
 use crate::{
     channel::{create_channel, Sender},
-    scheduling::{dispatcher::TaskDispatcherHandle, task::SwordfishTask},
+    scheduling::{
+        dispatcher::TaskDispatcherHandle,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::StageContext,
 };
 
@@ -33,7 +29,7 @@ impl SourceNode {
 
     #[allow(dead_code)]
     async fn execution_loop(
-        task_dispatcher_handle: TaskDispatcherHandle,
+        _task_dispatcher_handle: TaskDispatcherHandle,
         plan: LocalPhysicalPlanRef,
         input: PipelineInput,
         result_tx: Sender<PipelineOutput>,
@@ -72,16 +68,17 @@ impl SourceNode {
                         .data;
                     let mut psets = HashMap::new();
                     psets.insert(cache_key, vec![partition_ref]);
-                    let task = SwordfishTask::new(transformed_plan, psets);
+                    let task =
+                        SwordfishTask::new(transformed_plan, psets, SchedulingStrategy::Spread);
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }
                 }
             }
             PipelineInput::ScanTasks {
-                source_id,
                 scan_tasks,
                 pushdowns,
+                ..
             } => {
                 for scan_task in scan_tasks.iter() {
                     let transformed_plan = plan.clone().transform_up(|p| match p.as_ref() {
@@ -97,7 +94,11 @@ impl SourceNode {
                         _ => Ok(Transformed::no(p)),
                     })?;
                     let psets = HashMap::new();
-                    let task = SwordfishTask::new(transformed_plan.data, psets);
+                    let task = SwordfishTask::new(
+                        transformed_plan.data,
+                        psets,
+                        SchedulingStrategy::Spread,
+                    );
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }

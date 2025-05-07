@@ -9,9 +9,9 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_scan_info::{ScanState, ScanTaskLikeRef};
+use common_scan_info::ScanState;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{stats::StatsState, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{stats::StatsState, LogicalPlan, SourceInfo};
 
 use super::PipelineInput;
 

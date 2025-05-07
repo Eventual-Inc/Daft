@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
 use common_error::DaftResult;
@@ -63,15 +63,15 @@ impl WorkerManager for RayWorkerManager {
         })
     }
 
-    fn get_worker_resources(&self) -> Vec<(String, usize, usize)> {
+    fn get_worker_slots(&self) -> HashMap<String, usize> {
         Python::with_gil(|py| {
-            let py_worker_resources = self
+            let py_worker_slots = self
                 .ray_worker_manager
-                .call_method0(py, pyo3::intern!(py, "get_worker_resources"))
-                .expect("Failed to get worker resources from RayWorkerManager");
-            py_worker_resources
-                .extract::<Vec<(String, usize, usize)>>(py)
-                .expect("Failed to extract worker resources from RayWorkerManager")
+                .call_method0(py, pyo3::intern!(py, "get_worker_slots"))
+                .expect("Failed to get worker slots from RayWorkerManager");
+            py_worker_slots
+                .extract::<HashMap<String, usize>>(py)
+                .expect("Failed to extract worker slots from RayWorkerManager")
         })
     }
 

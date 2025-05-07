@@ -565,10 +565,6 @@ impl LocalPhysicalPlan {
         }
     }
 
-    pub fn estimated_memory_cost(&self) -> usize {
-        todo!("Implement estimated memory cost for local physical plan");
-    }
-
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
         match self {
             Self::PhysicalScan(_)

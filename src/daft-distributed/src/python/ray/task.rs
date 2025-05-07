@@ -32,16 +32,19 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
     async fn get_result(&mut self) -> DaftResult<PartitionRef> {
         let handle = self.handle.take().unwrap();
-        let coroutine = Python::with_gil(|py| {
-            let coroutine = handle
-                .call_method0(py, pyo3::intern!(py, "get_result"))?
-                .into_bound(py);
-            pyo3_async_runtimes::tokio::into_future(coroutine)
-        })?;
+        let fut = async move {
+            let result = Python::with_gil(|py| {
+                let coroutine = handle
+                    .call_method0(py, pyo3::intern!(py, "get_result"))?
+                    .into_bound(py);
+                pyo3_async_runtimes::tokio::into_future(coroutine)
+            })?;
+            DaftResult::Ok(result.await)
+        };
 
         // await the rust future in the scope of the asyncio event loop
         let task_locals = self.task_locals.take().unwrap();
-        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, coroutine).await?;
+        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, fut).await??;
 
         let ray_part_ref =
             Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
@@ -67,6 +70,33 @@ pub(crate) struct RayPartitionRef {
     pub object_ref: PyObject,
     pub num_rows: usize,
     pub size_bytes: usize,
+}
+
+#[pymethods]
+impl RayPartitionRef {
+    #[new]
+    pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
+        Self {
+            object_ref,
+            num_rows,
+            size_bytes,
+        }
+    }
+
+    #[getter]
+    pub fn get_object_ref(&self, py: Python) -> PyObject {
+        self.object_ref.clone_ref(py)
+    }
+
+    #[getter]
+    pub fn get_num_rows(&self) -> usize {
+        self.num_rows
+    }
+
+    #[getter]
+    pub fn get_size_bytes(&self) -> usize {
+        self.size_bytes
+    }
 }
 
 impl Partition for RayPartitionRef {
@@ -95,10 +125,6 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
-    fn estimated_memory_cost(&self) -> usize {
-        self.task.estimated_memory_cost()
-    }
-
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })
