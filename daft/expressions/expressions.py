@@ -3338,7 +3338,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_rstrip(self._expr))
+        f = native.get_function_from_registry("rstrip")
+        return Expression._from_pyexpr(f(self._expr))
 
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.

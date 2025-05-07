@@ -27,10 +27,6 @@ impl Series {
         self.with_utf8_array(|arr| Ok(arr.upper()?.into_series()))
     }
 
-    pub fn utf8_rstrip(&self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.rstrip()?.into_series()))
-    }
-
     pub fn utf8_substr(&self, start: &Self, length: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if start.data_type().is_integer() {

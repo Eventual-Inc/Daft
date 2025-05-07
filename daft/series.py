@@ -858,8 +858,7 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("lstrip")
 
     def rstrip(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_rstrip())
+        return self._eval_expressions("rstrip")
 
     def reverse(self) -> Series:
         return self._eval_expressions("reverse")

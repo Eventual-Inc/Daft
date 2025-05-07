@@ -11,6 +11,7 @@ mod lower;
 mod lpad;
 mod lstrip;
 mod normalize;
+pub(crate) mod pad;
 mod regexp_extract;
 mod regexp_extract_all;
 mod regexp_match;
@@ -18,13 +19,9 @@ mod repeat;
 mod replace;
 mod reverse;
 mod right;
-
-//
-pub(crate) mod pad;
-
 mod rpad;
+mod rstrip;
 mod startswith;
-
 pub(crate) mod utils;
 
 pub use capitalize::*;
@@ -49,6 +46,7 @@ pub use reverse::*;
 pub use right::*;
 //
 pub use rpad::*;
+pub use rstrip::*;
 pub use startswith::*;
 
 pub struct Utf8Functions;
@@ -78,6 +76,7 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Right);
 
         parent.add_fn(RPad);
+        parent.add_fn(RStrip);
         parent.add_fn(StartsWith);
     }
 }
