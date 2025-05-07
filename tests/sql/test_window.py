@@ -366,7 +366,6 @@ def test_multiple_window_functions():
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "value"])
 
 
-@pytest.mark.skip(reason="Window function implementation on main does not support ROWS BETWEEN yet")
 def test_row_number_and_running_sum_window_functions():
     """Test SQL ROW_NUMBER() and SUM() window functions over partitions with ordering."""
     random.seed(42)

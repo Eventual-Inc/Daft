@@ -1,10 +1,11 @@
 use std::{cmp::max, sync::Arc};
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
+use crate::{AsyncFileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 
 // TargetFileSizeWriter is a writer that writes files of a target size.
 // It rotates the writer when the current file reaches the target size.
@@ -13,7 +14,8 @@ struct TargetFileSizeWriter {
     current_in_memory_bytes_written: usize,
     total_physical_bytes_written: usize,
     bytes_per_file: Vec<usize>,
-    current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    current_writer:
+        Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     writer_factory:
         Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
@@ -30,8 +32,9 @@ impl TargetFileSizeWriter {
         partition_values: Option<RecordBatch>,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> DaftResult<Self> {
-        let writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>> =
-            writer_factory.create_writer(0, partition_values.as_ref())?;
+        let writer: Box<
+            dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+        > = writer_factory.create_writer(0, partition_values.as_ref())?;
         let estimate = size_calculator.calculate_target_in_memory_size_bytes();
         Ok(Self {
             current_in_memory_size_estimate: estimate,
@@ -52,21 +55,21 @@ impl TargetFileSizeWriter {
             .saturating_sub(self.current_in_memory_bytes_written)
     }
 
-    fn write_and_update_bytes(
+    async fn write_and_update_bytes(
         &mut self,
         input: Arc<MicroPartition>,
         size_bytes: usize,
     ) -> DaftResult<usize> {
         self.current_in_memory_bytes_written += size_bytes;
-        let written_bytes = self.current_writer.write(input)?;
+        let written_bytes = self.current_writer.write(input).await?;
         self.total_physical_bytes_written += written_bytes;
         if self.current_in_memory_bytes_written >= self.current_in_memory_size_estimate {
-            self.rotate_writer_and_update_estimates()?;
+            self.rotate_writer_and_update_estimates().await?;
         }
         Ok(written_bytes)
     }
 
-    fn rotate_writer_and_update_estimates(&mut self) -> DaftResult<()> {
+    async fn rotate_writer_and_update_estimates(&mut self) -> DaftResult<()> {
         // Record the size of the current file and update the inflation factor
         self.size_calculator.record_and_update_inflation_factor(
             self.current_writer.bytes_written(),
@@ -77,7 +80,7 @@ impl TargetFileSizeWriter {
             self.size_calculator.calculate_target_in_memory_size_bytes();
 
         // Close the current writer and add the result to the results
-        if let Some(result) = self.current_writer.close()? {
+        if let Some(result) = self.current_writer.close().await? {
             self.results.push(result);
             self.bytes_per_file
                 .push(self.current_writer.bytes_written());
@@ -92,11 +95,12 @@ impl TargetFileSizeWriter {
     }
 }
 
-impl FileWriter for TargetFileSizeWriter {
+#[async_trait]
+impl AsyncFileWriter for TargetFileSizeWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
+    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetFileSizeWriter"
@@ -124,10 +128,12 @@ impl FileWriter for TargetFileSizeWriter {
                 Ordering::Equal | Ordering::Less => {
                     let to_write =
                         input.slice(local_offset, local_offset + remaining_input_rows)?;
-                    bytes_written += self.write_and_update_bytes(
-                        to_write.into(),
-                        remaining_input_rows * avg_row_size_bytes,
-                    )?;
+                    bytes_written += self
+                        .write_and_update_bytes(
+                            to_write.into(),
+                            remaining_input_rows * avg_row_size_bytes,
+                        )
+                        .await?;
                     return Ok(bytes_written);
                 }
                 // We have more rows to write, write the target amount, rotate the writer and continue
@@ -136,7 +142,8 @@ impl FileWriter for TargetFileSizeWriter {
                     self.write_and_update_bytes(
                         to_write.into(),
                         rows_until_target * avg_row_size_bytes,
-                    )?;
+                    )
+                    .await?;
                     local_offset += rows_until_target;
                 }
             }
@@ -151,9 +158,9 @@ impl FileWriter for TargetFileSizeWriter {
         self.bytes_per_file.clone()
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         if self.current_in_memory_bytes_written > 0 {
-            if let Some(result) = self.current_writer.close()? {
+            if let Some(result) = self.current_writer.close().await? {
                 self.results.push(result);
                 self.bytes_per_file
                     .push(self.current_writer.bytes_written());
@@ -192,14 +199,14 @@ impl WriterFactory for TargetFileSizeWriterFactory {
         &self,
         _file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(TargetFileSizeWriter::new(
             self.writer_factory.clone(),
             partition_values.cloned(),
             self.size_calculator.clone(),
         )?)
             as Box<
-                dyn FileWriter<Input = Self::Input, Result = Self::Result>,
+                dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,
             >)
     }
 }
@@ -210,8 +217,8 @@ mod tests {
     use super::*;
     use crate::test::{make_dummy_mp, DummyWriterFactory};
 
-    #[test]
-    fn test_target_file_writer_exact_file() {
+    #[tokio::test]
+    async fn test_target_file_writer_exact_file() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(1, 1.0));
         let mut writer =
@@ -219,13 +226,13 @@ mod tests {
                 .unwrap();
 
         let mp = make_dummy_mp(1);
-        writer.write(mp).unwrap();
-        let res = writer.close().unwrap();
+        writer.write(mp).await.unwrap();
+        let res = writer.close().await.unwrap();
         assert_eq!(res.len(), 1);
     }
 
-    #[test]
-    fn test_target_file_writer_less_rows_for_one_file() {
+    #[tokio::test]
+    async fn test_target_file_writer_less_rows_for_one_file() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
@@ -233,13 +240,13 @@ mod tests {
                 .unwrap();
 
         let mp = make_dummy_mp(2);
-        writer.write(mp).unwrap();
-        let res = writer.close().unwrap();
+        writer.write(mp).await.unwrap();
+        let res = writer.close().await.unwrap();
         assert_eq!(res.len(), 1);
     }
 
-    #[test]
-    fn test_target_file_writer_more_rows_for_one_file() {
+    #[tokio::test]
+    async fn test_target_file_writer_more_rows_for_one_file() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
@@ -247,13 +254,13 @@ mod tests {
                 .unwrap();
 
         let mp = make_dummy_mp(4);
-        writer.write(mp).unwrap();
-        let res = writer.close().unwrap();
+        writer.write(mp).await.unwrap();
+        let res = writer.close().await.unwrap();
         assert_eq!(res.len(), 2);
     }
 
-    #[test]
-    fn test_target_file_writer_multiple_files() {
+    #[tokio::test]
+    async fn test_target_file_writer_multiple_files() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
@@ -261,13 +268,13 @@ mod tests {
                 .unwrap();
 
         let mp = make_dummy_mp(10);
-        writer.write(mp).unwrap();
-        let res = writer.close().unwrap();
+        writer.write(mp).await.unwrap();
+        let res = writer.close().await.unwrap();
         assert_eq!(res.len(), 4);
     }
 
-    #[test]
-    fn test_target_file_writer_many_writes_many_files() {
+    #[tokio::test]
+    async fn test_target_file_writer_many_writes_many_files() {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
@@ -276,9 +283,9 @@ mod tests {
 
         for _ in 0..10 {
             let mp = make_dummy_mp(1);
-            writer.write(mp).unwrap();
+            writer.write(mp).await.unwrap();
         }
-        let res = writer.close().unwrap();
+        let res = writer.close().await.unwrap();
         assert_eq!(res.len(), 4);
     }
 }

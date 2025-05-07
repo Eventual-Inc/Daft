@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_runtime::{get_io_runtime, Runtime};
@@ -26,7 +27,7 @@ use parquet::{
 };
 use tokio::sync::Mutex;
 
-use crate::{FileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriterFactory};
 
 /// TODO(desmond): This can be tuned.
 /// Default buffer size for writing to files.
@@ -82,7 +83,7 @@ impl WriterFactory for PhysicalWriterFactory {
         &self,
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         let (source_type, root_dir) = parse_url(&self.output_file_info.root_dir)?;
         match self.native {
             // TODO(desmond): Remote writes.
@@ -181,11 +182,12 @@ impl ArrowParquetWriter {
     }
 }
 
-impl FileWriter for ArrowParquetWriter {
+#[async_trait]
+impl AsyncFileWriter for ArrowParquetWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         if self.file_writer.is_none() {
             self.create_writer()?;
         }
@@ -275,7 +277,7 @@ impl FileWriter for ArrowParquetWriter {
         Ok(bytes_written)
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
         let file_writer = self.file_writer.clone();
         self.compute_runtime
@@ -357,7 +359,8 @@ pub fn create_pyarrow_file_writer(
     io_config: Option<&daft_io::IOConfig>,
     format: FileFormat,
     partition: Option<&RecordBatch>,
-) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>> {
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
+{
     match format {
         #[cfg(feature = "python")]
         FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(

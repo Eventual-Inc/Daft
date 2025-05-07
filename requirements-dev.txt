@@ -40,7 +40,10 @@ duckdb==1.1.2
 tqdm
 
 # Pyarrow
-pyarrow==19.0.0
+# Pyarrow 19.0.0 has a forwards compatibility bug so we use pyarrow 19.0.1 instead.
+# Pyarrow 20.0.0 is incompatible with Ray hence we can't use newer versions for now.
+# See: https://github.com/Eventual-Inc/Daft/pull/4301
+pyarrow==19.0.1
 # Ray
 ray[data, client]==2.34.0
 

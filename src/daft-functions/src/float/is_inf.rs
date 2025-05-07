@@ -2,6 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
+    with_match_float_and_null_daft_types,
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -25,8 +26,7 @@ impl ScalarUDF for IsInf {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
-                    // DataType::Float16 |
-                    DataType::Float32 | DataType::Float64 => {
+                    DataType::Null | DataType::Float32 | DataType::Float64 => {
                         Ok(Field::new(data_field.name, DataType::Boolean))
                     }
                     _ => Err(DaftError::TypeError(format!(
@@ -43,8 +43,13 @@ impl ScalarUDF for IsInf {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+        use daft_core::{array::ops::DaftIsInf, series::IntoSeries};
         match inputs {
-            [data] => data.is_inf(),
+            [data] => {
+                with_match_float_and_null_daft_types!(data.data_type(), |$T| {
+                    Ok(DaftIsInf::is_inf(data.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
+                })
+            }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input args, got {}",
                 inputs.len()

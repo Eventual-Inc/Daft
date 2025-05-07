@@ -1,18 +1,25 @@
+use arrow2::bitmap::{binary, Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
     prelude::*,
 };
-use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    AggExpr, WindowBoundary, WindowFrame, WindowFrameType,
+};
 
-use crate::RecordBatch;
+use crate::{
+    ops::window_states::{create_window_agg_state, WindowAggStateOps},
+    RecordBatch,
+};
 
 impl RecordBatch {
     pub fn window_grouped_agg(
         &self,
-        to_agg: &[AggExpr],
+        to_agg: &[BoundAggExpr],
         aliases: &[String],
-        partition_by: &[ExprRef],
+        partition_by: &[BoundExpr],
     ) -> DaftResult<Self> {
         if partition_by.is_empty() {
             return Err(DaftError::ValueError(
@@ -22,7 +29,9 @@ impl RecordBatch {
 
         let agg_exprs = to_agg.to_vec();
 
-        if matches!(agg_exprs.as_slice(), [AggExpr::MapGroups { .. }]) {
+        if let [agg_expr] = agg_exprs.as_slice()
+            && matches!(agg_expr.as_ref(), AggExpr::MapGroups { .. })
+        {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
             ));
@@ -72,8 +81,8 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    pub fn window_agg(&self, to_agg: &AggExpr, name: String) -> DaftResult<Self> {
-        if matches!(to_agg, AggExpr::MapGroups { .. }) {
+    pub fn window_agg(&self, to_agg: &BoundAggExpr, name: String) -> DaftResult<Self> {
+        if matches!(to_agg.as_ref(), AggExpr::MapGroups { .. }) {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
             ));
@@ -93,20 +102,20 @@ impl RecordBatch {
     pub fn window_agg_dynamic_frame(
         &self,
         name: String,
-        agg_expr: &AggExpr,
+        agg_expr: &BoundAggExpr,
         min_periods: usize,
         dtype: &DataType,
         frame: &WindowFrame,
     ) -> DaftResult<Self> {
         if matches!(frame.frame_type, WindowFrameType::Range) {
             return Err(DaftError::ValueError(
-                "RANGE frame type is not supported yet for window_agg_dynamic_frame".into(),
+                "Range frame type not yet supported in window aggregation".into(),
             ));
         }
 
         let total_rows = self.len();
 
-        // Convert WindowBoundary to Option<i64>
+        // Calculate boundaries within the rows_between function as they are relative
         let start_boundary = match &frame.start {
             WindowBoundary::UnboundedPreceding() => None,
             WindowBoundary::Offset(offset) => Some(*offset),
@@ -127,21 +136,110 @@ impl RecordBatch {
             }
         };
 
-        self.window_agg_rows_between(
-            agg_expr,
-            &name,
-            dtype,
-            start_boundary,
-            end_boundary,
-            min_periods,
-            total_rows,
-        )
+        let source = self.get_column(agg_expr.as_ref().name())?;
+        // Check if we can initialize an incremental state
+        match create_window_agg_state(source, agg_expr, total_rows)? {
+            Some(agg_state) => {
+                // Incremental state created successfully
+                self.window_agg_rows_incremental(
+                    &name,
+                    start_boundary,
+                    end_boundary,
+                    min_periods,
+                    total_rows,
+                    agg_state,
+                )
+            }
+            None => {
+                // Otherwise, use the non-incremental implementation
+                self.window_agg_rows(
+                    agg_expr,
+                    &name,
+                    dtype,
+                    start_boundary,
+                    end_boundary,
+                    min_periods,
+                    total_rows,
+                )
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_rows_between(
+    fn window_agg_rows_incremental(
         &self,
-        agg_expr: &AggExpr,
+        name: &str,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
+        min_periods: usize,
+        total_rows: usize,
+        mut agg_state: Box<dyn WindowAggStateOps>,
+    ) -> DaftResult<Self> {
+        // Track previous window boundaries
+        let mut prev_frame_start = 0;
+        let mut prev_frame_end = 0;
+        let mut validity = MutableBitmap::from_len_zeroed(total_rows);
+
+        for row_idx in 0..total_rows {
+            // Calculate frame bounds for this row
+            let frame_start = match start_boundary {
+                None => 0, // Unbounded preceding
+                Some(offset) => row_idx
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
+            };
+
+            let frame_end = match end_boundary {
+                None => total_rows, // Unbounded following
+                Some(offset) => (row_idx + 1)
+                    .saturating_add_signed(offset as isize)
+                    .min(total_rows),
+            };
+
+            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
+                return Err(DaftError::ValueError(
+                    "Negative frame size is not allowed".into(),
+                ));
+            };
+
+            // Check min_periods requirement
+            if frame_size >= min_periods {
+                // Remove values that left the window (values that were in the previous window but not in the current one)
+                if frame_start > prev_frame_start {
+                    agg_state.remove(prev_frame_start, frame_start)?;
+                }
+
+                // Add new values that entered the window (values that are in the current window but weren't in the previous)
+                if frame_end > prev_frame_end {
+                    agg_state.add(prev_frame_end, frame_end)?;
+                }
+
+                // Update previous boundaries for the next iteration
+                prev_frame_start = frame_start;
+                prev_frame_end = frame_end;
+                validity.set(row_idx, true);
+            }
+
+            // Evaluate current state to get the result for this row
+            agg_state.evaluate()?;
+        }
+
+        let mut validity = Bitmap::from(validity);
+        let agg_state = agg_state.build()?.rename(name);
+        if let Some(agg_validity) = agg_state.validity() {
+            validity = binary(&validity, agg_validity, |a, b| a & b);
+        }
+
+        // Build the final result series
+        let renamed_result = agg_state.with_validity(Some(validity))?;
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_rows(
+        &self,
+        agg_expr: &BoundAggExpr,
         name: &str,
         dtype: &DataType,
         start_boundary: Option<i64>,
@@ -202,7 +300,12 @@ impl RecordBatch {
         self.union(&row_number_batch)
     }
 
-    pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
+    pub fn window_rank(
+        &self,
+        name: String,
+        order_by: &[BoundExpr],
+        dense: bool,
+    ) -> DaftResult<Self> {
         if self.is_empty() {
             // Empty partition case - no work needed
             let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
@@ -257,9 +360,9 @@ impl RecordBatch {
     pub fn window_offset(
         &self,
         name: String,
-        expr: ExprRef,
+        expr: BoundExpr,
         offset: isize,
-        default: Option<ExprRef>,
+        default: Option<BoundExpr>,
     ) -> DaftResult<Self> {
         // Short-circuit if offset is 0 - just return the value itself
         if offset == 0 {
@@ -272,7 +375,7 @@ impl RecordBatch {
         let expr_col = self.eval_expression(&expr)?;
         let abs_offset = offset.unsigned_abs();
 
-        let process_default = |default_opt: &Option<ExprRef>,
+        let process_default = |default_opt: &Option<BoundExpr>,
                                target_type: &DataType,
                                slice_start: usize,
                                slice_end: usize,
