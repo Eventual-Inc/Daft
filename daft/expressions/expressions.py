@@ -2950,7 +2950,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_split(self._expr, pattern_expr._expr, regex))
+        f_name = "regexp_split" if regex else "split"
+        f = native.get_function_from_registry(f_name)
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together.

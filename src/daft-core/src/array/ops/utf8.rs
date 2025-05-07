@@ -6,9 +6,7 @@ use std::{
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{
-    array::{Array, BinaryArray as ArrowBinaryArray},
-    datatypes::DataType as ArrowType,
-    offset::Offsets,
+    array::BinaryArray as ArrowBinaryArray, datatypes::DataType as ArrowType, offset::Offsets,
     temporal_conversions,
 };
 use chrono::Datelike;
@@ -18,7 +16,7 @@ use itertools::Itertools;
 use num_traits::NumCast;
 
 use super::{as_arrow::AsArrow, full::FullNull};
-use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
+use crate::{array::prelude::*, datatypes::prelude::*};
 
 enum BroadcastedStrIter<'a> {
     Repeat(std::iter::RepeatN<Option<&'a str>>),
@@ -99,58 +97,6 @@ where
     Ok((false, result_len))
 }
 
-fn split_array_on_literal<'a>(
-    arr_iter: impl Iterator<Item = Option<&'a str>>,
-    pattern_iter: impl Iterator<Item = Option<&'a str>>,
-    splits: &mut arrow2::array::MutableUtf8Array<i64>,
-    offsets: &mut arrow2::offset::Offsets<i64>,
-    validity: &mut arrow2::bitmap::MutableBitmap,
-) -> DaftResult<()> {
-    for (val, pat) in arr_iter.zip(pattern_iter) {
-        let mut num_splits = 0i64;
-        match (val, pat) {
-            (Some(val), Some(pat)) => {
-                for split in val.split(pat) {
-                    splits.push(Some(split));
-                    num_splits += 1;
-                }
-                validity.push(true);
-            }
-            (_, _) => {
-                validity.push(false);
-            }
-        }
-        offsets.try_push(num_splits)?;
-    }
-    Ok(())
-}
-
-fn split_array_on_regex<'a>(
-    arr_iter: impl Iterator<Item = Option<&'a str>>,
-    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
-    splits: &mut arrow2::array::MutableUtf8Array<i64>,
-    offsets: &mut arrow2::offset::Offsets<i64>,
-    validity: &mut arrow2::bitmap::MutableBitmap,
-) -> DaftResult<()> {
-    for (val, re) in arr_iter.zip(regex_iter) {
-        let mut num_splits = 0i64;
-        match (val, re) {
-            (Some(val), Some(re)) => {
-                for split in re?.split(val) {
-                    splits.push(Some(split));
-                    num_splits += 1;
-                }
-                validity.push(true);
-            }
-            (_, _) => {
-                validity.push(false);
-            }
-        }
-        offsets.try_push(num_splits)?;
-    }
-    Ok(())
-}
-
 fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {
     let mut char_indices = s.char_indices();
 
@@ -221,96 +167,8 @@ where
 }
 
 impl Utf8Array {
-    pub fn split(&self, pattern: &Self, regex: bool) -> DaftResult<ListArray> {
-        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
-            .map_err(|e| DaftError::ValueError(format!("Error in split: {e}")))?;
-        if is_full_null {
-            return Ok(ListArray::full_null(
-                self.name(),
-                &DataType::List(Box::new(DataType::Utf8)),
-                expected_size,
-            ));
-        }
-        if expected_size == 0 {
-            return Ok(ListArray::empty(
-                self.name(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ));
-        }
-
-        let self_arrow = self.as_arrow();
-        let buffer_len = self_arrow.values().len();
-        // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurrences in the ith string in arr_iter.
-        let mut splits = arrow2::array::MutableUtf8Array::with_capacity(buffer_len);
-        let mut offsets = arrow2::offset::Offsets::new();
-        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(self.len());
-
-        let self_iter = create_broadcasted_str_iter(self, expected_size);
-        match (regex, pattern.len()) {
-            (true, 1) => {
-                let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
-                split_array_on_regex(
-                    self_iter,
-                    regex_iter,
-                    &mut splits,
-                    &mut offsets,
-                    &mut validity,
-                )?;
-            }
-            (true, _) => {
-                let regex_iter = pattern
-                    .as_arrow()
-                    .iter()
-                    .map(|pat| pat.map(regex::Regex::new));
-                split_array_on_regex(
-                    self_iter,
-                    regex_iter,
-                    &mut splits,
-                    &mut offsets,
-                    &mut validity,
-                )?;
-            }
-            (false, _) => {
-                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-                split_array_on_literal(
-                    self_iter,
-                    pattern_iter,
-                    &mut splits,
-                    &mut offsets,
-                    &mut validity,
-                )?;
-            }
-        }
-        // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
-        splits.shrink_to_fit();
-        let splits: arrow2::array::Utf8Array<i64> = splits.into();
-        let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
-        let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-            0 => None,
-            _ => Some(validity.into()),
-        };
-        let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
-        let result = ListArray::new(
-            Field::new(self.name(), DataType::List(Box::new(DataType::Utf8))),
-            flat_child,
-            offsets,
-            validity,
-        );
-        assert_eq!(result.len(), expected_size);
-        Ok(result)
-    }
-
     pub fn upper(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.to_uppercase().into())
-    }
-
-    pub fn lstrip(&self) -> DaftResult<Self> {
-        self.unary_broadcasted_op(|val| val.trim_start().into())
-    }
-
-    pub fn rstrip(&self) -> DaftResult<Self> {
-        self.unary_broadcasted_op(|val| val.trim_end().into())
     }
 
     pub fn reverse(&self) -> DaftResult<Self> {

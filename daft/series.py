@@ -820,10 +820,8 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("regexp_match", pattern)
 
     def split(self, pattern: Series, regex: bool = False) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_split(pattern._series, regex))
+        f_name = "regexp_split" if regex else "split"
+        return self._eval_expressions(f_name, pattern)
 
     def concat(self, other: Series) -> Series:
         if not isinstance(other, Series):

@@ -21,6 +21,7 @@ mod reverse;
 mod right;
 mod rpad;
 mod rstrip;
+mod split;
 mod startswith;
 pub(crate) mod utils;
 
@@ -44,9 +45,9 @@ pub use repeat::*;
 pub use replace::*;
 pub use reverse::*;
 pub use right::*;
-//
 pub use rpad::*;
 pub use rstrip::*;
+pub use split::*;
 pub use startswith::*;
 
 pub struct Utf8Functions;
@@ -74,9 +75,10 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(RegexpReplace);
         parent.add_fn(Reverse);
         parent.add_fn(Right);
-
         parent.add_fn(RPad);
         parent.add_fn(RStrip);
+        parent.add_fn(Split);
+        parent.add_fn(RegexpSplit);
         parent.add_fn(StartsWith);
     }
 }

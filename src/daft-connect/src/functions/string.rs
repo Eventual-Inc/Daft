@@ -1,4 +1,4 @@
-use daft_functions::utf8::{Utf8Split, Utf8Substr, Utf8Upper};
+use daft_functions::utf8::{Utf8Substr, Utf8Upper};
 
 use super::{FunctionModule, TODO_FUNCTION};
 
@@ -57,7 +57,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("repeat", TODO_FUNCTION);
         parent.add_fn("rtrim", TODO_FUNCTION);
         parent.add_fn("soundex", TODO_FUNCTION);
-        parent.add_fn("split", Utf8Split { regex: false });
+        parent.add_fn("split", daft_functions_utf8::Split);
         parent.add_fn("split_part", TODO_FUNCTION);
         parent.add_fn("startswith", daft_functions_utf8::StartsWith);
         parent.add_fn("substr", Utf8Substr {});

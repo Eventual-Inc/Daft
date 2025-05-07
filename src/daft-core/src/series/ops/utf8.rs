@@ -17,12 +17,6 @@ impl Series {
         }
     }
 
-    pub fn utf8_split(&self, pattern: &Self, regex: bool) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| {
-            pattern.with_utf8_array(|pattern_arr| Ok(arr.split(pattern_arr, regex)?.into_series()))
-        })
-    }
-
     pub fn utf8_upper(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.upper()?.into_series()))
     }

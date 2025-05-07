@@ -29,26 +29,6 @@ fn utf8_unary(
     }
 }
 
-fn utf8_binary(
-    func: impl Fn(ExprRef, ExprRef) -> ExprRef,
-    sql_name: &str,
-    arg_name_1: &str,
-    arg_name_2: &str,
-    inputs: &[sqlparser::ast::FunctionArg],
-    planner: &crate::planner::SQLPlanner,
-) -> SQLPlannerResult<ExprRef> {
-    match inputs {
-        [input1, input2] => {
-            let input1 = planner.plan_function_arg(input1)?;
-            let input2 = planner.plan_function_arg(input2)?;
-            Ok(func(input1, input2))
-        }
-        _ => invalid_operation_err!(
-            "invalid arguments for {sql_name}. Expected {sql_name}({arg_name_1}, {arg_name_2})",
-        ),
-    }
-}
-
 macro_rules! utf8_function {
     ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name:expr) => {
         pub struct $name;
@@ -124,14 +104,11 @@ pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        parent.add_fn("split", SQLUtf8Split);
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("regexp_split", SQLUtf8RegexpSplit);
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("upper", SQLUtf8Upper);
-
         parent.add_fn("to_date", SQLUtf8ToDate);
         parent.add_fn("to_datetime", SQLUtf8ToDatetime);
         parent.add_fn("count_matches", SQLCountMatches);
@@ -140,24 +117,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("concat", SQLConcat);
     }
 }
-
-utf8_function!(
-    SQLUtf8Split,
-    "split",
-    |input, pattern| daft_functions::utf8::split(input, pattern, false),
-    "Splits the string by the specified delimiter and returns an array of substrings",
-    "string_input",
-    "delimiter"
-);
-
-utf8_function!(
-    SQLUtf8RegexpSplit,
-    "regexp_split",
-    |input, pattern| daft_functions::utf8::split(input, pattern, true),
-    "Splits the string by the specified delimiter and returns an array of substrings",
-    "string_input",
-    "delimiter"
-);
 
 utf8_function!(
     SQLUtf8Upper,
