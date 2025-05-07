@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator, overload
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -16,22 +16,6 @@ from daft.schema import Schema
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
     from daft.io.pushdowns import Pushdowns
-
-
-@overload
-def _range(end: int) -> DataFrame: ...
-
-
-@overload
-def _range(start: int, end: int) -> DataFrame: ...
-
-
-@overload
-def _range(start: int, end: int, step: int) -> DataFrame: ...
-
-
-@overload
-def _range(start: int, end: int, step: int, partitions: int) -> DataFrame: ...
 
 
 # TODO: consider using `from_range` and `Series.from_range` instead.
