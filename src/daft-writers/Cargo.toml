@@ -2,6 +2,7 @@
 arrow2 = {workspace = true, features = [
   "io_ipc_compression"
 ]}
+async-trait = "0.1.79"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
@@ -12,6 +13,7 @@ daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 pyo3 = {workspace = true, optional = true}
+tokio = {workspace = true}
 
 [features]
 python = ["dep:pyo3", "common-file-formats/python", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-logical-plan/python", "daft-micropartition/python"]
