@@ -3778,7 +3778,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_to_datetime(self._expr, format, timezone))
+        format_expr = Expression._to_expression(format)._expr
+        timezone_expr = Expression._to_expression(timezone)._expr
+        f = native.get_function_from_registry("to_datetime")
+        return Expression._from_pyexpr(f(self._expr, format=format_expr, timezone=timezone_expr))
 
     def normalize(
         self,

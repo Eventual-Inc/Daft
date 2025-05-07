@@ -109,7 +109,6 @@ impl SQLModule for SQLModuleUtf8 {
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("upper", SQLUtf8Upper);
-        parent.add_fn("to_datetime", SQLUtf8ToDatetime);
         parent.add_fn("count_matches", SQLCountMatches);
         parent.add_fn("tokenize_encode", SQLTokenizeEncode);
         parent.add_fn("tokenize_decode", SQLTokenizeDecode);
@@ -124,52 +123,6 @@ utf8_function!(
     "Converts the string to uppercase",
     "string_input"
 );
-
-pub struct SQLUtf8ToDatetime;
-
-impl SQLFunction for SQLUtf8ToDatetime {
-    fn to_expr(
-        &self,
-        inputs: &[sqlparser::ast::FunctionArg],
-        planner: &crate::planner::SQLPlanner,
-    ) -> SQLPlannerResult<ExprRef> {
-        match inputs {
-            [input, fmt] => {
-                let input = planner.plan_function_arg(input)?;
-                let fmt = planner.plan_function_arg(fmt)?;
-                let fmt = fmt
-                    .as_literal()
-                    .and_then(|lit| lit.as_str())
-                    .ok_or_else(|| {
-                        PlannerError::invalid_operation("to_datetime format must be a string")
-                    })?;
-                Ok(daft_functions::utf8::to_datetime(input, fmt, None))
-            }
-            [input, fmt, tz] => {
-                let input = planner.plan_function_arg(input)?;
-                let fmt = planner.plan_function_arg(fmt)?;
-                let fmt = fmt
-                    .as_literal()
-                    .and_then(|lit| lit.as_str())
-                    .ok_or_else(|| {
-                        PlannerError::invalid_operation("to_datetime format must be a string")
-                    })?;
-                let tz = planner.plan_function_arg(tz)?;
-                let tz = tz.as_literal().and_then(|lit| lit.as_str());
-                Ok(daft_functions::utf8::to_datetime(input, fmt, tz))
-            }
-            _ => invalid_operation_err!("to_datetime takes either two or three arguments"),
-        }
-    }
-
-    fn docstrings(&self, _alias: &str) -> String {
-        "Parses the string as a datetime using the specified format.".to_string()
-    }
-
-    fn arg_names(&self) -> &'static [&'static str] {
-        &["string_input", "format"]
-    }
-}
 
 pub struct SQLCountMatches;
 

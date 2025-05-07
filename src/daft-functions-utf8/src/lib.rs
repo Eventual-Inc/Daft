@@ -25,6 +25,7 @@ mod split;
 mod startswith;
 mod substr;
 mod to_date;
+mod to_datetime;
 pub(crate) mod utils;
 
 pub use capitalize::*;
@@ -53,6 +54,8 @@ pub use split::*;
 pub use startswith::*;
 pub use substr::*;
 pub use to_date::*;
+pub use to_datetime::*;
+
 pub struct Utf8Functions;
 
 impl daft_dsl::functions::FunctionModule for Utf8Functions {
@@ -85,5 +88,6 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(StartsWith);
         parent.add_fn(Substr);
         parent.add_fn(ToDate);
+        parent.add_fn(ToDatetime);
     }
 }

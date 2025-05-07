@@ -13,11 +13,8 @@ use daft_dsl::{
     has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
     ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
-use daft_functions::{
-    numeric::{ceil::ceil, floor::floor},
-    utf8::to_datetime,
-};
-use daft_functions_utf8::{ilike, like, to_date};
+use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions_utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,

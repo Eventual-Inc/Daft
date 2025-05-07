@@ -157,7 +157,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(uri::url_upload);
 
     add!(utf8::utf8_upper);
-    add!(utf8::utf8_to_datetime);
 
     Ok(())
 }

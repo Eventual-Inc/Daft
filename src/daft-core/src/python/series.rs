@@ -349,11 +349,6 @@ impl PySeries {
         Ok(self.series.utf8_upper()?.into())
     }
 
-    #[pyo3(signature = (format, timezone=None))]
-    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
-        Ok(self.series.utf8_to_datetime(format, timezone)?.into())
-    }
-
     pub fn utf8_count_matches(
         &self,
         patterns: &Self,
