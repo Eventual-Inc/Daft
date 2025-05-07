@@ -101,38 +101,42 @@ def test_table_join_single_column(join_impl, dtype, data, null_safe_equal) -> No
         [col("x").cast(dtype), col("x_ind")]
     )
     right_table = MicroPartition.from_pydict({"y": right, "y_ind": list(range(len(right)))})
-    result_table = getattr(left_table, join_impl)(
+    result_table: MicroPartition = getattr(left_table, join_impl)(
         right_table, left_on=[col("x")], right_on=[col("y")], how=JoinType.Inner, **null_equals_nulls
     )
 
     assert result_table.column_names() == ["x", "x_ind", "y", "y_ind"]
 
-    result_pairs = list(zip(result_table.get_column("x_ind").to_pylist(), result_table.get_column("y_ind").to_pylist()))
+    result_pairs = list(
+        zip(result_table.get_column_by_name("x_ind").to_pylist(), result_table.get_column_by_name("y_ind").to_pylist())
+    )
     assert sorted(expected_pairs) == sorted(result_pairs)
     casted_l = left_table.get_column_by_name("x").to_pylist()
     result_l = [casted_l[idx] for idx, _ in result_pairs]
-    assert result_table.get_column("x").to_pylist() == result_l
+    assert result_table.get_column_by_name("x").to_pylist() == result_l
 
     casted_r = right_table.get_column_by_name("y").to_pylist()
     result_r = [casted_r[idx] for _, idx in result_pairs]
-    assert result_table.get_column("y").to_pylist() == result_r
+    assert result_table.get_column_by_name("y").to_pylist() == result_r
 
     # make sure the result is the same with right table on left
-    result_table = getattr(right_table, join_impl)(
+    result_table: MicroPartition = getattr(right_table, join_impl)(
         left_table, right_on=[col("x")], left_on=[col("y")], how=JoinType.Inner, **null_equals_nulls
     )
 
     assert result_table.column_names() == ["y", "y_ind", "x", "x_ind"]
 
-    result_pairs = list(zip(result_table.get_column("x_ind").to_pylist(), result_table.get_column("y_ind").to_pylist()))
+    result_pairs = list(
+        zip(result_table.get_column_by_name("x_ind").to_pylist(), result_table.get_column_by_name("y_ind").to_pylist())
+    )
     assert sorted(expected_pairs) == sorted(result_pairs)
     casted_l = left_table.get_column_by_name("x").to_pylist()
     result_l = [casted_l[idx] for idx, _ in result_pairs]
-    assert result_table.get_column("x").to_pylist() == result_l
+    assert result_table.get_column_by_name("x").to_pylist() == result_l
 
     casted_r = right_table.get_column_by_name("y").to_pylist()
     result_r = [casted_r[idx] for _, idx in result_pairs]
-    assert result_table.get_column("y").to_pylist() == result_r
+    assert result_table.get_column_by_name("y").to_pylist() == result_r
 
 
 @pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
@@ -305,17 +309,17 @@ def test_table_join_single_column_name_boolean(join_impl, null_safe_equal) -> No
     right_table = MicroPartition.from_pydict({"x": [None, True, False, None], "right.y": [0, 1, 2, 3]})
 
     null_equals_nulls = {"null_equals_nulls": [null_safe_equal]} if null_safe_equal else {}
-    result_table = getattr(left_table, join_impl)(
+    result_table: MicroPartition = getattr(left_table, join_impl)(
         right_table, left_on=[col("x")], right_on=[col("x")], **null_equals_nulls
     )
     assert result_table.column_names() == ["x", "y", "right.y"]
     result_sorted = result_table.sort([col("x")])
     if null_safe_equal:
-        assert result_sorted.get_column("y").to_pylist() == [0, 1, 2, 2]
-        assert result_sorted.get_column("right.y").to_pylist() == [2, 1, 0, 3]
+        assert result_sorted.get_column_by_name("y").to_pylist() == [0, 1, 2, 2]
+        assert result_sorted.get_column_by_name("right.y").to_pylist() == [2, 1, 0, 3]
     else:
-        assert result_sorted.get_column("y").to_pylist() == [0, 1]
-        assert result_sorted.get_column("right.y").to_pylist() == [2, 1]
+        assert result_sorted.get_column_by_name("y").to_pylist() == [0, 1]
+        assert result_sorted.get_column_by_name("right.y").to_pylist() == [2, 1]
 
 
 @pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
@@ -323,11 +327,11 @@ def test_table_join_single_column_name_null(join_impl) -> None:
     left_table = MicroPartition.from_pydict({"x": [None, None, None], "y": [0, 1, 2]})
     right_table = MicroPartition.from_pydict({"x": [None, None, None, None], "right.y": [0, 1, 2, 3]})
 
-    result_table = getattr(left_table, join_impl)(right_table, left_on=[col("x")], right_on=[col("x")])
+    result_table: MicroPartition = getattr(left_table, join_impl)(right_table, left_on=[col("x")], right_on=[col("x")])
     assert result_table.column_names() == ["x", "y", "right.y"]
     result_sorted = result_table.sort([col("x")])
-    assert result_sorted.get_column("y").to_pylist() == []
-    assert result_sorted.get_column("right.y").to_pylist() == []
+    assert result_sorted.get_column_by_name("y").to_pylist() == []
+    assert result_sorted.get_column_by_name("right.y").to_pylist() == []
 
 
 def test_table_join_anti() -> None:

@@ -395,10 +395,10 @@ pub(super) fn hash_outer_join(
         common_cols
             .into_iter()
             .map(|name| {
-                let lcol = get_column_by_name(left, name)?;
-                let rcol = get_column_by_name(right, name)?;
+                let lcol = get_column_by_name(left, name)?.take(&lidx)?;
+                let rcol = get_column_by_name(right, name)?.take(&ridx)?;
 
-                lcol.if_else(rcol, &take_from_left)
+                lcol.if_else(&rcol, &take_from_left)
             })
             .collect::<DaftResult<Vec<_>>>()?
     };

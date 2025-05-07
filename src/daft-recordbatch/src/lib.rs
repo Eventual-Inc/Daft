@@ -714,6 +714,7 @@ impl RecordBatch {
                 if_false,
                 predicate,
             } => match predicate.as_ref() {
+                // TODO: move this into simplify expression
                 Expr::Literal(LiteralValue::Boolean(true)) => self.eval_expression(&BoundExpr::new_unchecked(if_true.clone())),
                 Expr::Literal(LiteralValue::Boolean(false)) => {
                     Ok(self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?.rename(if_true.get_name(&self.schema)?))
