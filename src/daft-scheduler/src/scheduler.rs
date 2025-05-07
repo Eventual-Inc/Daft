@@ -504,7 +504,8 @@ fn physical_plan_to_partition_tasks(
         }) => {
             let upstream_iter =
                 physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
-            let py_physical_plan = py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
+            let py_physical_plan =
+                py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?;
 
             let sort_by_pyexprs: Vec<PyExpr> = sort_by
                 .iter()

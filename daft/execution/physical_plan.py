@@ -1733,7 +1733,7 @@ def top_n(
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Take the top N values from the result of `child_plan` according to `sort_info` and `limit`."""
     # TODO: The current distributed top_n implementation will perform a full sort
-    # followed by a limit. This is not optimal, but uncoming infrastructure changes
+    # followed by a limit. This is not optimal, but upcoming infrastructure changes
     # to the distributed execution engine will make it easier to add a more efficient
     # distributed top_n implementation.
 
@@ -1744,7 +1744,7 @@ def top_n(
         nulls_first=nulls_first,
         num_partitions=num_partitions,
     )
-    yield from global_limit(child_plan=child_plan, limit_rows=limit, eager=True, num_partitions=num_partitions)
+    yield from global_limit(child_plan=child_plan, limit_rows=limit, eager=False, num_partitions=num_partitions)
 
 
 def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int):
