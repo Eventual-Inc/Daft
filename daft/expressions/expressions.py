@@ -3283,7 +3283,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_upper(self._expr))
+        f = native.get_function_from_registry("upper")
+        return Expression._from_pyexpr(f(self._expr))
 
     def lstrip(self) -> Expression:
         """Strip whitespace from the left side of a UTF-8 string.

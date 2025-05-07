@@ -12,16 +12,16 @@ use serde::{Deserialize, Serialize};
 use crate::utils::{unary_utf8_evaluate, unary_utf8_to_field};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Lower;
+pub struct Upper;
 
 #[typetag::serde]
-impl ScalarUDF for Lower {
+impl ScalarUDF for Upper {
     fn name(&self) -> &'static str {
-        "lower"
+        "upper"
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_utf8_evaluate(inputs, series_lower)
+        unary_utf8_evaluate(inputs, series_upper)
     }
 
     fn function_args_to_field(
@@ -33,19 +33,19 @@ impl ScalarUDF for Lower {
     }
 
     fn docstring(&self) -> &'static str {
-        "Converts a string to lowercase."
+        "Converts a string to uppercase."
     }
 }
 
 #[must_use]
-pub fn lower(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Lower, vec![input]).into()
+pub fn upper(input: ExprRef) -> ExprRef {
+    ScalarFunction::new(Upper {}, vec![input]).into()
 }
 
-fn series_lower(s: &Series) -> DaftResult<Series> {
+fn series_upper(s: &Series) -> DaftResult<Series> {
     s.with_utf8_array(|arr| {
         Ok(arr
-            .unary_broadcasted_op(|val| val.to_lowercase().into())?
+            .unary_broadcasted_op(|val| val.to_uppercase().into())?
             .into_series())
     })
 }

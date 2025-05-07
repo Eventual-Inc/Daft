@@ -21,7 +21,6 @@ mod sequence;
 mod temporal;
 mod tokenize;
 mod uri;
-mod utf8;
 
 use std::sync::Arc;
 
@@ -155,8 +154,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
 
     add!(uri::url_download);
     add!(uri::url_upload);
-
-    add!(utf8::utf8_upper);
 
     Ok(())
 }

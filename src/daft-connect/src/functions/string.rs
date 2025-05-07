@@ -1,5 +1,3 @@
-use daft_functions::utf8::Utf8Upper;
-
 use super::{FunctionModule, TODO_FUNCTION};
 
 // see https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#string-functions
@@ -71,7 +69,7 @@ impl FunctionModule for StringFunctions {
         parent.add_fn("to_varchar", TODO_FUNCTION);
         parent.add_fn("translate", TODO_FUNCTION);
         parent.add_fn("trim", TODO_FUNCTION);
-        parent.add_fn("upper", Utf8Upper {});
+        parent.add_fn("upper", daft_functions_utf8::Upper);
         parent.add_fn("url_decode", TODO_FUNCTION);
         parent.add_fn("url_encode", TODO_FUNCTION);
     }

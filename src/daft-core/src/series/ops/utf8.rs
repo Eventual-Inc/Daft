@@ -16,10 +16,6 @@ impl Series {
         }
     }
 
-    pub fn utf8_upper(&self) -> DaftResult<Self> {
-        self.with_utf8_array(|arr| Ok(arr.upper()?.into_series()))
-    }
-
     pub fn utf8_count_matches(
         &self,
         patterns: &Self,

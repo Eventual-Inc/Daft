@@ -11,118 +11,16 @@ use crate::{
     invalid_operation_err,
 };
 
-fn utf8_unary(
-    func: impl Fn(ExprRef) -> ExprRef,
-    sql_name: &str,
-    arg_name: &str,
-    inputs: &[sqlparser::ast::FunctionArg],
-    planner: &crate::planner::SQLPlanner,
-) -> SQLPlannerResult<ExprRef> {
-    match inputs {
-        [input] => {
-            let input = planner.plan_function_arg(input)?;
-            Ok(func(input))
-        }
-        _ => invalid_operation_err!(
-            "invalid arguments for {sql_name}. Expected {sql_name}({arg_name})",
-        ),
-    }
-}
-
-macro_rules! utf8_function {
-    ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name:expr) => {
-        pub struct $name;
-        impl SQLFunction for $name {
-            fn to_expr(
-                &self,
-                inputs: &[sqlparser::ast::FunctionArg],
-                planner: &crate::planner::SQLPlanner,
-            ) -> SQLPlannerResult<ExprRef> {
-                utf8_unary($func, $sql_name, $arg_name, inputs, planner)
-            }
-
-            fn docstrings(&self, _alias: &str) -> String {
-                $doc.to_string()
-            }
-
-            fn arg_names(&self) -> &'static [&'static str] {
-                &[$arg_name]
-            }
-        }
-    };
-    ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name_1:expr, $arg_name_2:expr) => {
-        pub struct $name;
-        impl SQLFunction for $name {
-            fn to_expr(
-                &self,
-                inputs: &[sqlparser::ast::FunctionArg],
-                planner: &crate::planner::SQLPlanner,
-            ) -> SQLPlannerResult<ExprRef> {
-                utf8_binary($func, $sql_name, $arg_name_1, $arg_name_2, inputs, planner)
-            }
-
-            fn docstrings(&self, _alias: &str) -> String {
-                $doc.to_string()
-            }
-
-            fn arg_names(&self) -> &'static [&'static str] {
-                &[$arg_name_1, $arg_name_2]
-            }
-        }
-    };
-    ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name_1:expr, $arg_name_2:expr, $arg_name_3:expr) => {
-        pub struct $name;
-        impl SQLFunction for $name {
-            fn to_expr(
-                &self,
-                inputs: &[sqlparser::ast::FunctionArg],
-                planner: &crate::planner::SQLPlanner,
-            ) -> SQLPlannerResult<ExprRef> {
-                utf8_ternary(
-                    $func,
-                    $sql_name,
-                    $arg_name_1,
-                    $arg_name_2,
-                    $arg_name_3,
-                    inputs,
-                    planner,
-                )
-            }
-
-            fn docstrings(&self, _alias: &str) -> String {
-                $doc.to_string()
-            }
-
-            fn arg_names(&self) -> &'static [&'static str] {
-                &[$arg_name_1, $arg_name_2, $arg_name_3]
-            }
-        }
-    };
-}
-
 pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        // TODO add split variants
-        // parent.add("split", f(Split(false)));
-        // TODO add replace variants
-        // parent.add("replace", f(Replace(false)));
-        parent.add_fn("upper", SQLUtf8Upper);
         parent.add_fn("count_matches", SQLCountMatches);
         parent.add_fn("tokenize_encode", SQLTokenizeEncode);
         parent.add_fn("tokenize_decode", SQLTokenizeDecode);
         parent.add_fn("concat", SQLConcat);
     }
 }
-
-utf8_function!(
-    SQLUtf8Upper,
-    "upper",
-    daft_functions::utf8::upper,
-    "Converts the string to uppercase",
-    "string_input"
-);
 
 pub struct SQLCountMatches;
 

@@ -345,10 +345,6 @@ impl PySeries {
         Ok(self.series.data_type().clone().into())
     }
 
-    pub fn utf8_upper(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_upper()?.into())
-    }
-
     pub fn utf8_count_matches(
         &self,
         patterns: &Self,
