@@ -509,11 +509,13 @@ impl RecordBatch {
         Self::from_nonempty_columns(unioned)
     }
 
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
         let i = self.schema.get_index(name.as_ref())?;
         Ok(self.columns.get(i).unwrap())
     }
 
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn get_columns<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
         let series_by_name = names
             .iter()
