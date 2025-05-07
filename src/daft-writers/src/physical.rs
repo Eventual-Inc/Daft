@@ -40,9 +40,17 @@ pub struct PhysicalWriterFactory {
 }
 
 impl PhysicalWriterFactory {
-    fn native_available(file_format: FileFormat, file_schema: &SchemaRef) -> bool {
+    fn native_supported(file_format: FileFormat, root_dir: &str, file_schema: &SchemaRef) -> bool {
         // TODO(desmond): Currently we only support native parquet writes.
         if !matches!(file_format, FileFormat::Parquet) {
+            return false;
+        }
+        // TODO(desmond): Support remote writes.
+        let (source_type, _) = match parse_url(root_dir) {
+            Ok(result) => result,
+            Err(_) => return false,
+        };
+        if !matches!(source_type, SourceType::File) {
             return false;
         }
         let writer_properties = Arc::new(
@@ -69,13 +77,21 @@ impl PhysicalWriterFactory {
         parquet_schema.is_ok()
     }
 
-    pub fn new(output_file_info: OutputFileInfo, file_schema: &SchemaRef, native: bool) -> Self {
-        let native_available =
-            native && Self::native_available(output_file_info.file_format, file_schema);
+    pub fn new(
+        output_file_info: OutputFileInfo,
+        file_schema: &SchemaRef,
+        native_enabled: bool,
+    ) -> Self {
+        let native = native_enabled
+            && Self::native_supported(
+                output_file_info.file_format,
+                &output_file_info.root_dir,
+                file_schema,
+            );
         Self {
             output_file_info,
             schema: file_schema.clone(),
-            native: native_available,
+            native,
         }
     }
 }
@@ -89,10 +105,13 @@ impl WriterFactory for PhysicalWriterFactory {
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
-        let (source_type, root_dir) = parse_url(&self.output_file_info.root_dir)?;
         match self.native {
-            // TODO(desmond): Remote writes.
-            true if matches!(source_type, SourceType::File) => {
+            true => {
+                let (source_type, root_dir) = parse_url(&self.output_file_info.root_dir)?;
+                debug_assert!(
+                    matches!(source_type, SourceType::File),
+                    "Native writes are currently enabled for local writes only"
+                );
                 let root_dir = Path::new(root_dir.trim_start_matches("file://"));
                 let dir = if let Some(partition_values) = partition_values {
                     let partition_path = partition_values.to_partition_path(None)?;
