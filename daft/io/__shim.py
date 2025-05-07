@@ -6,33 +6,20 @@ from typing import TYPE_CHECKING
 from daft.daft import (
     PartitionField,
     PyRecordBatch,
-    ScanOperatorHandle,
     ScanTask,
 )
-from daft.dataframe import DataFrame
 from daft.io.pushdowns import Pushdowns
 from daft.io.scan import ScanOperator
-from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from daft.daft import (
-        Pushdowns as PyPushdowns,
-    )
+    from daft.daft import Pushdowns as PyPushdowns
     from daft.io.source import DataFrameSource, DataFrameSourceTask
     from daft.schema import Schema
 
 
-def _read(source: DataFrameSource) -> DataFrame:
-    """Reads a DataFrameSource as a DataFrame reusing ScanOperator."""
-    scan = __DataFrameSourceShim(source)
-    handle = ScanOperatorHandle.from_python_scan_operator(scan)
-    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
-    return DataFrame(builder)
-
-
-class __DataFrameSourceShim(ScanOperator):
+class _DataFrameSourceShim(ScanOperator):
     """!! INTERNAL ONLY .. SHIM TO REUSE EXISTING BACKED WORK !!"""
 
     _source: DataFrameSource
@@ -84,4 +71,6 @@ class __DataFrameSourceShim(ScanOperator):
 
 def _get_record_batches(task: DataFrameSourceTask) -> Iterator[PyRecordBatch]:
     """The task instance has been pickled then sent to this stateless method."""
-    return (batch._recordbatch for batch in task.get_record_batches())
+    for mp in task.get_micro_partitions():
+        for rb in mp.get_record_batches():
+            yield rb._recordbatch

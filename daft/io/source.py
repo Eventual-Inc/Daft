@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Iterator, TypeVar
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
     from daft.io.pushdowns import Pushdowns
-    from daft.recordbatch import RecordBatch
+    from daft.recordbatch import MicroPartition
     from daft.schema import Schema
 
 
@@ -15,11 +15,9 @@ __all__ = [
     "DataFrameSourceTask",
 ]
 
-R = TypeVar("R")
-
 
 class DataFrameSource(ABC):
-    """DataFrameSource is an interface for reading data into DataFrames.
+    """DataFrameSource is a low-level interface for reading data into DataFrames.
 
     When a DataFrameSource is read, it is split into multiple tasks which can be distributed
     for parallel processing. Each task is responsible for reading a specific portion of
@@ -45,7 +43,7 @@ class DataFrameSource(ABC):
 
     @abstractmethod
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataFrameSourceTask]:
-        """Returns an iterable of tasks for this source.
+        """Returns an iterator of tasks for this source.
 
         Returns:
             Iterable[DataFrameSourceTask]: An iterable of tasks that can be processed independently.
@@ -53,10 +51,16 @@ class DataFrameSource(ABC):
         ...
 
     def read(self) -> DataFrame:
-        """Reads this source into a DataFrame."""
-        from daft.io.__shim import _read
+        """Reads a DataFrameSource as a DataFrame."""
+        from daft.daft import ScanOperatorHandle
+        from daft.dataframe import DataFrame
+        from daft.io.__shim import _DataFrameSourceShim
+        from daft.logical.builder import LogicalPlanBuilder
 
-        return _read(self)
+        scan = _DataFrameSourceShim(self)
+        handle = ScanOperatorHandle.from_python_scan_operator(scan)
+        builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+        return DataFrame(builder)
 
 
 class DataFrameSourceTask(ABC):
@@ -69,14 +73,14 @@ class DataFrameSourceTask(ABC):
     @property
     @abstractmethod
     def schema(self) -> Schema:
-        """Returns the schema shared by each RecordBatch."""
+        """Returns the schema shared by each MicroPartition."""
         ...
 
     @abstractmethod
-    def get_record_batches(self) -> Iterator[RecordBatch]:
-        """Executes this task and produces record batches from the source data.
+    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+        """Executes this task to produce MicroPartitions.
 
         Returns:
-            An iterable of RecordBatch objects containing the data for this task.
+            An iterable of MicroPartition objects containing the data for this task.
         """
         ...

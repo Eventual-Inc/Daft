@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 from daft import DataType
 from daft.api_annotations import PublicAPI
 from daft.io.source import DataFrameSource, DataFrameSourceTask
-from daft.recordbatch.recordbatch import RecordBatch
+from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
 if TYPE_CHECKING:
@@ -34,6 +34,7 @@ def _range(start: int, end: int, step: int) -> DataFrame: ...
 def _range(start: int, end: int, step: int, partitions: int) -> DataFrame: ...
 
 
+# TODO: consider using `from_range` and `Series.from_range` instead.
 @PublicAPI  # type: ignore
 def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 1) -> DataFrame:
     """Creates a DataFrame with a range of values.
@@ -137,7 +138,6 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
     return RangeSource(start, end, step, partitions).read()
 
 
-# TODO: consider using `from_range` and `Series.from_range` instead.
 class RangeSource(DataFrameSource):
     """RangeSource produces a DataFrame from a range with a given step size."""
 
@@ -145,6 +145,7 @@ class RangeSource(DataFrameSource):
     _end: int
     _step: int
     _partitions: int
+    _schema = Schema.from_pydict({"id": DataType.int64()})
 
     def __init__(self, start: int, end: int, step: int = 1, partitions: int = 1) -> None:
         """Create a RangeSource instance.
@@ -166,9 +167,9 @@ class RangeSource(DataFrameSource):
 
     @property
     def schema(self) -> Schema:
-        return Schema.from_pydict({"id": DataType.int64()})
+        return self._schema
 
-    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataFrameSourceTask]:
+    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[RangeSourceTask]:
         step = self._step
         size = (self._end - self._start) // self._partitions
         curr_s = self._start
@@ -188,7 +189,7 @@ class RangeSourceTask(DataFrameSourceTask):
 
     @property
     def schema(self) -> Schema:
-        return Schema.from_pydict({"id": DataType.int64()})
+        return RangeSource._schema
 
-    def get_record_batches(self) -> Iterator[RecordBatch]:
-        yield RecordBatch.from_pydict({"id": list(range(self._start, self._end, self._step))})
+    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+        yield MicroPartition.from_pydict({"id": list(range(self._start, self._end, self._step))})
