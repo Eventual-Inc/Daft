@@ -1,6 +1,11 @@
 [dependencies]
+common-runtime = {path = "../runtime", default-features = false}
+opentelemetry = {version = "0.29", features = ["trace"]}
+opentelemetry-otlp = {version = "0.29", features = ["grpc-tonic"]}
+opentelemetry_sdk = {version = "0.29"}
 tracing = {workspace = true}
 tracing-chrome = "0.7.2"
+tracing-opentelemetry = {version = "0.30", features = ["default"]}
 tracing-subscriber = "0.3"
 
 [lints]

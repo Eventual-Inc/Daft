@@ -10,6 +10,7 @@ use std::{
 
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
+use opentelemetry::{global, metrics::Counter, KeyValue};
 use tracing::{instrument::Instrumented, Instrument};
 
 use crate::{
@@ -22,6 +23,10 @@ pub struct RuntimeStatsContext {
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
+    name: String,
+    rows_received_counter: Option<Counter<u64>>,
+    rows_emitted_counter: Option<Counter<u64>>,
+    cpu_us_counter: Option<Counter<u64>>,
 }
 
 #[derive(Debug)]
@@ -66,11 +71,22 @@ impl RuntimeStats {
 }
 
 impl RuntimeStatsContext {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new(name: &str) -> Arc<Self> {
+        let meter = global::meter("runtime_stats");
+        let rows_received_counter = meter
+            .u64_counter("daft.runtime_stats.rows_received")
+            .build();
+        let rows_emitted_counter = meter.u64_counter("daft.runtime_stats.rows_emitted").build();
+        let cpu_us_counter = meter.u64_counter("daft.runtime_stats.cpu_us").build();
+
         Arc::new(Self {
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
+            name: name.to_string(),
+            rows_received_counter: Some(rows_received_counter),
+            rows_emitted_counter: Some(rows_emitted_counter),
+            cpu_us_counter: Some(cpu_us_counter),
         })
     }
     pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
@@ -78,16 +94,28 @@ impl RuntimeStatsContext {
             elapsed.as_micros() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
+        if let Some(counter) = self.cpu_us_counter.as_ref() {
+            counter.add(
+                elapsed.as_micros() as u64,
+                &[KeyValue::new("context", self.name.clone())],
+            );
+        }
     }
 
     pub(crate) fn mark_rows_received(&self, rows: u64) {
         self.rows_received
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
+        if let Some(counter) = self.rows_received_counter.as_ref() {
+            counter.add(rows, &[KeyValue::new("context", self.name.clone())]);
+        }
     }
 
     pub(crate) fn mark_rows_emitted(&self, rows: u64) {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
+        if let Some(counter) = self.rows_emitted_counter.as_ref() {
+            counter.add(rows, &[KeyValue::new("context", self.name.clone())]);
+        }
     }
 
     pub(crate) fn get_rows_received(&self) -> u64 {
