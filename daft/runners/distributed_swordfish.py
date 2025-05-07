@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import AsyncGenerator, Callable, Dict, List, Tuple
+from typing import AsyncGenerator, Callable, Dict, Tuple
 
 from daft.daft import (
     LocalPhysicalPlan,
@@ -11,7 +11,10 @@ from daft.daft import (
     RaySwordfishTask,
 )
 from daft.recordbatch.micropartition import MicroPartition
-from daft.runners.constants import MAX_SWORDFISH_ACTOR_RESTARTS, MAX_SWORDFISH_ACTOR_TASK_RETRIES
+from daft.runners.constants import (
+    MAX_SWORDFISH_ACTOR_RESTARTS,
+    MAX_SWORDFISH_ACTOR_TASK_RETRIES,
+)
 from daft.runners.partitioning import PartitionMetadata
 
 try:
@@ -23,7 +26,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-@ray.remote(max_restarts=MAX_SWORDFISH_ACTOR_RESTARTS, max_task_retries=MAX_SWORDFISH_ACTOR_TASK_RETRIES)
+@ray.remote(
+    max_restarts=MAX_SWORDFISH_ACTOR_RESTARTS,
+    max_task_retries=MAX_SWORDFISH_ACTOR_TASK_RETRIES,
+)
 class RaySwordfishWorker:
     """RaySwordfishWorker is a ray actor that runs local physical plans on swordfish.
 
@@ -42,6 +48,7 @@ class RaySwordfishWorker:
         """Run a plan on swordfish and yield partitions."""
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+
         async for partition in self.native_executor.run_async(plan, psets_mp, self.daft_execution_config, None):
             if partition is None:
                 break
@@ -64,7 +71,6 @@ class RaySwordfishTaskHandle:
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     done_callback: Callable[[ray.ObjectRef], None]
-    task_memory_cost: int
 
     async def _get_result(self) -> RayPartitionRef:
         results = []
@@ -101,7 +107,7 @@ class RaySwordfishWorkerHandle:
         self.actor_handle = actor_handle
         self.num_cpus = num_cpus
         self.total_memory_bytes = total_memory_bytes
-        self.available_memory_bytes = total_memory_bytes
+        self.active_tasks = 0
 
     def get_actor_node_id(self) -> str:
         return self.actor_node_id
@@ -112,25 +118,20 @@ class RaySwordfishWorkerHandle:
     def get_total_memory_bytes(self) -> int:
         return self.total_memory_bytes
 
-    def get_available_memory_bytes(self) -> int:
-        return self.available_memory_bytes
-
-    def add_back_memory(self, memory_bytes: int):
-        self.available_memory_bytes += memory_bytes
+    def get_active_tasks(self) -> int:
+        return self.active_tasks
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
-        self.available_memory_bytes -= task.estimated_memory_cost()
+        self.active_tasks += 1
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
-        memory_to_return = task.estimated_memory_cost()
 
         def done_callback(_result: ray.ObjectRef):
-            self.add_back_memory(memory_to_return)
+            self.active_tasks -= 1
 
         return RaySwordfishTaskHandle(
             self.actor_handle.run_plan.remote(task.plan(), psets),
             self.actor_handle,
             done_callback,
-            task.estimated_memory_cost(),
         )
 
     def shutdown(self):
@@ -175,15 +176,11 @@ class RaySwordfishWorkerManager:
     def submit_task_to_worker(self, task: RaySwordfishTask, worker_id: str) -> RaySwordfishTaskHandle:
         return self.workers[worker_id].submit_task(task)
 
-    def get_worker_resources(self) -> List[tuple[str, int, int]]:
-        return [
-            (
-                worker.get_actor_node_id(),
-                worker.get_num_cpus(),
-                worker.get_available_memory_bytes(),
-            )
+    def get_worker_slots(self) -> Dict[str, int]:
+        return {
+            worker.get_actor_node_id(): worker.get_num_cpus() - worker.get_active_tasks()
             for worker in self.workers.values()
-        ]
+        }
 
     def try_autoscale(self, num_workers: int):
         """Try to autoscale the number of workers. this is a hint to the autoscaler to add more workers if needed."""

@@ -80,6 +80,7 @@ enum PipelineInput {
         partition_refs: Vec<PartitionRef>,
     },
     ScanTasks {
+        #[allow(dead_code)]
         source_id: usize,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,

@@ -179,6 +179,7 @@ impl StagePlan {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct StageContext {
     task_dispatcher_handle: TaskDispatcherHandle,
     joinset: JoinSet<DaftResult<()>>,

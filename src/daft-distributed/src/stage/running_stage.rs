@@ -15,6 +15,7 @@ use crate::{
     scheduling::dispatcher::{SubmittedTask, TaskDispatcherHandle},
 };
 
+#[derive(Debug)]
 enum RunningStageState {
     // Running: Stage is running and we are waiting for the result from the receiver
     Running(Receiver<PartitionRef>, Option<StageContext>),
@@ -73,7 +74,7 @@ impl Stream for RunningStage {
                 RunningStageState::Finishing(joinset) => match joinset.poll_join_next(cx) {
                     // Received a result from the joinset
                     Poll::Ready(Some(result)) => match result {
-                        Ok(Ok(())) => Some(Poll::Ready(None)),
+                        Ok(Ok(())) => None,
                         Ok(Err(e)) => Some(Poll::Ready(Some(Err(e)))),
                         Err(e) => Some(Poll::Ready(Some(Err(DaftError::External(e.into()))))),
                     },
@@ -153,7 +154,8 @@ pub(crate) fn materialize_stage_results(
                     }
                     FinalizedTask::Running(submitted_task) => {
                         if let Some(result) = submitted_task.await {
-                            if tx.send(result?).await.is_err() {
+                            let result = result?;
+                            if tx.send(result).await.is_err() {
                                 break;
                             }
                         }

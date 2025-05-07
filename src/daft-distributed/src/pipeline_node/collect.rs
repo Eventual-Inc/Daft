@@ -1,8 +1,4 @@
-use std::collections::HashMap;
-
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
-use daft_local_plan::LocalPhysicalPlanRef;
 
 use super::{
     translate::PipelinePlan, DistributedPipelineNode, PipelineOutput, RunningPipelineNode,
@@ -27,10 +23,10 @@ impl CollectNode {
 
     #[allow(dead_code)]
     async fn execution_loop(
-        task_dispatcher_handle: TaskDispatcherHandle,
-        plan: PipelinePlan,
-        input_node: Option<RunningPipelineNode>,
-        result_tx: Sender<PipelineOutput>,
+        _task_dispatcher_handle: TaskDispatcherHandle,
+        _plan: PipelinePlan,
+        _input_node: Option<RunningPipelineNode>,
+        _result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
         todo!("FLOTILLA_MS1: Implement collect execution sloop");
     }
