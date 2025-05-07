@@ -212,3 +212,24 @@ def test_groupby_rollup():
     """
     actual = daft.sql(sql, catalog).to_pydict()
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT capitalize(strings) as s, count(*) from data group by s",
+        "SELECT capitalize(strings) as s, count(*) from data group by capitalize(strings)",
+        "SELECT strings, count(*) from data group by capitalize(strings)",
+        "SELECT strings as s, count(*) from data group by capitalize(strings)",
+    ],
+)
+def test_various_groupby_positions(query):
+    data = daft.from_pydict({"strings": ["foo", "bar"]})
+
+    res = daft.sql(query, catalog=SQLCatalog({"data": data}))
+    if "s" in res.column_names:
+        res = res.sort("s").to_pydict()
+        assert res == {"s": ["Bar", "Foo"], "count": [1, 1]}
+    else:
+        res = res.sort("strings").to_pydict()
+        assert res == {"strings": ["Bar", "Foo"], "count": [1, 1]}
