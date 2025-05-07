@@ -4,7 +4,10 @@ use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
     prelude::*,
 };
-use daft_dsl::{AggExpr, ExprRef, WindowBoundary, WindowFrame, WindowFrameType};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    AggExpr, WindowBoundary, WindowFrame, WindowFrameType,
+};
 
 use crate::{
     ops::window_states::{create_window_agg_state, WindowAggStateOps},
@@ -14,9 +17,9 @@ use crate::{
 impl RecordBatch {
     pub fn window_grouped_agg(
         &self,
-        to_agg: &[AggExpr],
+        to_agg: &[BoundAggExpr],
         aliases: &[String],
-        partition_by: &[ExprRef],
+        partition_by: &[BoundExpr],
     ) -> DaftResult<Self> {
         if partition_by.is_empty() {
             return Err(DaftError::ValueError(
@@ -26,7 +29,9 @@ impl RecordBatch {
 
         let agg_exprs = to_agg.to_vec();
 
-        if matches!(agg_exprs.as_slice(), [AggExpr::MapGroups { .. }]) {
+        if let [agg_expr] = agg_exprs.as_slice()
+            && matches!(agg_expr.as_ref(), AggExpr::MapGroups { .. })
+        {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
             ));
@@ -76,8 +81,8 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    pub fn window_agg(&self, to_agg: &AggExpr, name: String) -> DaftResult<Self> {
-        if matches!(to_agg, AggExpr::MapGroups { .. }) {
+    pub fn window_agg(&self, to_agg: &BoundAggExpr, name: String) -> DaftResult<Self> {
+        if matches!(to_agg.as_ref(), AggExpr::MapGroups { .. }) {
             return Err(DaftError::ValueError(
                 "MapGroups not supported in window functions".into(),
             ));
@@ -97,7 +102,7 @@ impl RecordBatch {
     pub fn window_agg_dynamic_frame(
         &self,
         name: String,
-        agg_expr: &AggExpr,
+        agg_expr: &BoundAggExpr,
         min_periods: usize,
         dtype: &DataType,
         frame: &WindowFrame,
@@ -131,7 +136,7 @@ impl RecordBatch {
             }
         };
 
-        let source = self.get_column(agg_expr.name())?;
+        let source = self.get_column(agg_expr.as_ref().name())?;
         // Check if we can initialize an incremental state
         match create_window_agg_state(source, agg_expr, total_rows)? {
             Some(agg_state) => {
@@ -234,7 +239,7 @@ impl RecordBatch {
     #[allow(clippy::too_many_arguments)]
     fn window_agg_rows(
         &self,
-        agg_expr: &AggExpr,
+        agg_expr: &BoundAggExpr,
         name: &str,
         dtype: &DataType,
         start_boundary: Option<i64>,
@@ -295,7 +300,12 @@ impl RecordBatch {
         self.union(&row_number_batch)
     }
 
-    pub fn window_rank(&self, name: String, order_by: &[ExprRef], dense: bool) -> DaftResult<Self> {
+    pub fn window_rank(
+        &self,
+        name: String,
+        order_by: &[BoundExpr],
+        dense: bool,
+    ) -> DaftResult<Self> {
         if self.is_empty() {
             // Empty partition case - no work needed
             let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
@@ -350,9 +360,9 @@ impl RecordBatch {
     pub fn window_offset(
         &self,
         name: String,
-        expr: ExprRef,
+        expr: BoundExpr,
         offset: isize,
-        default: Option<ExprRef>,
+        default: Option<BoundExpr>,
     ) -> DaftResult<Self> {
         // Short-circuit if offset is 0 - just return the value itself
         if offset == 0 {
@@ -365,7 +375,7 @@ impl RecordBatch {
         let expr_col = self.eval_expression(&expr)?;
         let abs_offset = offset.unsigned_abs();
 
-        let process_default = |default_opt: &Option<ExprRef>,
+        let process_default = |default_opt: &Option<BoundExpr>,
                                target_type: &DataType,
                                slice_start: usize,
                                slice_end: usize,

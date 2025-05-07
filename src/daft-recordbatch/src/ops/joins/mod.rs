@@ -5,8 +5,8 @@ use daft_core::{
     array::growable::make_growable, join::JoinSide, prelude::*, utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
+    expr::bound_expr::BoundExpr,
     join::{get_common_join_cols, infer_join_schema},
-    ExprRef,
 };
 use hash_join::hash_semi_anti_join;
 
@@ -78,8 +78,8 @@ impl RecordBatch {
     pub fn hash_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         null_equals_nulls: &[bool],
         how: JoinType,
     ) -> DaftResult<Self> {
@@ -118,8 +118,8 @@ impl RecordBatch {
     pub fn sort_merge_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         is_sorted: bool,
     ) -> DaftResult<Self> {
         // sort first and then call join recursively

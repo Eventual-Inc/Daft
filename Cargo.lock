@@ -2663,6 +2663,7 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-decoding",
+ "daft-dsl",
  "daft-io",
  "daft-json",
  "daft-logical-plan",
