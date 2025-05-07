@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 
-use crate::FileWriter;
+use crate::AsyncFileWriter;
 
 pub struct PyArrowWriter {
     py_writer: PyObject,
@@ -176,11 +177,12 @@ impl PyArrowWriter {
     }
 }
 
-impl FileWriter for PyArrowWriter {
+#[async_trait]
+impl AsyncFileWriter for PyArrowWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         assert!(!self.is_closed, "Cannot write to a closed PyArrowWriter");
         let bytes_written = Python::with_gil(|py| {
             let py_micropartition = py
@@ -204,7 +206,7 @@ impl FileWriter for PyArrowWriter {
         vec![self.bytes_written]
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Python::with_gil(|py| {
             let result = self
