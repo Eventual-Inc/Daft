@@ -7,9 +7,9 @@ use std::{
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_runtime::{get_io_runtime, Runtime};
+use common_runtime::{get_compute_runtime, Runtime};
 use daft_core::{prelude::*, series::Series};
-use daft_io::{parse_url, IOStatsContext, SourceType};
+use daft_io::{parse_url, SourceType};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -25,7 +25,6 @@ use parquet::{
     },
     schema::types::SchemaDescriptor,
 };
-use tokio::sync::Mutex;
 
 use crate::{AsyncFileWriter, WriterFactory};
 
@@ -143,7 +142,7 @@ struct ArrowParquetWriter {
     arrow_schema: Arc<arrow_schema::Schema>,
     parquet_schema: SchemaDescriptor,
     partition_values: Option<RecordBatch>,
-    file_writer: Option<Arc<Mutex<SerializedFileWriter<BufWriter<std::fs::File>>>>>,
+    file_writer: Option<SerializedFileWriter<BufWriter<std::fs::File>>>,
     compute_runtime: Option<Arc<Runtime>>,
 }
 
@@ -175,9 +174,8 @@ impl ArrowParquetWriter {
             self.writer_properties.clone(),
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        self.file_writer = Some(Arc::new(Mutex::new(writer)));
-        // TODO(desmond): Currently using the IO runtime because blocking doesn't seem to work on the compute runtime.
-        self.compute_runtime = Some(get_io_runtime(true));
+        self.file_writer = Some(writer);
+        self.compute_runtime = Some(get_compute_runtime());
         Ok(())
     }
 }
@@ -196,8 +194,7 @@ impl AsyncFileWriter for ArrowParquetWriter {
             .as_ref()
             .expect("Compute runtime should be created by now");
         let starting_bytes_written = self.bytes_written();
-        let record_batches =
-            data.tables_or_read(IOStatsContext::new("ArrowParquetWriter::write"))?;
+        let record_batches = data.get_tables()?;
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,
@@ -222,56 +219,49 @@ impl AsyncFileWriter for ArrowParquetWriter {
 
         // Send the record batches to the column writer worker threads, wait for them to complete encoding,
         // then flush their results as a new row group.
-        let file_writer = self.file_writer.clone();
-        let fields = self.arrow_schema.fields.clone();
-        compute_runtime.block_on(async move {
-            for record_batch in record_batches.iter() {
-                let mut worker_iter = column_writer_worker_threads.iter_mut();
-                let arrays = record_batch.get_inner_arrow_arrays();
-                for (arr, field) in arrays.zip(&fields) {
-                    for leaves in compute_leaves(field, &arr.into())
-                        .map_err(|e| DaftError::ParquetError(e.to_string()))?
-                    {
-                        let _ = worker_iter
-                            .next()
-                            .expect("Worker iterator should still be valid")
-                            .1
-                            .send(leaves)
-                            .await;
-                    }
+        for record_batch in record_batches.iter() {
+            let mut worker_iter = column_writer_worker_threads.iter_mut();
+            let arrays = record_batch.get_inner_arrow_arrays();
+            for (arr, field) in arrays.zip(&self.arrow_schema.fields) {
+                for leaves in compute_leaves(field, &arr.into())
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?
+                {
+                    let _ = worker_iter
+                        .next()
+                        .expect("Worker iterator should still be valid")
+                        .1
+                        .send(leaves)
+                        .await;
                 }
             }
-            // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
-            let handles: Vec<_> = column_writer_worker_threads
-                .into_iter()
-                .map(|(handle, send)| {
-                    // Drop send side to signal termination.
-                    drop(send);
-                    handle
-                })
-                .collect();
-            let mut file_writer = file_writer
-                .as_ref()
-                .expect("File writer should be created by now")
-                .lock()
-                .await;
-            let mut row_group_writer = file_writer
-                .next_row_group()
+        }
+        // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
+        let handles: Vec<_> = column_writer_worker_threads
+            .into_iter()
+            .map(|(handle, send)| {
+                // Drop send side to signal termination.
+                drop(send);
+                handle
+            })
+            .collect();
+        let mut row_group_writer = self
+            .file_writer
+            .as_mut()
+            .expect("File writer should be created by now")
+            .next_row_group()
+            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        for handle in handles {
+            let chunk = handle
+                .await?
                 .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-            for handle in handles {
-                let chunk = handle
-                    .await?
-                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-                chunk
-                    .append_to_row_group(&mut row_group_writer)
-                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-            }
-            // Close the row group which writes to the underlying file
-            row_group_writer
-                .close()
+            chunk
+                .append_to_row_group(&mut row_group_writer)
                 .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-            Ok::<(), DaftError>(())
-        })??;
+        }
+        // Close the row group which writes to the underlying file.
+        row_group_writer
+            .close()
+            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
         let bytes_written = self.bytes_written() - starting_bytes_written;
         Ok(bytes_written)
@@ -279,21 +269,12 @@ impl AsyncFileWriter for ArrowParquetWriter {
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
-        let file_writer = self.file_writer.clone();
-        self.compute_runtime
-            .as_ref()
-            .expect("IO runtime should be created by now")
-            .block_on(async move {
-                let mut file_writer = file_writer
-                    .as_ref()
-                    .expect("File writer should be created by now")
-                    .lock()
-                    .await;
-                let _metadata = file_writer
-                    .finish()
-                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-                Ok::<(), DaftError>(())
-            })??;
+        let _metadata = self
+            .file_writer
+            .as_mut()
+            .expect("File writer should be created by now")
+            .finish()
+            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
         let field = Field::new("path", DataType::Utf8);
         let filename_series = Series::from_arrow(
@@ -314,40 +295,18 @@ impl AsyncFileWriter for ArrowParquetWriter {
     }
 
     fn bytes_written(&self) -> usize {
-        let file_writer = self.file_writer.clone();
-        let bytes_written = self
-            .compute_runtime
+        self.file_writer
             .as_ref()
-            .expect("IO runtime should be created by now")
-            .block_on(async move {
-                let file_writer = file_writer
-                    .as_ref()
-                    .expect("File writer should be created by now")
-                    .lock()
-                    .await;
-
-                file_writer.bytes_written()
-            })
-            .unwrap_or(0);
-        bytes_written
+            .expect("File writer should be created by now")
+            .bytes_written()
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        let file_writer = self.file_writer.clone();
         let bytes_written = self
-            .compute_runtime
+            .file_writer
             .as_ref()
-            .expect("IO runtime should be created by now")
-            .block_on(async move {
-                let file_writer = file_writer
-                    .as_ref()
-                    .expect("File writer should be created by now")
-                    .lock()
-                    .await;
-
-                file_writer.bytes_written()
-            })
-            .unwrap_or(0);
+            .expect("File writer should be created by now")
+            .bytes_written();
         vec![bytes_written]
     }
 }
