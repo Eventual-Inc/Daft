@@ -20,8 +20,8 @@ def with_otel_endpoint():
             del os.environ["DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT"]
 
 
-@pytest.skip("not implemented")
 def test_basic_otel_usage() -> None:
+    pytest.skip("otel is not fully implemented")
     daft_script = """
 import daft
 

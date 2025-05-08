@@ -8,6 +8,7 @@ use std::{
     time::Instant,
 };
 
+use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
 use opentelemetry::{global, metrics::Counter, KeyValue};
@@ -113,7 +114,7 @@ impl RuntimeStats {
 impl RuntimeStatsContext {
     pub(crate) fn new(name: &str) -> Arc<Self> {
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
-        if std::env::var("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+        if should_enable_opentelemetry() {
             subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
         }
 

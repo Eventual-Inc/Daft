@@ -24,8 +24,18 @@ static GLOBAL_METER_PROVIDER: LazyLock<
     Mutex<Option<opentelemetry_sdk::metrics::SdkMeterProvider>>,
 > = LazyLock::new(|| Mutex::new(None));
 
+const OTEL_EXPORTER_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
+
+pub fn should_enable_opentelemetry() -> bool {
+    std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT).is_ok()
+}
+
 pub fn init_opentelemetry_providers() {
-    let otlp_endpoint = match std::env::var("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT") {
+    if !should_enable_opentelemetry() {
+        return;
+    }
+
+    let otlp_endpoint = match std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT) {
         Ok(endpoint) => endpoint,
         Err(_) => return,
     };
@@ -38,18 +48,8 @@ pub fn init_opentelemetry_providers() {
 }
 
 pub fn flush_opentelemetry_providers() {
-    let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
-    if let Some(meter_provider) = mg.as_ref() {
-        if let Err(e) = meter_provider.force_flush() {
-            println!("Failed to flush OTLP metrics provider: {}", e);
-        }
-    }
-    let mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
-    if let Some(tracer_provider) = mg.as_ref() {
-        if let Err(e) = tracer_provider.force_flush() {
-            println!("Failed to flush OTLP tracer provider: {}", e);
-        }
-    }
+    flush_oltp_metrics_provider();
+    flush_oltp_tracer_provider();
 }
 
 async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
@@ -75,6 +75,15 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
     global::set_meter_provider(metrics_provider.clone());
 
     *mg = Some(metrics_provider);
+}
+
+fn flush_oltp_metrics_provider() {
+    let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
+    if let Some(meter_provider) = mg.as_ref() {
+        if let Err(e) = meter_provider.force_flush() {
+            println!("Failed to flush OTLP metrics provider: {}", e);
+        }
+    }
 }
 
 async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
@@ -109,6 +118,14 @@ async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
     *mg = Some(tracer_provider);
 }
 
+fn flush_oltp_tracer_provider() {
+    let mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
+    if let Some(tracer_provider) = mg.as_ref() {
+        if let Err(e) = tracer_provider.force_flush() {
+            println!("Failed to flush OTLP tracer provider: {}", e);
+        }
+    }
+}
 pub fn init_tracing(enable_chrome_trace: bool) {
     use std::sync::atomic::Ordering;
 
