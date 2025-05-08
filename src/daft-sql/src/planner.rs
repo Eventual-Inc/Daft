@@ -497,8 +497,18 @@ impl SQLPlanner<'_> {
             .map(|expr| {
                 if has_agg(&expr) {
                     aggs.insert(expr.clone());
-
                     resolved_col(expr.name())
+                // if the projection is the same as one in a groupby, we don't need to reevaluate it again
+                //  just reuse the existing column
+                } else if groupby_exprs.contains(&expr) {
+                    resolved_col(expr.name())
+                // similarly, if its the same as above, but an alias, the same logic applies
+                } else if let Expr::Alias(inner, name) = expr.as_ref() {
+                    if groupby_exprs.contains(inner) {
+                        resolved_col(inner.name()).alias(name.as_ref())
+                    } else {
+                        expr
+                    }
                 } else {
                     expr
                 }
@@ -1295,6 +1305,7 @@ impl SQLPlanner<'_> {
 
                 match field {
                     DateTimeField::Year => Ok(dt::dt_year(expr)),
+                    DateTimeField::Quarter => Ok(dt::dt_quarter(expr)),
                     DateTimeField::Month => Ok(dt::dt_month(expr)),
                     DateTimeField::Day => Ok(dt::dt_day(expr)),
                     DateTimeField::Custom(Ident { value, .. })
@@ -1303,9 +1314,19 @@ impl SQLPlanner<'_> {
                         Ok(dt::dt_day_of_week(expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "day_of_month" =>
+                    {
+                        Ok(dt::dt_day_of_month(expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_year" =>
                     {
                         Ok(dt::dt_day_of_year(expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "week_of_year" =>
+                    {
+                        Ok(dt::dt_week_of_year(expr))
                     }
                     DateTimeField::Date => Ok(dt::dt_date(expr)),
                     DateTimeField::Hour => Ok(dt::dt_hour(expr)),
@@ -1314,6 +1335,11 @@ impl SQLPlanner<'_> {
                     DateTimeField::Millisecond => Ok(dt::dt_millisecond(expr)),
                     DateTimeField::Microsecond => Ok(dt::dt_microsecond(expr)),
                     DateTimeField::Nanosecond => Ok(dt::dt_nanosecond(expr)),
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "unix_date" =>
+                    {
+                        Ok(dt::dt_unix_date(expr))
+                    }
                     other => unsupported_sql_err!("EXTRACT ({other})"),
                 }
             }

@@ -267,34 +267,59 @@ pub fn set_runner_py(_use_thread_pool: Option<bool>) -> DaftResult<DaftContext> 
     unimplemented!()
 }
 
+/// Helper function to parse a boolean environment variable.
+fn parse_bool_env_var(var_name: &str) -> Option<bool> {
+    std::env::var(var_name)
+        .ok()
+        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"))
+}
+
+/// Helper function to parse a numeric environment variable.
+fn parse_usize_env_var(var_name: &str) -> Option<usize> {
+    std::env::var(var_name).ok().and_then(|s| s.parse().ok())
+}
+
+/// Helper function to get the py runner config from the environment.
 #[cfg(feature = "python")]
-fn get_runner_config_from_env() -> RunnerConfig {
-    const DAFT_RUNNER: &str = "DAFT_RUNNER";
+fn get_py_runner_config_from_env() -> RunnerConfig {
+    const DAFT_DEVELOPER_USE_THREAD_POOL: &str = "DAFT_DEVELOPER_USE_THREAD_POOL";
+
+    RunnerConfig::Py {
+        use_thread_pool: parse_bool_env_var(DAFT_DEVELOPER_USE_THREAD_POOL),
+        num_threads: None,
+    }
+}
+
+/// Helper function to get the ray runner config from the environment.
+#[cfg(feature = "python")]
+fn get_ray_runner_config_from_env() -> RunnerConfig {
     const DAFT_RAY_ADDRESS: &str = "DAFT_RAY_ADDRESS";
     const RAY_ADDRESS: &str = "RAY_ADDRESS";
     const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
     const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
-    const DAFT_DEVELOPER_USE_THREAD_POOL: &str = "DAFT_DEVELOPER_USE_THREAD_POOL";
 
-    let runner_from_envvar = std::env::var(DAFT_RUNNER).unwrap_or_default();
-    let address = std::env::var(DAFT_RAY_ADDRESS).ok();
-    let address = if address.is_some() {
+    let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
         log::warn!(
-            "Detected usage of the $DAFT_RAY_ADDRESS environment variable. This will be deprecated, please use $RAY_ADDRESS instead."
+            "Detected usage of the ${} environment variable. This will be deprecated, please use ${} instead.",
+            DAFT_RAY_ADDRESS,
+            RAY_ADDRESS
         );
-        address
+        Some(address)
     } else {
         std::env::var(RAY_ADDRESS).ok()
     };
+    let max_task_backlog = parse_usize_env_var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG);
+    let force_client_mode = parse_bool_env_var(DAFT_RAY_FORCE_CLIENT_MODE);
+    RunnerConfig::Ray {
+        address,
+        max_task_backlog,
+        force_client_mode,
+    }
+}
 
-    let max_task_backlog = std::env::var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG)
-        .ok()
-        .map(|s| s.parse().unwrap());
-
-    let force_client_mode = std::env::var(DAFT_RAY_FORCE_CLIENT_MODE)
-        .ok()
-        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"));
-
+/// Helper function to automatically detect whether to use the ray runner.
+#[cfg(feature = "python")]
+fn detect_ray_state() -> bool {
     let mut ray_is_in_job = false;
     let mut in_ray_worker = false;
     let mut ray_is_initialized = false;
@@ -328,23 +353,22 @@ fn get_runner_config_from_env() -> RunnerConfig {
         Some(())
     });
 
-    match runner_from_envvar.to_lowercase().as_str() {
-        "ray" => RunnerConfig::Ray {
-            address,
-            max_task_backlog,
-            force_client_mode,
-        },
-        "py" => RunnerConfig::Py {
-            use_thread_pool: std::env::var(DAFT_DEVELOPER_USE_THREAD_POOL)
-                .ok()
-                .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1")),
-            num_threads: None,
-        },
-        _ if !in_ray_worker && (ray_is_initialized || ray_is_in_job) => RunnerConfig::Ray {
-            address: None,
-            max_task_backlog,
-            force_client_mode,
-        },
+    !in_ray_worker && (ray_is_initialized || ray_is_in_job)
+}
+
+#[cfg(feature = "python")]
+fn get_runner_config_from_env() -> RunnerConfig {
+    const DAFT_RUNNER: &str = "DAFT_RUNNER";
+
+    let runner_from_envvar = std::env::var(DAFT_RUNNER)
+        .unwrap_or_default()
+        .to_lowercase();
+
+    match runner_from_envvar.as_str() {
+        "native" => RunnerConfig::Native { num_threads: None },
+        "ray" => get_ray_runner_config_from_env(),
+        "py" => get_py_runner_config_from_env(),
+        _ if detect_ray_state() => get_ray_runner_config_from_env(),
         _ => RunnerConfig::Native { num_threads: None },
     }
 }

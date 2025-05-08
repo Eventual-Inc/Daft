@@ -1,5 +1,8 @@
 use daft_core::datatypes::TimeUnit;
-use daft_functions::temporal::{Day, DayOfWeek, DayOfYear, Hour, Minute, Month, Second, Year};
+use daft_functions::temporal::{
+    Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Minute, Month, Quarter, Second, UnixDate,
+    WeekOfYear, Year,
+};
 use daft_schema::dtype::DataType;
 
 use super::{FunctionModule, UnaryFunction, TODO_FUNCTION};
@@ -26,7 +29,7 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("datediff", TODO_FUNCTION);
         parent.add_fn("datepart", TODO_FUNCTION);
         parent.add_fn("day", Day);
-        parent.add_fn("dayofmonth", TODO_FUNCTION);
+        parent.add_fn("dayofmonth", DayOfMonth);
         parent.add_fn("dayofweek", DayOfWeek);
 
         parent.add_fn("dayofyear", DayOfYear);
@@ -48,7 +51,7 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("months_between", TODO_FUNCTION);
         parent.add_fn("next_day", TODO_FUNCTION);
         parent.add_fn("now", TODO_FUNCTION);
-        parent.add_fn("quarter", TODO_FUNCTION);
+        parent.add_fn("quarter", Quarter);
         parent.add_fn("second", Second);
         parent.add_fn("session_window", TODO_FUNCTION);
         parent.add_fn("timestamp_micros", TODO_FUNCTION);
@@ -65,13 +68,10 @@ impl FunctionModule for DatetimeFunctions {
         parent.add_fn("to_utc_timestamp", TODO_FUNCTION);
         parent.add_fn("trunc", TODO_FUNCTION);
         parent.add_fn("try_to_timestamp", TODO_FUNCTION);
-        parent.add_fn("unix_date", TODO_FUNCTION);
-        parent.add_fn("unix_micros", TODO_FUNCTION);
-        parent.add_fn("unix_millis", TODO_FUNCTION);
-        parent.add_fn("unix_seconds", TODO_FUNCTION);
+        parent.add_fn("unix_date", UnixDate);
         parent.add_fn("unix_timestamp", TODO_FUNCTION);
         parent.add_fn("weekday", TODO_FUNCTION);
-        parent.add_fn("weekofyear", TODO_FUNCTION);
+        parent.add_fn("weekofyear", WeekOfYear);
         parent.add_fn("window", TODO_FUNCTION);
         parent.add_fn("window_time", TODO_FUNCTION);
         parent.add_fn("year", Year);

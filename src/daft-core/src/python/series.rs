@@ -16,10 +16,7 @@ use pyo3::{
 
 use crate::{
     array::{
-        ops::{
-            as_arrow::AsArrow, trigonometry::TrigonometricFunction, DaftLogical,
-            Utf8NormalizeOptions,
-        },
+        ops::{as_arrow::AsArrow, DaftLogical, Utf8NormalizeOptions},
         pseudo_arrow::PseudoArrowArray,
         DataArray,
     },
@@ -141,165 +138,6 @@ impl PySeries {
         Ok(self.series.floor_div(&other.series)?.into())
     }
 
-    pub fn ceil(&self) -> PyResult<Self> {
-        Ok(self.series.ceil()?.into())
-    }
-
-    pub fn floor(&self) -> PyResult<Self> {
-        Ok(self.series.floor()?.into())
-    }
-
-    pub fn sign(&self) -> PyResult<Self> {
-        Ok(self.series.sign()?.into())
-    }
-
-    pub fn negative(&self) -> PyResult<Self> {
-        Ok(self.series.negative()?.into())
-    }
-
-    pub fn round(&self, decimal: i32) -> PyResult<Self> {
-        if decimal < 0 {
-            return Err(PyValueError::new_err(format!(
-                "decimal value can not be negative: {decimal}"
-            )));
-        }
-        Ok(self.series.round(decimal)?.into())
-    }
-    pub fn clip(&self, min: &Self, max: &Self) -> PyResult<Self> {
-        Ok(self.series.clip(&min.series, &max.series)?.into())
-    }
-
-    pub fn sqrt(&self) -> PyResult<Self> {
-        Ok(self.series.sqrt()?.into())
-    }
-
-    pub fn cbrt(&self) -> PyResult<Self> {
-        Ok(self.series.cbrt()?.into())
-    }
-
-    pub fn sin(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Sin)?
-            .into())
-    }
-
-    pub fn cos(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Cos)?
-            .into())
-    }
-
-    pub fn tan(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Tan)?
-            .into())
-    }
-
-    pub fn csc(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Csc)?
-            .into())
-    }
-
-    pub fn sec(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Sec)?
-            .into())
-    }
-
-    pub fn cot(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Cot)?
-            .into())
-    }
-
-    pub fn sinh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Sinh)?
-            .into())
-    }
-
-    pub fn cosh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Cosh)?
-            .into())
-    }
-
-    pub fn tanh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Tanh)?
-            .into())
-    }
-
-    pub fn arcsin(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcSin)?
-            .into())
-    }
-
-    pub fn arccos(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcCos)?
-            .into())
-    }
-
-    pub fn arctan(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcTan)?
-            .into())
-    }
-
-    pub fn arctan2(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.atan2(&other.series)?.into())
-    }
-
-    pub fn degrees(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Degrees)?
-            .into())
-    }
-
-    pub fn radians(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Radians)?
-            .into())
-    }
-
-    pub fn arctanh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcTanh)?
-            .into())
-    }
-
-    pub fn arccosh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcCosh)?
-            .into())
-    }
-
-    pub fn arcsinh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcSinh)?
-            .into())
-    }
-
     pub fn log2(&self) -> PyResult<Self> {
         Ok(self.series.log2()?.into())
     }
@@ -318,14 +156,6 @@ impl PySeries {
 
     pub fn log1p(&self) -> PyResult<Self> {
         Ok(self.series.log1p()?.into())
-    }
-
-    pub fn exp(&self) -> PyResult<Self> {
-        Ok(self.series.exp()?.into())
-    }
-
-    pub fn expm1(&self) -> PyResult<Self> {
-        Ok(self.series.expm1()?.into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
@@ -665,22 +495,6 @@ impl PySeries {
             .into())
     }
 
-    pub fn is_nan(&self) -> PyResult<Self> {
-        Ok(self.series.is_nan()?.into())
-    }
-
-    pub fn is_inf(&self) -> PyResult<Self> {
-        Ok(self.series.is_inf()?.into())
-    }
-
-    pub fn not_nan(&self) -> PyResult<Self> {
-        Ok(self.series.not_nan()?.into())
-    }
-
-    pub fn fill_nan(&self, fill_value: &Self) -> PyResult<Self> {
-        Ok(self.series.fill_nan(&fill_value.series)?.into())
-    }
-
     pub fn dt_date(&self) -> PyResult<Self> {
         Ok(self.series.dt_date()?.into())
     }
@@ -713,12 +527,20 @@ impl PySeries {
         Ok(self.series.dt_nanosecond()?.into())
     }
 
+    pub fn dt_unix_date(&self) -> PyResult<Self> {
+        Ok(self.series.dt_unix_date()?.into())
+    }
+
     pub fn dt_time(&self) -> PyResult<Self> {
         Ok(self.series.dt_time()?.into())
     }
 
     pub fn dt_month(&self) -> PyResult<Self> {
         Ok(self.series.dt_month()?.into())
+    }
+
+    pub fn dt_quarter(&self) -> PyResult<Self> {
+        Ok(self.series.dt_quarter()?.into())
     }
 
     pub fn dt_year(&self) -> PyResult<Self> {
@@ -729,8 +551,16 @@ impl PySeries {
         Ok(self.series.dt_day_of_week()?.into())
     }
 
+    pub fn dt_day_of_month(&self) -> PyResult<Self> {
+        Ok(self.series.dt_day_of_month()?.into())
+    }
+
     pub fn dt_day_of_year(&self) -> PyResult<Self> {
         Ok(self.series.dt_day_of_year()?.into())
+    }
+
+    pub fn dt_week_of_year(&self) -> PyResult<Self> {
+        Ok(self.series.dt_week_of_year()?.into())
     }
 
     pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {

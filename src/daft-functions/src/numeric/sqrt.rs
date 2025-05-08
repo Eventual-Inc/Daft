@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{Field, Schema},
-    series::Series,
+    prelude::{DataType, Field, Schema},
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -29,7 +29,17 @@ impl ScalarUDF for Sqrt {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, Series::sqrt)
+        evaluate_single_numeric(inputs, |s| {
+            let casted_dtype = s.to_floating_data_type()?;
+            let casted_self = s
+                .cast(&casted_dtype)
+                .expect("Casting numeric types to their floating point analogues should not fail");
+            match casted_dtype {
+                DataType::Float32 => Ok(casted_self.f32().unwrap().sqrt()?.into_series()),
+                DataType::Float64 => Ok(casted_self.f64().unwrap().sqrt()?.into_series()),
+                _ => unreachable!(),
+            }
+        })
     }
 }
 

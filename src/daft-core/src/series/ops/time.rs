@@ -167,6 +167,19 @@ impl Series {
         }
     }
 
+    pub fn dt_unix_date(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(_, _) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.unix_date()?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run unix_date() operation on timestamp types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
     pub fn dt_time(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Timestamp(tu, _) => {
@@ -197,6 +210,23 @@ impl Series {
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run month() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn dt_quarter(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Date => {
+                let downcasted = self.date()?;
+                Ok(downcasted.quarter()?.into_series())
+            }
+            DataType::Timestamp(..) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.date()?.quarter()?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run quarter() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }
@@ -236,6 +266,24 @@ impl Series {
         }
     }
 
+    pub fn dt_day_of_month(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(_, _) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.day_of_month()?.into_series())
+            }
+            DataType::Date => {
+                let date_array = self.date()?;
+                Ok(date_array.day_of_month()?.into_series())
+            }
+
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run day_of_month() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
     pub fn dt_day_of_year(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Timestamp(_, _) => {
@@ -249,6 +297,24 @@ impl Series {
 
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run day_of_year() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn dt_week_of_year(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(_, _) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.week_of_year()?.into_series())
+            }
+            DataType::Date => {
+                let date_array = self.date()?;
+                Ok(date_array.week_of_year()?.into_series())
+            }
+
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run week_of_year() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }

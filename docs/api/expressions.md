@@ -33,7 +33,7 @@ Daft Expressions allow you to express some computation that needs to happen in a
 
 ::: daft.expressions.Expression
     options:
-        filters: ["!^_[^_]"]
+        filters: ["!^_[^_]", "!over", "!lag", "!lead"]
 
 ::: daft.expressions.expressions.ExpressionStringNamespace
     options:

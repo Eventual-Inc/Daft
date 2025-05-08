@@ -16,9 +16,17 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
     Expressions allow you to express some computation that needs to happen in a DataFrame.
 
-- [**Functions**](functions.md)
+- [**Scalar Functions**](functions.md)
 
-    Daft Functions provide a set of built-in operations that can be applied to DataFrame columns.
+    Daft provides a set of built-in operations that can be applied to DataFrame columns.
+
+- [**User-Defined Functions**](udf.md)
+
+    User-Defined Functions (UDFs) are a mechanism to run Python code on the data that lives in a DataFrame.
+
+- [**Window Functions**](window.md)
+
+    Window functions allow you to perform calculations across a set of rows that are related to the current row.
 
 - [**Sessions**](sessions.md)
 
@@ -36,13 +44,9 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
     Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings, dates, tensors, and images.
 
-- [**Groupby**](groupby.md)
+- [**Aggregations**](aggregations.md)
 
     When performing aggregations such as sum, mean and count, Daft enables you to group data by certain keys and aggregate within those keys.
-
-- [**User-Defined Functions**](udf.md)
-
-    User-Defined Functions (UDFs) are a mechanism to run Python code on the data that lives in a DataFrame.
 
 - [**Series**](series.md)
 

@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::optimization::get_required_columns;
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
@@ -238,6 +238,11 @@ async fn read_json_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
+    let daft_schema = Arc::new(schema.into());
+    let predicate = predicate
+        .map(|expr| BoundExpr::try_new(expr, &daft_schema))
+        .transpose()?;
+
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
             let filtered = table?.filter(&[predicate.clone()])?;
@@ -272,7 +277,6 @@ async fn read_json_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        let daft_schema = Arc::new(schema.into());
         return RecordBatch::empty(Some(daft_schema));
     }
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
@@ -350,7 +354,10 @@ pub async fn stream_json(
     let filtered_tables = tables.map(move |table| {
         let table = table?;
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
+            let table = table?;
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
             if let Some(include_columns) = &include_columns {
                 filtered.get_columns(include_columns.as_slice())
             } else {

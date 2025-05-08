@@ -1,3 +1,4 @@
+pub mod bound_expr;
 pub mod window;
 
 mod display;
@@ -110,6 +111,7 @@ impl std::hash::Hash for Subquery {
 pub enum Column {
     Unresolved(UnresolvedColumn),
     Resolved(ResolvedColumn),
+    Bound(BoundColumn),
 }
 
 /// Information about the logical plan node that a column comes from.
@@ -165,7 +167,17 @@ pub enum ResolvedColumn {
     OuterRef(Field, PlanRef),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct BoundColumn {
+    pub index: usize,
+
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
+    /// Should only be used for display and debugging purposes
+    pub field: Field,
+}
+
 impl Column {
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn name(&self) -> String {
         match self {
             Self::Unresolved(UnresolvedColumn {
@@ -181,6 +193,10 @@ impl Column {
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
             Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
+            Self::Bound(BoundColumn {
+                field: Field { name, .. },
+                ..
+            }) => name.to_string(),
         }
     }
 }
@@ -382,6 +398,10 @@ pub fn unresolved_col(name: impl Into<Arc<str>>) -> ExprRef {
         plan_schema: None,
     }
     .into()
+}
+
+pub fn bound_col(index: usize, field: Field) -> ExprRef {
+    BoundColumn { index, field }.into()
 }
 
 /// Basic resolved column, refers to a singular input scope
@@ -845,6 +865,12 @@ impl From<ResolvedColumn> for ExprRef {
     }
 }
 
+impl From<BoundColumn> for ExprRef {
+    fn from(col: BoundColumn) -> Self {
+        Self::new(Expr::Column(Column::Bound(col)))
+    }
+}
+
 impl From<Column> for ExprRef {
     fn from(col: Column) -> Self {
         Self::new(Expr::Column(col))
@@ -1044,6 +1070,7 @@ impl Expr {
         Self::InSubquery(self, subquery).into()
     }
 
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
             // Base case - anonymous column reference.
@@ -1071,6 +1098,11 @@ impl Expr {
             Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, side))) => {
                 FieldID::new(format!("{side}.{name}"))
             }
+
+            Self::Column(Column::Bound(BoundColumn {
+                index,
+                field: Field { name, .. },
+            })) => FieldID::new(format!("{name}#{index}")),
 
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
                 Field { name, .. },
@@ -1371,6 +1403,8 @@ impl Expr {
                 Ok(field.clone())
             }
 
+            Self::Column(Column::Bound(BoundColumn { index, .. })) => Ok(schema[*index].clone()),
+
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field, _))) => Ok(field.clone()),
             Self::Not(expr) => {
                 let child_field = expr.to_field(schema)?;
@@ -1534,7 +1568,7 @@ impl Expr {
                         "Expected subquery to return a single column but received {subquery_schema}",
                     )));
                 }
-                let first_field = subquery_schema.get_field_at_index(0).unwrap();
+                let first_field = &subquery_schema[0];
 
                 Ok(first_field.clone())
             }
@@ -1545,6 +1579,7 @@ impl Expr {
         }
     }
 
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn name(&self) -> &str {
         match self {
             Self::Alias(.., name) => name.as_ref(),
@@ -1558,6 +1593,10 @@ impl Expr {
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _))) => {
                 name.as_ref()
             }
+            Self::Column(Column::Bound(BoundColumn {
+                field: Field { name, .. },
+                ..
+            })) => name.as_ref(),
             Self::Not(expr) => expr.name(),
             Self::IsNull(expr) => expr.name(),
             Self::NotNull(expr) => expr.name(),

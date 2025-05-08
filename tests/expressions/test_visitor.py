@@ -29,18 +29,18 @@ class Trace:
             return False
 
         # recursive equals using the PyExpr._eq method
-        def eq(l: object, r: object) -> bool:
-            if isinstance(l, Expression) and isinstance(r, Expression):
-                return l._expr._eq(r._expr)
-            elif isinstance(l, list) and isinstance(r, list):
-                if len(l) != len(r):
+        def eq(obj1: object, obj2: object) -> bool:
+            if isinstance(obj1, Expression) and isinstance(obj2, Expression):
+                return obj1._expr._eq(obj2._expr)
+            elif isinstance(obj1, list) and isinstance(obj2, list):
+                if len(obj1) != len(obj2):
                     return False
-                for lc, rc in zip(l, r):
+                for lc, rc in zip(obj1, obj2):
                     if not eq(lc, rc):
                         return False
                 return True
             else:
-                return l == r
+                return obj1 == obj2
 
         return eq(self.args, other.args)
 
@@ -54,7 +54,7 @@ class TracingVisitor(ExpressionVisitor[List[Trace]]):
     functional style folding with dispatch on the rust side bridging into this visitor.
 
     I've also left the scoped context parameter out of the ExpressionVisitor interface because
-    it's unlikley anyone would actually care for it, and anyone who does is already capable of
+    it's unlikely anyone would actually care for it, and anyone who does is already capable of
     managing their own state stack, this visitor is for the people.
     """
 

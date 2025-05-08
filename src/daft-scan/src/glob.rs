@@ -6,6 +6,7 @@ use common_runtime::RuntimeRef;
 use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::RecordBatch;
@@ -449,8 +450,12 @@ impl ScanOperator for GlobScanOperator {
                             RecordBatch::from_nonempty_columns(partition_values)?;
                         // If there are partition values, evaluate them against partition filters, if any.
                         if let Some(partition_filters) = &pushdowns.partition_filters {
+                            let partition_filters = BoundExpr::try_new(
+                                partition_filters.clone(),
+                                &partition_values_table.schema,
+                            )?;
                             let filter_result =
-                                partition_values_table.filter(&[partition_filters.clone()])?;
+                                partition_values_table.filter(&[partition_filters])?;
                             if filter_result.is_empty() {
                                 // Skip the current file since it does not satisfy the partition filters.
                                 return Ok(None);

@@ -8,7 +8,7 @@ use daft_core::{
     python::{PySchema, PySeries, PyTimeUnit},
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::python::PyExpr;
+use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr};
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -1131,8 +1131,11 @@ pub fn read_pyfunc_into_table_iter(
                     // Apply filters
                     let post_pushdown_table = || -> crate::Result<RecordBatch> {
                         let table = if let Some(filters) = scan_task_filters.as_ref() {
+                            let filters = BoundExpr::try_new(filters.clone(), &table.schema)
+                                .with_context(|_| DaftCoreComputeSnafu)?;
+
                             table
-                                .filter(&[filters.clone()])
+                                .filter(&[filters])
                                 .with_context(|_| DaftCoreComputeSnafu)?
                         } else {
                             table
