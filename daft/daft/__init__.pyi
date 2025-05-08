@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 class ImageMode(Enum):
     """Supported image modes for Daft's image type.
 
-    .. warning::
+    Warning:
         Currently, only the 8-bit modes (L, LA, RGB, RGBA) can be stored in a DataFrame.
         If your binary image data includes other modes, use the `mode` argument
         in `image.decode` to convert the images to a supported mode.
