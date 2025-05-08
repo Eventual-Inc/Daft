@@ -19,6 +19,7 @@ use daft_micropartition::{
 use futures::{stream::BoxStream, Stream, StreamExt};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
+use tracing::{instrument, Instrument};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -276,6 +277,7 @@ impl NativeExecutor {
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
         let handle = std::thread::spawn(move || {
+            let task_span = tracing::info_span!("NativeExecutor::run::task").entered();
             let runtime = rt.unwrap_or_else(|| {
                 Arc::new(
                     tokio::runtime::Builder::new_current_thread()
@@ -330,12 +332,11 @@ impl NativeExecutor {
                         )
                     )?;
                 }
-                flush_opentelemetry_providers();
                 Ok(())
             };
 
             let local_set = tokio::task::LocalSet::new();
-            local_set.block_on(&runtime, async {
+            let result = local_set.block_on(&runtime, async {
                 tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
@@ -348,7 +349,10 @@ impl NativeExecutor {
                     }
                     result = execution_task => result,
                 }
-            })
+            });
+            task_span.exit();
+            flush_opentelemetry_providers();
+            result
         });
 
         Ok(ExecutionEngineResult {
