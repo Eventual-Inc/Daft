@@ -8,11 +8,11 @@ use daft_logical_plan::{
     partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
 };
 use daft_schema::schema::SchemaRef;
-use running_stage::{materialize_stage_results, RunningStage};
+use running_stage::RunningStage;
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    pipeline_node::logical_plan_to_pipeline_node,
+    pipeline_node::{logical_plan_to_pipeline_node, materialize::materialize_pipeline_results},
     runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
@@ -80,13 +80,14 @@ impl Stage {
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> DaftResult<RunningStage> {
+        let mut stage_context = StageContext::try_new(worker_manager_factory)?;
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
-                let mut stage_context = StageContext::try_new(worker_manager_factory)?;
+                let mut pipeline_node =
+                    logical_plan_to_pipeline_node(plan.clone(), config, psets, &mut stage_context)?;
                 let running_node = pipeline_node.start(&mut stage_context);
                 let materialized_results_receiver =
-                    materialize_stage_results(running_node, &mut stage_context)?;
+                    materialize_pipeline_results(running_node, &mut stage_context);
                 let running_stage = RunningStage::new(materialized_results_receiver, stage_context);
                 Ok(running_stage)
             }
@@ -183,6 +184,7 @@ impl StagePlan {
 pub(crate) struct StageContext {
     task_dispatcher_handle: TaskDispatcherHandle,
     joinset: JoinSet<DaftResult<()>>,
+    node_id_counter: usize,
 }
 
 impl StageContext {
@@ -195,6 +197,7 @@ impl StageContext {
         Ok(Self {
             task_dispatcher_handle,
             joinset,
+            node_id_counter: 0,
         })
     }
 
@@ -207,6 +210,12 @@ impl StageContext {
         f: impl Future<Output = DaftResult<()>> + Send + 'static,
     ) {
         self.joinset.spawn(f);
+    }
+
+    pub fn get_node_id(&mut self) -> usize {
+        let node_id = self.node_id_counter;
+        self.node_id_counter += 1;
+        node_id
     }
 
     pub fn into_inner(self) -> (TaskDispatcherHandle, JoinSet<DaftResult<()>>) {

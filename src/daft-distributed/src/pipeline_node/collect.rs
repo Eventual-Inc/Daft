@@ -1,11 +1,20 @@
+use std::collections::HashMap;
+
 use common_error::DaftResult;
+use common_treenode::{Transformed, TreeNode};
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 
 use super::{
-    translate::PipelinePlan, DistributedPipelineNode, PipelineOutput, RunningPipelineNode,
+    translate::PipelinePlan, DistributedPipelineNode, PipelineInput, PipelineOutput,
+    RunningPipelineNode,
 };
 use crate::{
     channel::{create_channel, Sender},
-    scheduling::dispatcher::TaskDispatcherHandle,
+    scheduling::{
+        dispatcher::TaskDispatcherHandle,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::StageContext,
 };
 
@@ -21,14 +30,99 @@ impl CollectNode {
         Self { plan, children }
     }
 
+    async fn source_execution_loop(
+        plan: LocalPhysicalPlanRef,
+        input: PipelineInput,
+        result_tx: Sender<PipelineOutput>,
+    ) -> DaftResult<()> {
+        match input {
+            PipelineInput::InMemorySource {
+                cache_key,
+                partition_refs,
+            } => {
+                for partition_ref in partition_refs {
+                    let cache_key = cache_key.clone();
+                    let transformed_plan = plan
+                        .clone()
+                        .transform_up(|p| match p.as_ref() {
+                            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
+                                let size_bytes = partition_ref.size_bytes()?.unwrap();
+                                let num_rows = partition_ref.num_rows()?;
+                                let in_memory_info = InMemoryInfo::new(
+                                    placeholder.schema.clone(),
+                                    cache_key.clone(),
+                                    None,
+                                    1,
+                                    size_bytes,
+                                    num_rows,
+                                    None,
+                                    None,
+                                );
+                                let in_memory = LocalPhysicalPlan::in_memory_scan(
+                                    in_memory_info,
+                                    StatsState::NotMaterialized,
+                                );
+                                Ok(Transformed::yes(in_memory))
+                            }
+                            _ => Ok(Transformed::no(p)),
+                        })?
+                        .data;
+                    let mut psets = HashMap::new();
+                    psets.insert(cache_key, vec![partition_ref]);
+                    let task =
+                        SwordfishTask::new(transformed_plan, psets, SchedulingStrategy::Spread);
+                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            PipelineInput::ScanTasks {
+                scan_tasks,
+                pushdowns,
+                ..
+            } => {
+                for scan_task in scan_tasks.iter() {
+                    let transformed_plan = plan
+                        .clone()
+                        .transform_up(|p| match p.as_ref() {
+                            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
+                                let physical_scan = LocalPhysicalPlan::physical_scan(
+                                    vec![scan_task.clone()].into(),
+                                    pushdowns.clone(),
+                                    placeholder.schema.clone(),
+                                    StatsState::NotMaterialized,
+                                );
+                                Ok(Transformed::yes(physical_scan))
+                            }
+                            _ => Ok(Transformed::no(p)),
+                        })?
+                        .data;
+                    let psets = HashMap::new();
+                    let task =
+                        SwordfishTask::new(transformed_plan, psets, SchedulingStrategy::Spread);
+                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            PipelineInput::Intermediate => todo!(),
+        }
+        Ok(())
+    }
+
     #[allow(dead_code)]
     async fn execution_loop(
-        _task_dispatcher_handle: TaskDispatcherHandle,
-        _plan: PipelinePlan,
-        _input_node: Option<RunningPipelineNode>,
-        _result_tx: Sender<PipelineOutput>,
+        task_dispatcher_handle: TaskDispatcherHandle,
+        plan: PipelinePlan,
+        input_node: Option<RunningPipelineNode>,
+        result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
-        todo!("FLOTILLA_MS1: Implement collect execution sloop");
+        match input_node {
+            Some(input_node) => {
+                todo!("FLOTILLA_MS1: Implement collect execution loop with input node");
+            }
+            None => Self::source_execution_loop(plan.local_plan, plan.input, result_tx).await,
+        }
     }
 }
 

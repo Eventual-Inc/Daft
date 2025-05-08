@@ -148,7 +148,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn filter(
+    pub fn filter(
         input: LocalPhysicalPlanRef,
         predicate: ExprRef,
         stats_state: StatsState,
@@ -163,7 +163,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn limit(
+    pub fn limit(
         input: LocalPhysicalPlanRef,
         num_rows: i64,
         stats_state: StatsState,
@@ -178,7 +178,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn explode(
+    pub fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<ExprRef>,
         schema: SchemaRef,
@@ -193,7 +193,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn project(
+    pub fn project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
         schema: SchemaRef,
@@ -208,7 +208,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn actor_pool_project(
+    pub fn actor_pool_project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
         schema: SchemaRef,
@@ -223,7 +223,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn ungrouped_aggregate(
+    pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<ExprRef>,
         schema: SchemaRef,
@@ -238,7 +238,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn hash_aggregate(
+    pub fn hash_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<ExprRef>,
         group_by: Vec<ExprRef>,
@@ -255,7 +255,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn window_partition_only(
+    pub fn window_partition_only(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<ExprRef>,
         schema: SchemaRef,
@@ -275,7 +275,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_partition_and_order_by(
+    pub fn window_partition_and_order_by(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<ExprRef>,
         order_by: Vec<ExprRef>,
@@ -299,7 +299,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn window_partition_and_dynamic_frame(
+    pub fn window_partition_and_dynamic_frame(
         input: LocalPhysicalPlanRef,
         partition_by: Vec<ExprRef>,
         order_by: Vec<ExprRef>,
@@ -326,7 +326,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn unpivot(
+    pub fn unpivot(
         input: LocalPhysicalPlanRef,
         ids: Vec<ExprRef>,
         values: Vec<ExprRef>,
@@ -348,7 +348,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn pivot(
+    pub fn pivot(
         input: LocalPhysicalPlanRef,
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
@@ -371,7 +371,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn sort(
+    pub fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
@@ -390,7 +390,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn sample(
+    pub fn sample(
         input: LocalPhysicalPlanRef,
         fraction: f64,
         with_replacement: bool,
@@ -409,7 +409,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn monotonically_increasing_id(
+    pub fn monotonically_increasing_id(
         input: LocalPhysicalPlanRef,
         column_name: String,
         schema: SchemaRef,
@@ -425,7 +425,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn hash_join(
+    pub fn hash_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         left_on: Vec<ExprRef>,
@@ -448,7 +448,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn cross_join(
+    pub fn cross_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
         schema: SchemaRef,
@@ -463,7 +463,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn concat(
+    pub fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
         stats_state: StatsState,
@@ -478,7 +478,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn physical_write(
+    pub fn physical_write(
         input: LocalPhysicalPlanRef,
         data_schema: SchemaRef,
         file_schema: SchemaRef,
@@ -496,7 +496,7 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub(crate) fn catalog_write(
+    pub fn catalog_write(
         input: LocalPhysicalPlanRef,
         catalog_type: daft_logical_plan::CatalogType,
         data_schema: SchemaRef,
@@ -514,7 +514,7 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub(crate) fn lance_write(
+    pub fn lance_write(
         input: LocalPhysicalPlanRef,
         lance_info: daft_logical_plan::LanceCatalogInfo,
         data_schema: SchemaRef,
@@ -600,45 +600,45 @@ impl LocalPhysicalPlan {
         }
     }
 
-    fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
+    pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
-            [input] => match self {
+            [new_child] => match self {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
                 | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
-                Self::Filter(Filter { input, predicate, schema,..  }) => Self::filter(input.clone(), predicate.clone(), StatsState::NotMaterialized),
-                Self::Limit(Limit { input, num_rows, .. }) => Self::limit(input.clone(), *num_rows, StatsState::NotMaterialized),
-                Self::Project(Project { input, projection, schema, .. }) => Self::project(input.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::ActorPoolProject(ActorPoolProject { input, projection, schema, .. }) => Self::actor_pool_project(input.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::UnGroupedAggregate(UnGroupedAggregate { input, aggregations, schema, .. }) => Self::ungrouped_aggregate(input.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::HashAggregate(HashAggregate { input, aggregations, group_by, schema, .. }) => Self::hash_aggregate(input.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Pivot(Pivot { input, group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Sort(Sort { input, sort_by, descending, nulls_first, schema, .. }) => Self::sort(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), StatsState::NotMaterialized),
-                Self::Sample(Sample { input, fraction, with_replacement, seed, schema, .. }) => Self::sample(input.clone(), *fraction, *with_replacement, *seed, StatsState::NotMaterialized),
-                Self::Explode(Explode { input, to_explode, schema, .. }) => Self::explode(input.clone(), to_explode.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Unpivot(Unpivot { input, ids, values, variable_name, value_name, schema, .. }) => Self::unpivot(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::Concat(Concat { input, other, schema, .. }) => Self::concat(input.clone(), other.clone(), StatsState::NotMaterialized),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, column_name, schema, .. }) => Self::monotonically_increasing_id(input.clone(), column_name.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::WindowPartitionOnly(WindowPartitionOnly { input, partition_by, schema, aggregations, aliases, .. }) => Self::window_partition_only(input.clone(), partition_by.clone(), schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
-                Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { input, partition_by, order_by, descending, schema, functions, aliases, .. }) => Self::window_partition_and_order_by(input.clone(), partition_by.clone(), order_by.clone(), descending.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
-                Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame { input, partition_by, order_by, descending, frame, min_periods, schema, aggregations, aliases, .. }) => Self::window_partition_and_dynamic_frame(input.clone(), partition_by.clone(), order_by.clone(), descending.clone(), frame.clone(), *min_periods, schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
-                Self::PhysicalWrite(PhysicalWrite { input, data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(input.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
+                Self::Filter(Filter {  predicate, schema,..  }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
+                Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
+                Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::Pivot(Pivot {  group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(new_child.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::Sort(Sort {  sort_by, descending, nulls_first, schema, .. }) => Self::sort(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), StatsState::NotMaterialized),
+                Self::Sample(Sample {  fraction, with_replacement, seed, schema, .. }) => Self::sample(new_child.clone(), *fraction, *with_replacement, *seed, StatsState::NotMaterialized),
+                Self::Explode(Explode {  to_explode, schema, .. }) => Self::explode(new_child.clone(), to_explode.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::Unpivot(Unpivot {  ids, values, variable_name, value_name, schema, .. }) => Self::unpivot(new_child.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::Concat(Concat {  other, schema, .. }) => Self::concat(new_child.clone(), other.clone(), StatsState::NotMaterialized),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {  column_name, schema, .. }) => Self::monotonically_increasing_id(new_child.clone(), column_name.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::WindowPartitionOnly(WindowPartitionOnly {  partition_by, schema, aggregations, aliases, .. }) => Self::window_partition_only(new_child.clone(), partition_by.clone(), schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
+                Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {  partition_by, order_by, descending, schema, functions, aliases, .. }) => Self::window_partition_and_order_by(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
+                Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {  partition_by, order_by, descending, frame, min_periods, schema, aggregations, aliases, .. }) => Self::window_partition_and_dynamic_frame(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), frame.clone(), *min_periods, schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
+                Self::PhysicalWrite(PhysicalWrite {  data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(new_child.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
-                Self::CatalogWrite(CatalogWrite { input, catalog_type, data_schema, file_schema, stats_state, .. }) => Self::catalog_write(input.clone(), catalog_type.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
+                Self::CatalogWrite(CatalogWrite {  catalog_type, data_schema, file_schema, stats_state, .. }) => Self::catalog_write(new_child.clone(), catalog_type.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
-                Self::LanceWrite(LanceWrite { input, lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(input.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
+                Self::LanceWrite(LanceWrite {  lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(new_child.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
             },
-            [left, right] => match self {
-                Self::HashJoin(HashJoin { left, right, .. }) => {
-                    Self::hash_join(left.clone(), right.clone(), Vec::new(), Vec::new(), None, JoinType::Inner, self.schema().clone(), StatsState::NotMaterialized)
+            [new_left, new_right] => match self {
+                Self::HashJoin(HashJoin {  left_on, right_on, null_equals_null, join_type, schema, stats_state, .. }) => {
+                    Self::hash_join(new_left.clone(), new_right.clone(), left_on.clone(), right_on.clone(), null_equals_null.clone(), join_type.clone(), schema.clone(), stats_state.clone())
                 }
-                Self::CrossJoin(CrossJoin { left, right, .. }) => {
-                    Self::cross_join(left.clone(), right.clone(), self.schema().clone(), StatsState::NotMaterialized)
+                Self::CrossJoin(CrossJoin { schema, stats_state, .. }) => {
+                    Self::cross_join(new_left.clone(), new_right.clone(), schema.clone(), stats_state.clone())
                 }
-                Self::Concat(Concat { input, other, .. }) => {
-                    Self::concat(input.clone(), other.clone(), StatsState::NotMaterialized)
+                Self::Concat(Concat {  ..}) => {
+                    Self::concat(new_left.clone(), new_right.clone(), StatsState::NotMaterialized)
                 }
                 _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
             },

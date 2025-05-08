@@ -11,10 +11,12 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
-use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
+use daft_logical_plan::{
+    ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanRef,
+    SourceInfo,
+};
 use futures::Stream;
 use limit::LimitNode;
-use source::SourceNode;
 use translate::translate_logical_plan_to_pipeline_plan;
 
 use crate::{
@@ -25,7 +27,7 @@ use crate::{
 
 mod collect;
 mod limit;
-mod source;
+pub(crate) mod materialize;
 mod translate;
 
 pub(crate) trait DistributedPipelineNode: Send + Sync {
@@ -93,15 +95,17 @@ pub(crate) fn logical_plan_to_pipeline_node(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
+    stage_context: &mut StageContext,
 ) -> DaftResult<Box<dyn DistributedPipelineNode>> {
-    struct PipelineNodeBoundarySplitter {
+    struct PipelineNodeBoundarySplitter<'a> {
         root: LogicalPlanRef,
         psets: HashMap<String, Vec<PartitionRef>>,
         current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
         config: Arc<DaftExecutionConfig>,
+        stage_context: &'a mut StageContext,
     }
 
-    impl TreeNodeRewriter for PipelineNodeBoundarySplitter {
+    impl<'a> TreeNodeRewriter for PipelineNodeBoundarySplitter<'a> {
         type Node = LogicalPlanRef;
 
         fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
@@ -116,32 +120,37 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     let pipeline_plan = translate_logical_plan_to_pipeline_plan(
                         &node,
                         &self.config,
-                        std::mem::take(&mut self.psets),
+                        &mut self.psets,
                     )?;
+                    let collect_node = Box::new(CollectNode::new(pipeline_plan, input_nodes));
                     self.current_nodes = vec![Box::new(LimitNode::new(
+                        self.stage_context.get_node_id(),
                         limit.limit as usize,
-                        pipeline_plan,
-                        input_nodes,
+                        node.schema().clone(),
+                        collect_node,
                     ))];
                     // Here we will have to return a placeholder, essentially cutting off the plan
-                    todo!("FLOTILLA_MS1: Implement pipeline node boundary splitter for limit");
+                    let placeholder = PlaceHolderInfo::new(
+                        node.schema().clone(),
+                        ClusteringSpec::default().into(),
+                    );
+                    Ok(Transformed::yes(
+                        LogicalPlan::Source(Source::new(
+                            node.schema().clone(),
+                            SourceInfo::PlaceHolder(placeholder).into(),
+                        ))
+                        .into(),
+                    ))
                 }
                 _ if is_root => {
                     let pipeline_plan = translate_logical_plan_to_pipeline_plan(
                         &node,
                         &self.config,
-                        std::mem::take(&mut self.psets),
+                        &mut self.psets,
                     )?;
                     let input_nodes = std::mem::take(&mut self.current_nodes);
-                    if input_nodes.is_empty() {
-                        self.current_nodes = vec![Box::new(SourceNode::new(
-                            pipeline_plan.local_plan,
-                            pipeline_plan.input,
-                        ))];
-                    } else {
-                        self.current_nodes =
-                            vec![Box::new(CollectNode::new(pipeline_plan, input_nodes))];
-                    }
+                    self.current_nodes =
+                        vec![Box::new(CollectNode::new(pipeline_plan, input_nodes))];
                     Ok(Transformed::no(node))
                 }
                 _ => Ok(Transformed::no(node)),
@@ -154,6 +163,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
         current_nodes: vec![],
         psets,
         config,
+        stage_context,
     };
 
     let _transformed = plan.rewrite(&mut splitter)?;

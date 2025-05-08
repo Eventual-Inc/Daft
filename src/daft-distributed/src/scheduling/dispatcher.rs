@@ -7,6 +7,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
+use rand::Rng;
 use tokio_util::sync::CancellationToken;
 
 use super::task::SchedulingStrategy;
@@ -51,23 +52,30 @@ impl TaskDispatcher {
         worker_manager: &dyn WorkerManager,
     ) -> Vec<(usize, String)> {
         // Get worker resources and idle workers
-        let workers = worker_manager.get_worker_slots();
+        let mut workers = worker_manager.get_worker_slots();
 
         let mut schedulable_task_and_worker_ids = Vec::new();
 
         for (i, task) in queued_tasks.iter().enumerate() {
             match task.task.strategy() {
                 SchedulingStrategy::Spread => {
-                    // Find the worker with the most available slots
-                    let mut max_slots = 0;
-                    let mut max_worker_id = String::new();
-                    for (worker_id, worker_slots) in &workers {
-                        if *worker_slots > max_slots {
-                            max_slots = *worker_slots;
-                            max_worker_id.clone_from(worker_id);
-                        }
+                    // Get a random worker with available slots
+                    let available_workers: Vec<&String> = workers
+                        .iter()
+                        .filter(|(_, slots)| **slots > 0)
+                        .map(|(id, _)| id)
+                        .collect();
+                    let worker = if !available_workers.is_empty() {
+                        let random_worker = available_workers
+                            [rand::thread_rng().gen_range(0..available_workers.len())];
+                        Some(random_worker.clone())
+                    } else {
+                        None
+                    };
+                    if let Some(worker_id) = worker {
+                        schedulable_task_and_worker_ids.push((i, worker_id.clone()));
+                        *workers.get_mut(&worker_id).unwrap() -= 1;
                     }
-                    schedulable_task_and_worker_ids.push((i, max_worker_id));
                 }
                 SchedulingStrategy::NodeAffinity { node_id, soft } => {
                     match soft {
@@ -79,11 +87,16 @@ impl TaskDispatcher {
                                 schedulable_task_and_worker_ids.push((i, node_id.clone()));
                             } else {
                                 // Find any worker with available slots
-                                for (worker_id, worker_slots) in &workers {
-                                    if *worker_slots > 0 {
-                                        schedulable_task_and_worker_ids
-                                            .push((i, worker_id.clone()));
+                                let mut worker_id = None;
+                                for (id, slots) in &workers {
+                                    if *slots > 0 {
+                                        worker_id = Some(id.clone());
+                                        break;
                                     }
+                                }
+                                if let Some(worker_id) = worker_id {
+                                    schedulable_task_and_worker_ids.push((i, worker_id.clone()));
+                                    *workers.get_mut(&worker_id).unwrap() -= 1;
                                 }
                             }
                         }
@@ -93,6 +106,7 @@ impl TaskDispatcher {
                             let slots = workers.get(node_id).expect("Worker not found");
                             if *slots > 0 {
                                 schedulable_task_and_worker_ids.push((i, node_id.clone()));
+                                *workers.get_mut(node_id).unwrap() -= 1;
                             }
                         }
                     }
@@ -116,7 +130,10 @@ impl TaskDispatcher {
                 &queued_tasks,
                 &*dispatcher.worker_manager,
             );
-
+            println!(
+                "schedulable_task_and_worker_ids: {:?}",
+                schedulable_task_and_worker_ids
+            );
             // Schedule the tasks we found workers for (in reverse order to maintain indices, because we do swap_remove)
             for (task_idx, worker_id) in schedulable_task_and_worker_ids.into_iter().rev() {
                 let task = queued_tasks.swap_remove(task_idx);
@@ -128,9 +145,13 @@ impl TaskDispatcher {
                     tokio::select! {
                         biased;
                         // If the task was cancelled, return None
-                        () = task.cancel_token.cancelled() => None,
+                        () = task.cancel_token.cancelled() => {
+                            println!("cancelled task");
+                            None
+                        },
                         // If the task is finished, return the result and the result_tx
                         result = task_handle.get_result() => {
+                            println!("finished task");
                             Some((result, task.result_tx))
                         }
                     }

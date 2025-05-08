@@ -78,6 +78,7 @@ class RaySwordfishTaskHandle:
             results.append(result)
 
         metadata, result = self.actor_handle.concat_and_get_metadata.options(num_returns=2).remote(*results)
+        print(await result)
         metadata = await metadata
         return RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
 
@@ -87,6 +88,7 @@ class RaySwordfishTaskHandle:
         return await task
 
     def cancel(self):
+        print("cancelling task")
         ray.cancel(self.result_handle)
 
 

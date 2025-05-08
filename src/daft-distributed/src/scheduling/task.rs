@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum SchedulingStrategy {
     Spread,
     #[allow(dead_code)]

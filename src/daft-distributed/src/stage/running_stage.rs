@@ -12,7 +12,6 @@ use crate::{
     channel::{create_channel, Receiver},
     pipeline_node::{PipelineOutput, RunningPipelineNode},
     runtime::JoinSet,
-    scheduling::dispatcher::{SubmittedTask, TaskDispatcherHandle},
 };
 
 #[derive(Debug)]
@@ -97,88 +96,4 @@ impl Stream for RunningStage {
             }
         }
     }
-}
-
-pub(crate) fn materialize_stage_results(
-    running_node: RunningPipelineNode,
-    stage_context: &mut StageContext,
-) -> DaftResult<Receiver<PartitionRef>> {
-    // This task is responsible for submitting any unsubmitted tasks
-    fn spawn_task_finalizer(
-        joinset: &mut JoinSet<DaftResult<()>>,
-        mut running_node: RunningPipelineNode,
-        task_dispatcher_handle: TaskDispatcherHandle,
-    ) -> DaftResult<Receiver<FinalizedTask>> {
-        let (tx, rx) = create_channel(1);
-        joinset.spawn(async move {
-            while let Some(pipeline_result) = running_node.next().await {
-                let pipeline_output = pipeline_result?;
-                let to_send = match pipeline_output {
-                    // If the pipeline output is a materialized partition, we can just send it through the channel
-                    PipelineOutput::Materialized(partition) => {
-                        FinalizedTask::Materialized(partition)
-                    }
-                    // If the pipeline output is a task, we need to submit it to the task dispatcher
-                    PipelineOutput::Task(task) => {
-                        let task_result_handle = task_dispatcher_handle.submit_task(task).await?;
-                        FinalizedTask::Running(task_result_handle)
-                    }
-                    // If the task is already running, we can just send it through the channel
-                    PipelineOutput::Running(submitted_task) => {
-                        FinalizedTask::Running(submitted_task)
-                    }
-                };
-                if tx.send(to_send).await.is_err() {
-                    break;
-                }
-            }
-            Ok(())
-        });
-        Ok(rx)
-    }
-
-    // This task is responsible for materializing the results of finalized tasks
-    fn spawn_task_materializer(
-        joinset: &mut JoinSet<DaftResult<()>>,
-        mut finalized_tasks_receiver: Receiver<FinalizedTask>,
-    ) -> DaftResult<Receiver<PartitionRef>> {
-        let (tx, rx) = create_channel(1);
-        joinset.spawn(async move {
-            while let Some(finalized_task) = finalized_tasks_receiver.recv().await {
-                match finalized_task {
-                    // If the pipeline output is a materialized partition, we can just send it through the channel
-                    FinalizedTask::Materialized(partition) => {
-                        if tx.send(partition).await.is_err() {
-                            break;
-                        }
-                    }
-                    FinalizedTask::Running(submitted_task) => {
-                        if let Some(result) = submitted_task.await {
-                            let result = result?;
-                            if tx.send(result).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(())
-        });
-        Ok(rx)
-    }
-
-    enum FinalizedTask {
-        Materialized(PartitionRef),
-        Running(SubmittedTask),
-    }
-
-    let task_dispatcher_handle = stage_context.get_task_dispatcher_handle();
-    let finalized_tasks_receiver = spawn_task_finalizer(
-        &mut stage_context.joinset,
-        running_node,
-        task_dispatcher_handle,
-    )?;
-    let materialized_results_receiver =
-        spawn_task_materializer(&mut stage_context.joinset, finalized_tasks_receiver)?;
-    Ok(materialized_results_receiver)
 }
