@@ -93,12 +93,9 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    fn is_range_frame(
-        start_boundary: Option<&WindowBoundary>,
-        end_boundary: Option<&WindowBoundary>,
-    ) -> bool {
-        matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
-            || matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+    fn is_range_frame(start_boundary: &WindowBoundary, end_boundary: &WindowBoundary) -> bool {
+        matches!(start_boundary, WindowBoundary::RangeOffset(_))
+            || matches!(end_boundary, WindowBoundary::RangeOffset(_))
     }
 
     fn validate_range_frame_order_by(order_by: &[ExprRef]) -> DaftResult<()> {
@@ -111,16 +108,16 @@ impl RecordBatch {
     }
 
     fn extract_row_offsets(
-        start_boundary: Option<WindowBoundary>,
-        end_boundary: Option<WindowBoundary>,
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
     ) -> (Option<i64>, Option<i64>) {
         let start = match start_boundary {
-            Some(WindowBoundary::Offset(offset)) => Some(offset),
+            WindowBoundary::Offset(offset) => Some(*offset),
             _ => None,
         };
 
         let end = match end_boundary {
-            Some(WindowBoundary::Offset(offset)) => Some(offset),
+            WindowBoundary::Offset(offset) => Some(*offset),
             _ => None,
         };
 
@@ -163,19 +160,19 @@ impl RecordBatch {
         row_idx: usize,
         prev_frame_start: usize,
         prev_frame_end: usize,
-        start_boundary: Option<&WindowBoundary>,
-        end_boundary: Option<&WindowBoundary>,
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
         order_by_col: &Series,
         current_row_order_by: Series,
         descending: bool,
         total_rows: usize,
     ) -> DaftResult<(usize, usize)> {
         let frame_start = match start_boundary {
-            None => 0, // Unbounded preceding
-            Some(WindowBoundary::Offset(offset)) => row_idx
+            WindowBoundary::UnboundedPreceding => 0, // Unbounded preceding
+            WindowBoundary::Offset(offset) => row_idx
                 .saturating_add_signed(*offset as isize)
                 .min(total_rows),
-            Some(WindowBoundary::RangeOffset(offset)) => {
+            WindowBoundary::RangeOffset(offset) => {
                 let lower_bound = (current_row_order_by.clone() + offset.to_series())?;
                 let cmp = |i: usize| -> bool {
                     if descending {
@@ -205,19 +202,21 @@ impl RecordBatch {
                 }
                 idx
             }
-            Some(WindowBoundary::UnboundedPreceding) | Some(WindowBoundary::UnboundedFollowing) => {
-                unreachable!()
+            WindowBoundary::UnboundedFollowing => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
+                ));
             }
         };
 
         let frame_end = match end_boundary {
-            None => total_rows, // Unbounded following
-            Some(WindowBoundary::Offset(offset)) => {
+            WindowBoundary::UnboundedFollowing => total_rows, // Unbounded following
+            WindowBoundary::Offset(offset) => {
                 (row_idx + 1) // End is exclusive, hence +1
                     .saturating_add_signed(*offset as isize)
                     .min(total_rows)
             }
-            Some(WindowBoundary::RangeOffset(offset)) => {
+            WindowBoundary::RangeOffset(offset) => {
                 let upper_bound = (current_row_order_by + offset.to_series())?;
                 let cmp = |i: usize| -> bool {
                     if descending {
@@ -247,8 +246,10 @@ impl RecordBatch {
                 }
                 idx
             }
-            Some(WindowBoundary::UnboundedPreceding) | Some(WindowBoundary::UnboundedFollowing) => {
-                unreachable!()
+            WindowBoundary::UnboundedPreceding => {
+                return Err(DaftError::ValueError(
+                    "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
+                ));
             }
         };
 
@@ -299,37 +300,28 @@ impl RecordBatch {
     ) -> DaftResult<Self> {
         let total_rows = self.len();
 
-        // Calculate boundaries within the rows_between function as they are relative
-        let start_boundary = match &frame.start {
-            WindowBoundary::UnboundedPreceding => None,
-            WindowBoundary::Offset(_) | WindowBoundary::RangeOffset(_) => Some(frame.start.clone()),
-            WindowBoundary::UnboundedFollowing => {
-                return Err(DaftError::ValueError(
-                    "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
-                ));
-            }
-        };
+        if matches!(frame.start, WindowBoundary::UnboundedFollowing) {
+            return Err(DaftError::ValueError(
+                "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
+            ));
+        }
 
-        let end_boundary = match &frame.end {
-            WindowBoundary::UnboundedFollowing => None,
-            WindowBoundary::Offset(_) | WindowBoundary::RangeOffset(_) => Some(frame.end.clone()),
-            WindowBoundary::UnboundedPreceding => {
-                return Err(DaftError::ValueError(
-                    "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
-                ));
-            }
-        };
+        if matches!(frame.end, WindowBoundary::UnboundedPreceding) {
+            return Err(DaftError::ValueError(
+                "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
+            ));
+        }
 
         let source = self.get_column(agg_expr.name())?;
         // Check if we can initialize an incremental state
         match create_window_agg_state(source, agg_expr, total_rows)? {
             Some(agg_state) => {
-                if Self::is_range_frame(start_boundary.as_ref(), end_boundary.as_ref()) {
+                if Self::is_range_frame(&frame.start, &frame.end) {
                     Self::validate_range_frame_order_by(order_by)?;
                     self.window_agg_range_incremental(
                         &name,
-                        start_boundary,
-                        end_boundary,
+                        &frame.start,
+                        &frame.end,
                         &order_by[0],
                         descending[0],
                         min_periods,
@@ -337,7 +329,7 @@ impl RecordBatch {
                         agg_state,
                     )
                 } else {
-                    let (start, end) = Self::extract_row_offsets(start_boundary, end_boundary);
+                    let (start, end) = Self::extract_row_offsets(&frame.start, &frame.end);
                     self.window_agg_rows_incremental(
                         &name,
                         start,
@@ -349,21 +341,21 @@ impl RecordBatch {
                 }
             }
             None => {
-                if Self::is_range_frame(start_boundary.as_ref(), end_boundary.as_ref()) {
+                if Self::is_range_frame(&frame.start, &frame.end) {
                     Self::validate_range_frame_order_by(order_by)?;
                     self.window_agg_range(
                         agg_expr,
                         &name,
                         dtype,
-                        start_boundary,
-                        end_boundary,
+                        &frame.start,
+                        &frame.end,
                         &order_by[0],
                         descending[0],
                         min_periods,
                         total_rows,
                     )
                 } else {
-                    let (start, end) = Self::extract_row_offsets(start_boundary, end_boundary);
+                    let (start, end) = Self::extract_row_offsets(&frame.start, &frame.end);
                     self.window_agg_rows(
                         agg_expr,
                         &name,
@@ -481,8 +473,8 @@ impl RecordBatch {
     fn window_agg_range_incremental(
         &self,
         name: &str,
-        mut start_boundary: Option<WindowBoundary>,
-        mut end_boundary: Option<WindowBoundary>,
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
         order_by: &ExprRef,
         descending: bool,
         min_periods: usize,
@@ -498,11 +490,15 @@ impl RecordBatch {
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
 
+        // Make mutable copies for swapping if needed
+        let mut start = start_boundary.clone();
+        let mut end = end_boundary.clone();
+
         if descending
-            && matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
-            && matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+            && matches!(start, WindowBoundary::RangeOffset(_))
+            && matches!(end, WindowBoundary::RangeOffset(_))
         {
-            std::mem::swap(&mut start_boundary, &mut end_boundary);
+            std::mem::swap(&mut start, &mut end);
         }
 
         for row_idx in 0..total_rows {
@@ -513,8 +509,8 @@ impl RecordBatch {
                 row_idx,
                 prev_frame_start,
                 prev_frame_end,
-                start_boundary.as_ref(),
-                end_boundary.as_ref(),
+                &start,
+                &end,
                 &order_by_col,
                 current_row_order_by,
                 descending,
@@ -559,8 +555,8 @@ impl RecordBatch {
         agg_expr: &AggExpr,
         name: &str,
         dtype: &DataType,
-        mut start_boundary: Option<WindowBoundary>,
-        mut end_boundary: Option<WindowBoundary>,
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
         order_by: &ExprRef,
         descending: bool,
         min_periods: usize,
@@ -572,11 +568,15 @@ impl RecordBatch {
         // Use the non-optimized implementation (recalculate for each row)
         let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
 
+        // Make mutable copies for swapping if needed
+        let mut start = start_boundary.clone();
+        let mut end = end_boundary.clone();
+
         if descending
-            && matches!(start_boundary, Some(WindowBoundary::RangeOffset(_)))
-            && matches!(end_boundary, Some(WindowBoundary::RangeOffset(_)))
+            && matches!(start, WindowBoundary::RangeOffset(_))
+            && matches!(end, WindowBoundary::RangeOffset(_))
         {
-            std::mem::swap(&mut start_boundary, &mut end_boundary);
+            std::mem::swap(&mut start, &mut end);
         }
 
         let mut prev_frame_start = 0;
@@ -590,8 +590,8 @@ impl RecordBatch {
                 row_idx,
                 prev_frame_start,
                 prev_frame_end,
-                start_boundary.as_ref(),
-                end_boundary.as_ref(),
+                &start,
+                &end,
                 &order_by_col,
                 current_row_order_by,
                 descending,

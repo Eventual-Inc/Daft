@@ -224,45 +224,48 @@ impl LiteralValue {
         }
     }
 
-    pub fn neg(&self) -> Self {
+    pub fn neg(&self) -> DaftResult<Self> {
         match self {
-            Self::Int8(v) => Self::Int8(-v),
-            Self::Int16(v) => Self::Int16(-v),
-            Self::Int32(v) => Self::Int32(-v),
-            Self::Int64(v) => Self::Int64(-v),
+            Self::Int8(v) => Ok(Self::Int8(-v)),
+            Self::Int16(v) => Ok(Self::Int16(-v)),
+            Self::Int32(v) => Ok(Self::Int32(-v)),
+            Self::Int64(v) => Ok(Self::Int64(-v)),
             Self::UInt8(v) => {
                 if *v > 0 {
-                    Self::Int16(-(*v as i16))
+                    Ok(Self::Int16(-(*v as i16)))
                 } else {
-                    self.clone()
+                    Ok(self.clone())
                 }
             }
             Self::UInt16(v) => {
                 if *v > 0 {
-                    Self::Int32(-(*v as i32))
+                    Ok(Self::Int32(-(*v as i32)))
                 } else {
-                    self.clone()
+                    Ok(self.clone())
                 }
             }
             Self::UInt32(v) => {
                 if *v > 0 {
-                    Self::Int64(-(*v as i64))
+                    Ok(Self::Int64(-(*v as i64)))
                 } else {
-                    self.clone()
+                    Ok(self.clone())
                 }
             }
             Self::UInt64(v) => {
                 if *v > 0 {
-                    Self::Int64(-(*v as i64))
+                    Ok(Self::Int64(-(*v as i64)))
                 } else {
-                    self.clone()
+                    Ok(self.clone())
                 }
             }
-            Self::Float64(v) => Self::Float64(-v),
-            Self::Decimal(v, precision, scale) => Self::Decimal(-v, *precision, *scale),
-            Self::Duration(v, tu) => Self::Duration(-v, *tu),
-            Self::Interval(v) => Self::Interval(-v),
-            _ => panic!("Cannot negate literal: {:?}", self),
+            Self::Float64(v) => Ok(Self::Float64(-v)),
+            Self::Decimal(v, precision, scale) => Ok(Self::Decimal(-v, *precision, *scale)),
+            Self::Duration(v, tu) => Ok(Self::Duration(-v, *tu)),
+            Self::Interval(v) => Ok(Self::Interval(-v)),
+            _ => Err(DaftError::ValueError(format!(
+                "Cannot negate literal: {:?}",
+                self
+            ))),
         }
     }
 

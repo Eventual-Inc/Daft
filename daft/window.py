@@ -115,8 +115,8 @@ class Window:
 
     def rows_between(
         self,
-        start: Any,
-        end: Any,
+        start: int | _PyWindowBoundary,
+        end: int | _PyWindowBoundary,
         min_periods: int = 1,
     ) -> Window:
         """Restricts each window to a row-based frame between start and end boundaries.
@@ -221,15 +221,13 @@ class Window:
             ...     .range_between(datetime.timedelta(days=-1), datetime.timedelta(days=1))
             ... )
         """
-        start_boundary: _PyWindowBoundary
-        if start is Window.unbounded_preceding or start is Window.unbounded_following or start is Window.current_row:
+        if isinstance(start, _PyWindowBoundary):
             start_boundary = start
         else:
             start_expr = Expression._to_expression(start)
             start_boundary = _PyWindowBoundary.range_offset(start_expr._expr)
 
-        end_boundary: _PyWindowBoundary
-        if end is Window.unbounded_preceding or end is Window.unbounded_following or end is Window.current_row:
+        if isinstance(end, _PyWindowBoundary):
             end_boundary = end
         else:
             end_expr = Expression._to_expression(end)

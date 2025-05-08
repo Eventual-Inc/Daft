@@ -475,7 +475,7 @@ impl SQLPlanner<'_> {
 
                 if let Some(lit) = parsed_expr.as_literal() {
                     if is_range_frame {
-                        Ok(WindowBoundary::RangeOffset(lit.neg()))
+                        Ok(WindowBoundary::RangeOffset(lit.neg()?))
                     } else if let Some(value) = lit.as_i64() {
                         Ok(WindowBoundary::Offset(-value))
                     } else {
