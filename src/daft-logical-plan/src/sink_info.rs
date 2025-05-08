@@ -17,6 +17,7 @@ pub enum SinkInfo {
     OutputFileInfo(OutputFileInfo),
     #[cfg(feature = "python")]
     CatalogInfo(CatalogInfo),
+    CustomInfo(CustomInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -27,6 +28,26 @@ pub struct OutputFileInfo {
     pub partition_cols: Option<Vec<ExprRef>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
+}
+
+#[cfg(feature = "python")]
+#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
+#[derivative(PartialEq, Eq, Hash)]
+pub struct CustomInfo {
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
+    pub sink_class: Arc<PyObject>,
+}
+
+#[cfg(feature = "python")]
+impl CustomInfo {
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![format!("CustomInfo = {}", self.sink_class)]
+    }
 }
 
 #[cfg(feature = "python")]

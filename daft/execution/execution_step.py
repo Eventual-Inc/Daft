@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
 from daft.daft import JoinSide, ResourceRequest
+from daft.dataframe.dataframe import DataSink
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import overwrite_files
 from daft.recordbatch import MicroPartition, recordbatch_io
@@ -576,6 +577,23 @@ class WriteLance(SingleOutputInstruction):
             io_config=self.io_config,
             kwargs=self.kwargs,
         )
+
+
+@dataclass(frozen=True)
+class CustomWrite(SingleOutputInstruction):
+    sink_class: DataSink
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return list(self.sink_class.write(iter(inputs)))
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
 
 
 @dataclass(frozen=True)

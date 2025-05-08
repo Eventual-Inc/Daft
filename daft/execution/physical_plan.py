@@ -32,6 +32,7 @@ from typing import (
 
 from daft.context import get_context
 from daft.daft import JoinSide, ResourceRequest, WriteMode
+from daft.dataframe.dataframe import DataSink
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -220,6 +221,17 @@ def lance_write(
         )
         if isinstance(step, PartitionTaskBuilder)
         else step
+        for step in child_plan
+    )
+
+
+def custom_write(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    sink_class: DataSink,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Write the results of `child_plan` into a custom write sink described by `...`."""
+    yield from (
+        step.add_instruction(execution_step.CustomWrite(sink_class)) if isinstance(step, PartitionTaskBuilder) else step
         for step in child_plan
     )
 

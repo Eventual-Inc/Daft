@@ -17,6 +17,7 @@ use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
+use pyo3::PyClass;
 use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
@@ -740,6 +741,16 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[cfg(feature = "python")]
+    pub fn custom_write(&self, sink: Arc<PyObject>) -> DaftResult<Self> {
+        use crate::sink_info::CustomInfo;
+
+        let sink_info = SinkInfo::CustomInfo(CustomInfo { sink_class: sink });
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
     pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
@@ -1269,6 +1280,10 @@ impl PyLogicalPlanBuilder {
                 kwargs,
             )?
             .into())
+    }
+
+    pub fn custom_write(&self, sink: PyObject) -> PyResult<Self> {
+        Ok(self.builder.custom_write(Arc::new(sink))?.into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

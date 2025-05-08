@@ -482,6 +482,19 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    // #[cfg(feature = "python")]
+    // pub(crate) fn custom_write(
+    //     input: LocalPhysicalPlanRef,
+    //     sink_class: Arc<RuntimePyObject>,
+    //     data_schema: SchemaRef,
+    //     file_schema: SchemaRef,
+    //     stats_state: StatsState,
+    // ) -> LocalPhysicalPlanRef {
+    //     use daft_dsl::functions::python::RuntimePyObject;
+
+    //     todo!()
+    // }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })

@@ -13,6 +13,7 @@ from daft.daft import (
     ScanTask,
     WriteMode,
 )
+from daft.dataframe.dataframe import DataSink
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -396,3 +397,10 @@ def write_lance(
     kwargs: dict | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
+
+
+def write_custom(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sink_class: DataSink,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.custom_write(input, sink_class)

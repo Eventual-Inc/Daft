@@ -19,7 +19,6 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Generic,
     Iterable,
     Iterator,
     List,
@@ -1131,11 +1130,12 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write_to_sink(self, sink: "WriteSink", **kwargs) -> "DataFrame":
-        """Writes the DataFrame to the given WriteSink."""
+    def write(self, sink: "DataSink", **kwargs) -> "DataFrame":
+        """Writes the DataFrame to the given DataSink."""
         sink.start()
-        result = sink.write(self, **kwargs)
-        return sink.finish(result)
+        builder = self._builder.write_custom(sink)
+        write_df = DataFrame(builder)
+        sink.finish(write_df.collect())
 
     @DataframePublicAPI
     def write_lance(
@@ -1200,8 +1200,9 @@ class DataFrame:
         """
         from daft.dataframe.lance_write_sink import LanceWriteSink
 
-        sink = LanceWriteSink(uri, mode, io_config)
-        return self.write_to_sink(sink, **kwargs)
+        # TODO(Desmond): Add kwargs to the LanceWriteSink.
+        sink = LanceWriteSink(uri, self.schema(), mode, io_config)
+        return self.write(sink)
 
     ###
     # DataFrame operations
@@ -3696,22 +3697,20 @@ class GroupedDataFrame:
         return self.df._map_groups(udf, group_by=self.group_by)
 
 
-T = TypeVar("T")  # Result type returned by `WriteSink.write()` and accepted by `WriteSink.finish()`.
-
-
-class WriteSink(ABC, Generic[T]):
+class DataSink(ABC):
     """Interface for writing data to a sink that is not built-in."""
 
     def start(self) -> None:
-        """Optional callback for when a write starts."""
+        """Optional callback for when a write starts. For example, this can be used to start a transaction."""
         pass
 
     @abstractmethod
-    def write(self, dataframe: DataFrame, **kwargs) -> T:
-        """Write method that returns an intermediate result."""
-        raise NotImplementedError
+    def write(self, micropartitions: Iterator[MicroPartition], **kwargs) -> Iterator[MicroPartition]:
+        """Write method that takes in an iterator of MicroPartitions, and optionally some kwargs, and returns an iterator of MicroPartitions."""
 
     @abstractmethod
-    def finish(self, result: T) -> DataFrame:
-        """Finish method that consumes the result of write() and returns a DataFrame."""
-        raise NotImplementedError
+    def finish(self, results: DataFrame) -> DataFrame:
+        """Finish method that takes in DataFrame which collects the results of all the Write()s, and returns a DataFrame.
+
+        For example, this can be used to commit a transaction.
+        """

@@ -493,6 +493,10 @@ pub(super) fn translate_single_logical_node(
                         .arced()),
                     }
                 }
+                SinkInfo::CustomInfo(custom_info) => Ok(PhysicalPlan::CustomWrite(
+                    CustomWrite::new(schema.clone(), custom_info.clone(), input_physical),
+                )
+                .arced()),
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {

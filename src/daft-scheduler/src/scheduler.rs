@@ -9,7 +9,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use daft_logical_plan::InMemoryInfo;
 #[cfg(feature = "python")]
-use daft_logical_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+use daft_logical_plan::{CustomInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
 use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_physical_plan::{
@@ -262,6 +262,19 @@ fn lance_write(
 }
 
 #[cfg(feature = "python")]
+fn custom_write(
+    py: Python,
+    upstream_iter: PyObject,
+    custom_info: &CustomInfo,
+) -> PyResult<PyObject> {
+    let py_iter = py
+        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .getattr(pyo3::intern!(py, "write_custom"))?
+        .call1((upstream_iter, &custom_info.sink_class.clone_ref(py)))?;
+    Ok(py_iter.into())
+}
+
+#[cfg(feature = "python")]
 fn physical_plan_to_partition_tasks(
     physical_plan: &PhysicalPlan,
     py: Python,
@@ -269,7 +282,9 @@ fn physical_plan_to_partition_tasks(
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
     use daft_dsl::Expr;
-    use daft_physical_plan::ops::{CrossJoin, ShuffleExchange, ShuffleExchangeStrategy};
+    use daft_physical_plan::ops::{
+        CrossJoin, CustomWrite, ShuffleExchange, ShuffleExchangeStrategy,
+    };
     match physical_plan {
         PhysicalPlan::PreviousStageScan(..) => {
             panic!("PreviousStageScan should be optimized away before reaching the scheduler")
@@ -946,6 +961,16 @@ fn physical_plan_to_partition_tasks(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
             lance_info,
+        ),
+        #[cfg(feature = "python")]
+        PhysicalPlan::CustomWrite(CustomWrite {
+            schema: _,
+            custom_info,
+            input,
+        }) => custom_write(
+            py,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            custom_info,
         ),
     }
 }

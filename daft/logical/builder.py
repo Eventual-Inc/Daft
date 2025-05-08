@@ -392,3 +392,7 @@ class LogicalPlanBuilder:
             kwargs,
         )
         return LogicalPlanBuilder(builder)
+
+    def write_custom(self, sink: DataSink) -> LogicalPlanBuilder:
+        builder = self._builder.custom_write(sink)
+        return LogicalPlanBuilder(builder)
