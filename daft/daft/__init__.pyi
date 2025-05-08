@@ -1,7 +1,7 @@
 import builtins
 import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, TypeVar
 
 from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
     from daft.io.pushdowns import Term
     from daft.runners.runner import Runner
+    from daft.expressions.visitor import ExpressionVisitor
+
+R = TypeVar("R")
 
 class ImageMode(Enum):
     """Supported image modes for Daft's image type.
@@ -1102,6 +1105,12 @@ class PyExpr:
     def partitioning_years(self) -> PyExpr: ...
     def partitioning_iceberg_bucket(self, n: int) -> PyExpr: ...
     def partitioning_iceberg_truncate(self, w: int) -> PyExpr: ...
+
+    ###
+    # visitor
+    ###
+
+    def accept(self, visitor: ExpressionVisitor[R]) -> R: ...
 
     ###
     # Helper methods required by optimizer:
