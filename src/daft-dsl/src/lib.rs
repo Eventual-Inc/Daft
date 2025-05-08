@@ -34,7 +34,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<expr::window::WindowFrame>()?;
     parent.add_class::<expr::window::WindowSpec>()?;
 
-    parent.add_function(wrap_pyfunction!(python::named_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::unresolved_col, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::resolved_col, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::lit, parent)?)?;

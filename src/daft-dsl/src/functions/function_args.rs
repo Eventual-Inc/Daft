@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use serde::{Deserialize, Serialize};
 
 /// Wrapper around T to hold either a named or an unnamed argument.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum FunctionArg<T> {
     Named {
         name: Arc<str>, // todo: use Identifier instead of String
@@ -22,7 +23,54 @@ impl<T> FunctionArg<T> {
             arg,
         }
     }
+
+    /// apply a function on the inner T value
+    pub fn map<F, R>(&self, f: F) -> FunctionArg<R>
+    where
+        F: Fn(&T) -> R,
+    {
+        match self {
+            Self::Named { name, arg } => FunctionArg::Named {
+                name: name.clone(),
+                arg: f(arg),
+            },
+            Self::Unnamed(arg) => FunctionArg::Unnamed(f(arg)),
+        }
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> T {
+        match self {
+            Self::Named { name: _, arg } => arg,
+            Self::Unnamed(arg) => arg,
+        }
+    }
+
+    #[inline]
+    pub fn inner(&self) -> &T {
+        match self {
+            Self::Named { name: _, arg } => arg,
+            Self::Unnamed(arg) => arg,
+        }
+    }
 }
+
+impl<T, E> FunctionArg<Result<T, E>> {
+    /// transposes a FunctionArg<Result<T, E>> into a Result<FunctionArg<T>, E>
+    pub fn transpose(self) -> Result<FunctionArg<T>, E> {
+        match self {
+            Self::Named { name, arg } => match arg {
+                Ok(arg) => Ok(FunctionArg::Named { name, arg }),
+                Err(err) => Err(err),
+            },
+            Self::Unnamed(arg) => match arg {
+                Ok(arg) => Ok(FunctionArg::Unnamed(arg)),
+                Err(err) => Err(err),
+            },
+        }
+    }
+}
+
 // any T can be converted to an Unnamed FunctionArg
 impl<T> From<T> for FunctionArg<T> {
     fn from(arg: T) -> Self {
@@ -86,11 +134,12 @@ impl<T> From<T> for FunctionArg<T> {
 /// let decimal: ExprRef = args.optional("decimal")?.cloned().unwrap_or(lit(0));
 ///
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct FunctionArgs<T>(Vec<FunctionArg<T>>);
 
 impl<T> FunctionArgs<T> {
     /// Extract the inner `Vec<T>` values
+    #[inline]
     pub fn into_inner(self) -> Vec<T> {
         self.0
             .into_iter()
@@ -99,6 +148,18 @@ impl<T> FunctionArgs<T> {
                 FunctionArg::Unnamed(arg) => arg,
             })
             .collect()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<FunctionArg<T>> {
+        self.0.iter()
+    }
+}
+
+impl<T> IntoIterator for FunctionArgs<T> {
+    type Item = FunctionArg<T>;
+    type IntoIter = std::vec::IntoIter<FunctionArg<T>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -236,6 +297,10 @@ impl<T> FunctionArgs<T> {
         let slf = Self(inner);
         slf.assert_ordering()?;
         Ok(slf)
+    }
+
+    pub fn new_unchecked(inner: Vec<FunctionArg<T>>) -> Self {
+        Self(inner)
     }
 
     pub fn is_empty(&self) -> bool {

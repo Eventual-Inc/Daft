@@ -4,10 +4,7 @@ use std::{
 };
 
 use daft_dsl::{
-    expr::{
-        named_expr,
-        window::{WindowBoundary, WindowFrame, WindowFrameType},
-    },
+    expr::window::{WindowBoundary, WindowFrame, WindowFrameType},
     functions::{ScalarFunction, ScalarUDF},
     Expr, ExprRef, WindowExpr, WindowSpec,
 };
@@ -63,7 +60,7 @@ impl SQLFunction for Arc<dyn ScalarUDF> {
             .collect::<SQLPlannerResult<Vec<_>>>()?;
         Ok(ScalarFunction {
             udf: self.clone(),
-            inputs,
+            inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
         }
         .into())
     }
@@ -110,11 +107,13 @@ pub trait SQLFunction: Send + Sync {
         &self,
         inputs: &[FunctionArg],
         planner: &SQLPlanner,
-    ) -> SQLPlannerResult<Vec<ExprRef>> {
-        inputs
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArgs<ExprRef>> {
+        let inputs = inputs
             .iter()
             .map(|arg| planner.plan_function_arg(arg))
-            .collect::<SQLPlannerResult<Vec<_>>>()
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+        Ok(daft_dsl::functions::FunctionArgs::try_new(inputs)?)
     }
 
     // nit cleanup: argument consistency with SQLTableFunction
@@ -593,16 +592,21 @@ impl SQLPlanner<'_> {
     pub(crate) fn plan_function_arg(
         &self,
         function_arg: &FunctionArg,
-    ) -> SQLPlannerResult<ExprRef> {
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArg<ExprRef>> {
         match function_arg {
-            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr),
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Ok(
+                daft_dsl::functions::FunctionArg::unnamed(self.plan_expr(expr)?),
+            ),
             FunctionArg::Named {
                 name,
                 arg: FunctionArgExpr::Expr(expr),
                 operator: _,
             } => {
                 let expr = self.plan_expr(expr)?;
-                Ok(named_expr(name.to_string(), expr))
+                Ok(daft_dsl::functions::FunctionArg::named(
+                    name.to_string(),
+                    expr,
+                ))
             }
             _ => unsupported_sql_err!("non expr args not yet supported"),
         }

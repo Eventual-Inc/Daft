@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::{expr::named_expr, Column, ExprRef, ResolvedColumn};
+use daft_dsl::{functions::FunctionArgs, Column, ExprRef, ResolvedColumn};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -244,10 +244,7 @@ fn translate_clustering_spec_expr(
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             Ok(newchild.alias(name.clone()))
         }
-        Expr::NamedExpr { name, expr } => {
-            let newchild = translate_clustering_spec_expr(expr, old_colname_to_new_colname)?;
-            Ok(named_expr(name.clone(), newchild))
-        }
+
         Expr::BinaryOp { op, left, right } => {
             let newleft = translate_clustering_spec_expr(left, old_colname_to_new_colname)?;
             let newright = translate_clustering_spec_expr(right, old_colname_to_new_colname)?;
@@ -273,9 +270,12 @@ fn translate_clustering_spec_expr(
             let new_inputs = func
                 .inputs
                 .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .map(|arg| {
+                    arg.map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                        .transpose()
+                })
                 .collect::<Result<Vec<_>, _>>()?;
-            func.inputs = new_inputs;
+            func.inputs = FunctionArgs::new_unchecked(new_inputs);
             Ok(Expr::ScalarFunction(func).into())
         }
         Expr::Not(child) => {
