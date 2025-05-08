@@ -73,8 +73,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Readthedocs flyout
   const flyout = document.querySelector('readthedocs-flyout');
   if (flyout) {
-    // If the component supports a position property
-    flyout.setAttribute('position', 'bottom left');
+    flyout.setAttribute("position", "bottom-left");
   }
 
 });
