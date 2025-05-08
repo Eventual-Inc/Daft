@@ -24,13 +24,47 @@ pub struct RuntimeStatsContext {
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
     name: String,
-    stats: Option<RuntimeStatsMeter>,
+    subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
+}
+pub trait RuntimeStatsSubscriber: Send + Sync {
+    fn on_rows_received(&self, context: &str, count: u64);
+    fn on_rows_emitted(&self, context: &str, count: u64);
+    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64);
 }
 
-struct RuntimeStatsMeter {
+pub struct OpenTelemetrySubscriber {
     rows_received: Counter<u64>,
     rows_emitted: Counter<u64>,
     cpu_us: Counter<u64>,
+}
+
+impl OpenTelemetrySubscriber {
+    pub fn new() -> Self {
+        let meter = global::meter("runtime_stats");
+        Self {
+            rows_received: meter
+                .u64_counter("daft.runtime_stats.rows_received")
+                .build(),
+            rows_emitted: meter.u64_counter("daft.runtime_stats.rows_emitted").build(),
+            cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
+        }
+    }
+}
+impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
+    fn on_rows_received(&self, context: &str, count: u64) {
+        self.rows_received
+            .add(count, &[KeyValue::new("context", context.to_string())]);
+    }
+    fn on_rows_emitted(&self, context: &str, count: u64) {
+        self.rows_emitted
+            .add(count, &[KeyValue::new("context", context.to_string())]);
+    }
+    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64) {
+        self.cpu_us.add(
+            microseconds,
+            &[KeyValue::new("context", context.to_string())],
+        );
+    }
 }
 
 #[derive(Debug)]
@@ -76,29 +110,17 @@ impl RuntimeStats {
 
 impl RuntimeStatsContext {
     pub(crate) fn new(name: &str) -> Arc<Self> {
-        let stats_meter = if std::env::var("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
-            let meter = global::meter("runtime_stats");
-            let rows_received = meter
-                .u64_counter("daft.runtime_stats.rows_received")
-                .build();
-            let rows_emitted = meter.u64_counter("daft.runtime_stats.rows_emitted").build();
-            let cpu_us = meter.u64_counter("daft.runtime_stats.cpu_us").build();
-
-            Some(RuntimeStatsMeter {
-                rows_received,
-                rows_emitted,
-                cpu_us,
-            })
-        } else {
-            None
-        };
+        let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
+        if std::env::var("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+            subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
+        }
 
         Arc::new(Self {
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
             name: name.to_string(),
-            stats: stats_meter,
+            subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
         })
     }
     pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
@@ -106,31 +128,24 @@ impl RuntimeStatsContext {
             elapsed.as_micros() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
-        if let Some(stats) = self.stats.as_ref() {
-            stats.cpu_us.add(
-                elapsed.as_micros() as u64,
-                &[KeyValue::new("context", self.name.clone())],
-            );
+        for subscriber in self.subscribers.read().iter() {
+            subscriber.on_cpu_time_elapsed(&self.name, elapsed.as_micros() as u64);
         }
     }
 
     pub(crate) fn mark_rows_received(&self, rows: u64) {
         self.rows_received
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-        if let Some(stats) = self.stats.as_ref() {
-            stats
-                .rows_received
-                .add(rows, &[KeyValue::new("context", self.name.clone())]);
+        for subscriber in self.subscribers.read().iter() {
+            subscriber.on_rows_received(&self.name, rows);
         }
     }
 
     pub(crate) fn mark_rows_emitted(&self, rows: u64) {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-        if let Some(stats) = self.stats.as_ref() {
-            stats
-                .rows_emitted
-                .add(rows, &[KeyValue::new("context", self.name.clone())]);
+        for subscriber in self.subscribers.read().iter() {
+            subscriber.on_rows_emitted(&self.name, rows);
         }
     }
 

@@ -2456,6 +2456,7 @@ dependencies = [
  "log",
  "num-format",
  "opentelemetry",
+ "parking_lot 0.12.3",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
