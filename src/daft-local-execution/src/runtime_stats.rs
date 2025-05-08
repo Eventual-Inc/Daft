@@ -26,6 +26,7 @@ pub struct RuntimeStatsContext {
     name: String,
     subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
 }
+
 pub trait RuntimeStatsSubscriber: Send + Sync {
     fn on_rows_received(&self, context: &str, count: u64);
     fn on_rows_emitted(&self, context: &str, count: u64);
@@ -50,6 +51,7 @@ impl OpenTelemetrySubscriber {
         }
     }
 }
+
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     fn on_rows_received(&self, context: &str, count: u64) {
         self.rows_received
