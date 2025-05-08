@@ -115,8 +115,8 @@ class Window:
 
     def rows_between(
         self,
-        start: Any = unbounded_preceding,
-        end: Any = current_row,
+        start: Any,
+        end: Any,
         min_periods: int = 1,
     ) -> Window:
         """Restricts each window to a row-based frame between start and end boundaries.
@@ -176,8 +176,8 @@ class Window:
 
     def range_between(
         self,
-        start: Any = unbounded_preceding,
-        end: Any = current_row,
+        start: Any,
+        end: Any,
         min_periods: int = 1,
     ) -> Window:
         """Restricts each window to a range-based frame between start and end boundaries.
