@@ -153,6 +153,10 @@ impl<T> FunctionArgs<T> {
     pub fn iter(&self) -> std::slice::Iter<FunctionArg<T>> {
         self.0.iter()
     }
+
+    pub fn first(&self) -> Option<&T> {
+        self.0.first().map(|f| f.inner())
+    }
 }
 
 impl<T> IntoIterator for FunctionArgs<T> {
