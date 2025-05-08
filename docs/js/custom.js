@@ -55,4 +55,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
   script.async = true;
   document.head.appendChild(script);
+
+  // Open external links in new tab
+  var links = document.querySelectorAll('a[href^="http"], a[href^="https"]');
+  var domain = window.location.hostname;
+
+  for (var i = 0; i < links.length; i++) {
+    // Check if the link doesn't point to your domain
+    if (links[i].hostname !== domain) {
+      links[i].target = "_blank";
+      links[i].rel = "noopener noreferrer";
+    }
+  }
 });
