@@ -139,3 +139,25 @@ code.doc-symbol-method::after {
 .md-nav--secondary .md-nav__title {
   box-shadow: 0 0 .2rem .2rem var(--md-default-bg-color);
 }
+
+/* footer */
+.md-footer__link {
+  margin-bottom: 0.2rem;
+  margin-top: 0.5rem;
+}
+
+.md-footer__title {
+  margin-bottom: 0.5rem;
+}
+
+.md-footer .md-social {
+  padding: 0.2rem 0;
+}
+
+.md-footer__inner.md-grid {
+  max-width: 50rem;
+}
+
+.md-footer-meta__inner.md-grid {
+  max-width: 50rem;
+}
