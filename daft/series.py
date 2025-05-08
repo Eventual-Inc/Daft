@@ -738,9 +738,14 @@ class Series:
             if other is None:
                 continue
             if not isinstance(other, Series):
-                raise ValueError(f"expected another Series but got {type(other)}")
-            other_series_list.append(other._series.rename(col_name))
-            col_names.append(col_name)
+                try:
+                    other_series_list.append(Series.from_pylist([other])._series.rename(col_name))
+                    col_names.append(col_name)
+                except AttributeError:
+                    raise ValueError(f"expected another Series but got {type(other)}")
+            else:
+                other_series_list.append(other._series.rename(col_name))
+                col_names.append(col_name)
 
         rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
 
