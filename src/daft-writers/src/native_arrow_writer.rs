@@ -56,6 +56,7 @@ impl NativeArrowWriter {
             return false;
         }
         // TODO(desmond): Currently we do not extension and timestamp types.
+        // Conversion from daft -> arrow2 -> arrow-rs -> parquet also doesn't work for maps.
         let writer_properties = Arc::new(
             WriterProperties::builder()
                 .set_writer_version(WriterVersion::PARQUET_1_0)
