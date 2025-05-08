@@ -53,7 +53,6 @@ impl PhysicalOptimizer {
 
 impl Default for PhysicalOptimizer {
     fn default() -> Self {
-        eprintln!("Initializing PhysicalOptimizer with default rules");
         Self {
             rule_batches: vec![PhysicalOptimizerRuleBatch::new(
                 vec![
