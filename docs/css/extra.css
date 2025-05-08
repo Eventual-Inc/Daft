@@ -6,18 +6,12 @@
     right: .3rem;
     display: block;
     padding: .1rem .4rem;
-    color: var(--md-default-fg-color--light);
+    color: #fff;
     font-weight: bold;
     font-size: .8rem;
-    border: .05rem solid var(--md-default-fg-color--light);
+    border: .05rem solid #ffffff4d;
     border-radius: .1rem;
     content: "/";
-}
-
-/* search bar slash button dark mode */
-[data-md-color-scheme=slate][data-md-toggle="search"]:not(:checked) ~ .md-header .md-search__form::after {
-  color: white;
-  border: .05rem solid white;
 }
 
 :root {
@@ -147,6 +141,6 @@ code.doc-symbol-method::after {
 }
 
 /* readthedocs flyout */
-.container.bottom-left {
+readthedocs-flyout .floating.container.bottom-left {
   bottom: 40px;
 }
