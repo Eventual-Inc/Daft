@@ -32,11 +32,6 @@ pub struct TopN {
     pub nulls_first: Vec<bool>,
     /// Limit on number of rows.
     pub limit: i64,
-
-    // TODO: Should include?
-    // Whether to send tasks in waves (maximize throughput) or
-    // eagerly one-at-a-time (maximize time-to-first-result)
-    // pub eager: bool,
     /// The plan statistics.
     pub stats_state: StatsState,
 }

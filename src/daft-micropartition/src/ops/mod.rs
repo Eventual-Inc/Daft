@@ -9,4 +9,5 @@ mod pivot;
 mod slice;
 mod sort;
 mod take;
+mod top_n;
 mod unpivot;
