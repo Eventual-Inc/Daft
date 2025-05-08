@@ -819,19 +819,7 @@ impl RecordBatch {
         exprs: &[BoundExpr],
         result_series: Vec<Series>,
     ) -> DaftResult<Self> {
-        let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
-
-        let mut seen = HashSet::new();
-
-        for field in &fields {
-            let name = &field.name;
-            if seen.contains(name) {
-                return Err(DaftError::ValueError(format!(
-                    "Duplicate name found when evaluating expressions: {name}"
-                )));
-            }
-            seen.insert(name);
-        }
+        let fields = result_series.iter().map(|s| s.field().clone());
 
         let new_schema = Schema::new(fields);
 
