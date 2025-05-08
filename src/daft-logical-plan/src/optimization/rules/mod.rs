@@ -17,6 +17,7 @@ mod rule;
 mod simplify_expressions;
 mod simplify_null_filtered_join;
 mod split_actor_pool_projects;
+mod split_expensive_projections;
 mod unnest_subquery;
 
 pub use detect_monotonic_id::DetectMonotonicId;
@@ -38,4 +39,5 @@ pub use rule::OptimizerRule;
 pub use simplify_expressions::SimplifyExpressionsRule;
 pub use simplify_null_filtered_join::SimplifyNullFilteredJoin;
 pub use split_actor_pool_projects::SplitActorPoolProjects;
+pub use split_expensive_projections::SplitExpensiveProjections;
 pub use unnest_subquery::{UnnestPredicateSubquery, UnnestScalarSubquery};
