@@ -694,13 +694,13 @@ impl RecordBatch {
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Expr::ScalarFunction(func) => {
-                let evaluated_inputs = func.inputs
+                let args = func.inputs
                     .iter()
                     .map(|e| {
-                        e.map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone()))).transpose()
+                        e.map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
                     })
-                    .collect::<DaftResult<Vec<_>>>()?;
-                let args = FunctionArgs::try_new(evaluated_inputs)?;
+                    .collect::<DaftResult<FunctionArgs<Series>>>()?;
+
 
                 func.udf.evaluate(args)
             }

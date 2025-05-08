@@ -163,6 +163,26 @@ impl<T> IntoIterator for FunctionArgs<T> {
     }
 }
 
+impl<T> FromIterator<FunctionArg<T>> for DaftResult<FunctionArgs<T>> {
+    fn from_iter<I: IntoIterator<Item = FunctionArg<T>>>(iter: I) -> Self {
+        let vec: Vec<FunctionArg<T>> = iter.into_iter().collect();
+        FunctionArgs::try_new(vec)
+    }
+}
+
+impl<T, E> FromIterator<FunctionArg<Result<T, E>>> for Result<FunctionArgs<T>, DaftError>
+where
+    E: Into<DaftError>,
+{
+    fn from_iter<I: IntoIterator<Item = FunctionArg<Result<T, E>>>>(iter: I) -> Self {
+        let vec = iter
+            .into_iter()
+            .map(|v| v.transpose())
+            .collect::<Result<Vec<_>, E>>()
+            .map_err(|e| e.into())?;
+        FunctionArgs::try_new(vec)
+    }
+}
 /// trait to look up either positional or named values
 /// We use a trait here so the user can access function args by different values such as by name (str), or by position (usize),
 /// or by a combination, (position, name), (name, fallback_name), (position, name, fallback_name)
