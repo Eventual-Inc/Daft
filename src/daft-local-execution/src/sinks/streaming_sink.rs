@@ -94,7 +94,7 @@ impl StreamingSinkNode {
             op,
             name,
             children,
-            runtime_stats: RuntimeStatsContext::new(),
+            runtime_stats: RuntimeStatsContext::new(name),
             plan_stats,
         }
     }
