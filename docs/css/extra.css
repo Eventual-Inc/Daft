@@ -145,3 +145,8 @@ code.doc-symbol-method::after {
 .md-nav--secondary .md-nav__title {
   box-shadow: 0 0 .2rem .2rem var(--md-default-bg-color);
 }
+
+/* readthedocs flyout */
+.container.bottom-left {
+  bottom: 40px;
+}
