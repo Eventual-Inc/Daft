@@ -1,16 +1,23 @@
 /*https://github.com/squidfunk/mkdocs-material/issues/2574#issuecomment-821979698*/
+/* search bar slash button */
 [data-md-toggle="search"]:not(:checked) ~ .md-header .md-search__form::after {
     position: absolute;
     top: .3rem;
     right: .3rem;
     display: block;
     padding: .1rem .4rem;
-    color: var(--md-default-bg-color);
+    color: var(--md-default-fg-color--light);
     font-weight: bold;
     font-size: .8rem;
-    border: .05rem solid var(--md-default-bg-color--lighter);
+    border: .05rem solid var(--md-default-fg-color--light);
     border-radius: .1rem;
     content: "/";
+}
+
+/* search bar slash button dark mode */
+[data-md-color-scheme=slate][data-md-toggle="search"]:not(:checked) ~ .md-header .md-search__form::after {
+  color: white;
+  border: .05rem solid white;
 }
 
 :root {
