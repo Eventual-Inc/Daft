@@ -1793,3 +1793,58 @@ def test_range_window_with_timestamp(make_df):
     ).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date"], check_dtype=False)
+
+
+def test_timestamp_mixed_resolution(make_df):
+    """Test window operations with timestamps of varying resolutions over a ~10 day period."""
+    random.seed(90)
+
+    base_date = datetime.datetime(2023, 1, 1)
+    data = []
+
+    timestamps = [
+        base_date
+        + datetime.timedelta(
+            days=random.random() * 10,
+            hours=random.random() * 24,
+            minutes=random.random() * 60,
+            seconds=random.random() * 60,
+            microseconds=random.random() * 1_000_000,
+        )
+        for _ in range(10000)
+    ]
+    values = [random.randint(1, 100) for _ in range(10000)]
+
+    for ts, value in zip(timestamps, values):
+        data.append({"category": "A", "timestamp": ts, "value": value})
+
+    df = make_df(data)
+
+    time_span = datetime.timedelta(days=1, hours=4, minutes=16, seconds=64, microseconds=128)
+
+    expected_data = []
+    for i, (ts_i, val_i) in enumerate(zip(timestamps, values)):
+        window_sum = sum(val_j for ts_j, val_j in zip(timestamps, values) if abs(ts_j - ts_i) <= time_span)
+        expected_data.append(
+            {
+                "category": "A",
+                "timestamp": ts_i,
+                "value": val_i,
+                "window_sum": window_sum,
+            }
+        )
+
+    expected_df = pd.DataFrame(expected_data)
+
+    window_spec = Window().partition_by("category").order_by("timestamp").range_between(-time_span, time_span)
+
+    result = df.select(
+        col("category"), col("timestamp"), col("value"), col("value").sum().over(window_spec).alias("window_sum")
+    ).collect()
+
+    assert_df_equals(
+        result.to_pandas(),
+        expected_df,
+        sort_key=["category", "timestamp"],
+        check_dtype=False,
+    )

@@ -44,13 +44,8 @@ def test_plus(binary_data_fixture):
 def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType, op: ops) -> bool:
     """Checks whether these input types are resolvable for arithmetic operations."""
     # (temporal - temporal = duration)
-    if lhs.is_temporal() and rhs.is_temporal() and op == ops.sub:
-        # For timestamp subtraction, allow different precision units (ns, us, ms)
-        # but require same timezone
-        if lhs.is_timestamp() and rhs.is_timestamp():
-            # Check timezone compatibility - they must be the same or both None
-            return lhs.timezone == rhs.timezone
-        return lhs == rhs
+    if lhs.is_temporal() and rhs.is_temporal() and lhs == rhs and op == ops.sub:
+        return True
 
     # (numeric <op> numeric = numeric)
     return is_numeric(lhs) and is_numeric(rhs) and has_supertype(lhs, rhs)

@@ -292,7 +292,8 @@ def test_temporal_arithmetic_mismatch_granularity(t_timeunit, d_timeunit, timezo
         (df["duration"] + df["timestamp"]).alias("radd"),
         (df["timestamp"] - df["duration"]).alias("sub"),
     ]:
-        df.select(expression).collect()
+        with pytest.raises(ValueError):
+            df.select(expression).collect()
 
 
 @pytest.mark.parametrize("tu1, tu2", itertools.product(["ns", "us", "ms"], repeat=2))
