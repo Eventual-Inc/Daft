@@ -1229,14 +1229,20 @@ mod test {
         ])?;
         let partition_path = batch.to_partition_path(None)?;
         assert_eq!(
-            partition_path.to_string_lossy(),
-            "year=2023/month=1/day=__HIVE_DEFAULT_PARTITION__/today%27s%20date=2025%2F04%2F29"
+            partition_path,
+            std::path::PathBuf::from("year=2023")
+                .join("month=1")
+                .join("day=__HIVE_DEFAULT_PARTITION__")
+                .join("today%27s%20date=2025%2F04%2F29")
         );
         // Test with a fallback value that includes spaces.
         let partition_path = batch.to_partition_path(Some("unconventional fallback"))?;
         assert_eq!(
-            partition_path.to_string_lossy(),
-            "year=2023/month=1/day=unconventional%20fallback/today%27s%20date=2025%2F04%2F29"
+            partition_path,
+            std::path::PathBuf::from("year=2023")
+                .join("month=1")
+                .join("day=unconventional%20fallback")
+                .join("today%27s%20date=2025%2F04%2F29")
         );
         Ok(())
     }
