@@ -11,7 +11,7 @@ use super::{
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
         SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
-        UnnestPredicateSubquery, UnnestScalarSubquery,
+        SplitExpensiveProjections, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -157,6 +157,11 @@ impl Default for OptimizerBuilder {
                 // --- Materialize scan nodes ---
                 RuleBatch::new(
                     vec![Box::new(MaterializeScans::new())],
+                    RuleExecutionStrategy::Once,
+                ),
+                // --- Split Projections with expensive expressions ---
+                RuleBatch::new(
+                    vec![Box::new(SplitExpensiveProjections::new())],
                     RuleExecutionStrategy::Once,
                 ),
                 // --- Enrich logical plan with stats ---
