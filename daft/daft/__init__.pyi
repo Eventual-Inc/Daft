@@ -17,9 +17,9 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.expressions.visitor import ExpressionVisitor
     from daft.io.pushdowns import Term
     from daft.runners.runner import Runner
-    from daft.expressions.visitor import ExpressionVisitor
 
 R = TypeVar("R")
 
@@ -1107,10 +1107,18 @@ class PyExpr:
     def partitioning_iceberg_truncate(self, w: int) -> PyExpr: ...
 
     ###
-    # visitor
+    # Visitor methods
     ###
 
     def accept(self, visitor: ExpressionVisitor[R]) -> R: ...
+
+    ###
+    # Helper methods from Expr from Eq Hash traits
+    ###
+
+    def _eq(self) -> bool: ...
+    def _ne(self) -> bool: ...
+    def _hash(self) -> int: ...
 
     ###
     # Helper methods required by optimizer:

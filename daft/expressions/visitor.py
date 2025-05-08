@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Generic, List, TypeVar
+from typing import Any, Generic, List, TypeVar, TYPE_CHECKING
 
-from daft.expressions import Expression
-from daft.logical.schema import DataType
 
 R = TypeVar("R")
 
-class ExpressionVisitor(ABC, Generic[R]):
-    """BaseVisitor is used to process a Daft Expression object."""
 
+if TYPE_CHECKING:
+    from daft.expressions import Expression
+    from daft.logical.schema import DataType
+
+
+class ExpressionVisitor(ABC, Generic[R]):
     def visit(self, expr: Expression) -> R:
+        """Visit any expression."""
         return expr._expr.accept(self)
 
     @abstractmethod
@@ -34,8 +37,13 @@ class ExpressionVisitor(ABC, Generic[R]):
         """Visit a cast expression."""
         pass
 
+    @abstractmethod
+    def visit_list(self, items: list[Expression]) -> R:
+        """Visit a list expression."""
+        pass
+
     ###
-    # logical
+    # predicates
     ###
 
     @abstractmethod
@@ -53,10 +61,6 @@ class ExpressionVisitor(ABC, Generic[R]):
         """Visit a not expression."""
         pass
 
-    ###
-    # predicates
-    ###
-    
     @abstractmethod
     def visit_equal(self, left: Expression, right: Expression) -> R:
         """Visit an equals comparison predicate."""
@@ -93,7 +97,7 @@ class ExpressionVisitor(ABC, Generic[R]):
         pass
 
     @abstractmethod
-    def visit_is_in(self, expr: Expression, values: list[Expression]) -> R:
+    def visit_is_in(self, expr: Expression, items: list[Expression]) -> R:
         """Visit an is_in predicate."""
         pass
 
@@ -107,21 +111,11 @@ class ExpressionVisitor(ABC, Generic[R]):
         """Visit an not_null predicate."""
         pass
 
-    @abstractmethod
-    def visit_is_nan(self, expr: Expression) -> R:
-        """Visit an is_nan predicate."""
-        pass
-
-    @abstractmethod
-    def visit_not_nan(self, expr: Expression) -> R:
-        """Visit an not_nan predicate."""
-        pass
-
     ###
     # function covers any Expression.<function> not listed above
     ###
 
     @abstractmethod
-    def visit_function(self, name: str, args: List[Expression]) -> R:
+    def visit_function(self, name: str, args: list[Expression]) -> R:
         """Visit a function expression."""
         pass

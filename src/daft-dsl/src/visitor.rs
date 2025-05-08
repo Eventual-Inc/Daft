@@ -4,11 +4,15 @@ use daft_core::{
     utils::display::display_decimal128,
 };
 use pyo3::{
-    exceptions::PyValueError, types::{PyAnyMethods, PyBool, PyDict, PyList, PyListMethods, PyModule}, Bound, IntoPyObject, IntoPyObjectExt, PyAny, PyResult, Python
+    exceptions::PyValueError,
+    types::{PyAnyMethods, PyBool, PyDict, PyList, PyListMethods},
+    Bound, IntoPyObjectExt, PyAny, PyResult, Python,
 };
 
 use crate::{
-    functions::{FunctionExpr, ScalarFunction}, python::PyExpr, AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec
+    functions::{FunctionExpr, ScalarFunction},
+    python::PyExpr,
+    AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec,
 };
 
 /// Helper to downcast some specific pyo3 type to a PyAny.
@@ -61,25 +65,27 @@ pub(crate) struct PyVisitor<'py> {
     visitor: Bound<'py, PyAny>,
 }
 
-
 impl<'py> PyVisitor<'py> {
-
     fn new(visitor: Bound<'py, PyAny>) -> PyResult<Self> {
-        Ok(Self { py: visitor.py(), visitor })
+        Ok(Self {
+            py: visitor.py(),
+            visitor,
+        })
     }
 
     fn visit_column(&self, column: &Column) -> PyVisitorResult<'py> {
-        let meth = "visit_col";
+        let attr = "visit_col";
         let args = (column.name(),);
-        self.visitor.call_method1(meth, args)
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_alias(&self, expr: &ExprRef, alias: String) -> PyVisitorResult<'py> {
-        Err(PyValueError::new_err(
-            "Visitor does not support alias expressions",
-        ))
+        let attr = "visit_alias";
+        let args = (self.to_expr(expr)?, alias);
+        self.visitor.call_method1(attr, args)
     }
 
+    #[allow(unused_variables)]
     fn visit_agg(&self, agg_expr: &AggExpr) -> PyVisitorResult<'py> {
         Err(PyValueError::new_err(
             "Visitor does not support aggregate expressions",
@@ -92,26 +98,145 @@ impl<'py> PyVisitor<'py> {
         left: &ExprRef,
         right: &ExprRef,
     ) -> PyVisitorResult<'py> {
-        Err(PyValueError::new_err(
-            "Visitor does not support binary operations",
-        ))
+        let lhs = self.to_expr(left)?;
+        let rhs = self.to_expr(right)?;
+        match &op {
+            Operator::And => {
+                let attr = "visit_and";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Or => {
+                let attr = "visit_or";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Eq => {
+                let attr = "visit_equal";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::NotEq => {
+                let attr = "visit_not_equal";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Lt => {
+                let attr = "visit_less_than";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::LtEq => {
+                let attr = "visit_less_than_or_equal";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Gt => {
+                let attr = "visit_greater_than";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::GtEq => {
+                let attr = "visit_greater_than_or_equals";
+                let args = (lhs, rhs);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::EqNullSafe => {
+                let attr = "visit_function";
+                let args = ("eq_null_safe", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Plus => {
+                let attr = "visit_function";
+                let args = ("plus", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Minus => {
+                let attr = "visit_function";
+                let args = ("minus", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Multiply => {
+                let attr = "visit_function";
+                let args = ("multiply", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::TrueDivide => {
+                let attr = "visit_function";
+                let args = ("true_divide", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::FloorDivide => {
+                let attr = "visit_function";
+                let args = ("floor_divide", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Modulus => {
+                let attr = "visit_function";
+                let args = ("modulus", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::Xor => {
+                let attr = "visit_function";
+                let args = ("xor", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::ShiftLeft => {
+                let attr = "visit_function";
+                let args = ("shift_left", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+            Operator::ShiftRight => {
+                let attr = "visit_function";
+                let args = ("shift_right", vec![lhs, rhs]);
+                self.visitor.call_method1(attr, args)
+            }
+        }
     }
 
     fn visit_cast(&self, expr: &ExprRef, data_type: &DataType) -> PyVisitorResult<'py> {
-        let meth = "visit_cast";
-        let args = (
-            self.to_expr(expr)?,
-            self.to_data_type(data_type)?,
-        );
-        self.visitor.call_method1(meth, args)
+        let attr = "visit_cast";
+        let args = (self.to_expr(expr)?, self.to_data_type(data_type)?);
+        self.visitor.call_method1(attr, args)
     }
 
-    fn visit_function(&self, func: &FunctionExpr, inputs: &[ExprRef]) -> PyVisitorResult<'py> {
-        Err(PyValueError::new_err(
-            "Visitor does not support function expressions",
-        ))
+    fn visit_function(&self, func: &FunctionExpr, args: &[ExprRef]) -> PyVisitorResult<'py> {
+        use crate::functions::partitioning::PartitioningExpr;
+
+        let inputs = PyList::empty(self.py);
+        for input in args {
+            inputs.append(self.to_expr(input)?)?;
+        }
+
+        let name = match func {
+            FunctionExpr::Python(python_udf) => &python_udf.name,
+            FunctionExpr::Partitioning(partitioning_expr) => match partitioning_expr {
+                PartitioningExpr::Years => "years",
+                PartitioningExpr::Months => "month",
+                PartitioningExpr::Days => "days",
+                PartitioningExpr::Hours => "hours",
+                PartitioningExpr::IcebergBucket(b) => {
+                    inputs.append(b)?;
+                    "iceberg_bucket"
+                }
+                PartitioningExpr::IcebergTruncate(w) => {
+                    inputs.append(w)?;
+                    "iceberg_truncate"
+                }
+            },
+            _ => {
+                return Err(PyValueError::new_err(
+                    "Visitor does not support function expressions",
+                ))
+            }
+        };
+
+        let attr = "visit_function";
+        let args = (name, inputs);
+        self.visitor.call_method1(attr, args)
     }
 
+    #[allow(unused_variables)]
     fn visit_over(
         self,
         window_expr: &WindowExpr,
@@ -122,7 +247,7 @@ impl<'py> PyVisitor<'py> {
         ))
     }
 
-    #[allow(unused_attributes)]
+    #[allow(unused_variables)]
     fn visit_window_function(&self, window_expr: &WindowExpr) -> PyVisitorResult<'py> {
         Err(PyValueError::new_err(
             "Visitor does not yet support window function expressions",
@@ -130,37 +255,38 @@ impl<'py> PyVisitor<'py> {
     }
 
     fn visit_not(&self, expr: &ExprRef) -> PyVisitorResult<'py> {
-        let meth = "visit_not";
+        let attr = "visit_not";
         let args = (self.to_expr(expr)?,);
-        self.visitor.call_method1(meth, args)
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_is_null(&self, expr: &ExprRef) -> PyVisitorResult<'py> {
-        let meth = "visit_is_null";
+        let attr = "visit_is_null";
         let args = (self.to_expr(expr)?,);
-        self.visitor.call_method1(meth, args)
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_not_null(&self, expr: &ExprRef) -> PyVisitorResult<'py> {
-        let meth = "visit_not_null";
+        let attr = "visit_not_null";
         let args = (self.to_expr(expr)?,);
-        self.visitor.call_method1(meth, args)
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_fill_null(&self, expr: &ExprRef, expr1: &ExprRef) -> PyVisitorResult<'py> {
-        let meth = "visit_fill_null";
+        let attr = "visit_fill_null";
         let args = (self.to_expr(expr)?, self.to_expr(expr1)?);
-        self.visitor.call_method1(meth, args)
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_is_in(&self, expr: &ExprRef, exprs: &[ExprRef]) -> PyVisitorResult<'py> {
-        let meth = "visit_is_in";
-        let mut args_vec = vec![self.to_expr(expr)?];
-        for expr in exprs {
-            args_vec.push(self.to_expr(expr)?);
+        let attr = "visit_is_in";
+        let expr = self.to_expr(expr)?;
+        let items = PyList::empty(self.py);
+        for item in exprs {
+            items.append(self.to_expr(item)?)?;
         }
-        let args = (args_vec,);
-        self.visitor.call_method1(meth, args)
+        let args = (expr, items);
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_between(
@@ -169,21 +295,29 @@ impl<'py> PyVisitor<'py> {
         expr1: &ExprRef,
         expr2: &ExprRef,
     ) -> PyVisitorResult<'py> {
-        let meth = "visit_between";
-        let args = (self.to_expr(expr)?, self.to_expr(expr1)?, self.to_expr(expr2)?);
-        self.visitor.call_method1(meth, args)
+        let attr = "visit_between";
+        let args = (
+            self.to_expr(expr)?,
+            self.to_expr(expr1)?,
+            self.to_expr(expr2)?,
+        );
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_list(&self, exprs: &[ExprRef]) -> PyVisitorResult<'py> {
-        Err(PyValueError::new_err(
-            "Visitor does not support list expressions",
-        ))
+        let attr = "visit_list";
+        let items = PyList::empty(self.py);
+        for item in exprs {
+            items.append(self.to_expr(item)?)?;
+        }
+        let args = (items,);
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_literal(&self, literal_value: &LiteralValue) -> PyVisitorResult<'py> {
-        let meth = "visit_lit";
+        let attr = "visit_lit";
         let args = (self.to_lit(literal_value)?,);
-        self.visitor.call_method1(meth, args)
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_if_else(
@@ -192,32 +326,42 @@ impl<'py> PyVisitor<'py> {
         if_false: &ExprRef,
         predicate: &ExprRef,
     ) -> PyVisitorResult<'py> {
-        Err(PyValueError::new_err(
-            "Visitor does not support if_else expressions",
-        ))
+        let attr = "visit_function";
+        let predicate = self.to_expr(predicate)?;
+        let if_true = self.to_expr(if_true)?;
+        let if_false = self.to_expr(if_false)?;
+        let args = ("if_else", vec![predicate, if_true, if_false]);
+        self.visitor.call_method1(attr, args)
     }
 
     fn visit_scalar_function(&self, scalar_function: &ScalarFunction) -> PyVisitorResult<'py> {
-        Err(PyValueError::new_err(
-            "Visitor does not support scalar function expressions",
-        ))
+        let attr = "visit_function";
+        let name = scalar_function.name();
+        let inputs = PyList::empty(self.py);
+        for input in &scalar_function.inputs {
+            inputs.append(self.to_expr(input)?)?;
+        }
+        self.visitor.call_method1(attr, (name, inputs))
     }
 
+    #[allow(unused_variables)]
     fn visit_subquery(&self, subquery: &Subquery) -> PyVisitorResult<'py> {
         Err(PyValueError::new_err(
             "Visitor does not support subquery expressions",
         ))
     }
 
+    #[allow(unused_variables)]
     fn visit_in_subquery(&self, expr: &ExprRef, subquery: &Subquery) -> PyVisitorResult<'py> {
         Err(PyValueError::new_err(
-            "Visitor does not support in_subquery expressions",
+            "Visitor does not support subquery expressions",
         ))
     }
 
+    #[allow(unused_variables)]
     fn visit_exists(&self, subquery: &Subquery) -> PyVisitorResult<'py> {
         Err(PyValueError::new_err(
-            "Visitor does not support exists expressions",
+            "Visitor does not support subquery expressions",
         ))
     }
 
