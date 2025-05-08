@@ -70,10 +70,4 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Readthedocs flyout
-  const flyout = document.querySelector('readthedocs-flyout');
-  if (flyout) {
-    flyout.setAttribute("position", "bottom-left");
-  }
-
 });

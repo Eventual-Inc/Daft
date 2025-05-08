@@ -142,5 +142,9 @@ code.doc-symbol-method::after {
 
 /* readthedocs flyout */
 readthedocs-flyout div.floating.container.bottom-left {
-  bottom: 40px;
+  bottom: 30px;
+}
+
+readthedocs-flyout {
+  bottom: 30px;
 }
