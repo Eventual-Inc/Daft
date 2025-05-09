@@ -14,8 +14,8 @@ impl SQLFunction for SQLImageCrop {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, bbox] => {
-                let input = planner.plan_function_arg(input)?;
-                let bbox = planner.plan_function_arg(bbox)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let bbox = planner.plan_function_arg(bbox)?.into_inner();
                 Ok(crop(input, bbox))
             }
             _ => unsupported_sql_err!("Invalid arguments for image_crop: '{inputs:?}'"),

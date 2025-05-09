@@ -14,9 +14,11 @@ pub struct Utf8Left {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Left {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
     }
+
     fn name(&self) -> &'static str {
         "left"
     }
@@ -43,7 +45,7 @@ impl ScalarUDF for Utf8Left {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, nchars] => data.utf8_left(nchars),
             _ => Err(DaftError::ValueError(format!(

@@ -41,7 +41,7 @@ impl SQLFunction for AggExpr {
             handle_count(inputs, planner)
         } else {
             let inputs = self.args_to_expr_unnamed(inputs, planner)?;
-            to_expr(self, inputs.as_slice())
+            to_expr(self, inputs.into_inner().as_slice())
         }
     }
 
@@ -107,7 +107,8 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         }
         [expr] => {
             // SQL default COUNT ignores nulls
-            let input = planner.plan_function_arg(expr)?;
+            let input = planner.plan_function_arg(expr)?.into_inner();
+
             input.count(daft_core::count_mode::CountMode::Valid)
         }
         _ => unsupported_sql_err!("COUNT takes exactly one argument"),
