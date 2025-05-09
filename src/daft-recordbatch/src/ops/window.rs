@@ -292,11 +292,13 @@ impl RecordBatch {
         self.union(&window_batch)
     }
 
-    pub fn window_row_number_global(&self, name: String, offset: u64) -> DaftResult<Self> {
-        let row_numbers: Vec<u64> = ((offset + 1)..=(offset + self.len() as u64)).collect();
+    pub fn window_row_number_global(&self, name: String, offset: &mut u64) -> DaftResult<Self> {
+        let row_numbers: Vec<u64> = ((*offset + 1)..=(*offset + self.len() as u64)).collect();
         let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
 
         let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
+
+        *offset += self.len() as u64;
 
         self.union(&row_number_batch)
     }
@@ -307,6 +309,89 @@ impl RecordBatch {
         let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
 
         self.union(&row_number_batch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn window_rank_global(
+        &self,
+        name: String,
+        order_by: &[BoundExpr],
+        cur_rank: &mut u64,
+        next_rank: &mut u64,
+        previous_value: &mut Option<Self>,
+        dense: bool,
+    ) -> DaftResult<Self> {
+        // Fast‑path – empty batch
+        if self.is_empty() {
+            let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
+            let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
+            return self.union(&rank_batch);
+        }
+
+        // Evaluate ORDER BY expressions for the current batch
+        let order_by_table = self.eval_expression_list(order_by)?;
+
+        // Comparator over ORDER BY columns only
+        let col_cnt = order_by_table.columns.len();
+        let comparator: Box<dyn Fn(usize, usize) -> bool + Send + Sync> =
+            build_multi_array_is_equal(
+                order_by_table.columns.as_slice(),
+                order_by_table.columns.as_slice(),
+                &vec![true; col_cnt],
+                &vec![true; col_cnt],
+            )?;
+
+        // Detect whether this batch continues a tie from the previous batch
+        let first_row_different = if let Some(prev) = previous_value.as_ref() {
+            let first_row = order_by_table.slice(0, 1)?;
+            let single_cmp = build_multi_array_is_equal(
+                prev.columns.as_slice(),
+                first_row.columns.as_slice(),
+                &vec![true; col_cnt],
+                &vec![true; col_cnt],
+            )?;
+            !single_cmp(0, 0)
+        } else {
+            false
+        };
+
+        if first_row_different {
+            if dense {
+                *cur_rank += 1;
+            } else {
+                *cur_rank = *next_rank;
+            }
+        }
+
+        let mut rank_numbers = Vec::with_capacity(self.len());
+        rank_numbers.push(*cur_rank); // rank for first row
+
+        for i in 1..self.len() {
+            if !dense {
+                *next_rank += 1; // rank() always bumps the next counter
+            }
+
+            if !(comparator(i - 1, i)) {
+                if dense {
+                    *cur_rank += 1;
+                } else {
+                    *cur_rank = *next_rank;
+                }
+            }
+
+            rank_numbers.push(*cur_rank);
+        }
+
+        *next_rank += 1;
+
+        // Persist ORDER BY values from the last row for the next batch
+        let last_row = order_by_table.slice(self.len() - 1, self.len())?;
+        *previous_value = Some(last_row);
+
+        // Build output
+        let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
+        let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
+        self.union(&rank_batch)
     }
 
     pub fn window_rank(

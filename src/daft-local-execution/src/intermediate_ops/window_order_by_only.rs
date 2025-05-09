@@ -1,8 +1,8 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{ExprRef, WindowExpr};
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef, WindowExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -14,12 +14,27 @@ use super::intermediate_op::{
 };
 use crate::ExecutionTaskSpawner;
 
+#[derive(Clone)]
+struct RankState {
+    current_rank: u64,
+    next_rank: u64,
+    previous_value: Option<RecordBatch>,
+}
+
+#[derive(Clone)]
+struct DenseRankState {
+    current_rank: u64,
+    previous_value: Option<RecordBatch>,
+}
+
 pub struct WindowOrderByOnlyState {
     record_batches: Vec<RecordBatch>,
     window_exprs: Vec<WindowExpr>,
     aliases: Vec<String>,
     original_schema: SchemaRef,
     row_offset: u64,
+    rank_state: RankState,
+    dense_rank_state: DenseRankState,
 }
 
 impl WindowOrderByOnlyState {
@@ -34,6 +49,15 @@ impl WindowOrderByOnlyState {
             aliases,
             original_schema,
             row_offset: 0,
+            rank_state: RankState {
+                current_rank: 1,
+                next_rank: 1,
+                previous_value: None,
+            },
+            dense_rank_state: DenseRankState {
+                current_rank: 1,
+                previous_value: None,
+            },
         }
     }
 
@@ -97,43 +121,74 @@ impl IntermediateOperator for WindowOrderByOnlyOperator {
 
         window_state.push(input).unwrap();
 
-        let start_offset = window_state.row_offset;
-
         let window_exprs = window_state.window_exprs.clone();
         let aliases = window_state.aliases.clone();
         let original_schema = window_state.original_schema.clone();
         let mut batches = window_state.drain_record_batches();
 
+        let mut row_offset = window_state.row_offset;
+        let mut rank_state = window_state.rank_state.clone();
+        let mut dense_rank_state = window_state.dense_rank_state.clone();
+
+        let order_by = self
+            .order_by
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &original_schema))
+            .collect::<DaftResult<Vec<_>>>()
+            .unwrap();
+
         task_spawner
             .spawn(
                 async move {
-                    let mut running_offset = start_offset;
-
                     let mut out_batches = Vec::with_capacity(batches.len());
+
                     for mut batch in batches.drain(..) {
                         if batch.is_empty() {
                             continue;
                         }
 
+                        let mut seen_exprs = HashSet::new();
                         for (wexpr, name) in window_exprs.iter().zip(&aliases) {
-                            match wexpr {
-                                WindowExpr::RowNumber => {
-                                    batch = batch
-                                        .window_row_number_global(name.clone(), running_offset)?;
-                                }
-                                _ => {
-                                    return Err(DaftError::NotImplemented(format!(
-                                        "Unsupported window fn: {wexpr:?}"
-                                    )))
-                                }
+                            if !seen_exprs.insert(wexpr) {
+                                return Err(DaftError::InternalError(format!(
+                                    "Window expression {:?} appears more than once in window_exprs",
+                                    wexpr
+                                )));
                             }
+
+                            batch = match wexpr {
+                                WindowExpr::RowNumber => {
+                                    batch.window_row_number_global(name.clone(), &mut row_offset)?
+                                }
+                                WindowExpr::Rank => batch.window_rank_global(
+                                    name.clone(),
+                                    &order_by,
+                                    &mut rank_state.current_rank,
+                                    &mut rank_state.next_rank,
+                                    &mut rank_state.previous_value,
+                                    false,
+                                )?,
+                                WindowExpr::DenseRank => {
+                                    let mut next_rank_placeholder = 0; // unused
+                                    batch.window_rank_global(
+                                        name.clone(),
+                                        &order_by,
+                                        &mut dense_rank_state.current_rank,
+                                        &mut next_rank_placeholder,
+                                        &mut dense_rank_state.previous_value,
+                                        true,
+                                    )?
+                                }
+                                _ => unimplemented!("Unsupported window fn: {wexpr:?}"),
+                            };
                         }
-                        running_offset += batch.len() as u64;
                         out_batches.push(batch);
                     }
 
                     if let Some(ws) = state.as_any_mut().downcast_mut::<WindowOrderByOnlyState>() {
-                        ws.row_offset = running_offset;
+                        ws.row_offset = row_offset;
+                        ws.rank_state = rank_state;
+                        ws.dense_rank_state = dense_rank_state;
                     }
 
                     let output = if out_batches.is_empty() {
