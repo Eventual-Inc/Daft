@@ -31,34 +31,34 @@ class ImageMode(Enum):
     """
 
     #: 8-bit grayscale
-    L: int
+    L = 1
 
     #: 8-bit grayscale + alpha
-    LA: int
+    LA = 2
 
     #: 8-bit RGB
-    RGB: int
+    RGB = 3
 
     #: 8-bit RGB + alpha
-    RGBA: int
+    RGBA = 4
 
     #: 16-bit grayscale
-    L16: int
+    L16 = 5
 
     #: 16-bit grayscale + alpha
-    LA16: int
+    LA16 = 6
 
     #: 16-bit RGB
-    RGB16: int
+    RGB16 = 7
 
     #: 16-bit RGB + alpha
-    RGBA16: int
+    RGBA16 = 8
 
     #: 32-bit floating RGB
-    RGB32F: int
+    RGB32F = 9
 
     #: 32-bit floating RGB + alpha
-    RGBA32F: int
+    RGBA32F = 10
 
     @staticmethod
     def from_mode_string(mode: str) -> ImageMode:
@@ -86,8 +86,8 @@ class PyWindowBoundary:
 class WindowFrameType(Enum):
     """Represents the type of window frame (ROWS or RANGE)."""
 
-    Rows: int
-    Range: int
+    Rows = 1
+    Range = 2
 
 class WindowFrame:
     """Represents a window frame specification."""
@@ -111,11 +111,11 @@ class WindowSpec:
 class ImageFormat(Enum):
     """Supported image formats for Daft's image I/O."""
 
-    PNG: int
-    JPEG: int
-    TIFF: int
-    GIF: int
-    BMP: int
+    PNG = 1
+    JPEG = 2
+    TIFF = 3
+    GIF = 4
+    BMP = 5
 
     @staticmethod
     def from_format_string(mode: str) -> ImageFormat:
@@ -125,12 +125,12 @@ class ImageFormat(Enum):
 class JoinType(Enum):
     """Type of a join operation."""
 
-    Inner: int
-    Left: int
-    Right: int
-    Outer: int
-    Semi: int
-    Anti: int
+    Inner = 1
+    Left = 2
+    Right = 3
+    Outer = 4
+    Semi = 5
+    Anti = 6
 
     @staticmethod
     def from_join_type_str(join_type: str) -> JoinType:
@@ -146,9 +146,9 @@ class JoinType(Enum):
 class JoinStrategy(Enum):
     """Join strategy (algorithm) to use."""
 
-    Hash: int
-    SortMerge: int
-    Broadcast: int
+    Hash = 1
+    SortMerge = 2
+    Broadcast = 3
 
     @staticmethod
     def from_join_strategy_str(join_strategy: str) -> JoinStrategy:
@@ -162,8 +162,8 @@ class JoinStrategy(Enum):
         ...
 
 class JoinSide(Enum):
-    Left: int
-    Right: int
+    Left = 1
+    Right = 2
 
 class CountMode(Enum):
     """Supported count modes for Daft's count aggregation.
@@ -173,9 +173,9 @@ class CountMode(Enum):
     | Null  - Count only null values.
     """
 
-    All: int
-    Valid: int
-    Null: int
+    All = 1
+    Valid = 2
+    Null = 3
 
     @staticmethod
     def from_count_mode_str(count_mode: str) -> CountMode:
@@ -216,18 +216,18 @@ class ResourceRequest:
 class FileFormat(Enum):
     """Format of a file, e.g. Parquet, CSV, and JSON."""
 
-    Parquet: int
-    Csv: int
-    Json: int
+    Parquet = 1
+    Csv = 2
+    Json = 3
 
     def ext(self): ...
 
 class WriteMode(Enum):
     """Mode for writing data to a file."""
 
-    Overwrite: int
-    OverwritePartitions: int
-    Append: int
+    Overwrite = 1
+    OverwritePartitions = 2
+    Append = 3
 
     @staticmethod
     def from_str(mode: str) -> WriteMode: ...
