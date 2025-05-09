@@ -110,7 +110,16 @@ code.doc-symbol-method::after {
 
 /* spacing between header and body */
 .md-main__inner {
-  margin-top: 0.5rem;
+  margin-top: 0rem;
+}
+
+.md-sidebar .md-sidebar--primary,
+.md-sidebar .md-sidebar--secondary {
+  top: 110px;
+}
+
+.md-content__inner {
+  padding-top: 1rem;
 }
 
 /* sidebar spacing */
