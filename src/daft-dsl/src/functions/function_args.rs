@@ -71,13 +71,6 @@ impl<T, E> FunctionArg<Result<T, E>> {
     }
 }
 
-// any T can be converted to an Unnamed FunctionArg
-impl<T> From<T> for FunctionArg<T> {
-    fn from(arg: T) -> Self {
-        Self::Unnamed(arg)
-    }
-}
-
 /// FunctionArgs is a wrapper around a Vec<T> where T can either be a named or an unnamed argument.
 /// FunctionArgs handles the following
 /// 1. ensure that all unnamed arguments are before named arguments
@@ -392,12 +385,6 @@ impl<T> FunctionArgs<T> {
                 "Expected a value for the optional argument at position `{position:?}`"
             ))
         })
-    }
-}
-
-impl<T> From<Vec<T>> for FunctionArgs<T> {
-    fn from(args: Vec<T>) -> Self {
-        Self(args.into_iter().map(FunctionArg::from).collect())
     }
 }
 

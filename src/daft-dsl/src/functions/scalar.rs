@@ -17,12 +17,15 @@ pub struct ScalarFunction {
 }
 
 impl ScalarFunction {
+    // TODO(cory): use FunctionArgs instead of `Vec<ExprRef>`
     pub fn new<UDF: ScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
+        let inputs = inputs.into_iter().map(FunctionArg::unnamed).collect();
         Self {
             udf: Arc::new(udf),
-            inputs: inputs.into(),
+            inputs: FunctionArgs::new_unchecked(inputs),
         }
     }
+
     pub fn name(&self) -> &str {
         self.udf.name()
     }
@@ -45,29 +48,8 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     fn aliases(&self) -> &'static [&'static str] {
         &[]
     }
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let inputs = FunctionArgs::try_new(
-            inputs
-                .iter()
-                .map(|s| FunctionArg::unnamed(s.clone()))
-                .collect(),
-        )?;
 
-        self.evaluate(inputs)
-    }
-
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
-    fn docstring(&self) -> &'static str {
-        "No documentation available"
-    }
-}
-#[typetag::serde(tag = "type")]
-pub trait ScalarUDF2: Send + Sync + std::fmt::Debug {
-    fn name(&self) -> &'static str;
-    fn aliases(&self) -> &'static [&'static str] {
-        &[]
-    }
+    #[deprecated = "use evaluate instead"]
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         let inputs = FunctionArgs::try_new(
             inputs

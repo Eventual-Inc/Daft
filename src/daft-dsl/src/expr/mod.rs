@@ -38,7 +38,7 @@ use crate::{
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -1371,10 +1371,22 @@ impl Expr {
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
                 );
+                let new_children = sf
+                    .inputs
+                    .iter()
+                    .zip(children.into_iter())
+                    .map(|(fn_arg, child)| match fn_arg {
+                        FunctionArg::Named { name, .. } => FunctionArg::Named {
+                            name: name.clone(),
+                            arg: child,
+                        },
+                        FunctionArg::Unnamed(_) => FunctionArg::Unnamed(child),
+                    })
+                    .collect();
 
                 Self::ScalarFunction(crate::functions::ScalarFunction {
                     udf: sf.udf.clone(),
-                    inputs: children.into(),
+                    inputs: FunctionArgs::new_unchecked(new_children),
                 })
             }
         }
