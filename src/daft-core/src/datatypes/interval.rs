@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Neg};
 
 use arrow2::types::months_days_ns;
 use common_error::DaftResult;
@@ -19,6 +19,30 @@ impl IntervalValue {
             months,
             days,
             nanoseconds: nanos,
+        }
+    }
+}
+
+impl Neg for IntervalValue {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            months: -self.months,
+            days: -self.days,
+            nanoseconds: -self.nanoseconds,
+        }
+    }
+}
+
+impl Neg for &IntervalValue {
+    type Output = IntervalValue;
+
+    fn neg(self) -> Self::Output {
+        IntervalValue {
+            months: -self.months,
+            days: -self.days,
+            nanoseconds: -self.nanoseconds,
         }
     }
 }

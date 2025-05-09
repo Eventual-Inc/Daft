@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::{array::ops::as_arrow::AsArrow, utils::identity_hash_set::IndexHash};
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
@@ -10,7 +11,7 @@ use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{FileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriterFactory};
 
 /// PartitionedWriter is a writer that partitions the input data by a set of columns, and writes each partition
 /// to a separate file. It uses a map to keep track of the writers for each partition.
@@ -18,7 +19,7 @@ struct PartitionedWriter {
     // TODO: Figure out a way to NOT use the IndexHash + RawEntryMut pattern here. Ideally we want to store ScalarValues, aka. single Rows of the partition values as keys for the hashmap.
     per_partition_writers: HashMap<
         IndexHash,
-        Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     >,
     saved_partition_values: Vec<RecordBatch>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
@@ -58,11 +59,12 @@ impl PartitionedWriter {
     }
 }
 
-impl FileWriter for PartitionedWriter {
+#[async_trait]
+impl AsyncFileWriter for PartitionedWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
+    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed PartitionedWriter"
@@ -93,11 +95,13 @@ impl FileWriter for PartitionedWriter {
                     let mut writer = self
                         .writer_factory
                         .create_writer(0, Some(partition_value_row.as_ref()))?;
-                    bytes_written += writer.write(Arc::new(MicroPartition::new_loaded(
-                        table.schema.clone(),
-                        vec![table].into(),
-                        None,
-                    )))?;
+                    bytes_written += writer
+                        .write(Arc::new(MicroPartition::new_loaded(
+                            table.schema.clone(),
+                            vec![table].into(),
+                            None,
+                        )))
+                        .await?;
                     entry.insert_hashed_nocheck(
                         *partition_value_hash,
                         IndexHash {
@@ -110,11 +114,13 @@ impl FileWriter for PartitionedWriter {
                 }
                 RawEntryMut::Occupied(mut entry) => {
                     let writer = entry.get_mut();
-                    bytes_written += writer.write(Arc::new(MicroPartition::new_loaded(
-                        table.schema.clone(),
-                        vec![table].into(),
-                        None,
-                    )))?;
+                    bytes_written += writer
+                        .write(Arc::new(MicroPartition::new_loaded(
+                            table.schema.clone(),
+                            vec![table].into(),
+                            None,
+                        )))
+                        .await?;
                 }
             }
         }
@@ -135,10 +141,10 @@ impl FileWriter for PartitionedWriter {
             .collect()
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         let mut results = vec![];
         for (_, mut writer) in self.per_partition_writers.drain() {
-            results.extend(writer.close()?);
+            results.extend(writer.close().await?);
         }
         self.is_closed = true;
         Ok(results)
@@ -171,13 +177,13 @@ impl WriterFactory for PartitionedWriterFactory {
         &self,
         _file_idx: usize,
         _partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(PartitionedWriter::new(
             self.writer_factory.clone(),
             self.partition_cols.clone(),
         ))
             as Box<
-                dyn FileWriter<Input = Self::Input, Result = Self::Result>,
+                dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,
             >)
     }
 }

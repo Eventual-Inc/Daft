@@ -27,15 +27,6 @@ use crate::{
 };
 
 #[pyfunction]
-pub fn named_expr(name: &str, expr: PyExpr) -> PyExpr {
-    Expr::NamedExpr {
-        name: name.into(),
-        expr: expr.expr,
-    }
-    .into()
-}
-
-#[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
     PyExpr::from(crate::unresolved_col(name))
 }

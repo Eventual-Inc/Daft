@@ -13,6 +13,10 @@ pub struct JsonQuery {
 
 #[typetag::serde]
 impl ScalarUDF for JsonQuery {
+    #[allow(
+        deprecated,
+        reason = "temporary while transitioning to new scalarudf impl"
+    )]
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inner = inputs.into_inner();
         self.evaluate_from_series(&inner)

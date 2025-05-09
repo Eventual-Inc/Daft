@@ -23,8 +23,8 @@ impl SQLFunction for MapGet {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input, key] => {
-                let input = planner.plan_function_arg(input)?;
-                let key = planner.plan_function_arg(key)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let key = planner.plan_function_arg(key)?.into_inner();
                 Ok(daft_dsl::functions::map::get(input, key))
             }
             _ => invalid_operation_err!("Expected 2 input args"),
