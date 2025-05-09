@@ -10,7 +10,7 @@ use daft_core::{
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState, RecordBatch};
+use daft_recordbatch::{get_columns_by_name, GrowableRecordBatch, ProbeState, RecordBatch};
 use futures::{stream, StreamExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -262,14 +262,14 @@ impl OuterHashJoinProbeSink {
         let probe_side_table = probe_side_growable.build()?;
 
         let final_table = if join_type == JoinType::Left {
-            let join_table = build_side_table.get_columns(common_join_cols)?;
-            let left = build_side_table.get_columns(left_non_join_columns)?;
-            let right = probe_side_table.get_columns(right_non_join_columns)?;
+            let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
+            let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
+            let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
             join_table.union(&left)?.union(&right)?
         } else {
-            let join_table = build_side_table.get_columns(common_join_cols)?;
-            let left = probe_side_table.get_columns(left_non_join_columns)?;
-            let right = build_side_table.get_columns(right_non_join_columns)?;
+            let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
+            let left = get_columns_by_name(&probe_side_table, left_non_join_columns)?;
+            let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
             join_table.union(&left)?.union(&right)?
         };
         Ok(Arc::new(MicroPartition::new_loaded(
@@ -331,14 +331,14 @@ impl OuterHashJoinProbeSink {
         let probe_side_table = probe_side_growable.build()?;
 
         let final_table = if join_type == JoinType::Left {
-            let join_table = probe_side_table.get_columns(common_join_cols)?;
-            let left = probe_side_table.get_columns(left_non_join_columns)?;
-            let right = build_side_table.get_columns(right_non_join_columns)?;
+            let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?;
+            let left = get_columns_by_name(&probe_side_table, left_non_join_columns)?;
+            let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
             join_table.union(&left)?.union(&right)?
         } else {
-            let join_table = probe_side_table.get_columns(common_join_cols)?;
-            let left = build_side_table.get_columns(left_non_join_columns)?;
-            let right = probe_side_table.get_columns(right_non_join_columns)?;
+            let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?;
+            let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
+            let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
             join_table.union(&left)?.union(&right)?
         };
         Ok(Arc::new(MicroPartition::new_loaded(
@@ -402,11 +402,10 @@ impl OuterHashJoinProbeSink {
         let build_side_table = build_side_growable.build()?;
         let probe_side_table = probe_side_growable.build()?;
 
-        let join_table = probe_side_table
-            .get_columns(common_join_cols)?
+        let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?
             .cast_to_schema(outer_common_col_schema)?;
-        let left = build_side_table.get_columns(left_non_join_columns)?;
-        let right = probe_side_table.get_columns(right_non_join_columns)?;
+        let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
+        let right = get_columns_by_name(&probe_side_table, right_non_join_columns)?;
         // If we built the probe table on the right, flip the order of union.
         let (left, right) = if build_on_left {
             (left, right)
@@ -485,10 +484,9 @@ impl OuterHashJoinProbeSink {
         build_on_left: bool,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
-        let join_table = build_side_table
-            .get_columns(common_join_cols)?
+        let join_table = get_columns_by_name(&build_side_table, common_join_cols)?
             .cast_to_schema(outer_common_col_schema)?;
-        let left = build_side_table.get_columns(left_non_join_columns)?;
+        let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
         let right = {
             let columns = right_non_join_schema
                 .fields()
@@ -518,8 +516,8 @@ impl OuterHashJoinProbeSink {
         right_non_join_schema: &SchemaRef,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
-        let join_table = build_side_table.get_columns(common_join_cols)?;
-        let left = build_side_table.get_columns(left_non_join_columns)?;
+        let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
+        let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
         let right = {
             let columns = right_non_join_schema
                 .fields()
@@ -543,7 +541,7 @@ impl OuterHashJoinProbeSink {
         left_non_join_schema: &SchemaRef,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
-        let join_table = build_side_table.get_columns(common_join_cols)?;
+        let join_table = get_columns_by_name(&build_side_table, common_join_cols)?;
         let left = {
             let columns = left_non_join_schema
                 .fields()
@@ -556,7 +554,7 @@ impl OuterHashJoinProbeSink {
                 build_side_table.len(),
             )
         };
-        let right = build_side_table.get_columns(right_non_join_columns)?;
+        let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),

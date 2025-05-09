@@ -1645,6 +1645,10 @@ impl Expr {
         Ok(self.to_field(schema)?.dtype)
     }
 
+    pub fn get_name(&self, schema: &Schema) -> DaftResult<String> {
+        Ok(self.to_field(schema)?.name)
+    }
+
     pub fn input_mapping(self: &Arc<Self>) -> Option<String> {
         let required_columns = get_required_columns(self);
         let requires_computation = requires_computation(self);

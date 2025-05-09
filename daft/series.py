@@ -746,7 +746,7 @@ class Series:
         expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items() if v is not None}).alias(name)
 
         rb = rb.eval_expression_list([expr])
-        pyseries = rb.get_column(name)
+        pyseries = rb.get_column(0)
         return Series._from_pyseries(pyseries)
 
 

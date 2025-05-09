@@ -39,7 +39,7 @@ impl RecordBatch {
                             return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
                         }
                         let expr = BoundExpr::new_unchecked(inputs.first().unwrap().clone());
-                        let exploded_name = expr.inner().name();
+                        let exploded_name = expr.inner().get_name(&self.schema)?;
                         let evaluated = self.eval_expression(&expr)?;
                         if !matches!(
                             evaluated.data_type(),

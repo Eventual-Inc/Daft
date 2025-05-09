@@ -122,7 +122,12 @@ fn arrow_chunk_to_table(
         let predicate = BoundExpr::try_new(predicate, &table.schema)?;
         table = table.filter(&[predicate])?;
         if let Some(oc) = &original_columns {
-            table = table.get_columns(oc)?;
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
         }
         if let Some(nr) = original_num_rows {
             table = table.head(nr)?;
