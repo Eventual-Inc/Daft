@@ -71,6 +71,7 @@ class RaySwordfishTaskHandle:
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     done_callback: Callable[[ray.ObjectRef], None]
+    task: asyncio.Task | None = None
 
     async def _get_result(self) -> RayPartitionRef:
         results = []
@@ -78,17 +79,17 @@ class RaySwordfishTaskHandle:
             results.append(result)
 
         metadata, result = self.actor_handle.concat_and_get_metadata.options(num_returns=2).remote(*results)
-        print(await result)
         metadata = await metadata
         return RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
 
     async def get_result(self) -> RayPartitionRef:
-        task = asyncio.create_task(self._get_result())
-        task.add_done_callback(self.done_callback)
-        return await task
+        self.task = asyncio.create_task(self._get_result())
+        self.task.add_done_callback(self.done_callback)
+        return await self.task
 
     def cancel(self):
-        print("cancelling task")
+        if self.task:
+            self.task.cancel()
         ray.cancel(self.result_handle)
 
 

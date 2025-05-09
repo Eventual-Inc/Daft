@@ -11,7 +11,7 @@ use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle};
 #[allow(dead_code)]
 pub(crate) struct RayTaskResultHandle {
     /// The handle to the task
-    handle: Option<PyObject>,
+    handle: PyObject,
     /// The task locals, i.e. the asyncio event loop
     task_locals: Option<pyo3_async_runtimes::TaskLocals>,
 }
@@ -21,7 +21,7 @@ impl RayTaskResultHandle {
     #[allow(dead_code)]
     pub fn new(handle: PyObject, task_locals: pyo3_async_runtimes::TaskLocals) -> Self {
         Self {
-            handle: Some(handle),
+            handle,
             task_locals: Some(task_locals),
         }
     }
@@ -31,20 +31,25 @@ impl RayTaskResultHandle {
 impl SwordfishTaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
     async fn get_result(&mut self) -> DaftResult<PartitionRef> {
-        let handle = self.handle.take().unwrap();
-        let fut = async move {
+        // Create a coroutine that will await the result of the task
+        let coroutine = Python::with_gil(|py| {
+            self.handle
+                .call_method0(py, pyo3::intern!(py, "get_result"))
+                .expect("Failed to get result from RayTaskResultHandle")
+        });
+
+        // Create a rust future that will await the coroutine
+        let await_coroutine = async move {
             let result = Python::with_gil(|py| {
-                let coroutine = handle
-                    .call_method0(py, pyo3::intern!(py, "get_result"))?
-                    .into_bound(py);
-                pyo3_async_runtimes::tokio::into_future(coroutine)
+                pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
             })?;
             DaftResult::Ok(result.await)
         };
 
         // await the rust future in the scope of the asyncio event loop
         let task_locals = self.task_locals.take().unwrap();
-        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, fut).await??;
+        let materialized_result =
+            pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await??;
 
         let ray_part_ref =
             Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
@@ -54,13 +59,11 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
 
 impl Drop for RayTaskResultHandle {
     fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            Python::with_gil(|py| {
-                handle
-                    .call_method0(py, "cancel")
-                    .expect("Failed to cancel ray task")
-            });
-        }
+        Python::with_gil(|py| {
+            self.handle
+                .call_method0(py, "cancel")
+                .expect("Failed to cancel ray task")
+        });
     }
 }
 

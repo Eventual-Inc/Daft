@@ -1,6 +1,7 @@
 use std::{collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::DisplayLevel;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
@@ -85,6 +86,7 @@ impl Stage {
             StageType::MapPipeline { plan } => {
                 let mut pipeline_node =
                     logical_plan_to_pipeline_node(plan.clone(), config, psets, &mut stage_context)?;
+                println!("{}", pipeline_node.as_tree_display().display_as(DisplayLevel::Compact));
                 let running_node = pipeline_node.start(&mut stage_context);
                 let materialized_results_receiver =
                     materialize_pipeline_results(running_node, &mut stage_context);

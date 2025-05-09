@@ -4,6 +4,7 @@ use std::{
     sync::{atomic::AtomicUsize, Arc, Mutex},
 };
 
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
@@ -88,6 +89,23 @@ impl LimitNode {
     }
 }
 
+impl TreeDisplay for LimitNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Limit: {}", self.limit).unwrap();
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children()
+            .iter()
+            .map(|v| v.as_tree_display())
+            .collect()
+    }
+}
+
 impl DistributedPipelineNode for LimitNode {
     fn name(&self) -> &'static str {
         "Limit"
@@ -111,6 +129,10 @@ impl DistributedPipelineNode for LimitNode {
             self.schema.clone(),
         ));
         RunningPipelineNode::new(rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
 

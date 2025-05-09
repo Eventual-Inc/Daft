@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -126,6 +127,23 @@ impl CollectNode {
     }
 }
 
+impl TreeDisplay for CollectNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.name()).unwrap();
+        println!("display: {:?}", display);
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children()
+            .iter()
+            .map(|v| v.as_tree_display())
+            .collect()
+    }
+}
+
 impl DistributedPipelineNode for CollectNode {
     fn name(&self) -> &'static str {
         "Collect"
@@ -154,5 +172,9 @@ impl DistributedPipelineNode for CollectNode {
         stage_context.spawn_task_on_joinset(execution_loop);
 
         RunningPipelineNode::new(result_rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }

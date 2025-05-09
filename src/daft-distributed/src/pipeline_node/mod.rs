@@ -7,6 +7,7 @@ use std::{
 
 use collect::CollectNode;
 use common_daft_config::DaftExecutionConfig;
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
@@ -31,6 +32,7 @@ pub(crate) mod materialize;
 mod translate;
 
 pub(crate) trait DistributedPipelineNode: Send + Sync {
+    fn as_tree_display(&self) -> &dyn TreeDisplay;
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
     #[allow(dead_code)]
@@ -114,6 +116,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
 
         fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
             let is_root = Arc::ptr_eq(&node, &self.root);
+            println!("node: {:?}, is_root: {:?}", node.as_ref().name(), is_root);
             match node.as_ref() {
                 LogicalPlan::Limit(limit) => {
                     let input_nodes = std::mem::take(&mut self.current_nodes);
@@ -142,17 +145,18 @@ pub(crate) fn logical_plan_to_pipeline_node(
                         .into(),
                     ))
                 }
-                _ if is_root => {
-                    let pipeline_plan = translate_logical_plan_to_pipeline_plan(
-                        &node,
-                        &self.config,
-                        &mut self.psets,
-                    )?;
-                    let input_nodes = std::mem::take(&mut self.current_nodes);
-                    self.current_nodes =
-                        vec![Box::new(CollectNode::new(pipeline_plan, input_nodes))];
-                    Ok(Transformed::no(node))
-                }
+                // _ if is_root => {
+                //     let pipeline_plan = translate_logical_plan_to_pipeline_plan(
+                //         &node,
+                //         &self.config,
+                //         &mut self.psets,
+                //     )?;
+                //     let input_nodes = std::mem::take(&mut self.current_nodes);
+                //     println!("input_nodes: {:?}", input_nodes.len());
+                //     self.current_nodes =
+                //         vec![Box::new(CollectNode::new(pipeline_plan, input_nodes))];
+                //     Ok(Transformed::no(node))
+                // }
                 _ => Ok(Transformed::no(node)),
             }
         }
@@ -166,10 +170,27 @@ pub(crate) fn logical_plan_to_pipeline_node(
         stage_context,
     };
 
-    let _transformed = plan.rewrite(&mut splitter)?;
-    assert!(splitter.current_nodes.len() == 1);
-    Ok(splitter
-        .current_nodes
-        .pop()
-        .expect("Expected exactly one node"))
+    let transformed = plan.rewrite(&mut splitter)?;
+    match transformed.data.as_ref() {
+        LogicalPlan::Source(source)
+            if matches!(source.source_info.as_ref(), SourceInfo::PlaceHolder(_)) =>
+        {
+            assert!(splitter.current_nodes.len() == 1);
+            Ok(splitter
+                .current_nodes
+                .pop()
+                .expect("Expected exactly one node"))
+        }
+        _ => {
+            let logical_plan = transformed.data;
+            let pipeline_plan = translate_logical_plan_to_pipeline_plan(
+                &logical_plan,
+                &splitter.config,
+                &mut splitter.psets,
+            )?;
+            let input_nodes = std::mem::take(&mut splitter.current_nodes);
+            let collect_node = Box::new(CollectNode::new(pipeline_plan, input_nodes));
+            Ok(collect_node)
+        }
+    }
 }

@@ -28,7 +28,6 @@ async fn task_finalizer(
             PipelineOutput::Materialized(partition) => FinalizedTask::Materialized(partition),
             // If the pipeline output is a task, we need to submit it to the task dispatcher
             PipelineOutput::Task(task) => {
-                println!("submitting task: {:?}", task);
                 let task_result_handle = task_dispatcher_handle.submit_task(task).await?;
                 FinalizedTask::Running(task_result_handle)
             }
@@ -77,21 +76,18 @@ async fn task_materializer(
     let mut pending_tasks = OrderedJoinSet::new();
     loop {
         let num_pending = pending_tasks.num_pending();
-        println!("num_pending: {:?}", num_pending);
         tokio::select! {
             Some(finalized_task) = finalized_tasks_receiver.recv() => {
                 handle_finalized_task(finalized_task, &mut pending_tasks);
             }
             Some(result) = pending_tasks.join_next(), if num_pending > 0 => {
                 if handle_materialized_result(result, &tx).await? {
-                    println!("breaking");
                     break;
                 }
             }
             else => break,
         }
     }
-    println!("num pending at the end: {:?}", pending_tasks.num_pending());
 
     Ok(())
 }

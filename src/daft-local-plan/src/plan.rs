@@ -675,6 +675,16 @@ pub struct InMemoryScan {
     pub stats_state: StatsState,
 }
 
+impl InMemoryScan {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut display = vec![];
+        display.push("InMemoryScan:".to_string());
+        display.push(format!("Info: {:?}", self.info));
+        display.push(format!("StatsState: {:?}", self.stats_state));
+        display
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
