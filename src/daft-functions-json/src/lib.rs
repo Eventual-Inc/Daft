@@ -7,7 +7,10 @@ use daft_core::{
     prelude::{AsArrow, DataType, Utf8Array},
     series::Series,
 };
-use daft_dsl::{functions::ScalarFunction, ExprRef};
+use daft_dsl::{
+    functions::{FunctionModule, FunctionRegistry, ScalarFunction},
+    ExprRef,
+};
 use expr::JsonQuery;
 use itertools::Itertools;
 use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter};
@@ -111,8 +114,8 @@ pub fn json_query(input: ExprRef, query: ExprRef) -> ExprRef {
 
 pub struct JsonFunctions;
 
-impl daft_functions::FunctionModule for JsonFunctions {
-    fn register(parent: &mut daft_functions::FunctionRegistry) {
+impl FunctionModule for JsonFunctions {
+    fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(crate::expr::JsonQuery);
     }
 }

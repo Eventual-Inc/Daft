@@ -85,7 +85,6 @@ fn evaluate_single_numeric<F: Fn(&Series) -> DaftResult<Series>>(
 }
 
 pub struct NumericFunctions;
-
 impl FunctionModule for NumericFunctions {
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(Abs);

@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
-use common_tracing::refresh_chrome_trace;
+use common_tracing::{flush_opentelemetry_providers, refresh_chrome_trace};
 use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -330,6 +330,7 @@ impl NativeExecutor {
                         )
                     )?;
                 }
+                flush_opentelemetry_providers();
                 Ok(())
             };
 

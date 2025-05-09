@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use serde::{Deserialize, Serialize};
 
 /// Wrapper around T to hold either a named or an unnamed argument.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum FunctionArg<T> {
     Named {
         name: Arc<str>, // todo: use Identifier instead of String
@@ -22,11 +23,51 @@ impl<T> FunctionArg<T> {
             arg,
         }
     }
+
+    /// apply a function on the inner T value
+    pub fn map<F, R>(&self, f: F) -> FunctionArg<R>
+    where
+        F: Fn(&T) -> R,
+    {
+        match self {
+            Self::Named { name, arg } => FunctionArg::Named {
+                name: name.clone(),
+                arg: f(arg),
+            },
+            Self::Unnamed(arg) => FunctionArg::Unnamed(f(arg)),
+        }
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> T {
+        match self {
+            Self::Named { name: _, arg } => arg,
+            Self::Unnamed(arg) => arg,
+        }
+    }
+
+    #[inline]
+    pub fn inner(&self) -> &T {
+        match self {
+            Self::Named { name: _, arg } => arg,
+            Self::Unnamed(arg) => arg,
+        }
+    }
 }
-// any T can be converted to an Unnamed FunctionArg
-impl<T> From<T> for FunctionArg<T> {
-    fn from(arg: T) -> Self {
-        Self::Unnamed(arg)
+
+impl<T, E> FunctionArg<Result<T, E>> {
+    /// transposes a FunctionArg<Result<T, E>> into a Result<FunctionArg<T>, E>
+    pub fn transpose(self) -> Result<FunctionArg<T>, E> {
+        match self {
+            Self::Named { name, arg } => match arg {
+                Ok(arg) => Ok(FunctionArg::Named { name, arg }),
+                Err(err) => Err(err),
+            },
+            Self::Unnamed(arg) => match arg {
+                Ok(arg) => Ok(FunctionArg::Unnamed(arg)),
+                Err(err) => Err(err),
+            },
+        }
     }
 }
 
@@ -86,11 +127,12 @@ impl<T> From<T> for FunctionArg<T> {
 /// let decimal: ExprRef = args.optional("decimal")?.cloned().unwrap_or(lit(0));
 ///
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct FunctionArgs<T>(Vec<FunctionArg<T>>);
 
 impl<T> FunctionArgs<T> {
     /// Extract the inner `Vec<T>` values
+    #[inline]
     pub fn into_inner(self) -> Vec<T> {
         self.0
             .into_iter()
@@ -100,8 +142,44 @@ impl<T> FunctionArgs<T> {
             })
             .collect()
     }
+
+    pub fn iter(&self) -> std::slice::Iter<FunctionArg<T>> {
+        self.0.iter()
+    }
+
+    pub fn first(&self) -> Option<&T> {
+        self.0.first().map(|f| f.inner())
+    }
 }
 
+impl<T> IntoIterator for FunctionArgs<T> {
+    type Item = FunctionArg<T>;
+    type IntoIter = std::vec::IntoIter<FunctionArg<T>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<T> FromIterator<FunctionArg<T>> for DaftResult<FunctionArgs<T>> {
+    fn from_iter<I: IntoIterator<Item = FunctionArg<T>>>(iter: I) -> Self {
+        let vec: Vec<FunctionArg<T>> = iter.into_iter().collect();
+        FunctionArgs::try_new(vec)
+    }
+}
+
+impl<T, E> FromIterator<FunctionArg<Result<T, E>>> for Result<FunctionArgs<T>, DaftError>
+where
+    E: Into<DaftError>,
+{
+    fn from_iter<I: IntoIterator<Item = FunctionArg<Result<T, E>>>>(iter: I) -> Self {
+        let vec = iter
+            .into_iter()
+            .map(|v| v.transpose())
+            .collect::<Result<Vec<_>, E>>()
+            .map_err(|e| e.into())?;
+        FunctionArgs::try_new(vec)
+    }
+}
 /// trait to look up either positional or named values
 /// We use a trait here so the user can access function args by different values such as by name (str), or by position (usize),
 /// or by a combination, (position, name), (name, fallback_name), (position, name, fallback_name)
@@ -238,6 +316,10 @@ impl<T> FunctionArgs<T> {
         Ok(slf)
     }
 
+    pub fn new_unchecked(inner: Vec<FunctionArg<T>>) -> Self {
+        Self(inner)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -303,12 +385,6 @@ impl<T> FunctionArgs<T> {
                 "Expected a value for the optional argument at position `{position:?}`"
             ))
         })
-    }
-}
-
-impl<T> From<Vec<T>> for FunctionArgs<T> {
-    fn from(args: Vec<T>) -> Self {
-        Self(args.into_iter().map(FunctionArg::from).collect())
     }
 }
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import random
 from decimal import Decimal
 
@@ -554,17 +555,11 @@ def test_different_min_periods(make_df):
 
     df = make_df(data)
 
-    # TODO: would like to support this syntax as well
-    # base_window = Window().partition_by("category").order_by("ts", desc=False)
-    # window_no_min = base_window.rows_between(-3, 0, min_periods=1)
-    # window_min_2 = base_window.rows_between(-3, 0, min_periods=2)
-    # window_min_3 = base_window.rows_between(-3, 0, min_periods=3)
-    # window_min_4 = base_window.rows_between(-3, 0, min_periods=4)
-
-    window_no_min = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=1)
-    window_min_2 = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=2)
-    window_min_3 = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=3)
-    window_min_4 = Window().partition_by("category").order_by("ts", desc=False).rows_between(-3, 0, min_periods=4)
+    base_window = Window().partition_by("category").order_by("ts", desc=False)
+    window_no_min = base_window.rows_between(-3, 0, min_periods=1)
+    window_min_2 = base_window.rows_between(-3, 0, min_periods=2)
+    window_min_3 = base_window.rows_between(-3, 0, min_periods=3)
+    window_min_4 = base_window.rows_between(-3, 0, min_periods=4)
 
     result = df.select(
         col("category"),
@@ -828,6 +823,521 @@ def test_sum_avg_with_none(make_df):
         col("value"),
         col("value").sum().over(window_spec).alias("window_sum"),
         col("value").mean().over(window_spec).alias("window_avg"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_window(make_df):
+    """Test window aggregation with range frame type."""
+    random.seed(50)
+
+    data = []
+    expected_data = []
+
+    possible_timestamps = random.sample(range(1000), 300)
+    possible_timestamps.sort()
+
+    for category in ["A", "B"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+
+        for i, (ts, value) in enumerate(zip(timestamps, values)):
+            data.append({"category": category, "ts": ts, "value": value})
+
+            range_start = ts - 2
+            range_end = ts + 2
+
+            range_values = []
+            for j, other_ts in enumerate(timestamps):
+                if range_start <= other_ts <= range_end:
+                    range_values.append(values[j])
+
+            range_sum = sum(range_values)
+            range_avg = sum(range_values) / len(range_values) if range_values else None
+            range_min = min(range_values) if range_values else None
+            range_max = max(range_values) if range_values else None
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "ts": ts,
+                    "value": value,
+                    "range_sum": range_sum,
+                    "range_avg": range_avg,
+                    "range_min": range_min,
+                    "range_max": range_max,
+                }
+            )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(-2, 2)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_window_desc(make_df):
+    """Test window aggregation with range frame type and descending order."""
+    random.seed(53)
+
+    data = []
+    original_data_order = []
+
+    possible_timestamps = random.sample(range(1000), 300)
+    possible_timestamps.sort()
+
+    expected_results_map = {}
+
+    for category in ["A", "B"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+
+        category_data = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data.append((ts, value))
+
+        sorted_category_data = sorted(category_data, key=lambda x: x[0], reverse=True)
+
+        for i, (ts, value) in enumerate(sorted_category_data):
+            range_start = ts - 2
+            range_end = ts + 2
+
+            range_values = []
+            for other_ts, other_value in sorted_category_data:
+                if range_start <= other_ts <= range_end:
+                    range_values.append(other_value)
+
+            range_sum = sum(range_values)
+            range_avg = sum(range_values) / len(range_values) if range_values else None
+            range_min = min(range_values) if range_values else None
+            range_max = max(range_values) if range_values else None
+
+            expected_results_map[(category, ts)] = {
+                "range_sum": range_sum,
+                "range_avg": range_avg,
+                "range_min": range_min,
+                "range_max": range_max,
+            }
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map[(cat, ts)]
+        expected_data.append(
+            {
+                "category": cat,
+                "ts": ts,
+                "value": row["value"],
+                "range_sum": expected_vals["range_sum"],
+                "range_avg": expected_vals["range_avg"],
+                "range_min": expected_vals["range_min"],
+                "range_max": expected_vals["range_max"],
+            }
+        )
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("ts", desc=True).range_between(-2, 2)
+
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def calculate_expected_range(data_tuples, range_start_offset, range_end_offset, order_desc, min_periods=1):
+    sorted_data = sorted(data_tuples, key=lambda x: x[0], reverse=order_desc)
+
+    expected_map = {}
+
+    for i, (current_ts, current_value) in enumerate(sorted_data):
+        lower_bound = current_ts + range_start_offset if range_start_offset is not None else -float("inf")
+        upper_bound = current_ts + range_end_offset if range_end_offset is not None else float("inf")
+
+        range_values = [val for ts, val in sorted_data if lower_bound <= ts <= upper_bound]
+
+        if len(range_values) < min_periods:
+            expected_map[(current_ts)] = {
+                "range_sum": None,
+                "range_avg": None,
+                "range_min": None,
+                "range_max": None,
+            }
+        else:
+            expected_map[(current_ts)] = {
+                "range_sum": sum(range_values) if range_values else None,
+                "range_avg": sum(range_values) / len(range_values) if range_values else None,
+                "range_min": min(range_values) if range_values else None,
+                "range_max": max(range_values) if range_values else None,
+            }
+
+    return expected_map
+
+
+def test_range_trailing(make_df):
+    random.seed(60)
+    data = []
+    original_data_order = []
+
+    possible_timestamps = random.sample(range(1000), 200)
+    possible_timestamps.sort()
+
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+
+        cat_expected = calculate_expected_range(category_data_tuples, -5, -1, order_desc=False)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(-5, -1)
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_trailing_desc(make_df):
+    random.seed(61)
+    data = []
+    original_data_order = []
+
+    possible_timestamps = random.sample(range(100), 30)
+    possible_timestamps.sort()
+
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+
+        cat_expected = calculate_expected_range(category_data_tuples, -5, -1, order_desc=True)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = Window().partition_by("category").order_by("ts", desc=True).range_between(-5, -1)
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_leading(make_df):
+    random.seed(62)
+    data = []
+    original_data_order = []
+    possible_timestamps = random.sample(range(100), 30)
+    possible_timestamps.sort()
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+        cat_expected = calculate_expected_range(category_data_tuples, 1, 5, order_desc=False)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(1, 5)
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_leading_desc(make_df):
+    random.seed(63)
+    data = []
+    original_data_order = []
+    possible_timestamps = random.sample(range(100), 30)
+    possible_timestamps.sort()
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+        cat_expected = calculate_expected_range(category_data_tuples, 1, 5, order_desc=True)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = Window().partition_by("category").order_by("ts", desc=True).range_between(1, 5)
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_unbounded_start(make_df):
+    random.seed(64)
+    data = []
+    original_data_order = []
+    possible_timestamps = random.sample(range(100), 30)
+    possible_timestamps.sort()
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+        cat_expected = calculate_expected_range(category_data_tuples, None, 1, order_desc=False)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = (
+        Window().partition_by("category").order_by("ts", desc=False).range_between(Window.unbounded_preceding, 1)
+    )
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_unbounded_end(make_df):
+    random.seed(65)
+    data = []
+    original_data_order = []
+    possible_timestamps = random.sample(range(100), 30)
+    possible_timestamps.sort()
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+        cat_expected = calculate_expected_range(category_data_tuples, -1, None, order_desc=False)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = (
+        Window().partition_by("category").order_by("ts", desc=False).range_between(-1, Window.unbounded_following)
+    )
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_large_offset(make_df):
+    random.seed(66)
+    data = []
+    original_data_order = []
+    possible_timestamps = random.sample(range(100), 30)
+    possible_timestamps.sort()
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+        cat_expected = calculate_expected_range(category_data_tuples, None, None, order_desc=False)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(-10000, 10000)
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_with_min_periods(make_df):
+    random.seed(67)
+    data = []
+    original_data_order = []
+    possible_timestamps = random.sample(range(100), 30)
+    possible_timestamps.sort()
+    expected_results_map = {}
+
+    for category in ["X", "Y"]:
+        timestamps = possible_timestamps.copy()
+        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_data_tuples = []
+        for ts, value in zip(timestamps, values):
+            row = {"category": category, "ts": ts, "value": value}
+            data.append(row)
+            original_data_order.append(row)
+            category_data_tuples.append((ts, value))
+        cat_expected = calculate_expected_range(category_data_tuples, -3, 1, order_desc=False, min_periods=3)
+        for ts, results in cat_expected.items():
+            expected_results_map[(category, ts)] = results
+
+    expected_data = []
+    for row in original_data_order:
+        cat, ts = row["category"], row["ts"]
+        expected_vals = expected_results_map.get((cat, ts), {})
+        expected_data.append({"category": cat, "ts": ts, "value": row["value"], **expected_vals})
+
+    df = make_df(data)
+    window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(-3, 1, min_periods=3)
+    result = df.select(
+        col("category"),
+        col("ts"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("range_sum"),
+        col("value").mean().over(window_spec).alias("range_avg"),
+        col("value").min().over(window_spec).alias("range_min"),
+        col("value").max().over(window_spec).alias("range_max"),
     ).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
@@ -1226,3 +1736,109 @@ def test_sliding_sum_with_nan_and_none(make_df):
     expected_pd = pd.DataFrame(expected_data)
 
     assert_df_equals(result_pd, expected_pd, sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_range_window_with_timestamp(make_df):
+    """Test window operations with date/timestamp ranges using the API."""
+    random.seed(81)
+
+    base_date = datetime.datetime(2023, 1, 1)
+
+    data = []
+    expected_data = []
+
+    for category in ["A", "B"]:
+        dates = sorted([random.randint(0, 1000) for _ in range(700)])
+        values = random.sample(range(1, 1000), 700)
+        dates = [base_date + datetime.timedelta(days=date) for date in dates]
+
+        for date, value in zip(dates, values):
+            data.append({"category": category, "date": date, "value": value})
+
+            three_day_window_values = []
+            for other_date, other_value in zip(dates, values):
+                if abs((date - other_date).days) <= 3:
+                    three_day_window_values.append(other_value)
+
+            window_sum = sum(three_day_window_values)
+            window_avg = (window_sum / len(three_day_window_values)) if len(three_day_window_values) > 0 else None
+
+            expected_data.append(
+                {
+                    "category": category,
+                    "date": date,
+                    "value": value,
+                    "window_sum": window_sum,
+                    "window_avg": window_avg,
+                }
+            )
+
+    df = make_df(data)
+
+    three_days = datetime.timedelta(days=3)
+    window_spec = Window().partition_by("category").order_by("date").range_between(-three_days, three_days)
+
+    result = df.select(
+        col("category"),
+        col("date"),
+        col("value"),
+        col("value").sum().over(window_spec).alias("window_sum"),
+        col("value").mean().over(window_spec).alias("window_avg"),
+    ).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date"], check_dtype=False)
+
+
+def test_timestamp_mixed_resolution(make_df):
+    """Test window operations with timestamps of varying resolutions over a ~10 day period."""
+    random.seed(90)
+
+    base_date = datetime.datetime(2023, 1, 1)
+    data = []
+
+    timestamps = [
+        base_date
+        + datetime.timedelta(
+            days=random.random() * 10,
+            hours=random.random() * 24,
+            minutes=random.random() * 60,
+            seconds=random.random() * 60,
+            microseconds=random.random() * 1_000_000,
+        )
+        for _ in range(10000)
+    ]
+    values = [random.randint(1, 100) for _ in range(10000)]
+
+    for ts, value in zip(timestamps, values):
+        data.append({"category": "A", "timestamp": ts, "value": value})
+
+    df = make_df(data)
+
+    time_span = datetime.timedelta(days=1, hours=4, minutes=16, seconds=64, microseconds=128)
+
+    expected_data = []
+    for i, (ts_i, val_i) in enumerate(zip(timestamps, values)):
+        window_sum = sum(val_j for ts_j, val_j in zip(timestamps, values) if abs(ts_j - ts_i) <= time_span)
+        expected_data.append(
+            {
+                "category": "A",
+                "timestamp": ts_i,
+                "value": val_i,
+                "window_sum": window_sum,
+            }
+        )
+
+    expected_df = pd.DataFrame(expected_data)
+
+    window_spec = Window().partition_by("category").order_by("timestamp").range_between(-time_span, time_span)
+
+    result = df.select(
+        col("category"), col("timestamp"), col("value"), col("value").sum().over(window_spec).alias("window_sum")
+    ).collect()
+
+    assert_df_equals(
+        result.to_pandas(),
+        expected_df,
+        sort_key=["category", "timestamp"],
+        check_dtype=False,
+    )

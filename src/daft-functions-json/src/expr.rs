@@ -13,6 +13,10 @@ pub struct JsonQuery;
 
 #[typetag::serde]
 impl ScalarUDF for JsonQuery {
+    #[allow(
+        deprecated,
+        reason = "temporary while transitioning to new scalarudf impl"
+    )]
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, ComputeError: "json_query requires two arguments: input and query");
         let input = inputs.required((0, "input"))?;

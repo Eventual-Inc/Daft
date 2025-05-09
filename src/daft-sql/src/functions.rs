@@ -4,10 +4,7 @@ use std::{
 };
 
 use daft_dsl::{
-    expr::{
-        named_expr,
-        window::{WindowBoundary, WindowFrame, WindowFrameType},
-    },
+    expr::window::{WindowBoundary, WindowFrame},
     functions::{ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
     Expr, ExprRef, WindowExpr, WindowSpec,
 };
@@ -60,7 +57,7 @@ impl SQLFunction for Arc<dyn ScalarUDF> {
             .collect::<SQLPlannerResult<Vec<_>>>()?;
         Ok(ScalarFunction {
             udf: self.clone(),
-            inputs,
+            inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
         }
         .into())
     }
@@ -107,11 +104,13 @@ pub trait SQLFunction: Send + Sync {
         &self,
         inputs: &[FunctionArg],
         planner: &SQLPlanner,
-    ) -> SQLPlannerResult<Vec<ExprRef>> {
-        inputs
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArgs<ExprRef>> {
+        let inputs = inputs
             .iter()
             .map(|arg| planner.plan_function_arg(arg))
-            .collect::<SQLPlannerResult<Vec<_>>>()
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+        Ok(daft_dsl::functions::FunctionArgs::try_new(inputs)?)
     }
 
     // nit cleanup: argument consistency with SQLTableFunction
@@ -402,8 +401,8 @@ impl SQLPlanner<'_> {
             }
         };
 
-        if let Some(over) = func.over.as_ref() {
-            let window_spec = self.parse_window_spec(over)?;
+        if func.over.is_some() {
+            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
@@ -412,7 +411,7 @@ impl SQLPlanner<'_> {
                 Expr::WindowFunction(window_expr) => {
                     Expr::Over(window_expr.clone(), window_spec).arced()
                 }
-                _ => unsupported_sql_err!("window function expected, found: {:?}", window_fn),
+                _ => unsupported_sql_err!("window function expected"),
             })
         } else {
             // validate input argument arity and return the validated expression.
@@ -444,31 +443,24 @@ impl SQLPlanner<'_> {
 
                 if spec.window_frame.is_some() {
                     if let Some(sql_frame) = &spec.window_frame {
-                        let frame_type = match sql_frame.units {
-                            sqlparser::ast::WindowFrameUnits::Rows => WindowFrameType::Rows,
-                            sqlparser::ast::WindowFrameUnits::Range => WindowFrameType::Range,
-                            sqlparser::ast::WindowFrameUnits::Groups => {
-                                unsupported_sql_err!("Window frame units: Groups")
-                            }
-                        };
+                        let is_range_frame =
+                            matches!(sql_frame.units, sqlparser::ast::WindowFrameUnits::Range);
 
-                        let start = self.convert_window_frame_bound(&sql_frame.start_bound)?;
+                        let start = self
+                            .convert_window_frame_bound(&sql_frame.start_bound, is_range_frame)?;
 
                         // Convert end bound or default to CURRENT ROW if not specified
                         let end = match &sql_frame.end_bound {
-                            Some(end_bound) => self.convert_window_frame_bound(end_bound)?,
+                            Some(end_bound) => {
+                                self.convert_window_frame_bound(end_bound, is_range_frame)?
+                            }
                             None => WindowBoundary::Offset(0), // CURRENT ROW
                         };
 
-                        window_spec.frame = Some(WindowFrame {
-                            frame_type,
-                            start,
-                            end,
-                        });
+                        window_spec.frame = Some(WindowFrame { start, end });
                     }
                 }
 
-                // TODO: This should probably be done later in the code
                 if let Some(current_plan) = &self.current_plan {
                     window_spec = current_plan.resolve_window_spec(window_spec)?;
                 }
@@ -485,26 +477,29 @@ impl SQLPlanner<'_> {
     fn convert_window_frame_bound(
         &self,
         bound: &sqlparser::ast::WindowFrameBound,
+        is_range_frame: bool,
     ) -> SQLPlannerResult<daft_dsl::expr::window::WindowBoundary> {
         use daft_dsl::expr::window::WindowBoundary;
 
         match bound {
             sqlparser::ast::WindowFrameBound::CurrentRow => Ok(WindowBoundary::Offset(0)),
             sqlparser::ast::WindowFrameBound::Preceding(None) => {
-                Ok(WindowBoundary::UnboundedPreceding())
+                Ok(WindowBoundary::UnboundedPreceding)
             }
             sqlparser::ast::WindowFrameBound::Following(None) => {
-                Ok(WindowBoundary::UnboundedFollowing())
+                Ok(WindowBoundary::UnboundedFollowing)
             }
             sqlparser::ast::WindowFrameBound::Preceding(Some(expr)) => {
                 let parsed_expr = self.plan_expr(expr)?;
 
                 if let Some(lit) = parsed_expr.as_literal() {
-                    if let Some(value) = lit.as_i64() {
+                    if is_range_frame {
+                        Ok(WindowBoundary::RangeOffset(lit.neg()?))
+                    } else if let Some(value) = lit.as_i64() {
                         Ok(WindowBoundary::Offset(-value))
                     } else {
                         unsupported_sql_err!(
-                            "Window frame bound must be an integer, found: {}",
+                            "Window frame bound must be an integer for ROWS frames, found: {}",
                             lit
                         )
                     }
@@ -519,11 +514,13 @@ impl SQLPlanner<'_> {
                 let parsed_expr = self.plan_expr(expr)?;
 
                 if let Some(lit) = parsed_expr.as_literal() {
-                    if let Some(value) = lit.as_i64() {
+                    if is_range_frame {
+                        Ok(WindowBoundary::RangeOffset(lit.clone()))
+                    } else if let Some(value) = lit.as_i64() {
                         Ok(WindowBoundary::Offset(value))
                     } else {
                         unsupported_sql_err!(
-                            "Window frame bound must be an integer, found: {}",
+                            "Window frame bound must be an integer for ROWS frames, found: {}",
                             lit
                         )
                     }
@@ -590,16 +587,21 @@ impl SQLPlanner<'_> {
     pub(crate) fn plan_function_arg(
         &self,
         function_arg: &FunctionArg,
-    ) -> SQLPlannerResult<ExprRef> {
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArg<ExprRef>> {
         match function_arg {
-            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr),
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Ok(
+                daft_dsl::functions::FunctionArg::unnamed(self.plan_expr(expr)?),
+            ),
             FunctionArg::Named {
                 name,
                 arg: FunctionArgExpr::Expr(expr),
                 operator: _,
             } => {
                 let expr = self.plan_expr(expr)?;
-                Ok(named_expr(name.to_string(), expr))
+                Ok(daft_dsl::functions::FunctionArg::named(
+                    name.to_string(),
+                    expr,
+                ))
             }
             _ => unsupported_sql_err!("non expr args not yet supported"),
         }
