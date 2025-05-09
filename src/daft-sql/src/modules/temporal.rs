@@ -63,7 +63,7 @@ macro_rules! temporal {
             ) -> SQLPlannerResult<ExprRef> {
                 match inputs {
                     [input] => {
-                        let input = planner.plan_function_arg(input)?;
+                        let input = planner.plan_function_arg(input)?.into_inner();
 
                         Ok($fn_name(input))
                     }
@@ -116,13 +116,13 @@ impl SQLFunction for SQLUnixTimestamp {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let tu = TimeUnit::Seconds;
                 Ok(dt_to_unix_epoch(input, tu)?)
             }
             [input, tu] => {
-                let input = planner.plan_function_arg(input)?;
-                let tu = planner.plan_function_arg(tu)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let tu = planner.plan_function_arg(tu).map(|arg| arg.into_inner())?;
                 let Some(tu) = tu.as_literal().and_then(|lit| lit.as_str()) else {
                     unsupported_sql_err!("Invalid arguments for to_unix_epoch: '{inputs:?}'",)
                 };
@@ -154,12 +154,15 @@ impl SQLFunction for SQLStrftime {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(dt_strftime(input, None))
             }
             [input, format] => {
-                let input = planner.plan_function_arg(input)?;
-                let format = planner.plan_function_arg(format)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let format = planner
+                    .plan_function_arg(format)
+                    .map(|arg| arg.into_inner())?;
+
                 let format = format.as_literal().and_then(|lit| lit.as_str());
 
                 Ok(dt_strftime(input, format))

@@ -31,11 +31,11 @@ impl SQLFunction for SqlUrlDownload {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(uri::download(input, None))
             }
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args = planner.plan_function_args(
                     args,
                     &["max_connections", "on_error", "io_config"],

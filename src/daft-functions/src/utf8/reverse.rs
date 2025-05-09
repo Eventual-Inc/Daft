@@ -14,9 +14,11 @@ pub struct Utf8Reverse {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Reverse {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
     }
+
     fn name(&self) -> &'static str {
         "reverse"
     }
@@ -39,7 +41,7 @@ impl ScalarUDF for Utf8Reverse {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => data.utf8_reverse(),
             _ => Err(DaftError::ValueError(format!(

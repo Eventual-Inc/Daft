@@ -25,9 +25,6 @@ pub struct Encode {
 
 #[typetag::serde]
 impl ScalarUDF for Encode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "encode"
     }
@@ -49,7 +46,12 @@ impl ScalarUDF for Encode {
         Ok(Field::new(arg.name, DataType::Binary))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
+
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs[0].data_type() {
             DataType::Binary => {
                 let arg = inputs[0].downcast::<BinaryArray>()?;
@@ -86,11 +88,13 @@ pub struct TryEncode {
 
 #[typetag::serde]
 impl ScalarUDF for TryEncode {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "try_encode"
+    }
+
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -110,7 +114,7 @@ impl ScalarUDF for TryEncode {
         Ok(Field::new(arg.name, DataType::Binary))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs[0].data_type() {
             DataType::Binary => {
                 let arg = inputs[0].downcast::<BinaryArray>()?;

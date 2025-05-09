@@ -5,8 +5,10 @@ use std::{
 
 use daft_dsl::{
     expr::window::{WindowBoundary, WindowFrame},
+    functions::{ScalarFunction, ScalarUDF},
     Expr, ExprRef, WindowExpr, WindowSpec,
 };
+use daft_functions::FUNCTION_REGISTRY;
 use daft_session::Session;
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
@@ -17,9 +19,9 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
         coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleFloat, SQLModuleImage, SQLModuleJson, SQLModuleList,
-        SQLModuleMap, SQLModuleNumeric, SQLModulePartitioning, SQLModulePython, SQLModuleSketch,
-        SQLModuleStructs, SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8, SQLModuleWindow,
+        SQLModuleConfig, SQLModuleImage, SQLModuleJson, SQLModuleList, SQLModuleMap,
+        SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs,
+        SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -29,13 +31,11 @@ use crate::{
 pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
-    functions.register::<SQLModuleFloat>();
     functions.register::<SQLModuleHashing>();
     functions.register::<SQLModuleImage>();
     functions.register::<SQLModuleJson>();
     functions.register::<SQLModuleList>();
     functions.register::<SQLModuleMap>();
-    functions.register::<SQLModuleNumeric>();
     functions.register::<SQLModulePartitioning>();
     functions.register::<SQLModulePython>();
     functions.register::<SQLModuleSketch>();
@@ -46,8 +46,28 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
     functions.add_fn("coalesce", SQLCoalesce {});
+    for (name, function) in FUNCTION_REGISTRY.entries() {
+        functions.add_fn(name, function.clone());
+    }
     functions
 });
+
+impl SQLFunction for Arc<dyn ScalarUDF> {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        Ok(ScalarFunction {
+            udf: self.clone(),
+            inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
+        }
+        .into())
+    }
+    fn docstrings(&self, _alias: &str) -> String {
+        ScalarUDF::docstring(self.as_ref()).to_string()
+    }
+}
 
 /// Current feature-set
 fn check_features(func: &Function) -> SQLPlannerResult<()> {
@@ -87,11 +107,13 @@ pub trait SQLFunction: Send + Sync {
         &self,
         inputs: &[FunctionArg],
         planner: &SQLPlanner,
-    ) -> SQLPlannerResult<Vec<ExprRef>> {
-        inputs
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArgs<ExprRef>> {
+        let inputs = inputs
             .iter()
             .map(|arg| planner.plan_function_arg(arg))
-            .collect::<SQLPlannerResult<Vec<_>>>()
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+        Ok(daft_dsl::functions::FunctionArgs::try_new(inputs)?)
     }
 
     // nit cleanup: argument consistency with SQLTableFunction
@@ -568,10 +590,23 @@ impl SQLPlanner<'_> {
     pub(crate) fn plan_function_arg(
         &self,
         function_arg: &FunctionArg,
-    ) -> SQLPlannerResult<ExprRef> {
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArg<ExprRef>> {
         match function_arg {
-            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr),
-            _ => unsupported_sql_err!("named function args not yet supported"),
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Ok(
+                daft_dsl::functions::FunctionArg::unnamed(self.plan_expr(expr)?),
+            ),
+            FunctionArg::Named {
+                name,
+                arg: FunctionArgExpr::Expr(expr),
+                operator: _,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                Ok(daft_dsl::functions::FunctionArg::named(
+                    name.to_string(),
+                    expr,
+                ))
+            }
+            _ => unsupported_sql_err!("non expr args not yet supported"),
         }
     }
 
@@ -581,6 +616,7 @@ impl SQLPlanner<'_> {
     ) -> SQLPlannerResult<ExprRef> {
         match expr {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
+
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
         }
     }

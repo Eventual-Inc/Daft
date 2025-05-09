@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{Field, Schema},
     series::Series,
@@ -9,16 +9,19 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{evaluate_single_numeric, to_field_single_numeric};
+use super::to_field_single_numeric;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Abs {}
+pub struct Abs;
 
 #[typetag::serde]
 impl ScalarUDF for Abs {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        ensure!(inputs.len() == 1, "abs expects 1 argument");
+        let s = inputs.required((0, "input"))?;
+        s.abs()
     }
+
     fn name(&self) -> &'static str {
         "abs"
     }
@@ -27,9 +30,8 @@ impl ScalarUDF for Abs {
         to_field_single_numeric(self, inputs, schema)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        // todo: move this into ScalarUDF. but it's currently not possible because of the `fuzzy_eq` function
-        evaluate_single_numeric(inputs, Series::abs)
+    fn docstring(&self) -> &'static str {
+        "Gets the absolute value of a number."
     }
 }
 

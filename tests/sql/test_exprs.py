@@ -310,3 +310,27 @@ def test_round(precision, value, expected):
     expected = {"literal": [expected]}
 
     assert actual == expected
+
+
+# just another sanity check to make sure args & kwargs are working properly
+@pytest.mark.parametrize(
+    "query, should_work",
+    [
+        ("round(3.14159, precision:=3)", True),
+        ("round(input:=3.14159, precision:=3)", True),
+        ("round(input:=3.14159, 3)", False),
+        ("round(3.111)", True),
+        ("round(3.1111, 2)", True),
+        ("round(precision:=2, input:=3.14)", True),
+        ("round(precision:=2, 3.14)", False),
+    ],
+)
+def test_round_arg_handling(query, should_work):
+    query = f"select {query}"
+    try:
+        daft.sql(query).to_pydict()
+        if not should_work:
+            pytest.fail()
+    except Exception:
+        if should_work:
+            pytest.fail()
