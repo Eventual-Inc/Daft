@@ -660,7 +660,7 @@ pub fn populate_aggregation_stages(
             AggExpr::CountDistinct(sub_expr) => {
                 // First stage
                 let list_agg_id = add_to_stage(
-                    AggExpr::List,
+                    AggExpr::Set,
                     sub_expr.clone(),
                     schema,
                     &mut first_stage_aggs,

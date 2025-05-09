@@ -1,4 +1,5 @@
 pub mod agg;
+mod function_args;
 pub mod map;
 pub mod partitioning;
 pub mod python;
@@ -13,6 +14,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
+pub use function_args::{FunctionArg, FunctionArgs};
 use python::PythonUDF;
 pub use scalar::*;
 use serde::{Deserialize, Serialize};

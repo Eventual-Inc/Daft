@@ -14,7 +14,7 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
 memchr = "2.7.2"
-parking_lot = "0.12.3"
+parking_lot = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}

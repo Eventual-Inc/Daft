@@ -14,9 +14,11 @@ pub struct ImageResize {
 
 #[typetag::serde]
 impl ScalarUDF for ImageResize {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
     }
+
     fn name(&self) -> &'static str {
         "image_resize"
     }
@@ -47,7 +49,7 @@ impl ScalarUDF for ImageResize {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => daft_image::series::resize(input, self.width, self.height),
             _ => Err(DaftError::ValueError(format!(

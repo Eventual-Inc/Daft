@@ -39,7 +39,7 @@ impl SQLFunction for SQLImageEncode {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args = planner.plan_function_args(args, &["image_format"], 0)?;
                 Ok(encode(input, args))
             }

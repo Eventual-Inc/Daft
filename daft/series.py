@@ -340,120 +340,120 @@ class Series:
         return Series._from_pyseries(abs(self._series))
 
     def ceil(self) -> Series:
-        return self._apply_unary_expr(native.ceil)
+        return self._eval_expressions("ceil")
 
     def floor(self) -> Series:
-        return self._apply_unary_expr(native.floor)
+        return self._eval_expressions("floor")
 
     def sign(self) -> Series:
         """The sign of a numeric series."""
-        return self._apply_unary_expr(native.sign)
+        return self._eval_expressions("sign")
 
     def signum(self) -> Series:
         """The signum of a numeric series."""
-        return self._apply_unary_expr(native.sign)
+        return self._eval_expressions("sign")
 
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return self._apply_unary_expr(native.negative)
+        return self._eval_expressions("negative")
 
     def negative(self) -> Series:
         """The negative of a numeric series."""
-        return self._apply_unary_expr(native.negative)
+        return self._eval_expressions("negative")
 
-    def round(self, decimal: int) -> Series:
-        return self._apply_unary_expr(native.round, decimal=decimal)
+    def round(self, decimal: int = 0) -> Series:
+        return self._eval_expressions("round", decimal=decimal)
 
     def clip(self, min: Series, max: Series) -> Series:
-        return self._apply_n_arity_expr([min, max], native.clip)
+        return self._eval_expressions("clip", min, max)
 
     def sqrt(self) -> Series:
-        return self._apply_unary_expr(native.sqrt)
+        return self._eval_expressions("sqrt")
 
     def cbrt(self) -> Series:
-        return self._apply_unary_expr(native.cbrt)
+        return self._eval_expressions("cbrt")
 
     def sin(self) -> Series:
         """The elementwise sine of a numeric series."""
-        return self._apply_unary_expr(native.sin)
+        return self._eval_expressions("sin")
 
     def cos(self) -> Series:
         """The elementwise cosine of a numeric series."""
-        return self._apply_unary_expr(native.cos)
+        return self._eval_expressions("cos")
 
     def tan(self) -> Series:
         """The elementwise tangent of a numeric series."""
-        return self._apply_unary_expr(native.tan)
+        return self._eval_expressions("tan")
 
     def csc(self) -> Series:
         """The elementwise cosecant of a numeric series."""
-        return self._apply_unary_expr(native.csc)
+        return self._eval_expressions("csc")
 
     def sec(self) -> Series:
         """The elementwise secant of a numeric series."""
-        return self._apply_unary_expr(native.sec)
+        return self._eval_expressions("sec")
 
     def cot(self) -> Series:
         """The elementwise cotangent of a numeric series."""
-        return self._apply_unary_expr(native.cot)
+        return self._eval_expressions("cot")
 
     def sinh(self) -> Series:
         """The elementwise hyperbolic sine of a numeric series."""
-        return self._apply_unary_expr(native.sinh)
+        return self._eval_expressions("sinh")
 
     def cosh(self) -> Series:
         """The elementwise hyperbolic cosine of a numeric series."""
-        return self._apply_unary_expr(native.cosh)
+        return self._eval_expressions("cosh")
 
     def tanh(self) -> Series:
         """The elementwise hyperbolic tangent of a numeric series."""
-        return self._apply_unary_expr(native.tanh)
+        return self._eval_expressions("tanh")
 
     def arcsin(self) -> Series:
         """The elementwise arc sine of a numeric series."""
-        return self._apply_unary_expr(native.arcsin)
+        return self._eval_expressions("arcsin")
 
     def arccos(self) -> Series:
         """The elementwise arc cosine of a numeric series."""
-        return self._apply_unary_expr(native.arccos)
+        return self._eval_expressions("arccos")
 
     def arctan(self) -> Series:
         """The elementwise arc tangent of a numeric series."""
-        return self._apply_unary_expr(native.arctan)
+        return self._eval_expressions("arctan")
 
     def arctan2(self, other: Series) -> Series:
         """Calculates the four quadrant arctangent of coordinates (y, x)."""
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
-        return self._apply_binary_expr(other, native.arctan2)
+        return self._eval_expressions("arctan2", other)
 
     def arctanh(self) -> Series:
         """The elementwise inverse hyperbolic tangent of a numeric series."""
-        return self._apply_unary_expr(native.arctanh)
+        return self._eval_expressions("arctanh")
 
     def arccosh(self) -> Series:
         """The elementwise inverse hyperbolic cosine of a numeric series."""
-        return self._apply_unary_expr(native.arccosh)
+        return self._eval_expressions("arccosh")
 
     def arcsinh(self) -> Series:
         """The elementwise inverse hyperbolic sine of a numeric series."""
-        return self._apply_unary_expr(native.arcsinh)
+        return self._eval_expressions("arcsinh")
 
     def radians(self) -> Series:
         """The elementwise radians of a numeric series."""
-        return self._apply_unary_expr(native.radians)
+        return self._eval_expressions("radians")
 
     def degrees(self) -> Series:
         """The elementwise degrees of a numeric series."""
-        return self._apply_unary_expr(native.degrees)
+        return self._eval_expressions("degrees")
 
     def log2(self) -> Series:
         """The elementwise log2 of a numeric series."""
-        return Series._from_pyseries(self._series.log2())
+        return self._eval_expressions("log2")
 
     def log10(self) -> Series:
         """The elementwise log10 of a numeric series."""
-        return Series._from_pyseries(self._series.log10())
+        return self._eval_expressions("log10")
 
     def log(self, base: float) -> Series:
         """The elementwise log with given base, of a numeric series.
@@ -461,23 +461,23 @@ class Series:
         Args:
             base: The base of the logarithm.
         """
-        return Series._from_pyseries(self._series.log(base))
+        return self._eval_expressions("log", base=base)
 
     def ln(self) -> Series:
         """The elementwise ln of a numeric series."""
-        return Series._from_pyseries(self._series.ln())
+        return self._eval_expressions("ln")
 
     def log1p(self) -> Series:
         """The ln(self + 1) of a numeric series."""
-        return Series._from_pyseries(self._series.log1p())
+        return self._eval_expressions("log1p")
 
     def exp(self) -> Series:
         """The e^self of a numeric series."""
-        return self._apply_unary_expr(native.exp)
+        return self._eval_expressions("exp")
 
     def expm1(self) -> Series:
         """The e^self - 1 of a numeric series."""
-        return self._apply_unary_expr(native.expm1)
+        return self._eval_expressions("expm1")
 
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
@@ -725,24 +725,9 @@ class Series:
     def _debug_bincode_deserialize(cls, b: bytes) -> Series:
         return Series._from_pyseries(PySeries._debug_bincode_deserialize(b))
 
-    def _apply_unary_expr(self, func, **kwargs) -> Series:
-        rb = PyRecordBatch.from_pyseries_list([self._series])
-        name = self._series.name()
-        expr = func(native.unresolved_col(name), **kwargs)
-        pyseries = rb.eval_expression_list([expr]).get_column(0)
-        return Series._from_pyseries(pyseries)
+    def _eval_expressions(self, func_name, *others: Series, **kwargs) -> Series:
+        from daft.expressions.expressions import lit
 
-    def _apply_binary_expr(self, other, func, **kwargs) -> Series:
-        name = self._series.name()
-        s = self._series
-        other_series = other._series.rename("other")
-        rb = PyRecordBatch.from_pyseries_list([s, other_series])
-        expr = func(native.unresolved_col(name), native.unresolved_col("other"), **kwargs).alias(name)
-        rb = rb.eval_expression_list([expr])
-        pyseries = rb.get_column(0)
-        return Series._from_pyseries(pyseries)
-
-    def _apply_n_arity_expr(self, others, func, **kwargs) -> Series:
         name = self._series.name()
         s = self._series
         other_series_list = []
@@ -755,7 +740,10 @@ class Series:
         rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
 
         args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
-        expr = func(*args, **kwargs).alias(name)
+
+        f = native.get_function_from_registry(func_name)
+
+        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items()}).alias(name)
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(0)
@@ -793,27 +781,23 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
-    def _apply_unary_expr(self, func) -> Series:
+    def _eval_expressions(self, func_name: str, *others: Series, **kwargs) -> Series:
         s = Series._from_pyseries(self._series)
-        return s._apply_unary_expr(func)
-
-    def _apply_binary_expr(self, other: Series, func) -> Series:
-        s = Series._from_pyseries(self._series)
-        return s._apply_binary_expr(other, func)
+        return s._eval_expressions(func_name, *others, **kwargs)
 
 
 class SeriesFloatNamespace(SeriesNamespace):
     def is_nan(self) -> Series:
-        return self._apply_unary_expr(native.is_nan)
+        return self._eval_expressions("is_nan")
 
     def is_inf(self) -> Series:
-        return self._apply_unary_expr(native.is_inf)
+        return self._eval_expressions("is_inf")
 
     def not_nan(self) -> Series:
-        return self._apply_unary_expr(native.not_nan)
+        return self._eval_expressions("not_nan")
 
     def fill_nan(self, fill_value: Series) -> Series:
-        return self._apply_binary_expr(fill_value, native.fill_nan)
+        return self._eval_expressions("fill_nan", fill_value)
 
 
 class SeriesStringNamespace(SeriesNamespace):
