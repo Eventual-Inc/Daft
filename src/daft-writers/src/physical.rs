@@ -6,7 +6,7 @@ use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{FileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriterFactory};
 
 /// PhysicalWriterFactory is a factory for creating physical writers, i.e. parquet, csv writers.
 pub struct PhysicalWriterFactory {
@@ -31,7 +31,7 @@ impl WriterFactory for PhysicalWriterFactory {
         &self,
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         match self.native {
             true => unimplemented!(),
             false => {
@@ -56,7 +56,8 @@ pub fn create_pyarrow_file_writer(
     io_config: Option<&daft_io::IOConfig>,
     format: FileFormat,
     partition: Option<&RecordBatch>,
-) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>> {
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
+{
     match format {
         #[cfg(feature = "python")]
         FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(

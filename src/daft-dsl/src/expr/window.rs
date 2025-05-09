@@ -4,59 +4,62 @@ use std::{fmt, sync::Arc};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::expr::Expr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
+use crate::{expr::Expr, LiteralValue};
 
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum WindowBoundary {
     /// Represents UNBOUNDED PRECEDING or UNBOUNDED FOLLOWING
-    UnboundedPreceding(),
-    UnboundedFollowing(),
-    /// Represents a row offset:
+    UnboundedPreceding,
+    UnboundedFollowing,
+    /// Represents a row offset (inclusive):
     /// - 0 for CURRENT ROW
     /// - Negative for PRECEDING
     /// - Positive for FOLLOWING
     Offset(i64),
+    /// Represents a range offset (inclusive):
+    /// - 0 for CURRENT VALUE
+    /// - Negative for CURRENT VALUE - N
+    /// - Positive for CURRENT VALUE + N
+    RangeOffset(LiteralValue),
 }
+
+#[derive(Clone)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+pub struct PyWindowBoundary(pub WindowBoundary);
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl WindowBoundary {
+impl PyWindowBoundary {
     #[staticmethod]
     pub fn unbounded_preceding() -> Self {
-        Self::UnboundedPreceding()
+        Self(WindowBoundary::UnboundedPreceding)
     }
 
     #[staticmethod]
     pub fn unbounded_following() -> Self {
-        Self::UnboundedFollowing()
+        Self(WindowBoundary::UnboundedFollowing)
     }
 
     #[staticmethod]
     pub fn offset(n: i64) -> Self {
-        Self::Offset(n)
+        Self(WindowBoundary::Offset(n))
     }
-}
 
-/// Represents the type of window frame (ROWS or RANGE)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
-pub enum WindowFrameType {
-    /// Row-based window frame
-    Rows,
-    /// Range-based window frame
-    Range,
+    #[staticmethod]
+    pub fn range_offset(n: PyExpr) -> Self {
+        Self(WindowBoundary::RangeOffset(
+            n.expr.as_literal().unwrap().clone(),
+        ))
+    }
 }
 
 /// Represents a window frame specification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct WindowFrame {
-    /// Type of window frame (ROWS or RANGE)
-    pub frame_type: WindowFrameType,
     /// Start boundary of window frame
     pub start: WindowBoundary,
     /// End boundary of window frame
@@ -67,11 +70,10 @@ pub struct WindowFrame {
 #[pymethods]
 impl WindowFrame {
     #[new]
-    pub fn new(frame_type: WindowFrameType, start: WindowBoundary, end: WindowBoundary) -> Self {
+    pub fn new(start: PyWindowBoundary, end: PyWindowBoundary) -> Self {
         Self {
-            frame_type,
-            start,
-            end,
+            start: start.0,
+            end: end.0,
         }
     }
 }

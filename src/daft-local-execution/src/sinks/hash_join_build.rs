@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{make_probeable_builder, ProbeState, ProbeableBuilder, RecordBatch};
 use itertools::Itertools;
@@ -56,7 +56,12 @@ impl ProbeTableState {
             }
             for table in input_tables.iter() {
                 tables.push(table.clone());
-                let join_keys = table.eval_expression_list(projection)?;
+                let projection = projection
+                    .iter()
+                    .map(|expr| BoundExpr::try_new(expr.clone(), &table.schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let join_keys = table.eval_expression_list(&projection)?;
 
                 probe_table_builder.add_table(&join_keys)?;
             }

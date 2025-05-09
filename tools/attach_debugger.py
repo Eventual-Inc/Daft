@@ -24,7 +24,7 @@ def launch_debugging() -> None:
         msg = (
             "launch.py is not meant to be executed directly; please use the `Python: "
             "Debug Rust` debugging configuration to run a python script that uses the "
-            "polars library."
+            "daft library."
         )
         raise RuntimeError(msg)
 

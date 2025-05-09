@@ -1,4 +1,4 @@
-use daft_dsl::LiteralValue;
+use daft_dsl::functions::ScalarFunction;
 use daft_functions::numeric::{
     abs::Abs,
     cbrt::Cbrt,
@@ -6,7 +6,7 @@ use daft_functions::numeric::{
     exp::{Exp, Expm1},
     floor::Floor,
     log::{log, Ln, Log10, Log1p, Log2},
-    round::round,
+    round::Round,
     sign::{Negative, Sign},
     sqrt::Sqrt,
     trigonometry::{
@@ -18,9 +18,7 @@ use spark_connect::Expression;
 
 use super::{FunctionModule, SparkFunction, TODO_FUNCTION};
 use crate::{
-    error::{ConnectError, ConnectResult},
-    invalid_argument_err,
-    spark_analyzer::expr_analyzer::analyze_expr,
+    error::ConnectResult, invalid_argument_err, spark_analyzer::expr_analyzer::analyze_expr,
 };
 
 // see https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#math-functions
@@ -106,19 +104,7 @@ impl SparkFunction for LogFunction {
             invalid_argument_err!("log requires exactly 2 arguments");
         };
 
-        let base = match base.as_ref().as_literal() {
-            Some(LiteralValue::Int8(i)) => *i as f64,
-            Some(LiteralValue::UInt8(u)) => *u as f64,
-            Some(LiteralValue::Int16(i)) => *i as f64,
-            Some(LiteralValue::UInt16(u)) => *u as f64,
-            Some(LiteralValue::Int32(i)) => *i as f64,
-            Some(LiteralValue::UInt32(u)) => *u as f64,
-            Some(LiteralValue::Int64(i)) => *i as f64,
-            Some(LiteralValue::UInt64(u)) => *u as f64,
-            Some(LiteralValue::Float64(f)) => *f,
-            _ => invalid_argument_err!("log base must be a number"),
-        };
-        Ok(log(input.clone(), base))
+        Ok(log(input.clone(), base.clone()))
     }
 }
 
@@ -126,29 +112,11 @@ struct RoundFunction;
 
 impl SparkFunction for RoundFunction {
     fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
-        let mut args = args
+        let args = args
             .iter()
             .map(analyze_expr)
-            .collect::<ConnectResult<Vec<_>>>()?
-            .into_iter();
+            .collect::<ConnectResult<Vec<_>>>()?;
 
-        let input = args
-            .next()
-            .ok_or_else(|| ConnectError::invalid_argument("Expected 1 input arg, got 0"))?;
-
-        let scale = match args.next().as_ref().and_then(|e| e.as_literal()) {
-            Some(LiteralValue::Int8(i)) => Some(*i as i32),
-            Some(LiteralValue::UInt8(u)) => Some(*u as i32),
-            Some(LiteralValue::Int16(i)) => Some(*i as i32),
-            Some(LiteralValue::UInt16(u)) => Some(*u as i32),
-            Some(LiteralValue::Int32(i)) => Some(*i),
-            Some(LiteralValue::UInt32(u)) => Some(*u as i32),
-            Some(LiteralValue::Int64(i)) => Some(*i as i32),
-            Some(LiteralValue::UInt64(u)) => Some(*u as i32),
-            None => None,
-            _ => invalid_argument_err!("round precision must be an integer"),
-        };
-
-        Ok(round(input, scale))
+        Ok(ScalarFunction::new(Round, args).into())
     }
 }
