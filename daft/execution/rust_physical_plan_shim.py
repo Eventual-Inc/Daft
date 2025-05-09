@@ -13,7 +13,6 @@ from daft.daft import (
     ScanTask,
     WriteMode,
 )
-from daft.dataframe.dataframe import DataSink
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -24,6 +23,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.io import DataSink
     from daft.recordbatch import MicroPartition
 
 

@@ -20,11 +20,13 @@ from daft.io._warc import read_warc
 from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
+from daft.io.sink import DataSink
 
 __all__ = [
     "AzureConfig",
     "DataCatalogTable",
     "DataCatalogType",
+    "DataSink",
     "GCSConfig",
     "HTTPConfig",
     "IOConfig",

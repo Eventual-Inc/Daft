@@ -32,7 +32,6 @@ from typing import (
 
 from daft.context import get_context
 from daft.daft import JoinSide, ResourceRequest, WriteMode
-from daft.dataframe.dataframe import DataSink
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -61,6 +60,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.io import DataSink
     from daft.logical.schema import Schema
 
 

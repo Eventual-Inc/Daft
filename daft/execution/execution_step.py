@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
 from daft.daft import JoinSide, ResourceRequest
-from daft.dataframe.dataframe import DataSink
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import overwrite_files
 from daft.recordbatch import MicroPartition, recordbatch_io
@@ -25,6 +24,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.io import DataSink
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
 
@@ -584,7 +584,9 @@ class CustomWrite(SingleOutputInstruction):
     sink_class: DataSink
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return list(self.sink_class.write(iter(inputs)))
+        results = list(self.sink_class.write(iter(inputs)))
+        mp = MicroPartition.from_pydict({"custom_write_results": results})
+        return [mp]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         assert len(input_metadatas) == 1

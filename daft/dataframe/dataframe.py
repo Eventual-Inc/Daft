@@ -10,7 +10,6 @@ import os
 import pathlib
 import typing
 import warnings
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
@@ -54,12 +53,14 @@ if TYPE_CHECKING:
     import ray
     import torch
 
-    from daft.io import DataCatalogTable
+    from daft.io import DataCatalogTable, DataSink
     from daft.unity_catalog import UnityCatalogTable
 
 from daft.logical.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
+T = TypeVar("T")
+R = TypeVar("R")
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -1130,12 +1131,25 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write(self, sink: "DataSink", **kwargs) -> "DataFrame":
-        """Writes the DataFrame to the given DataSink."""
+    def write(self, sink: "DataSink[T, R]", **kwargs) -> "R":
+        """Writes the DataFrame to the given DataSink.
+
+        Args:
+            sink: The DataSink to write to.
+            **kwargs: Additional keyword arguments to pass to the DataSink.
+
+        Returns:
+            R: The result returned by the DataSink's finish() method.
+        """
         sink.start()
+
         builder = self._builder.write_custom(sink)
         write_df = DataFrame(builder)
-        sink.finish(write_df.collect())
+        write_df.collect()
+
+        results = write_df.to_pydict()
+        assert "custom_write_results" in results
+        return sink.finish(results["custom_write_results"])
 
     @DataframePublicAPI
     def write_lance(
@@ -3695,22 +3709,3 @@ class GroupedDataFrame:
 
         """
         return self.df._map_groups(udf, group_by=self.group_by)
-
-
-class DataSink(ABC):
-    """Interface for writing data to a sink that is not built-in."""
-
-    def start(self) -> None:
-        """Optional callback for when a write starts. For example, this can be used to start a transaction."""
-        pass
-
-    @abstractmethod
-    def write(self, micropartitions: Iterator[MicroPartition], **kwargs) -> Iterator[MicroPartition]:
-        """Write method that takes in an iterator of MicroPartitions, and optionally some kwargs, and returns an iterator of MicroPartitions."""
-
-    @abstractmethod
-    def finish(self, results: DataFrame) -> DataFrame:
-        """Finish method that takes in DataFrame which collects the results of all the Write()s, and returns a DataFrame.
-
-        For example, this can be used to commit a transaction.
-        """

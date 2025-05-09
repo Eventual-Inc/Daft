@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.table import Table as IcebergTable
 
+    from daft.io import DataSink
     from daft.plan_scheduler.physical_plan_scheduler import (
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,

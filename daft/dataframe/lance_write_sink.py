@@ -1,14 +1,17 @@
 import pathlib
-from typing import Iterator, Literal, Optional, Union
+from typing import Iterator, List, Literal, Optional, Union
+
+import lance
 
 from daft.context import get_context
 from daft.daft import IOConfig
-from daft.dataframe.dataframe import DataFrame, DataSink
+from daft.dataframe.dataframe import DataFrame
+from daft.io import DataSink
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 
 
-class LanceWriteSink(DataSink):
+class LanceWriteSink(DataSink[lance.FragmentMetadata, DataFrame]):
     """WriteSink for writing data to a Lance dataset."""
 
     def _import_lance(self):
@@ -57,7 +60,7 @@ class LanceWriteSink(DataSink):
                     f"Data schema:\n{self.pyarrow_schema}\nTable Schema:\n{table_schema}"
                 )
 
-    def write(self, micropartitions: Iterator[MicroPartition], **kwargs) -> Iterator[MicroPartition]:
+    def write(self, micropartitions: Iterator[MicroPartition], **kwargs) -> Iterator[lance.FragmentMetadata]:
         """Writes fragments from the given micropartitions."""
         lance = self._import_lance()
 
@@ -68,20 +71,16 @@ class LanceWriteSink(DataSink):
                 arrow_table, dataset_uri=self.table_uri, mode=self.mode, storage_options=self.storage_options, **kwargs
             )
 
-            mp = MicroPartition.from_pydict({"fragments": fragments})
+            yield from fragments
 
-            yield mp
-
-    def finish(self, results: DataFrame) -> DataFrame:
-        """Commits the fragments to the Lance dataset."""
+    def finish(self, results: List[lance.FragmentMetadata]) -> DataFrame:
+        """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
         from daft import from_pydict
         from daft.dependencies import pa
 
-        results_dict = results.to_pydict()
-        assert "fragments" in results_dict
-        fragments = results_dict["fragments"]
-
         lance = self._import_lance()
+
+        fragments = results
 
         if self.mode == "create" or self.mode == "overwrite":
             operation = lance.LanceOperation.Overwrite(self.pyarrow_schema, fragments)
