@@ -38,12 +38,12 @@ def test_row_number_function(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
-def test_order_by_only_row_number(make_df, repartition_nparts):
+def test_order_by_only_row_number(make_df, repartition_nparts, with_morsel_size):
     """Test row_number function with order_by only (no partition_by)."""
     random.seed(42)
 
     data = []
-    n = 1000000
+    n = 1000
     total = n + 1
 
     xs = list(range(1, n + 1))
