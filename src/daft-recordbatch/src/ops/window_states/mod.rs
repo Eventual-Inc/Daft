@@ -11,6 +11,8 @@ use daft_core::prelude::*;
 use daft_dsl::{expr::bound_expr::BoundAggExpr, AggExpr};
 use sum::SumWindowState;
 
+use crate::RecordBatch;
+
 /// Trait for window aggregation state implementations
 pub trait WindowAggStateOps {
     /// Add a value to the state with index information
@@ -27,25 +29,37 @@ pub trait WindowAggStateOps {
 }
 
 pub fn create_window_agg_state(
-    source: &Series,
+    sources: &RecordBatch,
     agg_expr: &BoundAggExpr,
     total_length: usize,
 ) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
     match agg_expr.as_ref() {
-        AggExpr::Sum(_) => sum::create_for_type(source, total_length),
-        AggExpr::Count(_, mode) => Ok(Some(Box::new(CountWindowState::new(
-            source,
-            total_length,
-            *mode,
-        )))),
+        AggExpr::Sum(_) => sum::create_for_type(sources, total_length),
+        AggExpr::Count(_, mode) => {
+            let [source] = sources.columns() else {
+                unreachable!("count should only have one input")
+            };
+
+            Ok(Some(Box::new(CountWindowState::new(
+                source,
+                total_length,
+                *mode,
+            ))))
+        }
         // TODO: Implement once proper behavior regarding NaNs is decided
         // AggExpr::Min(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, true)))),
         // AggExpr::Max(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, false)))),
-        AggExpr::CountDistinct(_) => Ok(Some(Box::new(CountDistinctWindowState::new(
-            source,
-            total_length,
-        )))),
-        AggExpr::Mean(_) => mean::create_for_type(source, total_length),
+        AggExpr::CountDistinct(_) => {
+            let [source] = sources.columns() else {
+                unreachable!("count distinct should only have one input")
+            };
+
+            Ok(Some(Box::new(CountDistinctWindowState::new(
+                source,
+                total_length,
+            ))))
+        }
+        AggExpr::Mean(_) => mean::create_for_type(sources, total_length),
         _ => Ok(None),
     }
 }

@@ -718,7 +718,7 @@ def test_global_list_aggs(dtype) -> None:
     daft_recordbatch = MicroPartition.from_pydict({"input": input})
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(dtype)])
     result = daft_recordbatch.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column("list").datatype() == DataType.list(dtype)
+    assert result.get_column_by_name("list").datatype() == DataType.list(dtype)
     assert result.to_pydict() == {"list": [daft_recordbatch.to_pydict()["input"]]}
 
 
@@ -726,7 +726,7 @@ def test_global_pyobj_list_aggs() -> None:
     input = [object(), object(), object()]
     table = MicroPartition.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column("list").datatype() == DataType.python()
+    assert result.get_column_by_name("list").datatype() == DataType.python()
     assert result.to_pydict()["list"][0] == input
 
 
@@ -734,7 +734,7 @@ def test_global_list_list_aggs() -> None:
     input = [[1], [2, 3, 4], [5, None], [], None]
     table = MicroPartition.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column("list").datatype() == DataType.list(DataType.list(DataType.int64()))
+    assert result.get_column_by_name("list").datatype() == DataType.list(DataType.list(DataType.int64()))
     assert result.to_pydict()["list"][0] == input
 
 
@@ -742,7 +742,7 @@ def test_global_fixed_size_list_list_aggs() -> None:
     input = Series.from_pylist([[1, 2], [3, 4], [5, None], None]).cast(DataType.fixed_size_list(DataType.int64(), 2))
     table = MicroPartition.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column("list").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
+    assert result.get_column_by_name("list").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
     assert result.to_pydict()["list"][0] == [[1, 2], [3, 4], [5, None], None]
 
 
@@ -750,7 +750,7 @@ def test_global_struct_list_aggs() -> None:
     input = [{"a": 1, "b": 2}, {"a": 3, "b": None}, None]
     table = MicroPartition.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column("list").datatype() == DataType.list(
+    assert result.get_column_by_name("list").datatype() == DataType.list(
         DataType.struct({"a": DataType.int64(), "b": DataType.int64()})
     )
     assert result.to_pydict()["list"][0] == input
@@ -771,9 +771,9 @@ def test_grouped_list_aggs(dtype) -> None:
     result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort(
         [col("groups")]
     )
-    assert result.get_column("list").datatype() == DataType.list(dtype)
+    assert result.get_column_by_name("list").datatype() == DataType.list(dtype)
 
-    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column_by_name("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
@@ -802,9 +802,9 @@ def test_grouped_list_list_aggs() -> None:
     result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort(
         [col("groups")]
     )
-    assert result.get_column("list").datatype() == DataType.list(DataType.list(DataType.int64()))
+    assert result.get_column_by_name("list").datatype() == DataType.list(DataType.list(DataType.int64()))
 
-    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column_by_name("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
@@ -822,9 +822,9 @@ def test_grouped_fixed_size_list_list_aggs() -> None:
     result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort(
         [col("groups")]
     )
-    assert result.get_column("list").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
+    assert result.get_column_by_name("list").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
 
-    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column_by_name("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
@@ -840,11 +840,11 @@ def test_grouped_struct_list_aggs() -> None:
     result = daft_recordbatch.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort(
         [col("groups")]
     )
-    assert result.get_column("list").datatype() == DataType.list(
+    assert result.get_column_by_name("list").datatype() == DataType.list(
         DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
     )
 
-    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column_by_name("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
 
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
@@ -856,7 +856,7 @@ def test_list_aggs_empty() -> None:
         [col("col_A").cast(DataType.int32()).alias("list").agg_list()],
         group_by=[col("col_B")],
     )
-    assert daft_recordbatch.get_column("list").datatype() == DataType.list(DataType.int32())
+    assert daft_recordbatch.get_column_by_name("list").datatype() == DataType.list(DataType.int32())
     res = daft_recordbatch.to_pydict()
 
     assert res == {"col_B": [], "list": []}
@@ -880,9 +880,9 @@ def test_global_concat_aggs(dtype, with_null) -> None:
         [col("input").cast(DataType.list(dtype))]
     )
     concated = daft_recordbatch.agg([col("input").alias("concat").agg_concat()])
-    assert concated.get_column("concat").datatype() == DataType.list(dtype)
+    assert concated.get_column_by_name("concat").datatype() == DataType.list(dtype)
 
-    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column_by_name("input").to_pylist()
     # We should ignore Null Array elements when performing the concat agg
     expected = [[val[0] for val in input_as_dtype if val is not None]]
     assert concated.to_pydict() == {"concat": expected}
@@ -899,7 +899,7 @@ def test_global_concat_aggs_pyobj() -> None:
 
     table = MicroPartition.from_pydict({"input": input})
     concatted = table.agg([col("input").alias("concat").agg_concat()])
-    assert concatted.get_column("concat").datatype() == DataType.python()
+    assert concatted.get_column_by_name("concat").datatype() == DataType.python()
     assert concatted.to_pydict()["concat"] == [expected]
 
 
@@ -920,9 +920,9 @@ def test_grouped_concat_aggs(dtype) -> None:
     concat_grouped = daft_recordbatch.agg(
         [col("input").alias("concat").agg_concat()], group_by=[col("groups") % 2]
     ).sort([col("groups")])
-    assert concat_grouped.get_column("concat").datatype() == DataType.list(dtype)
+    assert concat_grouped.get_column_by_name("concat").datatype() == DataType.list(dtype)
 
-    input_as_dtype = daft_recordbatch.get_column("input").to_pylist()
+    input_as_dtype = daft_recordbatch.get_column_by_name("input").to_pylist()
     # We should ignore Null Array elements when performing the concat agg
     expected_groups = [
         [input_as_dtype[i][0] for i in group if input_as_dtype[i] is not None] for group in [[1, 3, 5], [0, 2, 4, 6]]
@@ -942,7 +942,7 @@ def test_grouped_concat_aggs_pyobj() -> None:
 
     table = MicroPartition.from_pydict({"input": input, "groups": [1, 2, 3, 3, 4]})
     concatted = table.agg([col("input").alias("concat").agg_concat()], group_by=[col("groups")]).sort([col("groups")])
-    assert concatted.get_column("concat").datatype() == DataType.python()
+    assert concatted.get_column_by_name("concat").datatype() == DataType.python()
     assert concatted.to_pydict() == {
         "groups": [1, 2, 3, 4],
         "concat": [
@@ -961,7 +961,7 @@ def test_concat_aggs_empty() -> None:
         group_by=[col("col_B")],
     )
 
-    assert daft_recordbatch.get_column("concat").datatype() == DataType.list(DataType.int32())
+    assert daft_recordbatch.get_column_by_name("concat").datatype() == DataType.list(DataType.int32())
     res = daft_recordbatch.to_pydict()
 
     assert res == {"col_B": [], "concat": []}
@@ -1094,7 +1094,7 @@ def test_global_set_aggs(dtype) -> None:
 
     # Test without nulls
     result = daft_table.eval_expression_list([col("input").alias("set").agg_set()])
-    assert result.get_column("set").datatype() == DataType.list(dtype)
+    assert result.get_column_by_name("set").datatype() == DataType.list(dtype)
     expected = [x for x in set(input) if x is not None]
     result_set = result.to_pydict()["set"][0]
     _assert_all_hashable(result_set, "test_global_set_aggs")
@@ -1135,10 +1135,10 @@ def test_grouped_set_aggs(dtype) -> None:
 
     daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
     daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_table.get_column_by_name("input").to_pylist()
 
     result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
-    assert result.get_column("set").datatype() == DataType.list(dtype)
+    assert result.get_column_by_name("set").datatype() == DataType.list(dtype)
 
     result_dict = result.to_pydict()
     assert sorted(result_dict["groups"]) == [1, 2, 3]
@@ -1189,8 +1189,8 @@ def test_grouped_list_set_aggs() -> None:
 
     # Test without nulls
     result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
-    assert result.get_column("set").datatype() == DataType.list(DataType.list(DataType.int64()))
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    assert result.get_column_by_name("set").datatype() == DataType.list(DataType.list(DataType.int64()))
+    input_as_dtype = daft_table.get_column_by_name("input").to_pylist()
 
     # Convert lists to tuples for hashing
     def to_hashable(lst):
@@ -1228,10 +1228,10 @@ def test_grouped_struct_set_aggs() -> None:
 
     # Test without nulls
     result = daft_table.agg([col("input").alias("set").agg_set()], group_by=[col("groups")]).sort([col("groups")])
-    assert result.get_column("set").datatype() == DataType.list(
+    assert result.get_column_by_name("set").datatype() == DataType.list(
         DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
     )
-    input_as_dtype = daft_table.get_column("input").to_pylist()
+    input_as_dtype = daft_table.get_column_by_name("input").to_pylist()
 
     # Convert dicts to tuples for hashing
     def to_hashable(d):
@@ -1258,7 +1258,7 @@ def test_set_aggs_empty() -> None:
         [col("col_A").cast(DataType.int32()).alias("set").agg_set()],
         group_by=[col("col_B")],
     )
-    assert result.get_column("set").datatype() == DataType.list(DataType.int32())
+    assert result.get_column_by_name("set").datatype() == DataType.list(DataType.int32())
     assert result.to_pydict() == {"col_B": [], "set": []}
 
 
