@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    ExprRef, WindowBoundary, WindowExpr, WindowFrame, WindowFrameType,
+    ExprRef, WindowBoundary, WindowExpr, WindowFrame,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -195,13 +195,14 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                                 agg_expr.to_field(&params.original_schema)?.dtype;
                                             // Default for aggregate functions in partition by + order by: rows from start of partition to current row
                                             let frame = WindowFrame {
-                                                frame_type: WindowFrameType::Rows,
-                                                start: WindowBoundary::UnboundedPreceding(),
+                                                start: WindowBoundary::UnboundedPreceding,
                                                 end: WindowBoundary::Offset(0),
                                             };
                                             partition.window_agg_dynamic_frame(
                                                 name.clone(),
                                                 &BoundAggExpr::new_unchecked(agg_expr.clone()),
+                                                &order_by,
+                                                &params.descending,
                                                 1,
                                                 &dtype,
                                                 &frame,
