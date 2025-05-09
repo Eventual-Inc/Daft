@@ -19,7 +19,6 @@ use daft_micropartition::{
 use futures::{stream::BoxStream, Stream, StreamExt};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{instrument, Instrument};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,

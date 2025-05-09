@@ -6,7 +6,7 @@ use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Instrument, Span};
 
 use crate::{
     channel::{create_channel, Receiver},
@@ -92,9 +92,9 @@ impl BlockingSinkNode {
         rt_context: Arc<RuntimeStatsContext>,
         memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
-        let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
+        let spawner =
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, Span::current());
         let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             let result = op.sink(morsel, state, &spawner).await??;
@@ -119,12 +119,15 @@ impl BlockingSinkNode {
         memory_manager: Arc<MemoryManager>,
     ) {
         for input_receiver in input_receivers {
-            task_set.spawn(Self::run_worker(
-                op.clone(),
-                input_receiver,
-                stats.clone(),
-                memory_manager.clone(),
-            ));
+            task_set.spawn(
+                Self::run_worker(
+                    op.clone(),
+                    input_receiver,
+                    stats.clone(),
+                    memory_manager.clone(),
+                )
+                .instrument(Span::current()),
+            );
         }
     }
 }
@@ -206,6 +209,7 @@ impl PipelineNode for BlockingSinkNode {
         );
 
         let memory_manager = runtime_handle.memory_manager();
+        let blocking_sink_span = info_span!("BlockingSink");
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
@@ -235,7 +239,8 @@ impl PipelineNode for BlockingSinkNode {
                     let _ = counting_sender.send(res).await;
                 }
                 Ok(())
-            },
+            }
+            .instrument(blocking_sink_span),
             self.name(),
         );
         Ok(destination_receiver)
