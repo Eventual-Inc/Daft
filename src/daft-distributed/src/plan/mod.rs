@@ -6,13 +6,13 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 
 use crate::{
-    channel::{create_channel, Receiver},
+    channel::{create_channel, Receiver, Sender},
     runtime::{get_or_init_runtime, JoinHandle},
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
@@ -38,11 +38,27 @@ impl DistributedPhysicalPlan {
     }
 
     async fn execute_stages(
-        _stage_plan: StagePlan,
-        _psets: HashMap<String, Vec<PartitionRef>>,
-        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        stage_plan: StagePlan,
+        config: Arc<DaftExecutionConfig>,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
-        todo!("FLOTILLA_MS1: Implement execute stages");
+        if stage_plan.num_stages() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Cannot run multiple stages on flotilla yet. Got {} stages",
+                stage_plan.num_stages()
+            )));
+        }
+
+        let stage = stage_plan.get_root_stage();
+        let mut running_stage = stage.run_stage(config, psets, worker_manager_factory)?;
+        while let Some(partition) = running_stage.next().await {
+            if sender.send(partition?).await.is_err() {
+                break;
+            }
+        }
+        Ok(())
     }
 
     pub fn run_plan(
@@ -50,12 +66,16 @@ impl DistributedPhysicalPlan {
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> DaftResult<PlanResult> {
-        let (_result_sender, result_receiver) = create_channel(1);
+        let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
         let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
-        let handle = runtime.spawn(async move {
-            Self::execute_stages(stage_plan, psets, worker_manager_factory).await
-        });
+        let handle = runtime.spawn(Self::execute_stages(
+            stage_plan,
+            self.config.clone(),
+            psets,
+            worker_manager_factory,
+            result_sender,
+        ));
         Ok(PlanResult::new(handle, result_receiver))
     }
 
