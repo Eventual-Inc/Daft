@@ -15,7 +15,7 @@ use csv_async::AsyncReader;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
-use daft_dsl::optimization::get_required_columns;
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
@@ -316,6 +316,10 @@ async fn read_csv_single_into_table(
     let schema: arrow2::datatypes::Schema = schema_fields.into();
     let schema = Arc::new(schema.into());
 
+    let predicate = predicate
+        .map(|expr| BoundExpr::try_new(expr, &schema))
+        .transpose()?;
+
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
             let filtered = table?.filter(&[predicate.clone()])?;
@@ -428,7 +432,10 @@ pub async fn stream_csv_single(
     let filtered_tables = tables.map(move |table| {
         let table = table?;
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
+            let table = table?;
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
             if let Some(include_columns) = &include_columns {
                 filtered.get_columns(include_columns.as_slice())
             } else {

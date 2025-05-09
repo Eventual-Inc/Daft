@@ -1,3 +1,4 @@
+pub mod bound_expr;
 pub mod window;
 
 mod display;
@@ -1792,21 +1793,6 @@ impl Expr {
                 _ => Ok(Transformed::no(e)),
             })?
             .data)
-    }
-
-    pub fn bind(self: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
-        self.transform(|e| match e.as_ref() {
-            // TODO: remove ability to bind unresolved columns once we fix all tests
-            Self::Column(Column::Unresolved(UnresolvedColumn { name, .. }))
-            | Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
-                let index = schema.get_index(name)?;
-                let field = schema.get_field(name)?.clone();
-
-                Ok(Transformed::yes(bound_col(index, field)))
-            }
-            _ => Ok(Transformed::no(e)),
-        })
-        .map(|t| t.data)
     }
 }
 

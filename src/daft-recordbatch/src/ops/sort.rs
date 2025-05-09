@@ -1,13 +1,13 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::series::Series;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 
 use crate::RecordBatch;
 
 impl RecordBatch {
     pub fn sort(
         &self,
-        sort_keys: &[ExprRef],
+        sort_keys: &[BoundExpr],
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<Self> {
@@ -17,7 +17,7 @@ impl RecordBatch {
 
     pub fn argsort(
         &self,
-        sort_keys: &[ExprRef],
+        sort_keys: &[BoundExpr],
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<Series> {

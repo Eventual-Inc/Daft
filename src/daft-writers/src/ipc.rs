@@ -1,5 +1,6 @@
 use std::{fs::File, sync::Arc};
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
@@ -8,7 +9,7 @@ use daft_core::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{FileWriter, WriterFactory, RETURN_PATHS_COLUMN_NAME};
+use crate::{AsyncFileWriter, WriterFactory, RETURN_PATHS_COLUMN_NAME};
 
 pub struct IPCWriter {
     is_closed: bool,
@@ -45,11 +46,13 @@ impl IPCWriter {
         Ok(self.writer.as_mut().unwrap())
     }
 }
-impl FileWriter for IPCWriter {
+
+#[async_trait]
+impl AsyncFileWriter for IPCWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         assert!(!self.is_closed, "Writer is closed");
 
         let size_bytes = data.size_bytes()?.unwrap_or(0);
@@ -63,7 +66,7 @@ impl FileWriter for IPCWriter {
         Ok(size_bytes)
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         if let Some(mut writer) = self.writer.take() {
             writer.finish()?;
         }
@@ -106,7 +109,7 @@ impl WriterFactory for IPCWriterFactory {
         &self,
         file_idx: usize,
         _partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         let file_path = format!("{}/{}.arrow", self.dir, file_idx);
         let writer = IPCWriter::new(&file_path, self.compression);
         Ok(Box::new(writer))
