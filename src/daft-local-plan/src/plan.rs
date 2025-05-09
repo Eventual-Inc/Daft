@@ -311,7 +311,6 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    // input must be a sort plan
     pub(crate) fn window_order_by_only(
         input: LocalPhysicalPlanRef,
         order_by: Vec<ExprRef>,
@@ -321,6 +320,8 @@ impl LocalPhysicalPlan {
         functions: Vec<WindowExpr>,
         aliases: Vec<String>,
     ) -> LocalPhysicalPlanRef {
+        // input must be a sort plan
+        assert!(matches!(*input, Self::Sort(_)));
         Self::WindowOrderByOnly(WindowOrderByOnly {
             input,
             order_by,
