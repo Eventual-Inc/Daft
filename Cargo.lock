@@ -2355,7 +2355,6 @@ dependencies = [
  "image",
  "log",
  "num-traits",
- "pyo3",
  "serde",
  "typetag",
 ]

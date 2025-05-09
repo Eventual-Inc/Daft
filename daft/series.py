@@ -748,7 +748,7 @@ class Series:
 
         f = native.get_function_from_registry(func_name)
 
-        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items()}).alias(name)
+        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items() if v is not None}).alias(name)
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(name)
