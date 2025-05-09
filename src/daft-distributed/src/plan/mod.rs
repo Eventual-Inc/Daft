@@ -6,14 +6,15 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
+use common_runtime::RuntimeTask;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-use futures::Stream;
+use futures::{FutureExt, Stream, StreamExt};
 
 use crate::{
-    channel::{create_channel, Receiver},
-    runtime::{get_or_init_runtime, JoinHandle},
+    channel::{create_channel, Receiver, Sender},
+    runtime::get_or_init_runtime,
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
 };
@@ -38,11 +39,27 @@ impl DistributedPhysicalPlan {
     }
 
     async fn execute_stages(
-        _stage_plan: StagePlan,
-        _psets: HashMap<String, Vec<PartitionRef>>,
-        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        stage_plan: StagePlan,
+        config: Arc<DaftExecutionConfig>,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
-        todo!("FLOTILLA_MS1: Implement execute stages");
+        if stage_plan.num_stages() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Cannot run multiple stages on flotilla yet. Got {} stages",
+                stage_plan.num_stages()
+            )));
+        }
+
+        let stage = stage_plan.get_root_stage();
+        let mut running_stage = stage.run_stage(config, psets, worker_manager_factory)?;
+        while let Some(partition) = running_stage.next().await {
+            if sender.send(partition?).await.is_err() {
+                break;
+            }
+        }
+        Ok(())
     }
 
     pub fn run_plan(
@@ -50,12 +67,16 @@ impl DistributedPhysicalPlan {
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> DaftResult<PlanResult> {
-        let (_result_sender, result_receiver) = create_channel(1);
+        let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
         let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
-        let handle = runtime.spawn(async move {
-            Self::execute_stages(stage_plan, psets, worker_manager_factory).await
-        });
+        let handle = runtime.spawn(Self::execute_stages(
+            stage_plan,
+            self.config.clone(),
+            psets,
+            worker_manager_factory,
+            result_sender,
+        ));
         Ok(PlanResult::new(handle, result_receiver))
     }
 
@@ -67,15 +88,15 @@ impl DistributedPhysicalPlan {
 // This is the output of a plan, a receiver to receive the results of the plan.
 // And the join handle to the task that runs the plan.
 pub struct PlanResult {
-    _handle: Option<JoinHandle<DaftResult<()>>>,
-    _rx: Receiver<PartitionRef>,
+    task: Option<RuntimeTask<DaftResult<()>>>,
+    rx: Receiver<PartitionRef>,
 }
 
 impl PlanResult {
-    fn new(handle: JoinHandle<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
+    fn new(task: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
         Self {
-            _handle: Some(handle),
-            _rx: rx,
+            task: Some(task),
+            rx,
         }
     }
 }
@@ -83,7 +104,26 @@ impl PlanResult {
 impl Stream for PlanResult {
     type Item = DaftResult<PartitionRef>;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for plan result");
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.task.is_none() {
+            return Poll::Ready(None);
+        }
+
+        match self.rx.poll_recv(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(result)) => Poll::Ready(Some(Ok(result))),
+            Poll::Ready(None) => {
+                if let Some(mut handle) = self.task.take() {
+                    let result = handle.poll_unpin(cx);
+                    match result {
+                        Poll::Pending => Poll::Pending,
+                        Poll::Ready(Ok(Ok(()))) => Poll::Ready(None),
+                        Poll::Ready(Ok(Err(e))) | Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+                    }
+                } else {
+                    Poll::Ready(None)
+                }
+            }
+        }
     }
 }

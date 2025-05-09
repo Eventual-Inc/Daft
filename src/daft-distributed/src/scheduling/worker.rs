@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use common_error::DaftResult;
 
 use super::task::{SwordfishTask, SwordfishTaskResultHandle};
@@ -9,8 +11,8 @@ pub(crate) trait WorkerManager: Send + Sync {
         task: SwordfishTask,
         worker_id: String,
     ) -> Box<dyn SwordfishTaskResultHandle>;
-    // (worker id, num_cpus, memory)
-    fn get_worker_resources(&self) -> Vec<(String, usize, usize)>;
+    // (worker id, num_slots)
+    fn get_worker_slots(&self) -> HashMap<String, usize>;
     #[allow(dead_code)]
     fn try_autoscale(&self, num_workers: usize) -> DaftResult<()>;
     fn shutdown(&self) -> DaftResult<()>;
