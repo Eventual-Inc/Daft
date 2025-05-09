@@ -23,18 +23,26 @@ impl ScalarUDF for ImageDecode {
         let input = inputs.required((0, "input"))?;
         let image_mode = inputs.optional("mode")?;
         let on_error = inputs.optional(("on_error", "raise_on_error"))?;
+        let image_mode = match image_mode {
+            Some(s) => {
+                ensure!(s.len() == 1, "image_mode must be a scalar value");
 
-        let image_mode: Option<ImageMode> = image_mode
-            .map(|s| {
-                ensure!(s.len() == 1, "ImageMode must be a scalar value");
-                let value = s.utf8()?.get(0).unwrap();
-                value.parse()
-            })
-            .transpose()?;
+                if s.data_type().is_null() {
+                    None
+                } else {
+                    let value = s.utf8()?.get(0).unwrap();
+                    Some(value.parse()?)
+                }
+            }
+            None => None,
+        };
 
         let on_error = on_error
             .map(|s| {
                 ensure!(s.len() == 1, "OnError must be a scalar value");
+                if s.data_type().is_null() {
+                    return Ok("raise");
+                }
                 Ok(s.utf8()?.get(0).unwrap())
             })
             .transpose()?
