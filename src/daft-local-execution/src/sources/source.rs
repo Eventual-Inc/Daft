@@ -8,6 +8,7 @@ use daft_io::{IOStatsContext, IOStatsRef};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
+use tracing::{info_span, Instrument};
 
 use crate::{
     channel::{create_channel, Receiver},
@@ -135,7 +136,8 @@ impl PipelineNode for SourceNode {
                     let _ = counting_sender.send(empty).await;
                 }
                 Ok(())
-            },
+            }
+            .instrument(info_span!("Source")),
             self.name(),
         );
         Ok(destination_receiver)

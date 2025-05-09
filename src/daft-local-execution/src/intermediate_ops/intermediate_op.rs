@@ -6,7 +6,7 @@ use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Instrument, Span};
 
 use crate::{
     channel::{
@@ -118,10 +118,9 @@ impl IntermediateNode {
         rt_context: Arc<RuntimeStatsContext>,
         memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<()> {
-        let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
         let task_spawner =
-            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, Span::current());
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
@@ -165,7 +164,8 @@ impl IntermediateNode {
                     output_sender,
                     self.runtime_stats.clone(),
                     memory_manager.clone(),
-                ),
+                )
+                .instrument(Span::current()),
                 self.intermediate_op.name(),
             );
         }
@@ -257,12 +257,15 @@ impl PipelineNode for IntermediateNode {
             self.name(),
         );
 
-        let mut output_receiver = self.spawn_workers(
-            spawned_dispatch_result.worker_receivers,
-            runtime_handle,
-            maintain_order,
-            runtime_handle.memory_manager(),
-        );
+        let span = info_span!("IntermediateOp");
+        let mut output_receiver = span.in_scope(|| {
+            self.spawn_workers(
+                spawned_dispatch_result.worker_receivers,
+                runtime_handle,
+                maintain_order,
+                runtime_handle.memory_manager(),
+            )
+        });
         runtime_handle.spawn(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {
@@ -271,7 +274,8 @@ impl PipelineNode for IntermediateNode {
                     }
                 }
                 Ok(())
-            },
+            }
+            .instrument(span),
             op.name(),
         );
         Ok(destination_receiver)

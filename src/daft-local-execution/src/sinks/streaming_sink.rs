@@ -6,7 +6,7 @@ use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Instrument, Span};
 
 use crate::{
     channel::{
@@ -111,9 +111,9 @@ impl StreamingSinkNode {
         rt_context: Arc<RuntimeStatsContext>,
         memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<Box<dyn StreamingSinkState>> {
-        let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
+        let spawner =
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, Span::current());
         let mut state = op.make_state();
         while let Some(morsel) = input_receiver.recv().await {
             loop {
@@ -157,13 +157,16 @@ impl StreamingSinkNode {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
         for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            task_set.spawn(Self::run_worker(
-                op.clone(),
-                input_receiver,
-                output_sender,
-                stats.clone(),
-                memory_manager.clone(),
-            ));
+            task_set.spawn(
+                Self::run_worker(
+                    op.clone(),
+                    input_receiver,
+                    output_sender,
+                    stats.clone(),
+                    memory_manager.clone(),
+                )
+                .instrument(Span::current()),
+            );
         }
         output_receiver
     }
@@ -254,6 +257,7 @@ impl PipelineNode for StreamingSinkNode {
         );
 
         let memory_manager = runtime_handle.memory_manager();
+        let span = info_span!("StreamingSink");
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
@@ -290,7 +294,8 @@ impl PipelineNode for StreamingSinkNode {
                     let _ = counting_sender.send(res).await;
                 }
                 Ok(())
-            },
+            }
+            .instrument(span),
             self.name(),
         );
         Ok(destination_receiver)
