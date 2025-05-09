@@ -203,16 +203,15 @@ impl IntermediateOperator for WindowOrderByOnlyOperator {
                 .map(|e| e.to_string())
                 .join(", ")
         ));
-        if !self.params.order_by.is_empty() {
-            display.push(format!(
-                "Order by: {}",
-                self.params
-                    .order_by
-                    .iter()
-                    .map(|e| e.to_string())
-                    .join(", ")
-            ));
-        }
+        display.push(format!(
+            "Order by: {}",
+            self.params
+                .order_by
+                .iter()
+                .zip(self.params._descending.iter())
+                .map(|(e, d)| format!("{} {}", e, if *d { "desc" } else { "asc" }))
+                .join(", ")
+        ));
         display
     }
 

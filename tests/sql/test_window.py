@@ -416,3 +416,167 @@ def test_row_number_and_running_sum_window_functions():
     )
 
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "value"])
+
+
+def test_order_by_only_row_number():
+    """Test SQL ROW_NUMBER() window function with only ORDER BY (no PARTITION BY)."""
+    df = daft.from_pydict(
+        {
+            "value": [100, 200, 50, 500, 125, 300, 250, 150],
+        }
+    )
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            value,
+            ROW_NUMBER() OVER(
+                ORDER BY value
+            ) AS row_num
+        FROM test_data
+        ORDER BY value
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().order_by("value")
+
+    daft_result = df.with_column("row_num", row_number().over(window_spec)).sort(["value"]).collect()
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["value"])
+
+
+def test_order_by_only_rank():
+    """Test SQL RANK() window function with only ORDER BY (no PARTITION BY)."""
+    df = daft.from_pydict(
+        {
+            "value": [1, 1, 2, 2, 2, 3, 3, 4, 4],
+        }
+    )
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            value,
+            RANK() OVER(
+                ORDER BY value
+            ) AS rank_val
+        FROM test_data
+        ORDER BY value
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().order_by("value")
+
+    daft_result = df.with_column("rank_val", rank().over(window_spec)).sort(["value"]).collect()
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["value"])
+
+
+def test_order_by_only_dense_rank():
+    """Test SQL DENSE_RANK() window function with only ORDER BY (no PARTITION BY)."""
+    df = daft.from_pydict(
+        {
+            "value": [1, 1, 2, 2, 2, 3, 3, 4, 4],
+        }
+    )
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            value,
+            DENSE_RANK() OVER(
+                ORDER BY value
+            ) AS dense_rank_val
+        FROM test_data
+        ORDER BY value
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().order_by("value")
+
+    daft_result = df.with_column("dense_rank_val", dense_rank().over(window_spec)).sort(["value"]).collect()
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["value"])
+
+
+def test_order_by_only_desc():
+    """Test window functions with ORDER BY DESC."""
+    df = daft.from_pydict(
+        {
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            value,
+            ROW_NUMBER() OVER(ORDER BY value DESC) AS row_num,
+            RANK() OVER(ORDER BY value DESC) AS rank_val,
+            DENSE_RANK() OVER(ORDER BY value DESC) AS dense_rank_val
+        FROM test_data
+        ORDER BY value DESC
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().order_by("value", desc=True)
+
+    daft_result = (
+        df.with_column("row_num", row_number().over(window_spec))
+        .with_column("rank_val", rank().over(window_spec))
+        .with_column("dense_rank_val", dense_rank().over(window_spec))
+        .sort(["value"], desc=True)
+        .collect()
+    )
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["value"])
+
+
+def test_order_by_only_multiple_columns():
+    """Test window functions with ORDER BY multiple columns."""
+    df = daft.from_pydict(
+        {
+            "x": [1, 1, 1, 2, 2, 2],
+            "y": [1, 2, 3, 1, 2, 3],
+        }
+    )
+
+    catalog = SQLCatalog({"test_data": df})
+
+    sql_result = daft.sql(
+        """
+        SELECT
+            x,
+            y,
+            ROW_NUMBER() OVER(ORDER BY x, y) AS row_num,
+            RANK() OVER(ORDER BY x, y) AS rank_val,
+            DENSE_RANK() OVER(ORDER BY x, y) AS dense_rank_val
+        FROM test_data
+        ORDER BY x, y
+    """,
+        catalog=catalog,
+    ).collect()
+
+    window_spec = Window().order_by(["x", "y"])
+
+    daft_result = (
+        df.with_column("row_num", row_number().over(window_spec))
+        .with_column("rank_val", rank().over(window_spec))
+        .with_column("dense_rank_val", dense_rank().over(window_spec))
+        .sort(["x", "y"])
+        .collect()
+    )
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["x", "y"])
