@@ -5,7 +5,7 @@ from typing import Any, Iterator, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, image
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -743,7 +743,7 @@ class Series:
 
         f = native.get_function_from_registry(func_name)
 
-        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items()}).alias(name)
+        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items() if v is not None}).alias(name)
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(0)
@@ -1123,38 +1123,17 @@ class SeriesImageNamespace(SeriesNamespace):
         on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Series:
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-        if mode is not None:
-            if isinstance(mode, str):
-                mode = ImageMode.from_mode_string(mode.upper())
-            if not isinstance(mode, ImageMode):
-                raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(image.decode(self._series, raise_error_on_failure=raise_on_error, mode=mode))
+        return self._eval_expressions("image_decode", on_error=on_error, mode=mode)
 
     def encode(self, image_format: str | ImageFormat) -> Series:
-        if isinstance(image_format, str):
-            image_format = ImageFormat.from_format_string(image_format.upper())
-        if not isinstance(image_format, ImageFormat):
-            raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
-        return Series._from_pyseries(image.encode(self._series, image_format))
+        return self._eval_expressions("image_encode", image_format=image_format)
 
     def resize(self, w: int, h: int) -> Series:
-        if not isinstance(w, int):
-            raise TypeError(f"expected int for w but got {type(w)}")
-        if not isinstance(h, int):
-            raise TypeError(f"expected int for h but got {type(h)}")
-
-        return Series._from_pyseries(image.resize(self._series, w, h))
+        return self._eval_expressions("image_resize", w=w, h=h)
 
     def to_mode(self, mode: str | ImageMode) -> Series:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(image.to_mode(self._series, mode))
+        return self._eval_expressions("to_mode", mode=mode)

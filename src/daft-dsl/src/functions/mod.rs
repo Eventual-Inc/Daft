@@ -8,8 +8,10 @@ pub mod sketch;
 pub mod struct_;
 
 use std::{
+    collections::HashMap,
     fmt::{Display, Formatter, Result, Write},
     hash::Hash,
+    sync::{Arc, LazyLock, RwLock},
 };
 
 use common_error::DaftResult;
@@ -117,3 +119,44 @@ pub fn function_semantic_id(func: &FunctionExpr, inputs: &[ExprRef], schema: &Sc
     // TODO: check for function idempotency here.
     FieldID::new(format!("Function_{func:?}({inputs})"))
 }
+
+#[derive(Default)]
+pub struct FunctionRegistry {
+    // Todo: Use the Bindings object instead, so we can get aliases and case handling.
+    map: HashMap<String, Arc<dyn ScalarUDF>>,
+}
+pub trait FunctionModule {
+    /// Register this module to the given [SQLFunctions] table.
+    fn register(_parent: &mut FunctionRegistry);
+}
+
+impl FunctionRegistry {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+    pub fn register<Mod: FunctionModule>(&mut self) {
+        Mod::register(self);
+    }
+
+    pub fn add_fn<UDF: ScalarUDF + 'static>(&mut self, func: UDF) {
+        let func = Arc::new(func);
+        // todo: use bindings instead of hashmap so we don't need duplicate entries.
+        for alias in func.aliases() {
+            self.map.insert((*alias).to_string(), func.clone());
+        }
+        self.map.insert(func.name().to_string(), func);
+    }
+
+    pub fn get(&self, name: &str) -> Option<Arc<dyn ScalarUDF>> {
+        self.map.get(name).cloned()
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (&String, &Arc<dyn ScalarUDF>)> {
+        self.map.iter()
+    }
+}
+
+pub static FUNCTION_REGISTRY: LazyLock<RwLock<FunctionRegistry>> =
+    LazyLock::new(|| RwLock::new(FunctionRegistry::new()));

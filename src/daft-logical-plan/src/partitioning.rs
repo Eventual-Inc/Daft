@@ -244,7 +244,6 @@ fn translate_clustering_spec_expr(
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             Ok(newchild.alias(name.clone()))
         }
-
         Expr::BinaryOp { op, left, right } => {
             let newleft = translate_clustering_spec_expr(left, old_colname_to_new_colname)?;
             let newright = translate_clustering_spec_expr(right, old_colname_to_new_colname)?;
