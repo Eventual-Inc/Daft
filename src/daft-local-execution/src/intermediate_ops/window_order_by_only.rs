@@ -37,7 +37,6 @@ pub struct WindowOrderByOnlyParams {
 }
 
 pub struct WindowOrderByOnlyState {
-    record_batches: Vec<RecordBatch>,
     row_offset: u64,
     rank_state: RankState,
     dense_rank_state: DenseRankState,
@@ -46,7 +45,6 @@ pub struct WindowOrderByOnlyState {
 impl WindowOrderByOnlyState {
     fn new() -> Self {
         Self {
-            record_batches: Vec::new(),
             row_offset: 0,
             rank_state: RankState {
                 current_rank: 1,
@@ -59,18 +57,6 @@ impl WindowOrderByOnlyState {
             },
         }
     }
-
-    fn push(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
-        let tables = input.get_tables()?;
-        for table in tables.iter() {
-            self.record_batches.push(table.clone());
-        }
-        Ok(())
-    }
-
-    fn drain_record_batches(&mut self) -> Vec<RecordBatch> {
-        std::mem::take(&mut self.record_batches)
-    }
 }
 
 impl IntermediateOpState for WindowOrderByOnlyState {
@@ -80,7 +66,7 @@ impl IntermediateOpState for WindowOrderByOnlyState {
 }
 
 pub struct WindowOrderByOnlyOperator {
-    params: WindowOrderByOnlyParams,
+    params: Arc<WindowOrderByOnlyParams>,
 }
 
 impl WindowOrderByOnlyOperator {
@@ -92,13 +78,13 @@ impl WindowOrderByOnlyOperator {
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
         Ok(Self {
-            params: WindowOrderByOnlyParams {
+            params: Arc::new(WindowOrderByOnlyParams {
                 window_exprs: window_exprs.to_vec(),
                 aliases: aliases.to_vec(),
                 original_schema: schema.clone(),
                 order_by: order_by.to_vec(),
                 _descending: descending.to_vec(),
-            },
+            }),
         })
     }
 }
@@ -125,15 +111,6 @@ impl IntermediateOperator for WindowOrderByOnlyOperator {
         task_spawner
             .spawn(
                 async move {
-                    let mut batches = if let Some(ws) =
-                        state.as_any_mut().downcast_mut::<WindowOrderByOnlyState>()
-                    {
-                        ws.push(input)?;
-                        ws.drain_record_batches()
-                    } else {
-                        return Err(DaftError::ValueError("Failed to get window state".into()));
-                    };
-
                     let order_by = params
                         .order_by
                         .iter()
@@ -141,9 +118,9 @@ impl IntermediateOperator for WindowOrderByOnlyOperator {
                         .collect::<DaftResult<Vec<_>>>()
                         .unwrap();
 
-                    let mut out_batches = Vec::with_capacity(batches.len());
-
-                    for mut batch in batches.drain(..) {
+                    let tables = input.get_tables().unwrap();
+                    let mut out_batches = Vec::with_capacity(tables.len());
+                    for mut batch in tables.iter().cloned() {
                         if batch.is_empty() {
                             continue;
                         }
@@ -244,6 +221,6 @@ impl IntermediateOperator for WindowOrderByOnlyOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(1)
+        Ok(1) // necessary due to single-threaded execution with a single state
     }
 }
