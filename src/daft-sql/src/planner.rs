@@ -13,10 +13,8 @@ use daft_dsl::{
     has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
     ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
-use daft_functions::{
-    numeric::{ceil::ceil, floor::floor},
-    utf8::{ilike, like, to_date, to_datetime},
-};
+use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions_utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
@@ -1364,7 +1362,7 @@ impl SQLPlanner<'_> {
                 // SQL substring is one indexed
                 let start = start.sub(lit(1));
 
-                Ok(daft_functions::utf8::substr(expr, start, length))
+                Ok(daft_functions_utf8::substr(expr, start, length))
             }
             SQLExpr::Substring { special: false, .. } => {
                 unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
@@ -1375,7 +1373,7 @@ impl SQLPlanner<'_> {
             SQLExpr::Nested(e) => self.plan_expr(e),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
             SQLExpr::TypedString { data_type, value } => match data_type {
-                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
+                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), lit("%Y-%m-%d"))),
                 sqlparser::ast::DataType::Timestamp(None, TimezoneInfo::None)
                 | sqlparser::ast::DataType::Datetime(None) => Ok(to_datetime(
                     lit(value.as_str()),

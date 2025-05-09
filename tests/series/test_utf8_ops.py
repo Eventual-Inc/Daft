@@ -1580,13 +1580,13 @@ def test_series_utf8_count_matches():
         ]
     )
 
-    res = s.str.count_matches(p, False, False).to_pylist()
+    res = s.str.count_matches(p, whole_words=False, case_sensitive=False).to_pylist()
     assert res == [3, 0, 7, 3, 3, 3, 3, 3]
-    res = s.str.count_matches(p, True, False).to_pylist()
+    res = s.str.count_matches(p, whole_words=True, case_sensitive=False).to_pylist()
     assert res == [3, 0, 7, 0, 3, 0, 3, 3]
-    res = s.str.count_matches(p, False, True).to_pylist()
+    res = s.str.count_matches(p, whole_words=False, case_sensitive=True).to_pylist()
     assert res == [3, 0, 7, 3, 3, 3, 1, 3]
-    res = s.str.count_matches(p, True, True).to_pylist()
+    res = s.str.count_matches(p, whole_words=True, case_sensitive=True).to_pylist()
     assert res == [3, 0, 7, 0, 3, 0, 1, 3]
 
 
@@ -1595,5 +1595,5 @@ def test_series_utf8_count_matches():
 def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     s = Series.from_pylist(["hello world"])
     p = Series.from_pylist(["hello world", "hello", "world"])
-    res = s.str.count_matches(p, whole_words, case_sensitive).to_pylist()
+    res = s.str.count_matches(p, whole_words=whole_words, case_sensitive=case_sensitive).to_pylist()
     assert res == [1]

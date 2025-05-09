@@ -12,6 +12,7 @@ daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-functions = {workspace = true, optional = true, features = ["python"]}
+daft-functions-utf8 = {workspace = true, optional = true, features = ["python"]}
 daft-io = {path = "../daft-io", optional = true, features = ["python"]}
 daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
 daft-micropartition = {workspace = true, optional = true, features = [
@@ -53,7 +54,8 @@ python = [
   "dep:daft-recordbatch",
   "dep:daft-context",
   "dep:daft-catalog",
-  "dep:daft-functions"
+  "dep:daft-functions",
+  "dep:daft-functions-utf8"
 ]
 
 [lints]
