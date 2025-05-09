@@ -311,6 +311,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    // input must be a sort plan
     pub(crate) fn window_order_by_only(
         input: LocalPhysicalPlanRef,
         order_by: Vec<ExprRef>,
