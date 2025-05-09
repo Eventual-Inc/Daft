@@ -1136,14 +1136,14 @@ class DataFrame:
 
         Args:
             sink: The DataSink to write to.
-            **kwargs: Additional keyword arguments to pass to the DataSink.
+            **kwargs: Additional keyword arguments to pass to the DataSink's write() method.
 
         Returns:
             R: The result returned by the DataSink's finish() method.
         """
         sink.start()
 
-        builder = self._builder.write_custom(sink)
+        builder = self._builder.write_custom(sink, kwargs)
         write_df = DataFrame(builder)
         write_df.collect()
 
@@ -1214,9 +1214,8 @@ class DataFrame:
         """
         from daft.dataframe.lance_write_sink import LanceWriteSink
 
-        # TODO(Desmond): Add kwargs to the LanceWriteSink.
         sink = LanceWriteSink(uri, self.schema(), mode, io_config)
-        return self.write(sink)
+        return self.write(sink, **kwargs)
 
     ###
     # DataFrame operations

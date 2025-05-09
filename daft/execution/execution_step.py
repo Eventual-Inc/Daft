@@ -581,10 +581,11 @@ class WriteLance(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class CustomWrite(SingleOutputInstruction):
-    sink_class: DataSink
+    sink: DataSink
+    kwargs: dict | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        results = list(self.sink_class.write(iter(inputs)))
+        results = list(self.sink.write(iter(inputs), **self.kwargs))
         mp = MicroPartition.from_pydict({"custom_write_results": results})
         return [mp]
 

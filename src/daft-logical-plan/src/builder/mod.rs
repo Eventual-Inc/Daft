@@ -742,10 +742,10 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
-    pub fn custom_write(&self, sink: Arc<PyObject>) -> DaftResult<Self> {
+    pub fn custom_write(&self, sink: Arc<PyObject>, kwargs: Arc<PyObject>) -> DaftResult<Self> {
         use crate::sink_info::CustomInfo;
 
-        let sink_info = SinkInfo::CustomInfo(CustomInfo { sink_class: sink });
+        let sink_info = SinkInfo::CustomInfo(CustomInfo { sink, kwargs });
         let logical_plan: LogicalPlan =
             ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -1282,8 +1282,15 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
-    pub fn custom_write(&self, sink: PyObject) -> PyResult<Self> {
-        Ok(self.builder.custom_write(Arc::new(sink))?.into())
+    #[pyo3(signature = (sink, kwargs=None))]
+    pub fn custom_write(
+        &self,
+        py: Python,
+        sink: PyObject,
+        kwargs: Option<PyObject>,
+    ) -> PyResult<Self> {
+        let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));
+        Ok(self.builder.custom_write(Arc::new(sink), kwargs)?.into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

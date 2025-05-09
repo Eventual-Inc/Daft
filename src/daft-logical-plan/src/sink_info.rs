@@ -31,26 +31,6 @@ pub struct OutputFileInfo {
 }
 
 #[cfg(feature = "python")]
-#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
-#[derivative(PartialEq, Eq, Hash)]
-pub struct CustomInfo {
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
-    pub sink_class: Arc<PyObject>,
-}
-
-#[cfg(feature = "python")]
-impl CustomInfo {
-    pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!("CustomInfo = {}", self.sink_class)]
-    }
-}
-
-#[cfg(feature = "python")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CatalogInfo {
     pub catalog: CatalogType,
@@ -164,6 +144,33 @@ impl LanceCatalogInfo {
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
         }
         res
+    }
+}
+
+#[cfg(feature = "python")]
+#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
+#[derivative(PartialEq, Eq, Hash)]
+pub struct CustomInfo {
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
+    pub sink: Arc<PyObject>,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
+    pub kwargs: Arc<PyObject>,
+}
+
+#[cfg(feature = "python")]
+impl CustomInfo {
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![format!("CustomInfo = {}", self.sink)]
     }
 }
 

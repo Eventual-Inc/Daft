@@ -401,6 +401,7 @@ def write_lance(
 
 def write_custom(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    sink_class: DataSink,
+    sink: DataSink,
+    kwargs: dict | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    return physical_plan.custom_write(input, sink_class)
+    return physical_plan.custom_write(input, sink, kwargs)
