@@ -1,5 +1,11 @@
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
+use pyo3::{
+    pyclass, pymethods,
+    types::{PyModule, PyModuleMethods},
+    Bound, PyResult,
+};
+use tracing::{info_span, span::EnteredSpan, Span};
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{layer::SubscriberExt, prelude::*};
 static TRACING_INIT: AtomicBool = AtomicBool::new(false);
@@ -171,4 +177,47 @@ pub fn refresh_chrome_trace() -> bool {
     } else {
         false
     }
+}
+
+#[pyclass]
+struct QuerySpan {
+    span: Span,
+}
+
+#[pymethods]
+impl QuerySpan {
+    #[new]
+    pub fn new() -> Self {
+        let span = info_span!("DaftQuery");
+        Self { span }
+    }
+
+    pub fn enter(&self) -> EnteredSpanWrapper {
+        let span = self.span.clone().entered();
+        EnteredSpanWrapper::new(span)
+    }
+}
+
+#[pyclass(unsendable)]
+pub struct EnteredSpanWrapper {
+    span: EnteredSpan,
+}
+
+impl EnteredSpanWrapper {
+    pub fn new(span: EnteredSpan) -> Self {
+        Self { span }
+    }
+}
+
+impl Drop for EnteredSpanWrapper {
+    fn drop(&mut self) {
+        println!("Dropping span");
+    }
+}
+
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<QuerySpan>()?;
+    parent.add_class::<EnteredSpanWrapper>()?;
+
+    Ok(())
 }

@@ -1676,6 +1676,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "pyo3",
  "tracing",
  "tracing-chrome",
  "tracing-opentelemetry",
