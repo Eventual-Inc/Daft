@@ -57,8 +57,8 @@ impl SQLFunction for SQLTokenizeEncode {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, tokens_path] => {
-                let input = planner.plan_function_arg(input)?;
-                let tokens_path = planner.plan_function_arg(tokens_path)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let tokens_path = planner.plan_function_arg(tokens_path)?.into_inner();
                 let tokens_path = tokens_path
                     .as_literal()
                     .and_then(|lit| lit.as_str())
@@ -68,7 +68,7 @@ impl SQLFunction for SQLTokenizeEncode {
                 Ok(tokenize_encode(input, tokens_path, None, None, None, false))
             }
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args: TokenizeEncodeFunction = planner.plan_function_args(
                     args,
                     &[
@@ -142,8 +142,8 @@ impl SQLFunction for SQLTokenizeDecode {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, tokens_path] => {
-                let input = planner.plan_function_arg(input)?;
-                let tokens_path = planner.plan_function_arg(tokens_path)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let tokens_path = planner.plan_function_arg(tokens_path)?.into_inner();
                 let tokens_path = tokens_path
                     .as_literal()
                     .and_then(|lit| lit.as_str())
@@ -153,7 +153,7 @@ impl SQLFunction for SQLTokenizeDecode {
                 Ok(tokenize_decode(input, tokens_path, None, None, None))
             }
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args: TokenizeDecodeFunction = planner.plan_function_args(
                     args,
                     &["tokens_path", "pattern", "special_tokens"],
@@ -197,7 +197,7 @@ impl SQLFunction for SQLConcat {
     ) -> SQLPlannerResult<ExprRef> {
         let inputs = inputs
             .iter()
-            .map(|input| planner.plan_function_arg(input))
+            .map(|input| planner.plan_function_arg(input).map(|arg| arg.into_inner()))
             .collect::<SQLPlannerResult<Vec<_>>>()?;
         let mut inputs = inputs.into_iter();
 

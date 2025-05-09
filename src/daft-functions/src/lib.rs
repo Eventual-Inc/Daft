@@ -1,3 +1,7 @@
+#![allow(
+    deprecated,
+    reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
+)]
 pub mod binary;
 pub mod coalesce;
 pub mod distance;

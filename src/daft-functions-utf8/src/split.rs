@@ -8,7 +8,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -88,7 +88,10 @@ pub fn split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
         } else {
             Arc::new(Split)
         },
-        inputs: vec![input, pattern],
+        inputs: FunctionArgs::new_unchecked(vec![
+            FunctionArg::unnamed(input),
+            FunctionArg::unnamed(pattern),
+        ]),
     }
     .into()
 }

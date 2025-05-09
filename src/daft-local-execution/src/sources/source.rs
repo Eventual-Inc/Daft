@@ -40,7 +40,7 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(source: Arc<dyn Source>, plan_stats: StatsState) -> Self {
-        let runtime_stats = RuntimeStatsContext::new();
+        let runtime_stats = RuntimeStatsContext::new(source.name());
         let io_stats = IOStatsContext::new(source.name());
         Self {
             source,

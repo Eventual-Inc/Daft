@@ -6,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,11 @@ pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bo
         } else {
             Arc::new(Replace) as _
         },
-        inputs: vec![input, pattern, replacement],
+        inputs: FunctionArgs::new_unchecked(vec![
+            FunctionArg::unnamed(input),
+            FunctionArg::unnamed(pattern),
+            FunctionArg::unnamed(replacement),
+        ]),
     }
     .into()
 }

@@ -744,15 +744,11 @@ class Series:
 
         rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
 
-        args = (
-            [native.unresolved_col(name)]
-            + [native.unresolved_col(col_name) for col_name in col_names]
-            + [native.named_expr(name, lit(v)._expr) for name, v in kwargs.items() if v is not None]
-        )
+        args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
 
         f = native.get_function_from_registry(func_name)
 
-        expr = f(*args).alias(name)
+        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items()}).alias(name)
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(name)

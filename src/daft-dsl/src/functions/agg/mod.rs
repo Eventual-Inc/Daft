@@ -20,8 +20,10 @@ impl ScalarUDF for MergeMeanFunction {
         "merge_mean"
     }
 
+    #[allow(deprecated)]
     fn evaluate(&self, inputs: super::function_args::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
+
         self.evaluate_from_series(&inputs)
     }
 

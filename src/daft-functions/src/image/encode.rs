@@ -1,0 +1,64 @@
+use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
+
+/// Container for the keyword arguments for `image_encode`
+/// ex:
+/// ```text
+/// image_encode(input, image_format='png')
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ImageEncode {
+    pub image_format: ImageFormat,
+}
+
+#[typetag::serde]
+impl ScalarUDF for ImageEncode {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
+
+    fn name(&self) -> &'static str {
+        "image_encode"
+    }
+
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        match inputs {
+            [input] => {
+                let field = input.to_field(schema)?;
+                match field.dtype {
+                    DataType::Image(..) | DataType::FixedShapeImage(..) => {
+                        Ok(Field::new(field.name, DataType::Binary))
+                    }
+                    _ => Err(DaftError::TypeError(format!(
+                        "ImageEncode can only encode ImageArrays and FixedShapeImageArrays, got {field}"
+                    ))),
+                }
+            }
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
+        match inputs {
+            [input] => daft_image::series::encode(input, self.image_format),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+}
+
+#[must_use]
+pub fn encode(input: ExprRef, image_encode: ImageEncode) -> ExprRef {
+    ScalarFunction::new(image_encode, vec![input]).into()
+}

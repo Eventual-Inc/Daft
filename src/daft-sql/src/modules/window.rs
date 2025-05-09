@@ -74,10 +74,10 @@ impl SQLFunction for SQLLag {
             "LAG() takes 1, 2 or 3 arguments: LAG(value, offset, default)"
         );
 
-        let value = planner.plan_function_arg(&inputs[0])?;
+        let value = planner.plan_function_arg(&inputs[0])?.into_inner();
 
         let offset = if inputs.len() > 1 {
-            let offset_expr = planner.plan_function_arg(&inputs[1])?;
+            let offset_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
             if let Some(offset_val) = offset_expr.as_literal().and_then(|lit| lit.as_i64()) {
                 offset_val as isize
             } else {
@@ -88,7 +88,7 @@ impl SQLFunction for SQLLag {
         };
 
         let default = if inputs.len() > 2 {
-            Some(planner.plan_function_arg(&inputs[2])?)
+            Some(planner.plan_function_arg(&inputs[2])?.into_inner())
         } else {
             None
         };
@@ -121,10 +121,10 @@ impl SQLFunction for SQLLead {
             "LEAD() takes 1, 2 or 3 arguments: LEAD(value, offset, default)"
         );
 
-        let value = planner.plan_function_arg(&inputs[0])?;
+        let value = planner.plan_function_arg(&inputs[0])?.into_inner();
 
         let offset = if inputs.len() > 1 {
-            let offset_expr = planner.plan_function_arg(&inputs[1])?;
+            let offset_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
             if let Some(offset_val) = offset_expr.as_literal().and_then(|lit| lit.as_i64()) {
                 offset_val as isize
             } else {
@@ -135,7 +135,7 @@ impl SQLFunction for SQLLead {
         };
 
         let default = if inputs.len() > 2 {
-            Some(planner.plan_function_arg(&inputs[2])?)
+            Some(planner.plan_function_arg(&inputs[2])?.into_inner())
         } else {
             None
         };

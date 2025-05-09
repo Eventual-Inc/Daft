@@ -25,9 +25,7 @@ mod uri;
 use std::sync::Arc;
 
 use daft_dsl::{
-    expr::named_expr,
-    functions::{ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
-    null_lit,
+    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
     python::PyExpr,
     ExprRef,
 };
@@ -52,24 +50,24 @@ impl PyScalarFunction {
     ) -> PyResult<PyExpr> {
         let mut inputs = py_args
             .iter()
-            .map(|py| py.extract::<PyExpr>().map(|e| e.into()))
+            .map(|py| {
+                py.extract::<PyExpr>()
+                    .map(|e| FunctionArg::unnamed(e.into()))
+            })
             .collect::<PyResult<Vec<_>>>()?;
 
         if let Some(kwargs) = py_kwargs {
             for (k, v) in kwargs {
                 let key = k.extract::<String>()?;
                 let value = v.extract::<PyExpr>()?;
-                // we can skip adding null args
-                if value.expr != null_lit() {
-                    let expr = named_expr(key, value.expr);
-                    inputs.push(expr);
-                }
+
+                inputs.push(FunctionArg::named(Arc::from(key), value.expr));
             }
         }
 
         let expr: ExprRef = ScalarFunction {
             udf: self.inner.clone(),
-            inputs,
+            inputs: FunctionArgs::try_new(inputs)?,
         }
         .into();
 

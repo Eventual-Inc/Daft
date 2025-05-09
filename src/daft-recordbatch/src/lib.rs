@@ -25,7 +25,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
         BoundColumn,
     },
-    functions::{FunctionArg, FunctionArgs, FunctionEvaluator},
+    functions::{FunctionArgs, FunctionEvaluator},
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
     SketchType,
 };
@@ -616,7 +616,6 @@ impl RecordBatch {
     fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
-            Expr::NamedExpr {expr, ..} => Ok(self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?),
             Expr::Alias(child, name) => Ok(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
@@ -695,20 +694,13 @@ impl RecordBatch {
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Expr::ScalarFunction(func) => {
-                let evaluated_inputs = func.inputs
+                let args = func.inputs
                     .iter()
                     .map(|e| {
-                        if let Expr::NamedExpr {name, expr} = e.as_ref() {
-                            Ok(FunctionArg::Named {
-                                name: name.clone(),
-                                arg: self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                            })
-                        } else {
-                            Ok(FunctionArg::Unnamed(self.eval_expression(&BoundExpr::new_unchecked(e.clone()))?))
-                        }
+                        e.map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
                     })
-                    .collect::<DaftResult<Vec<_>>>()?;
-                let args = FunctionArgs::try_new(evaluated_inputs)?;
+                    .collect::<DaftResult<FunctionArgs<Series>>>()?;
+
 
                 func.udf.evaluate(args)
             }

@@ -22,7 +22,7 @@ impl SQLTableFunction for ReadDeltalakeFunction {
             }
             _ => unsupported_sql_err!("Expected one or two arguments"),
         };
-        let uri = planner.plan_function_arg(uri)?;
+        let uri = planner.plan_function_arg(uri)?.into_inner();
 
         let Some(uri) = uri.as_literal().and_then(|lit| lit.as_str()) else {
             unsupported_sql_err!("Expected a string literal for the first argument");

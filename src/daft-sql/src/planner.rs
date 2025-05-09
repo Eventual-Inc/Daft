@@ -495,8 +495,18 @@ impl SQLPlanner<'_> {
             .map(|expr| {
                 if has_agg(&expr) {
                     aggs.insert(expr.clone());
-
                     resolved_col(expr.name())
+                // if the projection is the same as one in a groupby, we don't need to reevaluate it again
+                //  just reuse the existing column
+                } else if groupby_exprs.contains(&expr) {
+                    resolved_col(expr.name())
+                // similarly, if its the same as above, but an alias, the same logic applies
+                } else if let Expr::Alias(inner, name) = expr.as_ref() {
+                    if groupby_exprs.contains(inner) {
+                        resolved_col(inner.name()).alias(name.as_ref())
+                    } else {
+                        expr
+                    }
                 } else {
                     expr
                 }

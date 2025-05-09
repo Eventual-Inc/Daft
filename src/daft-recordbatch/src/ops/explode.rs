@@ -34,7 +34,7 @@ impl RecordBatch {
             match expr.as_ref() {
                 Expr::ScalarFunction(func) => {
                     if func.name() == "explode" {
-                        let inputs = &func.inputs;
+                        let inputs = &func.inputs.clone().into_inner();
                         if inputs.len() != 1 {
                             return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
                         }

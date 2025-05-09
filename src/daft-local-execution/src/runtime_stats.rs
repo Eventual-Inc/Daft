@@ -8,8 +8,10 @@ use std::{
     time::Instant,
 };
 
+use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
+use opentelemetry::{global, metrics::Counter, KeyValue};
 use tracing::{instrument::Instrumented, Instrument};
 
 use crate::{
@@ -22,6 +24,50 @@ pub struct RuntimeStatsContext {
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
+    name: String,
+    subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
+}
+
+pub trait RuntimeStatsSubscriber: Send + Sync {
+    fn on_rows_received(&self, context: &str, count: u64);
+    fn on_rows_emitted(&self, context: &str, count: u64);
+    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64);
+}
+
+pub struct OpenTelemetrySubscriber {
+    rows_received: Counter<u64>,
+    rows_emitted: Counter<u64>,
+    cpu_us: Counter<u64>,
+}
+
+impl OpenTelemetrySubscriber {
+    pub fn new() -> Self {
+        let meter = global::meter("runtime_stats");
+        Self {
+            rows_received: meter
+                .u64_counter("daft.runtime_stats.rows_received")
+                .build(),
+            rows_emitted: meter.u64_counter("daft.runtime_stats.rows_emitted").build(),
+            cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
+        }
+    }
+}
+
+impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
+    fn on_rows_received(&self, context: &str, count: u64) {
+        self.rows_received
+            .add(count, &[KeyValue::new("context", context.to_string())]);
+    }
+    fn on_rows_emitted(&self, context: &str, count: u64) {
+        self.rows_emitted
+            .add(count, &[KeyValue::new("context", context.to_string())]);
+    }
+    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64) {
+        self.cpu_us.add(
+            microseconds,
+            &[KeyValue::new("context", context.to_string())],
+        );
+    }
 }
 
 #[derive(Debug)]
@@ -66,11 +112,18 @@ impl RuntimeStats {
 }
 
 impl RuntimeStatsContext {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new(name: &str) -> Arc<Self> {
+        let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
+        if should_enable_opentelemetry() {
+            subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
+        }
+
         Arc::new(Self {
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
+            name: name.to_string(),
+            subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
         })
     }
     pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
@@ -78,16 +131,25 @@ impl RuntimeStatsContext {
             elapsed.as_micros() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
+        for subscriber in self.subscribers.read().iter() {
+            subscriber.on_cpu_time_elapsed(&self.name, elapsed.as_micros() as u64);
+        }
     }
 
     pub(crate) fn mark_rows_received(&self, rows: u64) {
         self.rows_received
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
+        for subscriber in self.subscribers.read().iter() {
+            subscriber.on_rows_received(&self.name, rows);
+        }
     }
 
     pub(crate) fn mark_rows_emitted(&self, rows: u64) {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
+        for subscriber in self.subscribers.read().iter() {
+            subscriber.on_rows_emitted(&self.name, rows);
+        }
     }
 
     pub(crate) fn get_rows_received(&self) -> u64 {

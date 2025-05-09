@@ -84,6 +84,11 @@ where
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         for i in start_idx..end_idx {
             if self.source.is_valid(i) {
                 let value = self.source.get(i).unwrap();
