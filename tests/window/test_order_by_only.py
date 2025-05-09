@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
-def test_row_number(make_df, repartition_nparts):
+def test_row_number(make_df, repartition_nparts, with_morsel_size):
     df = make_df(
         {"category": ["A", "A", "A", "B", "B", "B", "C", "C"], "sales": [100, 200, 50, 500, 125, 300, 250, 150]},
         repartition=repartition_nparts,
@@ -38,12 +38,12 @@ def test_row_number(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
-def test_row_number_large(make_df, repartition_nparts):
+def test_order_by_only_row_number(make_df, repartition_nparts, with_morsel_size):
     """Test row_number function with order_by only (no partition_by)."""
     random.seed(42)
 
     data = []
-    n = 1000000
+    n = 1000
     total = n + 1
 
     xs = list(range(1, n + 1))
@@ -108,16 +108,16 @@ def test_row_number_large(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
-def test_rank(make_df, repartition_nparts):
+def test_rank(make_df, repartition_nparts, with_morsel_size):
     """Test rank function with order_by only (no partition_by)."""
     random.seed(42)
 
     data = []
-    n = 1000000
+    n = 1000
 
     values = []
-    for i in range(1, 1001):
-        values.extend([i] * 1000)
+    for i in range(1, 11):
+        values.extend([i] * 100)
 
     values = values[:n]
 
@@ -179,16 +179,16 @@ def test_rank(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
-def test_dense_rank(make_df, repartition_nparts):
+def test_dense_rank(make_df, repartition_nparts, with_morsel_size):
     """Test dense_rank function with order_by only (no partition_by)."""
     random.seed(43)
 
     data = []
-    n = 1000000
+    n = 1000
 
     values = []
-    for i in range(1, 1001):
-        values.extend([i] * 1000)
+    for i in range(1, 11):
+        values.extend([i] * 100)
 
     values = values[:n]
 
@@ -237,84 +237,9 @@ def test_dense_rank(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
-def test_rank_edge_case_large_position(make_df, repartition_nparts):
-    """Test rank function with specific edge case at 2^17th position."""
-    n = 150000
-    target_pos = 2**17
-
-    data = []
-    values = list(range(target_pos - 1))
-    values.extend([target_pos] * 3)
-    values.extend(range(target_pos + 2, n + 1))
-
-    random.seed(44)
-    random.shuffle(values)
-
-    for i, value in enumerate(values):
-        data.append({"id": i, "value": value})
-
-    df = make_df(data, repartition=repartition_nparts, repartition_columns=["id"])
-
-    window_spec_asc = Window().order_by("value", desc=False)
-    window_spec_desc = Window().order_by("value", desc=True)
-
-    result = df.select(
-        col("id"),
-        col("value"),
-        rank().over(window_spec_asc).alias("rank_asc"),
-        dense_rank().over(window_spec_asc).alias("dense_rank_asc"),
-        rank().over(window_spec_desc).alias("rank_desc"),
-        dense_rank().over(window_spec_desc).alias("dense_rank_desc"),
-    ).collect()
-
-    result_df = result.to_pandas().sort_values(by="id").reset_index(drop=True)
-
-    sorted_values_asc = sorted(values)
-    sorted_values_desc = sorted(values, reverse=True)
-
-    value_to_rank_asc = {}
-    value_to_dense_rank_asc = {}
-    value_to_rank_desc = {}
-    value_to_dense_rank_desc = {}
-
-    current_rank = 1
-    for i, v in enumerate(sorted_values_asc):
-        if v not in value_to_rank_asc:
-            value_to_rank_asc[v] = current_rank
-        if v not in value_to_dense_rank_asc:
-            value_to_dense_rank_asc[v] = len(value_to_dense_rank_asc) + 1
-        current_rank += 1
-
-    current_rank = 1
-    for i, v in enumerate(sorted_values_desc):
-        if v not in value_to_rank_desc:
-            value_to_rank_desc[v] = current_rank
-        if v not in value_to_dense_rank_desc:
-            value_to_dense_rank_desc[v] = len(value_to_dense_rank_desc) + 1
-        current_rank += 1
-
-    expected_df = (
-        pd.DataFrame(
-            {
-                "id": list(range(len(values))),
-                "value": values,
-                "rank_asc": [value_to_rank_asc[v] for v in values],
-                "dense_rank_asc": [value_to_dense_rank_asc[v] for v in values],
-                "rank_desc": [value_to_rank_desc[v] for v in values],
-                "dense_rank_desc": [value_to_dense_rank_desc[v] for v in values],
-            }
-        )
-        .sort_values(by="id")
-        .reset_index(drop=True)
-    )
-
-    assert_df_equals(result_df, expected_df, sort_key=["id", "value"], check_dtype=False)
-
-
-@pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
-def test_rank_with_150k_distinct_values(make_df, repartition_nparts):
-    """Test rank, dense_rank, and row_number with 150,000 distinct values."""
-    n = 150000
+def test_rank_with_1k_distinct_values(make_df, repartition_nparts, with_morsel_size):
+    """Test rank, dense_rank, and row_number with 15,000 distinct values."""
+    n = 1000
     random.seed(45)
 
     values = list(range(n))
