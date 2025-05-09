@@ -4,9 +4,9 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 
 from daft.catalog import Catalog, Table
-from daft.dataframe.dataframe import DataSink
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
+from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
