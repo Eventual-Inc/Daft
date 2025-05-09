@@ -14,8 +14,8 @@ use daft_dsl::{join::get_common_join_cols, resolved_col};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, UnGroupedAggregate, Unpivot, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    Project, Sample, Sort, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -34,6 +34,7 @@ use crate::{
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
         project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
+        window_order_by_only::WindowOrderByOnlyOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -205,6 +206,28 @@ pub fn physical_plan_to_pipeline(
             BlockingSinkNode::new(
                 Arc::new(window_partition_and_dynamic_frame_sink),
                 input_node,
+                stats_state.clone(),
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::WindowOrderByOnly(WindowOrderByOnly {
+            input,
+            order_by,
+            descending,
+            schema,
+            stats_state,
+            functions,
+            aliases,
+        }) => {
+            let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let window_order_by_only_op =
+                WindowOrderByOnlyOperator::new(functions, aliases, order_by, descending, schema)
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+            IntermediateNode::new(
+                Arc::new(window_order_by_only_op),
+                vec![input_node],
                 stats_state.clone(),
             )
             .boxed()

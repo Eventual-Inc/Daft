@@ -171,8 +171,29 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         window.aliases.clone(),
                     ))
                 }
-                _ => Err(DaftError::not_implemented(
-                    "Window without partition by not yet implemented",
+                (false, true, false) => {
+                    let sorted_input = LocalPhysicalPlan::sort(
+                        input,
+                        window.window_spec.order_by.clone(),
+                        window.window_spec.descending.clone(),
+                        window.window_spec.descending.clone(),
+                        window.stats_state.clone(),
+                    );
+                    Ok(LocalPhysicalPlan::window_order_by_only(
+                        sorted_input,
+                        window.window_spec.order_by.clone(),
+                        window.window_spec.descending.clone(),
+                        window.schema.clone(),
+                        window.stats_state.clone(),
+                        window.window_functions.clone(),
+                        window.aliases.clone(),
+                    ))
+                }
+                (false, true, true) => Err(DaftError::not_implemented(
+                    "Window with order by and frame not yet implemented",
+                )),
+                _ => Err(DaftError::ValueError(
+                    "Window requires either partition by or order by".to_string(),
                 )),
             }
         }
