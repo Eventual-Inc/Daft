@@ -134,12 +134,13 @@ impl BlockingSink for TopNSink {
                         state.finalize()
                     });
                     let concated = MicroPartition::concat(parts)?;
-                    let sorted = Arc::new(concated.sort(
+                    let final_output = Arc::new(concated.top_n(
                         &params.sort_by,
                         &params.descending,
                         &params.nulls_first,
+                        params.limit,
                     )?);
-                    Ok(Some(Arc::new(sorted.slice(0, params.limit)?)))
+                    Ok(Some(final_output))
                 },
                 Span::current(),
             )
