@@ -11,6 +11,10 @@ pub mod optimization;
 mod pyobj_serde;
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(feature = "python")]
+mod visitor;
+
 mod treenode;
 pub use common_treenode;
 pub use expr::{
