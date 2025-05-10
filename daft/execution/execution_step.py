@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.io import DataSink
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
 
@@ -576,6 +577,26 @@ class WriteLance(SingleOutputInstruction):
             io_config=self.io_config,
             kwargs=self.kwargs,
         )
+
+
+@dataclass(frozen=True)
+class CustomWrite(SingleOutputInstruction):
+    sink: DataSink
+    kwargs: dict | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        results = list(self.sink.write(iter(inputs), **self.kwargs))
+        mp = MicroPartition.from_pydict({"custom_write_results": results})
+        return [mp]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
 
 
 @dataclass(frozen=True)

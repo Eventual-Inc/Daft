@@ -19,6 +19,7 @@ use daft_dsl::{
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
+use pyo3::PyClass;
 use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
@@ -747,6 +748,16 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[cfg(feature = "python")]
+    pub fn custom_write(&self, sink: Arc<PyObject>, kwargs: Arc<PyObject>) -> DaftResult<Self> {
+        use crate::sink_info::CustomInfo;
+
+        let sink_info = SinkInfo::CustomInfo(CustomInfo { sink, kwargs });
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
     pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
@@ -1276,6 +1287,17 @@ impl PyLogicalPlanBuilder {
                 kwargs,
             )?
             .into())
+    }
+
+    #[pyo3(signature = (sink, kwargs=None))]
+    pub fn custom_write(
+        &self,
+        py: Python,
+        sink: PyObject,
+        kwargs: Option<PyObject>,
+    ) -> PyResult<Self> {
+        let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));
+        Ok(self.builder.custom_write(Arc::new(sink), kwargs)?.into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

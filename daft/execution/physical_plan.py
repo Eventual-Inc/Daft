@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.io import DataSink
     from daft.logical.schema import Schema
 
 
@@ -218,6 +219,20 @@ def lance_write(
                 kwargs=kwargs,
             ),
         )
+        if isinstance(step, PartitionTaskBuilder)
+        else step
+        for step in child_plan
+    )
+
+
+def custom_write(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    sink: DataSink,
+    kwargs: dict | None,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Write the results of `child_plan` into a custom write sink described by `...`."""
+    yield from (
+        step.add_instruction(execution_step.CustomWrite(sink, kwargs))
         if isinstance(step, PartitionTaskBuilder)
         else step
         for step in child_plan

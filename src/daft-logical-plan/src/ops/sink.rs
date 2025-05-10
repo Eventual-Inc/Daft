@@ -52,6 +52,11 @@ impl Sink {
                     CatalogType::Lance(_) => vec![Field::new("fragments", DataType::Python)],
                 }
             }
+            #[cfg(feature = "python")]
+            SinkInfo::CustomInfo(_) => {
+                // TODO(desmond): Add custom info fields here.
+                vec![Field::new("write_info", DataType::Python)]
+            }
         };
         let schema = Schema::new(fields).into();
         Ok(Self {
@@ -98,6 +103,10 @@ impl Sink {
                     res.extend(lance_info.multiline_display());
                 }
             },
+            #[cfg(feature = "python")]
+            SinkInfo::CustomInfo(custom_info) => {
+                res.push(format!("Sink: CustomInfo()"));
+            }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));
         if let StatsState::Materialized(stats) = &self.stats_state {
