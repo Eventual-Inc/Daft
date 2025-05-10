@@ -27,6 +27,7 @@ pub enum PhysicalPlan {
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
+    TopN(TopN),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     Aggregate(Aggregate),
@@ -88,6 +89,17 @@ impl PhysicalPlan {
             }
 
             Self::Sort(Sort {
+                input,
+                sort_by,
+                descending,
+                ..
+            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
+                input.clustering_spec().num_partitions(),
+                sort_by.clone(),
+                descending.clone(),
+            ))
+            .into(),
+            Self::TopN(TopN {
                 input,
                 sort_by,
                 descending,
@@ -238,7 +250,7 @@ impl PhysicalPlan {
                     acc_selectivity: input_stats.acc_selectivity * estimated_selectivity,
                 }
             }
-            Self::Limit(Limit { input, limit, .. }) => {
+            Self::Limit(Limit { input, limit, .. }) | Self::TopN(TopN { input, limit, .. }) => {
                 let input_stats = input.approximate_stats();
                 let limit = *limit as usize;
                 let limit_selectivity = if input_stats.num_rows > limit {
@@ -383,6 +395,7 @@ impl PhysicalPlan {
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sample(Sample { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
+            Self::TopN(TopN { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
@@ -427,6 +440,7 @@ impl PhysicalPlan {
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
+                Self::TopN(TopN { sort_by, descending, nulls_first, limit, num_partitions, .. }) => Self::TopN(TopN::new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, names, .. }) => Self::Pivot(Pivot::new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), names.clone())),
@@ -479,6 +493,7 @@ impl PhysicalPlan {
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
+            Self::TopN(..) => "TopN",
             Self::Explode(..) => "Explode",
             Self::Unpivot(..) => "Unpivot",
             Self::Sample(..) => "Sample",
@@ -515,6 +530,7 @@ impl PhysicalPlan {
             Self::ActorPoolProject(ap_project) => ap_project.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
+            Self::TopN(top_n) => top_n.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),

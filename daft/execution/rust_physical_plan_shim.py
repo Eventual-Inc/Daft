@@ -216,6 +216,25 @@ def sort(
     )
 
 
+def top_n(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sort_by: list[PyExpr],
+    descending: list[bool],
+    nulls_first: list[bool],
+    limit: int,
+    num_partitions: int,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
+    return physical_plan.top_n(
+        child_plan=input,
+        sort_by=expr_projection,
+        descending=descending,
+        nulls_first=nulls_first,
+        limit=limit,
+        num_partitions=num_partitions,
+    )
+
+
 def fanout_by_hash(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     num_partitions: int,

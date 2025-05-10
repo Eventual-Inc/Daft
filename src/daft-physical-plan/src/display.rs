@@ -18,6 +18,7 @@ impl TreeDisplay for PhysicalPlan {
             Self::Explode(explode) => explode.display_as(level),
             Self::Unpivot(unpivot) => unpivot.display_as(level),
             Self::Sort(sort) => sort.display_as(level),
+            Self::TopN(top_n) => top_n.display_as(level),
             Self::Sample(sample) => sample.display_as(level),
             Self::MonotonicallyIncreasingId(id) => id.display_as(level),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.display_as(level),

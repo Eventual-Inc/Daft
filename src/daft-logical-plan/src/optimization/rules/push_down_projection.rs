@@ -346,6 +346,7 @@ impl PushDownProjection {
             LogicalPlan::Sort(..)
             | LogicalPlan::Repartition(..)
             | LogicalPlan::Limit(..)
+            | LogicalPlan::TopN(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
             | LogicalPlan::Explode(..) => {

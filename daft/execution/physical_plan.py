@@ -1723,6 +1723,30 @@ def sort(
     )
 
 
+def top_n(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    sort_by: ExpressionsProjection,
+    descending: list[bool],
+    nulls_first: list[bool],
+    limit: int,
+    num_partitions: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Take the top N values from the result of `child_plan` according to `sort_info` and `limit`."""
+    # TODO: The current distributed top_n implementation will perform a full sort
+    # followed by a limit. This is not optimal, but upcoming infrastructure changes
+    # to the distributed execution engine will make it easier to add a more efficient
+    # distributed top_n implementation.
+
+    child_plan = sort(
+        child_plan=child_plan,
+        sort_by=sort_by,
+        descending=descending,
+        nulls_first=nulls_first,
+        num_partitions=num_partitions,
+    )
+    yield from global_limit(child_plan=child_plan, limit_rows=limit, eager=False, num_partitions=num_partitions)
+
+
 def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int):
     """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions."""
     seed = 0
