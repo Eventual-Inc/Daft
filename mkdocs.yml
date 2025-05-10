@@ -35,6 +35,7 @@ nav:
       - Apache Iceberg: integrations/iceberg.md
       - AWS Glue: integrations/glue.md
       - Delta Lake: integrations/delta_lake.md
+      - LanceDB: integrations/lance.md
       - S3 Tables: integrations/s3tables.md
       - Unity Catalog: integrations/unity_catalog.md
     - Storage:
