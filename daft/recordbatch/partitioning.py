@@ -1,3 +1,4 @@
+import urllib.parse
 from typing import Dict, List, Optional, Union
 
 from daft import Series
@@ -12,8 +13,9 @@ def partition_strings_to_path(
     parts: Dict[str, str],
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> str:
-    keys = parts.keys()
-    values = [partition_null_fallback if value is None else value for value in parts.values()]
+    # Hive-style partition keys and values should be URL encoded.
+    keys = [urllib.parse.quote(key) for key in parts.keys()]
+    values = [partition_null_fallback if value is None else urllib.parse.quote(value) for value in parts.values()]
     postfix = "/".join(f"{k}={v}" for k, v in zip(keys, values))
     return f"{root_path}/{postfix}"
 

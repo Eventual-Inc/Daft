@@ -212,6 +212,22 @@ impl DataType {
             _ => {} // Other types don't have child data types
         }
     }
+
+    /// Returns whether this datatype or any of its children contains a type that is currently unsupported in arrow-rs.
+    pub fn has_non_arrow_rs_convertible_type(&self) -> bool {
+        match self {
+            DataType::Extension(_, _, _) => true,
+            DataType::Timestamp(_, tz) => tz.is_some(),
+            DataType::Map(_, _) => true,
+            _ => {
+                let mut has_extension = false;
+                self.direct_children(|child| {
+                    has_extension = has_extension || child.has_non_arrow_rs_convertible_type();
+                });
+                has_extension
+            }
+        }
+    }
 }
 
 #[cfg(feature = "arrow")]
@@ -462,6 +478,14 @@ impl From<arrow_schema::IntervalUnit> for IntervalUnit {
             arrow_schema::IntervalUnit::DayTime => Self::DayTime,
             arrow_schema::IntervalUnit::MonthDayNano => Self::MonthDayNano,
         }
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<Schema> for arrow_schema::Schema {
+    fn from(schema: Schema) -> Self {
+        let fields: Vec<arrow_schema::Field> = schema.fields.into_iter().map(|f| f.into()).collect();
+        arrow_schema::Schema::new(fields)
     }
 }
 

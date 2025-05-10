@@ -2,23 +2,36 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use daft_core::prelude::*;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{AsyncFileWriter, WriterFactory};
+use crate::{native_arrow_writer::NativeArrowWriter, AsyncFileWriter, WriterFactory};
 
 /// PhysicalWriterFactory is a factory for creating physical writers, i.e. parquet, csv writers.
 pub struct PhysicalWriterFactory {
     output_file_info: OutputFileInfo,
-    native: bool, // TODO: Implement native writer
+    schema: SchemaRef,
+    native: bool,
 }
 
 impl PhysicalWriterFactory {
-    pub fn new(output_file_info: OutputFileInfo) -> Self {
+    pub fn new(
+        output_file_info: OutputFileInfo,
+        file_schema: &SchemaRef,
+        native_enabled: bool,
+    ) -> Self {
+        let native = native_enabled
+            && NativeArrowWriter::native_supported(
+                output_file_info.file_format,
+                &output_file_info.root_dir,
+                file_schema,
+            );
         Self {
             output_file_info,
-            native: false,
+            schema: file_schema.clone(),
+            native,
         }
     }
 }
@@ -33,18 +46,21 @@ impl WriterFactory for PhysicalWriterFactory {
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         match self.native {
-            true => unimplemented!(),
-            false => {
-                let writer = create_pyarrow_file_writer(
-                    &self.output_file_info.root_dir,
-                    file_idx,
-                    self.output_file_info.compression.as_ref(),
-                    self.output_file_info.io_config.as_ref(),
-                    self.output_file_info.file_format,
-                    partition_values,
-                )?;
-                Ok(writer)
-            }
+            true => create_native_writer(
+                &self.output_file_info.root_dir,
+                file_idx,
+                &self.schema,
+                self.output_file_info.file_format,
+                partition_values,
+            ),
+            _ => create_pyarrow_file_writer(
+                &self.output_file_info.root_dir,
+                file_idx,
+                self.output_file_info.compression.as_ref(),
+                self.output_file_info.io_config.as_ref(),
+                self.output_file_info.file_format,
+                partition_values,
+            ),
         }
     }
 }
@@ -73,6 +89,24 @@ pub fn create_pyarrow_file_writer(
         )?)),
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for physical write".to_string(),
+        )),
+    }
+}
+
+fn create_native_writer(
+    root_dir: &str,
+    file_idx: usize,
+    schema: &SchemaRef,
+    file_format: FileFormat,
+    partition_values: Option<&RecordBatch>,
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
+{
+    match file_format {
+        FileFormat::Parquet => {
+            NativeArrowWriter::create_parquet_writer(root_dir, schema, file_idx, partition_values)
+        }
+        _ => Err(DaftError::ComputeError(
+            "Unsupported file format for native write".to_string(),
         )),
     }
 }

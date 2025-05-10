@@ -1,4 +1,5 @@
 [dependencies]
+arrow-schema = {version = "54.2.1", optional = true}
 arrow2 = {workspace = true, features = ["io_parquet"]}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
@@ -9,6 +10,7 @@ thiserror = {workspace = true}
 parquet2 = {workspace = true}
 
 [features]
+arrow = ["arrow2/arrow", "dep:arrow-schema"]
 python = ["dep:pyo3"]
 
 [lints]

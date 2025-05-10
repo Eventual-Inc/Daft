@@ -567,10 +567,7 @@ impl MicroPartition {
     ///
     /// "Reading if necessary" means I/O operations only occur for unloaded data,
     /// optimizing performance by avoiding redundant reads.
-    pub(crate) fn tables_or_read(
-        &self,
-        io_stats: IOStatsRef,
-    ) -> crate::Result<Arc<Vec<RecordBatch>>> {
+    pub fn tables_or_read(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<RecordBatch>>> {
         let mut guard = self.state.lock().unwrap();
         match &*guard {
             TableState::Unloaded(scan_task) => {
