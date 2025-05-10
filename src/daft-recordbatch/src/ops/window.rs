@@ -632,15 +632,6 @@ impl RecordBatch {
         self.union(&window_batch)
     }
 
-    pub fn window_row_number_global(&self, name: String, offset: u64) -> DaftResult<Self> {
-        let row_numbers: Vec<u64> = ((offset + 1)..=(offset + self.len() as u64)).collect();
-        let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
-
-        let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
-
-        self.union(&row_number_batch)
-    }
-
     pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
         let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
         let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
