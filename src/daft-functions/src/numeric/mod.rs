@@ -19,15 +19,16 @@ use daft_core::{
     prelude::{Field, Schema},
     series::Series,
 };
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_dsl::{
+    functions::{FunctionModule, FunctionRegistry, ScalarUDF},
+    ExprRef,
+};
 use exp::{Exp, Expm1};
 use floor::Floor;
 use log::{Ln, Log, Log10, Log1p, Log2};
 use round::Round;
 use sign::{Negative, Sign};
 use sqrt::Sqrt;
-
-use crate::FunctionModule;
 
 fn to_field_single_numeric(
     f: &dyn ScalarUDF,
@@ -85,7 +86,7 @@ fn evaluate_single_numeric<F: Fn(&Series) -> DaftResult<Series>>(
 
 pub struct NumericFunctions;
 impl FunctionModule for NumericFunctions {
-    fn register(parent: &mut crate::FunctionRegistry) {
+    fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(Abs);
         parent.add_fn(Cbrt);
         parent.add_fn(Ceil);

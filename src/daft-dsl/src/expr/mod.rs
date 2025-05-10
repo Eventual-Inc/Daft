@@ -1289,6 +1289,7 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
+
             Self::IsNull(..) => {
                 Self::IsNull(children.first().expect("Should have 1 child").clone())
             }
