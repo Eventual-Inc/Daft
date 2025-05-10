@@ -44,6 +44,7 @@ document.addEventListener("DOMContentLoaded", function () {
   script.setAttribute("version", "stable");
   script.setAttribute("runllm-keyboard-shortcut", "Mod+j"); // cmd-j or ctrl-j to open the widget.
   script.setAttribute("runllm-name", "Daft");
+  script.setAttribute("runllm-position", "BOTTOM_LEFT");
   script.setAttribute("runllm-position-x", "20px");
   script.setAttribute("runllm-position-y", "98px");
   script.setAttribute("runllm-assistant-id", "160");
@@ -52,7 +53,21 @@ document.addEventListener("DOMContentLoaded", function () {
   script.setAttribute("runllm-join-community-text", "Join Daft Slack!");
   script.setAttribute("runllm-community-url", "https://www.getdaft.io/slack.html?utm_source=docs&utm_medium=button&utm_campaign=docs_ask_ai");
   script.setAttribute("runllm-community-type", "slack");
+  script.setAttribute("runllm-brand-logo", "https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/docs/img/favicon.png");
 
   script.async = true;
   document.head.appendChild(script);
+
+  // Open external links in new tab
+  var links = document.querySelectorAll('a[href^="http"], a[href^="https"]');
+  var domain = window.location.hostname;
+
+  for (var i = 0; i < links.length; i++) {
+    // Check if the link doesn't point to your domain
+    if (links[i].hostname !== domain) {
+      links[i].target = "_blank";
+      links[i].rel = "noopener noreferrer";
+    }
+  }
+
 });
