@@ -320,8 +320,6 @@ impl LocalPhysicalPlan {
         functions: Vec<WindowExpr>,
         aliases: Vec<String>,
     ) -> LocalPhysicalPlanRef {
-        // input must be a sort plan
-        assert!(matches!(*input, Self::Sort(_)));
         Self::WindowOrderByOnly(WindowOrderByOnly {
             input,
             order_by,
