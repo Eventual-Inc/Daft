@@ -96,7 +96,7 @@ from daft.convert import (
 )
 from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
-from daft.logical.schema import Schema
+from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
 from daft.io import (

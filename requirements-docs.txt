@@ -4,6 +4,7 @@
 markdown-exec
 mkdocs-jupyter
 mkdocs-material
+mkdocs-redirects
 pymdown-extensions
 mkdocstrings-python
 ruff # for mkdocstring formatting
