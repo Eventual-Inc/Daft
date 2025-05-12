@@ -32,13 +32,13 @@ impl SQLFunction for SqlUrlUpload {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, location] => {
-                let input = planner.plan_function_arg(input)?;
-                let location = planner.plan_function_arg(location)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let location = planner.plan_function_arg(location)?.into_inner();
                 Ok(uri::upload(input, location, None))
             }
             [input, location, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
-                let location = planner.plan_function_arg(location)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let location = planner.plan_function_arg(location)?.into_inner();
                 let mut args: UrlUploadArgs = planner.plan_function_args(
                     args,
                     &["max_connections", "on_error", "io_config"],

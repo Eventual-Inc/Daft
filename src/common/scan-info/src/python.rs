@@ -284,7 +284,7 @@ impl<'py> TermBuilder<'py> {
             Expr::ScalarFunction(scalar_function) => {
                 // (<proc> <args>...)
                 proc = scalar_function.name();
-                for arg in scalar_function.inputs.iter().as_ref() {
+                for arg in scalar_function.inputs.clone().into_inner().iter().as_ref() {
                     args.append(self.to_term(arg.as_ref())?)?;
                 }
             }

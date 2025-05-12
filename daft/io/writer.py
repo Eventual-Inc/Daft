@@ -159,8 +159,8 @@ class ParquetFileWriter(FileWriterBase):
         self.is_closed = True
         metadata = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
-            for col_name in self.partition_values.column_names():
-                metadata[col_name] = self.partition_values.get_column(col_name)
+            for column in self.partition_values.columns():
+                metadata[column.name()] = column
         return RecordBatch.from_pydict(metadata)
 
 
@@ -209,8 +209,8 @@ class CSVFileWriter(FileWriterBase):
         self.is_closed = True
         metadata = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
-            for col_name in self.partition_values.column_names():
-                metadata[col_name] = self.partition_values.get_column(col_name)
+            for column in self.partition_values.columns():
+                metadata[column.name()] = column
 
         return RecordBatch.from_pydict(metadata)
 
@@ -312,7 +312,7 @@ class DeltalakeWriter(ParquetFileWriter):
         converted_arrow_table = sanitize_table_for_deltalake(
             table,
             self.large_dtypes,
-            self.partition_values.column_names() if self.partition_values is not None else None,
+            self.partition_values.schema().column_names() if self.partition_values is not None else None,
         )
         if self.current_writer is None:
             self.current_writer = self._create_writer(converted_arrow_table.schema)

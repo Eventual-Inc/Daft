@@ -14,8 +14,8 @@ use daft_dsl::{join::get_common_join_cols, resolved_col};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, UnGroupedAggregate, Unpivot, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    Project, Sample, Sort, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -49,6 +49,7 @@ use crate::{
         pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
+        window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
         window_partition_and_order_by::WindowPartitionAndOrderBySink,
         window_partition_only::WindowPartitionOnlySink,
@@ -204,6 +205,28 @@ pub fn physical_plan_to_pipeline(
             })?;
             BlockingSinkNode::new(
                 Arc::new(window_partition_and_dynamic_frame_sink),
+                input_node,
+                stats_state.clone(),
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::WindowOrderByOnly(WindowOrderByOnly {
+            input,
+            order_by,
+            descending,
+            schema,
+            stats_state,
+            functions,
+            aliases,
+        }) => {
+            let input_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let window_order_by_only_op =
+                WindowOrderByOnlySink::new(functions, aliases, order_by, descending, schema)
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+            BlockingSinkNode::new(
+                Arc::new(window_order_by_only_op),
                 input_node,
                 stats_state.clone(),
             )

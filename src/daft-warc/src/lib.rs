@@ -557,7 +557,12 @@ pub async fn stream_warc(
                 let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
                 let filtered = table.filter(&[predicate])?;
                 if let Some(include_columns) = &include_columns {
-                    filtered.get_columns(include_columns.as_slice())
+                    let include_column_indices = include_columns
+                        .iter()
+                        .map(|name| table.schema.get_index(name))
+                        .collect::<DaftResult<Vec<_>>>()?;
+
+                    Ok(filtered.get_columns(&include_column_indices))
                 } else {
                     Ok(filtered)
                 }

@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState};
+use daft_recordbatch::{get_columns_by_name, GrowableRecordBatch, ProbeState};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
@@ -154,9 +154,9 @@ impl InnerHashJoinProbeOperator {
             (probe_side_table, build_side_table)
         };
 
-        let join_keys_table = left_table.get_columns(common_join_keys)?;
-        let left_non_join_columns = left_table.get_columns(left_non_join_columns)?;
-        let right_non_join_columns = right_table.get_columns(right_non_join_columns)?;
+        let join_keys_table = get_columns_by_name(&left_table, common_join_keys)?;
+        let left_non_join_columns = get_columns_by_name(&left_table, left_non_join_columns)?;
+        let right_non_join_columns = get_columns_by_name(&right_table, right_non_join_columns)?;
         let final_table = join_keys_table
             .union(&left_non_join_columns)?
             .union(&right_non_join_columns)?;
