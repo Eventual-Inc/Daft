@@ -50,4 +50,8 @@ impl IntermediateOperator for FilterOperator {
     fn name(&self) -> &'static str {
         "Filter"
     }
+
+    fn morsel_size(&self, _runtime_handle: &crate::ExecutionRuntimeContext) -> Option<usize> {
+        None
+    }
 }

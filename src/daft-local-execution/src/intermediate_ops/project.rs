@@ -10,7 +10,6 @@ use daft_dsl::{
     },
     Expr, ExprRef,
 };
-use daft_functions::uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -50,8 +49,9 @@ pub fn try_get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
                     ..
                 } => *batch_size,
                 Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "download" => {
-                    let download_args = udf.as_any().downcast_ref::<UrlDownloadArgs>().unwrap();
-                    Some(download_args.max_connections * CONNECTION_BATCH_FACTOR)
+                    // TODO: Figure out how to get it now? Earlier stage?
+                    // let download_args = udf.as_any().downcast_ref::<UrlDownloadArgs>().unwrap();
+                    Some(32 * CONNECTION_BATCH_FACTOR)
                 }
                 _ => None,
             };
@@ -188,8 +188,7 @@ impl IntermediateOperator for ProjectOperator {
         Ok(self.max_concurrency)
     }
 
-    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
+    fn morsel_size(&self, _runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
         self.batch_size
-            .or_else(|| Some(runtime_handle.default_morsel_size()))
     }
 }
