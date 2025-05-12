@@ -2,7 +2,6 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
 
-use core::slice;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result},
@@ -42,6 +41,7 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;
+pub use ops::{get_column_by_name, get_columns_by_name};
 pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
@@ -183,7 +183,7 @@ impl RecordBatch {
 
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
-        let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
+        let mut columns: Vec<Series> = Vec::with_capacity(schema.len());
         for field in schema.as_ref() {
             let series = Series::empty(&field.name, &field.dtype);
             columns.push(series);
@@ -261,10 +261,6 @@ impl RecordBatch {
 
     pub fn num_columns(&self) -> usize {
         self.columns.len()
-    }
-
-    pub fn column_names(&self) -> Vec<String> {
-        self.schema.names()
     }
 
     pub fn len(&self) -> usize {
@@ -464,10 +460,8 @@ impl RecordBatch {
         let num_columns = first_table.num_columns();
         let mut new_series = Vec::with_capacity(num_columns);
         for i in 0..num_columns {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
+            let series_to_cat: Vec<&Series> =
+                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
 
@@ -494,25 +488,23 @@ impl RecordBatch {
         Self::from_nonempty_columns(unioned)
     }
 
-    pub fn get_column<S: AsRef<str>>(&self, name: S) -> DaftResult<&Series> {
-        let i = self.schema.get_index(name.as_ref())?;
-        Ok(self.columns.get(i).unwrap())
+    pub fn get_column(&self, idx: usize) -> &Series {
+        &self.columns[idx]
     }
 
-    pub fn get_columns<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
-        let series_by_name = names
+    pub fn get_columns(&self, indices: &[usize]) -> Self {
+        let new_columns = indices
             .iter()
-            .map(|s| self.get_column(s).cloned())
-            .collect::<DaftResult<Vec<_>>>()?;
-        Self::new_with_size(
-            Schema::new(series_by_name.iter().map(|s| s.field().clone())),
-            series_by_name,
-            self.len(),
-        )
+            .map(|i| self.columns[*i].clone())
+            .collect::<Vec<_>>();
+
+        let new_schema = Schema::new(indices.iter().map(|i| self.schema[*i].clone()));
+
+        Self::new_unchecked(new_schema, new_columns, self.num_rows)
     }
 
-    pub fn get_column_by_index(&self, idx: usize) -> DaftResult<&Series> {
-        Ok(self.columns.get(idx).unwrap())
+    pub fn columns(&self) -> &[Series] {
+        &self.columns
     }
 
     fn eval_agg_expression(
@@ -631,7 +623,7 @@ impl RecordBatch {
             }
             Expr::IsIn(child, items) => {
                 if items.is_empty() {
-                    return BooleanArray::from_iter(child.name(), std::iter::once(Some(false))).into_series().broadcast(self.len());
+                    return BooleanArray::from_iter(&child.get_name(&self.schema)?, std::iter::once(Some(false))).into_series().broadcast(self.len());
                 }
                 let items = items.iter().map(|i| self.eval_expression(&BoundExpr::new_unchecked(i.clone()))).collect::<DaftResult<Vec<_>>>()?;
 
@@ -710,9 +702,10 @@ impl RecordBatch {
                 if_false,
                 predicate,
             } => match predicate.as_ref() {
+                // TODO: move this into simplify expression
                 Expr::Literal(LiteralValue::Boolean(true)) => self.eval_expression(&BoundExpr::new_unchecked(if_true.clone())),
                 Expr::Literal(LiteralValue::Boolean(false)) => {
-                    Ok(self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?.rename(if_true.name()))
+                    Ok(self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?.rename(if_true.get_name(&self.schema)?))
                 }
                 _ => {
                     let if_true_series = self.eval_expression(&BoundExpr::new_unchecked(if_true.clone()))?;
@@ -814,19 +807,7 @@ impl RecordBatch {
         exprs: &[BoundExpr],
         result_series: Vec<Series>,
     ) -> DaftResult<Self> {
-        let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
-
-        let mut seen = HashSet::new();
-
-        for field in &fields {
-            let name = &field.name;
-            if seen.contains(name) {
-                return Err(DaftError::ValueError(format!(
-                    "Duplicate name found when evaluating expressions: {name}"
-                )));
-            }
-            seen.insert(name);
-        }
+        let fields = result_series.iter().map(|s| s.field().clone());
 
         let new_schema = Schema::new(fields);
 
@@ -871,12 +852,12 @@ impl RecordBatch {
         schema: &Schema,
         fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> DaftResult<Self> {
-        let current_col_names = HashSet::<_>::from_iter(self.column_names());
+        let current_col_names = HashSet::<_>::from_iter(self.schema.field_names());
         let null_lit = null_lit();
         let exprs: Vec<_> = schema
             .into_iter()
             .map(|field| {
-                if current_col_names.contains(&field.name) {
+                if current_col_names.contains(field.name.as_str()) {
                     // For any fields already in the table, perform a cast
                     resolved_col(field.name.clone()).cast(&field.dtype)
                 } else {
@@ -999,8 +980,15 @@ impl TryFrom<RecordBatch> for FileInfos {
     type Error = DaftError;
 
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        let file_paths = record_batch
-            .get_column("path")?
+        let get_column_by_name = |name| {
+            if let [(idx, _)] = record_batch.schema.get_fields_with_name(name)[..] {
+                Ok(record_batch.get_column(idx))
+            } else {
+                Err(DaftError::SchemaMismatch(format!("RecordBatch requires columns \"path\", \"size\", and \"num_rows\" to convert to FileInfos, found: {}", record_batch.schema)))
+            }
+        };
+
+        let file_paths = get_column_by_name("path")?
             .utf8()?
             .data()
             .as_any()
@@ -1009,8 +997,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .iter()
             .map(|s| s.unwrap().to_string())
             .collect::<Vec<_>>();
-        let file_sizes = record_batch
-            .get_column("size")?
+        let file_sizes = get_column_by_name("size")?
             .i64()?
             .data()
             .as_any()
@@ -1019,8 +1006,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .iter()
             .map(|n| n.copied())
             .collect::<Vec<_>>();
-        let num_rows = record_batch
-            .get_column("num_rows")?
+        let num_rows = get_column_by_name("num_rows")?
             .i64()?
             .data()
             .as_any()
@@ -1084,14 +1070,6 @@ impl Display for RecordBatch {
 impl AsRef<Self> for RecordBatch {
     fn as_ref(&self) -> &Self {
         self
-    }
-}
-
-impl<'a> IntoIterator for &'a RecordBatch {
-    type Item = &'a Series;
-    type IntoIter = slice::Iter<'a, Series>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.columns.as_slice().iter()
     }
 }
 
