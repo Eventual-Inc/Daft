@@ -9,18 +9,22 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListJoin {}
+pub struct ListJoin;
 
 #[typetag::serde]
 impl ScalarUDF for ListJoin {
+    fn name(&self) -> &'static str {
+        "list_join"
+    }
+    fn aliases(&self) -> &'static [&'static str] {
+        &["array_to_string"]
+    }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         self.evaluate_from_series(&inputs)
-    }
-
-    fn name(&self) -> &'static str {
-        "list_join"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

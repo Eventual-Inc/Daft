@@ -9,8 +9,10 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListFill {}
+pub struct ListFill;
 
 #[typetag::serde]
 impl ScalarUDF for ListFill {

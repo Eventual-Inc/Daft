@@ -1,23 +1,52 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     lit, ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListSort {}
+pub struct ListSort;
 
 #[typetag::serde]
 impl ScalarUDF for ListSort {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-
     fn name(&self) -> &'static str {
         "list_sort"
+    }
+
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let data = inputs.required((0, "input"))?;
+        let desc = inputs.optional((1, "desc"))?;
+        let nulls_first = inputs.optional((2, "nulls_first"))?;
+    }
+
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let data = inputs.required((0, "input"))?.to_field(schema)?;
+        if let Some(desc) = inputs
+            .optional((1, "desc"))?
+            .map(|expr| expr.to_field(schema))
+            .transpose()?
+        {
+            ensure!(desc.dtype == DataType::Boolean, "desc must be boolean");
+        }
+        if let Some(nulls_first) = inputs
+            .optional((2, "nulls_first"))?
+            .map(|expr| expr.to_field(schema))
+            .transpose()?
+        {
+            ensure!(
+                nulls_first.dtype == DataType::Boolean,
+                "nulls_first must be boolean"
+            );
+        }
+        Ok(data)
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

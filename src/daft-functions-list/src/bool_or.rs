@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{DataType, Field, Schema},
+    prelude::{Field, Schema},
     series::Series,
 };
 use daft_dsl::{
@@ -9,25 +9,30 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListCountDistinct;
+pub struct ListBoolOr;
 
 #[typetag::serde]
-impl ScalarUDF for ListCountDistinct {
+impl ScalarUDF for ListBoolOr {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         self.evaluate_from_series(&inputs)
     }
 
     fn name(&self) -> &'static str {
-        "list_count_distinct"
+        "list_bool_or"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let field = input.to_field(schema)?;
-                Ok(Field::new(field.name, DataType::UInt64))
+                let inner_field = input.to_field(schema)?.to_exploded_field()?;
+                Ok(Field::new(
+                    inner_field.name.as_str(),
+                    daft_core::datatypes::DataType::Boolean,
+                ))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -38,8 +43,8 @@ impl ScalarUDF for ListCountDistinct {
 
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.list_count_distinct(),
-            _ => Err(DaftError::SchemaMismatch(format!(
+            [input] => Ok(input.list_bool_or()?),
+            _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
@@ -48,6 +53,6 @@ impl ScalarUDF for ListCountDistinct {
 }
 
 #[must_use]
-pub fn list_count_distinct(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListCountDistinct, vec![expr]).into()
+pub fn list_bool_or(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListBoolOr, vec![expr]).into()
 }

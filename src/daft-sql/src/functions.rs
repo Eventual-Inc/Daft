@@ -18,9 +18,9 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
         coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModulePartitioning,
-        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUri,
-        SQLModuleUtf8, SQLModuleWindow,
+        SQLModuleConfig, SQLModuleJson, SQLModuleMap, SQLModulePartitioning, SQLModulePython,
+        SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8,
+        SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -32,7 +32,6 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleHashing>();
     functions.register::<SQLModuleJson>();
-    functions.register::<SQLModuleList>();
     functions.register::<SQLModuleMap>();
     functions.register::<SQLModulePartitioning>();
     functions.register::<SQLModulePython>();

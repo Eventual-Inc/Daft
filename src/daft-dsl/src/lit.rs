@@ -450,6 +450,18 @@ impl LiteralValue {
             _ => None,
         }
     }
+    pub fn try_as_usize(&self) -> DaftResult<Option<usize>> {
+        match self {
+            Self::Int8(i) => usize::try_from(*i).map(Some),
+            Self::Int16(i) => usize::try_from(*i).map(Some),
+            Self::Int32(i) => usize::try_from(*i).map(Some),
+            Self::Int64(i) => usize::try_from(*i).map(Some),
+            Self::UInt32(i) => return Ok(Some(*i as usize)),
+            Self::UInt64(i) => return Ok(Some(*i as usize)),
+            _ => return Ok(None),
+        }
+        .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
+    }
 
     /// If the literal is `Float64`, return it. Otherwise, return None.
     pub fn as_f64(&self) -> Option<f64> {
@@ -540,6 +552,12 @@ where
             Some(val) => val.literal_value(),
             None => LiteralValue::Null,
         }
+    }
+}
+
+impl Literal for CountMode {
+    fn literal_value(self) -> LiteralValue {
+        self.to_string().literal_value()
     }
 }
 

@@ -2010,6 +2010,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-functions-list",
  "daft-hash",
  "daft-image",
  "daft-io",
@@ -2314,6 +2315,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-functions-list"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "indexmap 2.8.0",
+ "pyo3",
+ "serde",
+ "typetag",
+]
+
+[[package]]
 name = "daft-hash"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2438,6 +2453,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-list",
  "daft-io",
  "daft-json",
  "daft-local-plan",
@@ -2502,6 +2518,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-list",
  "daft-schema",
  "derivative",
  "indexmap 2.8.0",
@@ -2610,6 +2627,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-list",
  "daft-io",
  "daft-logical-plan",
  "daft-schema",
@@ -2643,6 +2661,7 @@ dependencies = [
  "common-runtime",
  "daft-core",
  "daft-dsl",
+ "daft-functions-list",
  "daft-image",
  "futures",
  "html-escape",
@@ -2797,6 +2816,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-functions-list",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-scan",

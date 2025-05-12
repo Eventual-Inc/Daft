@@ -155,7 +155,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::numeric::NumericFunctions>();
         functions_registry.register::<daft_functions::float::FloatFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
-
+        functions_registry.register::<daft_functions_list::ListFunctions>();
         Ok(())
     }
 }

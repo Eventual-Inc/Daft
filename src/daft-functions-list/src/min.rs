@@ -1,37 +1,40 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::try_mean_aggregation_supertype,
-    prelude::{Field, Schema},
-    series::Series,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListMean {}
+pub struct ListMin;
 
 #[typetag::serde]
-impl ScalarUDF for ListMean {
+impl ScalarUDF for ListMin {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inner = inputs.into_inner();
         self.evaluate_from_series(&inner)
     }
 
     fn name(&self) -> &'static str {
-        "list_mean"
+        "list_min"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let inner_field = input.to_field(schema)?.to_exploded_field()?;
-                Ok(Field::new(
-                    inner_field.name.as_str(),
-                    try_mean_aggregation_supertype(&inner_field.dtype)?,
-                ))
+                let field = input.to_field(schema)?.to_exploded_field()?;
+
+                if field.dtype.is_numeric() {
+                    Ok(field)
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Expected input to be numeric, got {}",
+                        field.dtype
+                    )))
+                }
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -42,7 +45,7 @@ impl ScalarUDF for ListMean {
 
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => Ok(input.list_mean()?),
+            [input] => Ok(input.list_min()?),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -52,6 +55,6 @@ impl ScalarUDF for ListMean {
 }
 
 #[must_use]
-pub fn list_mean(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListMean {}, vec![expr]).into()
+pub fn list_min(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListMin {}, vec![expr]).into()
 }

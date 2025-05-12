@@ -9,36 +9,27 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListDistinct {}
+pub struct ListCountDistinct;
 
 #[typetag::serde]
-impl ScalarUDF for ListDistinct {
+impl ScalarUDF for ListCountDistinct {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         self.evaluate_from_series(&inputs)
     }
 
     fn name(&self) -> &'static str {
-        "list_distinct"
+        "list_count_distinct"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
                 let field = input.to_field(schema)?;
-                match field.dtype {
-                    DataType::List(inner_type) => {
-                        Ok(Field::new(field.name, DataType::List(inner_type)))
-                    }
-                    DataType::FixedSizeList(inner_type, _) => {
-                        Ok(Field::new(field.name, DataType::List(inner_type)))
-                    }
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expected list input, got {}",
-                        field.dtype
-                    ))),
-                }
+                Ok(Field::new(field.name, DataType::UInt64))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -49,7 +40,7 @@ impl ScalarUDF for ListDistinct {
 
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.list_distinct(),
+            [input] => input.list_count_distinct(),
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -58,7 +49,7 @@ impl ScalarUDF for ListDistinct {
     }
 }
 
-/// Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
-pub fn list_distinct(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListDistinct {}, vec![expr]).into()
+#[must_use]
+pub fn list_count_distinct(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListCountDistinct, vec![expr]).into()
 }

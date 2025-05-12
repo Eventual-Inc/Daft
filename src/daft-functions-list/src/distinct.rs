@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{CountMode, DataType, Field, Schema},
-    series::{IntoSeries, Series},
+    prelude::{DataType, Field, Schema},
+    series::Series,
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -9,34 +9,36 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListCount {
-    pub mode: CountMode,
-}
+pub struct ListDistinct;
 
 #[typetag::serde]
-impl ScalarUDF for ListCount {
+impl ScalarUDF for ListDistinct {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         self.evaluate_from_series(&inputs)
     }
 
     fn name(&self) -> &'static str {
-        "count"
+        "list_distinct"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let input_field = input.to_field(schema)?;
-
-                match input_field.dtype {
-                    DataType::List(_) | DataType::FixedSizeList(_, _) => {
-                        Ok(Field::new(input.name(), DataType::UInt64))
+                let field = input.to_field(schema)?;
+                match field.dtype {
+                    DataType::List(inner_type) => {
+                        Ok(Field::new(field.name, DataType::List(inner_type)))
+                    }
+                    DataType::FixedSizeList(inner_type, _) => {
+                        Ok(Field::new(field.name, DataType::List(inner_type)))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "Expected input to be a list type, received: {}",
-                        input_field.dtype
+                        "Expected list input, got {}",
+                        field.dtype
                     ))),
                 }
             }
@@ -49,8 +51,8 @@ impl ScalarUDF for ListCount {
 
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => Ok(input.list_count(self.mode)?.into_series()),
-            _ => Err(DaftError::ValueError(format!(
+            [input] => input.list_distinct(),
+            _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
@@ -58,7 +60,7 @@ impl ScalarUDF for ListCount {
     }
 }
 
-#[must_use]
-pub fn list_count(expr: ExprRef, mode: CountMode) -> ExprRef {
-    ScalarFunction::new(ListCount { mode }, vec![expr]).into()
+/// Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
+pub fn list_distinct(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListDistinct {}, vec![expr]).into()
 }

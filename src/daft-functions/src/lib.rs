@@ -8,7 +8,6 @@ pub mod count_matches;
 pub mod distance;
 pub mod float;
 pub mod hash;
-pub mod list;
 pub mod minhash;
 pub mod numeric;
 #[cfg(feature = "python")]

@@ -14,10 +14,8 @@ use daft_dsl::{
     join::normalize_join_keys, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     SketchType,
 };
-use daft_functions::{
-    list::{count_distinct, distinct},
-    numeric::sqrt,
-};
+use daft_functions::numeric::sqrt;
+use daft_functions_list::{count_distinct, distinct};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{

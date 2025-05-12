@@ -9,33 +9,27 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListMax {}
+pub struct Explode;
 
 #[typetag::serde]
-impl ScalarUDF for ListMax {
+impl ScalarUDF for Explode {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
     }
 
     fn name(&self) -> &'static str {
-        "list_max"
+        "explode"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let field = input.to_field(schema)?.to_exploded_field()?;
-
-                if field.dtype.is_numeric() {
-                    Ok(field)
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Expected input to be numeric, got {}",
-                        field.dtype
-                    )))
-                }
+                let field = input.to_field(schema)?;
+                field.to_exploded_field()
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
@@ -46,7 +40,7 @@ impl ScalarUDF for ListMax {
 
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => Ok(input.list_max()?),
+            [input] => input.explode(),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -56,6 +50,6 @@ impl ScalarUDF for ListMax {
 }
 
 #[must_use]
-pub fn list_max(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListMax {}, vec![expr]).into()
+pub fn explode(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(Explode {}, vec![expr]).into()
 }

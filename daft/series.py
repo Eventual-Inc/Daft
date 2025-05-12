@@ -1093,23 +1093,16 @@ class SeriesListNamespace(SeriesNamespace):
             category=DeprecationWarning,
         )
 
-        return Series._from_pyseries(self._series.list_count(CountMode.All))
+        return self._eval_expressions("list_count", count_mode=CountMode.All)
 
     def length(self) -> Series:
-        return Series._from_pyseries(self._series.list_count(CountMode.All))
+        return self._eval_expressions("list_count", count_mode=CountMode.All)
 
     def get(self, idx: Series, default: Series) -> Series:
-        return Series._from_pyseries(self._series.list_get(idx._series, default._series))
+        return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        if isinstance(desc, bool):
-            desc = Series.from_pylist([desc], name="desc")
-        if nulls_first is None:
-            nulls_first = desc
-        elif isinstance(nulls_first, bool):
-            nulls_first = Series.from_pylist([nulls_first], name="nulls_first")
-
-        return Series._from_pyseries(self._series.list_sort(desc._series, nulls_first._series))
+        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
 
 class SeriesMapNamespace(SeriesNamespace):

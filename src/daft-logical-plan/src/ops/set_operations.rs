@@ -4,7 +4,7 @@ use common_error::DaftError;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::{count_mode::CountMode, join::JoinType, utils::supertype::get_supertype};
 use daft_dsl::{left_col, lit, null_lit, resolved_col, right_col, ExprRef};
-use daft_functions::list::{explode, list_fill};
+use daft_functions_list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
 use snafu::ResultExt;

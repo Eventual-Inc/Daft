@@ -1,11 +1,13 @@
 use std::str::FromStr;
 
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 use derive_more::Display;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
+
+use crate::series::Series;
 
 /// Supported count modes for Daft's count aggregation.
 ///
@@ -60,5 +62,14 @@ impl FromStr for CountMode {
                 Self::iterator().as_slice()
             ))),
         }
+    }
+}
+
+impl TryFrom<&Series> for CountMode {
+    type Error = DaftError;
+    fn try_from(value: &Series) -> std::result::Result<Self, Self::Error> {
+        ensure!(value.data_type().is_string() && value.len() == 1, ValueError: "expected string literal");
+        let v = value.utf8()?.get(0).unwrap();
+        v.parse()
     }
 }

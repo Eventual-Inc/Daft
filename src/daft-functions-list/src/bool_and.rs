@@ -9,33 +9,32 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::series::SeriesListExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ListChunk {
-    pub size: usize,
-}
+pub struct ListBoolAnd;
 
 #[typetag::serde]
-impl ScalarUDF for ListChunk {
+impl ScalarUDF for ListBoolAnd {
+    fn name(&self) -> &'static str {
+        "list_bool_and"
+    }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         self.evaluate_from_series(&inputs)
     }
 
-    fn name(&self) -> &'static str {
-        "chunk"
-    }
-
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let input_field = input.to_field(schema)?;
-                Ok(input_field
-                    .to_exploded_field()?
-                    .to_fixed_size_list_field(self.size)?
-                    .to_list_field()?)
+                let inner_field = input.to_field(schema)?.to_exploded_field()?;
+                Ok(Field::new(
+                    inner_field.name.as_str(),
+                    daft_core::datatypes::DataType::Boolean,
+                ))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
+                "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
         }
@@ -43,9 +42,9 @@ impl ScalarUDF for ListChunk {
 
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.list_chunk(self.size),
+            [input] => Ok(input.list_bool_and()?),
             _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input args, got {}",
+                "Expected 1 input arg, got {}",
                 inputs.len()
             ))),
         }
@@ -53,6 +52,6 @@ impl ScalarUDF for ListChunk {
 }
 
 #[must_use]
-pub fn list_chunk(expr: ExprRef, size: usize) -> ExprRef {
-    ScalarFunction::new(ListChunk { size }, vec![expr]).into()
+pub fn list_bool_and(expr: ExprRef) -> ExprRef {
+    ScalarFunction::new(ListBoolAnd, vec![expr]).into()
 }
