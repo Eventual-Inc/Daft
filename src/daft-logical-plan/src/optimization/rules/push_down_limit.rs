@@ -134,12 +134,7 @@ impl PushDownLimit {
                             limit as i64,
                         )?));
 
-                        // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
-                        let optimized = self
-                            .try_optimize_node(new_plan.clone())?
-                            .or(Transformed::yes(new_plan))
-                            .data;
-                        Ok(Transformed::yes(optimized))
+                        Ok(Transformed::yes(new_plan))
                     }
                     _ => Ok(Transformed::no(plan)),
                 }
