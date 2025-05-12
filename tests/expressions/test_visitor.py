@@ -155,8 +155,8 @@ class TracingVisitor(ExpressionVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_greater_than_or_equals(self, left: Expression, right: Expression) -> List[Trace]:
-        trace = Trace("visit_greater_than_or_equals", [left, right])
+    def visit_greater_than_or_equal(self, left: Expression, right: Expression) -> List[Trace]:
+        trace = Trace("visit_greater_than_or_equal", [left, right])
         acc = []
         acc += self.visit(left)
         acc += self.visit(right)
@@ -362,13 +362,13 @@ def test_visit_greater_than():
     ]
 
 
-def test_visit_greater_than_or_equals():
+def test_visit_greater_than_or_equal():
     exp_0 = col("x")
     exp_1 = exp_0 >= 1
     assert trace(exp_1) == [
         Trace("visit_col", ["x"]),
         Trace("visit_lit", [1]),
-        Trace("visit_greater_than_or_equals", [exp_0, lit(1)]),
+        Trace("visit_greater_than_or_equal", [exp_0, lit(1)]),
     ]
 
 
