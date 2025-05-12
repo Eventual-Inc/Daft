@@ -273,7 +273,7 @@ impl<'py> PyVisitor<'py> {
         let args: Vec<_> = scalar_function
             .inputs
             .iter()
-            .map(|expr| self.to_expr(expr))
+            .map(|arg| self.to_expr(arg.inner()))
             .collect::<PyResult<_>>()?;
         self.visit_function(name, args)
     }
