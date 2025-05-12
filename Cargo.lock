@@ -2482,6 +2482,7 @@ dependencies = [
  "pyo3",
  "serde",
  "strum 0.26.3",
+ "tracing",
 ]
 
 [[package]]
@@ -2516,6 +2517,7 @@ dependencies = [
  "snafu",
  "test-log",
  "tokio",
+ "tracing",
  "typed-builder 0.20.1",
  "uuid 1.16.0",
 ]

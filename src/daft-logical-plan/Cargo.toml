@@ -23,6 +23,7 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
 tokio = {workspace = true}
+tracing = {workspace = true}
 typed-builder = {workspace = true}
 uuid = {version = "1", features = ["v4"]}
 

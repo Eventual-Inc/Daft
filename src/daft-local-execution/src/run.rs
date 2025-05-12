@@ -112,6 +112,8 @@ impl PyNativeExecutor {
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<Bound<'a, PyAny>> {
+        let span = info_span!("Running top level native executor");
+        let _guard = span.enter();
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
@@ -147,6 +149,7 @@ impl PyNativeExecutor {
             })
         }));
         let part_iter = LocalPartitionIterator { iter };
+        flush_opentelemetry_providers();
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
@@ -277,10 +280,13 @@ impl NativeExecutor {
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
         let span = Span::current();
-        let child_span = info_span!(parent: &span, "query");
+        // span.record("ohoh:query", "boys");
+        // let child_span = info_span!(parent: &span, "query, boys");
         let handle = std::thread::spawn(move || {
-            let task_span = child_span.entered();
-            println!("task_span: {:?}", task_span);
+            // let task_span = child_span.entered();
+            // println!("task_span: {:?}", task_span);
+            // let _span = Span::current();
+            let _guard = span.enter();
             let runtime = rt.unwrap_or_else(|| {
                 Arc::new(
                     tokio::runtime::Builder::new_current_thread()
@@ -353,7 +359,7 @@ impl NativeExecutor {
                     result = execution_task => result,
                 }
             });
-            task_span.exit();
+            // task_span.exit();
             flush_opentelemetry_providers();
             result
         });

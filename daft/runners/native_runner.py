@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Iterator
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, set_compute_runtime_num_worker_threads
+from daft.daft import (
+    FileFormatConfig,
+    FileInfos,
+    IOConfig,
+    LocalPhysicalPlan,
+    QuerySpan,
+    set_compute_runtime_num_worker_threads,
+)
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -78,20 +86,29 @@ class NativeRunner(Runner[MicroPartition]):
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config
 
-        # Optimize the logical plan.
-        builder = builder.optimize()
-        plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
-        executor = NativeExecutor()
-        results_gen = executor.run(
-            plan,
-            {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
-            daft_execution_config,
-            results_buffer_size,
-        )
-        yield from results_gen
+        with with_span():
+            # Optimize the logical plan.
+            builder = builder.optimize()
+            plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
+            executor = NativeExecutor()
+            results_gen = executor.run(
+                plan,
+                {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                daft_execution_config,
+                results_buffer_size,
+            )
+            yield from results_gen
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
+
+
+@contextmanager
+def with_span():
+    span = QuerySpan()
+    entered_span = span.enter()
+    yield
+    del entered_span  # Dropping the span will exit the span

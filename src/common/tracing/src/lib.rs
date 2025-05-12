@@ -1,11 +1,18 @@
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::{
+    mem,
+    sync::{atomic::AtomicBool, Arc, Mutex},
+};
 
 use pyo3::{
     pyclass, pymethods,
     types::{PyModule, PyModuleMethods},
     Bound, PyResult,
 };
-use tracing::{info_span, span::EnteredSpan, Span};
+use tracing::{
+    info_span,
+    span::{Entered, EnteredSpan},
+    Span,
+};
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{layer::SubscriberExt, prelude::*};
 static TRACING_INIT: AtomicBool = AtomicBool::new(false);
@@ -56,6 +63,7 @@ pub fn init_opentelemetry_providers() {
 pub fn flush_opentelemetry_providers() {
     flush_oltp_metrics_provider();
     flush_oltp_tracer_provider();
+    println!("Flushed opentelemetry providers");
 }
 
 async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
@@ -180,44 +188,62 @@ pub fn refresh_chrome_trace() -> bool {
 }
 
 #[pyclass]
-struct QuerySpan {
-    span: Span,
-}
+struct QuerySpan {}
 
 #[pymethods]
 impl QuerySpan {
     #[new]
     pub fn new() -> Self {
-        let span = info_span!("DaftQuery");
-        Self { span }
+        flush_opentelemetry_providers();
+        Self {}
     }
 
-    pub fn enter(&self) -> EnteredSpanWrapper {
-        let span = self.span.clone().entered();
+    pub fn enter(&mut self) -> EnteredSpanWrapper {
+        println!("Entering span (Daft Query)");
+        let span = info_span!("Daft Query").entered();
         EnteredSpanWrapper::new(span)
+    }
+}
+
+impl Drop for QuerySpan {
+    fn drop(&mut self) {
+        println!("Dropping span (DaftQueryBoys)");
+        flush_opentelemetry_providers();
     }
 }
 
 #[pyclass(unsendable)]
 pub struct EnteredSpanWrapper {
-    span: EnteredSpan,
+    _entered_span: EnteredSpan,
 }
 
 impl EnteredSpanWrapper {
     pub fn new(span: EnteredSpan) -> Self {
-        Self { span }
-    }
-}
-
-impl Drop for EnteredSpanWrapper {
-    fn drop(&mut self) {
-        println!("Dropping span");
+        Self {
+            _entered_span: span,
+        }
     }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<QuerySpan>()?;
     parent.add_class::<EnteredSpanWrapper>()?;
+    parent.add_class::<Otel>()?;
 
     Ok(())
+}
+
+#[pyclass]
+struct Otel {}
+
+#[pymethods]
+impl Otel {
+    #[new]
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn flush(&self) {
+        flush_opentelemetry_providers();
+    }
 }

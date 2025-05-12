@@ -2,6 +2,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+use tracing::info_span;
 
 use crate::{translate, LocalPhysicalPlanRef};
 
@@ -15,6 +16,8 @@ pub struct PyLocalPhysicalPlan {
 impl PyLocalPhysicalPlan {
     #[staticmethod]
     fn from_logical_plan_builder(logical_plan_builder: &PyLogicalPlanBuilder) -> PyResult<Self> {
+        let span = info_span!("Building physical plan");
+        let _guard = span.enter();
         let logical_plan = logical_plan_builder.builder.build();
         let physical_plan = translate(&logical_plan)?;
         Ok(Self {
