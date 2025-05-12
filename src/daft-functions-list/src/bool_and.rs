@@ -1,15 +1,18 @@
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::{
-    prelude::{Field, Schema},
+    prelude::{DataType, Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::series::SeriesListExtension;
+use crate::{
+    series::SeriesListExtension,
+    utils::{unary_list_evaluate, unary_list_to_field},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListBoolAnd;
@@ -20,34 +23,15 @@ impl ScalarUDF for ListBoolAnd {
         "list_bool_and"
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
+        unary_list_evaluate(inputs, Series::list_bool_and)
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let inner_field = input.to_field(schema)?.to_exploded_field()?;
-                Ok(Field::new(
-                    inner_field.name.as_str(),
-                    daft_core::datatypes::DataType::Boolean,
-                ))
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
-    }
-
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => Ok(input.list_bool_and()?),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        unary_list_to_field(inputs, schema, DataType::Boolean)
     }
 }
 

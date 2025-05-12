@@ -1,4 +1,4 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{CountMode, DataType, Field, Schema},
     series::{IntoSeries, Series},

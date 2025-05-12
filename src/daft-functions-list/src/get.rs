@@ -1,10 +1,10 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     prelude::{Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,39 +16,46 @@ pub struct ListGet;
 
 #[typetag::serde]
 impl ScalarUDF for ListGet {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
-    }
-
     fn name(&self) -> &'static str {
         "list_get"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input, idx, default] => {
-                let input_field = input.to_field(schema)?;
-                let idx_field = idx.to_field(schema)?;
-                let _default_field = default.to_field(schema)?;
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let input = inputs.required((0, "input"))?;
+        let idx = inputs.required((1, "index"))?;
+        let _default = inputs.required((2, "default"))?;
+        input.list_get(idx, _default)
+    }
 
-                if !idx_field.dtype.is_integer() {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected get index to be integer, received: {}",
-                        idx_field.dtype
-                    )));
-                }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(
+            inputs.len() == 3,
+            SchemaMismatch: "Expected 3 input args, got {}",
+            inputs.len()
+        );
 
-                // TODO(Kevin): Check if default dtype can be cast into input dtype.
+        let input = inputs.required((0, "input"))?.to_field(schema)?;
+        let idx = inputs.required(1)?.to_field(schema)?;
+        let _default = inputs.required(2)?.to_field(schema)?;
 
-                let exploded_field = input_field.to_exploded_field()?;
-                Ok(exploded_field)
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 3 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        ensure!(
+            input.dtype.is_list() || input.dtype.is_fixed_size_list(),
+            "Input must be a list"
+        );
+
+        ensure!(
+            idx.dtype.is_integer(),
+            TypeError: "Index must be an integer, received: {}",
+            idx.dtype
+        );
+
+        // TODO(Kevin): Check if default dtype can be cast into input dtype.
+        let exploded_field = input.to_exploded_field()?;
+        Ok(exploded_field)
     }
 
     fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {

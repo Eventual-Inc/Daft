@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::{growable::make_growable, ListArray},
+    array::{growable::make_growable, ops::GroupIndices, ListArray},
     prelude::{CountMode, DataType, Field, Int64Array, UInt64Array, Utf8Array},
     series::{IntoSeries, Series},
 };
@@ -11,6 +11,7 @@ use daft_core::{
 use crate::kernels::{ListArrayAggExtension, ListArrayExtension};
 
 pub trait SeriesListExtension: Sized {
+    fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Self>;
     fn list_value_counts(&self) -> DaftResult<Self>;
     fn list_bool_and(&self) -> DaftResult<Self>;
     fn list_bool_or(&self) -> DaftResult<Self>;
@@ -31,6 +32,10 @@ pub trait SeriesListExtension: Sized {
 }
 
 impl SeriesListExtension for Series {
+    fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        let series = self.agg_list(groups)?.list_count_distinct()?;
+        Ok(series)
+    }
     fn list_value_counts(&self) -> DaftResult<Self> {
         let series = match self.data_type() {
             DataType::List(_) => self.list()?.value_counts(),

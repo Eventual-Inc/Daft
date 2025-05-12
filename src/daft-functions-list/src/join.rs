@@ -1,10 +1,10 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -23,55 +23,50 @@ impl ScalarUDF for ListJoin {
         &["array_to_string"]
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
+        let input = inputs.required((0, "input"))?;
+        let delimiter = inputs.required((1, "delimiter"))?;
+        ensure!(
+            delimiter.data_type().is_string(),
+            "Expected join delimiter to be of type string"
+        );
+
+        Ok(input.join(delimiter.utf8()?)?.into_series())
     }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(
+            inputs.len() == 2,
+            SchemaMismatch: "Expected 2 arguments, received: {}",
+            inputs.len()
+        );
+        let input_field = inputs.required((0, "input"))?.to_field(schema)?;
+        let delimiter = inputs.required((1, "delimiter"))?.to_field(schema)?;
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input, delimiter] => {
-                let input_field = input.to_field(schema)?;
-                let delimiter_field = delimiter.to_field(schema)?;
-                if delimiter_field.dtype != DataType::Utf8 {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected join delimiter to be of type {}, received: {}",
-                        DataType::Utf8,
-                        delimiter_field.dtype
-                    )));
-                }
+        ensure!(
+            input_field.dtype.is_list() || input_field.dtype.is_fixed_size_list(),
+            TypeError: "Expected input to be of type List, received: {}",
+            input_field.dtype
+        );
 
-                match input_field.dtype {
-                    DataType::List(_) | DataType::FixedSizeList(_, _) => {
-                        let exploded_field = input_field.to_exploded_field()?;
-                        if exploded_field.dtype != DataType::Utf8 {
-                            return Err(DaftError::TypeError(format!("Expected column \"{}\" to be a list type with a Utf8 child, received list type with child dtype {}", exploded_field.name, exploded_field.dtype)));
-                        }
-                        Ok(exploded_field)
-                    }
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expected input to be a list type, received: {}",
-                        input_field.dtype
-                    ))),
-                }
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
-    }
+        ensure!(
+            delimiter.dtype.is_string(),
+            TypeError: "Expected join delimiter to be of type {}, received: {}",
+            DataType::Utf8,
+            delimiter.dtype
+        );
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input, delimiter] => {
-                let delimiter = delimiter.utf8().unwrap();
-                Ok(input.join(delimiter)?.into_series())
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        let exploded_field = input_field.to_exploded_field()?;
+        ensure!(
+
+            exploded_field.dtype.is_string(),
+            TypeError: "Expected exploded input to be of type Utf8, received: {}",
+            exploded_field.dtype
+        );
+
+        Ok(exploded_field)
     }
 }
 

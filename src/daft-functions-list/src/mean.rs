@@ -1,11 +1,11 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     datatypes::try_mean_aggregation_supertype,
     prelude::{Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -17,39 +17,27 @@ pub struct ListMean;
 
 #[typetag::serde]
 impl ScalarUDF for ListMean {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-
     fn name(&self) -> &'static str {
         "list_mean"
     }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let inner_field = input.to_field(schema)?.to_exploded_field()?;
-                Ok(Field::new(
-                    inner_field.name.as_str(),
-                    try_mean_aggregation_supertype(&inner_field.dtype)?,
-                ))
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
+        let input = inputs.required((0, "input"))?;
+        input.list_mean()
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => Ok(input.list_mean()?),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input arg, got {}", inputs.len());
+        let input = inputs.required((0, "input"))?;
+        let inner_field = input.to_field(schema)?.to_exploded_field()?;
+        Ok(Field::new(
+            inner_field.name.as_str(),
+            try_mean_aggregation_supertype(&inner_field.dtype)?,
+        ))
     }
 }
 

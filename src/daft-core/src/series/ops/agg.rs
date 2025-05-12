@@ -33,12 +33,6 @@ impl Series {
         })
     }
 
-    pub fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        todo!()
-        // let series = self.agg_list(groups)?.list_count_distinct()?;
-        // Ok(series)
-    }
-
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         match self.data_type() {
             // intX -> int64 (in line with numpy)

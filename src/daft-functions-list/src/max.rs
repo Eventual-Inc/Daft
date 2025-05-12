@@ -1,10 +1,10 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,44 +16,25 @@ pub struct ListMax;
 
 #[typetag::serde]
 impl ScalarUDF for ListMax {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-
     fn name(&self) -> &'static str {
         "list_max"
     }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let field = input.to_field(schema)?.to_exploded_field()?;
-
-                if field.dtype.is_numeric() {
-                    Ok(field)
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Expected input to be numeric, got {}",
-                        field.dtype
-                    )))
-                }
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
+        let input = inputs.required((0, "input"))?;
+        input.list_max()
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => Ok(input.list_max()?),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input arg, got {}", inputs.len());
+        let input = inputs.required((0, "input"))?;
+        let field = input.to_field(schema)?.to_exploded_field()?;
+        ensure!(field.dtype.is_numeric(), TypeError: "Expected input to be numeric, got {}", field.dtype);
+        Ok(field)
     }
 }
 

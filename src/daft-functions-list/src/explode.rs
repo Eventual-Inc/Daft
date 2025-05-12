@@ -1,10 +1,10 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,36 +16,33 @@ pub struct Explode;
 
 #[typetag::serde]
 impl ScalarUDF for Explode {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
-    }
-
     fn name(&self) -> &'static str {
         "explode"
     }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let field = input.to_field(schema)?;
-                field.to_exploded_field()
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn aliases(&self) -> &'static [&'static str] {
+        &["unnest"]
+    }
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let input = inputs.required((0, "input"))?;
+        input.explode()
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => input.explode(),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(
+            inputs.len() == 1,
+            SchemaMismatch: "Expected 1 input arg, got {}",
+            inputs.len()
+        );
+        let field = inputs.required((0, "input"))?.to_field(schema)?;
+        ensure!(
+            field.dtype.is_list() || field.dtype.is_fixed_size_list(),
+            "Input must be a list"
+        );
+        field.to_exploded_field()
     }
 }
 
