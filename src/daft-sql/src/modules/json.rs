@@ -22,8 +22,8 @@ impl SQLFunction for JsonQuery {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input, query] => {
-                let input = planner.plan_function_arg(input)?;
-                let query = planner.plan_function_arg(query)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let query = planner.plan_function_arg(query)?.into_inner();
                 if let Some(q) = query.as_literal().and_then(|l| l.as_str()) {
                     Ok(daft_functions_json::json_query(input, q))
                 } else {

@@ -34,34 +34,34 @@ class ImageMode(Enum):
     """
 
     #: 8-bit grayscale
-    L: int
+    L = 1
 
     #: 8-bit grayscale + alpha
-    LA: int
+    LA = 2
 
     #: 8-bit RGB
-    RGB: int
+    RGB = 3
 
     #: 8-bit RGB + alpha
-    RGBA: int
+    RGBA = 4
 
     #: 16-bit grayscale
-    L16: int
+    L16 = 5
 
     #: 16-bit grayscale + alpha
-    LA16: int
+    LA16 = 6
 
     #: 16-bit RGB
-    RGB16: int
+    RGB16 = 7
 
     #: 16-bit RGB + alpha
-    RGBA16: int
+    RGBA16 = 8
 
     #: 32-bit floating RGB
-    RGB32F: int
+    RGB32F = 9
 
     #: 32-bit floating RGB + alpha
-    RGBA32F: int
+    RGBA32F = 10
 
     @staticmethod
     def from_mode_string(mode: str) -> ImageMode:
@@ -74,30 +74,31 @@ class ImageMode(Enum):
         """
         ...
 
-class WindowBoundary:
+class PyWindowBoundary:
     """Represents a window frame boundary in window functions."""
 
     @staticmethod
-    def unbounded_preceding() -> WindowBoundary: ...
+    def unbounded_preceding() -> PyWindowBoundary: ...
     @staticmethod
-    def unbounded_following() -> WindowBoundary: ...
+    def unbounded_following() -> PyWindowBoundary: ...
     @staticmethod
-    def offset(n: int) -> WindowBoundary: ...
+    def offset(n: int) -> PyWindowBoundary: ...
+    @staticmethod
+    def range_offset(n: PyExpr) -> PyWindowBoundary: ...
 
 class WindowFrameType(Enum):
     """Represents the type of window frame (ROWS or RANGE)."""
 
-    Rows: int
-    Range: int
+    Rows = 1
+    Range = 2
 
 class WindowFrame:
     """Represents a window frame specification."""
 
     def __init__(
         self,
-        frame_type: WindowFrameType,
-        start: WindowBoundary,
-        end: WindowBoundary,
+        start: PyWindowBoundary,
+        end: PyWindowBoundary,
     ) -> None: ...
 
 class WindowSpec:
@@ -113,11 +114,11 @@ class WindowSpec:
 class ImageFormat(Enum):
     """Supported image formats for Daft's image I/O."""
 
-    PNG: int
-    JPEG: int
-    TIFF: int
-    GIF: int
-    BMP: int
+    PNG = 1
+    JPEG = 2
+    TIFF = 3
+    GIF = 4
+    BMP = 5
 
     @staticmethod
     def from_format_string(mode: str) -> ImageFormat:
@@ -127,12 +128,12 @@ class ImageFormat(Enum):
 class JoinType(Enum):
     """Type of a join operation."""
 
-    Inner: int
-    Left: int
-    Right: int
-    Outer: int
-    Semi: int
-    Anti: int
+    Inner = 1
+    Left = 2
+    Right = 3
+    Outer = 4
+    Semi = 5
+    Anti = 6
 
     @staticmethod
     def from_join_type_str(join_type: str) -> JoinType:
@@ -148,9 +149,9 @@ class JoinType(Enum):
 class JoinStrategy(Enum):
     """Join strategy (algorithm) to use."""
 
-    Hash: int
-    SortMerge: int
-    Broadcast: int
+    Hash = 1
+    SortMerge = 2
+    Broadcast = 3
 
     @staticmethod
     def from_join_strategy_str(join_strategy: str) -> JoinStrategy:
@@ -164,8 +165,8 @@ class JoinStrategy(Enum):
         ...
 
 class JoinSide(Enum):
-    Left: int
-    Right: int
+    Left = 1
+    Right = 2
 
 class CountMode(Enum):
     """Supported count modes for Daft's count aggregation.
@@ -175,9 +176,9 @@ class CountMode(Enum):
     | Null  - Count only null values.
     """
 
-    All: int
-    Valid: int
-    Null: int
+    All = 1
+    Valid = 2
+    Null = 3
 
     @staticmethod
     def from_count_mode_str(count_mode: str) -> CountMode:
@@ -218,18 +219,18 @@ class ResourceRequest:
 class FileFormat(Enum):
     """Format of a file, e.g. Parquet, CSV, and JSON."""
 
-    Parquet: int
-    Csv: int
-    Json: int
+    Parquet = 1
+    Csv = 2
+    Json = 3
 
     def ext(self): ...
 
 class WriteMode(Enum):
     """Mode for writing data to a file."""
 
-    Overwrite: int
-    OverwritePartitions: int
-    Append: int
+    Overwrite = 1
+    OverwritePartitions = 2
+    Append = 3
 
     @staticmethod
     def from_str(mode: str) -> WriteMode: ...
@@ -1230,61 +1231,6 @@ class ConnectionHandle:
     def shutdown(self) -> None: ...
     def port(self) -> int: ...
 
-# expr numeric ops
-def abs(expr: PyExpr) -> PyExpr: ...
-def cbrt(expr: PyExpr) -> PyExpr: ...
-def ceil(expr: PyExpr) -> PyExpr: ...
-def clip(expr: PyExpr, min: PyExpr, max: PyExpr) -> PyExpr: ...
-def exp(expr: PyExpr) -> PyExpr: ...
-def expm1(expr: PyExpr) -> PyExpr: ...
-def floor(expr: PyExpr) -> PyExpr: ...
-def log2(expr: PyExpr) -> PyExpr: ...
-def log10(expr: PyExpr) -> PyExpr: ...
-def log(expr: PyExpr, base: float) -> PyExpr: ...
-def ln(expr: PyExpr) -> PyExpr: ...
-def log1p(expr: PyExpr) -> PyExpr: ...
-def round(expr: PyExpr, decimal: int) -> PyExpr: ...
-def sign(expr: PyExpr) -> PyExpr: ...
-def signum(expr: PyExpr) -> PyExpr: ...
-def negate(expr: PyExpr) -> PyExpr: ...
-def negative(expr: PyExpr) -> PyExpr: ...
-def sqrt(expr: PyExpr) -> PyExpr: ...
-def sin(expr: PyExpr) -> PyExpr: ...
-def cos(expr: PyExpr) -> PyExpr: ...
-def tan(expr: PyExpr) -> PyExpr: ...
-def csc(expr: PyExpr) -> PyExpr: ...
-def sec(expr: PyExpr) -> PyExpr: ...
-def cot(expr: PyExpr) -> PyExpr: ...
-def sinh(expr: PyExpr) -> PyExpr: ...
-def cosh(expr: PyExpr) -> PyExpr: ...
-def tanh(expr: PyExpr) -> PyExpr: ...
-def arcsin(expr: PyExpr) -> PyExpr: ...
-def arccos(expr: PyExpr) -> PyExpr: ...
-def arctan(expr: PyExpr) -> PyExpr: ...
-def arctan2(expr: PyExpr, other: PyExpr) -> PyExpr: ...
-def radians(expr: PyExpr) -> PyExpr: ...
-def degrees(expr: PyExpr) -> PyExpr: ...
-def arctanh(expr: PyExpr) -> PyExpr: ...
-def arccosh(expr: PyExpr) -> PyExpr: ...
-def arcsinh(expr: PyExpr) -> PyExpr: ...
-
-# ---
-# expr.image namespace
-# ---
-def image_crop(expr: PyExpr, bbox: PyExpr) -> PyExpr: ...
-def image_decode(expr: PyExpr, raise_on_error: bool, mode: ImageMode | None = None) -> PyExpr: ...
-def image_encode(expr: PyExpr, image_format: ImageFormat) -> PyExpr: ...
-def image_resize(expr: PyExpr, w: int, h: int) -> PyExpr: ...
-def image_to_mode(expr: PyExpr, mode: ImageMode) -> PyExpr: ...
-
-# ---
-# expr.float namespace
-# ---
-def is_nan(expr: PyExpr) -> PyExpr: ...
-def is_inf(expr: PyExpr) -> PyExpr: ...
-def not_nan(expr: PyExpr) -> PyExpr: ...
-def fill_nan(expr: PyExpr, fill_value: PyExpr) -> PyExpr: ...
-
 # ---
 # expr.json namespace
 # ---
@@ -1565,9 +1511,8 @@ class PyRecordBatch:
     def _repr_html_(self) -> str: ...
     def __len__(self) -> int: ...
     def size_bytes(self) -> int: ...
-    def column_names(self) -> list[str]: ...
-    def get_column(self, name: str) -> PySeries: ...
-    def get_column_by_index(self, idx: int) -> PySeries: ...
+    def get_column(self, idx: int) -> PySeries: ...
+    def columns(self) -> list[PySeries]: ...
     @staticmethod
     def concat(tables: list[PyRecordBatch]) -> PyRecordBatch: ...
     def slice(self, start: int, end: int) -> PyRecordBatch: ...
@@ -1587,7 +1532,9 @@ class PyRecordBatch:
 class PyMicroPartition:
     def schema(self) -> PySchema: ...
     def column_names(self) -> list[str]: ...
-    def get_column(self, name: str) -> PySeries: ...
+    def get_column_by_name(self, name: str) -> PySeries: ...
+    def get_column(self, idx: int) -> PySeries: ...
+    def columns(self) -> list[PySeries]: ...
     def get_record_batches(self) -> list[PyRecordBatch]: ...
     def size_bytes(self) -> int | None: ...
     def _repr_html_(self) -> str: ...
@@ -2153,3 +2100,8 @@ class FlightClientManager:
     async def fetch_partition(self, partition: int) -> PyMicroPartition: ...
 
 def cli(args: list[str]) -> None: ...
+
+class PyScalarFunction:
+    def __call__(self, *args: PyExpr, **kwargs: PyExpr) -> PyExpr: ...
+
+def get_function_from_registry(name: str) -> PyScalarFunction: ...

@@ -144,10 +144,18 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         m.add_wrapped(wrap_pyfunction!(set_compute_runtime_num_worker_threads))?;
-        daft_image::python::register_modules(m)?;
 
         daft_dashboard::register_modules(m)?;
         daft_cli::register_modules(m)?;
+
+        // We need to do this here because it's the only point in the rust codebase that we have access to all crates.
+        let mut functions_registry = daft_dsl::functions::FUNCTION_REGISTRY
+            .write()
+            .expect("Failed to acquire write lock on function registry");
+        functions_registry.register::<daft_functions::numeric::NumericFunctions>();
+        functions_registry.register::<daft_functions::float::FloatFunctions>();
+        functions_registry.register::<daft_image::functions::ImageFunctions>();
+
         Ok(())
     }
 }

@@ -224,6 +224,51 @@ impl LiteralValue {
         }
     }
 
+    pub fn neg(&self) -> DaftResult<Self> {
+        match self {
+            Self::Int8(v) => Ok(Self::Int8(-v)),
+            Self::Int16(v) => Ok(Self::Int16(-v)),
+            Self::Int32(v) => Ok(Self::Int32(-v)),
+            Self::Int64(v) => Ok(Self::Int64(-v)),
+            Self::UInt8(v) => {
+                if *v > 0 {
+                    Ok(Self::Int16(-(*v as i16)))
+                } else {
+                    Ok(self.clone())
+                }
+            }
+            Self::UInt16(v) => {
+                if *v > 0 {
+                    Ok(Self::Int32(-(*v as i32)))
+                } else {
+                    Ok(self.clone())
+                }
+            }
+            Self::UInt32(v) => {
+                if *v > 0 {
+                    Ok(Self::Int64(-(*v as i64)))
+                } else {
+                    Ok(self.clone())
+                }
+            }
+            Self::UInt64(v) => {
+                if *v > 0 {
+                    Ok(Self::Int64(-(*v as i64)))
+                } else {
+                    Ok(self.clone())
+                }
+            }
+            Self::Float64(v) => Ok(Self::Float64(-v)),
+            Self::Decimal(v, precision, scale) => Ok(Self::Decimal(-v, *precision, *scale)),
+            Self::Duration(v, tu) => Ok(Self::Duration(-v, *tu)),
+            Self::Interval(v) => Ok(Self::Interval(-v)),
+            _ => Err(DaftError::ValueError(format!(
+                "Cannot negate literal: {:?}",
+                self
+            ))),
+        }
+    }
+
     pub fn to_series(&self) -> Series {
         match self {
             Self::Null => NullArray::full_null("literal", &DataType::Null, 1).into_series(),

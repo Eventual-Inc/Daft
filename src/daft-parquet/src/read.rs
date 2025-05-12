@@ -294,7 +294,12 @@ async fn read_parquet_single(
         let predicate = BoundExpr::try_new(predicate, &table.schema)?;
         table = table.filter(&[predicate])?;
         if let Some(oc) = columns_to_return {
-            table = table.get_columns(&oc)?;
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
         }
         if let Some(nr) = num_rows_to_return {
             table = table.head(nr)?;

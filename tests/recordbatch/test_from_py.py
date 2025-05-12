@@ -590,7 +590,7 @@ def test_nested_list_dates(levels: int) -> None:
     for _ in range(levels):
         data = [data, data]
     table = MicroPartition.from_pydict({"item": data})
-    back_again = table.get_column("item")
+    back_again = table.get_column_by_name("item")
 
     dtype = back_again.datatype()
 
@@ -622,7 +622,7 @@ def test_nested_fixed_size_list_dates(levels: int) -> None:
 
     pa_data = pa.array(data, type=expected_arrow_type)
     table = MicroPartition.from_pydict({"data": pa_data})
-    back_again = table.get_column("data")
+    back_again = table.get_column_by_name("data")
 
     dtype = back_again.datatype()
 
@@ -639,7 +639,7 @@ def test_nested_struct_dates(levels: int) -> None:
 
     data = [data]
     table = MicroPartition.from_pydict({"data": data})
-    back_again = table.get_column("data")
+    back_again = table.get_column_by_name("data")
     dtype = back_again.datatype()
     expected_dtype = DataType.date()
     expected_arrow_type = pa.date32()

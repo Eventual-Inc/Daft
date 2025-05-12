@@ -14,9 +14,11 @@ pub struct Utf8Lower {}
 
 #[typetag::serde]
 impl ScalarUDF for Utf8Lower {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
     }
+
     fn name(&self) -> &'static str {
         "lower"
     }
@@ -39,7 +41,7 @@ impl ScalarUDF for Utf8Lower {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data] => data.utf8_lower(),
             _ => Err(DaftError::ValueError(format!(

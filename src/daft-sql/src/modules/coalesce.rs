@@ -10,7 +10,10 @@ impl SQLFunction for SQLCoalesce {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         let args = inputs
             .iter()
-            .map(|arg| planner.plan_function_arg(arg))
+            .map(|arg| {
+                let arg = planner.plan_function_arg(arg)?;
+                Ok(arg.into_inner())
+            })
             .collect::<crate::error::SQLPlannerResult<Vec<_>>>()?;
 
         Ok(daft_functions::coalesce::coalesce(args))
