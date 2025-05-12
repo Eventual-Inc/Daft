@@ -102,8 +102,10 @@ jobs:
         target: x86_64
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
-        args: --profile release-lto --out dist --sdist
+        args: --profile release --out dist --sdist
         sccache: true
+      env:
+        SCCACHE_LOG: debug
 
     # - name: Build wheels - Linux aarch64
     #   if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'aarch64') }}
