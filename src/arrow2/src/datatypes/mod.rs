@@ -216,9 +216,14 @@ impl DataType {
     /// Returns whether this datatype or any of its children contains a type that is currently unsupported in arrow-rs.
     pub fn has_non_arrow_rs_convertible_type(&self) -> bool {
         match self {
+            // TODO(desmond): Fix handling of extension types in arrow2->arrow-rs to enable this.
             DataType::Extension(_, _, _) => true,
+            // TODO(desmond): Fix handling of timestamps with timezones in arrow2->arrow-rs to enable this.
             DataType::Timestamp(_, tz) => tz.is_some(),
+            // TODO(desmond): Fix arrow2->arrow-rs->arrow-parquet conversion to enable this.
             DataType::Map(_, _) => true,
+            // TODO(desmond): Fix nested fields that span multiple data pages in arrow-rs to enable this.
+            // See https://github.com/Eventual-Inc/Daft/pull/2586 for more details.
             DataType::Struct(_) => true,
             _ => {
                 let mut has_extension = false;
