@@ -407,3 +407,77 @@ def test_multi_column_sort_combinations(desc, nulls_first, expected):
     )
     result = df.sort(by=["id", "a"], desc=desc, nulls_first=nulls_first)
     assert result.to_pydict() == expected
+
+
+@pytest.mark.parametrize(
+    "sort_keys,desc,nulls_first,expected",
+    [
+        pytest.param(
+            "a",
+            False,
+            None,
+            {"a": [-100, -1, 0, 1], "id": [3, None, 1, 2]},
+            id="a, asc",
+        ),
+        pytest.param(
+            "a",
+            False,
+            True,
+            {"a": [None, -100, -1, 0], "id": [4, 3, None, 1]},
+            id="a, asc, nulls first",
+        ),
+        pytest.param(
+            ["a", "id"],
+            [False, True],
+            None,
+            {"a": [-100, -1, 0, 1], "id": [3, None, 1, 2]},
+            id="a id, asc desc",
+        ),
+        pytest.param(
+            ["id", "a"],
+            [False, True],
+            [True, True],
+            {"a": [999, -1, 0, 1], "id": [None, None, 1, 2]},
+            id="id a, asc desc, nulls first first",
+        ),
+    ],
+)
+def test_top_k_basic(sort_keys, desc, nulls_first, expected):
+    df = daft.from_pydict(
+        {
+            "a": [0, 1, -1, 10, None, 999, -100],
+            "id": [1, 2, None, 3, 4, None, 3],
+        }
+    )
+    result = df.sort(by=sort_keys, desc=desc, nulls_first=nulls_first).limit(4)
+    assert result.to_pydict() == expected
+
+
+@pytest.mark.parametrize(
+    "sort_keys,desc,nulls_first,expected",
+    [
+        pytest.param(
+            ["id", "a"],
+            [False, True],
+            [True, True],
+            {"a": [999, -1, 0, 1, None, 10], "id": [None, None, 1, 2, 3, 3]},
+            id="id a, asc desc, nulls first first",
+        ),
+        pytest.param(
+            ["id", "a"],
+            [True, True],
+            [True, False],
+            {"a": [999, -1, None, 10, None, 1], "id": [None, None, 4, 3, 3, 2]},
+            id="id a, asc desc, nulls first first",
+        ),
+    ],
+)
+def test_top_k_second_level_sorting(sort_keys, desc, nulls_first, expected):
+    df = daft.from_pydict(
+        {
+            "a": [0, 1, -1, 10, None, 999, None],
+            "id": [1, 2, None, 3, 4, None, 3],
+        }
+    )
+    result = df.sort(by=sort_keys, desc=desc, nulls_first=nulls_first).limit(6)
+    assert result.to_pydict() == expected

@@ -27,6 +27,7 @@ mod scan;
 mod shuffle_exchange;
 mod sort;
 mod sort_merge_join;
+mod top_n;
 mod unpivot;
 
 pub use actor_pool_project::ActorPoolProject;
@@ -58,6 +59,7 @@ pub use scan::TabularScan;
 pub use shuffle_exchange::{ShuffleExchange, ShuffleExchangeFactory, ShuffleExchangeStrategy};
 pub use sort::Sort;
 pub use sort_merge_join::SortMergeJoin;
+pub use top_n::TopN;
 pub use unpivot::Unpivot;
 
 #[macro_export]
