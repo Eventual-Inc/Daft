@@ -29,7 +29,7 @@ class ExpressionVisitor(ABC, Generic[R]):
         ...         self.visit(expr)
         ...
         ...     def visit_cast(self, expr: Expression, dtype: DataType) -> None:
-        ...         print(f"Cast to: {dtype}")
+        ...         print(f"Cast: {dtype}")
         ...         self.visit(expr)
         ...
         ...     def visit_function(self, name: str, args: list[Expression]) -> None:
@@ -43,7 +43,7 @@ class ExpressionVisitor(ABC, Generic[R]):
         >>> visitor = PrintVisitor()
         >>> visitor.visit(expr)
         Alias: y
-        Cast to: int64
+        Cast: Int64
         Column: x
     """
 
