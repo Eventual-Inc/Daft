@@ -791,7 +791,9 @@ impl ScanTask {
                 .and_then(|s| {
                     // Derive in-memory size estimate from table stats.
                     self.num_rows().and_then(|num_rows| {
-                        let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
+                        #[allow(deprecated)]
+                        let mat_stats = s.cast_to_schema(&mat_schema).ok()?;
+                        let row_size = mat_stats.estimate_row_size().ok()?;
                         let estimate = (num_rows as f64) * row_size;
                         Some(estimate as usize)
                     })

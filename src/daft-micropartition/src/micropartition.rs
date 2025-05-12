@@ -333,7 +333,10 @@ fn materialize_scan_task(
 
     table_values = table_values
         .iter()
-        .map(|tbl| tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref()))
+        .map(|tbl| {
+            #[allow(deprecated)]
+            tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref())
+        })
         .collect::<DaftResult<Vec<_>>>()
         .context(DaftCoreComputeSnafu)?;
     Ok((table_values, cast_to_schema))
@@ -355,8 +358,9 @@ impl MicroPartition {
 
         let schema = scan_task.materialized_schema();
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+        #[allow(deprecated)]
         let statistics = statistics
-            .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
+            .cast_to_schema_with_fill(&schema, fill_map.as_ref())
             .expect("Statistics cannot be casted to schema");
         Self {
             schema,
@@ -385,11 +389,12 @@ impl MicroPartition {
             );
         }
 
-        let statistics = statistics.map(|stats| {
-            stats
-                .cast_to_schema(schema.clone())
-                .expect("Statistics cannot be casted to schema")
-        });
+        assert!(
+            statistics
+                .as_ref()
+                .is_none_or(|stats| stats.schema() == schema.as_ref()),
+            "Loaded MicroPartition's statistics schema must match its own schema exactly"
+        );
 
         // micropartition length is the length of all batches combined
         let length = record_batches
@@ -764,7 +769,10 @@ pub fn read_csv_into_micropartition(
                 .unwrap();
             let tables = tables
                 .into_iter()
-                .map(|tbl| tbl.cast_to_schema(&unioned_schema))
+                .map(|tbl| {
+                    #[allow(deprecated)]
+                    tbl.cast_to_schema(&unioned_schema)
+                })
                 .collect::<DaftResult<Vec<_>>>()?;
 
             // Construct MicroPartition from tables and unioned schema
@@ -813,7 +821,10 @@ pub fn read_json_into_micropartition(
                 .unwrap();
             let tables = tables
                 .into_iter()
-                .map(|tbl| tbl.cast_to_schema(&unioned_schema))
+                .map(|tbl| {
+                    #[allow(deprecated)]
+                    tbl.cast_to_schema(&unioned_schema)
+                })
                 .collect::<DaftResult<Vec<_>>>()?;
 
             // Construct MicroPartition from tables and unioned schema
@@ -1028,7 +1039,10 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     let fill_map = partition_spec.map(|pspec| pspec.to_fill_map());
     let all_tables = all_tables
         .into_iter()
-        .map(|t| t.cast_to_schema_with_fill(&pruned_daft_schema, fill_map.as_ref()))
+        .map(|t| {
+            #[allow(deprecated)]
+            t.cast_to_schema_with_fill(&pruned_daft_schema, fill_map.as_ref())
+        })
         .collect::<DaftResult<Vec<_>>>()?;
 
     // TODO: we can pass in stats here to optimize downstream workloads such as join. Make sure to correctly
@@ -1244,8 +1258,9 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+        #[allow(deprecated)]
         let casted_stats =
-            stats.cast_to_schema_with_fill(scan_task.materialized_schema(), fill_map.as_ref())?;
+            stats.cast_to_schema_with_fill(&scan_task.materialized_schema(), fill_map.as_ref())?;
 
         Ok(MicroPartition::new_unloaded(
             Arc::new(scan_task),

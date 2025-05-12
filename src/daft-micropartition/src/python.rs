@@ -215,6 +215,7 @@ impl PyMicroPartition {
     }
 
     pub fn cast_to_schema(&self, py: Python, schema: PySchema) -> PyResult<Self> {
+        #[allow(deprecated)]
         py.allow_threads(|| Ok(self.inner.cast_to_schema(schema.schema)?.into()))
     }
 

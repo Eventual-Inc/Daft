@@ -505,6 +505,7 @@ async fn stream_scan_task(
 
     Ok(table_stream.map(move |table| {
         let table = table?;
+        #[allow(deprecated)]
         let casted_table = table.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),
             scan_task
