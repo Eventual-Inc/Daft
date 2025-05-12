@@ -44,6 +44,8 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
+    - name: Setup Sccache
+      uses: mozilla-actions/sccache-action@v0.0.9
     - run: pip install uv
     - run: uv pip install twine yq setuptools_scm
 
@@ -72,6 +74,12 @@ jobs:
           echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe -Z tune-cpu=skylake" >> $GITHUB_ENV && \
           echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe -mtune=skylake" >> $GITHUB_ENV
         fi
+
+    # Rather than setting on each "Build Wheel" step, set it once for the rest of the job
+    - name: Configure Environment Variables for Sccache
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
