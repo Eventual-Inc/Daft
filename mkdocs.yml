@@ -171,7 +171,7 @@ extra:
 # Additional Style
 extra_css:
 - css/extra.css
-- css/docsearch.css
+# - css/docsearch.css
 - https://cdn.jsdelivr.net/npm/@docsearch/css@3
 
 extra_javascript:

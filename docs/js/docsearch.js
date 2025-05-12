@@ -1,3 +1,7 @@
+import docsearch from '@docsearch/js';
+
+import '@docsearch/css';
+
 docsearch({
     container: '#docsearch',
     appId: 'CTX8NKR4GC',
