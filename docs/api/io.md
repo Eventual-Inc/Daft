@@ -96,12 +96,12 @@
 
     These APIs are considered experimental.
 
-::: daft.io.source.DataFrameSource
+::: daft.io.source.DataSource
     options:
         filters: ["!^_"]
         heading_level: 3
 
-::: daft.io.source.DataFrameSourceTask
+::: daft.io.source.DataSourceTask
     options:
         filters: ["!^_"]
         heading_level: 3

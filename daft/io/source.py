@@ -11,15 +11,15 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "DataFrameSource",
-    "DataFrameSourceTask",
+    "DataSource",
+    "DataSourceTask",
 ]
 
 
-class DataFrameSource(ABC):
-    """DataFrameSource is a low-level interface for reading data into DataFrames.
+class DataSource(ABC):
+    """DataSource is a low-level interface for reading data into DataFrames.
 
-    When a DataFrameSource is read, it is split into multiple tasks which can be distributed
+    When a DataSource is read, it is split into multiple tasks which can be distributed
     for parallel processing. Each task is responsible for reading a specific portion of
     the data (e.g., a file partition, a range of rows, or a subset of a database table)
     and converting it into RecordBatches. Implementations should ensure that tasks
@@ -42,29 +42,29 @@ class DataFrameSource(ABC):
         ...
 
     @abstractmethod
-    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataFrameSourceTask]:
+    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
         """Returns an iterator of tasks for this source.
 
         Returns:
-            Iterable[DataFrameSourceTask]: An iterable of tasks that can be processed independently.
+            Iterable[DataSourceTask]: An iterable of tasks that can be processed independently.
         """
         ...
 
     def read(self) -> DataFrame:
-        """Reads a DataFrameSource as a DataFrame."""
+        """Reads a DataSource as a DataFrame."""
         from daft.daft import ScanOperatorHandle
         from daft.dataframe import DataFrame
-        from daft.io.__shim import _DataFrameSourceShim
+        from daft.io.__shim import _DataSourceShim
         from daft.logical.builder import LogicalPlanBuilder
 
-        scan = _DataFrameSourceShim(self)
+        scan = _DataSourceShim(self)
         handle = ScanOperatorHandle.from_python_scan_operator(scan)
         builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
         return DataFrame(builder)
 
 
-class DataFrameSourceTask(ABC):
-    """DataFrameSourceTask represents a partition of data that can be processed independently.
+class DataSourceTask(ABC):
+    """DataSourceTask represents a partition of data that can be processed independently.
 
     Warning:
         This API is early in its development and is subject to change.

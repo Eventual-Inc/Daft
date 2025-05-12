@@ -85,5 +85,5 @@ Please see [Daft I/O API docs](./api/io.md) for API details.
 
 | Function                                                    | Description                                                        |
 |-------------------------------------------------------------|--------------------------------------------------------------------|
-| [`DataFrameSource`][daft.io.source.DataFrameSource]         | Interface for reading data into DataFrames                         |
-| [`DataFrameSourceTask`][daft.io.source.DataFrameSourceTask] | Represents a partition of data that can be processed independently |
+| [`DataSource`][daft.io.source.DataSource]         | Interface for reading data into DataFrames                         |
+| [`DataSourceTask`][daft.io.source.DataSourceTask] | Represents a partition of data that can be processed independently |

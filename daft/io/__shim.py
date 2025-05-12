@@ -15,16 +15,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from daft.daft import Pushdowns as PyPushdowns
-    from daft.io.source import DataFrameSource, DataFrameSourceTask
+    from daft.io.source import DataSource, DataSourceTask
     from daft.schema import Schema
 
 
-class _DataFrameSourceShim(ScanOperator):
+class _DataSourceShim(ScanOperator):
     """!! INTERNAL ONLY .. SHIM TO REUSE EXISTING BACKED WORK !!"""
 
-    _source: DataFrameSource
+    _source: DataSource
 
-    def __init__(self, source: DataFrameSource) -> None:
+    def __init__(self, source: DataSource) -> None:
         self._source = source
 
     def schema(self) -> Schema:
@@ -69,6 +69,6 @@ class _DataFrameSourceShim(ScanOperator):
             )
 
 
-def _get_record_batches(task: DataFrameSourceTask) -> Iterator[PyRecordBatch]:
+def _get_record_batches(task: DataSourceTask) -> Iterator[PyRecordBatch]:
     """The task instance has been pickled then sent to this stateless method."""
     yield from (rb._recordbatch for mp in task.get_micro_partitions() for rb in mp.get_record_batches())

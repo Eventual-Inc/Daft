@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 from daft import DataType
 from daft.api_annotations import PublicAPI
-from daft.io.source import DataFrameSource, DataFrameSourceTask
+from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
@@ -138,7 +138,7 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
     return RangeSource(start, end, step, partitions).read()
 
 
-class RangeSource(DataFrameSource):
+class RangeSource(DataSource):
     """RangeSource produces a DataFrame from a range with a given step size."""
 
     _start: int
@@ -182,7 +182,7 @@ class RangeSource(DataFrameSource):
 
 
 @dataclass
-class RangeSourceTask(DataFrameSourceTask):
+class RangeSourceTask(DataSourceTask):
     _start: int
     _end: int
     _step: int
