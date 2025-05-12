@@ -36,4 +36,16 @@ impl RecordBatch {
             Series::argsort_multikey(expr_result.columns.as_slice(), descending, nulls_first)
         }
     }
+
+    pub fn top_n(
+        &self,
+        sort_keys: &[BoundExpr],
+        descending: &[bool],
+        nulls_first: &[bool],
+        limit: usize,
+    ) -> DaftResult<Self> {
+        let argsort = self.argsort(sort_keys, descending, nulls_first)?;
+        let top_n = argsort.slice(0, limit)?;
+        self.take(&top_n)
+    }
 }
