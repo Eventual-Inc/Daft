@@ -444,7 +444,7 @@ class OverwriteFiles(SingleOutputInstruction):
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         files_to_overwrite = []
         for input in inputs:
-            files_to_overwrite.extend(input.get_column("path").to_pylist())
+            files_to_overwrite.extend(input.get_column_by_name("path").to_pylist())
         overwrite_files(
             files_to_overwrite,
             self.root_dir,

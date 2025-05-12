@@ -10,6 +10,7 @@ use daft_core::{
 use num_traits::{FromPrimitive, Zero};
 
 use super::WindowAggStateOps;
+use crate::RecordBatch;
 
 pub struct SumWindowState<T>
 where
@@ -128,9 +129,13 @@ where
 }
 
 pub fn create_for_type(
-    source: &Series,
+    sources: &RecordBatch,
     total_length: usize,
 ) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
+    let [source] = sources.columns() else {
+        unreachable!("sum should only have one input")
+    };
+
     match source.data_type() {
         DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
             let casted = source.cast(&DataType::Int64)?;

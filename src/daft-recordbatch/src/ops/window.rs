@@ -317,9 +317,15 @@ impl RecordBatch {
             ));
         }
 
-        let source = self.get_column(agg_expr.as_ref().name())?;
+        let child_exprs = agg_expr
+            .as_ref()
+            .children()
+            .into_iter()
+            .map(BoundExpr::new_unchecked)
+            .collect::<Vec<_>>();
+        let sources = self.eval_expression_list(&child_exprs)?;
         // Check if we can initialize an incremental state
-        match create_window_agg_state(source, agg_expr, total_rows)? {
+        match create_window_agg_state(&sources, agg_expr, total_rows)? {
             Some(agg_state) => {
                 if Self::is_range_frame(&frame.start, &frame.end) {
                     Self::validate_range_frame_order_by(order_by)?;

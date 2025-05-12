@@ -50,6 +50,7 @@ pub enum LocalPhysicalPlan {
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
     WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
+    WindowOrderByOnly(WindowOrderByOnly),
 }
 
 impl LocalPhysicalPlan {
@@ -90,7 +91,8 @@ impl LocalPhysicalPlan {
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
                 stats_state,
                 ..
-            }) => stats_state,
+            })
+            | Self::WindowOrderByOnly(WindowOrderByOnly { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
@@ -304,6 +306,27 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             aggregations,
+            aliases,
+        })
+        .arced()
+    }
+
+    pub(crate) fn window_order_by_only(
+        input: LocalPhysicalPlanRef,
+        order_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        functions: Vec<WindowExpr>,
+        aliases: Vec<String>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowOrderByOnly(WindowOrderByOnly {
+            input,
+            order_by,
+            descending,
+            schema,
+            stats_state,
+            functions,
             aliases,
         })
         .arced()
@@ -537,7 +560,8 @@ impl LocalPhysicalPlan {
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
                 schema, ..
-            }) => schema,
+            })
+            | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
@@ -770,5 +794,16 @@ pub struct WindowPartitionAndDynamicFrame {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub aggregations: Vec<AggExpr>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowOrderByOnly {
+    pub input: LocalPhysicalPlanRef,
+    pub order_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub functions: Vec<WindowExpr>,
     pub aliases: Vec<String>,
 }

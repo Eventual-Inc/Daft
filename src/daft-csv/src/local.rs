@@ -903,7 +903,12 @@ where
             let predicate = BoundExpr::try_new(predicate.clone(), &read_schema)?;
             let filtered = table.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())?
+                let include_column_indices = include_columns
+                    .iter()
+                    .map(|name| read_schema.get_index(name))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                filtered.get_columns(&include_column_indices)
             } else {
                 filtered
             }

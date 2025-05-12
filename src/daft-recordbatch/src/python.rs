@@ -397,30 +397,17 @@ impl PyRecordBatch {
         Ok(self.record_batch.size_bytes()?)
     }
 
-    #[must_use]
-    pub fn column_names(&self) -> Vec<String> {
-        self.record_batch.column_names()
+    pub fn get_column(&self, idx: usize) -> PySeries {
+        self.record_batch.get_column(idx).clone().into()
     }
 
-    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
-        Ok(self.record_batch.get_column(name)?.clone().into())
-    }
-
-    pub fn get_column_by_index(&self, idx: i64) -> PyResult<PySeries> {
-        if idx < 0 {
-            return Err(PyValueError::new_err(format!(
-                "Invalid index, negative numbers not supported: {idx}"
-            )));
-        }
-        let idx = idx as usize;
-        if idx >= self.record_batch.len() {
-            return Err(PyValueError::new_err(format!(
-                "Invalid index, out of bounds: {idx} out of {}",
-                self.record_batch.len()
-            )));
-        }
-
-        Ok(self.record_batch.get_column_by_index(idx)?.clone().into())
+    pub fn columns(&self) -> Vec<PySeries> {
+        self.record_batch
+            .columns()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
     }
 
     #[staticmethod]
