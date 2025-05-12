@@ -40,7 +40,6 @@ pub use bool_and::*;
 use daft_dsl::functions::FunctionModule;
 pub use series::SeriesListExtension;
 pub struct ListFunctions;
-pub(crate) mod utils;
 
 impl FunctionModule for ListFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {

@@ -390,10 +390,12 @@ impl<T> FunctionArgs<T> {
         })
     }
 }
+
 pub trait ScalarValue: Sized {
     fn try_from_series(value: &Series) -> DaftResult<Self>;
     fn try_from_literal(value: &LiteralValue) -> DaftResult<Self>;
 }
+
 impl ScalarValue for CountMode {
     fn try_from_series(value: &Series) -> DaftResult<Self> {
         ensure!(value.data_type().is_string() && value.len() == 1, ValueError: "expected string literal");
@@ -403,16 +405,31 @@ impl ScalarValue for CountMode {
     fn try_from_literal(value: &LiteralValue) -> DaftResult<Self> {
         match value {
             LiteralValue::Utf8(s) => s.parse(),
-            _ => Err(DaftError::ValueError(format!("expected string literal"))),
+            _ => Err(DaftError::ValueError("expected string literal".to_string())),
         }
     }
 }
 
 impl FunctionArgs<Series> {
-    pub fn required_scalar<'a, Value, Key: FunctionArgKey>(
-        &'a self,
+    pub fn optional_scalar<Value, Key: FunctionArgKey>(
+        &self,
         position: Key,
-    ) -> DaftResult<Value>
+    ) -> DaftResult<Option<Value>>
+    where
+        Value: ScalarValue,
+    {
+        let v = position.optional(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the optional argument at position `{position:?}`"
+            ))
+        })?;
+
+        match v {
+            Some(v) => Value::try_from_series(v).map(Some),
+            None => Ok(None),
+        }
+    }
+    pub fn required_scalar<Value, Key: FunctionArgKey>(&self, position: Key) -> DaftResult<Value>
     where
         Value: ScalarValue,
     {
@@ -427,10 +444,28 @@ impl FunctionArgs<Series> {
 }
 
 impl FunctionArgs<ExprRef> {
-    pub fn required_scalar<'a, Value, Key: FunctionArgKey>(
-        &'a self,
+    pub fn optional_scalar<Value, Key: FunctionArgKey>(
+        &self,
         position: Key,
-    ) -> DaftResult<Value>
+    ) -> DaftResult<Option<Value>>
+    where
+        Value: ScalarValue,
+    {
+        let v = position.optional(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the optional argument at position `{position:?}`"
+            ))
+        })?;
+
+        match v.map(|v| v.as_ref()) {
+            Some(crate::Expr::Literal(v)) => Value::try_from_literal(v).map(Some),
+            None => Ok(None),
+            _ => Err(DaftError::ValueError(
+                "Expected a literal value".to_string(),
+            )),
+        }
+    }
+    pub fn required_scalar<Value, Key: FunctionArgKey>(&self, position: Key) -> DaftResult<Value>
     where
         Value: ScalarValue,
     {
@@ -441,7 +476,9 @@ impl FunctionArgs<ExprRef> {
         })?;
         match v.as_ref() {
             crate::Expr::Literal(v) => Value::try_from_literal(v),
-            _ => Err(DaftError::ValueError(format!("Expected a literal value"))),
+            _ => Err(DaftError::ValueError(
+                "Expected a literal value".to_string(),
+            )),
         }
     }
 }

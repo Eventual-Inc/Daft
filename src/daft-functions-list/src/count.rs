@@ -21,7 +21,8 @@ impl ScalarUDF for ListCount {
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
-        let count_mode: CountMode = inputs.required_scalar((1, "mode"))?;
+        let count_mode: Option<CountMode> = inputs.optional_scalar((1, "mode"))?;
+        let count_mode = count_mode.unwrap_or(CountMode::Valid);
 
         Ok(input.list_count(count_mode)?.into_series())
     }
@@ -31,10 +32,10 @@ impl ScalarUDF for ListCount {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(inputs.len() == 2, SchemaMismatch: "Expected 2 input args, got {}", inputs.len());
+        ensure!(!inputs.is_empty() && inputs.len() <=2, SchemaMismatch: "Expected 1 or 2 input args, got {}", inputs.len());
 
         let input_field = inputs.required((0, "input"))?.to_field(schema)?;
-        let _: CountMode = inputs.required_scalar((1, "mode"))?;
+        let _: Option<CountMode> = inputs.optional_scalar((1, "mode"))?;
 
         Ok(Field::new(input_field.name, DataType::UInt64))
     }

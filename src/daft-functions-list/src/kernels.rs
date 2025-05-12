@@ -601,7 +601,7 @@ impl ListArrayExtension for FixedSizeListArray {
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
         let idx_iter = create_iter(idx, self.len());
-        let default = default;
+
         assert!(
             default.len() == 1,
             "Only a single default value is supported"

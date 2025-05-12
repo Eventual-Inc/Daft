@@ -61,7 +61,7 @@ impl ScalarUDF for ListSlice {
             );
         }
 
-        Ok(input.to_exploded_field()?.to_list_field()?)
+        input.to_exploded_field()?.to_list_field()
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

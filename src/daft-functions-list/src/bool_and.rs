@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -9,10 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    series::SeriesListExtension,
-    utils::{unary_list_evaluate, unary_list_to_field},
-};
+use crate::series::SeriesListExtension;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListBoolAnd;
@@ -23,7 +20,8 @@ impl ScalarUDF for ListBoolAnd {
         "list_bool_and"
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        unary_list_evaluate(inputs, Series::list_bool_and)
+        let input = inputs.required((0, "input"))?;
+        input.list_bool_and()
     }
 
     fn function_args_to_field(
@@ -31,7 +29,11 @@ impl ScalarUDF for ListBoolAnd {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        unary_list_to_field(inputs, schema, DataType::Boolean)
+        ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
+        let input = inputs.required((0, "input"))?.to_field(schema)?;
+        let inner_field = input.to_exploded_field()?;
+
+        Ok(Field::new(inner_field.name.as_str(), DataType::Boolean))
     }
 }
 
