@@ -79,6 +79,7 @@ jobs:
     - name: Configure Environment Variables for Sccache
       run: |
         echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
