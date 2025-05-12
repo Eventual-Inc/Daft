@@ -79,7 +79,6 @@ jobs:
     - name: Configure Environment Variables for Sccache
       run: |
         echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
@@ -93,6 +92,7 @@ jobs:
       with:
         target: x86_64
         args: --profile release-lto --out dist
+        sccache: true
 
     - name: Build wheels - Linux x86
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'x86_64') }}
@@ -102,6 +102,7 @@ jobs:
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
+        sccache: true
 
     - name: Build wheels - Linux aarch64
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'aarch64') }}
@@ -112,6 +113,7 @@ jobs:
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+        sccache: true
 
     - name: Build wheels - Mac aarch64
       if: ${{ (inputs.os == 'macos') && (inputs.arch == 'aarch64')  }}
@@ -119,6 +121,7 @@ jobs:
       with:
         target: aarch64
         args: --profile release-lto --out dist
+        sccache: true
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
         CFLAGS: -mtune=apple-m1
