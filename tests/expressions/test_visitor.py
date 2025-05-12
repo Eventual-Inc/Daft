@@ -6,11 +6,11 @@ import pytest
 
 from daft.expressions import (
     Expression,
-    ExpressionVisitor,
     col,
     list_,
     lit,
 )
+from daft.expressions.visitor import PredicateVisitor
 from daft.logical.schema import DataType
 from daft.series import Series
 
@@ -45,7 +45,7 @@ class Trace:
         return eq(self.args, other.args)
 
 
-class TracingVisitor(ExpressionVisitor[List[Trace]]):
+class TracingVisitor(PredicateVisitor[List[Trace]]):
     """TracingVisitor accumulates a callstack so we can verify how the rust PyVisitor dispatches.
 
     This is factored intentionally to exemplify a stateless tree fold, and I've made the
