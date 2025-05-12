@@ -219,6 +219,7 @@ impl DataType {
             DataType::Extension(_, _, _) => true,
             DataType::Timestamp(_, tz) => tz.is_some(),
             DataType::Map(_, _) => true,
+            DataType::Struct(_) => true,
             _ => {
                 let mut has_extension = false;
                 self.direct_children(|child| {
