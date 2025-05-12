@@ -82,6 +82,11 @@ docs: .venv ## Build Daft documentation
 docs-serve: .venv ## Build Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
 
+.PHONY: frontend
+frontend: .venv ## Build daft-dashboard frontend assets
+	cd src/daft-dashboard/frontend && \
+		bun run build
+
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
