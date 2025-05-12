@@ -116,7 +116,7 @@ def lit(value: object) -> Expression:
     elif isinstance(value, ImageFormat):
         lit_value = _lit(str(value))
     elif isinstance(value, ImageMode):
-        lit_value = _lit(str(value)) 
+        lit_value = _lit(str(value))
     elif isinstance(value, CountMode):
         lit_value = _lit(str(value))
     else:
@@ -618,7 +618,7 @@ class Expression:
                 f"Argument of type {key_type} is not supported in Expression.__getitem__. Only int and string types are supported."
             )
 
-    def _eval_expressions(self, func_name: str, *args, **kwargs) -> Expression:
+    def _eval_expressions(self, func_name, *args, **kwargs) -> Expression:
         expr_args = [Expression._to_expression(v)._expr for v in args]
         expr_kwargs = {k: Expression._to_expression(v)._expr for k, v in kwargs.items() if v is not None}
         f = native.get_function_from_registry(func_name)
@@ -1834,7 +1834,7 @@ class ExpressionNamespace:
         ns._expr = expr._expr
         return ns
 
-    def _eval_expressions(self, func_name: str, *args: Expression, **kwargs) -> Series:
+    def _eval_expressions(self, func_name: str, *args, **kwargs) -> Expression:
         e = Expression._from_pyexpr(self._expr)
         return e._eval_expressions(func_name, *args, **kwargs)
 
@@ -4058,7 +4058,6 @@ class ExpressionListNamespace(ExpressionNamespace):
 
         return self._eval_expressions("list_count", CountMode.All)
 
-
     def length(self) -> Expression:
         """Gets the length of each list.
 
@@ -4077,7 +4076,6 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with the type of the list values
         """
-        
         return self._eval_expressions("list_get", idx, default)
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
@@ -4194,7 +4192,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_bool_or")
 
-    def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
+    def sort(self, desc: bool | Expression | None = None, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
         Args:
