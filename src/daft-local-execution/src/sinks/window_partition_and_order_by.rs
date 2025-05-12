@@ -287,7 +287,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
             self.window_partition_and_order_by_params
                 .order_by
                 .iter()
-                .map(|e| e.to_string())
+                .zip(self.window_partition_and_order_by_params.descending.iter())
+                .map(|(e, d)| format!("{} {}", e, if *d { "desc" } else { "asc" }))
                 .join(", ")
         ));
         display
