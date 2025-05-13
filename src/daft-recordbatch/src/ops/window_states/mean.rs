@@ -8,7 +8,10 @@ use daft_core::{
 use num_traits::Zero;
 
 use super::WindowAggStateOps;
-use crate::ops::window_states::{CountWindowState, SumWindowState};
+use crate::{
+    ops::window_states::{CountWindowState, SumWindowState},
+    RecordBatch,
+};
 
 pub struct MeanWindowState<T>
 where
@@ -75,9 +78,13 @@ where
 }
 
 pub fn create_for_type(
-    source: &Series,
+    sources: &RecordBatch,
     total_length: usize,
 ) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
+    let [source] = sources.columns() else {
+        unreachable!("sum should only have one input")
+    };
+
     let target_type = try_mean_aggregation_supertype(source.data_type())?;
     match target_type {
         DataType::Float64 => {

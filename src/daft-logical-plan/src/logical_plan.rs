@@ -43,6 +43,7 @@ pub enum LogicalPlan {
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     SubqueryAlias(SubqueryAlias),
     Window(Window),
+    TopN(TopN),
 }
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
@@ -109,6 +110,7 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.schema(),
             Self::Window(Window { schema, .. }) => schema.clone(),
+            Self::TopN(TopN { input, .. }) => input.schema(),
         }
     }
 
@@ -239,6 +241,14 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
+            Self::TopN(top_n) => {
+                let res = top_n
+                    .sort_by
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
         }
     }
 
@@ -265,6 +275,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             Self::SubqueryAlias(..) => "Alias",
             Self::Window(..) => "Window",
+            Self::TopN(..) => "TopN",
         }
     }
 
@@ -287,7 +298,8 @@ impl LogicalPlan {
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
-            | Self::Window(Window { stats_state, .. }) => stats_state,
+            | Self::Window(Window { stats_state, .. })
+            | Self::TopN(TopN { stats_state, .. }) => stats_state,
             Self::Intersect(_) => {
                 panic!("Intersect nodes should be optimized away before stats are materialized")
             }
@@ -337,6 +349,7 @@ impl LogicalPlan {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
             Self::Window(plan) => Self::Window(plan.with_materialized_stats()),
+            Self::TopN(plan) => Self::TopN(plan.with_materialized_stats()),
         }
     }
 
@@ -365,6 +378,7 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(alias) => alias.multiline_display(),
             Self::Window(window) => window.multiline_display(),
+            Self::TopN(top_n) => top_n.multiline_display(),
         }
     }
 
@@ -393,6 +407,7 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => vec![input],
             Self::Window(Window { input, .. }) => vec![input],
+            Self::TopN(TopN { input, .. }) => vec![input],
         }
     }
 
@@ -423,6 +438,9 @@ impl LogicalPlan {
                     window_functions.clone(),
                     aliases.clone(),
                     window_spec.clone(),
+                ).unwrap()),
+                Self::TopN(TopN { sort_by, descending, nulls_first, limit, .. }) => Self::TopN(TopN::try_new(
+                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit
                 ).unwrap()),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
@@ -569,7 +587,8 @@ impl LogicalPlan {
             | Self::Sample(Sample { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
-            | Self::Window(Window { plan_id, .. }) => plan_id,
+            | Self::Window(Window { plan_id, .. })
+            | Self::TopN(TopN { plan_id, .. }) => plan_id,
         }
     }
 
@@ -604,6 +623,7 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
             Self::Window(window) => window.with_plan_id(Some(plan_id)),
+            Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
         }
     }
 }
@@ -708,3 +728,4 @@ impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
+impl_from_data_struct_for_logical_plan!(TopN);

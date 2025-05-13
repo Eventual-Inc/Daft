@@ -16,6 +16,7 @@ mod sink;
 mod sort;
 mod source;
 mod summarize;
+mod top_n;
 mod unpivot;
 mod window;
 
@@ -37,5 +38,6 @@ pub use sink::Sink;
 pub use sort::Sort;
 pub use source::Source;
 pub use summarize::summarize;
+pub use top_n::TopN;
 pub use unpivot::Unpivot;
 pub use window::Window;

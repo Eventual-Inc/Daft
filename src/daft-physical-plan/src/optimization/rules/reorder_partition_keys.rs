@@ -160,6 +160,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 // the rest should have been dealt with earlier
                 PhysicalPlan::ShuffleExchange(ShuffleExchange {strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum { .. }, ..}) |
                 PhysicalPlan::Sort(..) |
+                PhysicalPlan::TopN(..) |
                 PhysicalPlan::InMemoryScan(..) |
                 PhysicalPlan::TabularScan(..) |
                 PhysicalPlan::EmptyScan(..) |

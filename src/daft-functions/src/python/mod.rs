@@ -15,7 +15,6 @@ macro_rules! simple_python_wrapper {
 mod binary;
 mod coalesce;
 mod distance;
-mod image;
 mod list;
 mod misc;
 mod sequence;
@@ -27,7 +26,7 @@ mod utf8;
 use std::sync::Arc;
 
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
     python::PyExpr,
     ExprRef,
 };
@@ -35,8 +34,6 @@ use pyo3::{
     types::{PyDict, PyModule, PyModuleMethods, PyTuple},
     wrap_pyfunction, Bound, PyResult,
 };
-
-use crate::FUNCTION_REGISTRY;
 
 #[pyo3::pyclass]
 pub struct PyScalarFunction {
@@ -81,7 +78,7 @@ impl PyScalarFunction {
 
 #[pyo3::pyfunction]
 pub fn get_function_from_registry(name: &str) -> PyResult<PyScalarFunction> {
-    let f = FUNCTION_REGISTRY.get(name);
+    let f = FUNCTION_REGISTRY.read().unwrap().get(name);
     if let Some(f) = f {
         Ok(PyScalarFunction { inner: f })
     } else {
@@ -107,12 +104,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::decode);
     add!(binary::try_encode);
     add!(binary::try_decode);
-
-    add!(image::image_crop);
-    add!(image::image_to_mode);
-    add!(image::image_decode);
-    add!(image::image_encode);
-    add!(image::image_resize);
 
     add!(list::list_chunk);
     add!(list::list_count);

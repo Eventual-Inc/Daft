@@ -5,7 +5,7 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Source},
+    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -115,6 +115,26 @@ impl PushDownLimit {
                             .or(Transformed::yes(new_plan))
                             .data;
                         Ok(Transformed::yes(optimized))
+                    }
+                    // Combine Limit with Sort into TopN
+                    //
+                    // Limit-Sort -> TopN
+                    LogicalPlan::Sort(LogicalSort {
+                        input,
+                        sort_by,
+                        descending,
+                        nulls_first,
+                        ..
+                    }) => {
+                        let new_plan = Arc::new(LogicalPlan::TopN(LogicalTopN::try_new(
+                            input.clone(),
+                            sort_by.clone(),
+                            descending.clone(),
+                            nulls_first.clone(),
+                            limit as i64,
+                        )?));
+
+                        Ok(Transformed::yes(new_plan))
                     }
                     _ => Ok(Transformed::no(plan)),
                 }

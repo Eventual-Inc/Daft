@@ -273,7 +273,7 @@ class TabularWriteVisitors:
             partition_values_for_paths = self.partition_values.take(partition_indices)
 
             for c in partition_values_for_paths.column_names():
-                metadata[c] = partition_values_for_paths.get_column(c)
+                metadata[c] = partition_values_for_paths.get_column_by_name(c)
 
         return MicroPartition.from_pydict(metadata)
 

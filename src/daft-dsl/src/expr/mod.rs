@@ -1289,6 +1289,7 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
+
             Self::IsNull(..) => {
                 Self::IsNull(children.first().expect("Should have 1 child").clone())
             }
@@ -1642,6 +1643,10 @@ impl Expr {
 
     pub fn get_type(&self, schema: &Schema) -> DaftResult<DataType> {
         Ok(self.to_field(schema)?.dtype)
+    }
+
+    pub fn get_name(&self, schema: &Schema) -> DaftResult<String> {
+        Ok(self.to_field(schema)?.name)
     }
 
     pub fn input_mapping(self: &Arc<Self>) -> Option<String> {

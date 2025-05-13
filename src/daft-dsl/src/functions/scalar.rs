@@ -25,14 +25,12 @@ impl ScalarFunction {
             inputs: FunctionArgs::new_unchecked(inputs),
         }
     }
-
     pub fn name(&self) -> &str {
         self.udf.name()
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf
-            .to_field(self.inputs.clone().into_inner().as_slice(), schema)
+        self.udf.function_args_to_field(self.inputs.clone(), schema)
     }
 }
 
@@ -62,7 +60,30 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     }
 
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
+
+    #[allow(deprecated)]
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        // for backwards compatibility we add a default implementation.
+        // TODO: move all existing implementations of `to_field` over to `function_args_to_field`
+        // Once that is done, we can name it back to `to_field`.
+        self.to_field(inputs.into_inner().as_slice(), schema)
+    }
+
+    #[deprecated = "use `function_args_to_field` instead"]
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        let inputs = inputs
+            .iter()
+            .map(|e| FunctionArg::unnamed(e.clone()))
+            .collect::<Vec<_>>();
+
+        let inputs = FunctionArgs::new_unchecked(inputs);
+        self.function_args_to_field(inputs, schema)
+    }
+
     fn docstring(&self) -> &'static str {
         "No documentation available"
     }

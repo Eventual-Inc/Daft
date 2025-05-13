@@ -158,7 +158,7 @@ def test_table_partition_by_hash_single_col(size, k, dtype) -> None:
     seen_so_far = set()
     for st in split_tables:
         unique_to_table = set()
-        for x, x_ind in zip(st.get_column("x").to_pylist(), st.get_column("x_ind").to_pylist()):
+        for x, x_ind in zip(st.get_column_by_name("x").to_pylist(), st.get_column_by_name("x_ind").to_pylist()):
             assert (x_ind % k) == int(x)
             unique_to_table.add(x)
         for v in unique_to_table:
@@ -184,7 +184,9 @@ def test_table_partition_by_hash_two_col(size, k, dtype) -> None:
     for st in split_tables:
         unique_to_table = set()
         for x, y, x_ind in zip(
-            st.get_column("x").to_pylist(), st.get_column("y").to_pylist(), st.get_column("x_ind").to_pylist()
+            st.get_column_by_name("x").to_pylist(),
+            st.get_column_by_name("y").to_pylist(),
+            st.get_column_by_name("x_ind").to_pylist(),
         ):
             assert (x_ind % k) == int(x)
             unique_to_table.add((x, y))
@@ -203,7 +205,7 @@ def test_table_partition_by_random(size, k) -> None:
     assert total_split_len == size
 
     for st in split_tables:
-        for x in st.get_column("x").to_pylist():
+        for x in st.get_column_by_name("x").to_pylist():
             assert x not in seen_so_far
             seen_so_far.add(x)
 
@@ -252,7 +254,7 @@ def test_table_partition_by_range_single_column(size, k, desc) -> None:
         input_boundaries = input_boundaries[::-1]
 
     boundaries = RecordBatch.from_pydict({"x": input_boundaries}).eval_expression_list(
-        [col("x").cast(table.get_column("x").datatype())]
+        [col("x").cast(table.get_column_by_name("x").datatype())]
     )
 
     split_tables = table.partition_by_range([col("x")], boundaries, [desc])
@@ -265,7 +267,7 @@ def test_table_partition_by_range_single_column(size, k, desc) -> None:
     seen_idx = set()
 
     for i, st in enumerate(split_tables):
-        for x, x_ind in zip(st.get_column("x").to_pylist(), st.get_column("x_ind").to_pylist()):
+        for x, x_ind in zip(st.get_column_by_name("x").to_pylist(), st.get_column_by_name("x_ind").to_pylist()):
             assert original_boundaries[i] <= x
             if i < (k - 1):
                 assert x <= original_boundaries[i + 1]
@@ -287,7 +289,10 @@ def test_table_partition_by_range_multi_column(size, k, desc) -> None:
         input_boundaries = input_boundaries[::-1]
 
     boundaries = RecordBatch.from_pydict({"x": np.ones(k - 1), "y": input_boundaries}).eval_expression_list(
-        [col("x").cast(table.get_column("x").datatype()), col("y").cast(table.get_column("y").datatype())]
+        [
+            col("x").cast(table.get_column_by_name("x").datatype()),
+            col("y").cast(table.get_column_by_name("y").datatype()),
+        ]
     )
 
     split_tables = table.partition_by_range([col("x"), col("y")], boundaries, [desc, desc])
@@ -300,7 +305,7 @@ def test_table_partition_by_range_multi_column(size, k, desc) -> None:
     seen_idx = set()
 
     for i, st in enumerate(split_tables):
-        for x, y in zip(st.get_column("x").to_pylist(), st.get_column("y").to_pylist()):
+        for x, y in zip(st.get_column_by_name("x").to_pylist(), st.get_column_by_name("y").to_pylist()):
             assert original_boundaries[i] <= y
             if i < (k - 1):
                 assert y <= original_boundaries[i + 1]
