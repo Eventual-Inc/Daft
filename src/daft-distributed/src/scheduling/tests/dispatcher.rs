@@ -10,14 +10,13 @@ use std::{
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     scheduling::{
-        dispatcher::{SchedulableTask, TaskDispatcher, TaskDispatcherHandle},
+        dispatcher::TaskDispatcher,
         task::{SchedulingStrategy, Task, TaskId},
-        tests::{MockPartition, MockTask, MockTaskBuilder, MockWorkerManager},
-        worker::{Worker, WorkerId, WorkerManager},
+        tests::{MockPartition, MockTaskBuilder, MockWorkerManager},
+        worker::{WorkerId, WorkerManager},
     },
     utils::joinset::JoinSet,
 };
@@ -257,9 +256,8 @@ async fn test_dispatcher_with_busy_workers() -> DaftResult<()> {
             self.inner.add_worker(worker_id, num_cpus)
         }
 
-        async fn set_worker_full(&self, worker_id: &WorkerId) -> DaftResult<()> {
-            let mut workers = self.inner.workers.lock().unwrap();
-            if let Some(worker_mut) = workers.get_mut(worker_id) {
+        async fn set_worker_full(&mut self, worker_id: &WorkerId) -> DaftResult<()> {
+            if let Some(worker_mut) = self.inner.workers.get_mut(worker_id) {
                 worker_mut.num_active_tasks = worker_mut.num_cpus;
             }
             Ok(())
@@ -327,8 +325,7 @@ async fn test_dispatcher_with_busy_workers() -> DaftResult<()> {
     let submitted_task = handle.submit_task(task).await?;
 
     // Free up a worker
-    let mut workers = worker_manager.inner.workers.lock().unwrap();
-    if let Some(worker) = workers.get_mut("worker1") {
+    if let Some(worker) = worker_manager.inner.workers.get_mut("worker1") {
         worker.num_active_tasks = 0;
     }
 

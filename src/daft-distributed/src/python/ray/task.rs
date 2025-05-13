@@ -82,7 +82,6 @@ pub(crate) struct RayPartitionRef {
 impl RayPartitionRef {
     #[new]
     pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
-        println!("new RayPartitionRef: {:?}, {}, {}", object_ref, num_rows, size_bytes);
         Self {
             object_ref,
             num_rows,

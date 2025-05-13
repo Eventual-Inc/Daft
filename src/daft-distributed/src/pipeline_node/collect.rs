@@ -115,7 +115,7 @@ impl CollectNode {
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let mut task_or_partition_ref_stream =
-            materialize_running_pipeline_outputs(input, JoinSet::new());
+            materialize_running_pipeline_outputs(input);
         while let Some(result) = task_or_partition_ref_stream.next().await {
             let pipeline_output = result?;
             match pipeline_output {

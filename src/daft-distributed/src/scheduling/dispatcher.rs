@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
@@ -69,6 +70,7 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
         mut task_rx: Receiver<Vec<SchedulableTask<T>>>,
     ) -> DaftResult<()> {
         let mut running_tasks = JoinSet::new();
+        let mut running_tasks_by_id = HashMap::new();
         let mut pending_tasks: Vec<SchedulableTask<T>> =
             Vec::with_capacity(dispatcher.worker_manager.total_available_cpus());
 
@@ -96,28 +98,38 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
                         biased;
                         // If the task was cancelled, return None
                         () = task.cancel_token.cancelled() => {
-                            (worker_id, task_id, None)
+                            None
                         },
                         // If the task is finished, return the result and the result_tx
                         result = task_handle.get_result() => {
-                            (worker_id, task_id, Some((result, task.result_tx)))
+                            Some((result, task.result_tx))
                         }
                     }
                 };
-                running_tasks.spawn(task_future);
+                let joinset_id = running_tasks.spawn(task_future).id();
+                running_tasks_by_id.insert(joinset_id, (worker_id, task_id));
             }
 
             // 4. Wait for tasks to finish or receive new tasks
             tokio::select! {
                 biased;
-                Some(result) = running_tasks.join_next() => {
-                    let (worker_id, task_id, result) = result.map_err(|e| DaftError::External(e.into()))?;
-                    dispatcher.worker_manager.mark_task_finished(task_id, worker_id);
-                    match result {
-                        Some((result, result_tx)) => {
-                            let _ = result_tx.send(result);
+                Some(finished_task) = running_tasks.join_next_with_id() => {
+                    match finished_task {
+                        Ok((joinset_id, task_result)) => {
+                            let (worker_id, task_id) = running_tasks_by_id.remove(&joinset_id).unwrap();
+                            dispatcher.worker_manager.mark_task_finished(task_id, worker_id);
+                            match task_result {
+                                Some((result, result_tx)) => {
+                                    let _ = result_tx.send(result);
+                                }
+                                None => {}
+                            }
                         }
-                        None => {}
+                        Err(e) => {
+                            let joinset_id = e.id();
+                            let (worker_id, task_id) = running_tasks_by_id.remove(&joinset_id).unwrap();
+                            dispatcher.worker_manager.mark_task_finished(task_id, worker_id);
+                        }
                     }
                 }
                 Some(next_tasks) = task_rx.recv() => {
@@ -208,6 +220,8 @@ impl<T: Task> TaskDispatcherHandle<T> {
         Ok(submitted_tasks)
     }
 }
+
+#[derive(Debug)]
 pub(crate) struct SubmittedTask {
     task_id: TaskId,
     result_rx: OneshotReceiver<DaftResult<Vec<PartitionRef>>>,

@@ -77,7 +77,7 @@ impl<T: Task> Stream for RunningPipelineNode<T> {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) enum PipelineOutput<T: Task> {
     Materialized(PartitionRef),
     Tasks(Vec<T>),

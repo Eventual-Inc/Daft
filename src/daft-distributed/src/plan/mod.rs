@@ -9,7 +9,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_runtime::RuntimeTask;
-use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::LogicalPlanBuilder;
 use futures::{FutureExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 

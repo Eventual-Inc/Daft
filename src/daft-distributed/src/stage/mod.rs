@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_logical_plan::LogicalPlanRef;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
@@ -16,7 +16,7 @@ use crate::{
         task::SwordfishTask,
         worker::{WorkerManager, WorkerManagerFactory},
     },
-    utils::joinset::JoinSet,
+    utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
 mod stage_builder;
@@ -55,9 +55,15 @@ impl Stage {
                 let running_node = pipeline_node.start(&mut stage_context, psets.clone());
 
                 let (task_dispatcher_handle, joinset) = stage_context.into_inner();
-                let partition_ref_stream =
-                    materialize_all_pipeline_outputs(running_node, task_dispatcher_handle, joinset);
-                Ok(partition_ref_stream)
+                let partition_ref_stream = JoinableForwardingStream::new(
+                    materialize_all_pipeline_outputs(running_node, task_dispatcher_handle),
+                    joinset,
+                );
+                Ok(partition_ref_stream.map(|result| match result {
+                    Ok(Ok(partition_ref)) => Ok(partition_ref),
+                    Ok(Err(e)) => Err(e),
+                    Err(e) => Err(e),
+                }))
             }
         }
     }
@@ -163,8 +169,10 @@ impl StageContext {
         worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
     ) -> DaftResult<Self> {
         let worker_manager = worker_manager_factory.create_worker_manager()?;
-        let task_dispatcher =
-            TaskDispatcher::new_with_scheduler(Box::new(worker_manager), Box::new(LinearScheduler::new()));
+        let task_dispatcher = TaskDispatcher::new_with_scheduler(
+            Box::new(worker_manager),
+            Box::new(LinearScheduler::new()),
+        );
         let mut joinset = JoinSet::new();
         let task_dispatcher_handle =
             TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);

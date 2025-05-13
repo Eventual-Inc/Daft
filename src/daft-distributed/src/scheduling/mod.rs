@@ -5,4 +5,4 @@ pub(crate) mod worker;
 
 // Include the tests module
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

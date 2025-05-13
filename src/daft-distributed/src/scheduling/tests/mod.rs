@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::{Partition, PartitionRef};
 use uuid::Uuid;
 
@@ -49,12 +49,18 @@ impl Partition for MockPartition {
     }
 }
 
+pub(crate) fn create_mock_partition_ref(num_rows: usize, size_bytes: usize) -> PartitionRef {
+    Arc::new(MockPartition::new(num_rows, size_bytes))
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct MockTask {
     task_id: String,
     scheduling_strategy: SchedulingStrategy,
     task_result: PartitionRef,
     cancel_marker: Option<Arc<AtomicBool>>,
     sleep_duration: Option<Duration>,
+    error_message: Option<String>,
 }
 
 /// A builder pattern implementation for creating MockTask instances
@@ -64,6 +70,7 @@ pub(crate) struct MockTaskBuilder {
     task_result: PartitionRef,
     cancel_marker: Option<Arc<AtomicBool>>,
     sleep_duration: Option<Duration>,
+    error_message: Option<String>,
 }
 
 impl MockTaskBuilder {
@@ -75,6 +82,7 @@ impl MockTaskBuilder {
             task_result: partition_ref,
             cancel_marker: None,
             sleep_duration: None,
+            error_message: None,
         }
     }
 
@@ -96,6 +104,11 @@ impl MockTaskBuilder {
         self
     }
 
+    pub fn with_error(mut self) -> Self {
+        self.error_message = Some("test error".to_string());
+        self
+    }
+
     /// Build the MockTask
     pub fn build(self) -> MockTask {
         MockTask {
@@ -104,6 +117,7 @@ impl MockTaskBuilder {
             task_result: self.task_result,
             cancel_marker: self.cancel_marker,
             sleep_duration: self.sleep_duration,
+            error_message: self.error_message,
         }
     }
 }
@@ -129,6 +143,7 @@ struct MockTaskResultHandle {
     worker_id: WorkerId,
     sleep_duration: Option<Duration>,
     cancel_marker: Option<Arc<AtomicBool>>,
+    error_message: Option<String>,
 }
 
 impl MockTaskResultHandle {
@@ -138,6 +153,7 @@ impl MockTaskResultHandle {
         worker_id: WorkerId,
         sleep_duration: Option<Duration>,
         cancel_marker: Option<Arc<AtomicBool>>,
+        error_message: Option<String>,
     ) -> Self {
         Self {
             result,
@@ -145,6 +161,7 @@ impl MockTaskResultHandle {
             worker_id,
             sleep_duration,
             cancel_marker,
+            error_message,
         }
     }
 }
@@ -155,7 +172,11 @@ impl SwordfishTaskResultHandle for MockTaskResultHandle {
         if let Some(sleep_duration) = self.sleep_duration {
             tokio::time::sleep(sleep_duration).await;
         }
-        self.worker_manager.mark_task_finished(TaskId::default(), self.worker_id.clone());
+        if let Some(error_message) = self.error_message.take() {
+            return Err(DaftError::InternalError(error_message));
+        }
+        self.worker_manager
+            .mark_task_finished(TaskId::default(), self.worker_id.clone());
         Ok(vec![self.result.clone()])
     }
 }
@@ -165,26 +186,27 @@ impl Drop for MockTaskResultHandle {
         if let Some(cancel_marker) = self.cancel_marker.take() {
             cancel_marker.store(true, Ordering::SeqCst);
         }
-        self.worker_manager.mark_task_finished(TaskId::default(), self.worker_id.clone());
+        self.worker_manager
+            .mark_task_finished(TaskId::default(), self.worker_id.clone());
     }
 }
 
 /// A mock implementation of the WorkerManager trait for testing
 #[derive(Clone)]
 pub struct MockWorkerManager {
-    workers: Arc<Mutex<HashMap<WorkerId, MockWorker>>>,
+    workers: HashMap<WorkerId, MockWorker>,
 }
 
 impl MockWorkerManager {
     pub fn new() -> Self {
         Self {
-            workers: Arc::new(Mutex::new(HashMap::new())),
+            workers: HashMap::new(),
         }
     }
 
     pub fn add_worker(&mut self, worker_id: WorkerId, num_cpus: usize) -> DaftResult<()> {
-        let mut workers = self.workers.lock().unwrap();
-        workers.insert(worker_id.clone(), MockWorker::new(worker_id, num_cpus));
+        self.workers
+            .insert(worker_id.clone(), MockWorker::new(worker_id, num_cpus));
         Ok(())
     }
 }
@@ -232,40 +254,36 @@ impl WorkerManager for MockWorkerManager {
     ) -> Box<dyn SwordfishTaskResultHandle> {
         // First, get the task as a MockTask
         let task = *task.into_any().downcast::<MockTask>().unwrap();
-        
+
         // Update the worker's active task count
-        let mut workers = self.workers.lock().unwrap();
-        if let Some(worker) = workers.get_mut(&worker_id) {
+        if let Some(worker) = self.workers.get_mut(&worker_id) {
             worker.num_active_tasks += 1;
             worker.active_task_ids.insert(task.task_id.clone());
         }
-        
+
         Box::new(MockTaskResultHandle::new(
             task.task_result,
             self.clone(),
             worker_id,
             task.sleep_duration,
             task.cancel_marker,
+            task.error_message,
         ))
     }
 
     fn mark_task_finished(&mut self, task_id: TaskId, worker_id: WorkerId) {
-        let mut workers = self.workers.lock().unwrap();
-        if let Some(worker) = workers.get_mut(&worker_id) {
+        if let Some(worker) = self.workers.get_mut(&worker_id) {
             worker.num_active_tasks = worker.num_active_tasks.saturating_sub(1);
             worker.active_task_ids.remove(&task_id);
         }
     }
 
     fn workers(&self) -> &HashMap<WorkerId, Self::Worker> {
-        // This is not ideal because we can't return a reference to the mutex-guarded map
-        // For testing purposes, we'll just panic in this method - it shouldn't be called directly
-        panic!("workers() method not implemented for MockWorkerManager");
+        &self.workers
     }
 
     fn total_available_cpus(&self) -> usize {
-        let workers = self.workers.lock().unwrap();
-        workers.values().map(|w| w.num_cpus).sum()
+        self.workers.values().map(|w| w.num_cpus).sum()
     }
 
     fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
@@ -274,8 +292,7 @@ impl WorkerManager for MockWorkerManager {
     }
 
     fn shutdown(&mut self) -> DaftResult<()> {
-        let mut workers = self.workers.lock().unwrap();
-        workers.clear();
+        self.workers.clear();
         Ok(())
     }
 }

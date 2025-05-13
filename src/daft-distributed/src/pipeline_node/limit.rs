@@ -62,7 +62,7 @@ impl LimitNode {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<()> {
         let mut materialized_result_stream =
-            materialize_all_pipeline_outputs(input, task_dispatcher_handle.clone(), JoinSet::new());
+            materialize_all_pipeline_outputs(input, task_dispatcher_handle.clone());
         while let Some(partition_ref) = materialized_result_stream.next().await {
             let partition_ref = partition_ref?;
             let num_rows = partition_ref.num_rows()?;
