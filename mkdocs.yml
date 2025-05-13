@@ -182,7 +182,6 @@ extra_javascript:
 - js/custom.js
 - js/docsearch.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
-- https://cdn.jsdelivr.net/npm/@docsearch/js@3/dist/umd.js
 
 # Extensions
 markdown_extensions:
