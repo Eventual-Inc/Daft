@@ -1,4 +1,4 @@
-use std::{cmp::Ordering::*, collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, ops::RangeInclusive, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -7,16 +7,15 @@ use daft_micropartition::MicroPartition;
 pub struct RowBasedBuffer {
     pub buffer: VecDeque<Arc<MicroPartition>>,
     pub curr_len: usize,
-    pub threshold: usize,
+    pub range: RangeInclusive<usize>,
 }
 
 impl RowBasedBuffer {
-    pub fn new(threshold: usize) -> Self {
-        assert!(threshold > 0);
+    pub fn new(range: RangeInclusive<usize>) -> Self {
         Self {
             buffer: VecDeque::new(),
             curr_len: 0,
-            threshold,
+            range,
         }
     }
 
@@ -32,9 +31,12 @@ impl RowBasedBuffer {
     // - If the buffer has more than enough morsels, return a vec of morsels, each correctly sized to the threshold.
     //   The remaining morsels will be pushed back to the buffer
     pub fn pop_enough(&mut self) -> DaftResult<Option<Vec<Arc<MicroPartition>>>> {
-        match self.curr_len.cmp(&self.threshold) {
-            Less => Ok(None),
-            Equal => {
+        match (
+            *self.range.start() <= self.curr_len,
+            self.curr_len <= *self.range.end(),
+        ) {
+            (false, true) => Ok(None),
+            (true, true) => {
                 if self.buffer.len() == 1 {
                     let part = self.buffer.pop_front().unwrap();
                     self.curr_len = 0;
@@ -45,13 +47,13 @@ impl RowBasedBuffer {
                     Ok(Some(vec![chunk.into()]))
                 }
             }
-            Greater => {
-                let num_ready_chunks = self.curr_len / self.threshold;
+            (true, false) => {
+                let num_ready_chunks = self.curr_len / self.range.end();
                 let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
                 let mut start = 0;
                 let mut parts_to_return = Vec::with_capacity(num_ready_chunks);
                 for _ in 0..num_ready_chunks {
-                    let end = start + self.threshold;
+                    let end = start + self.range.end();
                     let part = concated.slice(start, end)?;
                     parts_to_return.push(part.into());
                     start = end;
@@ -65,12 +67,14 @@ impl RowBasedBuffer {
                 }
                 Ok(Some(parts_to_return))
             }
+            // Smaller than the lower bound and larger than the upper bound
+            (false, false) => unreachable!(),
         }
     }
 
     // Pop all morsels in the buffer regardless of the threshold
     pub fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        assert!(self.curr_len < self.threshold);
+        assert!(self.curr_len < *self.range.start());
         if self.buffer.is_empty() {
             Ok(None)
         } else {

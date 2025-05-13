@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
@@ -58,8 +58,8 @@ pub trait IntermediateOperator: Send + Sync {
         Ok(get_compute_pool_num_threads())
     }
 
-    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
-        Some(runtime_handle.default_morsel_size())
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> RangeInclusive<usize> {
+        0..=runtime_handle.default_morsel_size()
     }
 
     fn dispatch_spawner(
@@ -68,9 +68,13 @@ pub trait IntermediateOperator: Send + Sync {
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(self.morsel_size(runtime_handle)))
+            Arc::new(RoundRobinDispatcher::new(
+                self.morsel_size_range(runtime_handle),
+            ))
         } else {
-            Arc::new(UnorderedDispatcher::new(self.morsel_size(runtime_handle)))
+            Arc::new(UnorderedDispatcher::new(
+                self.morsel_size_range(runtime_handle),
+            ))
         }
     }
 }

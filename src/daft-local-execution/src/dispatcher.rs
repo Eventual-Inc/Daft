@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
@@ -38,18 +38,18 @@ pub(crate) struct SpawnedDispatchResult {
 /// A dispatcher that distributes morsels to workers in a round-robin fashion.
 /// Used if the operator requires maintaining the order of the input.
 pub(crate) struct RoundRobinDispatcher {
-    morsel_size: Option<usize>,
+    morsel_size_range: RangeInclusive<usize>,
 }
 
 impl RoundRobinDispatcher {
-    pub(crate) fn new(morsel_size: Option<usize>) -> Self {
-        Self { morsel_size }
+    pub(crate) fn new(morsel_size_range: RangeInclusive<usize>) -> Self {
+        Self { morsel_size_range }
     }
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
-        morsel_size: Option<usize>,
+        morsel_size_range: RangeInclusive<usize>,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
         let mut send_to_next_worker = |data: Arc<MicroPartition>| {
@@ -59,27 +59,23 @@ impl RoundRobinDispatcher {
         };
 
         for receiver in input_receivers {
-            let mut buffer = morsel_size.map(RowBasedBuffer::new);
+            let mut buffer = RowBasedBuffer::new(morsel_size_range.clone());
+
             while let Some(morsel) = receiver.recv().await {
-                if let Some(buffer) = &mut buffer {
-                    buffer.push(&morsel);
-                    if let Some(ready) = buffer.pop_enough()? {
-                        for r in ready {
-                            if send_to_next_worker(r).await.is_err() {
-                                return Ok(());
-                            }
+                buffer.push(&morsel);
+                if let Some(ready) = buffer.pop_enough()? {
+                    for r in ready {
+                        if send_to_next_worker(r).await.is_err() {
+                            return Ok(());
                         }
                     }
-                } else if send_to_next_worker(morsel).await.is_err() {
-                    return Ok(());
                 }
             }
+
             // Clear all remaining morsels
-            if let Some(buffer) = &mut buffer {
-                if let Some(last_morsel) = buffer.pop_all()? {
-                    if send_to_next_worker(last_morsel).await.is_err() {
-                        return Ok(());
-                    }
+            if let Some(last_morsel) = buffer.pop_all()? {
+                if send_to_next_worker(last_morsel).await.is_err() {
+                    return Ok(());
                 }
             }
         }
@@ -96,9 +92,9 @@ impl DispatchSpawner for RoundRobinDispatcher {
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
-        let morsel_size = self.morsel_size;
+        let morsel_size_range = self.morsel_size_range.clone();
         let task = runtime_handle.spawn(async move {
-            Self::dispatch_inner(worker_senders, input_receivers, morsel_size).await
+            Self::dispatch_inner(worker_senders, input_receivers, morsel_size_range).await
         });
 
         SpawnedDispatchResult {
@@ -111,41 +107,37 @@ impl DispatchSpawner for RoundRobinDispatcher {
 /// A dispatcher that distributes morsels to workers in an unordered fashion.
 /// Used if the operator does not require maintaining the order of the input.
 pub(crate) struct UnorderedDispatcher {
-    morsel_size: Option<usize>,
+    morsel_size_range: RangeInclusive<usize>,
 }
 
 impl UnorderedDispatcher {
-    pub(crate) fn new(morsel_size: Option<usize>) -> Self {
-        Self { morsel_size }
+    pub(crate) fn new(morsel_size_range: RangeInclusive<usize>) -> Self {
+        Self { morsel_size_range }
     }
 
     async fn dispatch_inner(
         worker_sender: Sender<Arc<MicroPartition>>,
         input_receivers: Vec<CountingReceiver>,
-        morsel_size: Option<usize>,
+        morsel_size_range: RangeInclusive<usize>,
     ) -> DaftResult<()> {
         for receiver in input_receivers {
-            let mut buffer = morsel_size.map(RowBasedBuffer::new);
+            let mut buffer = RowBasedBuffer::new(morsel_size_range.clone());
+
             while let Some(morsel) = receiver.recv().await {
-                if let Some(buffer) = &mut buffer {
-                    buffer.push(&morsel);
-                    if let Some(ready) = buffer.pop_enough()? {
-                        for r in ready {
-                            if worker_sender.send(r).await.is_err() {
-                                return Ok(());
-                            }
+                buffer.push(&morsel);
+                if let Some(ready) = buffer.pop_enough()? {
+                    for r in ready {
+                        if worker_sender.send(r).await.is_err() {
+                            return Ok(());
                         }
                     }
-                } else if worker_sender.send(morsel).await.is_err() {
-                    return Ok(());
                 }
             }
+
             // Clear all remaining morsels
-            if let Some(buffer) = &mut buffer {
-                if let Some(last_morsel) = buffer.pop_all()? {
-                    if worker_sender.send(last_morsel).await.is_err() {
-                        return Ok(());
-                    }
+            if let Some(last_morsel) = buffer.pop_all()? {
+                if worker_sender.send(last_morsel).await.is_err() {
+                    return Ok(());
                 }
             }
         }
@@ -162,10 +154,11 @@ impl DispatchSpawner for UnorderedDispatcher {
     ) -> SpawnedDispatchResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
-        let morsel_size = self.morsel_size;
+        let morsel_size_range = self.morsel_size_range.clone();
 
-        let dispatch_task = runtime_handle
-            .spawn(async move { Self::dispatch_inner(worker_sender, receiver, morsel_size).await });
+        let dispatch_task = runtime_handle.spawn(async move {
+            Self::dispatch_inner(worker_sender, receiver, morsel_size_range).await
+        });
 
         SpawnedDispatchResult {
             worker_receivers,
