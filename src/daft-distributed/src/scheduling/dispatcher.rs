@@ -107,16 +107,16 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
                         }
                     }
                 };
-                let joinset_id = running_tasks.spawn(task_future).id();
+                let joinset_id = running_tasks.spawn(task_future);
                 running_tasks_by_id.insert(joinset_id, (worker_id, task_id));
             }
 
             // 4. Wait for tasks to finish or receive new tasks
             tokio::select! {
                 biased;
-                Some(finished_task) = running_tasks.join_next_with_id() => {
+                Some((joinset_id, finished_task)) = running_tasks.join_next_with_id() => {
                     match finished_task {
-                        Ok((joinset_id, task_result)) => {
+                        Ok(task_result) => {
                             let (worker_id, task_id) = running_tasks_by_id.remove(&joinset_id).unwrap();
                             dispatcher.worker_manager.mark_task_finished(task_id, worker_id);
                             match task_result {
@@ -127,9 +127,9 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
                             }
                         }
                         Err(e) => {
-                            let joinset_id = e.id();
                             let (worker_id, task_id) = running_tasks_by_id.remove(&joinset_id).unwrap();
                             dispatcher.worker_manager.mark_task_finished(task_id, worker_id);
+                            return Err(e);
                         }
                     }
                 }

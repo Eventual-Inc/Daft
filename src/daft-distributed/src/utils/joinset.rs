@@ -1,16 +1,69 @@
 use std::{
     collections::{HashMap, VecDeque},
     future::Future,
+    task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
 use tokio::task::Id;
 
-pub type JoinSet<T> = tokio::task::JoinSet<T>;
+#[derive(Debug)]
+pub(crate) struct JoinSet<T> {
+    inner: tokio::task::JoinSet<T>,
+}
+
+impl<T: Send + 'static> JoinSet<T> {
+    pub fn new() -> Self {
+        Self {
+            inner: tokio::task::JoinSet::new(),
+        }
+    }
+
+    pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) -> Id {
+        let handle = self.inner.spawn(task);
+        handle.id()
+    }
+
+    pub async fn join_next(&mut self) -> Option<DaftResult<T>> {
+        let res = self.inner.join_next().await;
+        match res {
+            Some(Ok(result)) => Some(Ok(result)),
+            Some(Err(e)) => Some(Err(DaftError::External(e.into()))),
+            None => None,
+        }
+    }
+
+    pub fn poll_join_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<DaftResult<T>>> {
+        let res = self.inner.poll_join_next(cx);
+        match res {
+            Poll::Ready(Some(Ok(result))) => Poll::Ready(Some(Ok(result))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(DaftError::External(e.into())))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    pub async fn join_next_with_id(&mut self) -> Option<(Id, DaftResult<T>)> {
+        let res = self.inner.join_next_with_id().await;
+        match res {
+            Some(Ok((id, result))) => Some((id, Ok(result))),
+            Some(Err(e)) => Some((e.id(), Err(DaftError::External(e.into())))),
+            None => None,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
 
 #[allow(dead_code)]
-pub fn create_join_set<T>() -> JoinSet<T> {
-    tokio::task::JoinSet::new()
+pub fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
+    JoinSet::new()
 }
 
 pub(crate) struct OrderedJoinSet<T> {
@@ -29,8 +82,7 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
     }
 
     pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) {
-        let abort_handle = self.join_set.spawn(task);
-        let id = abort_handle.id();
+        let id = self.join_set.spawn(task);
         self.order.push_back(id);
     }
 
@@ -41,18 +93,18 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
             return Some(Ok(result));
         }
         while let Some(result) = self.join_set.join_next_with_id().await {
-            if let Err(e) = result {
-                let err_id = e.id();
-                // remove this id from the order
-                self.order.retain(|id| *id != err_id);
-                return Some(Err(DaftError::External(e.into())));
+            if let (result_id, Err(e)) = result {
+                // If the result is an error, remove this id from the order
+                self.order.retain(|id| *id != result_id);
+                return Some(Err(e));
             }
-            let (next_id, result) = result.unwrap();
+
+            let (next_id, result) = result;
             if next_id == *id {
                 self.order.pop_front();
-                return Some(Ok(result));
+                return Some(result);
             }
-            self.finished.insert(next_id, result);
+            self.finished.insert(next_id, result.unwrap());
         }
         None
     }
