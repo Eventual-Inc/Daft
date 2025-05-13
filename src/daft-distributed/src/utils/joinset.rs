@@ -65,7 +65,7 @@ impl<T: Send + 'static> JoinSet<T> {
 }
 
 #[allow(dead_code)]
-pub fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
+pub(crate) fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
     JoinSet::new()
 }
 
