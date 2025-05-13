@@ -23,6 +23,7 @@ pub enum LocalPhysicalPlan {
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
+    TopN(TopN),
     // Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
@@ -50,6 +51,7 @@ pub enum LocalPhysicalPlan {
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
     WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
+    WindowOrderByOnly(WindowOrderByOnly),
 }
 
 impl LocalPhysicalPlan {
@@ -76,6 +78,7 @@ impl LocalPhysicalPlan {
             | Self::Explode(Explode { stats_state, .. })
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
+            | Self::TopN(TopN { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
@@ -90,7 +93,8 @@ impl LocalPhysicalPlan {
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
                 stats_state,
                 ..
-            }) => stats_state,
+            })
+            | Self::WindowOrderByOnly(WindowOrderByOnly { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
@@ -309,6 +313,27 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn window_order_by_only(
+        input: LocalPhysicalPlanRef,
+        order_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        functions: Vec<WindowExpr>,
+        aliases: Vec<String>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowOrderByOnly(WindowOrderByOnly {
+            input,
+            order_by,
+            descending,
+            schema,
+            stats_state,
+            functions,
+            aliases,
+        })
+        .arced()
+    }
+
     pub(crate) fn unpivot(
         input: LocalPhysicalPlanRef,
         ids: Vec<ExprRef>,
@@ -367,6 +392,27 @@ impl LocalPhysicalPlan {
             sort_by,
             descending,
             nulls_first,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub(crate) fn top_n(
+        input: LocalPhysicalPlanRef,
+        sort_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+        limit: i64,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::TopN(TopN {
+            input,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
             schema,
             stats_state,
         })
@@ -526,6 +572,7 @@ impl LocalPhysicalPlan {
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Pivot(Pivot { schema, .. })
             | Self::Sort(Sort { schema, .. })
+            | Self::TopN(TopN { schema, .. })
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
@@ -537,7 +584,8 @@ impl LocalPhysicalPlan {
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
                 schema, ..
-            }) => schema,
+            })
+            | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
@@ -618,6 +666,17 @@ pub struct Sort {
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TopN {
+    pub input: LocalPhysicalPlanRef,
+    pub sort_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub nulls_first: Vec<bool>,
+    pub limit: i64,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -770,5 +829,16 @@ pub struct WindowPartitionAndDynamicFrame {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub aggregations: Vec<AggExpr>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowOrderByOnly {
+    pub input: LocalPhysicalPlanRef,
+    pub order_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub functions: Vec<WindowExpr>,
     pub aliases: Vec<String>,
 }

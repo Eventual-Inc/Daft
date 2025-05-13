@@ -38,7 +38,7 @@ use crate::{
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -1220,8 +1220,8 @@ impl Expr {
                     .join(",");
                 let frame_details = if let Some(frame) = &window_spec.frame {
                     format!(
-                        ",frame_type={:?},start={:?},end={:?},min_periods={}",
-                        frame.frame_type, frame.start, frame.end, window_spec.min_periods
+                        ",start={:?},end={:?},min_periods={}",
+                        frame.start, frame.end, window_spec.min_periods
                     )
                 } else {
                     String::new()
@@ -1272,7 +1272,7 @@ impl Expr {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
-            Self::ScalarFunction(sf) => sf.inputs.clone(),
+            Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
         }
     }
 
@@ -1289,6 +1289,7 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
+
             Self::IsNull(..) => {
                 Self::IsNull(children.first().expect("Should have 1 child").clone())
             }
@@ -1371,10 +1372,22 @@ impl Expr {
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
                 );
+                let new_children = sf
+                    .inputs
+                    .iter()
+                    .zip(children.into_iter())
+                    .map(|(fn_arg, child)| match fn_arg {
+                        FunctionArg::Named { name, .. } => FunctionArg::Named {
+                            name: name.clone(),
+                            arg: child,
+                        },
+                        FunctionArg::Unnamed(_) => FunctionArg::Unnamed(child),
+                    })
+                    .collect();
 
                 Self::ScalarFunction(crate::functions::ScalarFunction {
                     udf: sf.udf.clone(),
-                    inputs: children,
+                    inputs: FunctionArgs::new_unchecked(new_children),
                 })
             }
         }
@@ -1632,6 +1645,10 @@ impl Expr {
         Ok(self.to_field(schema)?.dtype)
     }
 
+    pub fn get_name(&self, schema: &Schema) -> DaftResult<String> {
+        Ok(self.to_field(schema)?.name)
+    }
+
     pub fn input_mapping(self: &Arc<Self>) -> Option<String> {
         let required_columns = get_required_columns(self);
         let requires_computation = requires_computation(self);
@@ -1653,7 +1670,7 @@ impl Expr {
                     write!(buffer, "{}", name)
                 }
                 Expr::Literal(lit) => lit.display_sql(buffer),
-                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
+                Expr::Alias(expr, ..) => to_sql_inner(expr, buffer),
                 Expr::BinaryOp { op, left, right } => {
                     to_sql_inner(left, buffer)?;
                     let op = match op {

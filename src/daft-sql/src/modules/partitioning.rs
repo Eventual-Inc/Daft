@@ -38,9 +38,10 @@ impl SQLFunction for PartitioningExpr {
             Self::Hours => partitioning_helper(args, planner, "hours", partitioning::hours),
             Self::IcebergBucket(_) => {
                 ensure!(args.len() == 2, "iceberg_bucket takes exactly 2 arguments");
-                let input = planner.plan_function_arg(&args[0])?;
+                let input = planner.plan_function_arg(&args[0])?.into_inner();
                 let n = planner
-                    .plan_function_arg(&args[1])?
+                    .plan_function_arg(&args[1])
+                    .map(|arg| arg.into_inner())?
                     .as_literal()
                     .and_then(daft_dsl::LiteralValue::as_i64)
                     .ok_or_else(|| {
@@ -65,9 +66,10 @@ impl SQLFunction for PartitioningExpr {
                     args.len() == 2,
                     "iceberg_truncate takes exactly 2 arguments"
                 );
-                let input = planner.plan_function_arg(&args[0])?;
+                let input = planner.plan_function_arg(&args[0])?.into_inner();
                 let w = planner
-                    .plan_function_arg(&args[1])?
+                    .plan_function_arg(&args[1])
+                    .map(|arg| arg.into_inner())?
                     .as_literal()
                     .and_then(daft_dsl::LiteralValue::as_i64)
                     .ok_or_else(|| {
@@ -111,6 +113,6 @@ fn partitioning_helper<F: FnOnce(daft_dsl::ExprRef) -> daft_dsl::ExprRef>(
     f: F,
 ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
     ensure!(args.len() == 1, "{} takes exactly 1 argument", method_name);
-    let args = planner.plan_function_arg(&args[0])?;
+    let args = planner.plan_function_arg(&args[0])?.into_inner();
     Ok(f(args))
 }

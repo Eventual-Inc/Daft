@@ -1,4 +1,4 @@
-use arrow2::bitmap::{binary, Bitmap, MutableBitmap};
+use arrow2::bitmap::{Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
@@ -6,7 +6,7 @@ use daft_core::{
 };
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr},
-    AggExpr, WindowBoundary, WindowFrame, WindowFrameType,
+    AggExpr, WindowBoundary, WindowFrame,
 };
 
 use crate::{
@@ -98,69 +98,285 @@ impl RecordBatch {
         self.union(&window_result)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn window_agg_dynamic_frame(
-        &self,
-        name: String,
-        agg_expr: &BoundAggExpr,
-        min_periods: usize,
-        dtype: &DataType,
-        frame: &WindowFrame,
-    ) -> DaftResult<Self> {
-        if matches!(frame.frame_type, WindowFrameType::Range) {
+    fn is_range_frame(start_boundary: &WindowBoundary, end_boundary: &WindowBoundary) -> bool {
+        matches!(start_boundary, WindowBoundary::RangeOffset(_))
+            || matches!(end_boundary, WindowBoundary::RangeOffset(_))
+    }
+
+    fn validate_range_frame_order_by(order_by: &[BoundExpr]) -> DaftResult<()> {
+        if order_by.len() != 1 {
             return Err(DaftError::ValueError(
-                "Range frame type not yet supported in window aggregation".into(),
+                "Range frame requires exactly one ORDER BY column, multiple columns are not supported".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn extract_row_offsets(
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
+    ) -> (Option<i64>, Option<i64>) {
+        let start = match start_boundary {
+            WindowBoundary::Offset(offset) => Some(*offset),
+            _ => None,
+        };
+
+        let end = match end_boundary {
+            WindowBoundary::Offset(offset) => Some(*offset),
+            _ => None,
+        };
+
+        (start, end)
+    }
+
+    // Helper method to calculate row-based frame boundaries
+    fn calculate_row_frame_bounds(
+        row_idx: usize,
+        start_boundary: Option<i64>,
+        end_boundary: Option<i64>,
+        total_rows: usize,
+    ) -> DaftResult<(usize, usize)> {
+        let frame_start = match start_boundary {
+            None => 0, // Unbounded preceding
+            Some(offset) => row_idx
+                .saturating_add_signed(offset as isize)
+                .min(total_rows),
+        };
+
+        let frame_end = match end_boundary {
+            None => total_rows, // Unbounded following
+            Some(offset) => (row_idx + 1)
+                .saturating_add_signed(offset as isize)
+                .min(total_rows),
+        };
+
+        if frame_end < frame_start {
+            return Err(DaftError::ValueError(
+                "Negative frame size is not allowed".into(),
             ));
         }
 
-        let total_rows = self.len();
+        Ok((frame_start, frame_end))
+    }
 
-        // Calculate boundaries within the rows_between function as they are relative
-        let start_boundary = match &frame.start {
-            WindowBoundary::UnboundedPreceding() => None,
-            WindowBoundary::Offset(offset) => Some(*offset),
-            WindowBoundary::UnboundedFollowing() => {
+    // Helper method to calculate range-based frame boundaries
+    #[allow(clippy::too_many_arguments)]
+    fn calculate_range_frame_bounds(
+        row_idx: usize,
+        prev_frame_start: usize,
+        prev_frame_end: usize,
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
+        order_by_col: &Series,
+        current_row_order_by: Series,
+        descending: bool,
+        total_rows: usize,
+    ) -> DaftResult<(usize, usize)> {
+        let frame_start = match start_boundary {
+            WindowBoundary::UnboundedPreceding => 0, // Unbounded preceding
+            WindowBoundary::Offset(offset) => row_idx
+                .saturating_add_signed(*offset as isize)
+                .min(total_rows),
+            WindowBoundary::RangeOffset(offset) => {
+                let lower_bound = (current_row_order_by.clone() + offset.to_series())?;
+                let cmp = |i: usize| -> bool {
+                    if descending {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .lte(&lower_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    } else {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .gte(&lower_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    }
+                };
+                let mut idx = prev_frame_start;
+                while idx < total_rows {
+                    if cmp(idx) {
+                        break;
+                    }
+                    idx += 1;
+                }
+                idx
+            }
+            WindowBoundary::UnboundedFollowing => {
                 return Err(DaftError::ValueError(
                     "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
                 ));
             }
         };
 
-        let end_boundary = match &frame.end {
-            WindowBoundary::UnboundedFollowing() => None,
-            WindowBoundary::Offset(offset) => Some(*offset),
-            WindowBoundary::UnboundedPreceding() => {
+        let frame_end = match end_boundary {
+            WindowBoundary::UnboundedFollowing => total_rows, // Unbounded following
+            WindowBoundary::Offset(offset) => {
+                (row_idx + 1) // End is exclusive, hence +1
+                    .saturating_add_signed(*offset as isize)
+                    .min(total_rows)
+            }
+            WindowBoundary::RangeOffset(offset) => {
+                let upper_bound = (current_row_order_by + offset.to_series())?;
+                let cmp = |i: usize| -> bool {
+                    if descending {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .lt(&upper_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    } else {
+                        order_by_col
+                            .slice(i, i + 1)
+                            .unwrap()
+                            .gt(&upper_bound)
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or(false)
+                    }
+                };
+                let mut idx = prev_frame_end;
+                while idx < total_rows {
+                    if cmp(idx) {
+                        break;
+                    }
+                    idx += 1;
+                }
+                idx
+            }
+            WindowBoundary::UnboundedPreceding => {
                 return Err(DaftError::ValueError(
                     "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
                 ));
             }
         };
 
-        let source = self.get_column(agg_expr.as_ref().name())?;
+        if frame_end < frame_start {
+            return Err(DaftError::ValueError(
+                "Negative frame size is not allowed".into(),
+            ));
+        }
+
+        Ok((frame_start, frame_end))
+    }
+
+    // Helper to update incremental state
+    fn update_incremental_state(
+        prev_frame_start: &mut usize,
+        prev_frame_end: &mut usize,
+        frame_start: usize,
+        frame_end: usize,
+        agg_state: &mut Box<dyn WindowAggStateOps>,
+    ) -> DaftResult<()> {
+        // Remove values that left the window (values that were in the previous window but not in the current one)
+        if frame_start > *prev_frame_start {
+            agg_state.remove(*prev_frame_start, frame_start)?;
+        }
+
+        // Add new values that entered the window (values that are in the current window but weren't in the previous)
+        if frame_end > *prev_frame_end {
+            agg_state.add(*prev_frame_end, frame_end)?;
+        }
+
+        // Update previous boundaries for the next iteration
+        *prev_frame_start = frame_start;
+        *prev_frame_end = frame_end;
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn window_agg_dynamic_frame(
+        &self,
+        name: String,
+        agg_expr: &BoundAggExpr,
+        order_by: &[BoundExpr],
+        descending: &[bool],
+        min_periods: usize,
+        dtype: &DataType,
+        frame: &WindowFrame,
+    ) -> DaftResult<Self> {
+        let total_rows = self.len();
+
+        if matches!(frame.start, WindowBoundary::UnboundedFollowing) {
+            return Err(DaftError::ValueError(
+                "UNBOUNDED FOLLOWING is not valid as a starting frame boundary".into(),
+            ));
+        }
+
+        if matches!(frame.end, WindowBoundary::UnboundedPreceding) {
+            return Err(DaftError::ValueError(
+                "UNBOUNDED PRECEDING is not valid as an ending frame boundary".into(),
+            ));
+        }
+
+        let child_exprs = agg_expr
+            .as_ref()
+            .children()
+            .into_iter()
+            .map(BoundExpr::new_unchecked)
+            .collect::<Vec<_>>();
+        let sources = self.eval_expression_list(&child_exprs)?;
         // Check if we can initialize an incremental state
-        match create_window_agg_state(source, agg_expr, total_rows)? {
+        match create_window_agg_state(&sources, agg_expr, total_rows)? {
             Some(agg_state) => {
-                // Incremental state created successfully
-                self.window_agg_rows_incremental(
-                    &name,
-                    start_boundary,
-                    end_boundary,
-                    min_periods,
-                    total_rows,
-                    agg_state,
-                )
+                if Self::is_range_frame(&frame.start, &frame.end) {
+                    Self::validate_range_frame_order_by(order_by)?;
+                    self.window_agg_range_incremental(
+                        &name,
+                        &frame.start,
+                        &frame.end,
+                        &order_by[0],
+                        descending[0],
+                        min_periods,
+                        total_rows,
+                        agg_state,
+                    )
+                } else {
+                    let (start, end) = Self::extract_row_offsets(&frame.start, &frame.end);
+                    self.window_agg_rows_incremental(
+                        &name,
+                        start,
+                        end,
+                        min_periods,
+                        total_rows,
+                        agg_state,
+                    )
+                }
             }
             None => {
-                // Otherwise, use the non-incremental implementation
-                self.window_agg_rows(
-                    agg_expr,
-                    &name,
-                    dtype,
-                    start_boundary,
-                    end_boundary,
-                    min_periods,
-                    total_rows,
-                )
+                if Self::is_range_frame(&frame.start, &frame.end) {
+                    Self::validate_range_frame_order_by(order_by)?;
+                    self.window_agg_range(
+                        agg_expr,
+                        &name,
+                        dtype,
+                        &frame.start,
+                        &frame.end,
+                        &order_by[0],
+                        descending[0],
+                        min_periods,
+                        total_rows,
+                    )
+                } else {
+                    let (start, end) = Self::extract_row_offsets(&frame.start, &frame.end);
+                    self.window_agg_rows(
+                        agg_expr,
+                        &name,
+                        dtype,
+                        start,
+                        end,
+                        min_periods,
+                        total_rows,
+                    )
+                }
             }
         }
     }
@@ -182,41 +398,24 @@ impl RecordBatch {
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
-            let frame_start = match start_boundary {
-                None => 0, // Unbounded preceding
-                Some(offset) => row_idx
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
+            let (frame_start, frame_end) = Self::calculate_row_frame_bounds(
+                row_idx,
+                start_boundary,
+                end_boundary,
+                total_rows,
+            )?;
 
-            let frame_end = match end_boundary {
-                None => total_rows, // Unbounded following
-                Some(offset) => (row_idx + 1)
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
-
-            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            };
+            let frame_size = frame_end - frame_start;
 
             // Check min_periods requirement
             if frame_size >= min_periods {
-                // Remove values that left the window (values that were in the previous window but not in the current one)
-                if frame_start > prev_frame_start {
-                    agg_state.remove(prev_frame_start, frame_start)?;
-                }
-
-                // Add new values that entered the window (values that are in the current window but weren't in the previous)
-                if frame_end > prev_frame_end {
-                    agg_state.add(prev_frame_end, frame_end)?;
-                }
-
-                // Update previous boundaries for the next iteration
-                prev_frame_start = frame_start;
-                prev_frame_end = frame_end;
+                Self::update_incremental_state(
+                    &mut prev_frame_start,
+                    &mut prev_frame_end,
+                    frame_start,
+                    frame_end,
+                    &mut agg_state,
+                )?;
                 validity.set(row_idx, true);
             }
 
@@ -227,7 +426,7 @@ impl RecordBatch {
         let mut validity = Bitmap::from(validity);
         let agg_state = agg_state.build()?.rename(name);
         if let Some(agg_validity) = agg_state.validity() {
-            validity = binary(&validity, agg_validity, |a, b| a & b);
+            validity = arrow2::bitmap::and(&validity, agg_validity);
         }
 
         // Build the final result series
@@ -254,25 +453,166 @@ impl RecordBatch {
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
-            let frame_start = match start_boundary {
-                None => 0, // Unbounded preceding
-                Some(offset) => row_idx
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
+            let (frame_start, frame_end) = Self::calculate_row_frame_bounds(
+                row_idx,
+                start_boundary,
+                end_boundary,
+                total_rows,
+            )?;
 
-            let frame_end = match end_boundary {
-                None => total_rows, // Unbounded following
-                Some(offset) => (row_idx + 1)
-                    .saturating_add_signed(offset as isize)
-                    .min(total_rows),
-            };
+            let frame_size = frame_end - frame_start;
 
-            let Some(frame_size) = frame_end.checked_sub(frame_start) else {
-                return Err(DaftError::ValueError(
-                    "Negative frame size is not allowed".into(),
-                ));
-            };
+            if frame_size < min_periods {
+                // Add a null series for this row
+                result_series.push(null_series.clone());
+            } else {
+                // Calculate aggregation for this frame
+                let frame_data = self.slice(frame_start, frame_end)?;
+                let agg_result = frame_data.eval_agg_expression(agg_expr, None)?;
+                result_series.push(agg_result);
+            }
+        }
+
+        // Rename the result and create the final record batch
+        let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
+        let renamed_result = final_result_series.rename(name);
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_range_incremental(
+        &self,
+        name: &str,
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
+        order_by: &BoundExpr,
+        descending: bool,
+        min_periods: usize,
+        total_rows: usize,
+        mut agg_state: Box<dyn WindowAggStateOps>,
+    ) -> DaftResult<Self> {
+        // Use the optimized implementation with incremental state updates
+        // Initialize the state for incremental aggregation
+        let order_by_col = self.eval_expression(order_by)?;
+        let mut validity = MutableBitmap::with_capacity(total_rows);
+
+        // Track previous window boundaries
+        let mut prev_frame_start = 0;
+        let mut prev_frame_end = 0;
+
+        // Make mutable copies for swapping if needed
+        let mut start = start_boundary.clone();
+        let mut end = end_boundary.clone();
+
+        if descending
+            && matches!(start, WindowBoundary::RangeOffset(_))
+            && matches!(end, WindowBoundary::RangeOffset(_))
+        {
+            std::mem::swap(&mut start, &mut end);
+        }
+
+        for row_idx in 0..total_rows {
+            let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
+
+            // Calculate frame bounds for this row using the provided boundaries
+            let (frame_start, frame_end) = Self::calculate_range_frame_bounds(
+                row_idx,
+                prev_frame_start,
+                prev_frame_end,
+                &start,
+                &end,
+                &order_by_col,
+                current_row_order_by,
+                descending,
+                total_rows,
+            )?;
+
+            let frame_size = frame_end - frame_start;
+
+            // Check min_periods requirement
+            if frame_size >= min_periods {
+                Self::update_incremental_state(
+                    &mut prev_frame_start,
+                    &mut prev_frame_end,
+                    frame_start,
+                    frame_end,
+                    &mut agg_state,
+                )?;
+                validity.push(true);
+            } else {
+                validity.push(false);
+            }
+
+            // Evaluate current state to get the result for this row
+            agg_state.evaluate()?;
+        }
+
+        let mut validity = Bitmap::from(validity);
+        let agg_state = agg_state.build()?.rename(name);
+        if let Some(agg_validity) = agg_state.validity() {
+            validity = arrow2::bitmap::and(&validity, agg_validity);
+        }
+
+        // Build the final result series
+        let renamed_result = agg_state.with_validity(Some(validity))?;
+        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
+        self.union(&window_batch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn window_agg_range(
+        &self,
+        agg_expr: &BoundAggExpr,
+        name: &str,
+        dtype: &DataType,
+        start_boundary: &WindowBoundary,
+        end_boundary: &WindowBoundary,
+        order_by: &BoundExpr,
+        descending: bool,
+        min_periods: usize,
+        total_rows: usize,
+    ) -> DaftResult<Self> {
+        let order_by_col = self.eval_expression(order_by)?;
+        let null_series = Series::full_null(name, dtype, 1);
+
+        // Use the non-optimized implementation (recalculate for each row)
+        let mut result_series: Vec<Series> = Vec::with_capacity(total_rows);
+
+        // Make mutable copies for swapping if needed
+        let mut start = start_boundary.clone();
+        let mut end = end_boundary.clone();
+
+        if descending
+            && matches!(start, WindowBoundary::RangeOffset(_))
+            && matches!(end, WindowBoundary::RangeOffset(_))
+        {
+            std::mem::swap(&mut start, &mut end);
+        }
+
+        let mut prev_frame_start = 0;
+        let mut prev_frame_end = 0;
+
+        for row_idx in 0..total_rows {
+            let current_row_order_by = order_by_col.slice(row_idx, row_idx + 1)?;
+
+            // Calculate frame bounds for this row using the provided boundaries
+            let (frame_start, frame_end) = Self::calculate_range_frame_bounds(
+                row_idx,
+                prev_frame_start,
+                prev_frame_end,
+                &start,
+                &end,
+                &order_by_col,
+                current_row_order_by,
+                descending,
+                total_rows,
+            )?;
+
+            prev_frame_start = frame_start;
+            prev_frame_end = frame_end;
+
+            let frame_size = frame_end - frame_start;
 
             if frame_size < min_periods {
                 // Add a null series for this row

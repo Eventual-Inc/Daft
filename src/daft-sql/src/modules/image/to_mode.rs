@@ -34,7 +34,7 @@ impl SQLFunction for SQLImageToMode {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let ImageToMode { mode } = planner.plan_function_args(args, &["mode"], 0)?;
                 Ok(image_to_mode(input, mode))
             }

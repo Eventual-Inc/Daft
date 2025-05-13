@@ -1,5 +1,4 @@
-use common_error::{DaftError, DaftResult};
-use common_hashable_float_wrapper::FloatWrapper;
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -10,18 +9,22 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::evaluate_single_numeric;
-
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! log {
-    ($name:ident, $variant:ident) => {
+    ($name:ident, $variant:ident, $docstring:literal) => {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
+            fn evaluate(
+                &self,
+                inputs: daft_dsl::functions::FunctionArgs<Series>,
+            ) -> DaftResult<Series> {
+                ensure!(inputs.len() == 1, "Expected 1 argument");
+                let input = inputs.required((0, "input"))?;
+
+                input.$name()
             }
 
             fn name(&self) -> &'static str {
@@ -49,8 +52,8 @@ macro_rules! log {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-                evaluate_single_numeric(inputs, Series::$name)
+            fn docstring(&self) -> &'static str {
+                $docstring
             }
         }
 
@@ -61,18 +64,27 @@ macro_rules! log {
     };
 }
 
-log!(log2, Log2);
-log!(log10, Log10);
-log!(ln, Ln);
-log!(log1p, Log1p);
+log!(log2, Log2, "Calculates the base-2 logarithm of a number.");
+log!(
+    log10,
+    Log10,
+    "Calculates the base-10 logarithm of a number."
+);
+log!(ln, Ln, "Calculates the natural logarithm of a number.");
+log!(
+    log1p,
+    Log1p,
+    "Calculates the natural logarithm of a number plus one (ln(x + 1))."
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Log(FloatWrapper<f64>);
+pub struct Log;
 
 #[typetag::serde]
 impl ScalarUDF for Log {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
     }
 
     fn name(&self) -> &'static str {
@@ -80,13 +92,16 @@ impl ScalarUDF for Log {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
+        ensure!(inputs.len() == 2, "log takes two arguments");
+        let field = inputs.first().unwrap().to_field(schema)?;
+        let base = inputs.get(1).unwrap().to_field(schema)?;
+        if !base.dtype.is_numeric() {
+            return Err(DaftError::TypeError(format!(
+                "Expected base to log to be numeric, got {}",
+                base.dtype
             )));
         }
-        let field = inputs.first().unwrap().to_field(schema)?;
+
         let dtype = match field.dtype {
             DataType::Float32 => DataType::Float32,
             dt if dt.is_numeric() => DataType::Float64,
@@ -100,12 +115,24 @@ impl ScalarUDF for Log {
         Ok(Field::new(field.name, dtype))
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, |x| x.log(self.0 .0))
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
+        ensure!(inputs.len() == 2, "log takes two arguments");
+        let input = &inputs[0];
+        let base = &inputs[1];
+        let base = {
+            ensure!(base.len() == 1, "expected scalar value");
+            let s = base.cast(&DataType::Float64)?;
+
+            s.f64().unwrap().get(0).unwrap()
+        };
+        input.log(base)
+    }
+    fn docstring(&self) -> &'static str {
+        "Calculates the first argument-based logarithm of the second argument log_x(y)."
     }
 }
 
 #[must_use]
-pub fn log(input: ExprRef, base: f64) -> ExprRef {
-    ScalarFunction::new(Log(FloatWrapper(base)), vec![input]).into()
+pub fn log(input: ExprRef, base: ExprRef) -> ExprRef {
+    ScalarFunction::new(Log, vec![input, base]).into()
 }

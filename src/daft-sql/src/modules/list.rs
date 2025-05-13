@@ -41,10 +41,10 @@ impl SQLFunction for SQLListChunk {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input, chunk_size] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let chunk_size = planner
                     .plan_function_arg(chunk_size)
-                    .and_then(|arg| match arg.as_ref() {
+                    .and_then(|arg| match arg.into_inner().as_ref() {
                         Expr::Literal(LiteralValue::Int64(n)) => Ok(*n as usize),
                         _ => unsupported_sql_err!("Expected chunk size to be a number"),
                     })?;
@@ -75,15 +75,15 @@ impl SQLFunction for SQLListCount {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::list::count(input, CountMode::Valid))
             }
             [input, count_mode] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let mode =
                     planner
                         .plan_function_arg(count_mode)
-                        .and_then(|arg| match arg.as_ref() {
+                        .and_then(|arg| match arg.into_inner().as_ref() {
                             Expr::Literal(LiteralValue::Utf8(s)) => {
                                 s.parse().map_err(PlannerError::from)
                             }
@@ -114,7 +114,7 @@ impl SQLFunction for SQLExplode {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::list::explode(input))
             }
             _ => unsupported_sql_err!("Expected 1 argument"),
@@ -140,8 +140,8 @@ impl SQLFunction for SQLListJoin {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input, separator] => {
-                let input = planner.plan_function_arg(input)?;
-                let separator = planner.plan_function_arg(separator)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let separator = planner.plan_function_arg(separator)?.into_inner();
                 Ok(daft_functions::list::join(input, separator))
             }
             _ => unsupported_sql_err!(
@@ -169,7 +169,7 @@ impl SQLFunction for SQLListMax {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::list::max(input))
             }
             _ => unsupported_sql_err!("invalid arguments for list_max. Expected list_max(expr)"),
@@ -195,7 +195,7 @@ impl SQLFunction for SQLListMean {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::list::mean(input))
             }
             _ => unsupported_sql_err!("invalid arguments for list_mean. Expected list_mean(expr)"),
@@ -221,7 +221,7 @@ impl SQLFunction for SQLListMin {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::list::min(input))
             }
             _ => unsupported_sql_err!("invalid arguments for list_min. Expected list_min(expr)"),
@@ -247,7 +247,7 @@ impl SQLFunction for SQLListSum {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::list::sum(input))
             }
             _ => unsupported_sql_err!("invalid arguments for list_sum. Expected list_sum(expr)"),
@@ -273,9 +273,9 @@ impl SQLFunction for SQLListSlice {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input, start, end] => {
-                let input = planner.plan_function_arg(input)?;
-                let start = planner.plan_function_arg(start)?;
-                let end = planner.plan_function_arg(end)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let start = planner.plan_function_arg(start)?.into_inner();
+                let end = planner.plan_function_arg(end)?.into_inner();
                 Ok(daft_functions::list::slice(input, start, end))
             }
             _ => unsupported_sql_err!(
@@ -303,11 +303,11 @@ impl SQLFunction for SQLListSort {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::list::sort(input, None, None))
             }
             [input, order] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 use sqlparser::ast::{
                     Expr::Identifier as SQLIdent, FunctionArg::Unnamed,
                     FunctionArgExpr::Expr as SQLExpr,
