@@ -8,7 +8,6 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 itertools = {workspace = true}
 num-traits = {workspace = true}
-pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
@@ -19,7 +18,6 @@ arrow2 = {workspace = true}
 
 [features]
 python = [
-  "dep:pyo3",
   "common-error/python",
   "daft-core/python",
   "daft-dsl/python"

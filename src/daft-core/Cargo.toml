@@ -40,7 +40,6 @@ ndarray = "0.16.1"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
-regex = {workspace = true}
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
 

@@ -44,8 +44,8 @@ def test_iceberg_predicates():
     assert _term(col("a").is_in(items)) == Expr("is_in", Reference("a"), Expr("list", 1, 2, 3))
     assert _term(~(col("a").is_in(items))) == Expr("not", Expr("is_in", Reference("a"), Expr("list", 1, 2, 3)))
 
-    assert _term(col("a").str.startswith("xyz")) == Expr("startswith", Reference("a"), "xyz")
-    assert _term(~(col("a").str.startswith("xyz"))) == Expr("not", Expr("startswith", Reference("a"), "xyz"))
+    assert _term(col("a").str.startswith("xyz")) == Expr("starts_with", Reference("a"), "xyz")
+    assert _term(~(col("a").str.startswith("xyz"))) == Expr("not", Expr("starts_with", Reference("a"), "xyz"))
 
 
 def test_iceberg_transforms():
