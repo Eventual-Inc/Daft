@@ -5,7 +5,6 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use tokio::task::Id;
 
 #[derive(Debug)]
 pub(crate) struct JoinSet<T> {
@@ -19,7 +18,7 @@ impl<T: Send + 'static> JoinSet<T> {
         }
     }
 
-    pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) -> Id {
+    pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) -> tokio::task::Id {
         let handle = self.inner.spawn(task);
         handle.id()
     }
@@ -45,7 +44,7 @@ impl<T: Send + 'static> JoinSet<T> {
     }
 
     #[allow(dead_code)]
-    pub async fn join_next_with_id(&mut self) -> Option<(Id, DaftResult<T>)> {
+    pub async fn join_next_with_id(&mut self) -> Option<(tokio::task::Id, DaftResult<T>)> {
         let res = self.inner.join_next_with_id().await;
         match res {
             Some(Ok((id, result))) => Some((id, Ok(result))),
@@ -73,8 +72,8 @@ pub fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
 #[allow(dead_code)]
 pub(crate) struct OrderedJoinSet<T> {
     join_set: JoinSet<T>,
-    order: VecDeque<Id>,
-    finished: HashMap<Id, T>,
+    order: VecDeque<tokio::task::Id>,
+    finished: HashMap<tokio::task::Id, DaftResult<T>>,
 }
 
 #[allow(dead_code)]
@@ -93,24 +92,23 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
     }
 
     pub async fn join_next(&mut self) -> Option<DaftResult<T>> {
+        // If the order is empty, return None
         let id = self.order.front()?;
+
+        // If the task is already finished, return the result
         if let Some(result) = self.finished.remove(id) {
             self.order.pop_front();
-            return Some(Ok(result));
+            return Some(result);
         }
-        while let Some(result) = self.join_set.join_next_with_id().await {
-            if let (result_id, Err(e)) = result {
-                // If the result is an error, remove this id from the order
-                self.order.retain(|id| *id != result_id);
-                return Some(Err(e));
-            }
 
+        // Keep joining tasks until the next task is the one we are looking for
+        while let Some(result) = self.join_set.join_next_with_id().await {
             let (next_id, result) = result;
             if next_id == *id {
                 self.order.pop_front();
                 return Some(result);
             }
-            self.finished.insert(next_id, result.unwrap());
+            self.finished.insert(next_id, result);
         }
         None
     }
@@ -246,10 +244,10 @@ mod tests {
             3
         });
 
-        // First task should fail because it was joined first
-        assert!(join_set.join_next().await.unwrap().is_err());
-        // Second task should fail
+        // First task should succeed
         assert_eq!(join_set.join_next().await.unwrap().unwrap(), 1);
+        // Second task should fail
+        assert!(join_set.join_next().await.unwrap().is_err());
         // Third task should succeed
         assert_eq!(join_set.join_next().await.unwrap().unwrap(), 3);
         assert!(join_set.join_next().await.is_none());
