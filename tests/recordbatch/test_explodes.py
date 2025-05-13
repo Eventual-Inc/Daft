@@ -104,5 +104,5 @@ def test_explode_eval_expr(data):
 
 def test_explode_bad_col_type():
     table = MicroPartition.from_pydict({"a": [1, 2, 3]})
-    with pytest.raises(ValueError, match="to be a List Type, but is"):
+    with pytest.raises(ValueError, match="Input must be a list"):
         table = table.explode([col("a")._explode()])

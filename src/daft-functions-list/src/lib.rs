@@ -32,7 +32,7 @@ pub use min::{list_min as min, ListMin};
 pub use slice::{list_slice as slice, ListSlice};
 pub use sort::{list_sort as sort, ListSort};
 pub use sum::{list_sum as sum, ListSum};
-pub use value_counts::list_value_counts as value_counts;
+pub use value_counts::{list_value_counts as value_counts, ListValueCounts};
 
 pub(crate) mod kernels;
 pub(crate) mod series;
@@ -59,5 +59,6 @@ impl FunctionModule for ListFunctions {
         parent.add_fn(ListSlice);
         parent.add_fn(ListSort);
         parent.add_fn(ListSum);
+        parent.add_fn(ListValueCounts);
     }
 }

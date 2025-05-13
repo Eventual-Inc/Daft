@@ -9,10 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::series::SeriesListExtension;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct ListValueCountsFunction;
+pub struct ListValueCounts;
 
 #[typetag::serde]
-impl ScalarUDF for ListValueCountsFunction {
+impl ScalarUDF for ListValueCounts {
     fn name(&self) -> &'static str {
         "list_value_counts"
     }
@@ -44,5 +44,5 @@ impl ScalarUDF for ListValueCountsFunction {
 }
 
 pub fn list_value_counts(expr: ExprRef) -> ExprRef {
-    ScalarFunction::new(ListValueCountsFunction, vec![expr]).into()
+    ScalarFunction::new(ListValueCounts, vec![expr]).into()
 }

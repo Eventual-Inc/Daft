@@ -2323,7 +2323,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "indexmap 2.8.0",
- "pyo3",
  "serde",
  "typetag",
 ]
