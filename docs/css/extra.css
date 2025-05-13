@@ -11,7 +11,7 @@
     font-size: .8rem;
     border: .05rem solid #ffffff4d;
     border-radius: .1rem;
-    content: "/";
+    /* content: "/"; */
 }
 
 :root {
@@ -171,25 +171,8 @@ code.doc-symbol-method::after {
   max-width: 50rem;
 }
 
-/** Algolia search module */
-.md-search__input::-webkit-search-decoration,
-.md-search__input::-webkit-search-cancel-button,
-.md-search__input::-webkit-search-results-button,
-.md-search__input::-webkit-search-results-decoration {
-  -webkit-appearance:none;
-}
-
-.md-search-result__article {
-  padding-bottom: .55em;
-}
-
-.ais-SearchBox-form {
-  display: flex;
-  flex-direction: row;
-  gap: 10px;
-}
-
-.md-search-result mark.ais-Highlight-highlighted,
-.md-search-result mark.ais-Snippet-highlighted {
-  color: var(--md-primary-fg-color);
+/* Ask AI Widget */
+p.mantine-focus-auto.m_b6d8b162.mantine-Text-root, [class*="mantine-Text-root"] {
+  /* Change the font family to your preferred font */
+  font-family: 'Oxygen', sans-serif !important;
 }

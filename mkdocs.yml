@@ -136,6 +136,10 @@ theme:
 
 # Additional Configuration
 extra:
+  docsearch:
+    app_id: 'CTX8NKR4GC'
+    api_key: 'eb05e80b7739efec7038d98158f39a54'
+    index_name: 'getdaft'
   analytics:
     provider: google
     property: G-YN4QSRPV0K
@@ -171,12 +175,14 @@ extra:
 # Additional Style
 extra_css:
 - css/extra.css
+- css/docsearch.css
 - https://cdn.jsdelivr.net/npm/@docsearch/css@3
 
 extra_javascript:
 - js/custom.js
 - js/docsearch.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
+- https://cdn.jsdelivr.net/npm/@docsearch/js@3/dist/umd.js
 
 # Extensions
 markdown_extensions:
@@ -202,7 +208,6 @@ markdown_extensions:
 plugins:
 - markdown-exec
 - mkdocs-jupyter:
-    enable: false
     execute: false
     include_source: true
 - search:
@@ -223,6 +228,7 @@ plugins:
           members_order: alphabetical # or source
           separate_signature: true
           show_bases: false
+          show_labels: false
           show_if_no_docstring: true
           show_root_full_path: false
           show_root_heading: true
