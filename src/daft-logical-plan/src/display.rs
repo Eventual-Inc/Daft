@@ -126,7 +126,7 @@ Sort6["Sort: Sort by = (col(last_name), ascending, nulls last)"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
 Limit9["Limit: 1000"]
-Filter10["Filter: startswith(col(last_name), lit('S')) & endswith(col(last_name),
+Filter10["Filter: starts_with(col(last_name), lit('S')) & ends_with(col(last_name),
 lit('n'))"]
 Source11["PlaceHolder:
 Num partitions = 0

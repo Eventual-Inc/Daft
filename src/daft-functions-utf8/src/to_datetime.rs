@@ -6,7 +6,7 @@ use daft_core::{
 };
 use daft_dsl::{
     functions::{FunctionArgs, ScalarFunction, ScalarUDF},
-    lit, ExprRef,
+    lit, ExprRef, LiteralValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -20,16 +20,18 @@ impl ScalarUDF for ToDatetime {
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
-        let format = inputs.required("format")?;
-        dbg!(&format);
+        let format = inputs.required((1, "format"))?;
         ensure!(format.data_type().is_string() && format.len() == 1, ValueError: "format must be a string literal");
 
         let format = format.utf8().unwrap().get(0).unwrap();
 
         let tz = if let Some(tz) = inputs.optional("timezone")? {
-            dbg!(&tz);
-            ensure!(tz.data_type().is_string() && tz.len() == 1, ValueError: "timezone must be a string literal");
-            Some(tz.utf8().unwrap().get(0).unwrap())
+            if tz.data_type() == &DataType::Null {
+                None
+            } else {
+                ensure!(tz.data_type().is_string() && tz.len() == 1, ValueError: "timezone must be a string literal");
+                Some(tz.utf8().unwrap().get(0).unwrap())
+            }
         } else {
             None
         };
@@ -44,26 +46,28 @@ impl ScalarUDF for ToDatetime {
     ) -> DaftResult<Field> {
         ensure!(!inputs.is_empty() && inputs.len() <= 3, SchemaMismatch: "Expected between 1 and 3 arguments, got {}", inputs.len());
         let data_field = inputs.required((0, "input"))?.to_field(schema)?;
-        let format_expr = inputs.required("format")?;
-        dbg!(&format_expr);
+        let format_expr = inputs.required((1, "format"))?;
         let format = format_expr
             .as_literal()
             .and_then(|lit| lit.as_str())
             .ok_or_else(|| DaftError::TypeError("format must be a string literal".to_string()))?;
-        dbg!(&format);
 
         let timeunit = infer_timeunit_from_format_string(format);
 
-        let timezone = if let Some(tz_expr) = inputs.optional((2, "timezone"))? {
-            Some(
-                tz_expr
-                    .as_literal()
-                    .and_then(|lit| lit.as_str())
-                    .ok_or_else(|| {
-                        DaftError::TypeError("timezone must be a string literal".to_string())
-                    })?
-                    .to_string(),
-            )
+        let timezone = if let Some(tz_expr) = inputs.optional("timezone")? {
+            let lit = tz_expr.as_literal();
+
+            if lit == Some(&LiteralValue::Null) {
+                None
+            } else {
+                Some(
+                    lit.and_then(|lit| lit.as_str())
+                        .ok_or_else(|| {
+                            DaftError::TypeError("timezone must be a string literal".to_string())
+                        })?
+                        .to_string(),
+                )
+            }
         } else if format_string_has_offset(format) {
             // if it has an offset, we coerce it to UTC. This is consistent with other engines (duckdb, polars)
             Some("UTC".to_string())
