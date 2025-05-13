@@ -74,7 +74,7 @@ impl RowBasedBuffer {
 
     // Pop all morsels in the buffer regardless of the threshold
     pub fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        assert!(self.curr_len < *self.range.start());
+        assert!(self.curr_len < *self.range.end());
         if self.buffer.is_empty() {
             Ok(None)
         } else {
