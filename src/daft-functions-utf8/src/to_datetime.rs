@@ -20,12 +20,14 @@ impl ScalarUDF for ToDatetime {
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
-        let format = inputs.required((1, "format"))?;
+        let format = inputs.required("format")?;
+        dbg!(&format);
         ensure!(format.data_type().is_string() && format.len() == 1, ValueError: "format must be a string literal");
 
         let format = format.utf8().unwrap().get(0).unwrap();
 
-        let tz = if let Some(tz) = inputs.optional((2, "timezone"))? {
+        let tz = if let Some(tz) = inputs.optional("timezone")? {
+            dbg!(&tz);
             ensure!(tz.data_type().is_string() && tz.len() == 1, ValueError: "timezone must be a string literal");
             Some(tz.utf8().unwrap().get(0).unwrap())
         } else {
@@ -42,11 +44,13 @@ impl ScalarUDF for ToDatetime {
     ) -> DaftResult<Field> {
         ensure!(!inputs.is_empty() && inputs.len() <= 3, SchemaMismatch: "Expected between 1 and 3 arguments, got {}", inputs.len());
         let data_field = inputs.required((0, "input"))?.to_field(schema)?;
-        let format_expr = inputs.required((1, "format"))?;
+        let format_expr = inputs.required("format")?;
+        dbg!(&format_expr);
         let format = format_expr
             .as_literal()
             .and_then(|lit| lit.as_str())
             .ok_or_else(|| DaftError::TypeError("format must be a string literal".to_string()))?;
+        dbg!(&format);
 
         let timeunit = infer_timeunit_from_format_string(format);
 
@@ -56,7 +60,7 @@ impl ScalarUDF for ToDatetime {
                     .as_literal()
                     .and_then(|lit| lit.as_str())
                     .ok_or_else(|| {
-                        DaftError::TypeError("format must be a string literal".to_string())
+                        DaftError::TypeError("timezone must be a string literal".to_string())
                     })?
                     .to_string(),
             )
