@@ -203,12 +203,29 @@ def register_python_catalog(catalog: object, name: str | None = None) -> str:
     return name
 
 
+Properties = dict[str, Any]
+
+
 class NotFoundError(Exception):
     """Raised when some catalog object is not able to be found."""
 
 
 class Catalog(ABC):
-    """Interface for python catalog implementations."""
+    """Interface for Python catalog implementations.
+
+    A Catalog is a service for discovering, accessing, and querying
+    tabular and non-tabular data. You can instantiate a Catalog using
+    one of the static `from_` methods.
+
+    Examples:
+        >>> import daft
+        >>> from daft.catalog import Catalog
+        >>>
+        >>> data = {"users": {"id": [1, 2, 3], "name": ["a", "b", "c"]}}
+        >>> catalog = Catalog.from_pydict(data)
+        >>> catalog.list_tables()
+        ['users']
+    """
 
     @property
     @abstractmethod
@@ -252,13 +269,18 @@ class Catalog(ABC):
 
     @staticmethod
     def from_iceberg(catalog: object) -> Catalog:
-        """Creates a Daft Catalog instance from an Iceberg catalog.
+        """Create a Daft Catalog from a PyIceberg catalog object.
+
+        Example:
+            >>> from pyiceberg.catalog import load_catalog
+            >>> iceberg_catalog = load_catalog("my_iceberg_catalog")
+            >>> catalog = Catalog.from_iceberg(iceberg_catalog)
 
         Args:
-            catalog (object): pyiceberg catalog object
+            catalog (object): a PyIceberg catalog instance
 
         Returns:
-            Catalog: new daft catalog instance from the pyiceberg catalog object.
+            Catalog: a new Catalog instance backed by the PyIceberg catalog.
         """
         try:
             from daft.catalog.__iceberg import IcebergCatalog
@@ -269,13 +291,18 @@ class Catalog(ABC):
 
     @staticmethod
     def from_unity(catalog: object) -> Catalog:
-        """Creates a Daft Catalog instance from a Unity catalog.
+        """Create a Daft Catalog from a Unity Catalog client.
+
+        Example:
+            >>> from unity_sdk import UnityCatalogClient
+            >>> unity_client = UnityCatalogClient(...)
+            >>> catalog = Catalog.from_unity(unity_client)
 
         Args:
-            catalog (object): unity catalog object
+            catalog (object): a Unity Catalog client instance
 
         Returns:
-            Catalog: new daft catalog instance from the unity catalog object.
+            Catalog: a new Catalog instance backed by the Unity catalog.
         """
         try:
             from daft.catalog.__unity import UnityCatalog
@@ -292,15 +319,21 @@ class Catalog(ABC):
     ) -> Catalog:
         """Creates a Daft Catalog from S3 Tables bucket ARN, with optional client or session.
 
-        If neither a boto3 client nor session is given, an Iceberg REST client is used.
+        If neither a boto3 client nor session is provided, the Iceberg REST
+        client will be used under the hood.
+
+        Example:
+            >>> arn = "arn:aws:s3:::my-s3tables-bucket"
+            >>> catalog = Catalog.from_s3tables(arn)
+            >>> catalog.list_tables()
 
         Args:
-            table_bucket_arn (str): s3tables bucket arn
-            client: optional boto3 client
-            session: optional boto3 session
+            table_bucket_arn (str): ARN of the S3 Tables bucket
+            client (object, optional): a boto3 client
+            session (object, optional): a boto3 session
 
         Returns:
-            Catalog: new daft catalog instance backed by S3 Tables.
+            Catalog: a new Catalog instance backed by S3 Tables.
         """
         try:
             from daft.catalog.__s3tables import S3Catalog
@@ -396,7 +429,12 @@ class Catalog(ABC):
             self.create_namespace(identifier)
 
     @abstractmethod
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         """Creates a table in this catalog.
 
         Args:
@@ -408,7 +446,12 @@ class Catalog(ABC):
         """
         raise NotImplementedError
 
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table_if_not_exists(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        properties: Properties | None = None,
+    ) -> Table:
         """Creates a table in this catalog if it does not already exist.
 
         Args:
@@ -421,7 +464,7 @@ class Catalog(ABC):
         try:
             return self.get_table(identifier)
         except NotFoundError:
-            return self.create_table(identifier, source)
+            return self.create_table(identifier, source, properties)
 
     ###
     # has_*

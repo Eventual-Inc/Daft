@@ -16,8 +16,9 @@ pub struct ListChunk {
 
 #[typetag::serde]
 impl ScalarUDF for ListChunk {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
     }
 
     fn name(&self) -> &'static str {
@@ -40,7 +41,7 @@ impl ScalarUDF for ListChunk {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input.list_chunk(self.size),
             _ => Err(DaftError::ValueError(format!(

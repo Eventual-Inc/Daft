@@ -82,6 +82,7 @@ def test_float_fill_nan() -> None:
     s = Series.from_arrow(pa.array([1.0, np.nan, 3.0, float("nan")]))
     fill = Series.from_arrow(pa.array([2.0]))
     result = s.float.fill_nan(fill)
+
     assert result.to_pylist() == [1.0, 2.0, 3.0, 2.0]
 
 

@@ -268,6 +268,31 @@ impl Mul for &Series {
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Mul)
             }
+            // ----------------
+            // Temporal types
+            // ----------------
+            output_type if output_type.is_interval() => {
+                match (self.data_type(), rhs.data_type()) {
+                    // ----------------
+                    // Interval
+                    // ----------------
+                    // Interval * numeric = Interval
+                    (DataType::Interval, dt) if dt.is_integer() => {
+                        let physical_result =
+                            lhs.interval()?.mul(rhs.cast(&DataType::Int32)?.i32()?)?;
+                        physical_result.cast(output_type)
+                    }
+                    // numeric * Interval = Interval
+                    (dt, DataType::Interval) if dt.is_integer() => {
+                        let physical_result =
+                            rhs.interval()?.mul(lhs.cast(&DataType::Int32)?.i32()?)?;
+                        physical_result.cast(output_type)
+                    }
+                    _ => {
+                        arithmetic_op_not_implemented!(self, "*", rhs, output_type)
+                    }
+                }
+            }
             _ => arithmetic_op_not_implemented!(self, "*", rhs, output_type),
         }
     }
@@ -427,11 +452,14 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
+    use arrow2::types::months_days_ns;
     use common_error::DaftResult;
 
     use crate::{
         array::ops::full::FullNull,
-        datatypes::{DataType, Float32Array, Float64Array, Int32Array, Int64Array, Utf8Array},
+        datatypes::{
+            DataType, Float32Array, Float64Array, Int32Array, Int64Array, IntervalArray, Utf8Array,
+        },
         series::IntoSeries,
     };
 
@@ -524,6 +552,40 @@ mod tests {
         let b = Utf8Array::from(("b", str_array.as_slice()));
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Utf8);
+        Ok(())
+    }
+    #[test]
+    fn mul_interval_and_int() -> DaftResult<()> {
+        let a = IntervalArray::from((
+            "a",
+            vec![
+                months_days_ns::new(1, 2, 3),
+                months_days_ns::new(4, 5, 6),
+                months_days_ns::new(7, 8, 9),
+            ],
+        ));
+        let b = Int32Array::from(("b", vec![1, 2, 3]));
+        let c = a.into_series() * b.into_series();
+        assert_eq!(*c?.data_type(), DataType::Interval);
+        Ok(())
+    }
+    #[test]
+    fn mul_interval_and_float() -> DaftResult<()> {
+        let a = IntervalArray::from((
+            "a",
+            vec![
+                months_days_ns::new(1, 2, 3),
+                months_days_ns::new(4, 5, 6),
+                months_days_ns::new(7, 8, 9),
+            ],
+        ));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let c = a.into_series() * b.into_series();
+        assert!(c.is_err());
+        assert_eq!(
+            c.unwrap_err().to_string(),
+            "DaftError::TypeError Cannot multiply types: Interval, Float64"
+        );
         Ok(())
     }
 }

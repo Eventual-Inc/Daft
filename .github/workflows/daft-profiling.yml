@@ -44,6 +44,12 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
+
     - name: Build Rust Library
       run: |
         source activate

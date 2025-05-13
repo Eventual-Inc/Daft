@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from daft.catalog import Catalog, Identifier, Table
 from daft.context import get_context
@@ -47,7 +47,27 @@ __all__ = [
 
 
 class Session:
-    """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs."""
+    """Session holds a connection's state and orchestrates execution of DataFrame and SQL queries against catalogs.
+
+    Examples:
+        >>> import daft
+        >>> from daft.session import Session
+        >>>
+        >>> sess = Session()
+        >>>
+        >>> # Create a temporary table from a DataFrame
+        >>> sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
+        >>>
+        >>> # Read the table as a DataFrame
+        >>> df = sess.read_table("T")
+        >>>
+        >>> # Execute an SQL query
+        >>> sess.sql("SELECT * FROM T").show()
+        >>>
+        >>> # You can also retrieve the current session without creating a new one:
+        >>> from daft.session import current_session
+        >>> sess = current_session()
+    """
 
     _session: PySession
 
@@ -182,7 +202,7 @@ class Session:
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace_if_not_exists(identifier)
 
-    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table(self, identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
         """Creates a table in the current catalog.
 
         If no namespace is specified, the current namespace is used.
@@ -201,9 +221,14 @@ class Session:
             if ns := self.current_namespace():
                 identifier = ns + identifier
 
-        return catalog.create_table(identifier, source)
+        return catalog.create_table(identifier, source, properties)
 
-    def create_table_if_not_exists(self, identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+    def create_table_if_not_exists(
+        self,
+        identifier: Identifier | str,
+        source: Schema | DataFrame,
+        **properties: Any,
+    ) -> Table:
         """Creates a table in the current catalog if it does not already exist.
 
         If no namespace is specified, the current namespace is used.
@@ -222,7 +247,7 @@ class Session:
             if ns := self.current_namespace():
                 identifier = ns + identifier
 
-        return catalog.create_table_if_not_exists(identifier, source)
+        return catalog.create_table_if_not_exists(identifier, source, properties)
 
     def create_temp_table(self, identifier: str, source: Schema | DataFrame) -> Table:
         """Creates a temp table scoped to this session's lifetime.
@@ -572,14 +597,14 @@ def create_namespace_if_not_exists(identifier: Identifier | str):
     return _session().create_namespace_if_not_exists(identifier)
 
 
-def create_table(identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+def create_table(identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
     """Creates a table in the current session's active catalog and namespace."""
-    return _session().create_table(identifier, source)
+    return _session().create_table(identifier, source, **properties)
 
 
-def create_table_if_not_exists(identifier: Identifier | str, source: Schema | DataFrame) -> Table:
+def create_table_if_not_exists(identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
     """Creates a table in the current session's active catalog and namespace if it does not already exist."""
-    return _session().create_table_if_not_exists(identifier, source)
+    return _session().create_table_if_not_exists(identifier, source, **properties)
 
 
 def create_temp_table(identifier: str, source: Schema | DataFrame) -> Table:

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_logical_plan::CustomInfo;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
@@ -9,7 +10,7 @@ use pyo3::{
     Python,
 };
 
-use crate::{FileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriterFactory};
 
 pub struct CustomWriter {
     is_closed: bool,
@@ -29,11 +30,12 @@ impl CustomWriter {
     }
 }
 
-impl FileWriter for CustomWriter {
+#[async_trait]
+impl AsyncFileWriter for CustomWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         self.bytes_written += data
             .size_bytes()?
             .expect("MicroPartition should have size_bytes for LanceWriter");
@@ -83,7 +85,7 @@ impl FileWriter for CustomWriter {
         vec![self.bytes_written]
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Ok(std::mem::take(&mut self.results))
     }
@@ -108,7 +110,7 @@ impl WriterFactory for CustomWriterFactory {
         &self,
         _file_idx: usize,
         _partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         let writer = CustomWriter::new(self.custom_info.clone());
         Ok(Box::new(writer))
     }

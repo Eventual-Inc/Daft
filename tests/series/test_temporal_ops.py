@@ -44,6 +44,25 @@ def test_series_date_month_operation() -> None:
     assert input == months.to_pylist()
 
 
+def test_series_date_quarter_operation() -> None:
+    from datetime import date
+
+    def date_maker(m):
+        if m is None:
+            return None
+        return date(2023, m, 1)
+
+    input = list(range(1, 10)) + [None, 11, 12]
+
+    input_dates = list(map(date_maker, input))
+    s = Series.from_pylist(input_dates)
+    months = s.dt.month()
+
+    assert months.datatype() == DataType.uint32()
+
+    assert input == months.to_pylist()
+
+
 def test_series_date_year_operation() -> None:
     from datetime import date
 
@@ -245,6 +264,27 @@ def test_series_timestamp_month_operation(tz) -> None:
 
 
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
+def test_series_timestamp_quarter_operation(tz) -> None:
+    from datetime import datetime
+
+    def ts_maker(m):
+        if m is None:
+            return None
+        return datetime(2023, m, 1, 23, 1, 1)
+
+    input = list(range(1, 10)) + [None, 11, 12]
+    expected = [(m + 2) // 3 if m is not None else None for m in input]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms(), timezone=tz))
+    quarters = s.dt.quarter()
+
+    assert quarters.datatype() == DataType.uint32()
+
+    assert expected == quarters.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_year_operation(tz) -> None:
     from datetime import datetime
 
@@ -262,6 +302,46 @@ def test_series_timestamp_year_operation(tz) -> None:
     assert years.datatype() == DataType.int32()
 
     assert input == years.to_pylist()
+
+
+def test_series_timestamp_unix_date_operation() -> None:
+    from datetime import datetime
+
+    input_ts = [
+        datetime(1978, 1, 1, 1, 1, 1, 0),
+        datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        None,
+    ]
+
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    out = s.dt.unix_date()
+
+    assert out.datatype() == DataType.uint64()
+
+    assert [2922, 20009, 34699, None] == out.to_pylist()
+
+
+def test_series_unix_date_input_date_error() -> None:
+    import re
+    from datetime import date
+
+    input_dates = [date(1978, 1, 1), date(2024, 10, 13), date(2065, 1, 1), None]
+    s = Series.from_pylist(input_dates).cast(DataType.date())
+    expected_error = "DaftError::ComputeError Can only run unix_date() operation on timestamp types, got Date"
+    with pytest.raises(Exception, match=re.escape(expected_error)):
+        s.dt.unix_date()
+
+
+def test_series_unix_date_input_time_error() -> None:
+    import re
+    from datetime import time
+
+    input_times = [time(12, 30, 0), time(23, 59, 59), time(0, 0, 0), None]
+    s = Series.from_pylist(input_times).cast(DataType.time("ns"))
+    expected_error = "DaftError::ComputeError Can only run unix_date() operation on timestamp types, got Time"
+    with pytest.raises(Exception, match=re.escape(expected_error)):
+        s.dt.unix_date()
 
 
 def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):
@@ -462,24 +542,42 @@ def test_series_to_unix_epoch(timeunit, expected):
     assert expected_series.to_pylist() == actual_series.to_pylist()
 
 
-def test_series_day_of_year():
+@pytest.mark.parametrize(
+    ("fun", "expected"),
+    [
+        ("day_of_week", 0),
+        ("day_of_month", 1),
+        ("day_of_year", 1),
+        ("week_of_year", 1),
+    ],
+)
+def test_series_day_of_year(fun, expected):
     from datetime import datetime
 
     input_series = Series.from_pylist([datetime(2024, 1, 1, 1)])
-    expected_series = Series.from_pylist([1])
+    expected_series = Series.from_pylist([expected])
 
-    day_of_year = input_series.dt.day_of_year()
-    assert expected_series.to_pylist() == day_of_year.to_pylist()
+    series = getattr(input_series.dt, fun)()
+    assert expected_series.to_pylist() == series.to_pylist()
 
 
-def test_series_date_day_of_year():
+@pytest.mark.parametrize(
+    ("fun", "expected"),
+    [
+        ("day_of_week", 0),
+        ("day_of_month", 1),
+        ("day_of_year", 1),
+        ("week_of_year", 1),
+    ],
+)
+def test_series_date_day_of_year(fun, expected):
     from datetime import date
 
     input_series = Series.from_pylist([date(2024, 1, 1)])
-    expected_series = Series.from_pylist([1])
+    expected_series = Series.from_pylist([expected])
 
-    day_of_year = input_series.dt.day_of_year()
-    assert expected_series.to_pylist() == day_of_year.to_pylist()
+    series = getattr(input_series.dt, fun)()
+    assert expected_series.to_pylist() == series.to_pylist()
 
 
 # just a sanity check, more robust tests are in tests/dataframe/test_temporals.py

@@ -1,7 +1,7 @@
-use common_error::DaftResult;
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
-    prelude::{Field, Schema},
-    series::Series,
+    prelude::{DataType, Field, Schema},
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -9,16 +9,34 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{evaluate_single_numeric, to_field_single_numeric};
+use super::to_field_single_numeric;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Ceil {}
+pub struct Ceil;
 
 #[typetag::serde]
 impl ScalarUDF for Ceil {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        ensure!(inputs.len() == 1, "ceil expects 1 argument");
+        let s = inputs.required((0, "input"))?;
+        match s.data_type() {
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64 => Ok(s.clone()),
+            DataType::Float32 => Ok(s.f32().unwrap().ceil()?.into_series()),
+            DataType::Float64 => Ok(s.f64().unwrap().ceil()?.into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "ceil not implemented for {}",
+                dt
+            ))),
+        }
     }
+
     fn name(&self) -> &'static str {
         "ceil"
     }
@@ -27,8 +45,8 @@ impl ScalarUDF for Ceil {
         to_field_single_numeric(self, inputs, schema)
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, Series::ceil)
+    fn docstring(&self) -> &'static str {
+        "Rounds a number up to the nearest integer."
     }
 }
 

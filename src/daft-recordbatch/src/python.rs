@@ -1,16 +1,16 @@
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     join::JoinType,
     prelude::*,
     python::{series::PySeries, PySchema},
 };
-use daft_dsl::python::PyExpr;
-use daft_logical_plan::FileInfos;
+use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr};
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
     ffi,
+    file_info::{FileInfo, FileInfos},
     preview::{Preview, PreviewFormat, PreviewOptions},
     RecordBatch,
 };
@@ -19,6 +19,16 @@ use crate::{
 #[derive(Clone)]
 pub struct PyRecordBatch {
     pub record_batch: RecordBatch,
+}
+
+impl PyRecordBatch {
+    fn pyexpr_to_bound(&self, expr: PyExpr) -> DaftResult<BoundExpr> {
+        BoundExpr::try_new(expr.into(), &self.record_batch.schema)
+    }
+
+    fn pyexprs_to_bound(&self, exprs: Vec<PyExpr>) -> DaftResult<Vec<BoundExpr>> {
+        exprs.into_iter().map(|e| self.pyexpr_to_bound(e)).collect()
+    }
 }
 
 #[pymethods]
@@ -34,7 +44,7 @@ impl PyRecordBatch {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = exprs.into_iter().map(|e| e.into()).collect();
+        let converted_exprs = self.pyexprs_to_bound(exprs)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -48,8 +58,7 @@ impl PyRecordBatch {
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let converted_exprs = self.pyexprs_to_bound(exprs)?;
         py.allow_threads(|| Ok(self.record_batch.filter(converted_exprs.as_slice())?.into()))
     }
 
@@ -60,10 +69,7 @@ impl PyRecordBatch {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let converted_exprs = self.pyexprs_to_bound(sort_keys)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -83,10 +89,7 @@ impl PyRecordBatch {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let converted_exprs = self.pyexprs_to_bound(sort_keys)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -100,10 +103,8 @@ impl PyRecordBatch {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg: Vec<daft_dsl::ExprRef> =
-            to_agg.into_iter().map(std::convert::Into::into).collect();
-        let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(std::convert::Into::into).collect();
+        let converted_to_agg = self.pyexprs_to_bound(to_agg)?;
+        let converted_group_by = self.pyexprs_to_bound(group_by)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -120,10 +121,9 @@ impl PyRecordBatch {
         values_col: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
-        let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(std::convert::Into::into).collect();
-        let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
-        let converted_values_col: daft_dsl::ExprRef = values_col.into();
+        let converted_group_by = self.pyexprs_to_bound(group_by)?;
+        let converted_pivot_col = self.pyexpr_to_bound(pivot_col)?;
+        let converted_values_col = self.pyexpr_to_bound(values_col)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -145,10 +145,8 @@ impl PyRecordBatch {
         right_on: Vec<PyExpr>,
         how: JoinType,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> =
-            left_on.into_iter().map(std::convert::Into::into).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> =
-            right_on.into_iter().map(std::convert::Into::into).collect();
+        let left_exprs = self.pyexprs_to_bound(left_on)?;
+        let right_exprs = self.pyexprs_to_bound(right_on)?;
         let null_equals_nulls = vec![false; left_exprs.len()];
         py.allow_threads(|| {
             Ok(self
@@ -172,10 +170,8 @@ impl PyRecordBatch {
         right_on: Vec<PyExpr>,
         is_sorted: bool,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> =
-            left_on.into_iter().map(std::convert::Into::into).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> =
-            right_on.into_iter().map(std::convert::Into::into).collect();
+        let left_exprs = self.pyexprs_to_bound(left_on)?;
+        let right_exprs = self.pyexprs_to_bound(right_on)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -190,8 +186,7 @@ impl PyRecordBatch {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_explode: Vec<daft_dsl::ExprRef> =
-            to_explode.into_iter().map(|e| e.expr).collect();
+        let converted_to_explode = self.pyexprs_to_bound(to_explode)?;
 
         py.allow_threads(|| {
             Ok(self
@@ -301,8 +296,7 @@ impl PyRecordBatch {
                 "Can not partition into negative number of partitions: {num_partitions}"
             )));
         }
-        let exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let exprs = self.pyexprs_to_bound(exprs)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -347,10 +341,7 @@ impl PyRecordBatch {
         boundaries: &Self,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let exprs = self.pyexprs_to_bound(partition_keys)?;
         py.allow_threads(|| {
             Ok(self
                 .record_batch
@@ -370,10 +361,7 @@ impl PyRecordBatch {
         py: Python,
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let exprs = self.pyexprs_to_bound(partition_keys)?;
         py.allow_threads(|| {
             let (tables, values) = self.record_batch.partition_by_value(exprs.as_slice())?;
             let pyrecordbatches = tables
@@ -407,30 +395,17 @@ impl PyRecordBatch {
         Ok(self.record_batch.size_bytes()?)
     }
 
-    #[must_use]
-    pub fn column_names(&self) -> Vec<String> {
-        self.record_batch.column_names()
+    pub fn get_column(&self, idx: usize) -> PySeries {
+        self.record_batch.get_column(idx).clone().into()
     }
 
-    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
-        Ok(self.record_batch.get_column(name)?.clone().into())
-    }
-
-    pub fn get_column_by_index(&self, idx: i64) -> PyResult<PySeries> {
-        if idx < 0 {
-            return Err(PyValueError::new_err(format!(
-                "Invalid index, negative numbers not supported: {idx}"
-            )));
-        }
-        let idx = idx as usize;
-        if idx >= self.record_batch.len() {
-            return Err(PyValueError::new_err(format!(
-                "Invalid index, out of bounds: {idx} out of {}",
-                self.record_batch.len()
-            )));
-        }
-
-        Ok(self.record_batch.get_column_by_index(idx)?.clone().into())
+    pub fn columns(&self) -> Vec<PySeries> {
+        self.record_batch
+            .columns()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
     }
 
     #[staticmethod]
@@ -504,6 +479,25 @@ impl PyRecordBatch {
             record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
         })
     }
+    #[staticmethod]
+    pub fn from_pyseries_list(pycolumns: Vec<PySeries>) -> PyResult<Self> {
+        if pycolumns.is_empty() {
+            return Ok(Self {
+                record_batch: RecordBatch::empty(None)?,
+            });
+        }
+
+        let num_rows = pycolumns.first().unwrap().series.len();
+
+        let (fields, columns) = pycolumns
+            .into_iter()
+            .map(|s| (s.series.field().clone(), s.series))
+            .unzip::<_, _, Vec<Field>, Vec<Series>>();
+
+        Ok(Self {
+            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
+        })
+    }
 
     pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
@@ -556,5 +550,8 @@ impl AsRef<RecordBatch> for PyRecordBatch {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyRecordBatch>()?;
+    parent.add_class::<FileInfos>()?;
+    parent.add_class::<FileInfo>()?;
+
     Ok(())
 }

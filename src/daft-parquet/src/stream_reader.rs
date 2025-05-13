@@ -4,7 +4,7 @@ use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, StreamExt};
@@ -119,9 +119,15 @@ fn arrow_chunk_to_table(
 
     // Apply pushdowns if needed
     if let Some(predicate) = predicate {
+        let predicate = BoundExpr::try_new(predicate, &table.schema)?;
         table = table.filter(&[predicate])?;
         if let Some(oc) = &original_columns {
-            table = table.get_columns(oc)?;
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
         }
         if let Some(nr) = original_num_rows {
             table = table.head(nr)?;

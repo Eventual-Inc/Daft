@@ -33,7 +33,7 @@ Daft Expressions allow you to express some computation that needs to happen in a
 
 ::: daft.expressions.Expression
     options:
-        filters: ["!^_[^_]"]
+        filters: ["!^_[^_]", "!over", "!lag", "!lead"]
 
 ::: daft.expressions.expressions.ExpressionStringNamespace
     options:
@@ -105,4 +105,14 @@ Daft Expressions allow you to express some computation that needs to happen in a
     options:
         filters: ["!^_"]
         toc_label: Expression.embedding
-        heading: Expression.emedding
+        heading: Expression.embedding
+
+## Visitor
+
+::: daft.expressions.visitor.ExpressionVisitor
+    options:
+        filters: ["!^_", "!_$"]
+
+::: daft.expressions.visitor.PredicateVisitor
+    options:
+        filters: ["!^_"]

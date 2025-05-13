@@ -3,8 +3,9 @@ from __future__ import annotations
 import warnings
 from typing import Any, Iterator, Literal, TypeVar
 
+import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -339,120 +340,120 @@ class Series:
         return Series._from_pyseries(abs(self._series))
 
     def ceil(self) -> Series:
-        return Series._from_pyseries(self._series.ceil())
+        return self._eval_expressions("ceil")
 
     def floor(self) -> Series:
-        return Series._from_pyseries(self._series.floor())
+        return self._eval_expressions("floor")
 
     def sign(self) -> Series:
         """The sign of a numeric series."""
-        return Series._from_pyseries(self._series.sign())
+        return self._eval_expressions("sign")
 
     def signum(self) -> Series:
         """The signum of a numeric series."""
-        return Series._from_pyseries(self._series.sign())
+        return self._eval_expressions("sign")
 
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return Series._from_pyseries(self._series.negative())
+        return self._eval_expressions("negative")
 
     def negative(self) -> Series:
         """The negative of a numeric series."""
-        return Series._from_pyseries(self._series.negative())
+        return self._eval_expressions("negative")
 
-    def round(self, decimal: int) -> Series:
-        return Series._from_pyseries(self._series.round(decimal))
+    def round(self, decimal: int = 0) -> Series:
+        return self._eval_expressions("round", decimal=decimal)
 
     def clip(self, min: Series, max: Series) -> Series:
-        return Series._from_pyseries(self._series.clip(min._series, max._series))
+        return self._eval_expressions("clip", min, max)
 
     def sqrt(self) -> Series:
-        return Series._from_pyseries(self._series.sqrt())
+        return self._eval_expressions("sqrt")
 
     def cbrt(self) -> Series:
-        return Series._from_pyseries(self._series.cbrt())
+        return self._eval_expressions("cbrt")
 
     def sin(self) -> Series:
         """The elementwise sine of a numeric series."""
-        return Series._from_pyseries(self._series.sin())
+        return self._eval_expressions("sin")
 
     def cos(self) -> Series:
         """The elementwise cosine of a numeric series."""
-        return Series._from_pyseries(self._series.cos())
+        return self._eval_expressions("cos")
 
     def tan(self) -> Series:
         """The elementwise tangent of a numeric series."""
-        return Series._from_pyseries(self._series.tan())
+        return self._eval_expressions("tan")
 
     def csc(self) -> Series:
         """The elementwise cosecant of a numeric series."""
-        return Series._from_pyseries(self._series.csc())
+        return self._eval_expressions("csc")
 
     def sec(self) -> Series:
         """The elementwise secant of a numeric series."""
-        return Series._from_pyseries(self._series.sec())
+        return self._eval_expressions("sec")
 
     def cot(self) -> Series:
         """The elementwise cotangent of a numeric series."""
-        return Series._from_pyseries(self._series.cot())
+        return self._eval_expressions("cot")
 
     def sinh(self) -> Series:
         """The elementwise hyperbolic sine of a numeric series."""
-        return Series._from_pyseries(self._series.sinh())
+        return self._eval_expressions("sinh")
 
     def cosh(self) -> Series:
         """The elementwise hyperbolic cosine of a numeric series."""
-        return Series._from_pyseries(self._series.cosh())
+        return self._eval_expressions("cosh")
 
     def tanh(self) -> Series:
         """The elementwise hyperbolic tangent of a numeric series."""
-        return Series._from_pyseries(self._series.tanh())
+        return self._eval_expressions("tanh")
 
     def arcsin(self) -> Series:
         """The elementwise arc sine of a numeric series."""
-        return Series._from_pyseries(self._series.arcsin())
+        return self._eval_expressions("arcsin")
 
     def arccos(self) -> Series:
         """The elementwise arc cosine of a numeric series."""
-        return Series._from_pyseries(self._series.arccos())
+        return self._eval_expressions("arccos")
 
     def arctan(self) -> Series:
         """The elementwise arc tangent of a numeric series."""
-        return Series._from_pyseries(self._series.arctan())
+        return self._eval_expressions("arctan")
 
     def arctan2(self, other: Series) -> Series:
         """Calculates the four quadrant arctangent of coordinates (y, x)."""
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
-        return Series._from_pyseries(self._series.arctan2(other._series))
+        return self._eval_expressions("arctan2", other)
 
     def arctanh(self) -> Series:
         """The elementwise inverse hyperbolic tangent of a numeric series."""
-        return Series._from_pyseries(self._series.arctanh())
+        return self._eval_expressions("arctanh")
 
     def arccosh(self) -> Series:
         """The elementwise inverse hyperbolic cosine of a numeric series."""
-        return Series._from_pyseries(self._series.arccosh())
+        return self._eval_expressions("arccosh")
 
     def arcsinh(self) -> Series:
         """The elementwise inverse hyperbolic sine of a numeric series."""
-        return Series._from_pyseries(self._series.arcsinh())
+        return self._eval_expressions("arcsinh")
 
     def radians(self) -> Series:
         """The elementwise radians of a numeric series."""
-        return Series._from_pyseries(self._series.radians())
+        return self._eval_expressions("radians")
 
     def degrees(self) -> Series:
         """The elementwise degrees of a numeric series."""
-        return Series._from_pyseries(self._series.degrees())
+        return self._eval_expressions("degrees")
 
     def log2(self) -> Series:
         """The elementwise log2 of a numeric series."""
-        return Series._from_pyseries(self._series.log2())
+        return self._eval_expressions("log2")
 
     def log10(self) -> Series:
         """The elementwise log10 of a numeric series."""
-        return Series._from_pyseries(self._series.log10())
+        return self._eval_expressions("log10")
 
     def log(self, base: float) -> Series:
         """The elementwise log with given base, of a numeric series.
@@ -460,23 +461,23 @@ class Series:
         Args:
             base: The base of the logarithm.
         """
-        return Series._from_pyseries(self._series.log(base))
+        return self._eval_expressions("log", base=base)
 
     def ln(self) -> Series:
         """The elementwise ln of a numeric series."""
-        return Series._from_pyseries(self._series.ln())
+        return self._eval_expressions("ln")
 
     def log1p(self) -> Series:
         """The ln(self + 1) of a numeric series."""
-        return Series._from_pyseries(self._series.log1p())
+        return self._eval_expressions("log1p")
 
     def exp(self) -> Series:
         """The e^self of a numeric series."""
-        return Series._from_pyseries(self._series.exp())
+        return self._eval_expressions("exp")
 
     def expm1(self) -> Series:
         """The e^self - 1 of a numeric series."""
-        return Series._from_pyseries(self._series.expm1())
+        return self._eval_expressions("expm1")
 
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
@@ -724,6 +725,30 @@ class Series:
     def _debug_bincode_deserialize(cls, b: bytes) -> Series:
         return Series._from_pyseries(PySeries._debug_bincode_deserialize(b))
 
+    def _eval_expressions(self, func_name, *others: Series, **kwargs) -> Series:
+        from daft.expressions.expressions import lit
+
+        name = self._series.name()
+        s = self._series
+        other_series_list = []
+        col_names = []
+        for i, other in enumerate(others):
+            col_name = f"c{i}"
+            other_series_list.append(other._series.rename(col_name))
+            col_names.append(col_name)
+
+        rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
+
+        args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
+
+        f = native.get_function_from_registry(func_name)
+
+        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items() if v is not None}).alias(name)
+
+        rb = rb.eval_expression_list([expr])
+        pyseries = rb.get_column(0)
+        return Series._from_pyseries(pyseries)
+
 
 def item_to_series(name: str, item: Any) -> Series:
     if isinstance(item, list):
@@ -756,22 +781,23 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
+    def _eval_expressions(self, func_name: str, *others: Series, **kwargs) -> Series:
+        s = Series._from_pyseries(self._series)
+        return s._eval_expressions(func_name, *others, **kwargs)
+
 
 class SeriesFloatNamespace(SeriesNamespace):
     def is_nan(self) -> Series:
-        return Series._from_pyseries(self._series.is_nan())
+        return self._eval_expressions("is_nan")
 
     def is_inf(self) -> Series:
-        return Series._from_pyseries(self._series.is_inf())
+        return self._eval_expressions("is_inf")
 
     def not_nan(self) -> Series:
-        return Series._from_pyseries(self._series.not_nan())
+        return self._eval_expressions("not_nan")
 
     def fill_nan(self, fill_value: Series) -> Series:
-        if not isinstance(fill_value, Series):
-            raise ValueError(f"expected another Series but got {type(fill_value)}")
-        assert self._series is not None and fill_value._series is not None
-        return Series._from_pyseries(self._series.fill_nan(fill_value._series))
+        return self._eval_expressions("fill_nan", fill_value)
 
 
 class SeriesStringNamespace(SeriesNamespace):
@@ -995,11 +1021,17 @@ class SeriesDateNamespace(SeriesNamespace):
     def nanosecond(self) -> Series:
         return Series._from_pyseries(self._series.dt_nanosecond())
 
+    def unix_date(self) -> Series:
+        return Series._from_pyseries(self._series.dt_unix_date())
+
     def time(self) -> Series:
         return Series._from_pyseries(self._series.dt_time())
 
     def month(self) -> Series:
         return Series._from_pyseries(self._series.dt_month())
+
+    def quarter(self) -> Series:
+        return Series._from_pyseries(self._series.dt_quarter())
 
     def year(self) -> Series:
         return Series._from_pyseries(self._series.dt_year())
@@ -1007,8 +1039,14 @@ class SeriesDateNamespace(SeriesNamespace):
     def day_of_week(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_week())
 
+    def day_of_month(self) -> Series:
+        return Series._from_pyseries(self._series.dt_day_of_month())
+
     def day_of_year(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_year())
+
+    def week_of_year(self) -> Series:
+        return Series._from_pyseries(self._series.dt_week_of_year())
 
     def truncate(self, interval: str, relative_to: Series | None = None) -> Series:
         if relative_to is not None and not isinstance(relative_to, Series):
@@ -1085,38 +1123,17 @@ class SeriesImageNamespace(SeriesNamespace):
         on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Series:
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-        if mode is not None:
-            if isinstance(mode, str):
-                mode = ImageMode.from_mode_string(mode.upper())
-            if not isinstance(mode, ImageMode):
-                raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(image.decode(self._series, raise_error_on_failure=raise_on_error, mode=mode))
+        return self._eval_expressions("image_decode", on_error=on_error, mode=mode)
 
     def encode(self, image_format: str | ImageFormat) -> Series:
-        if isinstance(image_format, str):
-            image_format = ImageFormat.from_format_string(image_format.upper())
-        if not isinstance(image_format, ImageFormat):
-            raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
-        return Series._from_pyseries(image.encode(self._series, image_format))
+        return self._eval_expressions("image_encode", image_format=image_format)
 
     def resize(self, w: int, h: int) -> Series:
-        if not isinstance(w, int):
-            raise TypeError(f"expected int for w but got {type(w)}")
-        if not isinstance(h, int):
-            raise TypeError(f"expected int for h but got {type(h)}")
-
-        return Series._from_pyseries(image.resize(self._series, w, h))
+        return self._eval_expressions("image_resize", w=w, h=h)
 
     def to_mode(self, mode: str | ImageMode) -> Series:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(image.to_mode(self._series, mode))
+        return self._eval_expressions("to_mode", mode=mode)

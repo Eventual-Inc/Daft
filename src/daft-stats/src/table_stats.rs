@@ -36,10 +36,9 @@ impl TableStatistics {
             return Err(DaftError::ValueError(format!("Expected stats table to have 2 rows, with min and max values for each column, but got {} rows: {}", table.len(), table)));
         }
         let mut columns = IndexMap::with_capacity(table.num_columns());
-        for name in table.column_names() {
-            let col = table.get_column(&name).unwrap();
+        for col in table.columns() {
             let stats = ColumnRangeStatistics::new(Some(col.slice(0, 1)?), Some(col.slice(1, 2)?))?;
-            columns.insert(name, stats);
+            columns.insert(col.name().to_string(), stats);
         }
         Ok(Self { columns })
     }
@@ -47,10 +46,9 @@ impl TableStatistics {
     #[must_use]
     pub fn from_table(table: &RecordBatch) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
-        for name in table.column_names() {
-            let col = table.get_column(&name).unwrap();
+        for col in table.columns() {
             let stats = ColumnRangeStatistics::from_series(col);
-            columns.insert(name, stats);
+            columns.insert(col.name().to_string(), stats);
         }
         Self { columns }
     }

@@ -26,6 +26,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use async_trait::async_trait;
 use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
@@ -49,15 +50,16 @@ pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
 ///
 /// The `Input` type is the type of data that will be written to the file.
 /// The `Result` type is the type of the result that will be returned when the file is closed.
-pub trait FileWriter: Send + Sync {
+#[async_trait]
+pub trait AsyncFileWriter: Send + Sync {
     type Input;
     type Result;
 
     /// Write data to the file, returning the number of bytes written.
-    fn write(&mut self, data: Self::Input) -> DaftResult<usize>;
+    async fn write(&mut self, data: Self::Input) -> DaftResult<usize>;
 
     /// Close the file and return the result. The caller should NOT write to the file after calling this method.
-    fn close(&mut self) -> DaftResult<Self::Result>;
+    async fn close(&mut self) -> DaftResult<Self::Result>;
 
     /// Return the total number of bytes written by this writer.
     fn bytes_written(&self) -> usize;
@@ -78,7 +80,7 @@ pub trait WriterFactory: Send + Sync {
         &self,
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>>;
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>>;
 }
 
 pub fn make_physical_writer_factory(
@@ -148,7 +150,7 @@ pub fn make_ipc_writer(
     dir: &str,
     target_filesize: usize,
     compression: Option<&str>,
-) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
     let compression = match compression {
         Some("lz4") => Some(arrow2::io::ipc::write::Compression::LZ4),
         Some("zstd") => Some(arrow2::io::ipc::write::Compression::ZSTD),
@@ -163,7 +165,7 @@ pub fn make_ipc_writer(
     let base_writer_factory = IPCWriterFactory::new(dir.to_string(), compression);
     let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
         target_filesize,
-        if compression.is_some() { 1.0 } else { 2.0 },
+        if compression.is_some() { 2.0 } else { 1.0 },
     );
     let file_writer_factory = TargetFileSizeWriterFactory::new(
         Arc::new(base_writer_factory),

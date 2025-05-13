@@ -452,7 +452,7 @@ pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
             let thumb = image.fit_to(128, 128);
             let mut bytes: Vec<u8> = vec![];
             let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+            thumb.encode(ImageFormat::PNG, &mut writer).unwrap();
             drop(writer);
             format!(
                 "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",
@@ -474,7 +474,7 @@ pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize) -> String 
             let thumb = image.fit_to(128, 128);
             let mut bytes: Vec<u8> = vec![];
             let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
-            thumb.encode(ImageFormat::JPEG, &mut writer).unwrap();
+            thumb.encode(ImageFormat::PNG, &mut writer).unwrap();
             drop(writer);
             format!(
                 "<img style=\"max-height:128px;width:auto\" src=\"data:image/png;base64, {}\" alt=\"{}\" />",

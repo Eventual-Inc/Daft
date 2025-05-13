@@ -20,9 +20,11 @@ macro_rules! impl_temporal {
 
             #[typetag::serde]
             impl ScalarUDF for $name {
-                fn as_any(&self) -> &dyn std::any::Any {
-                    self
+                fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+                    let inner = inputs.into_inner();
+                    self.evaluate_from_series(&inner)
                 }
+
 
                 fn name(&self) -> &'static str {
                     stringify!([ < $name:snake:lower > ])
@@ -48,7 +50,7 @@ macro_rules! impl_temporal {
                     }
                 }
 
-                fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+                fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
                     match inputs {
                         [input] => input.$dt(),
                         _ => Err(DaftError::ValueError(format!(
@@ -71,22 +73,27 @@ impl_temporal!(Date, dt_date, "dt_date", Date);
 impl_temporal!(Day, dt_day, "dt_day", UInt32);
 impl_temporal!(Hour, dt_hour, "dt_hour", UInt32);
 impl_temporal!(DayOfWeek, dt_day_of_week, "dt_day_of_week", UInt32);
+impl_temporal!(DayOfMonth, dt_day_of_month, "dt_day_of_month", UInt32);
 impl_temporal!(DayOfYear, dt_day_of_year, "dt_day_of_year", UInt32);
+impl_temporal!(WeekOfYear, dt_week_of_year, "dt_week_of_year", UInt32);
 impl_temporal!(Minute, dt_minute, "dt_minute", UInt32);
 impl_temporal!(Month, dt_month, "dt_month", UInt32);
 impl_temporal!(Second, dt_second, "dt_second", UInt32);
 impl_temporal!(Millisecond, dt_millisecond, "dt_millisecond", UInt32);
 impl_temporal!(Microsecond, dt_microsecond, "dt_microsecond", UInt32);
 impl_temporal!(Nanosecond, dt_nanosecond, "dt_nanosecond", UInt32);
+impl_temporal!(Quarter, dt_quarter, "dt_quarter", UInt32);
 impl_temporal!(Year, dt_year, "dt_year", Int32);
+impl_temporal!(UnixDate, dt_unix_date, "dt_unix_date", UInt64);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Time;
 
 #[typetag::serde]
 impl ScalarUDF for Time {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
     }
 
     fn name(&self) -> &'static str {
@@ -119,7 +126,7 @@ impl ScalarUDF for Time {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input.dt_time(),
             _ => Err(DaftError::ValueError(format!(
@@ -147,9 +154,11 @@ pub struct TemporalToString {
 
 #[typetag::serde]
 impl ScalarUDF for UnixTimestamp {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
     }
+
     fn name(&self) -> &'static str {
         "to_unix_epoch"
     }
@@ -173,7 +182,7 @@ impl ScalarUDF for UnixTimestamp {
             ))),
         }
     }
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input
                 .cast(&DataType::Timestamp(self.time_unit, None))
@@ -188,8 +197,9 @@ impl ScalarUDF for UnixTimestamp {
 
 #[typetag::serde]
 impl ScalarUDF for TemporalToString {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inner = inputs.into_inner();
+        self.evaluate_from_series(&inner)
     }
 
     fn name(&self) -> &'static str {
@@ -217,7 +227,7 @@ impl ScalarUDF for TemporalToString {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [input] => input.dt_strftime(self.format.as_deref()),
             _ => Err(DaftError::ValueError(format!(
@@ -257,13 +267,17 @@ mod test {
             (Arc::new(Day), "day"),
             (Arc::new(Hour), "hour"),
             (Arc::new(DayOfWeek), "day_of_week"),
+            (Arc::new(DayOfMonth), "day_of_month"),
             (Arc::new(DayOfYear), "day_of_year"),
+            (Arc::new(WeekOfYear), "week_of_year"),
             (Arc::new(Minute), "minute"),
             (Arc::new(Month), "month"),
             (Arc::new(Second), "second"),
             (Arc::new(Millisecond), "millisecond"),
             (Arc::new(Nanosecond), "nanosecond"),
+            (Arc::new(UnixDate), "unix_date"),
             (Arc::new(Time), "time"),
+            (Arc::new(Quarter), "quarter"),
             (Arc::new(Year), "year"),
             (
                 Arc::new(Truncate {

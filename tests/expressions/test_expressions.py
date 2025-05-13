@@ -40,7 +40,7 @@ def test_make_lit(data, expected_dtype) -> None:
     assert literal.name() == "literal"
     empty_table = MicroPartition.empty()
     lit_table = empty_table.eval_expression_list([literal])
-    series = lit_table.get_column("literal")
+    series = lit_table.get_column_by_name("literal")
     assert series.datatype() == expected_dtype
     repr_out = repr(literal)
 
@@ -149,7 +149,7 @@ def test_repr_functions_round() -> None:
     a = col("a")
     y = a.round()
     repr_out = repr(y)
-    assert repr_out == "round(col(a))"
+    assert repr_out == "round(col(a), lit(0))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -185,9 +185,9 @@ def test_repr_functions_log10() -> None:
 
 def test_repr_functions_log() -> None:
     a = col("a")
-    y = a.log()
+    y = a.log(2)
     repr_out = repr(y)
-    assert repr_out == "log(col(a))"
+    assert repr_out == "log(col(a), lit(2))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -295,6 +295,15 @@ def test_repr_functions_arcsinh() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_unix_date() -> None:
+    a = col("a")
+    y = a.dt.unix_date()
+    repr_out = repr(y)
+    assert repr_out == "unix_date(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()
@@ -313,6 +322,15 @@ def test_repr_functions_month() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_quarter() -> None:
+    a = col("a")
+    y = a.dt.quarter()
+    repr_out = repr(y)
+    assert repr_out == "quarter(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_year() -> None:
     a = col("a")
     y = a.dt.year()
@@ -327,6 +345,33 @@ def test_repr_functions_day_of_week() -> None:
     y = a.dt.day_of_week()
     repr_out = repr(y)
     assert repr_out == "day_of_week(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_day_of_month() -> None:
+    a = col("a")
+    y = a.dt.day_of_month()
+    repr_out = repr(y)
+    assert repr_out == "day_of_month(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_day_of_year() -> None:
+    a = col("a")
+    y = a.dt.day_of_year()
+    repr_out = repr(y)
+    assert repr_out == "day_of_year(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_week_of_year() -> None:
+    a = col("a")
+    y = a.dt.week_of_year()
+    repr_out = repr(y)
+    assert repr_out == "week_of_year(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -557,7 +602,7 @@ def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
     pa_table = pa.table({"dt": pa_array})
     mp = MicroPartition.from_arrow(pa_table)
 
-    series = mp.get_column("dt")
+    series = mp.get_column_by_name("dt")
     output = repr(series)
 
     # Series repr is very long, so we just check the last line which contains the timestamp

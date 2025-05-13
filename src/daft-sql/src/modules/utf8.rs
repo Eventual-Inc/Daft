@@ -21,7 +21,7 @@ fn utf8_unary(
 ) -> SQLPlannerResult<ExprRef> {
     match inputs {
         [input] => {
-            let input = planner.plan_function_arg(input)?;
+            let input = planner.plan_function_arg(input)?.into_inner();
             Ok(func(input))
         }
         _ => invalid_operation_err!(
@@ -40,8 +40,8 @@ fn utf8_binary(
 ) -> SQLPlannerResult<ExprRef> {
     match inputs {
         [input1, input2] => {
-            let input1 = planner.plan_function_arg(input1)?;
-            let input2 = planner.plan_function_arg(input2)?;
+            let input1 = planner.plan_function_arg(input1)?.into_inner();
+            let input2 = planner.plan_function_arg(input2)?.into_inner();
             Ok(func(input1, input2))
         }
         _ => invalid_operation_err!(
@@ -61,9 +61,9 @@ fn utf8_ternary(
 ) -> SQLPlannerResult<ExprRef> {
     match inputs {
         [input1, input2, input3] => {
-            let input1 = planner.plan_function_arg(input1)?;
-            let input2 = planner.plan_function_arg(input2)?;
-            let input3 = planner.plan_function_arg(input3)?;
+            let input1 = planner.plan_function_arg(input1)?.into_inner();
+            let input2 = planner.plan_function_arg(input2)?.into_inner();
+            let input3 = planner.plan_function_arg(input3)?.into_inner();
             Ok(func(input1, input2, input3))
         },
         _ => invalid_operation_err!(
@@ -375,14 +375,14 @@ impl SQLFunction for SQLUtf8RegexpExtract {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, pattern] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let pattern = planner.plan_function_arg(pattern)?.into_inner();
                 Ok(daft_functions::utf8::extract(input, pattern, 0))
             }
             [input, pattern, idx] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
-                let idx = planner.plan_function_arg(idx)?.as_literal().and_then(LiteralValue::as_i64).ok_or_else(|| {
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let pattern = planner.plan_function_arg(pattern)?.into_inner();
+                let idx = planner.plan_function_arg(idx).map(|arg| arg.into_inner())?.as_literal().and_then(LiteralValue::as_i64).ok_or_else(|| {
                     PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {idx:?}"))
                 })? as usize;
                 Ok(daft_functions::utf8::extract(input, pattern, idx))
@@ -411,14 +411,14 @@ impl SQLFunction for SQLUtf8RegexpExtractAll {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, pattern] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let pattern = planner.plan_function_arg(pattern)?.into_inner();
                 Ok(daft_functions::utf8::extract_all(input, pattern, 0))
             }
             [input, pattern, idx] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
-                let idx = planner.plan_function_arg(idx)?.as_literal().and_then(LiteralValue::as_i64).ok_or_else(|| {
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let pattern = planner.plan_function_arg(pattern)?.into_inner();
+                let idx = planner.plan_function_arg(idx).map(|arg| arg.into_inner())?.as_literal().and_then(LiteralValue::as_i64).ok_or_else(|| {
                     PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract_all, found {idx:?}"))
                 })? as usize;
                 Ok(daft_functions::utf8::extract_all(input, pattern, idx))
@@ -446,8 +446,8 @@ impl SQLFunction for SQLUtf8ToDate {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, fmt] => {
-                let input = planner.plan_function_arg(input)?;
-                let fmt = planner.plan_function_arg(fmt)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let fmt = planner.plan_function_arg(fmt)?.into_inner();
                 let fmt = fmt
                     .as_literal()
                     .and_then(|lit| lit.as_str())
@@ -479,8 +479,8 @@ impl SQLFunction for SQLUtf8ToDatetime {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, fmt] => {
-                let input = planner.plan_function_arg(input)?;
-                let fmt = planner.plan_function_arg(fmt)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let fmt = planner.plan_function_arg(fmt)?.into_inner();
                 let fmt = fmt
                     .as_literal()
                     .and_then(|lit| lit.as_str())
@@ -490,15 +490,15 @@ impl SQLFunction for SQLUtf8ToDatetime {
                 Ok(daft_functions::utf8::to_datetime(input, fmt, None))
             }
             [input, fmt, tz] => {
-                let input = planner.plan_function_arg(input)?;
-                let fmt = planner.plan_function_arg(fmt)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let fmt = planner.plan_function_arg(fmt)?.into_inner();
                 let fmt = fmt
                     .as_literal()
                     .and_then(|lit| lit.as_str())
                     .ok_or_else(|| {
                         PlannerError::invalid_operation("to_datetime format must be a string")
                     })?;
-                let tz = planner.plan_function_arg(tz)?;
+                let tz = planner.plan_function_arg(tz)?.into_inner();
                 let tz = tz.as_literal().and_then(|lit| lit.as_str());
                 Ok(daft_functions::utf8::to_datetime(input, fmt, tz))
             }
@@ -539,13 +539,13 @@ impl SQLFunction for SQLCountMatches {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, pattern] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let pattern = planner.plan_function_arg(pattern)?.into_inner();
                 Ok(utf8_count_matches(input, pattern, false, true))
             }
             [input, pattern, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
-                let pattern = planner.plan_function_arg(pattern)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let pattern = planner.plan_function_arg(pattern)?.into_inner();
                 let args: CountMatchesFunction =
                     planner.plan_function_args(args, &["whole_words", "case_sensitive"], 0)?;
 
@@ -600,14 +600,14 @@ impl SQLFunction for SQLNormalize {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(daft_functions::utf8::normalize(
                     input,
                     Utf8NormalizeOptions::default(),
                 ))
             }
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args: Utf8NormalizeOptions = planner.plan_function_args(
                     args,
                     &["remove_punct", "lowercase", "nfd_unicode", "white_space"],
@@ -670,8 +670,8 @@ impl SQLFunction for SQLTokenizeEncode {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, tokens_path] => {
-                let input = planner.plan_function_arg(input)?;
-                let tokens_path = planner.plan_function_arg(tokens_path)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let tokens_path = planner.plan_function_arg(tokens_path)?.into_inner();
                 let tokens_path = tokens_path
                     .as_literal()
                     .and_then(|lit| lit.as_str())
@@ -681,7 +681,7 @@ impl SQLFunction for SQLTokenizeEncode {
                 Ok(tokenize_encode(input, tokens_path, None, None, None, false))
             }
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args: TokenizeEncodeFunction = planner.plan_function_args(
                     args,
                     &[
@@ -755,8 +755,8 @@ impl SQLFunction for SQLTokenizeDecode {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, tokens_path] => {
-                let input = planner.plan_function_arg(input)?;
-                let tokens_path = planner.plan_function_arg(tokens_path)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let tokens_path = planner.plan_function_arg(tokens_path)?.into_inner();
                 let tokens_path = tokens_path
                     .as_literal()
                     .and_then(|lit| lit.as_str())
@@ -766,7 +766,7 @@ impl SQLFunction for SQLTokenizeDecode {
                 Ok(tokenize_decode(input, tokens_path, None, None, None))
             }
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args: TokenizeDecodeFunction = planner.plan_function_args(
                     args,
                     &["tokens_path", "pattern", "special_tokens"],
@@ -810,7 +810,7 @@ impl SQLFunction for SQLConcat {
     ) -> SQLPlannerResult<ExprRef> {
         let inputs = inputs
             .iter()
-            .map(|input| planner.plan_function_arg(input))
+            .map(|input| planner.plan_function_arg(input).map(|arg| arg.into_inner()))
             .collect::<SQLPlannerResult<Vec<_>>>()?;
         let mut inputs = inputs.into_iter();
 

@@ -26,7 +26,8 @@ use daft_logical_plan::{
         Join as LogicalJoin, Limit as LogicalLimit,
         MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-        Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+        Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
+        Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -139,6 +140,25 @@ pub(super) fn translate_single_logical_node(
                 PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
                     .arced(),
             )
+        }
+        LogicalPlan::TopN(LogicalTopN {
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            let num_partitions = input_physical.clustering_spec().num_partitions();
+            Ok(PhysicalPlan::TopN(TopN::new(
+                input_physical,
+                sort_by.clone(),
+                descending.clone(),
+                nulls_first.clone(),
+                *limit,
+                num_partitions,
+            ))
+            .arced())
         }
         LogicalPlan::Explode(LogicalExplode { to_explode, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -665,7 +685,7 @@ pub fn populate_aggregation_stages(
             AggExpr::CountDistinct(sub_expr) => {
                 // First stage
                 let list_agg_id = add_to_stage(
-                    AggExpr::List,
+                    AggExpr::Set,
                     sub_expr.clone(),
                     schema,
                     &mut first_stage_aggs,

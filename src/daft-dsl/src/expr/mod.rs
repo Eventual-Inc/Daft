@@ -1,3 +1,4 @@
+pub mod bound_expr;
 pub mod window;
 
 mod display;
@@ -37,7 +38,7 @@ use crate::{
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -110,6 +111,7 @@ impl std::hash::Hash for Subquery {
 pub enum Column {
     Unresolved(UnresolvedColumn),
     Resolved(ResolvedColumn),
+    Bound(BoundColumn),
 }
 
 /// Information about the logical plan node that a column comes from.
@@ -165,7 +167,17 @@ pub enum ResolvedColumn {
     OuterRef(Field, PlanRef),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct BoundColumn {
+    pub index: usize,
+
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
+    /// Should only be used for display and debugging purposes
+    pub field: Field,
+}
+
 impl Column {
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn name(&self) -> String {
         match self {
             Self::Unresolved(UnresolvedColumn {
@@ -181,6 +193,10 @@ impl Column {
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
             Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
+            Self::Bound(BoundColumn {
+                field: Field { name, .. },
+                ..
+            }) => name.to_string(),
         }
     }
 }
@@ -355,6 +371,17 @@ pub enum WindowExpr {
 
     #[display("dense_rank")]
     DenseRank,
+
+    // input: the column to offset
+    // offset > 0: LEAD (shift values ahead by offset)
+    // offset < 0: LAG (shift values behind by offset)
+    // default: the value to fill before / after the offset
+    #[display("offset({input}, {offset}, {default:?})")]
+    Offset {
+        input: ExprRef,
+        offset: isize,
+        default: Option<ExprRef>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -371,6 +398,10 @@ pub fn unresolved_col(name: impl Into<Arc<str>>) -> ExprRef {
         plan_schema: None,
     }
     .into()
+}
+
+pub fn bound_col(index: usize, field: Field) -> ExprRef {
+    BoundColumn { index, field }.into()
 }
 
 /// Basic resolved column, refers to a singular input scope
@@ -698,6 +729,11 @@ impl WindowExpr {
             Self::RowNumber => "row_number",
             Self::Rank => "rank",
             Self::DenseRank => "dense_rank",
+            Self::Offset {
+                input,
+                offset: _,
+                default: _,
+            } => input.name(),
         }
     }
 
@@ -707,6 +743,20 @@ impl WindowExpr {
             Self::RowNumber => FieldID::new("row_number"),
             Self::Rank => FieldID::new("rank"),
             Self::DenseRank => FieldID::new("dense_rank"),
+            Self::Offset {
+                input,
+                offset,
+                default,
+            } => {
+                let child_id = input.semantic_id(schema);
+                let default_part = if let Some(default_expr) = default {
+                    let default_id = default_expr.semantic_id(schema);
+                    format!(",default={default_id}")
+                } else {
+                    String::new()
+                };
+                FieldID::new(format!("{child_id}.offset(offset={offset}{default_part})"))
+            }
         }
     }
 
@@ -716,6 +766,17 @@ impl WindowExpr {
             Self::RowNumber => vec![],
             Self::Rank => vec![],
             Self::DenseRank => vec![],
+            Self::Offset {
+                input,
+                offset: _,
+                default,
+            } => {
+                let mut children = vec![input.clone()];
+                if let Some(default_expr) = default {
+                    children.push(default_expr.clone());
+                }
+                children
+            }
         }
     }
 
@@ -725,6 +786,29 @@ impl WindowExpr {
             Self::RowNumber => Self::RowNumber,
             Self::Rank => Self::Rank,
             Self::DenseRank => Self::DenseRank,
+            // Offset can have either one or two children:
+            // 1. The first child is always the expression to offset
+            // 2. The second child is the optional default value (if provided)
+            Self::Offset {
+                input: _,
+                offset,
+                default: _,
+            } => {
+                let input = children
+                    .first()
+                    .expect("Should have at least 1 child")
+                    .clone();
+                let default = if children.len() > 1 {
+                    Some(children.get(1).unwrap().clone())
+                } else {
+                    None
+                };
+                Self::Offset {
+                    input,
+                    offset: *offset,
+                    default,
+                }
+            }
         }
     }
 
@@ -734,6 +818,11 @@ impl WindowExpr {
             Self::RowNumber => Ok(Field::new("row_number", DataType::UInt64)),
             Self::Rank => Ok(Field::new("rank", DataType::UInt64)),
             Self::DenseRank => Ok(Field::new("dense_rank", DataType::UInt64)),
+            Self::Offset {
+                input,
+                offset: _,
+                default: _,
+            } => input.to_field(schema),
         }
     }
 }
@@ -773,6 +862,12 @@ impl From<UnresolvedColumn> for ExprRef {
 impl From<ResolvedColumn> for ExprRef {
     fn from(col: ResolvedColumn) -> Self {
         Self::new(Expr::Column(Column::Resolved(col)))
+    }
+}
+
+impl From<BoundColumn> for ExprRef {
+    fn from(col: BoundColumn) -> Self {
+        Self::new(Expr::Column(Column::Bound(col)))
     }
 }
 
@@ -906,6 +1001,15 @@ impl Expr {
         Self::WindowFunction(WindowExpr::DenseRank).into()
     }
 
+    pub fn offset(self: ExprRef, offset: isize, default: Option<ExprRef>) -> ExprRef {
+        Self::WindowFunction(WindowExpr::Offset {
+            input: self,
+            offset,
+            default,
+        })
+        .into()
+    }
+
     #[allow(clippy::should_implement_trait)]
     pub fn not(self: ExprRef) -> ExprRef {
         Self::Not(self).into()
@@ -966,6 +1070,7 @@ impl Expr {
         Self::InSubquery(self, subquery).into()
     }
 
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
             // Base case - anonymous column reference.
@@ -993,6 +1098,11 @@ impl Expr {
             Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, side))) => {
                 FieldID::new(format!("{side}.{name}"))
             }
+
+            Self::Column(Column::Bound(BoundColumn {
+                index,
+                field: Field { name, .. },
+            })) => FieldID::new(format!("{name}#{index}")),
 
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
                 Field { name, .. },
@@ -1108,8 +1218,16 @@ impl Expr {
                     })
                     .collect::<Vec<_>>()
                     .join(",");
+                let frame_details = if let Some(frame) = &window_spec.frame {
+                    format!(
+                        ",start={:?},end={:?},min_periods={}",
+                        frame.start, frame.end, window_spec.min_periods
+                    )
+                } else {
+                    String::new()
+                };
 
-                FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}])"))
+                FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}]{frame_details})"))
             }
             Self::WindowFunction(window_expr) => {
                 let child_id = window_expr.semantic_id(schema);
@@ -1154,7 +1272,7 @@ impl Expr {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
-            Self::ScalarFunction(sf) => sf.inputs.clone(),
+            Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
         }
     }
 
@@ -1171,6 +1289,7 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
+
             Self::IsNull(..) => {
                 Self::IsNull(children.first().expect("Should have 1 child").clone())
             }
@@ -1253,10 +1372,22 @@ impl Expr {
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
                 );
+                let new_children = sf
+                    .inputs
+                    .iter()
+                    .zip(children.into_iter())
+                    .map(|(fn_arg, child)| match fn_arg {
+                        FunctionArg::Named { name, .. } => FunctionArg::Named {
+                            name: name.clone(),
+                            arg: child,
+                        },
+                        FunctionArg::Unnamed(_) => FunctionArg::Unnamed(child),
+                    })
+                    .collect();
 
                 Self::ScalarFunction(crate::functions::ScalarFunction {
                     udf: sf.udf.clone(),
-                    inputs: children,
+                    inputs: FunctionArgs::new_unchecked(new_children),
                 })
             }
         }
@@ -1284,6 +1415,8 @@ impl Expr {
             Self::Column(Column::Resolved(ResolvedColumn::JoinSide(field, ..))) => {
                 Ok(field.clone())
             }
+
+            Self::Column(Column::Bound(BoundColumn { index, .. })) => Ok(schema[*index].clone()),
 
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(field, _))) => Ok(field.clone()),
             Self::Not(expr) => {
@@ -1448,7 +1581,7 @@ impl Expr {
                         "Expected subquery to return a single column but received {subquery_schema}",
                     )));
                 }
-                let first_field = subquery_schema.get_field_at_index(0).unwrap();
+                let first_field = &subquery_schema[0];
 
                 Ok(first_field.clone())
             }
@@ -1459,6 +1592,7 @@ impl Expr {
         }
     }
 
+    #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn name(&self) -> &str {
         match self {
             Self::Alias(.., name) => name.as_ref(),
@@ -1472,6 +1606,10 @@ impl Expr {
             Self::Column(Column::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _))) => {
                 name.as_ref()
             }
+            Self::Column(Column::Bound(BoundColumn {
+                field: Field { name, .. },
+                ..
+            })) => name.as_ref(),
             Self::Not(expr) => expr.name(),
             Self::IsNull(expr) => expr.name(),
             Self::NotNull(expr) => expr.name(),
@@ -1507,6 +1645,10 @@ impl Expr {
         Ok(self.to_field(schema)?.dtype)
     }
 
+    pub fn get_name(&self, schema: &Schema) -> DaftResult<String> {
+        Ok(self.to_field(schema)?.name)
+    }
+
     pub fn input_mapping(self: &Arc<Self>) -> Option<String> {
         let required_columns = get_required_columns(self);
         let requires_computation = requires_computation(self);
@@ -1528,7 +1670,7 @@ impl Expr {
                     write!(buffer, "{}", name)
                 }
                 Expr::Literal(lit) => lit.display_sql(buffer),
-                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
+                Expr::Alias(expr, ..) => to_sql_inner(expr, buffer),
                 Expr::BinaryOp { op, left, right } => {
                     to_sql_inner(left, buffer)?;
                     let op = match op {

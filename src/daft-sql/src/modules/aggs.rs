@@ -41,7 +41,7 @@ impl SQLFunction for AggExpr {
             handle_count(inputs, planner)
         } else {
             let inputs = self.args_to_expr_unnamed(inputs, planner)?;
-            to_expr(self, inputs.as_slice())
+            to_expr(self, inputs.into_inner().as_slice())
         }
     }
 
@@ -81,7 +81,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
             Some(plan) => {
                 let schema = plan.schema();
-                unresolved_col(schema.get_field_at_index(0)?.name.clone())
+                unresolved_col(schema[0].name.clone())
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
             }
@@ -95,7 +95,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                     if let Some(schema) =
                         plan.plan.clone().get_schema_for_alias(&ident.to_string())?
                     {
-                        unresolved_col(schema.get_field_at_index(0)?.name.clone())
+                        unresolved_col(schema[0].name.clone())
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
                     } else {
@@ -107,7 +107,8 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         }
         [expr] => {
             // SQL default COUNT ignores nulls
-            let input = planner.plan_function_arg(expr)?;
+            let input = planner.plan_function_arg(expr)?.into_inner();
+
             input.count(daft_core::count_mode::CountMode::Valid)
         }
         _ => unsupported_sql_err!("COUNT takes exactly one argument"),

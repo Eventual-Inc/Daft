@@ -105,38 +105,37 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         }
         LogicalPlan::Window(window) => {
             let input = translate(&window.input)?;
-            if !window.window_spec.partition_by.is_empty()
-                && window.window_spec.order_by.is_empty()
-                && window.window_spec.frame.is_none()
-            {
-                let aggregations = window
-                    .window_functions
-                    .iter()
-                    .map(|w| {
-                        if let WindowExpr::Agg(agg_expr) = w {
-                            Ok(agg_expr.clone())
-                        } else {
-                            Err(DaftError::TypeError(format!(
-                                "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
-                                w
-                            )))
-                        }
-                    })
-                    .collect::<DaftResult<Vec<AggExpr>>>()?;
+            match (
+                !window.window_spec.partition_by.is_empty(),
+                !window.window_spec.order_by.is_empty(),
+                window.window_spec.frame.is_some(),
+            ) {
+                (true, false, false) => {
+                    let aggregations = window
+                        .window_functions
+                        .iter()
+                        .map(|w| {
+                            if let WindowExpr::Agg(agg_expr) = w {
+                                Ok(agg_expr.clone())
+                            } else {
+                                Err(DaftError::TypeError(format!(
+                                    "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
+                                    w
+                                )))
+                            }
+                        })
+                        .collect::<DaftResult<Vec<AggExpr>>>()?;
 
-                Ok(LocalPhysicalPlan::window_partition_only(
-                    input,
-                    window.window_spec.partition_by.clone(),
-                    window.schema.clone(),
-                    window.stats_state.clone(),
-                    aggregations,
-                    window.aliases.clone(),
-                ))
-            } else if !window.window_spec.partition_by.is_empty()
-                && !window.window_spec.order_by.is_empty()
-                && window.window_spec.frame.is_none()
-            {
-                Ok(LocalPhysicalPlan::window_partition_and_order_by(
+                    Ok(LocalPhysicalPlan::window_partition_only(
+                        input,
+                        window.window_spec.partition_by.clone(),
+                        window.schema.clone(),
+                        window.stats_state.clone(),
+                        aggregations,
+                        window.aliases.clone(),
+                    ))
+                }
+                (true, true, false) => Ok(LocalPhysicalPlan::window_partition_and_order_by(
                     input,
                     window.window_spec.partition_by.clone(),
                     window.window_spec.order_by.clone(),
@@ -145,11 +144,48 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     window.stats_state.clone(),
                     window.window_functions.clone(),
                     window.aliases.clone(),
-                ))
-            } else {
-                Err(DaftError::not_implemented(
-                    "Window with order by or frame not yet implemented",
-                ))
+                )),
+                (true, true, true) => {
+                    let aggregations = window
+                        .window_functions
+                        .iter()
+                        .map(|w| {
+                            if let WindowExpr::Agg(agg_expr) = w {
+                                agg_expr.clone()
+                            } else {
+                                panic!("Expected AggExpr")
+                            }
+                        })
+                        .collect::<Vec<AggExpr>>();
+
+                    Ok(LocalPhysicalPlan::window_partition_and_dynamic_frame(
+                        input,
+                        window.window_spec.partition_by.clone(),
+                        window.window_spec.order_by.clone(),
+                        window.window_spec.descending.clone(),
+                        window.window_spec.frame.clone().unwrap(),
+                        window.window_spec.min_periods,
+                        window.schema.clone(),
+                        window.stats_state.clone(),
+                        aggregations,
+                        window.aliases.clone(),
+                    ))
+                }
+                (false, true, false) => Ok(LocalPhysicalPlan::window_order_by_only(
+                    input,
+                    window.window_spec.order_by.clone(),
+                    window.window_spec.descending.clone(),
+                    window.schema.clone(),
+                    window.stats_state.clone(),
+                    window.window_functions.clone(),
+                    window.aliases.clone(),
+                )),
+                (false, true, true) => Err(DaftError::not_implemented(
+                    "Window with order by and frame not yet implemented",
+                )),
+                _ => Err(DaftError::ValueError(
+                    "Window requires either partition by or order by".to_string(),
+                )),
             }
         }
         LogicalPlan::Unpivot(unpivot) => {
@@ -185,6 +221,17 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 sort.descending.clone(),
                 sort.nulls_first.clone(),
                 sort.stats_state.clone(),
+            ))
+        }
+        LogicalPlan::TopN(top_n) => {
+            let input = translate(&top_n.input)?;
+            Ok(LocalPhysicalPlan::top_n(
+                input,
+                top_n.sort_by.clone(),
+                top_n.descending.clone(),
+                top_n.nulls_first.clone(),
+                top_n.limit,
+                top_n.stats_state.clone(),
             ))
         }
         LogicalPlan::Join(join) => {

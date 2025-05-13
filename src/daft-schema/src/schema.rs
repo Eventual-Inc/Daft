@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    ops::Index,
     sync::Arc,
 };
 
@@ -70,21 +71,29 @@ impl Schema {
         DataType::Struct(self.fields.clone())
     }
 
-    pub fn get_field_at_index(&self, index: usize) -> DaftResult<&Field> {
-        self.fields
-            .get(index)
-            .ok_or(DaftError::FieldNotFound(format!(
-                "Attempted to access field at out-of-bounds index {} in schema: {:?}",
-                index, self.fields
-            )))
-    }
-
     pub fn fields(&self) -> &[Field] {
         &self.fields
     }
 
     pub fn field_names(&self) -> impl Iterator<Item = &str> {
         self.fields.iter().map(|f| f.name.as_str())
+    }
+
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    pub fn get_fields_with_name(&self, name: &str) -> Vec<(usize, &Field)> {
+        self.name_to_indices
+            .get(name)
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|i| (*i, &self.fields[*i]))
+            .collect()
     }
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
@@ -146,14 +155,6 @@ impl Schema {
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn names(&self) -> Vec<String> {
         self.fields.iter().map(|f| &f.name).cloned().collect()
-    }
-
-    pub fn len(&self) -> usize {
-        self.fields.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.fields.is_empty()
     }
 
     /// Takes the disjoint union over the `self` and `other` schemas, throwing an error if the
@@ -394,5 +395,13 @@ impl<'a> IntoIterator for &'a Schema {
 
     fn into_iter(self) -> Self::IntoIter {
         self.fields().iter()
+    }
+}
+
+impl Index<usize> for Schema {
+    type Output = Field;
+
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.fields[i]
     }
 }

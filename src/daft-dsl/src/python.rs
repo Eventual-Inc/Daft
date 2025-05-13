@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     expr::{Expr, WindowExpr},
+    visitor::accept,
     ExprRef, LiteralValue, Operator,
 };
 
@@ -562,6 +563,37 @@ impl PyExpr {
         Ok(Self {
             expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
         })
+    }
+
+    #[pyo3(signature = (offset, default=None))]
+    pub fn offset(&self, offset: isize, default: Option<&Self>) -> PyResult<Self> {
+        let default = default.map(|e| e.expr.clone());
+        Ok(Self {
+            expr: Arc::new(Expr::WindowFunction(WindowExpr::Offset {
+                input: self.expr.clone(),
+                offset,
+                default,
+            })),
+        })
+    }
+
+    pub fn accept<'py>(&self, visitor: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        accept(&self.clone(), visitor)
+    }
+
+    pub fn _eq(&self, other: &Self) -> bool {
+        self.expr == other.expr
+    }
+
+    pub fn _ne(&self, other: &Self) -> bool {
+        self.expr != other.expr
+    }
+
+    pub fn _hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.expr.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
