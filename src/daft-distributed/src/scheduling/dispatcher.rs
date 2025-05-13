@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     future::Future,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -27,14 +28,14 @@ use crate::{
 };
 // The task dispatcher is responsible for dispatching tasks to workers.
 pub(crate) struct TaskDispatcher<T: Task, W: Worker> {
-    worker_manager: Box<dyn WorkerManager<Worker = W>>,
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     scheduler: Box<dyn Scheduler<T, W>>,
 }
 
 impl<T: Task, W: Worker> TaskDispatcher<T, W> {
     const MAX_TASKS_IN_CHANNEL: usize = 512;
 
-    pub fn new(worker_manager: Box<dyn WorkerManager<Worker = W>>) -> Self {
+    pub fn new(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         let scheduler = Box::new(DefaultScheduler::new());
         Self {
             worker_manager,
@@ -43,7 +44,7 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
     }
 
     pub fn new_with_scheduler(
-        worker_manager: Box<dyn WorkerManager<Worker = W>>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         scheduler: Box<dyn Scheduler<T, W>>,
     ) -> Self {
         Self {
@@ -142,7 +143,7 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
                 }
             }
         }
-        dispatcher.worker_manager.shutdown()
+        Ok(())
     }
 }
 

@@ -1,13 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
 use common_error::DaftResult;
 use pyo3::prelude::*;
 
-use super::{task::*, RaySwordfishWorker};
+use super::RaySwordfishWorker;
 use crate::scheduling::{
-    task::{SwordfishTask, SwordfishTaskResultHandle, Task, TaskId},
-    worker::{Worker, WorkerId, WorkerManager, WorkerManagerFactory},
+    task::{SwordfishTaskResultHandle, Task, TaskId},
+    worker::{Worker, WorkerId, WorkerManager},
 };
 
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
@@ -17,10 +16,8 @@ pub(crate) struct RayWorkerManager {
     task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
-// TODO(FLOTILLA_MS1): Make Ray worker manager live for the duration of the program
-// so that we don't have to recreate it on every stage.
 impl RayWorkerManager {
-    pub fn try_new(task_locals: &pyo3_async_runtimes::TaskLocals) -> DaftResult<Self> {
+    pub fn try_new() -> DaftResult<Self> {
         let (ray_workers, task_locals) = Python::with_gil(|py| {
             let distributed_swordfish_module = py.import("daft.runners.distributed_swordfish")?;
             let ray_workers = distributed_swordfish_module
@@ -30,7 +27,8 @@ impl RayWorkerManager {
                 .into_iter()
                 .map(|w| (w.id().clone(), w))
                 .collect();
-            let task_locals = task_locals.clone_ref(py);
+            let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)
+                .expect("Failed to get current task locals");
             DaftResult::Ok((ray_worker_hashmap, task_locals))
         })?;
         Ok(Self {
@@ -44,12 +42,12 @@ impl WorkerManager for RayWorkerManager {
     type Worker = RaySwordfishWorker;
 
     fn submit_task_to_worker(
-        &mut self,
+        &self,
         task: Box<dyn Task>,
         worker_id: String,
     ) -> Box<dyn SwordfishTaskResultHandle> {
         self.ray_workers
-            .get_mut(&worker_id)
+            .get(&worker_id)
             .unwrap()
             .submit_task(task, &self.task_locals)
             .expect("Failed to submit task to RayWorkerManager")
@@ -59,9 +57,9 @@ impl WorkerManager for RayWorkerManager {
         &self.ray_workers
     }
 
-    fn mark_task_finished(&mut self, task_id: TaskId, worker_id: WorkerId) {
+    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId) {
         self.ray_workers
-            .get_mut(&worker_id)
+            .get(&worker_id)
             .unwrap()
             .mark_task_finished(task_id);
     }
@@ -73,35 +71,39 @@ impl WorkerManager for RayWorkerManager {
             .sum()
     }
 
-    fn shutdown(&mut self) -> DaftResult<()> {
-        for worker in self.ray_workers.values_mut() {
+    fn shutdown(&self) -> DaftResult<()> {
+        for worker in self.ray_workers.values() {
             worker.shutdown();
         }
         Ok(())
     }
 }
 
-pub(crate) struct RayWorkerManagerFactory {
-    daft_execution_config: Arc<DaftExecutionConfig>,
-    task_locals: pyo3_async_runtimes::TaskLocals,
-}
-
-impl RayWorkerManagerFactory {
-    pub fn new(
-        daft_execution_config: Arc<DaftExecutionConfig>,
-        task_locals: pyo3_async_runtimes::TaskLocals,
-    ) -> Self {
-        Self {
-            daft_execution_config,
-            task_locals,
-        }
+impl Drop for RayWorkerManager {
+    fn drop(&mut self) {
+        self.shutdown().unwrap();
     }
 }
 
-impl WorkerManagerFactory for RayWorkerManagerFactory {
-    type WorkerManager = RayWorkerManager;
+#[pyclass(module= "daft.daft", name = "RayWorkerManager")]
+#[derive(Clone)]
+pub(crate) struct PyRayWorkerManager {
+    pub inner: Arc<RayWorkerManager>,
+}
 
-    fn create_worker_manager(&self) -> DaftResult<Self::WorkerManager> {
-        RayWorkerManager::try_new(&self.task_locals)
+#[pymethods]
+impl PyRayWorkerManager {
+    #[new]
+    pub fn new() -> DaftResult<Self> {
+        let inner = RayWorkerManager::try_new()?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+}
+
+impl PyRayWorkerManager {
+    pub fn inner(&self) -> Arc<dyn WorkerManager<Worker = RaySwordfishWorker>> {
+        self.inner.clone()
     }
 }

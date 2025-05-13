@@ -11,6 +11,7 @@ from daft.daft import (
     RayPartitionRef,
     RaySwordfishTask,
     RaySwordfishWorker,
+    RayWorkerManager,
 )
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.constants import (
@@ -164,6 +165,7 @@ class FlotillaScheduler:
         self.curr_result_gen: AsyncIterator[tuple[ray.ObjectRef, int, int]] | None = (
             None
         )
+        self.worker_manager = RayWorkerManager()
 
     def run_plan(
         self,
@@ -180,7 +182,7 @@ class FlotillaScheduler:
             for k, v in partition_sets.items()
         }
         self.curr_plan = plan
-        self.curr_result_gen = self.curr_plan.run_plan(psets)
+        self.curr_result_gen = self.curr_plan.run_plan(psets, self.worker_manager)
 
     async def get_next_partition(self) -> tuple[ray.ObjectRef, int, int] | None:
         if self.curr_result_gen is None:

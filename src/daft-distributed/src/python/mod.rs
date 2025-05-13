@@ -7,12 +7,17 @@ use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
-use serde::{Deserialize, Serialize};
 use pyo3::prelude::*;
-use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManagerFactory};
+use ray::{
+    PyRayWorkerManager, RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager,
+};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::plan::{DistributedPhysicalPlan, PlanResult};
+use crate::{
+    plan::{DistributedPhysicalPlan, PlanResult},
+    scheduling::worker::WorkerManager,
+};
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
@@ -43,7 +48,10 @@ impl PythonPartitionRefStream {
                         let objref = ray_part_ref.object_ref.clone_ref(py);
                         let size_bytes = ray_part_ref.size_bytes;
                         let num_rows = ray_part_ref.num_rows;
-                        println!("objref: {:?}, num_rows: {:?}, size_bytes: {:?}", objref, num_rows, size_bytes);
+                        println!(
+                            "objref: {:?}, num_rows: {:?}, size_bytes: {:?}",
+                            objref, num_rows, size_bytes
+                        );
                         let ret = (objref, num_rows, size_bytes);
                         Some(ret)
                     }
@@ -78,6 +86,7 @@ impl PyDistributedPhysicalPlan {
     fn run_plan(
         &self,
         psets: HashMap<String, Vec<RayPartitionRef>>,
+        worker_manager: PyRayWorkerManager,
         py: Python,
     ) -> PyResult<PythonPartitionRefStream> {
         let psets = psets
@@ -92,14 +101,9 @@ impl PyDistributedPhysicalPlan {
             })
             .collect();
         let daft_execution_config = self.planner.execution_config().clone();
-        let worker_manager_factory = RayWorkerManagerFactory::new(
-            daft_execution_config,
-            pyo3_async_runtimes::tokio::get_current_locals(py)
-                .expect("Failed to get current task locals"),
-        );
         let part_stream = self
             .planner
-            .run_plan(Arc::new(psets), Box::new(worker_manager_factory))?;
+            .run_plan(Arc::new(psets), worker_manager.inner())?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(part_stream)),
         };
@@ -114,5 +118,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
+    parent.add_class::<PyRayWorkerManager>()?;
     Ok(())
 }

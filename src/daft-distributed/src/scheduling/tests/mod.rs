@@ -16,8 +16,8 @@ use common_partitioning::{Partition, PartitionRef};
 use uuid::Uuid;
 
 use super::{
-    task::{SchedulingStrategy, SwordfishTask, SwordfishTaskResultHandle, Task, TaskId},
-    worker::{Worker, WorkerId, WorkerManager, WorkerManagerFactory},
+    task::{SchedulingStrategy, SwordfishTaskResultHandle, Task, TaskId},
+    worker::{Worker, WorkerId, WorkerManager},
 };
 
 #[derive(Debug)]
@@ -216,7 +216,8 @@ pub(crate) struct MockWorker {
     worker_id: WorkerId,
     num_cpus: usize,
     num_active_tasks: usize,
-    active_task_ids: HashSet<TaskId>,
+    active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
+    is_shutdown: Arc<AtomicBool>,
 }
 
 impl MockWorker {
@@ -225,8 +226,21 @@ impl MockWorker {
             worker_id,
             num_cpus,
             num_active_tasks: 0,
-            active_task_ids: HashSet::new(),
+            active_task_ids: Arc::new(Mutex::new(HashSet::new())),
+            is_shutdown: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn mark_task_finished(&self, task_id: TaskId) {
+        self.active_task_ids.lock().unwrap().remove(&task_id);
+    }
+
+    pub fn add_active_task(&self, task_id: TaskId) {
+        self.active_task_ids.lock().unwrap().insert(task_id);
+    }
+
+    pub fn shutdown(&self) {
+        self.is_shutdown.store(true, Ordering::SeqCst);
     }
 }
 
@@ -240,7 +254,7 @@ impl Worker for MockWorker {
     }
 
     fn active_task_ids(&self) -> HashSet<TaskId> {
-        self.active_task_ids.clone()
+        self.active_task_ids.lock().unwrap().clone()
     }
 }
 
@@ -248,7 +262,7 @@ impl WorkerManager for MockWorkerManager {
     type Worker = MockWorker;
 
     fn submit_task_to_worker(
-        &mut self,
+        &self,
         task: Box<dyn Task>,
         worker_id: WorkerId,
     ) -> Box<dyn SwordfishTaskResultHandle> {
@@ -256,9 +270,8 @@ impl WorkerManager for MockWorkerManager {
         let task = *task.into_any().downcast::<MockTask>().unwrap();
 
         // Update the worker's active task count
-        if let Some(worker) = self.workers.get_mut(&worker_id) {
-            worker.num_active_tasks += 1;
-            worker.active_task_ids.insert(task.task_id.clone());
+        if let Some(worker) = self.workers.get(&worker_id) {
+            worker.add_active_task(task.task_id.clone());
         }
 
         Box::new(MockTaskResultHandle::new(
@@ -271,10 +284,9 @@ impl WorkerManager for MockWorkerManager {
         ))
     }
 
-    fn mark_task_finished(&mut self, task_id: TaskId, worker_id: WorkerId) {
-        if let Some(worker) = self.workers.get_mut(&worker_id) {
-            worker.num_active_tasks = worker.num_active_tasks.saturating_sub(1);
-            worker.active_task_ids.remove(&task_id);
+    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId) {
+        if let Some(worker) = self.workers.get(&worker_id) {
+            worker.mark_task_finished(task_id);
         }
     }
 
@@ -291,8 +303,8 @@ impl WorkerManager for MockWorkerManager {
         Ok(())
     }
 
-    fn shutdown(&mut self) -> DaftResult<()> {
-        self.workers.clear();
+    fn shutdown(&self) -> DaftResult<()> {
+        self.workers.values().for_each(|w| w.shutdown());
         Ok(())
     }
 }

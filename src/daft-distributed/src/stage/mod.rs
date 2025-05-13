@@ -14,7 +14,7 @@ use crate::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
         scheduler::LinearScheduler,
         task::SwordfishTask,
-        worker::{WorkerManager, WorkerManagerFactory},
+        worker::{Worker, WorkerManager},
     },
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
@@ -44,12 +44,12 @@ pub(crate) struct Stage {
 }
 
 impl Stage {
-    pub(crate) fn run_stage<W: WorkerManager + 'static>(
+    pub(crate) fn run_stage<W: Worker>(
         &self,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     ) -> DaftResult<impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static> {
-        let mut stage_context = StageContext::try_new(worker_manager_factory)?;
+        let mut stage_context = StageContext::try_new(worker_manager)?;
         match &self.type_ {
             StageType::MapPipeline { pipeline_node } => {
                 let running_node = pipeline_node.start(&mut stage_context, psets.clone());
@@ -165,14 +165,9 @@ pub(crate) struct StageContext {
 }
 
 impl StageContext {
-    fn try_new<W: WorkerManager + 'static>(
-        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
-    ) -> DaftResult<Self> {
-        let worker_manager = worker_manager_factory.create_worker_manager()?;
-        let task_dispatcher = TaskDispatcher::new_with_scheduler(
-            Box::new(worker_manager),
-            Box::new(LinearScheduler::new()),
-        );
+    fn try_new<W: Worker>(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> DaftResult<Self> {
+        let task_dispatcher =
+            TaskDispatcher::new_with_scheduler(worker_manager, Box::new(LinearScheduler::new()));
         let mut joinset = JoinSet::new();
         let task_dispatcher_handle =
             TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);

@@ -30,11 +30,11 @@ fn create_mock_partition(num_rows: usize, size_bytes: usize) -> PartitionRef {
 #[tokio::test]
 async fn test_basic_task_dispatch() -> DaftResult<()> {
     // Create a mock worker manager with one worker
-    let mut worker_manager = Box::new(MockWorkerManager::new());
+    let mut worker_manager = MockWorkerManager::new();
     worker_manager.add_worker("worker1".to_string(), 4)?;
 
     // Create the task dispatcher
-    let task_dispatcher = TaskDispatcher::new(worker_manager);
+    let task_dispatcher = TaskDispatcher::new(Arc::new(worker_manager));
 
     // Spawn the dispatcher
     let mut joinset = JoinSet::new();
@@ -87,7 +87,7 @@ async fn test_multiple_concurrent_tasks() -> DaftResult<()> {
     worker_manager.add_worker("worker2".to_string(), 4)?;
 
     // Create the task dispatcher
-    let task_dispatcher = TaskDispatcher::new(Box::new(worker_manager));
+    let task_dispatcher = TaskDispatcher::new(Arc::new(worker_manager));
 
     // Spawn the dispatcher
     let mut joinset = JoinSet::new();
@@ -145,7 +145,7 @@ async fn test_task_cancellation() -> DaftResult<()> {
     worker_manager.add_worker("worker1".to_string(), 1)?;
 
     // Create the task dispatcher
-    let task_dispatcher = TaskDispatcher::new(Box::new(worker_manager));
+    let task_dispatcher = TaskDispatcher::new(Arc::new(worker_manager));
 
     // Spawn the dispatcher
     let mut joinset = JoinSet::new();
@@ -207,7 +207,7 @@ async fn test_task_with_node_affinity() -> DaftResult<()> {
     worker_manager.add_worker("worker3".to_string(), 2)?;
 
     // Create the task dispatcher
-    let task_dispatcher = TaskDispatcher::new(Box::new(worker_manager));
+    let task_dispatcher = TaskDispatcher::new(Arc::new(worker_manager));
 
     // Spawn the dispatcher
     let mut joinset = JoinSet::new();
@@ -268,7 +268,7 @@ async fn test_dispatcher_with_busy_workers() -> DaftResult<()> {
         type Worker = crate::scheduling::tests::MockWorker;
 
         fn submit_task_to_worker(
-            &mut self,
+            &self,
             task: Box<dyn Task>,
             worker_id: WorkerId,
         ) -> Box<dyn crate::scheduling::task::SwordfishTaskResultHandle> {
@@ -282,7 +282,7 @@ async fn test_dispatcher_with_busy_workers() -> DaftResult<()> {
             self.inner.submit_task_to_worker(task, worker_id)
         }
 
-        fn mark_task_finished(&mut self, task_id: TaskId, worker_id: WorkerId) {
+        fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId) {
             self.inner.mark_task_finished(task_id, worker_id);
         }
 
@@ -299,7 +299,7 @@ async fn test_dispatcher_with_busy_workers() -> DaftResult<()> {
             self.inner.try_autoscale(num_workers)
         }
 
-        fn shutdown(&mut self) -> DaftResult<()> {
+        fn shutdown(&self) -> DaftResult<()> {
             self.inner.shutdown()
         }
     }
@@ -314,7 +314,7 @@ async fn test_dispatcher_with_busy_workers() -> DaftResult<()> {
         .await?;
 
     // Create and spawn the task dispatcher
-    let task_dispatcher = TaskDispatcher::new(Box::new(worker_manager.clone()));
+    let task_dispatcher = TaskDispatcher::new(Arc::new(worker_manager.clone()));
     let mut joinset = JoinSet::new();
     let handle = TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
 
@@ -348,7 +348,7 @@ async fn test_dispatcher_handle() -> DaftResult<()> {
     worker_manager.add_worker("worker1".to_string(), 4)?;
 
     // Create the task dispatcher
-    let task_dispatcher = TaskDispatcher::new(Box::new(worker_manager));
+    let task_dispatcher = TaskDispatcher::new(Arc::new(worker_manager));
 
     // Spawn the dispatcher
     let mut joinset = JoinSet::new();

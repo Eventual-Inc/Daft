@@ -1,21 +1,14 @@
-use std::{
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use futures::{Stream, StreamExt};
-use rand::{seq::SliceRandom, thread_rng};
 
 use crate::{
     pipeline_node::PipelineOutput,
     scheduling::{
         dispatcher::{SubmittedTask, TaskDispatcherHandle},
-        task::{SwordfishTask, Task},
+        task::Task,
     },
     utils::{
         channel::{create_channel, Receiver, Sender},
@@ -220,20 +213,14 @@ mod tests {
     };
 
     use common_error::{DaftError, DaftResult};
-    use futures::{stream, Stream, StreamExt};
+    use futures::{stream, StreamExt};
     use rand::{Rng, SeedableRng};
 
     use super::*;
-    use crate::{
-        pipeline_node,
-        scheduling::{
-            dispatcher::TaskDispatcherHandle,
-            task::SchedulingStrategy,
-            tests::{
-                create_mock_partition_ref, MockPartition, MockTask, MockTaskBuilder,
-                MockWorkerManager,
-            },
-        },
+    use crate::scheduling::{
+        dispatcher::TaskDispatcherHandle,
+        task::SchedulingStrategy,
+        tests::{create_mock_partition_ref, MockTask, MockTaskBuilder, MockWorkerManager},
     };
 
     struct TestContext {
@@ -248,7 +235,7 @@ mod tests {
                 worker_manager.add_worker(name, num_workers)?;
             }
             let task_dispatcher =
-                crate::scheduling::dispatcher::TaskDispatcher::new(Box::new(worker_manager));
+                crate::scheduling::dispatcher::TaskDispatcher::new(Arc::new(worker_manager));
             let mut joinset = JoinSet::new();
             let handle = crate::scheduling::dispatcher::TaskDispatcher::spawn_task_dispatcher(
                 task_dispatcher,

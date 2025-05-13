@@ -20,7 +20,7 @@ pub(crate) struct RaySwordfishWorker {
     actor_handle: Arc<PyObject>,
     num_cpus: usize,
     total_memory_bytes: usize,
-    active_task_ids: HashSet<String>,
+    active_task_ids: Arc<Mutex<HashSet<String>>>,
 }
 
 #[pymethods]
@@ -37,18 +37,18 @@ impl RaySwordfishWorker {
             actor_handle: Arc::new(actor_handle),
             num_cpus,
             total_memory_bytes,
-            active_task_ids: HashSet::new(),
+            active_task_ids: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }
 
 impl RaySwordfishWorker {
-    pub fn mark_task_finished(&mut self, task_id: String) {
-        self.active_task_ids.remove(&task_id);
+    pub fn mark_task_finished(&self, task_id: String) {
+        self.active_task_ids.lock().unwrap().remove(&task_id);
     }
 
     pub fn submit_task(
-        &mut self,
+        &self,
         task: Box<dyn Task>,
         task_locals: &pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Box<dyn SwordfishTaskResultHandle>> {
@@ -63,11 +63,11 @@ impl RaySwordfishWorker {
             let task_locals = task_locals.clone_ref(py);
             Box::new(RayTaskResultHandle::new(py_task_handle, task_locals))
         });
-        self.active_task_ids.insert(task_id);
+        self.active_task_ids.lock().unwrap().insert(task_id);
         Ok(py_task_handle)
     }
 
-    pub fn shutdown(&mut self) {
+    pub fn shutdown(&self) {
         Python::with_gil(|py| {
             self.actor_handle
                 .call_method0(py, pyo3::intern!(py, "shutdown"))
@@ -86,6 +86,6 @@ impl Worker for RaySwordfishWorker {
     }
 
     fn active_task_ids(&self) -> HashSet<TaskId> {
-        self.active_task_ids.clone()
+        self.active_task_ids.lock().unwrap().clone()
     }
 }

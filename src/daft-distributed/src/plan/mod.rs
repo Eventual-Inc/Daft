@@ -14,7 +14,7 @@ use futures::{FutureExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    scheduling::worker::{WorkerManager, WorkerManagerFactory},
+    scheduling::worker::{Worker, WorkerManager},
     stage::{StagePlan, StagePlanRef},
     utils::{
         channel::{create_channel, Receiver, Sender},
@@ -41,10 +41,10 @@ impl DistributedPhysicalPlan {
         })
     }
 
-    async fn execute_stages<W: WorkerManager + 'static>(
+    async fn execute_stages<W: Worker>(
         stage_plan: StagePlanRef,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
@@ -55,7 +55,7 @@ impl DistributedPhysicalPlan {
         }
 
         let stage = stage_plan.get_root_stage();
-        let mut running_stage = stage.run_stage(psets, worker_manager_factory)?;
+        let mut running_stage = stage.run_stage(psets, worker_manager)?;
         while let Some(partition) = running_stage.next().await {
             if sender.send(partition?).await.is_err() {
                 break;
@@ -64,17 +64,17 @@ impl DistributedPhysicalPlan {
         Ok(())
     }
 
-    pub fn run_plan<W: WorkerManager + 'static>(
+    pub fn run_plan<W: Worker>(
         &self,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     ) -> DaftResult<PlanResult> {
         let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
         let handle = runtime.spawn(Self::execute_stages(
             self.stage_plan.clone(),
             psets,
-            worker_manager_factory,
+            worker_manager,
             result_sender,
         ));
         Ok(PlanResult::new(handle, result_receiver))

@@ -17,21 +17,16 @@ pub(crate) trait WorkerManager: Send + Sync {
     type Worker: Worker;
 
     fn submit_task_to_worker(
-        &mut self,
+        &self,
         task: Box<dyn Task>,
         worker_id: WorkerId,
     ) -> Box<dyn SwordfishTaskResultHandle>;
-    fn mark_task_finished(&mut self, task_id: TaskId, worker_id: WorkerId);
+    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId);
     fn workers(&self) -> &HashMap<WorkerId, Self::Worker>;
     fn total_available_cpus(&self) -> usize;
     #[allow(dead_code)]
     fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
         Ok(())
     }
-    fn shutdown(&mut self) -> DaftResult<()>;
-}
-
-pub(crate) trait WorkerManagerFactory: Send + Sync {
-    type WorkerManager: WorkerManager;
-    fn create_worker_manager(&self) -> DaftResult<Self::WorkerManager>;
+    fn shutdown(&self) -> DaftResult<()>;
 }
