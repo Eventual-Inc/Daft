@@ -46,6 +46,8 @@ pub enum LocalPhysicalPlan {
     CatalogWrite(CatalogWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    #[cfg(feature = "python")]
+    CustomWrite(CustomWrite),
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
 }
@@ -89,7 +91,8 @@ impl LocalPhysicalPlan {
             }
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
-            | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
+            | Self::LanceWrite(LanceWrite { stats_state, .. })
+            | Self::CustomWrite(CustomWrite { stats_state, .. }) => stats_state,
         }
     }
 
@@ -482,18 +485,21 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    // #[cfg(feature = "python")]
-    // pub(crate) fn custom_write(
-    //     input: LocalPhysicalPlanRef,
-    //     sink_class: Arc<RuntimePyObject>,
-    //     data_schema: SchemaRef,
-    //     file_schema: SchemaRef,
-    //     stats_state: StatsState,
-    // ) -> LocalPhysicalPlanRef {
-    //     use daft_dsl::functions::python::RuntimePyObject;
-
-    //     todo!()
-    // }
+    #[cfg(feature = "python")]
+    pub(crate) fn custom_write(
+        input: LocalPhysicalPlanRef,
+        custom_info: daft_logical_plan::CustomInfo,
+        file_schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::CustomWrite(CustomWrite {
+            input,
+            custom_info,
+            file_schema,
+            stats_state,
+        })
+        .arced()
+    }
 
     pub fn schema(&self) -> &SchemaRef {
         match self {
@@ -520,6 +526,8 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
+            #[cfg(feature = "python")]
+            Self::CustomWrite(CustomWrite { file_schema, .. }) => file_schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
@@ -707,6 +715,15 @@ pub struct LanceWrite {
     pub input: LocalPhysicalPlanRef,
     pub lance_info: daft_logical_plan::LanceCatalogInfo,
     pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+pub struct CustomWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub custom_info: daft_logical_plan::CustomInfo,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
 }

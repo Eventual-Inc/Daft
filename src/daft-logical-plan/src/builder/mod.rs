@@ -17,7 +17,6 @@ use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
-use pyo3::PyClass;
 use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
@@ -742,10 +741,15 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
-    pub fn custom_write(&self, sink: Arc<PyObject>, kwargs: Arc<PyObject>) -> DaftResult<Self> {
+    pub fn custom_write(
+        &self,
+        name: String,
+        sink: Arc<PyObject>,
+        kwargs: Arc<PyObject>,
+    ) -> DaftResult<Self> {
         use crate::sink_info::CustomInfo;
 
-        let sink_info = SinkInfo::CustomInfo(CustomInfo { sink, kwargs });
+        let sink_info = SinkInfo::CustomInfo(CustomInfo { name, sink, kwargs });
         let logical_plan: LogicalPlan =
             ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
         Ok(self.with_new_plan(logical_plan))
@@ -1282,15 +1286,19 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
-    #[pyo3(signature = (sink, kwargs=None))]
+    #[pyo3(signature = (name, sink, kwargs=None))]
     pub fn custom_write(
         &self,
         py: Python,
+        name: String,
         sink: PyObject,
         kwargs: Option<PyObject>,
     ) -> PyResult<Self> {
         let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));
-        Ok(self.builder.custom_write(Arc::new(sink), kwargs)?.into())
+        Ok(self
+            .builder
+            .custom_write(name, Arc::new(sink), kwargs)?
+            .into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

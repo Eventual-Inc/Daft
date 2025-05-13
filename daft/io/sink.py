@@ -10,6 +10,10 @@ R = TypeVar("R")
 class DataSink(ABC, Generic[T, R]):
     """Interface for writing data to a sink that is not built-in."""
 
+    def name(self) -> str:
+        """Optional custom sink name."""
+        return "Custom Data Sink"
+
     def start(self) -> None:
         """Optional callback for when a write starts. For example, this can be used to start a transaction."""
         pass

@@ -17,6 +17,7 @@ pub enum SinkInfo {
     OutputFileInfo(OutputFileInfo),
     #[cfg(feature = "python")]
     CatalogInfo(CatalogInfo),
+    #[cfg(feature = "python")]
     CustomInfo(CustomInfo),
 }
 
@@ -151,6 +152,7 @@ impl LanceCatalogInfo {
 #[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
 #[derivative(PartialEq, Eq, Hash)]
 pub struct CustomInfo {
+    pub name: String,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"

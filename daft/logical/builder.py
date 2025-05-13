@@ -394,6 +394,6 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
-    def write_custom(self, sink: DataSink, kwargs: dict | None) -> LogicalPlanBuilder:
-        builder = self._builder.custom_write(sink, kwargs)
+    def write_custom(self, name: str, sink: DataSink, kwargs: dict | None) -> LogicalPlanBuilder:
+        builder = self._builder.custom_write(name, sink, kwargs)
         return LogicalPlanBuilder(builder)

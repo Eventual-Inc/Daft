@@ -585,7 +585,7 @@ class CustomWrite(SingleOutputInstruction):
     kwargs: dict | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        results = list(self.sink.write(iter(inputs), **self.kwargs))
+        results = list(self.sink.write(iter(inputs), **(self.kwargs or {})))
         mp = MicroPartition.from_pydict({"custom_write_results": results})
         return [mp]
 

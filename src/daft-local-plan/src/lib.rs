@@ -5,6 +5,8 @@ mod translate;
 #[cfg(feature = "python")]
 pub use plan::CatalogWrite;
 #[cfg(feature = "python")]
+pub use plan::CustomWrite;
+#[cfg(feature = "python")]
 pub use plan::LanceWrite;
 pub use plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
