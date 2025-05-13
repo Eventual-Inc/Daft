@@ -551,7 +551,18 @@ impl ScanTask {
                         acc_size
                             .and_then(|acc_size| curr_size.map(|curr_size| acc_size + curr_size)),
                         acc_stats.and_then(|acc_stats| {
-                            curr_stats.map(|curr_stats| acc_stats.union(&curr_stats).unwrap())
+                            curr_stats
+                                .map(
+                                    #[allow(deprecated)]
+                                    |curr_stats| {
+                                        let acc_stats = acc_stats.cast_to_schema(&schema)?;
+                                        let curr_stats = curr_stats.cast_to_schema(&schema)?;
+                                        acc_stats.union(&curr_stats)
+                                    },
+                                )
+                                .transpose()
+                                .ok()
+                                .flatten()
                         }),
                     )
                 },

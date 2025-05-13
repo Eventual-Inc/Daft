@@ -514,10 +514,20 @@ async fn stream_scan_task(
                 .map(|pspec| pspec.to_fill_map())
                 .as_ref(),
         )?;
+
+        let stats = scan_task
+            .statistics
+            .as_ref()
+            .map(|stats| {
+                #[allow(deprecated)]
+                stats.cast_to_schema(&scan_task.materialized_schema())
+            })
+            .transpose()?;
+
         let mp = Arc::new(MicroPartition::new_loaded(
             scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
-            scan_task.statistics.clone(),
+            stats,
         ));
         Ok(mp)
     }))

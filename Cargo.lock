@@ -2817,7 +2817,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-recordbatch",
- "indexmap 2.8.0",
  "serde",
  "snafu",
 ]
