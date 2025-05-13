@@ -110,7 +110,9 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
             }
             self.finished.insert(next_id, result);
         }
-        None
+        unreachable!(
+            "OrderedJoinSet::join_next should never return None if the order is not empty"
+        );
     }
 
     pub fn num_pending(&self) -> usize {

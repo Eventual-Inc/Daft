@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use futures::{Stream, StreamExt};
 
 use crate::utils::joinset::JoinSet;
@@ -78,7 +78,7 @@ where
                     Poll::Ready(Some(result)) => match result {
                         Ok(Ok(())) => None,
                         Ok(Err(e)) => Some(Poll::Ready(Some(Err(e)))),
-                        Err(e) => Some(Poll::Ready(Some(Err(DaftError::External(e.into()))))),
+                        Err(e) => Some(Poll::Ready(Some(Err(e)))),
                     },
                     // All background tasks are complete
                     Poll::Ready(None) => {
@@ -103,6 +103,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use common_error::DaftError;
+
     use super::*;
     use crate::utils::channel::create_channel;
 
@@ -154,14 +156,52 @@ mod tests {
 
         let mut count = 0;
         while let Some(result) = stream.next().await {
-            if result.is_err() {
-                assert_eq!(count, 9);
+            if let Err(e) = result {
+                assert!(matches!(e, DaftError::InternalError(_)));
+                assert!(e.to_string().contains("test error"));
             } else {
                 assert_eq!(result.unwrap(), 1);
                 count += 1;
             }
         }
         assert!(stream.next().await.is_none());
+        // 9 results because we consume the stream before joining the tasks
+        assert_eq!(count, 9);
+    }
+
+    #[tokio::test]
+    async fn test_joinable_forwarding_stream_basic_panic() {
+        let (tx, rx) = create_channel(1);
+
+        let mut joinset = JoinSet::new();
+        for i in 0..10 {
+            let tx = tx.clone();
+            joinset.spawn(async move {
+                if i == 5 {
+                    panic!("test panic");
+                } else {
+                    tx.send(1).await.unwrap();
+                }
+                Ok(())
+            });
+        }
+        drop(tx);
+
+        let mut stream =
+            JoinableForwardingStream::new(tokio_stream::wrappers::ReceiverStream::new(rx), joinset);
+
+        let mut count = 0;
+        while let Some(result) = stream.next().await {
+            if let Err(e) = result {
+                assert!(matches!(e, DaftError::External(_)));
+                assert!(e.to_string().contains("test panic"));
+            } else {
+                assert_eq!(result.unwrap(), 1);
+                count += 1;
+            }
+        }
+        assert!(stream.next().await.is_none());
+        // 9 results because we consume the stream before joining the tasks
         assert_eq!(count, 9);
     }
 }
