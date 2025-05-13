@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.expressions.visitor import ExpressionVisitor
-    from daft.io.pushdowns import Term
     from daft.runners.runner import Runner
 
 R = TypeVar("R")
@@ -792,11 +791,6 @@ class Pushdowns:
         """List of field names that are required by the filter predicate."""
         ...
 
-    @staticmethod
-    def _to_term(expr: PyExpr, schema: PySchema | None = None) -> Term:
-        """Converts a PyExpr into a pushdown Term, optionally binding to the given schema."""
-        ...
-
 def read_parquet(
     uri: str,
     columns: list[str] | None = None,
@@ -1118,8 +1112,8 @@ class PyExpr:
     # Helper methods from Expr from Eq Hash traits
     ###
 
-    def _eq(self) -> bool: ...
-    def _ne(self) -> bool: ...
+    def _eq(self, other: PyExpr) -> bool: ...
+    def _ne(self, other: PyExpr) -> bool: ...
     def _hash(self) -> int: ...
 
     ###

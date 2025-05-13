@@ -11,6 +11,10 @@ this page covers lower-level APIs which we are evolving for more advanced usage.
     options:
         filters: ["!^_"]
 
-::: daft.io.scan.ScanPushdowns
+## Pushdowns
+
+Daft supports predicate, projection, and limit pushdowns. Learn more about [Pushdowns](../advanced/pushdowns.md) in the Daft User Guide.
+
+::: daft.io.pushdowns.Pushdowns
     options:
         filters: ["!^_"]
