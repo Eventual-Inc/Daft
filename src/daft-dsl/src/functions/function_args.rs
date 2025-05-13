@@ -1,7 +1,18 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use serde::{Deserialize, Serialize};
+use daft_core::{
+    prelude::{DataType, Field},
+    series::Series,
+};
+use derive_more::derive::Display;
+use indexmap::IndexMap;
+use serde::{
+    de::{DeserializeOwned, MapAccess, SeqAccess, Visitor},
+    forward_to_deserialize_any, Deserialize, Deserializer, Serialize,
+};
+
+use crate::{ExprRef, LiteralValue};
 
 /// Wrapper around T to hold either a named or an unnamed argument.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -388,11 +399,193 @@ impl<T> FunctionArgs<T> {
     }
 }
 
+impl FunctionArgs<Series> {
+    pub fn extract<V: DeserializeOwned, Key: FunctionArgKey>(
+        &self,
+        position: Key,
+    ) -> DaftResult<V> {
+        let value = position.required(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the required argument at position `{position:?}`"
+            ))
+        })?;
+
+        let lit = LiteralValue::try_from_single_value_series(&value)?;
+        let deserializer = LiteralValueDeserializer::new(&lit);
+        let res = V::deserialize(deserializer);
+        res.map_err(|e| e.into())
+    }
+
+    pub fn extract_optional<V: DeserializeOwned, Key: FunctionArgKey>(
+        &self,
+        position: Key,
+    ) -> DaftResult<Option<V>> {
+        let value = position.optional(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the optional argument at position `{position:?}`"
+            ))
+        })?;
+
+        match value {
+            Some(value) => {
+                let lit = LiteralValue::try_from_single_value_series(&value)?;
+                let deserializer = LiteralValueDeserializer::new(&lit);
+                let res = V::deserialize(deserializer);
+                res.map_err(|e| e.into()).map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+impl FunctionArgs<ExprRef> {
+    pub fn extract<V: DeserializeOwned, Key: FunctionArgKey>(
+        &self,
+        position: Key,
+    ) -> DaftResult<V> {
+        let value = position.required(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the required argument at position `{position:?}`"
+            ))
+        })?;
+
+        match value.as_literal() {
+            Some(lit) => {
+                let deserializer = LiteralValueDeserializer::new(&lit);
+                let res = V::deserialize(deserializer);
+                res.map_err(|e| e.into())
+            }
+            None => Err(DaftError::ValueError(format!(
+                "Expected a literal value for the optional argument at position `{position:?}`"
+            ))),
+        }
+    }
+
+    pub fn extract_optional<V: DeserializeOwned, Key: FunctionArgKey>(
+        &self,
+        position: Key,
+    ) -> DaftResult<Option<V>> {
+        let value = position.optional(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the optional argument at position `{position:?}`"
+            ))
+        })?;
+
+        match value {
+            Some(value) => match value.as_literal() {
+                Some(lit) => {
+                    let deserializer = LiteralValueDeserializer::new(&lit);
+                    let res = V::deserialize(deserializer);
+                    res.map_err(|e| e.into()).map(Some)
+                }
+                None => Err(DaftError::ValueError(format!(
+                    "Expected a literal value for the optional argument at position `{position:?}`"
+                ))),
+            },
+            None => Ok(None),
+        }
+    }
+}
+
+pub struct LiteralValueDeserializer<'de> {
+    lit: &'de LiteralValue,
+}
+
+impl<'de> LiteralValueDeserializer<'de> {
+    pub fn new(lit: &'de LiteralValue) -> Self {
+        LiteralValueDeserializer { lit }
+    }
+}
+
+#[derive(Debug, Display)]
+pub struct SerdeError {
+    message: String,
+}
+
+impl SerdeError {
+    pub fn new(message: &str) -> Self {
+        SerdeError {
+            message: message.to_string(),
+        }
+    }
+}
+
+impl std::error::Error for SerdeError {}
+impl serde::ser::Error for SerdeError {
+    fn custom<T: std::fmt::Display>(msg: T) -> Self {
+        SerdeError {
+            message: msg.to_string(),
+        }
+    }
+}
+
+impl serde::de::Error for SerdeError {
+    fn custom<T: std::fmt::Display>(msg: T) -> Self {
+        SerdeError {
+            message: msg.to_string(),
+        }
+    }
+}
+
+impl From<SerdeError> for DaftError {
+    fn from(err: SerdeError) -> Self {
+        DaftError::ValueError(err.message)
+    }
+}
+
+impl<'de> Deserializer<'de> for LiteralValueDeserializer<'de> {
+    type Error = SerdeError;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, SerdeError>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        dbg!(&self.lit);
+
+        match self.lit {
+            LiteralValue::Null => visitor.visit_none(),
+            LiteralValue::Boolean(b) => visitor.visit_bool(*b),
+            LiteralValue::Utf8(s) => visitor.visit_str(s),
+            LiteralValue::Binary(items) => visitor.visit_bytes(&items),
+            LiteralValue::FixedSizeBinary(items, _) => visitor.visit_bytes(&items),
+            LiteralValue::Int8(i8) => visitor.visit_i8(*i8),
+            LiteralValue::UInt8(u8) => visitor.visit_u8(*u8),
+            LiteralValue::Int16(i16) => visitor.visit_i16(*i16),
+            LiteralValue::UInt16(u16) => visitor.visit_u16(*u16),
+            LiteralValue::Int32(i32) => visitor.visit_i32(*i32),
+            LiteralValue::UInt32(u32) => visitor.visit_u32(*u32),
+            LiteralValue::Int64(i64) => visitor.visit_i64(*i64),
+            LiteralValue::UInt64(u64) => visitor.visit_u64(*u64),
+            LiteralValue::Float64(f64) => visitor.visit_f64(*f64),
+            LiteralValue::Timestamp(..) => Err(SerdeError::new("Not implemented: Timestamp")),
+            LiteralValue::Date(_) => Err(SerdeError::new("Not implemented: Date")),
+            LiteralValue::Time(..) => Err(SerdeError::new("Not implemented: Time")),
+            LiteralValue::Duration(..) => Err(SerdeError::new("Not implemented: Duration")),
+            LiteralValue::Interval(..) => Err(SerdeError::new("Not implemented: Interval")),
+            LiteralValue::Decimal(_, _, _) => Err(SerdeError::new("Not implemented: Decimal")),
+            LiteralValue::Series(_) => Err(SerdeError::new("Not implemented: Series")),
+            #[cfg(feature = "python")]
+            LiteralValue::Python(_) => Err(SerdeError::new("Not implemented: Python")),
+            LiteralValue::Struct(_) => Err(SerdeError::new("Not implemented: Struct")),
+        }
+    }
+
+    forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct enum identifier ignored_any
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
+    use daft_core::prelude::CountMode;
 
-    use crate::functions::function_args::{FunctionArg, FunctionArgs};
+    use crate::{
+        functions::function_args::{FunctionArg, FunctionArgs},
+        lit, lit_value,
+    };
     #[test]
     fn test_function_args_ordering() {
         let res = FunctionArgs::try_new(vec![
@@ -532,5 +725,21 @@ mod tests {
         let args: FunctionArgs<usize> = FunctionArgs::try_new(Vec::new()).unwrap();
         assert!(args.is_empty());
         assert_eq!(args.len(), 0);
+    }
+
+    #[test]
+    fn test_extract() -> DaftResult<()> {
+let args = FunctionArgs::new_unchecked(vec![
+    FunctionArg::unnamed(lit_value(CountMode::All)?), // CountMode,
+    FunctionArg::unnamed(lit_value(1i64)?),           // i64
+    FunctionArg::unnamed(lit_value(1.0)?),            // f64
+    FunctionArg::unnamed(lit_value("All")?),          // CountMode
+]);
+
+let count_mode: CountMode = args.extract(0)?;
+let other_count_mode: CountMode = args.extract(3)?;
+let count_mode_as_str: String = args.extract(3)?;
+
+        Ok(())
     }
 }
