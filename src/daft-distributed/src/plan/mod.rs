@@ -11,17 +11,20 @@ use common_partitioning::PartitionRef;
 use common_runtime::RuntimeTask;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use futures::{FutureExt, Stream, StreamExt};
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    channel::{create_channel, Receiver, Sender},
-    runtime::get_or_init_runtime,
-    scheduling::worker::WorkerManagerFactory,
-    stage::StagePlan,
+    scheduling::worker::{WorkerManager, WorkerManagerFactory},
+    stage::{StagePlan, StagePlanRef},
+    utils::{
+        channel::{create_channel, Receiver, Sender},
+        runtime::get_or_init_runtime,
+    },
 };
 
+#[derive(Serialize, Deserialize)]
 pub struct DistributedPhysicalPlan {
-    #[allow(dead_code)]
-    logical_plan: LogicalPlanRef,
+    stage_plan: StagePlanRef,
     config: Arc<DaftExecutionConfig>,
 }
 
@@ -33,16 +36,15 @@ impl DistributedPhysicalPlan {
         let plan = builder.build();
 
         Ok(Self {
-            logical_plan: plan,
+            stage_plan: Arc::new(StagePlan::from_logical_plan(plan, config.clone())?),
             config,
         })
     }
 
-    async fn execute_stages(
-        stage_plan: StagePlan,
-        config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+    async fn execute_stages<W: WorkerManager + 'static>(
+        stage_plan: StagePlanRef,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
         sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
@@ -53,7 +55,7 @@ impl DistributedPhysicalPlan {
         }
 
         let stage = stage_plan.get_root_stage();
-        let mut running_stage = stage.run_stage(config, psets, worker_manager_factory)?;
+        let mut running_stage = stage.run_stage(psets, worker_manager_factory)?;
         while let Some(partition) = running_stage.next().await {
             if sender.send(partition?).await.is_err() {
                 break;
@@ -62,17 +64,15 @@ impl DistributedPhysicalPlan {
         Ok(())
     }
 
-    pub fn run_plan(
+    pub fn run_plan<W: WorkerManager + 'static>(
         &self,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
     ) -> DaftResult<PlanResult> {
         let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
-        let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
         let handle = runtime.spawn(Self::execute_stages(
-            stage_plan,
-            self.config.clone(),
+            self.stage_plan.clone(),
             psets,
             worker_manager_factory,
             result_sender,
@@ -111,7 +111,10 @@ impl Stream for PlanResult {
 
         match self.rx.poll_recv(cx) {
             Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(result)) => Poll::Ready(Some(Ok(result))),
+            Poll::Ready(Some(result)) => {
+                println!("received result: {:?}", result);
+                Poll::Ready(Some(Ok(result)))
+            }
             Poll::Ready(None) => {
                 if let Some(mut handle) = self.task.take() {
                     let result = handle.poll_unpin(cx);

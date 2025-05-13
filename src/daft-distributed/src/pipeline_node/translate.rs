@@ -11,10 +11,11 @@ use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use daft_dsl::{join::normalize_join_keys, AggExpr, ExprRef, WindowExpr};
-use daft_local_plan::{translate, LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{
     stats::StatsState, JoinStrategy, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
 };
+use serde::{Deserialize, Serialize};
 
 use super::PipelineInput;
 
@@ -24,7 +25,7 @@ fn get_next_source_id() -> usize {
     SOURCE_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub(crate) struct PipelinePlan {
     pub local_plan: LocalPhysicalPlanRef,
     pub input: PipelineInput,
@@ -34,27 +35,21 @@ pub(crate) struct PipelinePlan {
 pub(crate) fn translate_logical_plan_to_pipeline_plan(
     logical_plan: &LogicalPlanRef,
     execution_config: &DaftExecutionConfig,
-    psets: &mut HashMap<String, Vec<PartitionRef>>,
 ) -> DaftResult<PipelinePlan> {
     // Translate the logical plan to a local plan and a list of inputs
     fn translate_logical_plan_to_local_plan_and_inputs(
         logical_plan: &LogicalPlanRef,
         execution_config: &DaftExecutionConfig,
-        psets: &mut HashMap<String, Vec<PartitionRef>>,
         pipeline_input: &mut Option<PipelineInput>,
     ) -> DaftResult<LocalPhysicalPlanRef> {
         match logical_plan.as_ref() {
             LogicalPlan::Source(source) => match source.source_info.as_ref() {
                 SourceInfo::InMemory(info) => {
-                    let partition_refs = psets.get(&info.cache_key).unwrap().clone();
                     assert!(
                         pipeline_input.is_none(),
                         "Pipelines cannot have multiple inputs"
                     );
-                    *pipeline_input = Some(PipelineInput::InMemorySource {
-                        cache_key: info.cache_key.clone(),
-                        partition_refs,
-                    });
+                    *pipeline_input = Some(PipelineInput::InMemorySource { info: info.clone() });
                     let local_plan = LocalPhysicalPlan::in_memory_scan(
                         info.clone(),
                         daft_logical_plan::stats::StatsState::NotMaterialized,
@@ -104,7 +99,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &filter.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::filter(
@@ -117,7 +111,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &limit.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::limit(
@@ -130,7 +123,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &project.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::project(
@@ -144,7 +136,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &actor_pool_project.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::actor_pool_project(
@@ -158,7 +149,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &sample.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::sample(
@@ -173,7 +163,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &aggregate.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 if aggregate.groupby.is_empty() {
@@ -197,7 +186,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &window.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 match (
@@ -275,7 +263,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &unpivot.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::unpivot(
@@ -292,7 +279,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &pivot.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::pivot(
@@ -310,7 +296,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &sort.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::sort(
@@ -330,13 +315,11 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let left = translate_logical_plan_to_local_plan_and_inputs(
                     &join.left,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 let right = translate_logical_plan_to_local_plan_and_inputs(
                     &join.right,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
 
@@ -378,7 +361,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &distinct.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 let col_exprs = input
@@ -399,13 +381,11 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &concat.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 let other = translate_logical_plan_to_local_plan_and_inputs(
                     &concat.other,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::concat(
@@ -418,7 +398,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 translate_logical_plan_to_local_plan_and_inputs(
                     &repartition.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )
             }
@@ -426,7 +405,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &monotonically_increasing_id.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::monotonically_increasing_id(
@@ -441,7 +419,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &sink.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 let data_schema = input.schema().clone();
@@ -481,7 +458,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
                 let input = translate_logical_plan_to_local_plan_and_inputs(
                     &explode.input,
                     execution_config,
-                    psets,
                     pipeline_input,
                 )?;
                 Ok(LocalPhysicalPlan::explode(
@@ -507,7 +483,6 @@ pub(crate) fn translate_logical_plan_to_pipeline_plan(
     let local_plan = translate_logical_plan_to_local_plan_and_inputs(
         logical_plan,
         execution_config,
-        psets,
         &mut input,
     )?;
     Ok(PipelinePlan {

@@ -1611,6 +1611,7 @@ dependencies = [
  "futures",
  "pyo3",
  "serde",
+ "typetag",
 ]
 
 [[package]]
@@ -2231,6 +2232,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-partitioning",
+ "common-py-serde",
  "common-runtime",
  "common-scan-info",
  "common-treenode",
@@ -2243,8 +2245,12 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
+ "serde",
  "tokio",
+ "tokio-stream",
  "tokio-util",
+ "typetag",
+ "uuid 1.16.0",
 ]
 
 [[package]]

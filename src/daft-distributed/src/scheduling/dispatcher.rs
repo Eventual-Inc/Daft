@@ -7,35 +7,54 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
-use rand::Rng;
 use tokio_util::sync::CancellationToken;
 
-use super::task::SchedulingStrategy;
+use super::{
+    scheduler::{DefaultScheduler, Scheduler},
+    task::{SchedulingStrategy, Task, TaskId},
+    worker::Worker,
+};
 use crate::{
-    channel::{
-        create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver, Sender,
+    scheduling::worker::WorkerManager,
+    utils::{
+        channel::{
+            create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
+            Sender,
+        },
+        joinset::JoinSet,
     },
-    runtime::JoinSet,
-    scheduling::{task::SwordfishTask, worker::WorkerManager},
 };
 // The task dispatcher is responsible for dispatching tasks to workers.
-#[allow(dead_code)]
-pub(crate) struct TaskDispatcher {
-    worker_manager: Box<dyn WorkerManager>,
+pub(crate) struct TaskDispatcher<T: Task, W: Worker> {
+    worker_manager: Box<dyn WorkerManager<Worker = W>>,
+    scheduler: Box<dyn Scheduler<T, W>>,
 }
 
-impl TaskDispatcher {
-    const MAX_TASKS_IN_CHANNEL: usize = 100;
-    const MAX_TASKS_IN_BUFFER: usize = 100;
+impl<T: Task, W: Worker> TaskDispatcher<T, W> {
+    const MAX_TASKS_IN_CHANNEL: usize = 512;
 
-    pub fn new(worker_manager: Box<dyn WorkerManager>) -> Self {
-        Self { worker_manager }
+    pub fn new(worker_manager: Box<dyn WorkerManager<Worker = W>>) -> Self {
+        let scheduler = Box::new(DefaultScheduler::new());
+        Self {
+            worker_manager,
+            scheduler,
+        }
+    }
+
+    pub fn new_with_scheduler(
+        worker_manager: Box<dyn WorkerManager<Worker = W>>,
+        scheduler: Box<dyn Scheduler<T, W>>,
+    ) -> Self {
+        Self {
+            worker_manager,
+            scheduler,
+        }
     }
 
     pub fn spawn_task_dispatcher(
         task_dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
-    ) -> TaskDispatcherHandle {
+    ) -> TaskDispatcherHandle<T> {
         let (task_dispatcher_sender, task_dispatcher_receiver) =
             create_channel(Self::MAX_TASKS_IN_CHANNEL);
         joinset.spawn(Self::run_dispatch_loop(
@@ -45,226 +64,189 @@ impl TaskDispatcher {
         TaskDispatcherHandle::new(task_dispatcher_sender)
     }
 
-    // Determine which tasks can be scheduled on which workers
-    // Returns a list of (task_idx, worker_id) tuples
-    fn get_schedulable_task_and_worker_ids(
-        queued_tasks: &[DispatchableTask],
-        worker_manager: &dyn WorkerManager,
-    ) -> Vec<(usize, String)> {
-        // Get worker resources and idle workers
-        let mut workers = worker_manager.get_worker_slots();
-
-        let mut schedulable_task_and_worker_ids = Vec::new();
-
-        for (i, task) in queued_tasks.iter().enumerate() {
-            match task.task.strategy() {
-                SchedulingStrategy::Spread => {
-                    // Get a random worker with available slots
-                    let available_workers: Vec<&String> = workers
-                        .iter()
-                        .filter(|(_, slots)| **slots > 0)
-                        .map(|(id, _)| id)
-                        .collect();
-                    let worker = if !available_workers.is_empty() {
-                        let random_worker = available_workers
-                            [rand::thread_rng().gen_range(0..available_workers.len())];
-                        Some(random_worker.clone())
-                    } else {
-                        None
-                    };
-                    if let Some(worker_id) = worker {
-                        schedulable_task_and_worker_ids.push((i, worker_id.clone()));
-                        *workers.get_mut(&worker_id).unwrap() -= 1;
-                    }
-                }
-                SchedulingStrategy::NodeAffinity { node_id, soft } => {
-                    match soft {
-                        true => {
-                            // Find the worker with the node id, if it has available slots then schedule the task
-                            // Otherwise, find another worker with available slots
-                            let slots = workers.get(node_id).expect("Worker not found");
-                            if *slots > 0 {
-                                schedulable_task_and_worker_ids.push((i, node_id.clone()));
-                            } else {
-                                // Find any worker with available slots
-                                let mut worker_id = None;
-                                for (id, slots) in &workers {
-                                    if *slots > 0 {
-                                        worker_id = Some(id.clone());
-                                        break;
-                                    }
-                                }
-                                if let Some(worker_id) = worker_id {
-                                    schedulable_task_and_worker_ids.push((i, worker_id.clone()));
-                                    *workers.get_mut(&worker_id).unwrap() -= 1;
-                                }
-                            }
-                        }
-                        false => {
-                            // Find the worker with the node id, if it has available slots then schedule the task
-                            // Otherwise, skip the task
-                            let slots = workers.get(node_id).expect("Worker not found");
-                            if *slots > 0 {
-                                schedulable_task_and_worker_ids.push((i, node_id.clone()));
-                                *workers.get_mut(node_id).unwrap() -= 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        schedulable_task_and_worker_ids
-    }
-
     async fn run_dispatch_loop(
-        dispatcher: Self,
-        mut task_rx: Receiver<DispatchableTask>,
+        mut dispatcher: Self,
+        mut task_rx: Receiver<Vec<SchedulableTask<T>>>,
     ) -> DaftResult<()> {
-        let mut pending_tasks = JoinSet::new();
-        let mut queued_tasks: Vec<DispatchableTask> = Vec::with_capacity(Self::MAX_TASKS_IN_BUFFER);
+        let mut running_tasks = JoinSet::new();
+        let mut pending_tasks: Vec<SchedulableTask<T>> =
+            Vec::with_capacity(dispatcher.worker_manager.total_available_cpus());
 
         loop {
-            // Get schedulable tasks
-            let schedulable_task_and_worker_ids = Self::get_schedulable_task_and_worker_ids(
-                &queued_tasks,
-                &*dispatcher.worker_manager,
-            );
-            println!(
-                "schedulable_task_and_worker_ids: {:?}",
-                schedulable_task_and_worker_ids
-            );
-            // Schedule the tasks we found workers for (in reverse order to maintain indices, because we do swap_remove)
-            for (task_idx, worker_id) in schedulable_task_and_worker_ids.into_iter().rev() {
-                let task = queued_tasks.swap_remove(task_idx);
+            // 1. Update the scheduler with the current state of the workers
+            let workers = dispatcher.worker_manager.workers();
+            dispatcher.scheduler.update_state(workers);
+
+            // 2. Get tasks to schedule
+            let schedule_result = dispatcher
+                .scheduler
+                .schedule_tasks(std::mem::take(&mut pending_tasks));
+            let schedulable_task_and_worker_ids = schedule_result.scheduled_tasks;
+            pending_tasks = schedule_result.unscheduled_tasks;
+
+            // 3. Schedule tasks
+            for (worker_id, task) in schedulable_task_and_worker_ids.into_iter() {
+                let task_id = task.task_id().to_string();
                 let mut task_handle = dispatcher
                     .worker_manager
-                    .submit_task_to_worker(task.task, worker_id);
+                    .submit_task_to_worker(Box::new(task.task), worker_id.clone());
 
                 let task_future = async move {
                     tokio::select! {
                         biased;
                         // If the task was cancelled, return None
                         () = task.cancel_token.cancelled() => {
-                            println!("cancelled task");
-                            None
+                            (worker_id, task_id, None)
                         },
                         // If the task is finished, return the result and the result_tx
                         result = task_handle.get_result() => {
-                            println!("finished task");
-                            Some((result, task.result_tx))
+                            (worker_id, task_id, Some((result, task.result_tx)))
                         }
                     }
                 };
-                pending_tasks.spawn(task_future);
+                running_tasks.spawn(task_future);
             }
 
-            let num_pending_tasks = pending_tasks.len();
-
+            // 4. Wait for tasks to finish or receive new tasks
             tokio::select! {
                 biased;
-                Some(result) = pending_tasks.join_next(), if num_pending_tasks > 0 => {
+                Some(result) = running_tasks.join_next() => {
+                    let (worker_id, task_id, result) = result.map_err(|e| DaftError::External(e.into()))?;
+                    dispatcher.worker_manager.mark_task_finished(task_id, worker_id);
                     match result {
-                        Ok(Some((result, result_tx))) => {
+                        Some((result, result_tx)) => {
                             let _ = result_tx.send(result);
                         }
-                        Ok(None) => {}
-                        Err(e) => {
-                            return Err(DaftError::External(e.into()));
-                        }
+                        None => {}
                     }
                 }
-                true = async {
-                    let limit = Self::MAX_TASKS_IN_BUFFER - queued_tasks.len();
-                    let num_received = task_rx.recv_many(&mut queued_tasks, limit).await;
-                    num_received > 0
-                } => {}
+                Some(next_tasks) = task_rx.recv() => {
+                    pending_tasks.extend(next_tasks);
+                }
                 else => {
+                    assert!(running_tasks.is_empty());
+                    assert!(task_rx.is_closed());
                     break;
                 }
             }
         }
-
         dispatcher.worker_manager.shutdown()
     }
 }
 
-struct DispatchableTask {
-    task: SwordfishTask,
-    result_tx: OneshotSender<DaftResult<PartitionRef>>,
+pub(crate) struct SchedulableTask<T: Task> {
+    task: T,
+    result_tx: OneshotSender<DaftResult<Vec<PartitionRef>>>,
     cancel_token: CancellationToken,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct TaskDispatcherHandle {
-    task_dispatcher_sender: Sender<DispatchableTask>,
+impl<T: Task> SchedulableTask<T> {
+    pub fn new(
+        task: T,
+        result_tx: OneshotSender<DaftResult<Vec<PartitionRef>>>,
+        cancel_token: CancellationToken,
+    ) -> Self {
+        Self {
+            task,
+            result_tx,
+            cancel_token,
+        }
+    }
+
+    pub fn strategy(&self) -> &SchedulingStrategy {
+        self.task.strategy()
+    }
+
+    pub fn task_id(&self) -> &str {
+        self.task.task_id()
+    }
 }
 
-impl TaskDispatcherHandle {
-    fn new(task_dispatcher_sender: Sender<DispatchableTask>) -> Self {
+#[derive(Clone, Debug)]
+pub(crate) struct TaskDispatcherHandle<T: Task> {
+    task_dispatcher_sender: Sender<Vec<SchedulableTask<T>>>,
+}
+
+impl<T: Task> TaskDispatcherHandle<T> {
+    fn new(task_dispatcher_sender: Sender<Vec<SchedulableTask<T>>>) -> Self {
         Self {
             task_dispatcher_sender,
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
-        let unsubmitted_task = UnsubmittedTask::new(task);
-        let submitted_task = unsubmitted_task
-            .submit_task(&self.task_dispatcher_sender)
-            .await;
-        Ok(submitted_task)
+    fn prepare_tasks_for_submission(
+        &self,
+        tasks: Vec<T>,
+    ) -> (Vec<SchedulableTask<T>>, Vec<SubmittedTask>) {
+        let mut schedulable_tasks = Vec::with_capacity(tasks.len());
+        let mut submitted_tasks = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            let (result_tx, result_rx) = create_oneshot_channel();
+            let cancel_token = CancellationToken::new();
+            let submitted_task = SubmittedTask::new(
+                task.task_id().to_string(),
+                result_rx,
+                Some(cancel_token.clone()),
+            );
+            let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token);
+            schedulable_tasks.push(schedulable_task);
+            submitted_tasks.push(submitted_task);
+        }
+        (schedulable_tasks, submitted_tasks)
+    }
+
+    pub async fn submit_task(&self, task: T) -> DaftResult<SubmittedTask> {
+        let (schedulable_tasks, mut submitted_tasks) =
+            self.prepare_tasks_for_submission(vec![task]);
+        let _ = self.task_dispatcher_sender.send(schedulable_tasks).await;
+        Ok(submitted_tasks.pop().unwrap())
+    }
+
+    pub async fn submit_many_tasks(&self, tasks: Vec<T>) -> DaftResult<Vec<SubmittedTask>> {
+        let (schedulable_tasks, submitted_tasks) = self.prepare_tasks_for_submission(tasks);
+        let _ = self.task_dispatcher_sender.send(schedulable_tasks).await;
+        Ok(submitted_tasks)
     }
 }
-
-#[allow(dead_code)]
-struct UnsubmittedTask {
-    task: SwordfishTask,
-}
-
-impl UnsubmittedTask {
-    fn new(task: SwordfishTask) -> Self {
-        Self { task }
-    }
-
-    async fn submit_task(self, task_dispatcher_sender: &Sender<DispatchableTask>) -> SubmittedTask {
-        let (result_tx, result_rx) = create_oneshot_channel();
-        let cancel_token = CancellationToken::new();
-        let _ = task_dispatcher_sender
-            .send(DispatchableTask {
-                task: self.task,
-                result_tx,
-                cancel_token: cancel_token.clone(),
-            })
-            .await;
-        SubmittedTask::new(result_rx, Some(cancel_token))
-    }
-}
-
 pub(crate) struct SubmittedTask {
-    result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+    task_id: TaskId,
+    result_rx: OneshotReceiver<DaftResult<Vec<PartitionRef>>>,
     cancel_token: Option<CancellationToken>,
+    finished: bool,
 }
 
 impl SubmittedTask {
     fn new(
-        result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+        task_id: TaskId,
+        result_rx: OneshotReceiver<DaftResult<Vec<PartitionRef>>>,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
         Self {
+            task_id,
             result_rx,
             cancel_token,
+            finished: false,
         }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.task_id
     }
 }
 
 impl Future for SubmittedTask {
-    type Output = Option<DaftResult<PartitionRef>>;
+    type Output = Option<DaftResult<Vec<PartitionRef>>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {
-            Poll::Ready(Ok(result)) => Poll::Ready(Some(result)),
-            Poll::Ready(Err(_)) => Poll::Ready(None),
+            Poll::Ready(Ok(result)) => {
+                self.finished = true;
+                Poll::Ready(Some(result))
+            }
+            Poll::Ready(Err(_)) => {
+                self.finished = true;
+                Poll::Ready(None)
+            }
             Poll::Pending => Poll::Pending,
         }
     }
@@ -272,6 +254,9 @@ impl Future for SubmittedTask {
 
 impl Drop for SubmittedTask {
     fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
         if let Some(cancel_token) = self.cancel_token.take() {
             cancel_token.cancel();
         }

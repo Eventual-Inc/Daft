@@ -8,6 +8,7 @@ from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
+from daft.runners.distributed_swordfish import RaySwordfishActorHandle
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -1867,7 +1868,7 @@ class DistributedPhysicalPlan:
     def from_logical_plan_builder(
         builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
-    def run_plan(self, psets: dict[str, list[RayPartitionRef]]) -> AsyncIterator[tuple[object, int, int]]: ...
+    def run_plan(self, psets: dict[str, list[RayPartitionRef]]) -> AsyncIterator[tuple[ray.ObjectRef, int, int]]: ...
 
 class LocalPhysicalPlan:
     @staticmethod
@@ -1880,8 +1881,13 @@ class RayPartitionRef:
 
     def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int): ...
 
+class RaySwordfishWorker:
+    def __init__(self, worker_id: str, actor_handle: RaySwordfishActorHandle, num_cpus: int, memory_bytes: int): ...
+
 class RaySwordfishTask:
+    def task_id(self) -> str: ...
     def plan(self) -> LocalPhysicalPlan: ...
+    def config(self) -> PyDaftExecutionConfig: ...
     def psets(self) -> dict[str, list[RayPartitionRef]]: ...
 
 class NativeExecutor:

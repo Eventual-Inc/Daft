@@ -7,6 +7,7 @@ common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 common-display = {path = "../common/display", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
@@ -15,9 +16,13 @@ daft-schema = {path = "../daft-schema", default-features = false}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
+serde = {workspace = true}
 rand = {workspace = true}
 tokio = {workspace = true}
+tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
+typetag = {workspace = true}
+uuid = {version = "1.10.0", features = ["v4", "serde"]}
 
 [features]
 python = [
@@ -26,6 +31,7 @@ python = [
   "common-daft-config/python",
   "common-error/python",
   "common-treenode/python",
+  "common-py-serde/python",
   "daft-logical-plan/python",
   "daft-local-plan/python",
   "daft-scan/python"

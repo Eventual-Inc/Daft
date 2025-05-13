@@ -1,56 +1,28 @@
 use std::{collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::DisplayLevel;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_dsl::ExprRef;
-use daft_logical_plan::{
-    partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
-};
-use daft_schema::schema::SchemaRef;
-use running_stage::RunningStage;
+use daft_logical_plan::LogicalPlanRef;
+use futures::Stream;
+use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    pipeline_node::{logical_plan_to_pipeline_node, materialize::materialize_pipeline_results},
-    runtime::JoinSet,
+    pipeline_node::{materialize::materialize_all_pipeline_outputs, DistributedPipelineNode},
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-        worker::WorkerManagerFactory,
+        scheduler::LinearScheduler,
+        task::SwordfishTask,
+        worker::{WorkerManager, WorkerManagerFactory},
     },
+    utils::joinset::JoinSet,
 };
 
-mod running_stage;
 mod stage_builder;
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct StageID(usize);
-
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
-struct ChannelID(usize);
-
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-struct DataChannel {
-    schema: SchemaRef,
-    clustering_spec: Option<ClusteringSpecRef>,
-    stats: Option<ApproxStats>,
-    // ordering: Option<ExprRef>,
-}
-#[derive(Debug)]
-#[allow(dead_code)]
-struct InputChannel {
-    from_stage: StageID,
-    channel_id: ChannelID,
-    data_channel: DataChannel,
-}
-#[derive(Debug)]
-#[allow(dead_code)]
-struct OutputChannel {
-    to_stages: Vec<StageID>,
-    data_channel: DataChannel,
-}
 
 // THIS CODE IS SUBJECT TO CHANGE
 // Tentatively: A stage represents a fragment of a logical plan that can be run from start to finish
@@ -65,88 +37,86 @@ struct OutputChannel {
 // - We must be able to do re-planning based on new statistics.
 // - We must allow for potential concurrent execution of stages.
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Stage {
     id: StageID,
     type_: StageType,
-    input_channels: Vec<InputChannel>,
-    output_channels: Vec<OutputChannel>,
 }
 
 impl Stage {
-    pub(crate) fn run_stage(
+    pub(crate) fn run_stage<W: WorkerManager + 'static>(
         &self,
-        config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
-    ) -> DaftResult<RunningStage> {
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
+    ) -> DaftResult<impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static> {
         let mut stage_context = StageContext::try_new(worker_manager_factory)?;
         match &self.type_ {
-            StageType::MapPipeline { plan } => {
-                let mut pipeline_node =
-                    logical_plan_to_pipeline_node(plan.clone(), config, psets, &mut stage_context)?;
-                println!("{}", pipeline_node.as_tree_display().display_as(DisplayLevel::Compact));
-                let running_node = pipeline_node.start(&mut stage_context);
-                let materialized_results_receiver =
-                    materialize_pipeline_results(running_node, &mut stage_context);
-                let running_stage = RunningStage::new(materialized_results_receiver, stage_context);
-                Ok(running_stage)
+            StageType::MapPipeline { pipeline_node } => {
+                let running_node = pipeline_node.start(&mut stage_context, psets.clone());
+
+                let (task_dispatcher_handle, joinset) = stage_context.into_inner();
+                let partition_ref_stream =
+                    materialize_all_pipeline_outputs(running_node, task_dispatcher_handle, joinset);
+                Ok(partition_ref_stream)
             }
-            _ => todo!("FLOTILLA_MS2: Implement run stage for other stage types"),
         }
     }
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Serialize, Deserialize)]
 enum StageType {
     MapPipeline {
-        plan: LogicalPlanRef,
+        pipeline_node: Box<dyn DistributedPipelineNode>,
     },
-    HashJoin {
-        plan: LogicalPlanRef,
-        left_on: Vec<ExprRef>,
-        right_on: Vec<ExprRef>,
-        null_equals_null: Option<Vec<bool>>,
-        join_type: JoinType,
-    },
+    // HashJoin {
+    //     plan: LogicalPlanRef,
+    //     left_on: Vec<ExprRef>,
+    //     right_on: Vec<ExprRef>,
+    //     null_equals_null: Option<Vec<bool>>,
+    //     join_type: JoinType,
+    // },
     // SortMergeJoin {
     //     plan: LocalPhysicalPlanRef,
     // },
-    HashAggregate {
-        plan: LogicalPlanRef,
-        aggregations: Vec<ExprRef>,
-        group_by: Vec<ExprRef>,
-    },
-    Broadcast,
-    Exchange {
-        clustering_spec: ClusteringSpecRef,
-    },
+    // HashAggregate {
+    //     plan: LogicalPlanRef,
+    //     aggregations: Vec<ExprRef>,
+    //     group_by: Vec<ExprRef>,
+    // },
+    // Broadcast,
+    // Exchange {
+    //     clustering_spec: ClusteringSpecRef,
+    // },
 }
 
 impl StageType {
     fn name(&self) -> &str {
         match self {
             Self::MapPipeline { .. } => "MapPipeline",
-            Self::HashJoin { .. } => "HashJoin",
-            Self::HashAggregate { .. } => "HashAggregate",
-            Self::Broadcast => "Broadcast",
-            Self::Exchange { .. } => "Exchange",
+            // Self::HashJoin { .. } => "HashJoin",
+            // Self::HashAggregate { .. } => "HashAggregate",
+            // Self::Broadcast => "Broadcast",
+            // Self::Exchange { .. } => "Exchange",
         }
     }
 }
 
-#[derive(Debug)]
+pub(crate) type StagePlanRef = Arc<StagePlan>;
+
+#[derive(Serialize, Deserialize)]
 pub(crate) struct StagePlan {
     stages: HashMap<StageID, Stage>,
     root_stage: StageID,
 }
 
 impl StagePlan {
-    pub(crate) fn from_logical_plan(plan: LogicalPlanRef) -> DaftResult<Self> {
+    pub(crate) fn from_logical_plan(
+        plan: LogicalPlanRef,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<Self> {
         let builder = StagePlanBuilder::new();
-        let stage_plan = builder.build_stage_plan(plan)?;
+        let stage_plan = builder.build_stage_plan(plan, config)?;
 
         Ok(stage_plan)
     }
@@ -164,9 +134,9 @@ impl StagePlan {
                 print!("  ");
             }
             println!("Stage {}: {}", curr.0, name);
-            stage.input_channels.iter().enumerate().for_each(|(i, c)| {
-                stack.push((depth + ((i != 0) as usize), c.from_stage.clone()));
-            });
+            // stage.input_channels.iter().enumerate().for_each(|(i, c)| {
+            //     stack.push((depth + ((i != 0) as usize), c.from_stage.clone()));
+            // });
         }
     }
 
@@ -184,26 +154,27 @@ impl StagePlan {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct StageContext {
-    task_dispatcher_handle: TaskDispatcherHandle,
+    task_dispatcher_handle: TaskDispatcherHandle<SwordfishTask>,
     joinset: JoinSet<DaftResult<()>>,
-    node_id_counter: usize,
 }
 
 impl StageContext {
-    fn try_new(worker_manager_factory: Box<dyn WorkerManagerFactory>) -> DaftResult<Self> {
+    fn try_new<W: WorkerManager + 'static>(
+        worker_manager_factory: Box<dyn WorkerManagerFactory<WorkerManager = W>>,
+    ) -> DaftResult<Self> {
         let worker_manager = worker_manager_factory.create_worker_manager()?;
-        let task_dispatcher = TaskDispatcher::new(worker_manager);
+        let task_dispatcher =
+            TaskDispatcher::new_with_scheduler(Box::new(worker_manager), Box::new(LinearScheduler::new()));
         let mut joinset = JoinSet::new();
         let task_dispatcher_handle =
             TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
         Ok(Self {
             task_dispatcher_handle,
             joinset,
-            node_id_counter: 0,
         })
     }
 
-    pub fn get_task_dispatcher_handle(&self) -> TaskDispatcherHandle {
+    pub fn get_task_dispatcher_handle(&self) -> TaskDispatcherHandle<SwordfishTask> {
         self.task_dispatcher_handle.clone()
     }
 
@@ -214,13 +185,7 @@ impl StageContext {
         self.joinset.spawn(f);
     }
 
-    pub fn get_node_id(&mut self) -> usize {
-        let node_id = self.node_id_counter;
-        self.node_id_counter += 1;
-        node_id
-    }
-
-    pub fn into_inner(self) -> (TaskDispatcherHandle, JoinSet<DaftResult<()>>) {
+    pub fn into_inner(self) -> (TaskDispatcherHandle<SwordfishTask>, JoinSet<DaftResult<()>>) {
         (self.task_dispatcher_handle, self.joinset)
     }
 }

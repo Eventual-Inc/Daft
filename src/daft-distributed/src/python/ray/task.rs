@@ -1,11 +1,12 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
+use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
 
-use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle};
+use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle, Task};
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
 #[allow(dead_code)]
@@ -30,7 +31,7 @@ impl RayTaskResultHandle {
 #[async_trait::async_trait]
 impl SwordfishTaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
-    async fn get_result(&mut self) -> DaftResult<PartitionRef> {
+    async fn get_result(&mut self) -> DaftResult<Vec<PartitionRef>> {
         // Create a coroutine that will await the result of the task
         let coroutine = Python::with_gil(|py| {
             self.handle
@@ -50,10 +51,12 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
         let task_locals = self.task_locals.take().unwrap();
         let materialized_result =
             pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await??;
-
-        let ray_part_ref =
-            Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
-        Ok(Arc::new(ray_part_ref))
+        let ray_part_refs =
+            Python::with_gil(|py| materialized_result.extract::<Vec<RayPartitionRef>>(py))?;
+        Ok(ray_part_refs
+            .into_iter()
+            .map(|r| Arc::new(r) as PartitionRef)
+            .collect::<Vec<PartitionRef>>())
     }
 }
 
@@ -79,6 +82,7 @@ pub(crate) struct RayPartitionRef {
 impl RayPartitionRef {
     #[new]
     pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
+        println!("new RayPartitionRef: {:?}, {}, {}", object_ref, num_rows, size_bytes);
         Self {
             object_ref,
             num_rows,
@@ -116,21 +120,32 @@ impl Partition for RayPartitionRef {
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishTask")]
 pub(crate) struct RaySwordfishTask {
-    task: SwordfishTask,
+    task: Box<SwordfishTask>,
 }
 
 impl RaySwordfishTask {
     #[allow(dead_code)]
-    pub fn new(task: SwordfishTask) -> Self {
+    pub fn new(task: Box<SwordfishTask>) -> Self {
         Self { task }
     }
 }
 
 #[pymethods]
 impl RaySwordfishTask {
+    fn task_id(&self) -> String {
+        self.task.task_id().to_string()
+    }
+
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })
+    }
+
+    fn config(&self) -> PyResult<PyDaftExecutionConfig> {
+        let config = self.task.config();
+        Ok(PyDaftExecutionConfig {
+            config: config.clone(),
+        })
     }
 
     fn psets(&self, py: Python) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {

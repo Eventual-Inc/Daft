@@ -1,39 +1,10 @@
 use std::{
     collections::{HashMap, VecDeque},
     future::Future,
-    sync::{Once, OnceLock},
 };
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::{PoolType, Runtime, RuntimeRef};
-use tokio::task::{Id, JoinError};
-
-pub static RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-pub static PYO3_RUNTIME_INITIALIZED: Once = Once::new();
-
-pub fn get_or_init_runtime() -> &'static Runtime {
-    let runtime_ref = RUNTIME.get_or_init(|| {
-        let mut tokio_runtime_builder = tokio::runtime::Builder::new_multi_thread();
-        tokio_runtime_builder.enable_all();
-        tokio_runtime_builder.worker_threads(1);
-        tokio_runtime_builder.thread_name_fn(move || "Daft-Scheduler".to_string());
-        let tokio_runtime = tokio_runtime_builder
-            .build()
-            .expect("Failed to build runtime");
-        Runtime::new(
-            tokio_runtime,
-            PoolType::Custom("daft-scheduler".to_string()),
-        )
-    });
-    #[cfg(feature = "python")]
-    {
-        PYO3_RUNTIME_INITIALIZED.call_once(|| {
-            pyo3_async_runtimes::tokio::init_with_runtime(&runtime_ref.runtime)
-                .expect("Failed to initialize python runtime");
-        });
-    }
-    runtime_ref
-}
+use tokio::task::Id;
 
 pub type JoinSet<T> = tokio::task::JoinSet<T>;
 
@@ -71,6 +42,9 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
         }
         while let Some(result) = self.join_set.join_next_with_id().await {
             if let Err(e) = result {
+                let err_id = e.id();
+                // remove this id from the order
+                self.order.retain(|id| *id != err_id);
                 return Some(Err(DaftError::External(e.into())));
             }
             let (next_id, result) = result.unwrap();
@@ -92,12 +66,13 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
 mod tests {
     use std::time::Duration;
 
+    use rand::Rng;
     use tokio::time::sleep;
 
     use super::*;
 
     #[tokio::test]
-    async fn test_ordered_join_set_basic() {
+    async fn test_ordered_joinset_basic() {
         let mut join_set = OrderedJoinSet::new();
 
         // Spawn tasks in order
@@ -113,7 +88,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ordered_join_set_out_of_order() {
+    async fn test_ordered_joinset_basic_out_of_order() {
         let mut join_set = OrderedJoinSet::new();
 
         // Spawn tasks with different delays
@@ -138,7 +113,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ordered_join_set_error_handling() {
+    async fn test_ordered_joinset_large_out_of_order() {
+        let mut join_set = OrderedJoinSet::new();
+
+        // Spawn multiple tasks with different delays
+        for i in 0..1000000 {
+            join_set.spawn(async move {
+                // random sleep between 0 and 1000ms
+                let sleep_duration = rand::thread_rng().gen_range(0..1000);
+                sleep(Duration::from_millis(sleep_duration)).await;
+                i
+            });
+        }
+
+        // Join all tasks
+        let mut count = 0;
+        while let Some(result) = join_set.join_next().await {
+            assert_eq!(result.unwrap(), count);
+            count += 1;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ordered_joinset_basic_error_handling() {
         let mut join_set = OrderedJoinSet::<i32>::new();
 
         // Spawn a task that panics
@@ -151,10 +148,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ordered_join_set_mixed_success_error() {
+    async fn test_ordered_joinset_basic_mixed_success_error() {
         let mut join_set = OrderedJoinSet::new();
 
         // Spawn a mix of successful and failing tasks
+
         join_set.spawn(async { 1 });
         join_set.spawn(async {
             panic!("test panic");
@@ -162,9 +160,38 @@ mod tests {
         join_set.spawn(async { 3 });
 
         // First task should succeed
+
         assert_eq!(join_set.join_next().await.unwrap().unwrap(), 1);
         // Second task should fail
         assert!(join_set.join_next().await.unwrap().is_err());
+        // Third task should succeed
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 3);
+        assert!(join_set.join_next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ordered_joinset_basic_mixed_success_error_out_of_order() {
+        let mut join_set = OrderedJoinSet::new();
+
+        // Spawn a mix of successful and failing tasks
+
+        join_set.spawn(async {
+            sleep(Duration::from_millis(100)).await;
+            1
+        });
+        join_set.spawn(async {
+            sleep(Duration::from_millis(50)).await;
+            panic!("test panic");
+        });
+        join_set.spawn(async {
+            sleep(Duration::from_millis(200)).await;
+            3
+        });
+
+        // First task should fail because it was joined first
+        assert!(join_set.join_next().await.unwrap().is_err());
+        // Second task should fail
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 1);
         // Third task should succeed
         assert_eq!(join_set.join_next().await.unwrap().unwrap(), 3);
         assert!(join_set.join_next().await.is_none());

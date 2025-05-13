@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
 # serializable before importing pa from daft.dependencies.
+from daft.runners.distributed_swordfish import FlotillaScheduler
 import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
@@ -27,7 +28,6 @@ from daft.runners import ray_tracing
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
-from daft.utils import SyncFromAsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -1218,6 +1218,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
+        
+        self.flotilla_scheduler : FlotillaScheduler | None = None
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return PartitionSetCache()
@@ -1334,7 +1336,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
         elif daft_execution_config.flotilla:
             try:
-                distributed_planner = DistributedPhysicalPlan.from_logical_plan_builder(
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
                     builder._builder, daft_execution_config
                 )
             except Exception as e:
@@ -1342,22 +1344,15 @@ class RayRunner(Runner[ray.ObjectRef]):
                 # Fallback to regular execution
                 self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
-                # If plan building succeeds, execute it
-                from functools import partial
+                if self.flotilla_scheduler is None:
+                    self.flotilla_scheduler = FlotillaScheduler.remote()
 
-                psets = {
-                    k: [
-                        RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0)
-                        for v in v.values()
-                    ]
-                    for k, v in self._part_set_cache.get_all_partition_sets().items()
-                }
-                # SyncFromAsyncIterator is used to convert an async iterator to a sync iterator.
-                # This is because the distributed planner returns an async iterator.
-                # Note that the async iterator is created lazily upon first iteration, this is because the `run_plan`
-                # method needs to capture the current python event loop.
-                sync_iter = SyncFromAsyncIterator(partial(distributed_planner.run_plan, psets))
-                for obj, size_bytes, num_rows in sync_iter:
+                ray.get(self.flotilla_scheduler.run_plan.remote(distributed_plan, self._part_set_cache.get_all_partition_sets()))
+                while True:
+                    next_partition = ray.get(self.flotilla_scheduler.get_next_partition.remote())
+                    if next_partition is None:
+                        break
+                    obj, num_rows, size_bytes = next_partition
                     metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
                         [PartitionMetadata(num_rows, size_bytes)]
                     )

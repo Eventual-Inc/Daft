@@ -4,10 +4,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::Partition;
+use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
+use serde::{Deserialize, Serialize};
 use pyo3::prelude::*;
-use ray::{RayPartitionRef, RaySwordfishTask, RayWorkerManagerFactory};
+use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManagerFactory};
 use tokio::sync::Mutex;
 
 use crate::plan::{DistributedPhysicalPlan, PlanResult};
@@ -41,7 +43,8 @@ impl PythonPartitionRefStream {
                         let objref = ray_part_ref.object_ref.clone_ref(py);
                         let size_bytes = ray_part_ref.size_bytes;
                         let num_rows = ray_part_ref.num_rows;
-                        let ret = (objref, size_bytes, num_rows);
+                        println!("objref: {:?}, num_rows: {:?}, size_bytes: {:?}", objref, num_rows, size_bytes);
+                        let ret = (objref, num_rows, size_bytes);
                         Some(ret)
                     }
                     None => None,
@@ -53,6 +56,7 @@ impl PythonPartitionRefStream {
 }
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan", frozen)]
+#[derive(Serialize, Deserialize)]
 struct PyDistributedPhysicalPlan {
     planner: DistributedPhysicalPlan,
 }
@@ -95,7 +99,7 @@ impl PyDistributedPhysicalPlan {
         );
         let part_stream = self
             .planner
-            .run_plan(psets, Box::new(worker_manager_factory))?;
+            .run_plan(Arc::new(psets), Box::new(worker_manager_factory))?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(part_stream)),
         };
@@ -103,9 +107,12 @@ impl PyDistributedPhysicalPlan {
     }
 }
 
+impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
+    parent.add_class::<RaySwordfishWorker>()?;
     Ok(())
 }
