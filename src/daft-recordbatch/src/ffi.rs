@@ -18,7 +18,7 @@ pub fn record_batch_from_arrow(
         return Ok(RecordBatch::empty(Some(schema))?);
     }
 
-    let names = schema.names();
+    let names = schema.field_names().collect::<Vec<_>>();
     let num_batches = batches.len();
     // First extract all the arrays at once while holding the GIL
     let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn arrow2::array::Array>>, usize)> =
@@ -45,7 +45,7 @@ pub fn record_batch_from_arrow(
                 .enumerate()
                 .map(|(i, array)| {
                     let cast_array = cast_array_for_daft_if_needed(array);
-                    Series::try_from((names.get(i).unwrap().as_str(), cast_array))
+                    Series::try_from((names[i], cast_array))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
             tables.push(RecordBatch::new_with_size(
@@ -68,7 +68,7 @@ pub fn record_batch_to_arrow(
     let mut names: Vec<String> = Vec::with_capacity(table.num_columns());
 
     for i in 0..table.num_columns() {
-        let s = table.get_column_by_index(i)?;
+        let s = table.get_column(i);
         let arrow_array = s.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
         let py_array = common_arrow_ffi::to_py_array(py, arrow_array, &pyarrow)?;

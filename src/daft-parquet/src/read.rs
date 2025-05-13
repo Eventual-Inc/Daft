@@ -15,7 +15,7 @@ use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
-use daft_dsl::{optimization::get_required_columns, ExprRef};
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns, ExprRef};
 use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
 use futures::{
@@ -291,9 +291,15 @@ async fn read_parquet_single(
     if let Some(predicate) = predicate {
         // If a predicate exists, we need to apply it before a limit and also keep all of the columns that it needs until it is applied
         // TODO ideally pipeline this with IO and before concatenating, rather than after
+        let predicate = BoundExpr::try_new(predicate, &table.schema)?;
         table = table.filter(&[predicate])?;
         if let Some(oc) = columns_to_return {
-            table = table.get_columns(&oc)?;
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
         }
         if let Some(nr) = num_rows_to_return {
             table = table.head(nr)?;

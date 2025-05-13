@@ -15,9 +15,6 @@ pub struct BinaryLength {}
 
 #[typetag::serde]
 impl ScalarUDF for BinaryLength {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn name(&self) -> &'static str {
         "length"
     }
@@ -36,8 +33,11 @@ impl ScalarUDF for BinaryLength {
             Err(e) => Err(e),
         }
     }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        self.evaluate_from_series(&inputs)
+    }
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs[0].data_type() {
             DataType::Binary => {
                 let binary_array = inputs[0].downcast::<BinaryArray>()?;

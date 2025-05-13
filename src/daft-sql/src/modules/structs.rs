@@ -23,8 +23,8 @@ impl SQLFunction for StructGet {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match inputs {
             [input, key] => {
-                let input = planner.plan_function_arg(input)?;
-                let key = planner.plan_function_arg(key)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
+                let key = planner.plan_function_arg(key).map(|arg| arg.into_inner())?;
                 if let Some(lit) = key.as_literal().and_then(|lit| lit.as_str()) {
                     Ok(daft_dsl::functions::struct_::get(input, lit))
                 } else {

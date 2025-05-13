@@ -115,6 +115,10 @@ def lit(value: object) -> Expression:
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
+    elif isinstance(value, ImageFormat):
+        lit_value = _lit(str(value))
+    elif isinstance(value, ImageMode):
+        lit_value = _lit(str(value))
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -420,7 +424,8 @@ class Expression:
 
     def abs(self) -> Expression:
         """Absolute of a numeric expression."""
-        return Expression._from_pyexpr(native.abs(self._expr))
+        f = native.get_function_from_registry("abs")
+        return Expression._from_pyexpr(f(self._expr))
 
     def __add__(self, other: object) -> Expression:
         """Adds two numeric expressions or concatenates two string expressions (``e1 + e2``)."""
@@ -741,13 +746,13 @@ class Expression:
 
     def ceil(self) -> Expression:
         """The ceiling of a numeric expression."""
-        expr = native.ceil(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("ceil")
+        return Expression._from_pyexpr(f(self._expr))
 
     def floor(self) -> Expression:
         """The floor of a numeric expression."""
-        expr = native.floor(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("floor")
+        return Expression._from_pyexpr(f(self._expr))
 
     def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
         """Clips an expression to the given minimum and maximum values.
@@ -757,108 +762,111 @@ class Expression:
             max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
 
         """
-        min_expr = Expression._to_expression(min)
-        max_expr = Expression._to_expression(max)
-        return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
+        min_expr = Expression._to_expression(min)._expr
+        max_expr = Expression._to_expression(max)._expr
+        f = native.get_function_from_registry("clip")
+        return Expression._from_pyexpr(f(self._expr, min_expr, max_expr))
 
     def sign(self) -> Expression:
         """The sign of a numeric expression."""
-        expr = native.sign(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("sign")
+        return Expression._from_pyexpr(f(self._expr))
 
     def signum(self) -> Expression:
         """The signum of a numeric expression."""
-        expr = native.signum(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("sign")
+        return Expression._from_pyexpr(f(self._expr))
 
     def negate(self) -> Expression:
         """The negative of a numeric expression."""
-        expr = native.negate(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("negative")
+        return Expression._from_pyexpr(f(self._expr))
 
     def negative(self) -> Expression:
         """The negative of a numeric expression."""
-        expr = native.negative(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("negative")
+        return Expression._from_pyexpr(f(self._expr))
 
-    def round(self, decimals: int = 0) -> Expression:
+    def round(self, decimals: int | Expression = 0) -> Expression:
         """The round of a numeric expression.
 
         Args:
             decimals: number of decimal places to round to. Defaults to 0.
         """
         assert isinstance(decimals, int)
-        expr = native.round(self._expr, decimals)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("round")
+        decimals_expr = Expression._to_expression(decimals)._expr
+        return Expression._from_pyexpr(f(self._expr, decimal=decimals_expr))
 
     def sqrt(self) -> Expression:
         """The square root of a numeric expression."""
-        expr = native.sqrt(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("sqrt")
+        return Expression._from_pyexpr(f(self._expr))
 
     def cbrt(self) -> Expression:
         """The cube root of a numeric expression."""
-        return Expression._from_pyexpr(native.cbrt(self._expr))
+        f = native.get_function_from_registry("cbrt")
+        return Expression._from_pyexpr(f(self._expr))
 
     def sin(self) -> Expression:
         """The elementwise sine of a numeric expression."""
-        expr = native.sin(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("sin")
+        return Expression._from_pyexpr(f(self._expr))
 
     def cos(self) -> Expression:
         """The elementwise cosine of a numeric expression."""
-        expr = native.cos(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("cos")
+        return Expression._from_pyexpr(f(self._expr))
 
     def tan(self) -> Expression:
         """The elementwise tangent of a numeric expression."""
-        expr = native.tan(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("tan")
+        return Expression._from_pyexpr(f(self._expr))
 
     def csc(self) -> Expression:
         """The elementwise cosecant of a numeric expression."""
-        expr = native.csc(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("csc")
+        return Expression._from_pyexpr(f(self._expr))
 
     def sec(self) -> Expression:
         """The elementwise secant of a numeric expression."""
-        expr = native.sec(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("sec")
+        return Expression._from_pyexpr(f(self._expr))
 
     def cot(self) -> Expression:
         """The elementwise cotangent of a numeric expression."""
-        expr = native.cot(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("cot")
+        return Expression._from_pyexpr(f(self._expr))
 
     def sinh(self) -> Expression:
         """The elementwise hyperbolic sine of a numeric expression."""
-        expr = native.sinh(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("sinh")
+        return Expression._from_pyexpr(f(self._expr))
 
     def cosh(self) -> Expression:
         """The elementwise hyperbolic cosine of a numeric expression."""
-        expr = native.cosh(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("cosh")
+        return Expression._from_pyexpr(f(self._expr))
 
     def tanh(self) -> Expression:
         """The elementwise hyperbolic tangent of a numeric expression."""
-        expr = native.tanh(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("tanh")
+        return Expression._from_pyexpr(f(self._expr))
 
     def arcsin(self) -> Expression:
         """The elementwise arc sine of a numeric expression."""
-        expr = native.arcsin(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("arcsin")
+        return Expression._from_pyexpr(f(self._expr))
 
     def arccos(self) -> Expression:
         """The elementwise arc cosine of a numeric expression."""
-        expr = native.arccos(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("arccos")
+        return Expression._from_pyexpr(f(self._expr))
 
     def arctan(self) -> Expression:
         """The elementwise arc tangent of a numeric expression."""
-        expr = native.arctan(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("arctan")
+        return Expression._from_pyexpr(f(self._expr))
 
     def arctan2(self, other: Expression) -> Expression:
         """Calculates the four quadrant arctangent of coordinates (y, x), in radians.
@@ -869,72 +877,75 @@ class Expression:
         * ``y < 0``: ``(-pi, -pi/2)``
         """
         expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(native.arctan2(self._expr, expr._expr))
+        f = native.get_function_from_registry("arctan2")
+        return Expression._from_pyexpr(f(self._expr, expr._expr))
 
     def arctanh(self) -> Expression:
         """The elementwise inverse hyperbolic tangent of a numeric expression."""
-        expr = native.arctanh(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("arctanh")
+        return Expression._from_pyexpr(f(self._expr))
 
     def arccosh(self) -> Expression:
         """The elementwise inverse hyperbolic cosine of a numeric expression."""
-        expr = native.arccosh(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("arccosh")
+        return Expression._from_pyexpr(f(self._expr))
 
     def arcsinh(self) -> Expression:
         """The elementwise inverse hyperbolic sine of a numeric expression."""
-        expr = native.arcsinh(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("arcsinh")
+        return Expression._from_pyexpr(f(self._expr))
 
     def radians(self) -> Expression:
         """The elementwise radians of a numeric expression."""
-        expr = native.radians(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("radians")
+        return Expression._from_pyexpr(f(self._expr))
 
     def degrees(self) -> Expression:
         """The elementwise degrees of a numeric expression."""
-        expr = native.degrees(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("degrees")
+        return Expression._from_pyexpr(f(self._expr))
 
     def log2(self) -> Expression:
         """The elementwise log base 2 of a numeric expression."""
-        expr = native.log2(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("log2")
+        return Expression._from_pyexpr(f(self._expr))
 
     def log10(self) -> Expression:
         """The elementwise log base 10 of a numeric expression."""
-        expr = native.log10(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("log10")
+        return Expression._from_pyexpr(f(self._expr))
 
     def log(self, base: float = math.e) -> Expression:  # type: ignore
         """The elementwise log with given base, of a numeric expression.
 
         Args:
             base: The base of the logarithm. Defaults to e.
-        """
+        """ ""
         assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
-        expr = native.log(self._expr, float(base))
+        base = lit(base)
+        f = native.get_function_from_registry("log")
+        expr = f(self._expr, base._expr)
         return Expression._from_pyexpr(expr)
 
     def ln(self) -> Expression:
         """The elementwise natural log of a numeric expression."""
-        expr = native.ln(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("ln")
+        return Expression._from_pyexpr(f(self._expr))
 
     def log1p(self) -> Expression:
         """The ln(self + 1) of a numeric expression."""
-        expr = native.log1p(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("log1p")
+        return Expression._from_pyexpr(f(self._expr))
 
     def exp(self) -> Expression:
         """The e^self of a numeric expression."""
-        expr = native.exp(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("exp")
+        return Expression._from_pyexpr(f(self._expr))
 
     def expm1(self) -> Expression:
         """The e^self - 1 of a numeric expression."""
-        expr = native.expm1(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("expm1")
+        return Expression._from_pyexpr(f(self._expr))
 
     def bitwise_and(self, other: Expression) -> Expression:
         """Bitwise AND of two integer expressions."""
@@ -1653,15 +1664,15 @@ class Expression:
             │ ---   ┆ ---        ┆ ---   ┆ ---            │
             │ Utf8  ┆ Utf8       ┆ Int64 ┆ Int64          │
             ╞═══════╪════════════╪═══════╪════════════════╡
-            │ A     ┆ 2020-01-01 ┆ 1     ┆ 6              │
+            │ A     ┆ 2020-01-01 ┆ 1     ┆ 1              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ A     ┆ 2020-01-02 ┆ 2     ┆ 6              │
+            │ A     ┆ 2020-01-02 ┆ 2     ┆ 3              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ A     ┆ 2020-01-03 ┆ 3     ┆ 6              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B     ┆ 2020-01-04 ┆ 4     ┆ 15             │
+            │ B     ┆ 2020-01-04 ┆ 4     ┆ 4              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ B     ┆ 2020-01-05 ┆ 5     ┆ 15             │
+            │ B     ┆ 2020-01-05 ┆ 5     ┆ 9              │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
             │ B     ┆ 2020-01-06 ┆ 6     ┆ 15             │
             ╰───────┴────────────┴───────┴────────────────╯
@@ -1728,11 +1739,11 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def lead(self, offset: int = 1, default: Any | None = None) -> Expression:
-        """Get the value from a previous row within a window partition.
+        """Get the value from a future row within a window partition.
 
         Args:
             offset: The number of rows to shift forward. Must be >= 0.
-            default: Value to use when no previous row exists. Can be a column reference.
+            default: Value to use when no future row exists. Can be a column reference.
 
         Returns:
             Expression: Value from the row `offset` positions after the current row.
@@ -1986,7 +1997,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.is_nan(self._expr))
+        f = native.get_function_from_registry("is_nan")
+        return Expression._from_pyexpr(f(self._expr))
 
     def is_inf(self) -> Expression:
         """Checks if values in the Expression are Infinity.
@@ -2019,7 +2031,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             (Showing first 4 of 4 rows)
 
         """
-        return Expression._from_pyexpr(native.is_inf(self._expr))
+        f = native.get_function_from_registry("is_inf")
+        return Expression._from_pyexpr(f(self._expr))
 
     def not_nan(self) -> Expression:
         """Checks if values are not NaN (a special float value indicating not-a-number).
@@ -2050,7 +2063,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.not_nan(self._expr))
+        f = native.get_function_from_registry("not_nan")
+        return Expression._from_pyexpr(f(self._expr))
 
     def fill_nan(self, fill_value: Expression) -> Expression:
         """Fills NaN values in the Expression with the provided fill_value.
@@ -2079,8 +2093,8 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         """
         fill_value = Expression._to_expression(fill_value)
-        expr = native.fill_nan(self._expr, fill_value._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("fill_nan")
+        return Expression._from_pyexpr(f(self._expr, fill_value._expr))
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
@@ -2362,8 +2376,46 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╰───────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
+
         """
         return Expression._from_pyexpr(native.dt_nanosecond(self._expr))
+
+    def unix_date(self) -> Expression:
+        """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
+
+        Returns:
+            Expression: a UInt64 expression
+
+        Examples:
+            >>> import daft
+            >>> from datetime import datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime(1978, 1, 1, 1, 1, 1, 0),
+            ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
+            ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
+            ...         ]
+            ...     }
+            ... )
+            >>>
+            >>> df.select(daft.col("datetime").alias("unix_date").dt.unix_date()).show()
+            ╭───────────╮
+            │ unix_date │
+            │ ---       │
+            │ UInt64    │
+            ╞═══════════╡
+            │ 2922      │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 20009     │
+            ├╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 34699     │
+            ╰───────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return Expression._from_pyexpr(native.dt_unix_date(self._expr))
 
     def time(self) -> Expression:
         """Retrieves the time for a datetime column.
@@ -2436,6 +2488,41 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_month(self._expr))
 
+    def quarter(self) -> Expression:
+        """Retrieves the quarter for a datetime column.
+
+        Returns:
+            Expression: a UInt32 expression with just the quarter extracted from a datetime column
+
+        Examples:
+            >>> import daft, datetime
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "datetime": [
+            ...             datetime.datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime.datetime(2023, 7, 4, 0, 0, 0),
+            ...             datetime.datetime(2022, 12, 5, 0, 0, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> df.with_column("quarter", df["datetime"].dt.quarter()).collect()
+            ╭───────────────────────────────┬─────────╮
+            │ datetime                      ┆ quarter │
+            │ ---                           ┆ ---     │
+            │ Timestamp(Microseconds, None) ┆ UInt32  │
+            ╞═══════════════════════════════╪═════════╡
+            │ 2024-01-01 00:00:00           ┆ 1       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 2023-07-04 00:00:00           ┆ 3       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 2022-12-05 00:00:00           ┆ 4       │
+            ╰───────────────────────────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return Expression._from_pyexpr(native.dt_quarter(self._expr))
+
     def year(self) -> Expression:
         """Retrieves the year for a datetime column.
 
@@ -2467,7 +2554,6 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             ╰───────────────────────────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-
 
         """
         return Expression._from_pyexpr(native.dt_year(self._expr))
@@ -4424,20 +4510,11 @@ class ExpressionImageNamespace(ExpressionNamespace):
         Returns:
             Expression: An Image expression represnting an image column.
         """
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
+        image_mode = Expression._to_expression(mode)._expr
+        raise_on_error = lit(on_error)._expr
+        f = native.get_function_from_registry("image_decode")
 
-        if mode is not None:
-            if isinstance(mode, str):
-                mode = ImageMode.from_mode_string(mode.upper())
-            if not isinstance(mode, ImageMode):
-                raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Expression._from_pyexpr(native.image_decode(self._expr, raise_on_error=raise_on_error, mode=mode))
+        return Expression._from_pyexpr(f(self._expr, raise_on_error=raise_on_error, mode=image_mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
@@ -4452,7 +4529,9 @@ class ExpressionImageNamespace(ExpressionNamespace):
             image_format = ImageFormat.from_format_string(image_format.upper())
         if not isinstance(image_format, ImageFormat):
             raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
-        return Expression._from_pyexpr(native.image_encode(self._expr, image_format))
+        f = native.get_function_from_registry("image_encode")
+        image_format_expr = lit(image_format)._expr
+        return Expression._from_pyexpr(f(self._expr, image_format=image_format_expr))
 
     def resize(self, w: int, h: int) -> Expression:
         """Resize image into the provided width and height.
@@ -4464,11 +4543,10 @@ class ExpressionImageNamespace(ExpressionNamespace):
         Returns:
             Expression: An Image expression representing an image column of the resized images.
         """
-        if not isinstance(w, int):
-            raise TypeError(f"expected int for w but got {type(w)}")
-        if not isinstance(h, int):
-            raise TypeError(f"expected int for h but got {type(h)}")
-        return Expression._from_pyexpr(native.image_resize(self._expr, w, h))
+        width = lit(w)._expr
+        height = lit(h)._expr
+        f = native.get_function_from_registry("image_resize")
+        return Expression._from_pyexpr(f(self._expr, w=width, h=height))
 
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
         """Crops images with the provided bounding box.
@@ -4488,14 +4566,17 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 )
             bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
-        return Expression._from_pyexpr(native.image_crop(self._expr, bbox._expr))
+        f = native.get_function_from_registry("image_crop")
+        return Expression._from_pyexpr(f(self._expr, bbox._expr))
 
     def to_mode(self, mode: str | ImageMode) -> Expression:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Expression._from_pyexpr(native.image_to_mode(self._expr, mode))
+        image_mode = lit(mode)._expr
+        f = native.get_function_from_registry("to_mode")
+        return Expression._from_pyexpr(f(self._expr, mode=image_mode))
 
 
 class ExpressionPartitioningNamespace(ExpressionNamespace):
