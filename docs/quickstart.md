@@ -26,7 +26,7 @@ For more advanced installation options, please see [Installation](install.md).
 
 ### Create Your First Daft DataFrame
 
-See also [DataFrame Creation API Docs](api/dataframe_creation.md). Let's create a DataFrame from a dictionary of columns:
+See also [IO API Docs](api/io.md). Let's create a DataFrame from a dictionary of columns:
 
 === "🐍 Python"
     ```python
