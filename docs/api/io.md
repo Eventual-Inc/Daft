@@ -28,6 +28,16 @@
     options:
         heading_level: 3
 
+<!-- temp -->
+::: daft.file_path.from_glob_path
+    options:
+        heading_level: 3
+
+<!-- temp -->
+::: daft.sql.sql.sql
+    options:
+        heading_level: 3
+
 <!-- read_ -->
 
 ::: daft.read_csv
