@@ -29,7 +29,7 @@ class Pushdowns:
     to convert the rust expressions to this python pushdowns class.
 
     Attributes:
-        projections (list[Term] | None): Optional list of Terms (typically column references) to project.
+        projections (list[Reference | None): Optional list of references to project.
         predicate (Term | None): Optional filter predicate to apply to rows.
         limit (int | None): Optional limit on the number of rows to return.
     """
