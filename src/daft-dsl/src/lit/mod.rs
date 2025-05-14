@@ -504,21 +504,6 @@ pub trait Literal: Sized {
     fn literal_value(self) -> LiteralValue;
 }
 
-// pub trait Literal2: Sized {
-//     /// [Literal](Expr::Literal) expression.
-//     fn lit(self) -> ExprRef {
-//         Expr::Literal(self.literal_value()).into()
-//     }
-//     fn literal_value(self) -> LiteralValue;
-// }
-
-// impl <S> Literal2 for S where S: Serialize {
-//     fn literal_value(self) -> LiteralValue {
-//         todo!()
-//         // S::serialize(&self, serializer)
-//     }
-// }
-
 impl Literal for IntervalValue {
     fn literal_value(self) -> LiteralValue {
         LiteralValue::Interval(self)
