@@ -57,3 +57,5 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
     Configure the execution backend, Daft in various ways during execution, and how Daft interacts with storage.
 
 - [**Miscellaneous**](misc.md)
+
+</div>
