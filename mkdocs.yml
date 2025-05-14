@@ -96,17 +96,12 @@ theme:
   - content.code.copy   # add copy button to code sections
   - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
   - toc.follow
-  # - toc.integrate   # adds page subsections to left-hand menu (instead of right-hand menu)
   - navigation.footer
   - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
   - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
   - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
   - navigation.top   # back-to-top button
   - navigation.instant
-    # - navigation.sections # fixed sections
-    # - navigation.expand # drop down sections
-    # - navigation.path # breadcrumb navigation is rendered above title of each page
-    # - navigation.indexes # section header can also be a doc BUT! clashes with toc.integrate for the top-level page
 
   palette:
   - media: "(prefers-color-scheme)"
