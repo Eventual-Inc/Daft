@@ -44,9 +44,7 @@ pub(crate) fn native_parquet_writer_supported(
     if !matches!(source_type, SourceType::File) {
         return Ok(false);
     }
-    // TODO(desmond): Currently we do not extension and timestamp types.
-    // Conversion from daft -> arrow2 -> arrow-rs -> parquet also doesn't work for maps.
-    // Arrow-rs also does not handle a bug we identified with nested fields that span multiple data pages.
+    // TODO(desmond): Currently we do not support extension and timestamp types.
     let arrow_schema = match file_schema.to_arrow() {
         Ok(schema) => {
             for field in &schema.fields {
