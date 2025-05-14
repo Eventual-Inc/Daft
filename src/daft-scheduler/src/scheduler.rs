@@ -992,12 +992,12 @@ fn physical_plan_to_partition_tasks(
         #[cfg(feature = "python")]
         PhysicalPlan::DataSink(DataSink {
             schema: _,
-            data_sink_info: custom_info,
+            data_sink_info,
             input,
         }) => data_sink_write(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
-            custom_info,
+            data_sink_info,
         ),
     }
 }
