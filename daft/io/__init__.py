@@ -20,7 +20,7 @@ from daft.io._warc import read_warc
 from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
-from daft.io.sink import DataSink
+from daft.io.sink import DataSink, WriteOutput
 
 __all__ = [
     "AzureConfig",
@@ -32,6 +32,7 @@ __all__ = [
     "IOConfig",
     "S3Config",
     "S3Credentials",
+    "WriteOutput",
     "_range",
     "from_glob_path",
     "read_csv",

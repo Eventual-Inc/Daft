@@ -270,11 +270,7 @@ fn custom_write(
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_custom"))?
-        .call1((
-            upstream_iter,
-            &custom_info.sink.clone_ref(py),
-            &custom_info.kwargs.clone_ref(py),
-        ))?;
+        .call1((upstream_iter, &custom_info.sink.clone_ref(py)))?;
     Ok(py_iter.into())
 }
 

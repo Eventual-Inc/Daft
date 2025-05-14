@@ -5,13 +5,13 @@ import lance
 
 from daft.context import get_context
 from daft.daft import IOConfig
-from daft.dataframe.dataframe import DataFrame
-from daft.io import DataSink
+from daft.datatype import DataType
+from daft.io import DataSink, WriteOutput
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 
 
-class LanceWriteSink(DataSink[lance.FragmentMetadata, DataFrame]):
+class LanceWriteSink(DataSink[lance.FragmentMetadata]):
     """WriteSink for writing data to a Lance dataset."""
 
     def _import_lance(self):
@@ -28,6 +28,7 @@ class LanceWriteSink(DataSink[lance.FragmentMetadata, DataFrame]):
         schema: Schema,
         mode: Literal["create", "append", "overwrite"],
         io_config: Optional[IOConfig] = None,
+        **kwargs,
     ):
         from daft.dependencies import pa
         from daft.io.object_store_options import io_config_to_storage_options
@@ -36,31 +37,44 @@ class LanceWriteSink(DataSink[lance.FragmentMetadata, DataFrame]):
 
         if not isinstance(uri, (str, pathlib.Path)):
             raise TypeError(f"Expected URI to be str or pathlib.Path, got {type(uri)}")
-        self.table_uri = str(uri)
-        self.mode = mode
-        self.io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        self._table_uri = str(uri)
+        self._mode = mode
+        self._io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        self._args = kwargs
 
-        self.storage_options = io_config_to_storage_options(self.io_config, self.table_uri)
+        self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
 
-        self.pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in schema)
+        self._pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in schema)
 
         try:
-            table = lance.dataset(self.table_uri, storage_options=self.storage_options)
+            table = lance.dataset(self._table_uri, storage_options=self._storage_options)
 
         except ValueError:
             table = None
 
-        self.version = 0
+        self._version = 0
         if table:
             table_schema = table.schema
-            self.version = table.latest_version
-            if self.pyarrow_schema != table_schema and not (self.mode == "overwrite"):
+            self._version = table.latest_version
+            if self._pyarrow_schema != table_schema and not (self._mode == "overwrite"):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
-                    f"Data schema:\n{self.pyarrow_schema}\nTable Schema:\n{table_schema}"
+                    f"Data schema:\n{self._pyarrow_schema}\nTable Schema:\n{table_schema}"
                 )
 
-    def write(self, micropartitions: Iterator[MicroPartition], **kwargs) -> Iterator[lance.FragmentMetadata]:
+        self._schema = Schema._from_pydict(
+            {
+                "num_fragments": DataType.int64(),
+                "num_deleted_rows": DataType.int64(),
+                "num_small_files": DataType.int64(),
+                "version": DataType.int64(),
+            }
+        )
+
+    def schema(self) -> Schema:
+        return self._schema
+
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteOutput[lance.FragmentMetadata]]:
         """Writes fragments from the given micropartitions."""
         lance = self._import_lance()
 
@@ -68,31 +82,34 @@ class LanceWriteSink(DataSink[lance.FragmentMetadata, DataFrame]):
             arrow_table = micropartition.to_arrow()
 
             fragments = lance.fragment.write_fragments(
-                arrow_table, dataset_uri=self.table_uri, mode=self.mode, storage_options=self.storage_options, **kwargs
+                arrow_table,
+                dataset_uri=self._table_uri,
+                mode=self._mode,
+                storage_options=self._storage_options,
+                **self._args,
             )
 
             yield from fragments
 
-    def finish(self, results: List[lance.FragmentMetadata]) -> DataFrame:
+    def finalize(self, results: List[WriteOutput[lance.FragmentMetadata]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
-        from daft import from_pydict
         from daft.dependencies import pa
 
         lance = self._import_lance()
 
         fragments = results
 
-        if self.mode == "create" or self.mode == "overwrite":
-            operation = lance.LanceOperation.Overwrite(self.pyarrow_schema, fragments)
-        elif self.mode == "append":
+        if self._mode == "create" or self._mode == "overwrite":
+            operation = lance.LanceOperation.Overwrite(self._pyarrow_schema, fragments)
+        elif self._mode == "append":
             operation = lance.LanceOperation.Append(fragments)
 
         dataset = lance.LanceDataset.commit(
-            self.table_uri, operation, read_version=self.version, storage_options=self.storage_options
+            self._table_uri, operation, read_version=self._version, storage_options=self._storage_options
         )
         stats = dataset.stats.dataset_stats()
 
-        tbl = from_pydict(
+        tbl = MicroPartition.from_pydict(
             {
                 "num_fragments": pa.array([stats["num_fragments"]], type=pa.int64()),
                 "num_deleted_rows": pa.array([stats["num_deleted_rows"]], type=pa.int64()),

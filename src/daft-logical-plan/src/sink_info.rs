@@ -160,13 +160,6 @@ pub struct CustomInfo {
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
     pub sink: Arc<PyObject>,
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
-    pub kwargs: Arc<PyObject>,
 }
 
 #[cfg(feature = "python")]

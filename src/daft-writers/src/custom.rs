@@ -5,10 +5,7 @@ use common_error::DaftResult;
 use daft_logical_plan::CustomInfo;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
-use pyo3::{
-    types::{PyAnyMethods, PyDict},
-    Python,
-};
+use pyo3::{types::PyAnyMethods, Python};
 
 use crate::{AsyncFileWriter, WriterFactory};
 
@@ -49,15 +46,10 @@ impl AsyncFileWriter for CustomWriter {
             let py_list = pyo3::types::PyList::new(py, &[py_micropartition])?;
             let py_iter = py_list.try_iter()?;
 
-            let kwargs = self
+            let result = self
                 .custom_info
-                .kwargs
-                .as_ref()
-                .downcast_bound::<PyDict>(py)?;
-            let result =
-                self.custom_info
-                    .sink
-                    .call_method(py, "write", (py_iter,), Some(kwargs))?;
+                .sink
+                .call_method(py, "write", (py_iter,), None)?;
             let result_list = py
                 .import(pyo3::intern!(py, "builtins"))?
                 .call_method1("list", (result,))?;
@@ -69,7 +61,7 @@ impl AsyncFileWriter for CustomWriter {
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
                 .getattr(pyo3::intern!(py, "from_pydict"))?
                 .call1((results_dict,))?
-                .getattr(pyo3::intern!(py, "_table"))?
+                .getattr(pyo3::intern!(py, "_recordbatch"))?
                 .extract()
         })?;
 

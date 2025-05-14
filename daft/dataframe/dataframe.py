@@ -1179,25 +1179,33 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write(self, sink: "DataSink[T, R]", **kwargs) -> "R":
+    def write_sink(self, sink: "DataSink[T]") -> "DataFrame":
         """Writes the DataFrame to the given DataSink.
 
         Args:
             sink: The DataSink to write to.
-            **kwargs: Additional keyword arguments to pass to the DataSink's write() method.
 
         Returns:
-            R: The result returned by the DataSink's finish() method.
+            DataFrame: A dataframe from the micropartition returned by the DataSink's `.finalize()` method.
         """
         sink.start()
 
-        builder = self._builder.write_custom(sink.name(), sink, kwargs)
+        builder = self._builder.write_custom(sink.name(), sink)
         write_df = DataFrame(builder)
         write_df.collect()
 
         results = write_df.to_pydict()
         assert "custom_write_results" in results
-        return sink.finish(results["custom_write_results"])
+        micropartition = sink.finalize(results["custom_write_results"])
+        if micropartition.schema() != sink.schema():
+            raise ValueError(
+                f"Schema mismatch between the data sink's schema and the result's schema:\nSink schema:\n{sink.schema()}\nResult schema:\n{micropartition.schema()}"
+            )
+        # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
+        # plan from the source all the way to the sink to the sink's results. In theory we can do this
+        # for all other sinks too.
+        write_plan_builder = to_logical_plan_builder(micropartition)
+        return DataFrame(write_plan_builder)
 
     @DataframePublicAPI
     def write_lance(
@@ -1262,8 +1270,8 @@ class DataFrame:
         """
         from daft.dataframe.lance_write_sink import LanceWriteSink
 
-        sink = LanceWriteSink(uri, self.schema(), mode, io_config)
-        return self.write(sink, **kwargs)
+        sink = LanceWriteSink(uri, self.schema(), mode, io_config, **kwargs)
+        return self.write_sink(sink)
 
     ###
     # DataFrame operations
