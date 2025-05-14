@@ -29,7 +29,7 @@
         heading_level: 3
 
 <!-- temp -->
-::: daft.file_path.from_glob_path
+::: daft.io.file_path.from_glob_path
     options:
         heading_level: 3
 
