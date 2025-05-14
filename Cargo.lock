@@ -2451,7 +2451,6 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
- "daft-functions",
  "daft-functions-list",
  "daft-io",
  "daft-json",
