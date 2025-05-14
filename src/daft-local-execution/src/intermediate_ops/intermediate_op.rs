@@ -88,7 +88,7 @@ impl IntermediateNode {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
     ) -> Self {
-        let rts = RuntimeStatsContext::new();
+        let rts = RuntimeStatsContext::new(intermediate_op.name());
         Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats)
     }
 

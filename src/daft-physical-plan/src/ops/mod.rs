@@ -5,6 +5,8 @@ mod concat;
 mod cross_join;
 mod csv;
 #[cfg(feature = "python")]
+mod data_sink_write;
+#[cfg(feature = "python")]
 mod deltalake_write;
 mod empty_scan;
 mod explode;
@@ -27,6 +29,7 @@ mod scan;
 mod shuffle_exchange;
 mod sort;
 mod sort_merge_join;
+mod top_n;
 mod unpivot;
 
 pub use actor_pool_project::ActorPoolProject;
@@ -35,6 +38,8 @@ pub use broadcast_join::BroadcastJoin;
 pub use concat::Concat;
 pub use cross_join::CrossJoin;
 pub use csv::TabularWriteCsv;
+#[cfg(feature = "python")]
+pub use data_sink_write::DataSink;
 #[cfg(feature = "python")]
 pub use deltalake_write::DeltaLakeWrite;
 pub use empty_scan::EmptyScan;
@@ -58,6 +63,7 @@ pub use scan::TabularScan;
 pub use shuffle_exchange::{ShuffleExchange, ShuffleExchangeFactory, ShuffleExchangeStrategy};
 pub use sort::Sort;
 pub use sort_merge_join::SortMergeJoin;
+pub use top_n::TopN;
 pub use unpivot::Unpivot;
 
 #[macro_export]

@@ -322,8 +322,8 @@ impl Sub for InferDataType<'_> {
                     (ts @ DataType::Timestamp(..), du @ DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
-                    (DataType::Timestamp(t_unit_self, tz_self), DataType::Timestamp(t_unit_other, tz_other))
-                    if t_unit_self == t_unit_other && tz_self == tz_other => Ok(DataType::Duration(*t_unit_self)),
+                (DataType::Timestamp(t_unit_self, tz_self), DataType::Timestamp(t_unit_other, tz_other))
+                if t_unit_self == t_unit_other && tz_self == tz_other => Ok(DataType::Duration(*t_unit_self)),
                 (ts @ DataType::Timestamp(..), ts_other @ DataType::Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision or timezone: {}, {}. Please explicitly cast to the precision or timezone you wish to add in.", ts, ts_other)
                 )),

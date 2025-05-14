@@ -88,7 +88,7 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
         YearTransform,
     )
 
-    part_col = col(schema.find_field(field.source_id).name)
+    part_col: Expression = col(schema.find_field(field.source_id).name)
 
     if isinstance(field.transform, IdentityTransform):
         transform_expr = part_col

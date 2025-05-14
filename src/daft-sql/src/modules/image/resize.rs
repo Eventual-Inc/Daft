@@ -56,7 +56,7 @@ impl SQLFunction for SQLImageResize {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let ImageResize { width, height } =
                     planner.plan_function_args(args, &["w", "h"], 2)?;
                 Ok(resize(input, width, height))

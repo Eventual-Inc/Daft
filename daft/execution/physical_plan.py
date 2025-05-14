@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.io import DataSink
     from daft.logical.schema import Schema
 
 
@@ -220,6 +221,17 @@ def lance_write(
         )
         if isinstance(step, PartitionTaskBuilder)
         else step
+        for step in child_plan
+    )
+
+
+def data_sink_write(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    sink: DataSink,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Write the results of `child_plan` into a custom write sink described by `sink`."""
+    yield from (
+        step.add_instruction(execution_step.DataSinkWrite(sink)) if isinstance(step, PartitionTaskBuilder) else step
         for step in child_plan
     )
 
@@ -1721,6 +1733,30 @@ def sort(
             for per_part_boundaries in per_partition_bounds
         ],
     )
+
+
+def top_n(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    sort_by: ExpressionsProjection,
+    descending: list[bool],
+    nulls_first: list[bool],
+    limit: int,
+    num_partitions: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Take the top N values from the result of `child_plan` according to `sort_info` and `limit`."""
+    # TODO: The current distributed top_n implementation will perform a full sort
+    # followed by a limit. This is not optimal, but upcoming infrastructure changes
+    # to the distributed execution engine will make it easier to add a more efficient
+    # distributed top_n implementation.
+
+    child_plan = sort(
+        child_plan=child_plan,
+        sort_by=sort_by,
+        descending=descending,
+        nulls_first=nulls_first,
+        num_partitions=num_partitions,
+    )
+    yield from global_limit(child_plan=child_plan, limit_rows=limit, eager=False, num_partitions=num_partitions)
 
 
 def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int):
