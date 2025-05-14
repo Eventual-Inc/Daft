@@ -24,7 +24,6 @@ use parquet::{
     },
     schema::types::SchemaDescriptor,
 };
-use tokio::sync::mpsc::Sender;
 
 use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
@@ -166,62 +165,63 @@ impl ParquetWriter {
         Ok(())
     }
 
-    /// Helper function that spawns 1 worker thread per leaf column, returning the handles to the
-    /// workers and senders to give each worker arrow leaf columns to write.
+    /// Helper function that spawns 1 worker thread per leaf column, dispatches the relevant arrow leaf columns to each
+    /// worker, then returns the handles to the workers.
     fn spawn_column_writer_workers(
         &self,
-        channel_size: usize,
-    ) -> DaftResult<(Vec<ParquetColumnWriterHandle>, Vec<Sender<ArrowLeafColumn>>)> {
+        record_batches: &[RecordBatch],
+    ) -> DaftResult<Vec<ParquetColumnWriterHandle>> {
+        // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,
             &self.arrow_schema,
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        // Create a container to store each leaf column's arrow data.
+        let mut leaf_column_data: Vec<Vec<ArrowLeafColumn>> = column_writers
+            .iter()
+            .map(|_| Vec::with_capacity(record_batches.len()))
+            .collect();
+        // For each record batch, grab the leaf data and store it in the relevant container.
+        for record_batch in record_batches {
+            let arrays = record_batch.get_inner_arrow_arrays();
+            let mut leaf_iter = leaf_column_data.iter_mut();
+
+            for (arr, field) in arrays.zip(&self.arrow_schema.fields) {
+                let leaves = compute_leaves(field, &arr.into())
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                for leaf in leaves {
+                    match leaf_iter.next() {
+                        Some(slot) => slot.push(leaf),
+                        None => {
+                            return Err(DaftError::InternalError(
+                                "Mismatch between leaves and column slots".to_string(),
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+        // Spawn leaf column writers and pass in their column data.
         let compute_runtime = get_compute_runtime();
-        let (handles, senders): (Vec<_>, Vec<_>) = column_writers
+        Ok(column_writers
             .into_iter()
-            .map(|mut writer| {
-                let (send, mut recv) = tokio::sync::mpsc::channel(channel_size);
-                let handle = compute_runtime.spawn(async move {
-                    while let Some(col) = recv.recv().await {
+            .zip(leaf_column_data.into_iter())
+            .map(|(mut writer, column_data)| {
+                compute_runtime.spawn(async move {
+                    for data in column_data {
                         writer
-                            .write(&col)
+                            .write(&data)
                             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
                     }
                     writer
                         .close()
                         .map_err(|e| DaftError::ParquetError(e.to_string()))
-                });
-                (handle, send)
+                })
             })
-            .unzip();
-
-        Ok((handles, senders))
-    }
-
-    /// Helper function that dispatches record batches to the worker threads.
-    async fn dispatch_record_batches_to_workers(
-        &self,
-        record_batches: &[RecordBatch],
-        mut senders: Vec<Sender<ArrowLeafColumn>>,
-    ) -> DaftResult<()> {
-        for recordbatch in record_batches {
-            let arrays = recordbatch.get_inner_arrow_arrays();
-            for ((arr, field), sender) in arrays
-                .zip(&self.arrow_schema.fields)
-                .zip(senders.iter_mut())
-            {
-                let leaves = compute_leaves(field, &arr.into())
-                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-                for leaf in leaves {
-                    sender.send(leaf).await.map_err(|_| {
-                        DaftError::ComputeError("Failed to send column to worker".to_string())
-                    })?;
-                }
-            }
-        }
-        Ok(())
+            .collect())
     }
 }
 
@@ -237,13 +237,8 @@ impl AsyncFileWriter for ParquetWriter {
         let starting_bytes_written = self.bytes_written();
         let record_batches = data.get_tables()?;
 
-        // Initialize column writers and channels.
-        let (column_writer_handles, column_writer_senders) =
-            self.spawn_column_writer_workers(record_batches.len())?;
-
-        // Send the record batches to the column writer worker threads.
-        self.dispatch_record_batches_to_workers(&record_batches, column_writer_senders)
-            .await?;
+        // Spawn column writers.
+        let column_writer_handles = self.spawn_column_writer_workers(&record_batches)?;
 
         // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
         let mut row_group_writer = self

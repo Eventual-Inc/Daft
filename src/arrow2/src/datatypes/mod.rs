@@ -221,10 +221,10 @@ impl DataType {
             // TODO(desmond): Fix handling of timestamps with timezones in arrow2->arrow-rs to enable this.
             DataType::Timestamp(_, tz) => tz.is_none(),
             // TODO(desmond): Fix arrow2->arrow-rs->arrow-parquet conversion to enable this.
-            DataType::Map(_, _) => false,
+            // DataType::Map(_, _) => false,
             // TODO(desmond): Fix nested fields that span multiple data pages in arrow-rs to enable this.
             // See https://github.com/Eventual-Inc/Daft/pull/2586 for more details.
-            DataType::Struct(_) => false,
+            // DataType::Struct(_) => false,
             _ => {
                 let mut can_convert = true;
                 self.direct_children(|child| {
