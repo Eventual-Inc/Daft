@@ -7,8 +7,8 @@ from daft.context import get_context
 from daft.daft import IOConfig
 from daft.datatype import DataType
 from daft.io import DataSink, WriteOutput
-from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
+from daft.schema import Schema
 
 
 class LanceWriteSink(DataSink[lance.FragmentMetadata]):
@@ -62,13 +62,13 @@ class LanceWriteSink(DataSink[lance.FragmentMetadata]):
                     f"Data schema:\n{self._pyarrow_schema}\nTable Schema:\n{table_schema}"
                 )
 
-        self._schema = Schema._from_pydict(
-            {
-                "num_fragments": DataType.int64(),
-                "num_deleted_rows": DataType.int64(),
-                "num_small_files": DataType.int64(),
-                "version": DataType.int64(),
-            }
+        self._schema = Schema._from_field_name_and_types(
+            [
+                ("num_fragments", DataType.int64()),
+                ("num_deleted_rows", DataType.int64()),
+                ("num_small_files", DataType.int64()),
+                ("version", DataType.int64()),
+            ]
         )
 
     def schema(self) -> Schema:

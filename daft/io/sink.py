@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Generic, Iterator, TypeVar
 
-from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
+from daft.schema import Schema
 
 T = TypeVar("T")
 
