@@ -199,7 +199,7 @@ markdown_extensions:
 
 # Plugins
 plugins:
-- markdown-exec
+# - markdown-exec
 - mkdocs-jupyter:
     execute: false
     include_source: true
