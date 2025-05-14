@@ -120,7 +120,6 @@ pub mod pylib {
         daft_distributed::register_modules(m)?;
         daft_dsl::register_modules(m)?;
         daft_functions::register_modules(m)?;
-        daft_functions_json::register_modules(m)?;
         daft_io::register_modules(m)?;
         daft_json::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
@@ -156,6 +155,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::float::FloatFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
         functions_registry.register::<daft_functions_utf8::Utf8Functions>();
+        functions_registry.register::<daft_functions_json::JsonFunctions>();
 
         Ok(())
     }

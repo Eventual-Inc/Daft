@@ -20,8 +20,8 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
-        InferDataType,
+        try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+        try_stddev_aggregation_supertype, try_sum_supertype, InferDataType,
     },
     join::JoinSide,
     prelude::*,
@@ -351,6 +351,9 @@ pub enum AggExpr {
     #[display("list({_0})")]
     Concat(ExprRef),
 
+    #[display("skew({_0}")]
+    Skew(ExprRef),
+
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     MapGroups {
         func: FunctionExpr,
@@ -442,7 +445,8 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr) => expr.name(),
+            | Self::Concat(expr)
+            | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
@@ -530,6 +534,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
+            Self::Skew(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_skew()"))
+            }
             Self::MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
         }
     }
@@ -552,7 +560,8 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr) => vec![expr.clone()],
+            | Self::Concat(expr)
+            | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
@@ -578,6 +587,7 @@ impl AggExpr {
             Self::List(_) => Self::List(first_child()),
             Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
+            Self::Skew(_) => Self::Skew(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
                 inputs: children,
@@ -711,6 +721,15 @@ impl AggExpr {
                     ))),
                 }
             }
+
+            Self::Skew(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_skew_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+
             Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
         }
     }
@@ -975,6 +994,10 @@ impl Expr {
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
+    }
+
+    pub fn skew(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Skew(self)).into()
     }
 
     pub fn agg_list(self: ExprRef) -> ExprRef {

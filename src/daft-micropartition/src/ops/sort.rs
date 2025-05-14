@@ -62,4 +62,34 @@ impl MicroPartition {
             _ => unreachable!(),
         }
     }
+
+    pub fn top_n(
+        &self,
+        sort_keys: &[ExprRef],
+        descending: &[bool],
+        nulls_first: &[bool],
+        limit: usize,
+    ) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::top_n");
+
+        let tables = self.concat_or_get(io_stats)?;
+
+        let sort_keys = sort_keys
+            .iter()
+            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
+            .try_collect::<Vec<_>>()?;
+
+        match tables.as_slice() {
+            [] => Ok(Self::empty(Some(self.schema.clone()))),
+            [single] => {
+                let sorted = single.top_n(&sort_keys, descending, nulls_first, limit)?;
+                Ok(Self::new_loaded(
+                    self.schema.clone(),
+                    Arc::new(vec![sorted]),
+                    self.statistics.clone(),
+                ))
+            }
+            _ => unreachable!(),
+        }
+    }
 }

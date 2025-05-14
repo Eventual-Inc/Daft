@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -624,6 +625,27 @@ def test_agg_any_value_ignore_nulls(make_df, repartition_nparts, with_morsel_siz
     res = daft_df.to_pydict()
     mapping = {res["group"][i]: res["any_value"][i] for i in range(len(res["group"]))}
     assert mapping == {1: 2, 2: 4, 3: None}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_skew(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4],
+            "values": [1, 3, 2, 4, None, 4, 1, 1, 2, None, None, None],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.groupby("group").agg(col("values").skew().alias("skew"))
+
+    daft_df.collect()
+    res = daft_df.to_pydict()
+    mapping = {res["group"][i]: res["skew"][i] for i in range(len(res["group"]))}
+    assert len(mapping) == 4
+    assert mapping[1] == 0.0
+    assert math.isnan(mapping[2])
+    assert math.isclose(mapping[3], 0.70710678, rel_tol=1e-5)
+    assert mapping[4] is None
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
