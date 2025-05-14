@@ -1477,7 +1477,7 @@ Daft supports file paths to a single file, a directory of files, and wildcards. 
     df = daft.read_csv("s3://mybucket/path/to/*.csv")
     ```
 
-To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [`creating DataFrames from files`](api/dataframe_creation.md#files).
+To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [`creating DataFrames from files`](api/io.md#input).
 
 ### From Data Catalogs
 
@@ -1485,7 +1485,7 @@ If you use catalogs such as [Apache Iceberg](integrations/iceberg.md) or [Apache
 
 ### From File Paths
 
-Daft also provides an easy utility to create a DataFrame from globbing a path. You can use the [`daft.from_glob_path()`][daft.from_glob_path] method which will read a DataFrame of globbed filepaths.
+Daft also provides an easy utility to create a DataFrame from globbing a path. You can use the [`daft.from_glob_path()`][daft.io.file_path.from_glob_path] method which will read a DataFrame of globbed filepaths.
 
 === "🐍 Python"
     ``` python
@@ -1514,7 +1514,7 @@ For testing, or small datasets that fit in memory, you may also create DataFrame
     df = daft.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
     ```
 
-To learn more, consult the API documentation on [`creating DataFrames from in-memory data structures`](api/dataframe_creation.md#in-memory-data).
+To learn more, consult the API documentation on [`creating DataFrames from in-memory data structures`](api/io.md#input).
 
 
 ### From Databases
