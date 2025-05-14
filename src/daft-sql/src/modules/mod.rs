@@ -4,7 +4,6 @@ pub mod aggs;
 pub mod coalesce;
 pub mod config;
 pub mod hashing;
-pub mod json;
 pub mod map;
 pub mod partitioning;
 pub mod python;
@@ -17,7 +16,6 @@ pub mod window;
 
 pub use aggs::SQLModuleAggs;
 pub use config::SQLModuleConfig;
-pub use json::SQLModuleJson;
 pub use map::SQLModuleMap;
 pub use partitioning::SQLModulePartitioning;
 pub use python::SQLModulePython;

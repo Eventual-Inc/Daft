@@ -223,6 +223,17 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 sort.stats_state.clone(),
             ))
         }
+        LogicalPlan::TopN(top_n) => {
+            let input = translate(&top_n.input)?;
+            Ok(LocalPhysicalPlan::top_n(
+                input,
+                top_n.sort_by.clone(),
+                top_n.descending.clone(),
+                top_n.nulls_first.clone(),
+                top_n.limit,
+                top_n.stats_state.clone(),
+            ))
+        }
         LogicalPlan::Join(join) => {
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
                 return Err(DaftError::not_implemented(
@@ -334,6 +345,13 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ))
                     }
                 },
+                #[cfg(feature = "python")]
+                SinkInfo::DataSinkInfo(data_sink_info) => Ok(LocalPhysicalPlan::data_sink(
+                    input,
+                    data_sink_info.clone(),
+                    sink.schema.clone(),
+                    sink.stats_state.clone(),
+                )),
             }
         }
         LogicalPlan::Explode(explode) => {

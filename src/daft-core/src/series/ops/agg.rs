@@ -6,7 +6,7 @@ use crate::{
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
-            DaftSetAggable, DaftStddevAggable, DaftSumAggable, GroupIndices,
+            DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable, DaftSumAggable, GroupIndices,
         },
         ListArray,
     },
@@ -332,6 +332,22 @@ impl Series {
                 other
             ))),
         }
+    }
+
+    pub fn skew(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        let target_type = try_skew_aggregation_supertype(self.data_type())?;
+        if !matches!(target_type, DataType::Float64) {
+            return Err(DaftError::not_implemented(format!(
+                "Skew is not implement for {target_type}, source type: {}",
+                self.data_type()
+            )));
+        }
+
+        let casted = self.cast(&DataType::Float64)?;
+        let casted = casted.f64()?;
+        Ok(groups
+            .map_or_else(|| casted.skew(), |groups| casted.grouped_skew(groups))?
+            .into_series())
     }
 }
 

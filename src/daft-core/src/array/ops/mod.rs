@@ -48,6 +48,7 @@ mod search_sorted;
 mod shift;
 mod sign;
 mod sketch_percentile;
+mod skew;
 mod sort;
 pub(crate) mod sparse_tensor;
 mod sqrt;
@@ -253,4 +254,10 @@ pub trait DaftBoolAggable {
     fn bool_or(&self) -> Self::Output;
     fn grouped_bool_and(&self, groups: &GroupIndices) -> Self::Output;
     fn grouped_bool_or(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftSkewAggable {
+    type Output;
+    fn skew(&self) -> Self::Output;
+    fn grouped_skew(&self, groups: &GroupIndices) -> Self::Output;
 }

@@ -528,6 +528,7 @@ fn pull_up_correlated_cols(
         // ops that cannot pull up correlated columns
         LogicalPlan::ActorPoolProject(..)
         | LogicalPlan::Limit(..)
+        | LogicalPlan::TopN(..)
         | LogicalPlan::Sample(..)
         | LogicalPlan::Source(..)
         | LogicalPlan::Explode(..)

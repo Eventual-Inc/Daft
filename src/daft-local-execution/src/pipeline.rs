@@ -14,7 +14,7 @@ use daft_dsl::{join::get_common_join_cols, resolved_col};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
@@ -49,6 +49,7 @@ use crate::{
         pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
+        top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
         window_partition_and_order_by::WindowPartitionAndOrderBySink,
@@ -415,6 +416,24 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             BlockingSinkNode::new(Arc::new(sort_sink), child_node, stats_state.clone()).boxed()
         }
+        LocalPhysicalPlan::TopN(TopN {
+            input,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
+            stats_state,
+            ..
+        }) => {
+            let sink = TopNSink::new(
+                sort_by.clone(),
+                descending.clone(),
+                nulls_first.clone(),
+                *limit as usize,
+            );
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            BlockingSinkNode::new(Arc::new(sink), child_node, stats_state.clone()).boxed()
+        }
         LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
             column_name,
@@ -776,6 +795,25 @@ pub fn physical_plan_to_pipeline(
             let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
             let write_sink = WriteSink::new(
                 WriteFormat::Lance,
+                writer_factory,
+                None,
+                file_schema.clone(),
+                None,
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DataSink(daft_local_plan::DataSink {
+            input,
+            data_sink_info,
+            file_schema,
+            stats_state,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let writer_factory =
+                daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
+            let write_sink = WriteSink::new(
+                WriteFormat::DataSink,
                 writer_factory,
                 None,
                 file_schema.clone(),

@@ -160,6 +160,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 // the rest should have been dealt with earlier
                 PhysicalPlan::ShuffleExchange(ShuffleExchange {strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum { .. }, ..}) |
                 PhysicalPlan::Sort(..) |
+                PhysicalPlan::TopN(..) |
                 PhysicalPlan::InMemoryScan(..) |
                 PhysicalPlan::TabularScan(..) |
                 PhysicalPlan::EmptyScan(..) |
@@ -170,7 +171,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::BroadcastJoin(..) |
                 PhysicalPlan::CrossJoin(..) => unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable"),
                 #[cfg(feature = "python")]
-                PhysicalPlan::IcebergWrite(..) | PhysicalPlan::DeltaLakeWrite(..) | PhysicalPlan::LanceWrite(..) => {
+                PhysicalPlan::IcebergWrite(..) | PhysicalPlan::DeltaLakeWrite(..) | PhysicalPlan::LanceWrite(..) | PhysicalPlan::DataSink(..) => {
                     unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable")
                 }
             }
