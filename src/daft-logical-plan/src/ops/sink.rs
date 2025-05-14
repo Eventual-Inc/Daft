@@ -52,6 +52,10 @@ impl Sink {
                     CatalogType::Lance(_) => vec![Field::new("fragments", DataType::Python)],
                 }
             }
+            #[cfg(feature = "python")]
+            SinkInfo::DataSinkInfo(_) => {
+                vec![Field::new("write_results", DataType::Python)]
+            }
         };
         let schema = Schema::new(fields).into();
         Ok(Self {
@@ -98,6 +102,10 @@ impl Sink {
                     res.extend(lance_info.multiline_display());
                 }
             },
+            #[cfg(feature = "python")]
+            SinkInfo::DataSinkInfo(data_sink_info) => {
+                res.push(format!("Sink: DataSink({})", data_sink_info.name));
+            }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));
         if let StatsState::Materialized(stats) = &self.stats_state {

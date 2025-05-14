@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterator, Litera
 from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
+from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
@@ -27,7 +28,7 @@ R = TypeVar("R")
 class ImageMode(Enum):
     """Supported image modes for Daft's image type.
 
-    .. warning::
+    Warning:
         Currently, only the 8-bit modes (L, LA, RGB, RGBA) can be stored in a DataFrame.
         If your binary image data includes other modes, use the `mode` argument
         in `image.decode` to convert the images to a supported mode.
@@ -1821,6 +1822,7 @@ class LogicalPlanBuilder:
         io_config: IOConfig | None = None,
         kwargs: dict[str, Any] | None = None,
     ) -> LogicalPlanBuilder: ...
+    def datasink_write(self, name: str, sink: DataSink) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def describe(self) -> LogicalPlanBuilder: ...
     def summarize(self) -> LogicalPlanBuilder: ...
