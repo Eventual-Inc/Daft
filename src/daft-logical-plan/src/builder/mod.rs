@@ -748,7 +748,7 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
-    pub fn custom_write(&self, name: String, sink: Arc<PyObject>) -> DaftResult<Self> {
+    pub fn datasink_write(&self, name: String, sink: Arc<PyObject>) -> DaftResult<Self> {
         use crate::sink_info::DataSinkInfo;
 
         let sink_info = SinkInfo::DataSinkInfo(DataSinkInfo { name, sink });
@@ -1289,8 +1289,8 @@ impl PyLogicalPlanBuilder {
     }
 
     #[pyo3(signature = (name, sink))]
-    pub fn custom_write(&self, name: String, sink: PyObject) -> PyResult<Self> {
-        Ok(self.builder.custom_write(name, Arc::new(sink))?.into())
+    pub fn datasink_write(&self, name: String, sink: PyObject) -> PyResult<Self> {
+        Ok(self.builder.datasink_write(name, Arc::new(sink))?.into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

@@ -41,7 +41,7 @@ class DataSink(ABC, Generic[T]):
 
     def name(self) -> str:
         """Optional custom sink name."""
-        return "Custom Data Sink"
+        return "User-defined Data Sink"
 
     @abstractmethod
     def schema(self) -> Schema:

@@ -1190,7 +1190,7 @@ class DataFrame:
         """
         sink.start()
 
-        builder = self._builder.write_custom(sink.name(), sink)
+        builder = self._builder.write_datasink(sink.name(), sink)
         write_df = DataFrame(builder)
         write_df.collect()
 

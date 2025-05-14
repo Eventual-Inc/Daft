@@ -165,7 +165,7 @@ pub struct DataSinkInfo {
 #[cfg(feature = "python")]
 impl DataSinkInfo {
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!("CustomInfo = {}", self.sink)]
+        vec![format!("DataSinkInfo = {}", self.sink)]
     }
 }
 

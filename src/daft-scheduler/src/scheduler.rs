@@ -262,15 +262,15 @@ fn lance_write(
 }
 
 #[cfg(feature = "python")]
-fn custom_write(
+fn data_sink_write(
     py: Python,
     upstream_iter: PyObject,
-    custom_info: &DataSinkInfo,
+    data_sink_info: &DataSinkInfo,
 ) -> PyResult<PyObject> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-        .getattr(pyo3::intern!(py, "write_custom"))?
-        .call1((upstream_iter, &custom_info.sink.clone_ref(py)))?;
+        .getattr(pyo3::intern!(py, "write_data_sink"))?
+        .call1((upstream_iter, &data_sink_info.sink.clone_ref(py)))?;
     Ok(py_iter.into())
 }
 
@@ -994,7 +994,7 @@ fn physical_plan_to_partition_tasks(
             schema: _,
             data_sink_info: custom_info,
             input,
-        }) => custom_write(
+        }) => data_sink_write(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
             custom_info,

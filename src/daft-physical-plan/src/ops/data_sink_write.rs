@@ -15,12 +15,12 @@ pub struct DataSink {
 impl DataSink {
     pub(crate) fn new(
         schema: SchemaRef,
-        custom_info: DataSinkInfo,
+        data_sink_info: DataSinkInfo,
         input: PhysicalPlanRef,
     ) -> Self {
         Self {
             schema,
-            data_sink_info: custom_info,
+            data_sink_info,
             input,
         }
     }

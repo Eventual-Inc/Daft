@@ -103,8 +103,8 @@ impl Sink {
                 }
             },
             #[cfg(feature = "python")]
-            SinkInfo::DataSinkInfo(custom_info) => {
-                res.push(format!("Sink: Custom({})", custom_info.name));
+            SinkInfo::DataSinkInfo(data_sink_info) => {
+                res.push(format!("Sink: DataSink({})", data_sink_info.name));
             }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));

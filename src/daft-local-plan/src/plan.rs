@@ -566,13 +566,13 @@ impl LocalPhysicalPlan {
     #[cfg(feature = "python")]
     pub(crate) fn data_sink(
         input: LocalPhysicalPlanRef,
-        custom_info: daft_logical_plan::DataSinkInfo,
+        data_sink_info: daft_logical_plan::DataSinkInfo,
         file_schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::DataSink(DataSink {
             input,
-            data_sink_info: custom_info,
+            data_sink_info,
             file_schema,
             stats_state,
         })
