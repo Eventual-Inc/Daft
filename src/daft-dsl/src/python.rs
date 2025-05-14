@@ -23,7 +23,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     expr::{Expr, WindowExpr},
-    visitor::accept,
     ExprRef, LiteralValue, Operator,
 };
 
@@ -579,25 +578,6 @@ impl PyExpr {
                 default,
             })),
         })
-    }
-
-    pub fn accept<'py>(&self, visitor: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-        accept(&self.clone(), visitor)
-    }
-
-    pub fn _eq(&self, other: &Self) -> bool {
-        self.expr == other.expr
-    }
-
-    pub fn _ne(&self, other: &Self) -> bool {
-        self.expr != other.expr
-    }
-
-    pub fn _hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.expr.hash(&mut hasher);
-        hasher.finish()
     }
 }
 
