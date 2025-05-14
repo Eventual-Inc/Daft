@@ -32,7 +32,7 @@ use crate::AsyncFileWriter;
 /// Default buffer size for writing to files.
 const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 
-type ColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
+type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 
 pub(crate) struct NativeArrowWriter {}
 
