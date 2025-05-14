@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
@@ -149,6 +149,33 @@ impl<T> FunctionArgs<T> {
 
     pub fn first(&self) -> Option<&T> {
         self.0.first().map(|f| f.inner())
+    }
+
+    pub fn to_unnamed_and_named(&self) -> DaftResult<(Vec<&T>, HashMap<&str, &T>)> {
+        let mut seen_named = false;
+
+        let mut unnamed = Vec::new();
+        let mut named: HashMap<&str, &T> = HashMap::new();
+
+        for function_arg in &self.0 {
+            match function_arg {
+                FunctionArg::Named { name, arg } => {
+                    seen_named = true;
+                    named.insert(name, arg);
+                }
+                FunctionArg::Unnamed(arg) => {
+                    if seen_named {
+                        return Err(DaftError::ValueError(
+                            "Cannot have unnamed arguments after named arguments".to_string(),
+                        ));
+                    }
+
+                    unnamed.push(arg);
+                }
+            }
+        }
+
+        Ok((unnamed, named))
     }
 }
 
@@ -390,9 +417,11 @@ impl<T> FunctionArgs<T> {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use common_error::{DaftError, DaftResult};
+    use common_macros::FunctionArgs;
 
     use crate::functions::function_args::{FunctionArg, FunctionArgs};
+
     #[test]
     fn test_function_args_ordering() {
         let res = FunctionArgs::try_new(vec![
@@ -532,5 +561,57 @@ mod tests {
         let args: FunctionArgs<usize> = FunctionArgs::try_new(Vec::new()).unwrap();
         assert!(args.is_empty());
         assert_eq!(args.len(), 0);
+    }
+
+    #[test]
+    fn test_macro() {
+        #[derive(FunctionArgs)]
+        struct TestArgs<T> {
+            arg1: T,
+            arg2: T,
+        }
+
+        let should_succeed = [
+            vec![FunctionArg::unnamed(1), FunctionArg::unnamed(2)],
+            vec![FunctionArg::unnamed(1), FunctionArg::named("arg2", 2)],
+            vec![FunctionArg::named("arg1", 1), FunctionArg::named("arg2", 2)],
+            vec![FunctionArg::named("arg2", 2), FunctionArg::named("arg1", 1)],
+        ];
+
+        let should_fail = [
+            vec![FunctionArg::unnamed(1)],
+            vec![
+                FunctionArg::unnamed(1),
+                FunctionArg::unnamed(2),
+                FunctionArg::unnamed(3),
+            ],
+            vec![FunctionArg::named("arg1", 1)],
+            vec![FunctionArg::named("arg1", 1), FunctionArg::unnamed(2)],
+            vec![FunctionArg::named("arg3", 3)],
+            vec![
+                FunctionArg::named("arg1", 1),
+                FunctionArg::named("arg2", 2),
+                FunctionArg::named("arg3", 3),
+            ],
+        ];
+
+        for args in should_succeed {
+            let function_args = FunctionArgs::try_new(args).unwrap();
+
+            let parsed_args = TestArgs::try_from(function_args).expect("should succeed");
+            assert_eq!(parsed_args.arg1, 1);
+            assert_eq!(parsed_args.arg2, 2);
+        }
+
+        for args in should_fail {
+            let parse_args = || {
+                let function_args = FunctionArgs::try_new(args)?;
+                TestArgs::try_from(function_args)?;
+
+                Ok::<_, DaftError>(())
+            };
+
+            parse_args().expect_err("should fail");
+        }
     }
 }

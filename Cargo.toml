@@ -150,6 +150,7 @@ members = [
   "src/common/display",
   "src/common/error",
   "src/common/io-config",
+  "src/common/macros",
   "src/common/partitioning",
   "src/common/scan-info",
   "src/common/system-info",
