@@ -1,21 +1,33 @@
+use std::collections::{HashMap, HashSet};
+
 use common_error::DaftResult;
 
-use super::task::{SwordfishTask, SwordfishTaskResultHandle};
+use super::task::{SwordfishTaskResultHandle, Task, TaskId};
+
+pub(crate) type WorkerId = String;
+
+#[allow(dead_code)]
+pub(crate) trait Worker: Send + Sync + 'static {
+    fn id(&self) -> &WorkerId;
+    fn num_cpus(&self) -> usize;
+    fn active_task_ids(&self) -> HashSet<TaskId>;
+}
 
 #[allow(dead_code)]
 pub(crate) trait WorkerManager: Send + Sync {
+    type Worker: Worker;
+
     fn submit_task_to_worker(
         &self,
-        task: SwordfishTask,
-        worker_id: String,
+        task: Box<dyn Task>,
+        worker_id: WorkerId,
     ) -> Box<dyn SwordfishTaskResultHandle>;
-    // (worker id, num_cpus, memory)
-    fn get_worker_resources(&self) -> Vec<(String, usize, usize)>;
+    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId);
+    fn workers(&self) -> &HashMap<WorkerId, Self::Worker>;
+    fn total_available_cpus(&self) -> usize;
     #[allow(dead_code)]
-    fn try_autoscale(&self, num_workers: usize) -> DaftResult<()>;
+    fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
+        Ok(())
+    }
     fn shutdown(&self) -> DaftResult<()>;
-}
-
-pub(crate) trait WorkerManagerFactory: Send + Sync {
-    fn create_worker_manager(&self) -> DaftResult<Box<dyn WorkerManager>>;
 }

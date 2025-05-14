@@ -14,7 +14,8 @@ use crate::{
     pipeline_node::logical_plan_to_pipeline_node,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-        worker::WorkerManagerFactory,
+        task::SwordfishTask,
+        worker::{Worker, WorkerManager},
     },
     utils::joinset::JoinSet,
 };
@@ -72,13 +73,13 @@ pub(crate) struct Stage {
 }
 
 impl Stage {
-    pub(crate) fn run_stage(
+    pub(crate) fn run_stage<W: Worker>(
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     ) -> DaftResult<()> {
-        let mut stage_context = StageContext::try_new(worker_manager_factory)?;
+        let mut stage_context = StageContext::try_new(worker_manager)?;
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
@@ -181,14 +182,13 @@ impl StagePlan {
 
 #[allow(dead_code)]
 pub(crate) struct StageContext {
-    pub task_dispatcher_handle: TaskDispatcherHandle,
+    pub task_dispatcher_handle: TaskDispatcherHandle<SwordfishTask>,
     pub joinset: JoinSet<DaftResult<()>>,
 }
 
 impl StageContext {
     #[allow(dead_code)]
-    fn try_new(worker_manager_factory: Box<dyn WorkerManagerFactory>) -> DaftResult<Self> {
-        let worker_manager = worker_manager_factory.create_worker_manager()?;
+    fn try_new<W: Worker>(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> DaftResult<Self> {
         let task_dispatcher = TaskDispatcher::new(worker_manager);
         let mut joinset = JoinSet::new();
         let task_dispatcher_handle =
@@ -199,7 +199,7 @@ impl StageContext {
         })
     }
 
-    fn into_inner(self) -> (TaskDispatcherHandle, JoinSet<DaftResult<()>>) {
+    fn into_inner(self) -> (TaskDispatcherHandle<SwordfishTask>, JoinSet<DaftResult<()>>) {
         (self.task_dispatcher_handle, self.joinset)
     }
 }

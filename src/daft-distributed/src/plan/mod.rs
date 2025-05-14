@@ -13,7 +13,7 @@ use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use futures::{FutureExt, Stream};
 
 use crate::{
-    scheduling::worker::WorkerManagerFactory,
+    scheduling::worker::{Worker, WorkerManager},
     stage::StagePlan,
     utils::{
         channel::{create_channel, Receiver, Sender},
@@ -40,11 +40,11 @@ impl DistributedPhysicalPlan {
         })
     }
 
-    async fn execute_stages(
+    async fn execute_stages<W: Worker>(
         stage_plan: StagePlan,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         _sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
@@ -55,32 +55,26 @@ impl DistributedPhysicalPlan {
         }
 
         let stage = stage_plan.get_root_stage();
-        stage.run_stage(psets, config, worker_manager_factory)?;
+        stage.run_stage(psets, config, worker_manager)?;
         todo!("FLOTILLA_MS1: Implement execute_stages")
     }
 
-    pub fn run_plan(
+    pub fn run_plan<W: Worker>(
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     ) -> DaftResult<PlanResult> {
         let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
         let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
         let config = self.config.clone();
         let handle = runtime.spawn(async move {
-            Self::execute_stages(
-                stage_plan,
-                psets,
-                config,
-                worker_manager_factory,
-                result_sender,
-            )
-            .await
+            Self::execute_stages(stage_plan, psets, config, worker_manager, result_sender).await
         });
         Ok(PlanResult::new(handle, result_receiver))
     }
 
+    #[allow(dead_code)]
     pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
         &self.config
     }

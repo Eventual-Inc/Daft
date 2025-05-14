@@ -6,7 +6,7 @@ use daft_local_plan::LocalPhysicalPlanRef;
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
-    scheduling::dispatcher::TaskDispatcherHandle,
+    scheduling::{dispatcher::TaskDispatcherHandle, task::Task},
     stage::StageContext,
     utils::channel::{create_channel, Sender},
 };
@@ -43,8 +43,8 @@ impl LimitNode {
     }
 
     #[allow(dead_code)]
-    async fn execution_loop(
-        _task_dispatcher_handle: TaskDispatcherHandle,
+    async fn execution_loop<T: Task>(
+        _task_dispatcher_handle: TaskDispatcherHandle<T>,
         _local_physical_plans: Vec<LocalPhysicalPlanRef>,
         _input_node: Option<RunningPipelineNode>,
         _input_psets: HashMap<String, Vec<PartitionRef>>,
