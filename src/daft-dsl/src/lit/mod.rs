@@ -1,5 +1,7 @@
+mod deserializer;
+mod serializer;
 use std::{
-    fmt::{self, Display, Formatter, Result},
+    fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
     io::{self, Write},
     sync::Arc,
@@ -16,10 +18,7 @@ use daft_core::{
     },
 };
 use indexmap::IndexMap;
-use serde::{
-    ser::{self, Error},
-    Deserialize, Serialize,
-};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::pyobj_serde::PyObjectWrapper;
@@ -606,72 +605,86 @@ impl LiteralValue {
     pub fn into_single_value_series(self) -> DaftResult<Series> {
         literals_to_series(&[self])
     }
+
     pub fn try_from_single_value_series(s: &Series) -> DaftResult<Self> {
         ensure!(s.len() == 1, ValueError: "expected a scalar value");
+        Self::get_from_series(s, 0)
+    }
 
+    /// instead of type checking a series such as
+    /// `series.utf8().get(idx)`
+    /// this allows you to get any value as a `LiteralValue` from a series
+    /// LiteralValue::get_from_series(s, 0) -> LiteralValue
+    pub fn get_from_series(s: &Series, idx: usize) -> DaftResult<Self> {
+        let err = || {
+            DaftError::ValueError(format!(
+                "index {} out of bounds for series of length {}",
+                idx,
+                s.len()
+            ))
+        };
         match s.data_type() {
-            DataType::Null => Ok(LiteralValue::Null),
-            DataType::Boolean => Ok(s.bool()?.get(0).unwrap().literal_value()),
-            DataType::Int8 => Ok(s.i8()?.get(0).unwrap().literal_value()),
-            DataType::UInt8 => Ok(s.u8()?.get(0).unwrap().literal_value()),
-            DataType::Int16 => Ok(s.i16()?.get(0).unwrap().literal_value()),
-            DataType::UInt16 => Ok(s.u16()?.get(0).unwrap().literal_value()),
-            DataType::Int32 => Ok(s.i32()?.get(0).unwrap().literal_value()),
-            DataType::UInt32 => Ok(s.u32()?.get(0).unwrap().literal_value()),
-            DataType::Int64 => Ok(s.i64()?.get(0).unwrap().literal_value()),
-            DataType::UInt64 => Ok(s.u64()?.get(0).unwrap().literal_value()),
-            DataType::Float64 => Ok(s.f64()?.get(0).unwrap().literal_value()),
+            DataType::Null => Ok(Self::Null),
+            DataType::Boolean => Ok(s.bool()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int8 => Ok(s.i8()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt8 => Ok(s.u8()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int16 => Ok(s.i16()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt16 => Ok(s.u16()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int32 => Ok(s.i32()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt32 => Ok(s.u32()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Int64 => Ok(s.i64()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::UInt64 => Ok(s.u64()?.get(idx).ok_or_else(err)?.literal_value()),
+            DataType::Float64 => Ok(s.f64()?.get(idx).ok_or_else(err)?.literal_value()),
             DataType::Float32 => todo!(),
-            DataType::Decimal128(precision, scale) => Ok(LiteralValue::Decimal(
-                s.decimal128()?.get(0).unwrap(),
+            DataType::Decimal128(precision, scale) => Ok(Self::Decimal(
+                s.decimal128()?.get(idx).ok_or_else(err)?,
                 *precision as _,
                 *scale as _,
             )),
-            DataType::Timestamp(tu, tz) => Ok(LiteralValue::Timestamp(
-                s.timestamp()?.get(0).unwrap(),
+            DataType::Timestamp(tu, tz) => Ok(Self::Timestamp(
+                s.timestamp()?.get(idx).ok_or_else(err)?,
                 *tu,
                 tz.clone(),
             )),
-            DataType::Date => Ok(LiteralValue::Date(s.date()?.get(0).unwrap())),
+            DataType::Date => Ok(Self::Date(s.date()?.get(idx).ok_or_else(err)?)),
             DataType::Time(time_unit) => {
-                Ok(LiteralValue::Time(s.time()?.get(0).unwrap(), *time_unit))
+                Ok(Self::Time(s.time()?.get(idx).ok_or_else(err)?, *time_unit))
             }
-            DataType::Duration(time_unit) => Ok(LiteralValue::Duration(
-                s.duration()?.get(0).unwrap(),
+            DataType::Duration(time_unit) => Ok(Self::Duration(
+                s.duration()?.get(idx).ok_or_else(err)?,
                 *time_unit,
             )),
-            DataType::Interval => Ok(LiteralValue::Interval(s.interval()?.get(0).unwrap().into())),
-            DataType::Binary => Ok(LiteralValue::Binary(s.binary()?.get(0).unwrap().into())),
-            DataType::FixedSizeBinary(n) => Ok(LiteralValue::FixedSizeBinary(
-                s.fixed_size_binary()?.get(0).unwrap().into(),
+            DataType::Interval => Ok(Self::Interval(
+                s.interval()?.get(idx).ok_or_else(err)?.into(),
+            )),
+            DataType::Binary => Ok(Self::Binary(s.binary()?.get(idx).ok_or_else(err)?.into())),
+            DataType::FixedSizeBinary(n) => Ok(Self::FixedSizeBinary(
+                s.fixed_size_binary()?.get(idx).ok_or_else(err)?.into(),
                 *n,
             )),
-            DataType::Utf8 => Ok(LiteralValue::Utf8(s.utf8()?.get(0).unwrap().into())),
+            DataType::Utf8 => Ok(Self::Utf8(s.utf8()?.get(idx).ok_or_else(err)?.into())),
             DataType::FixedSizeList(_, _) => {
-                let lst = s.fixed_size_list()?.get(0).unwrap();
+                let lst = s.fixed_size_list()?.get(idx).ok_or_else(err)?;
                 Ok(lst.literal_value())
             }
             DataType::List(_) => {
-                let lst = s.list()?.get(0).unwrap();
+                let lst = s.list()?.get(idx).ok_or_else(err)?;
                 Ok(lst.literal_value())
             }
             DataType::Struct(fields) => {
                 let children = &s.struct_()?.children;
                 let mut map = IndexMap::new();
                 for (field, child) in fields.iter().zip(children) {
-                    map.insert(
-                        field.clone(),
-                        LiteralValue::try_from_single_value_series(&child)?,
-                    );
+                    map.insert(field.clone(), Self::try_from_single_value_series(child)?);
                 }
-                Ok(LiteralValue::Struct(map))
+                Ok(Self::Struct(map))
             }
 
             #[cfg(feature = "python")]
             DataType::Python => {
-                let v = s.python()?.get(0);
+                let v = s.python()?.get(idx);
 
-                Ok(LiteralValue::Python(PyObjectWrapper(v)))
+                Ok(Self::Python(PyObjectWrapper(v)))
             }
             ty => Err(DaftError::ValueError(format!(
                 "Unsupported data type: {}",
@@ -822,11 +835,45 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
     })
 }
 
+impl From<LiteralValue> for ExprRef {
+    fn from(lit: LiteralValue) -> Self {
+        Self::new(Expr::Literal(lit.into()))
+    }
+}
+pub fn make_literal<S: Serialize>(s: S) -> DaftResult<LiteralValue> {
+    if std::any::type_name::<S>() == std::any::type_name::<LiteralValue>() {
+        return Err(DaftError::ValueError(
+            "Cannot serialize LiteralValue to LiteralValue".to_string(),
+        ));
+    }
+    s.serialize(serializer::LiteralValueSerializer)
+        .map_err(|e| e.into())
+}
+
+pub trait FromLiteral: Sized {
+    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self>;
+}
+
+impl<D> FromLiteral for D
+where
+    D: DeserializeOwned,
+{
+    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+        let deserializer = deserializer::LiteralValueDeserializer { lit };
+        D::deserialize(deserializer).map_err(|e| e.into())
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use common_error::DaftResult;
+    use common_io_config::{AzureConfig, IOConfig, S3Config};
     use daft_core::prelude::*;
+    use indexmap::IndexMap;
+    use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
     use super::LiteralValue;
+    use crate::lit::{make_literal, FromLiteral};
 
     #[test]
     fn test_literals_to_series() {
@@ -899,441 +946,19 @@ mod test {
         let actual = super::literals_to_series(&values);
         assert!(actual.is_err());
     }
-}
-
-#[derive(Debug)]
-pub struct LitError {
-    message: String,
-}
-
-impl From<LitError> for DaftError {
-    fn from(err: LitError) -> Self {
-        DaftError::ValueError(err.message)
-    }
-}
-
-impl ser::Error for LitError {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        LitError {
-            message: msg.to_string(),
-        }
-    }
-}
-
-impl fmt::Display for LitError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl std::error::Error for LitError {}
-
-struct SerializeVec {
-    values: Vec<LiteralValue>,
-}
-
-impl ser::SerializeSeq for SerializeVec {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    fn serialize_element<T>(&mut self, value: &T) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        self.values.push(value.serialize(LiteralValueSerializer)?);
-        Ok(())
-    }
-
-    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Series(
-            literals_to_series(self.values.as_slice()).unwrap(),
-        ))
-    }
-}
-
-impl ser::SerializeTuple for SerializeVec {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    fn serialize_element<T>(&mut self, value: &T) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        ser::SerializeSeq::serialize_element(self, value)
-    }
-
-    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        ser::SerializeSeq::end(self)
-    }
-}
-impl ser::SerializeTupleStruct for SerializeVec {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    fn serialize_field<T>(&mut self, value: &T) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        ser::SerializeSeq::serialize_element(self, value)
-    }
-
-    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        ser::SerializeSeq::end(self)
-    }
-}
-
-struct SerializeTupleVariant {
-    name: String,
-    values: Vec<LiteralValue>,
-}
-
-impl ser::SerializeTupleVariant for SerializeTupleVariant {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    fn serialize_field<T>(&mut self, value: &T) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        self.values.push(value.serialize(LiteralValueSerializer)?);
-        Ok(())
-    }
-
-    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        let series = literals_to_series(&self.values).unwrap();
-
-        let mut map = IndexMap::new();
-        map.insert(
-            Field::new(self.name, series.data_type().clone()),
-            LiteralValue::Series(series),
-        );
-        Ok(LiteralValue::Struct(map))
-    }
-}
-
-struct SerializeMap {
-    map: IndexMap<Field, LiteralValue>,
-    next_key: Option<Field>,
-}
-
-impl ser::SerializeMap for SerializeMap {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    fn serialize_key<T>(&mut self, key: &T) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        let key_value = key.serialize(LiteralValueSerializer)?;
-        let dtype = key_value.get_type();
-        if let LiteralValue::Utf8(s) = key_value {
-            self.next_key = Some(Field::new(s, dtype));
-            Ok(())
-        } else {
-            Err(LitError::custom("Map keys must be strings"))
-        }
-    }
-
-    fn serialize_value<T>(&mut self, value: &T) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        let key = self.next_key.take().unwrap();
-        let value = value.serialize(LiteralValueSerializer)?;
-        self.map.insert(key, value);
-        Ok(())
-    }
-
-    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Struct(self.map))
-    }
-}
-struct SerializeStruct {
-    map: IndexMap<Field, LiteralValue>,
-}
-
-impl ser::SerializeStruct for SerializeStruct {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    fn serialize_field<T>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        let value_lit = value.serialize(LiteralValueSerializer)?;
-        let field = Field::new(key.to_string(), value_lit.get_type());
-        self.map.insert(field, value_lit);
-        Ok(())
-    }
-
-    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Struct(self.map))
-    }
-}
-struct SerializeStructVariant {
-    name: String,
-    map: IndexMap<Field, LiteralValue>,
-}
-
-impl ser::SerializeStructVariant for SerializeStructVariant {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    fn serialize_field<T>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> std::result::Result<(), Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        let value_lit = value.serialize(LiteralValueSerializer)?;
-        let dtype = value_lit.get_type();
-        let field = Field::new(key.to_string(), dtype);
-        self.map.insert(field, value_lit);
-        Ok(())
-    }
-
-    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        let variant_struct = LiteralValue::Struct(self.map);
-        let mut outer_map = IndexMap::new();
-        let variant_field = Field::new(self.name, DataType::Struct(vec![]));
-        outer_map.insert(variant_field, variant_struct);
-        Ok(LiteralValue::Struct(outer_map))
-    }
-}
-struct LiteralValueSerializer;
-
-impl ser::Serializer for LiteralValueSerializer {
-    type Ok = LiteralValue;
-    type Error = LitError;
-
-    type SerializeSeq = SerializeVec;
-    type SerializeTuple = SerializeVec;
-    type SerializeTupleStruct = SerializeVec;
-    type SerializeTupleVariant = SerializeTupleVariant;
-    type SerializeMap = SerializeMap;
-    type SerializeStruct = SerializeStruct;
-    type SerializeStructVariant = SerializeStructVariant;
-
-    fn serialize_bool(self, v: bool) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Boolean(v))
-    }
-
-    fn serialize_i8(self, v: i8) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Int8(v))
-    }
-
-    fn serialize_i16(self, v: i16) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Int16(v))
-    }
-
-    fn serialize_i32(self, v: i32) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Int32(v))
-    }
-
-    fn serialize_i64(self, v: i64) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Int64(v))
-    }
-
-    fn serialize_u8(self, v: u8) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::UInt8(v))
-    }
-
-    fn serialize_u16(self, v: u16) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::UInt16(v))
-    }
-
-    fn serialize_u32(self, v: u32) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::UInt32(v))
-    }
-
-    fn serialize_u64(self, v: u64) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::UInt64(v))
-    }
-
-    fn serialize_f32(self, v: f32) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Float64(v as f64))
-    }
-
-    fn serialize_f64(self, v: f64) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Float64(v))
-    }
-
-    fn serialize_char(self, v: char) -> std::result::Result<Self::Ok, Self::Error> {
-        let mut s = String::new();
-        s.push(v);
-        Ok(LiteralValue::Utf8(s))
-    }
-
-    fn serialize_str(self, v: &str) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Utf8(v.to_string()))
-    }
-
-    fn serialize_bytes(self, v: &[u8]) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Binary(v.to_vec()))
-    }
-
-    fn serialize_none(self) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Null)
-    }
-
-    fn serialize_some<T>(self, value: &T) -> std::result::Result<Self::Ok, Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        value.serialize(self)
-    }
-
-    fn serialize_unit(self) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Null)
-    }
-
-    fn serialize_unit_struct(
-        self,
-        name: &'static str,
-    ) -> std::result::Result<Self::Ok, Self::Error> {
-        Ok(LiteralValue::Null)
-    }
-
-    fn serialize_unit_variant(
-        self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
-    ) -> std::result::Result<Self::Ok, Self::Error> {
-        self.serialize_str(variant)
-    }
-
-    fn serialize_newtype_struct<T>(
-        self,
-        name: &'static str,
-        value: &T,
-    ) -> std::result::Result<Self::Ok, Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        value.serialize(self)
-    }
-
-    fn serialize_newtype_variant<T>(
-        self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
-        value: &T,
-    ) -> std::result::Result<Self::Ok, Self::Error>
-    where
-        T: ?Sized + Serialize,
-    {
-        let value_lit = value.serialize(LiteralValueSerializer)?;
-        let dtype = value_lit.get_type();
-        let field = Field::new(variant.to_string(), dtype);
-        let mut map = IndexMap::new();
-        map.insert(field, value_lit);
-        Ok(LiteralValue::Struct(map))
-    }
-
-    fn serialize_seq(
-        self,
-        _len: Option<usize>,
-    ) -> std::result::Result<Self::SerializeSeq, Self::Error> {
-        Ok(SerializeVec { values: Vec::new() })
-    }
-
-    fn serialize_tuple(self, len: usize) -> std::result::Result<Self::SerializeTuple, Self::Error> {
-        self.serialize_seq(Some(len))
-    }
-
-    fn serialize_tuple_struct(
-        self,
-        name: &'static str,
-        len: usize,
-    ) -> std::result::Result<Self::SerializeTupleStruct, Self::Error> {
-        self.serialize_seq(Some(len))
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
-        len: usize,
-    ) -> std::result::Result<Self::SerializeTupleVariant, Self::Error> {
-        Ok(SerializeTupleVariant {
-            name: variant.to_string(),
-            values: Vec::new(),
-        })
-    }
-
-    fn serialize_map(
-        self,
-        len: Option<usize>,
-    ) -> std::result::Result<Self::SerializeMap, Self::Error> {
-        Ok(SerializeMap {
-            map: IndexMap::new(),
-            next_key: None,
-        })
-    }
-
-    fn serialize_struct(
-        self,
-        name: &'static str,
-        len: usize,
-    ) -> std::result::Result<Self::SerializeStruct, Self::Error> {
-        Ok(SerializeStruct {
-            map: IndexMap::new(),
-        })
-    }
-
-    fn serialize_struct_variant(
-        self,
-        name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
-        len: usize,
-    ) -> std::result::Result<Self::SerializeStructVariant, Self::Error> {
-        Ok(SerializeStructVariant {
-            name: variant.to_string(),
-            map: IndexMap::new(),
-        })
-    }
-}
-
-pub fn lit_value<S: Serialize>(s: S) -> DaftResult<LiteralValue> {
-    s.serialize(LiteralValueSerializer).map_err(|e| e.into())
-}
-
-#[cfg(test)]
-mod tests {
-    use common_error::DaftResult;
-    use daft_core::{
-        array::StructArray,
-        prelude::{CountMode, DataType, Field, Float64Array},
-        series::{IntoSeries, Series},
-    };
-    use indexmap::IndexMap;
-    use serde::Serialize;
-
-    use super::lit_value;
-    use crate::LiteralValue;
 
     #[test]
     fn test_lit_value_serde() -> DaftResult<()> {
-        let literal = lit_value(1.0)?;
-        assert_eq!(literal, LiteralValue::Float64(1.0));
+        let lit = make_literal(1.0)?;
+        assert_eq!(lit, LiteralValue::Float64(1.0));
 
-        let literal = lit_value(CountMode::All)?;
-        assert_eq!(literal, LiteralValue::Utf8("All".to_string()));
+        let lit = make_literal(CountMode::All)?;
+        assert_eq!(lit, LiteralValue::Utf8("All".to_string()));
 
-        let literal = lit_value(vec![1.0, 2.0, 3.0])?;
+        let lit = make_literal(vec![1.0, 2.0, 3.0])?;
         let s = Float64Array::from_values("literal", vec![1.0, 2.0, 3.0].into_iter()).into_series();
         let expected = LiteralValue::Series(s);
-        assert_eq!(literal, expected);
+        assert_eq!(lit, expected);
 
         #[derive(Serialize)]
         struct Foo {
@@ -1341,7 +966,7 @@ mod tests {
             b: String,
         }
 
-        let literal = lit_value(Foo {
+        let literal = make_literal(Foo {
             a: 1,
             b: "test".to_string(),
         })?;
@@ -1356,19 +981,71 @@ mod tests {
 
         assert_eq!(literal, expected);
 
-        #[derive(Serialize)]
-        struct Nested {
-            foo: Foo,
-            foo_arr: Vec<Foo>,
-        }
-
-        let literal = lit_value(vec![Foo {
-            a: 2,
-            b: "test2".to_string(),
-        }])?;
-        dbg!(&literal);
-
         assert!(false);
+
+        Ok(())
+    }
+
+    fn roundtrip<V: Serialize + DeserializeOwned + Clone + std::fmt::Debug + PartialEq>(
+        value: V,
+    ) -> DaftResult<()> {
+        let lit = make_literal(value.clone()).expect("Failed to create LiteralValue");
+        let deserialized = V::try_from_literal(&lit).expect("Failed to deserialize LiteralValue");
+        assert_eq!(value, deserialized);
+        Ok(())
+    }
+
+    #[test]
+    fn test_roundtrip() -> DaftResult<()> {
+        roundtrip(1i8)?;
+        roundtrip(1i16)?;
+        roundtrip(1i32)?;
+        roundtrip(1i64)?;
+        roundtrip(1u8)?;
+        roundtrip(1u16)?;
+        roundtrip(1u32)?;
+        roundtrip(1u64)?;
+        roundtrip(1f32)?;
+        roundtrip(1f64)?;
+        roundtrip("test".to_string())?;
+        roundtrip(vec![1.0, 2.0, 3.0])?;
+        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+        struct Foo {
+            a: i32,
+            b: String,
+        }
+        roundtrip(Foo {
+            a: 1,
+            b: "test".to_string(),
+        })?;
+        roundtrip(S3Config::default())?;
+        roundtrip(AzureConfig::default())?;
+        roundtrip(IOConfig::default())?;
+
+        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+        enum FooWithVariants {
+            A(i64),
+            B { a: i32, b: Foo },
+        }
+        roundtrip(CountMode::All)?;
+        roundtrip(ImageFormat::PNG)?;
+        roundtrip(ImageMode::L)?;
+        roundtrip(ImageMode::LA)?;
+        roundtrip(ImageMode::RGBA)?;
+        roundtrip(ImageMode::L16)?;
+        roundtrip(ImageMode::LA16)?;
+        roundtrip(ImageMode::RGB16)?;
+        roundtrip(ImageMode::RGBA16)?;
+        roundtrip(ImageMode::RGB32F)?;
+        roundtrip(ImageMode::RGBA32F)?;
+        roundtrip(FooWithVariants::A(1))?;
+        roundtrip(FooWithVariants::B {
+            a: 1,
+            b: Foo {
+                a: 1,
+                b: "test".to_string(),
+            },
+        })?;
 
         Ok(())
     }

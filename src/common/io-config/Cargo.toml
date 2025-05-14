@@ -1,6 +1,6 @@
 [dependencies]
 aws-credential-types = {version = "0.55.3"}
-chrono = {workspace = true}
+chrono = {workspace = true, features = ["serde"]}
 common-error = {path = "../error", default-features = false}
 common-py-serde = {path = "../py-serde", default-features = false}
 derivative = {workspace = true}

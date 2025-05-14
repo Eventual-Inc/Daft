@@ -2254,6 +2254,7 @@ dependencies = [
  "bincode",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-io-config",
  "common-py-serde",
  "common-resource-request",
  "common-treenode",

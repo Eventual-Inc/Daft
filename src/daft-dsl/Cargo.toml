@@ -2,6 +2,7 @@
 bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
+common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
@@ -15,7 +16,15 @@ serde = {workspace = true}
 typetag = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-treenode/python", "common-py-serde/python", "common-resource-request/python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-core/python",
+  "common-io-config/python",
+  "common-treenode/python",
+  "common-py-serde/python",
+  "common-resource-request/python"
+]
 test-utils = []
 
 [lints]

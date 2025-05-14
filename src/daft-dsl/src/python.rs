@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     expr::{Expr, WindowExpr},
+    lit::make_literal,
     ExprRef, LiteralValue, Operator,
 };
 
@@ -201,6 +202,15 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
         let bytes = pybytes.as_bytes();
         Ok(crate::lit(bytes).into())
+    } else if item.is_instance_of::<common_io_config::python::IOConfig>() {
+        let py_ioconfig = item.extract::<common_io_config::python::IOConfig>()?;
+        Ok(ExprRef::from(make_literal(py_ioconfig.config)?).into())
+    } else if item.is_instance_of::<ImageMode>() {
+        let image_mode = item.extract::<ImageMode>()?;
+        Ok(ExprRef::from(make_literal(image_mode)?).into())
+    } else if item.is_instance_of::<ImageFormat>() {
+        let fmt = item.extract::<ImageFormat>()?;
+        Ok(ExprRef::from(make_literal(fmt)?).into())
     } else if item.is_none() {
         Ok(crate::null_lit().into())
     } else {
