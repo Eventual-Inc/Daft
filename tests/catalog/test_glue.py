@@ -316,7 +316,7 @@ def test_glue_csv_table_from_table_info_1(glue_catalog):
     csv_table = GlueCsvTable.from_table_info(glue_catalog, table_info)
     assert csv_table._path == "s3://bucket/test_csv_table/"
     assert len(csv_table._schema) == 3
-    assert csv_table._schema == Schema.from_pydict(
+    assert csv_table._schema == Schema._from_pydict(
         {
             "col1": DataType.string(),
             "col2": DataType.int32(),
@@ -488,7 +488,7 @@ def test_convert_glue_schema():
     ]
 
     # Test schema conversion
-    assert _convert_glue_schema(columns) == Schema.from_pydict(
+    assert _convert_glue_schema(columns) == Schema._from_pydict(
         {
             "bool_col": DataType.bool(),
             "byte_col": DataType.int8(),

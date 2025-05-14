@@ -182,7 +182,7 @@ def test_session_create_table_with_properties():
     # properties to pass through
     properties = {"format": "parquet", "partitioning": ["col1"], "description": "Test table with properties"}
 
-    schema = Schema.from_pydict(
+    schema = Schema._from_pydict(
         {
             "a": dt.bool(),
             "b": dt.int64(),

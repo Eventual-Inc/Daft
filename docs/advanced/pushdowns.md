@@ -6,6 +6,24 @@
 
 Daft supports predicate, projection, and limit pushdowns in its scan operators.
 
+## Usage
+
+Daft does not *officially* support user-defined scan operators, but it is
+possible today by extending the [`ScanOperator`][daft.io.scan.ScanOperator].
+
+The [`to_scan_tasks`][daft.io.scan.ScanOperator.to_scan_tasks] method receives a
+pushdowns object which contains information the optimizer determined can be
+pushed down into the scan. This is a wrapper over a Rust type, and its members
+cannot be easily interpreted from python. To solve this, we use a python
+[`Pushdowns`][daft.io.pushdowns.Pushdowns] class holding
+[`Term`][daft.io.pushdowns.Term] objects which are a representation of the
+pushed-down expressions. You can construct a
+[`ScanPushdowns`][daft.io.scan.ScanPushdowns] object using `_from_pypushdowns(pushdowns, schema)`.
+
+Once you have the pushdown terms, you will need to apply them based upon
+your own context. One way to operate on a term tree is using the
+[`TermVisitor`][daft.io.pushdowns.TermVisitor].
+
 ## Term Reference
 
 !!! warn "Warning!"

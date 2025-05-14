@@ -62,7 +62,7 @@ if sys.version_info < (3, 10):
 else:
     from typing import Concatenate, ParamSpec
 
-from daft.schema import Schema
+from daft.logical.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 T = TypeVar("T")

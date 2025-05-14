@@ -215,6 +215,7 @@ impl SparkAnalyzer<'_> {
     }
 
     fn range(&self, range: Range) -> ConnectResult<LogicalPlanBuilder> {
+        use daft_scan::python::pylib::ScanOperatorHandle;
         let Range {
             start,
             end,
@@ -236,7 +237,7 @@ impl SparkAnalyzer<'_> {
                 PyModule::import(py, "daft.io._range").wrap_err("Failed to import range module")?;
 
             let range = range_module
-                .getattr(pyo3::intern!(py, "_range"))
+                .getattr(pyo3::intern!(py, "RangeScanOperator"))
                 .wrap_err("Failed to get range function")?;
 
             let range = range
@@ -246,12 +247,11 @@ impl SparkAnalyzer<'_> {
                 .unwrap()
                 .unbind();
 
-            let builder: PyLogicalPlanBuilder = range
-                .getattr(py, intern!(py, "_builder"))?
-                .getattr(py, intern!(py, "_builder"))?
-                .extract(py)?;
+            let scan_operator_handle = ScanOperatorHandle::from_python_scan_operator(range, py)?;
 
-            ConnectResult::<_>::Ok(builder.builder)
+            let plan = LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)?;
+
+            ConnectResult::<_>::Ok(plan)
         })
         .wrap_err("Failed to create range scan")?;
 

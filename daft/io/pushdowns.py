@@ -3,12 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import TYPE_CHECKING, Generic, Sequence, TypeVar, Union
-
-from daft.daft import Pushdowns as PyPushdowns
-
-if TYPE_CHECKING:
-    from daft.schema import Schema
+from typing import Generic, Sequence, TypeVar, Union
 
 Value = Union[str, int, float, bool, None]
 R = TypeVar("R")
@@ -16,59 +11,10 @@ C = TypeVar("C")
 
 
 @dataclass(frozen=True)
-class Pushdowns:
-    """Pushdowns is a python-friendly representation of daft's rust Pushdown type.
+class Pushdowns(ABC):
+    """Base class for pushdown information."""
 
-    The existing Pushdowns class comes from pyo3 which holds references to wrapper
-    classes for daft's expression enum. This is not ammenable for python consumption.
-    Here we have renamed Pushdowns to PyPushdowns for consistency with daft's other
-    pyo3 wrapper classes.
-
-    In Daft 0.5.0 we will change the pushdown parameter from daft.daft.Pushdowns to
-    daft.io.Pushdowns. For now, please use `Pushdowns._from_pypushdowns(py_pushdowns)`
-    to convert the rust expressions to this python pushdowns class.
-
-    Attributes:
-        projections (list[Term] | None): Optional list of Terms (typically column references) to project.
-        predicate (Term | None): Optional filter predicate to apply to rows.
-        limit (int | None): Optional limit on the number of rows to return.
-    """
-
-    projections: list[Reference] | None = None
-    predicate: Term | None = None
-    limit: int | None = None
-
-    @classmethod
-    def _from_pypushdowns(cls, pypushdowns: PyPushdowns, schema: Schema) -> Pushdowns:
-        # need the PySchema to send to rust side
-        _schema = schema._schema
-
-        # use both the 'filters' and 'partition_filters' as the predicate
-        predicate: Term | None = None
-        p1 = pypushdowns.filters
-        p2 = pypushdowns.partition_filters
-
-        # combine the two predicates with 'and' if necessary
-        if p1 is not None and p2 is not None:
-            predicate = PyPushdowns._to_term(p1 & p2, _schema)
-        elif p1 is not None:
-            predicate = PyPushdowns._to_term(p1, _schema)
-        elif p2 is not None:
-            predicate = PyPushdowns._to_term(p2, _schema)
-
-        # field to index map is case-sensitive .. to do it proper we'll need rust-side work.
-        fields = {field.name: index for index, field in enumerate(schema)}
-
-        # convert each column name to a reference term, this requires resolving in the schema.
-        if pypushdowns.columns:
-            projections = [Reference(path=col, index=fields[col]) for col in pypushdowns.columns]
-        else:
-            projections = None
-
-        # limit is just an int, so no conversion necessary
-        limit = pypushdowns.limit
-
-        return Pushdowns(projections, predicate, limit)
+    pass
 
 
 @dataclass(frozen=True)
@@ -88,7 +34,7 @@ class Reference(Term):
         index: Field index if this reference is bound to a schema.
     """
 
-    path: str  # <- consider tuple[str...]
+    path: str
     index: int | None = None
 
 
@@ -127,7 +73,7 @@ class Expr(Term):
     Exprs follow the common rule that positional come before named.
     This is enforced on instantiation since we use python args and kwargs.
 
-    Examples:
+    Example:
         >>> Expr("f", 42)  # (f 42)
         >>> Expr("f", "hello")  # (f "hello")
         >>> Expr("f", 1, 2.5, "test")  # (f 1 2.50 "test")
@@ -182,7 +128,7 @@ class Arg:
 
 
 class TermVisitor(ABC, Generic[C, R]):
-    """TermVisitor uses the `@singledispatchmethod` for a class-based visitor.
+    """TermVisitor uses the @singledispatchmethod for a class-based visitor.
 
     Note that we are not using the typical "accept" method on an term variant
     for dispatching because the @singledispatchmethod handles this for us.
@@ -231,10 +177,10 @@ class LispyVisitor(TermVisitor[None, str]):
 
     An interesting exercise would be implementing https://norvig.com/lispy.html.
 
-    Examples:
-        >>> visitor = LispyVisitor()
-        >>> term = Expr("+", 1, 2)
-        >>> print(visitor.visit(term))
+    Example:
+    >>> visitor = LispyVisitor()
+    >>> term = Expr("+", 1, 2)
+    >>> print(visitor.visit(term))
     """
 
     ###
