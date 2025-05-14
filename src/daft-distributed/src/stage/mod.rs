@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::{
     partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
@@ -9,6 +11,7 @@ use daft_schema::schema::SchemaRef;
 use stage_builder::StagePlanBuilder;
 
 use crate::{
+    pipeline_node::logical_plan_to_pipeline_node,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
         worker::WorkerManagerFactory,
@@ -61,11 +64,36 @@ struct OutputChannel {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-struct Stage {
+pub(crate) struct Stage {
     id: StageID,
     type_: StageType,
     input_channels: Vec<InputChannel>,
     output_channels: Vec<OutputChannel>,
+}
+
+impl Stage {
+    pub(crate) fn run_stage(
+        &self,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        config: Arc<DaftExecutionConfig>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+    ) -> DaftResult<()> {
+        let mut stage_context = StageContext::try_new(worker_manager_factory)?;
+        match &self.type_ {
+            StageType::MapPipeline { plan } => {
+                let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
+                let _running_node = pipeline_node.start(&mut stage_context);
+
+                let (_task_dispatcher_handle, _joinset) = stage_context.into_inner();
+                // JoinableForwardingStream::new(
+                //     materialize_all_pipeline_outputs(running_node, task_dispatcher_handle),
+                //     joinset,
+                // );
+                todo!("FLOTILLA_MS2: Implement stage run_stage for MapPipeline")
+            }
+            _ => todo!("FLOTILLA_MS2: Implement other stage types"),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -139,6 +167,16 @@ impl StagePlan {
             });
         }
     }
+
+    pub(crate) fn num_stages(&self) -> usize {
+        self.stages.len()
+    }
+
+    pub fn get_root_stage(&self) -> &Stage {
+        self.stages
+            .get(&self.root_stage)
+            .expect("expect root stage to be in stages")
+    }
 }
 
 #[allow(dead_code)]
@@ -159,5 +197,9 @@ impl StageContext {
             task_dispatcher_handle,
             joinset,
         })
+    }
+
+    fn into_inner(self) -> (TaskDispatcherHandle, JoinSet<DaftResult<()>>) {
+        (self.task_dispatcher_handle, self.joinset)
     }
 }

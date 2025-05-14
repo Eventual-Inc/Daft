@@ -23,6 +23,7 @@ use crate::{
 
 mod collect;
 mod limit;
+pub(crate) mod materialize;
 mod translate;
 
 pub(crate) trait DistributedPipelineNode: Send + Sync {
