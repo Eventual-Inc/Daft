@@ -12,11 +12,16 @@ use crate::{
     AsyncFileWriter, WriterFactory,
 };
 
+enum WriterType {
+    Native,
+    Pyarrow,
+}
+
 /// PhysicalWriterFactory is a factory for creating physical writers, i.e. parquet, csv writers.
 pub struct PhysicalWriterFactory {
     output_file_info: OutputFileInfo,
     schema: SchemaRef,
-    native: bool,
+    writer_type: WriterType,
 }
 
 impl PhysicalWriterFactory {
@@ -25,16 +30,21 @@ impl PhysicalWriterFactory {
         file_schema: SchemaRef,
         native_enabled: bool,
     ) -> DaftResult<Self> {
-        let native = native_enabled
+        let writer_type = if native_enabled
             && native_parquet_writer_supported(
                 output_file_info.file_format,
                 &output_file_info.root_dir,
                 &file_schema,
-            )?;
+            )? {
+            WriterType::Native
+        } else {
+            WriterType::Pyarrow
+        };
+
         Ok(Self {
             output_file_info,
             schema: file_schema,
-            native,
+            writer_type,
         })
     }
 }
@@ -48,15 +58,15 @@ impl WriterFactory for PhysicalWriterFactory {
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
-        match self.native {
-            true => create_native_writer(
+        match self.writer_type {
+            WriterType::Native => create_native_writer(
                 &self.output_file_info.root_dir,
                 file_idx,
                 &self.schema,
                 self.output_file_info.file_format,
                 partition_values,
             ),
-            _ => create_pyarrow_file_writer(
+            WriterType::Pyarrow => create_pyarrow_file_writer(
                 &self.output_file_info.root_dir,
                 file_idx,
                 self.output_file_info.compression.as_ref(),
