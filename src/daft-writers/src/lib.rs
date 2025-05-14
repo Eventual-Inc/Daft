@@ -85,9 +85,12 @@ pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo,
     file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
-    let base_writer_factory =
-        PhysicalWriterFactory::new(file_info.clone(), file_schema, cfg.native_parquet_writer);
+) -> DaftResult<Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
+    let base_writer_factory = PhysicalWriterFactory::new(
+        file_info.clone(),
+        file_schema.clone(),
+        cfg.native_parquet_writer,
+    )?;
     match file_info.file_format {
         FileFormat::Parquet => {
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
@@ -115,9 +118,9 @@ pub fn make_physical_writer_factory(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
                 );
-                Arc::new(partitioned_writer_factory)
+                Ok(Arc::new(partitioned_writer_factory))
             } else {
-                Arc::new(file_writer_factory)
+                Ok(Arc::new(file_writer_factory))
             }
         }
         FileFormat::Csv => {
@@ -136,9 +139,9 @@ pub fn make_physical_writer_factory(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
                 );
-                Arc::new(partitioned_writer_factory)
+                Ok(Arc::new(partitioned_writer_factory))
             } else {
-                Arc::new(file_writer_factory)
+                Ok(Arc::new(file_writer_factory))
             }
         }
         _ => unreachable!("Physical write should only support Parquet and CSV"),

@@ -28,109 +28,97 @@ use tokio::sync::mpsc::Sender;
 
 use crate::AsyncFileWriter;
 
-/// TODO(desmond): This can be tuned.
-/// Default buffer size for writing to files.
-const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
-
 type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 
-pub(crate) struct NativeArrowWriter {}
-
-impl NativeArrowWriter {
-    /// Helper function that checks if we support native writes given the file format, root directory, and schema.
-    pub(crate) fn native_supported(
-        file_format: FileFormat,
-        root_dir: &str,
-        file_schema: &SchemaRef,
-    ) -> bool {
-        // TODO(desmond): Currently we only support native parquet writes.
-        if !matches!(file_format, FileFormat::Parquet) {
-            return false;
-        }
-        // TODO(desmond): Currently we only support local writes.
-        let (source_type, _) = match parse_url(root_dir) {
-            Ok(result) => result,
-            Err(_) => return false,
-        };
-        if !matches!(source_type, SourceType::File) {
-            return false;
-        }
-        // TODO(desmond): Currently we do not extension and timestamp types.
-        // Conversion from daft -> arrow2 -> arrow-rs -> parquet also doesn't work for maps.
-        // Arrow-rs also does not handle a bug we identified with nested fields that span multiple data pages.
-        let writer_properties = Arc::new(
-            WriterProperties::builder()
-                .set_writer_version(WriterVersion::PARQUET_1_0)
-                .set_compression(Compression::SNAPPY)
-                .build(),
-        );
-        let arrow_schema = match file_schema.to_arrow() {
-            Ok(schema) => {
-                for field in &schema.fields {
-                    if field.data_type().has_non_arrow_rs_convertible_type() {
-                        return false;
-                    }
+/// Helper function that checks if we support native writes given the file format, root directory, and schema.
+pub(crate) fn native_writer_supported(
+    file_format: FileFormat,
+    root_dir: &str,
+    file_schema: &SchemaRef,
+) -> DaftResult<bool> {
+    // TODO(desmond): Currently we only support native parquet writes.
+    if !matches!(file_format, FileFormat::Parquet) {
+        return Ok(false);
+    }
+    // TODO(desmond): Currently we only support local writes.
+    let (source_type, _) = parse_url(root_dir)?;
+    if !matches!(source_type, SourceType::File) {
+        return Ok(false);
+    }
+    // TODO(desmond): Currently we do not extension and timestamp types.
+    // Conversion from daft -> arrow2 -> arrow-rs -> parquet also doesn't work for maps.
+    // Arrow-rs also does not handle a bug we identified with nested fields that span multiple data pages.
+    let arrow_schema = match file_schema.to_arrow() {
+        Ok(schema) => {
+            for field in &schema.fields {
+                if !field.data_type().can_convert_to_arrow_rs() {
+                    return Ok(false);
                 }
-                Arc::new(schema.into())
             }
-            Err(_) => return false,
-        };
-        let parquet_schema = ArrowSchemaConverter::new()
-            .with_coerce_types(writer_properties.coerce_types())
-            .convert(&arrow_schema);
-        parquet_schema.is_ok()
-    }
+            Arc::new(schema.into())
+        }
+        Err(_) => return Ok(false),
+    };
+    let writer_properties = Arc::new(
+        WriterProperties::builder()
+            .set_writer_version(WriterVersion::PARQUET_1_0)
+            .set_compression(Compression::SNAPPY)
+            .build(),
+    );
+    Ok(ArrowSchemaConverter::new()
+        .with_coerce_types(writer_properties.coerce_types())
+        .convert(&arrow_schema)
+        .is_ok())
+}
 
-    pub(crate) fn create_parquet_writer(
-        root_dir: &str,
-        schema: &SchemaRef,
-        file_idx: usize,
-        partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<
-        Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
-    > {
-        // Parse the root directory and add partition values if present.
-        let (source_type, root_dir) = parse_url(root_dir)?;
-        debug_assert!(
-            matches!(source_type, SourceType::File),
-            "Native writes are currently enabled for local writes only"
-        );
-        let root_dir = Path::new(root_dir.trim_start_matches("file://"));
-        let dir = if let Some(partition_values) = partition_values {
-            let partition_path = partition_values.to_partition_path(None)?;
-            root_dir.join(partition_path)
-        } else {
-            root_dir.to_path_buf()
-        };
-        // Create the directories if they don't exist.
-        std::fs::create_dir_all(&dir)?;
+pub(crate) fn create_native_parquet_writer(
+    root_dir: &str,
+    schema: &SchemaRef,
+    file_idx: usize,
+    partition_values: Option<&RecordBatch>,
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
+{
+    // Parse the root directory and add partition values if present.
+    let (source_type, root_dir) = parse_url(root_dir)?;
+    debug_assert!(
+        matches!(source_type, SourceType::File),
+        "Native writes are currently enabled for local writes only"
+    );
+    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
+    let dir = if let Some(partition_values) = partition_values {
+        let partition_path = partition_values.to_partition_path(None)?;
+        root_dir.join(partition_path)
+    } else {
+        root_dir.to_path_buf()
+    };
+    // Create the directories if they don't exist.
+    std::fs::create_dir_all(&dir)?;
 
-        let filename = dir.join(format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx));
+    let filename = dir.join(format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx));
 
-        // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
-        // could be interesting but has much less support in the ecosystem (including ourselves).
-        let writer_properties = Arc::new(
-            WriterProperties::builder()
-                .set_writer_version(WriterVersion::PARQUET_1_0)
-                .set_compression(Compression::SNAPPY)
-                .build(),
-        );
+    // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
+    // could be interesting but has much less support in the ecosystem (including ourselves).
+    let writer_properties = Arc::new(
+        WriterProperties::builder()
+            .set_writer_version(WriterVersion::PARQUET_1_0)
+            .set_compression(Compression::SNAPPY)
+            .build(),
+    );
 
-        let arrow_schema = Arc::new(schema.to_arrow()?.into());
+    let arrow_schema = Arc::new(schema.to_arrow()?.into());
 
-        let parquet_schema = ArrowSchemaConverter::new()
-            .with_coerce_types(writer_properties.coerce_types())
-            .convert(&arrow_schema)
-            .expect("By this point we should have verified that the schema is convertible");
+    let parquet_schema = ArrowSchemaConverter::new()
+        .with_coerce_types(writer_properties.coerce_types())
+        .convert(&arrow_schema)
+        .expect("By this point `native_writer_supported` should have been called which would have verified that the schema is convertible");
 
-        Ok(Box::new(ArrowParquetWriter::new(
-            filename,
-            writer_properties,
-            arrow_schema,
-            parquet_schema,
-            partition_values.cloned(),
-        )))
-    }
+    Ok(Box::new(ArrowParquetWriter::new(
+        filename,
+        writer_properties,
+        arrow_schema,
+        parquet_schema,
+        partition_values.cloned(),
+    )))
 }
 
 struct ArrowParquetWriter {
@@ -143,6 +131,9 @@ struct ArrowParquetWriter {
 }
 
 impl ArrowParquetWriter {
+    /// TODO(desmond): This can be tuned.
+    /// Default buffer size for writing to files.
+    const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
     const PATH_FIELD_NAME: &str = "path";
 
     fn new(
@@ -164,7 +155,7 @@ impl ArrowParquetWriter {
 
     fn create_writer(&mut self) -> DaftResult<()> {
         let file = std::fs::File::create(&self.filename)?;
-        let bufwriter = BufWriter::with_capacity(DEFAULT_WRITE_BUFFER_SIZE, file);
+        let bufwriter = BufWriter::with_capacity(Self::DEFAULT_WRITE_BUFFER_SIZE, file);
         let writer = SerializedFileWriter::new(
             bufwriter,
             self.parquet_schema.root_schema_ptr(),

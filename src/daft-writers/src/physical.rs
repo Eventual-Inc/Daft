@@ -7,7 +7,10 @@ use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{native_arrow_writer::NativeArrowWriter, AsyncFileWriter, WriterFactory};
+use crate::{
+    native_arrow_writer::{create_native_parquet_writer, native_writer_supported},
+    AsyncFileWriter, WriterFactory,
+};
 
 /// PhysicalWriterFactory is a factory for creating physical writers, i.e. parquet, csv writers.
 pub struct PhysicalWriterFactory {
@@ -19,20 +22,20 @@ pub struct PhysicalWriterFactory {
 impl PhysicalWriterFactory {
     pub fn new(
         output_file_info: OutputFileInfo,
-        file_schema: &SchemaRef,
+        file_schema: SchemaRef,
         native_enabled: bool,
-    ) -> Self {
+    ) -> DaftResult<Self> {
         let native = native_enabled
-            && NativeArrowWriter::native_supported(
+            && native_writer_supported(
                 output_file_info.file_format,
                 &output_file_info.root_dir,
-                file_schema,
-            );
-        Self {
+                &file_schema,
+            )?;
+        Ok(Self {
             output_file_info,
-            schema: file_schema.clone(),
+            schema: file_schema,
             native,
-        }
+        })
     }
 }
 
@@ -103,7 +106,7 @@ fn create_native_writer(
 {
     match file_format {
         FileFormat::Parquet => {
-            NativeArrowWriter::create_parquet_writer(root_dir, schema, file_idx, partition_values)
+            create_native_parquet_writer(root_dir, schema, file_idx, partition_values)
         }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),
