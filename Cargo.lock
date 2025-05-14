@@ -2513,6 +2513,7 @@ dependencies = [
  "rand 0.8.5",
  "rstest",
  "serde",
+ "serde_json",
  "snafu",
  "test-log",
  "tokio",
