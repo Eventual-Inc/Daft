@@ -91,13 +91,13 @@ class LanceWriteSink(DataSink[lance.FragmentMetadata]):
 
             yield from fragments
 
-    def finalize(self, results: List[WriteOutput[lance.FragmentMetadata]]) -> MicroPartition:
+    def finalize(self, write_outputs: List[WriteOutput[lance.FragmentMetadata]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
         from daft.dependencies import pa
 
         lance = self._import_lance()
 
-        fragments = results
+        fragments = [write_output._output for write_output in write_outputs]
 
         if self._mode == "create" or self._mode == "overwrite":
             operation = lance.LanceOperation.Overwrite(self._pyarrow_schema, fragments)
