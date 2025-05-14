@@ -165,6 +165,39 @@ impl ParquetWriter {
         Ok(())
     }
 
+    fn extract_leaf_columns_from_record_batches(
+        &self,
+        record_batches: &[RecordBatch],
+        num_leaf_columns: usize,
+    ) -> DaftResult<Vec<Vec<ArrowLeafColumn>>> {
+        // Preallocate a vector for each leaf column across all record batches.
+        let mut leaf_columns: Vec<Vec<ArrowLeafColumn>> = (0..num_leaf_columns)
+            .map(|_| Vec::with_capacity(record_batches.len()))
+            .collect();
+        // Iterate through each record batch and extract its leaf columns.
+        for record_batch in record_batches {
+            let arrays = record_batch.get_inner_arrow_arrays();
+            let mut leaf_column_slots = leaf_columns.iter_mut();
+
+            for (arr, field) in arrays.zip(&self.arrow_schema.fields) {
+                let leaves = compute_leaves(field, &arr.into())
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                for leaf in leaves {
+                    match leaf_column_slots.next() {
+                        Some(slot) => slot.push(leaf),
+                        None => {
+                            return Err(DaftError::InternalError(
+                                "Mismatch between leaves and column slots".to_string(),
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+        Ok(leaf_columns)
+    }
+
     /// Helper function that spawns 1 worker thread per leaf column, dispatches the relevant arrow leaf columns to each
     /// worker, then returns the handles to the workers.
     fn spawn_column_writer_workers(
@@ -178,42 +211,22 @@ impl ParquetWriter {
             &self.arrow_schema,
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        // Create a container to store each leaf column's arrow data.
-        let mut leaf_column_data: Vec<Vec<ArrowLeafColumn>> = column_writers
-            .iter()
-            .map(|_| Vec::with_capacity(record_batches.len()))
-            .collect();
-        // For each record batch, grab the leaf data and store it in the relevant container.
-        for record_batch in record_batches {
-            let arrays = record_batch.get_inner_arrow_arrays();
-            let mut leaf_iter = leaf_column_data.iter_mut();
 
-            for (arr, field) in arrays.zip(&self.arrow_schema.fields) {
-                let leaves = compute_leaves(field, &arr.into())
-                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        // Flatten record batches into per-leaf-column Arrow data chunks.
+        let leaf_columns =
+            self.extract_leaf_columns_from_record_batches(record_batches, column_writers.len())?;
 
-                for leaf in leaves {
-                    match leaf_iter.next() {
-                        Some(slot) => slot.push(leaf),
-                        None => {
-                            return Err(DaftError::InternalError(
-                                "Mismatch between leaves and column slots".to_string(),
-                            ))
-                        }
-                    }
-                }
-            }
-        }
-        // Spawn leaf column writers and pass in their column data.
         let compute_runtime = get_compute_runtime();
+
+        // Spawn one worker per leaf column writer.
         Ok(column_writers
             .into_iter()
-            .zip(leaf_column_data.into_iter())
-            .map(|(mut writer, column_data)| {
+            .zip(leaf_columns.into_iter())
+            .map(|(mut writer, leaf_column)| {
                 compute_runtime.spawn(async move {
-                    for data in column_data {
+                    for chunk in leaf_column {
                         writer
-                            .write(&data)
+                            .write(&chunk)
                             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
                     }
                     writer
