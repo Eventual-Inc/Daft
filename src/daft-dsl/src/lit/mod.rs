@@ -966,8 +966,6 @@ mod test {
 
         assert_eq!(literal, expected);
 
-        assert!(false);
-
         Ok(())
     }
 
