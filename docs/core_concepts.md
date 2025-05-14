@@ -2531,6 +2531,7 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
 - [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/embeddings/daft_tutorial_embeddings_stackexchange.ipynb)
 - [:material-image-search: **Querying Images with UDFs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/image_querying/top_n_red_color.ipynb)
 - [:material-image-sync: **Image Generation on GPUs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
+- [:material-window-closed-variant: **Window Functions in Daft**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions.ipynb)
 
 </div>
 
