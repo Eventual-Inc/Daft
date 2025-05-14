@@ -599,6 +599,9 @@ impl RecordBatch {
             AggExpr::Concat(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .agg_concat(groups),
+            AggExpr::Skew(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .skew(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
