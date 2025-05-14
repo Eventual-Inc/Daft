@@ -3,11 +3,12 @@
 mod batch;
 mod file;
 mod ipc;
-mod native_arrow_writer;
+mod parquet_writer;
 mod partition;
 mod physical;
 #[cfg(test)]
 mod test;
+mod utils;
 
 // Make test module public for use in other crates' tests
 #[cfg(not(test))]

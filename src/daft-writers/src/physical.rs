@@ -8,7 +8,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
-    native_arrow_writer::{create_native_parquet_writer, native_writer_supported},
+    parquet_writer::{create_native_parquet_writer, native_parquet_writer_supported},
     AsyncFileWriter, WriterFactory,
 };
 
@@ -26,7 +26,7 @@ impl PhysicalWriterFactory {
         native_enabled: bool,
     ) -> DaftResult<Self> {
         let native = native_enabled
-            && native_writer_supported(
+            && native_parquet_writer_supported(
                 output_file_info.file_format,
                 &output_file_info.root_dir,
                 &file_schema,

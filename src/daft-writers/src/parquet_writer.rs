@@ -26,12 +26,12 @@ use parquet::{
 };
 use tokio::sync::mpsc::Sender;
 
-use crate::AsyncFileWriter;
+use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
 type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
-pub(crate) fn native_writer_supported(
+pub(crate) fn native_parquet_writer_supported(
     file_format: FileFormat,
     root_dir: &str,
     file_schema: &SchemaRef,
@@ -86,7 +86,7 @@ pub(crate) fn create_native_parquet_writer(
     );
     let root_dir = Path::new(root_dir.trim_start_matches("file://"));
     let dir = if let Some(partition_values) = partition_values {
-        let partition_path = partition_values.to_partition_path(None)?;
+        let partition_path = record_batch_to_partition_path(partition_values, None)?;
         root_dir.join(partition_path)
     } else {
         root_dir.to_path_buf()
@@ -112,7 +112,7 @@ pub(crate) fn create_native_parquet_writer(
         .convert(&arrow_schema)
         .expect("By this point `native_writer_supported` should have been called which would have verified that the schema is convertible");
 
-    Ok(Box::new(ArrowParquetWriter::new(
+    Ok(Box::new(ParquetWriter::new(
         filename,
         writer_properties,
         arrow_schema,
@@ -121,7 +121,7 @@ pub(crate) fn create_native_parquet_writer(
     )))
 }
 
-struct ArrowParquetWriter {
+struct ParquetWriter {
     filename: PathBuf,
     writer_properties: Arc<WriterProperties>,
     arrow_schema: Arc<arrow_schema::Schema>,
@@ -130,7 +130,7 @@ struct ArrowParquetWriter {
     file_writer: Option<SerializedFileWriter<BufWriter<std::fs::File>>>,
 }
 
-impl ArrowParquetWriter {
+impl ParquetWriter {
     /// TODO(desmond): This can be tuned.
     /// Default buffer size for writing to files.
     const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
@@ -226,7 +226,7 @@ impl ArrowParquetWriter {
 }
 
 #[async_trait]
-impl AsyncFileWriter for ArrowParquetWriter {
+impl AsyncFileWriter for ParquetWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 

@@ -2646,7 +2646,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "urlencoding",
 ]
 
 [[package]]
@@ -2860,6 +2859,7 @@ dependencies = [
  "parquet",
  "pyo3",
  "tokio",
+ "urlencoding",
  "uuid 1.16.0",
 ]
 
