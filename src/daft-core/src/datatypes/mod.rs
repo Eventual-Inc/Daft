@@ -7,7 +7,8 @@ pub mod prelude;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub use agg_ops::{
-    try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
+    try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+    try_stddev_aggregation_supertype, try_sum_supertype,
 };
 use arrow2::{
     compute::comparison::Simd8,

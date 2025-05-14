@@ -2451,6 +2451,8 @@ class DataFrame:
             return expr.agg_set()
         elif op == "concat":
             return expr.agg_concat()
+        elif op == "skew":
+            return expr.skew()
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
@@ -3649,6 +3651,14 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped count per column.
         """
         return self.df._apply_agg_fn(Expression.count, cols, self.group_by)
+
+    def skew(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped skew on this GroupedDataFrame.
+
+        Returns:
+            DataFrame: DataFrame with the grouped skew per column.
+        """
+        return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
 
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped list on this GroupedDataFrame.
