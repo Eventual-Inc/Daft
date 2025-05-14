@@ -6,7 +6,7 @@ use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
 
-use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle, Task};
+use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle, Task, TaskId};
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
 #[allow(dead_code)]
@@ -131,8 +131,8 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
-    fn task_id(&self) -> String {
-        self.task.task_id().to_string()
+    fn task_id(&self) -> &TaskId {
+        self.task.task_id()
     }
 
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {

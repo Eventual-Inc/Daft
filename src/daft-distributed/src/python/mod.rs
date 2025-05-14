@@ -41,10 +41,6 @@ impl PythonPartitionRefStream {
                         let objref = ray_part_ref.object_ref.clone_ref(py);
                         let size_bytes = ray_part_ref.size_bytes;
                         let num_rows = ray_part_ref.num_rows;
-                        println!(
-                            "objref: {:?}, num_rows: {:?}, size_bytes: {:?}",
-                            objref, num_rows, size_bytes
-                        );
                         let ret = (objref, num_rows, size_bytes);
                         Some(ret)
                     }

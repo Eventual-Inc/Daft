@@ -159,7 +159,7 @@ impl SubmittedTask {
     }
 
     #[allow(dead_code)]
-    pub fn id(&self) -> &str {
+    pub fn id(&self) -> &TaskId {
         &self._task_id
     }
 }

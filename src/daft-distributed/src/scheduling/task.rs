@@ -24,7 +24,7 @@ pub(crate) enum SchedulingStrategy {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SwordfishTask {
-    id: String,
+    id: TaskId,
     plan: LocalPhysicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
@@ -49,7 +49,7 @@ impl SwordfishTask {
         }
     }
 
-    pub fn id(&self) -> &str {
+    pub fn id(&self) -> &TaskId {
         &self.id
     }
 

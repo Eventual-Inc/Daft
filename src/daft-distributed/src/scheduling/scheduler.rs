@@ -49,15 +49,15 @@ impl DefaultScheduler {
         }
     }
     fn try_schedule_spread_task(&self) -> Option<WorkerId> {
-        todo!()
+        todo!("FLOTILLA_MS1: Implement scheduling spread task for default scheduler")
     }
 
     fn try_schedule_soft_node_affinity_task(&self, _node_id: &str) -> Option<WorkerId> {
-        todo!()
+        todo!("FLOTILLA_MS1: Implement scheduling soft node affinity task for default scheduler")
     }
 
     fn try_schedule_hard_node_affinity_task(&self, _node_id: &str) -> Option<WorkerId> {
-        todo!()
+        todo!("FLOTILLA_MS1: Implement scheduling hard node affinity task for default scheduler")
     }
 
     fn try_schedule_task<T: Task>(&self, task: &SchedulableTask<T>) -> Option<WorkerId> {
@@ -121,10 +121,10 @@ impl LinearScheduler {
 
 impl<T: Task, W: Worker> Scheduler<T, W> for LinearScheduler {
     fn update_state(&mut self, _workers: &HashMap<WorkerId, W>) {
-        todo!()
+        todo!("FLOTILLA_MS1: Implement updating state for linear scheduler")
     }
 
     fn schedule_tasks(&mut self, _tasks: Vec<SchedulableTask<T>>) -> ScheduleResult<T> {
-        todo!()
+        todo!("FLOTILLA_MS1: Implement scheduling tasks for linear scheduler")
     }
 }
