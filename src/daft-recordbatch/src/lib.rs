@@ -1035,9 +1035,8 @@ impl RecordBatch {
         let default_partition = if let Some(partition_null_fallback) = partition_null_fallback {
             urlencoding::encode(partition_null_fallback)
         } else {
-            DEFAULT_PARTITION_VALUE.to_string().into()
+            DEFAULT_PARTITION_VALUE.into()
         };
-        let mut partition_path = PathBuf::new();
         let partition_path = self
             .columns
             .iter()
@@ -1265,7 +1264,14 @@ mod test {
 
         let result = batch.to_partition_path(None);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), DaftError::InternalError(_)));
+        assert!(matches!(
+            result.as_ref().unwrap_err(),
+            DaftError::InternalError(_)
+        ));
+        assert_eq!(
+            result.as_ref().unwrap_err().to_string(),
+            "DaftError::InternalError Only single row RecordBatches can be converted to partition strings"
+        );
         Ok(())
     }
 }

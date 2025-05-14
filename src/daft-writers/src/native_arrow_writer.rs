@@ -7,7 +7,7 @@ use std::{
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_runtime::{get_compute_runtime, Runtime, RuntimeTask};
+use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::prelude::*;
 use daft_io::{parse_url, SourceType};
 use daft_micropartition::MicroPartition;
@@ -140,10 +140,11 @@ struct ArrowParquetWriter {
     parquet_schema: SchemaDescriptor,
     partition_values: Option<RecordBatch>,
     file_writer: Option<SerializedFileWriter<BufWriter<std::fs::File>>>,
-    compute_runtime: Option<Arc<Runtime>>,
 }
 
 impl ArrowParquetWriter {
+    const PATH_FIELD_NAME: &str = "path";
+
     fn new(
         filename: PathBuf,
         writer_properties: Arc<WriterProperties>,
@@ -158,7 +159,6 @@ impl ArrowParquetWriter {
             parquet_schema,
             partition_values,
             file_writer: None,
-            compute_runtime: None,
         }
     }
 
@@ -172,7 +172,6 @@ impl ArrowParquetWriter {
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         self.file_writer = Some(writer);
-        self.compute_runtime = Some(get_compute_runtime());
         Ok(())
     }
 
@@ -181,18 +180,14 @@ impl ArrowParquetWriter {
     fn spawn_column_writer_workers(
         &self,
         channel_size: usize,
-    ) -> DaftResult<(Vec<ColumnWriterHandle>, Vec<Sender<ArrowLeafColumn>>)> {
-        let compute_runtime = self
-            .compute_runtime
-            .as_ref()
-            .expect("Compute runtime should be created by now");
-
+    ) -> DaftResult<(Vec<ParquetColumnWriterHandle>, Vec<Sender<ArrowLeafColumn>>)> {
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,
             &self.arrow_schema,
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        let compute_runtime = get_compute_runtime();
         let (handles, senders): (Vec<_>, Vec<_>) = column_writers
             .into_iter()
             .map(|mut writer| {
@@ -290,7 +285,7 @@ impl AsyncFileWriter for ArrowParquetWriter {
             .finish()
             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         // Return a recordbatch containing the filename that we wrote to.
-        let field = Field::new("path", DataType::Utf8);
+        let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
             Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
