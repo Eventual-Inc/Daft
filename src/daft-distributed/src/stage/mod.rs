@@ -3,13 +3,17 @@ use std::{collections::HashMap, future::Future, sync::Arc};
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_logical_plan::LogicalPlanRef;
+use daft_dsl::ExprRef;
+use daft_logical_plan::{partitioning::ClusteringSpecRef, JoinType, LogicalPlanRef};
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    pipeline_node::{materialize::materialize_all_pipeline_outputs, DistributedPipelineNode},
+    pipeline_node::{
+        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
+        DistributedPipelineNode,
+    },
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
         scheduler::LinearScheduler,
@@ -48,10 +52,12 @@ impl Stage {
         &self,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+        config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static> {
         let mut stage_context = StageContext::try_new(worker_manager)?;
         match &self.type_ {
-            StageType::MapPipeline { pipeline_node } => {
+            StageType::MapPipeline { plan } => {
+                let pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config)?;
                 let running_node = pipeline_node.start(&mut stage_context, psets.clone());
 
                 let (task_dispatcher_handle, joinset) = stage_context.into_inner();
@@ -65,6 +71,7 @@ impl Stage {
                     Err(e) => Err(e),
                 }))
             }
+            _ => todo!("FLOTILLA MS2: Implement other stages"),
         }
     }
 }
@@ -73,37 +80,37 @@ impl Stage {
 #[derive(Serialize, Deserialize)]
 enum StageType {
     MapPipeline {
-        pipeline_node: Box<dyn DistributedPipelineNode>,
+        plan: LogicalPlanRef,
     },
-    // HashJoin {
-    //     plan: LogicalPlanRef,
-    //     left_on: Vec<ExprRef>,
-    //     right_on: Vec<ExprRef>,
-    //     null_equals_null: Option<Vec<bool>>,
-    //     join_type: JoinType,
-    // },
+    HashJoin {
+        plan: LogicalPlanRef,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+        null_equals_null: Option<Vec<bool>>,
+        join_type: JoinType,
+    },
     // SortMergeJoin {
     //     plan: LocalPhysicalPlanRef,
     // },
-    // HashAggregate {
-    //     plan: LogicalPlanRef,
-    //     aggregations: Vec<ExprRef>,
-    //     group_by: Vec<ExprRef>,
-    // },
-    // Broadcast,
-    // Exchange {
-    //     clustering_spec: ClusteringSpecRef,
-    // },
+    HashAggregate {
+        plan: LogicalPlanRef,
+        aggregations: Vec<ExprRef>,
+        group_by: Vec<ExprRef>,
+    },
+    Broadcast,
+    Exchange {
+        clustering_spec: ClusteringSpecRef,
+    },
 }
 
 impl StageType {
     fn name(&self) -> &str {
         match self {
             Self::MapPipeline { .. } => "MapPipeline",
-            // Self::HashJoin { .. } => "HashJoin",
-            // Self::HashAggregate { .. } => "HashAggregate",
-            // Self::Broadcast => "Broadcast",
-            // Self::Exchange { .. } => "Exchange",
+            Self::HashJoin { .. } => "HashJoin",
+            Self::HashAggregate { .. } => "HashAggregate",
+            Self::Broadcast => "Broadcast",
+            Self::Exchange { .. } => "Exchange",
         }
     }
 }
@@ -117,12 +124,9 @@ pub(crate) struct StagePlan {
 }
 
 impl StagePlan {
-    pub(crate) fn from_logical_plan(
-        plan: LogicalPlanRef,
-        config: Arc<DaftExecutionConfig>,
-    ) -> DaftResult<Self> {
+    pub(crate) fn from_logical_plan(plan: LogicalPlanRef) -> DaftResult<Self> {
         let builder = StagePlanBuilder::new();
-        let stage_plan = builder.build_stage_plan(plan, config)?;
+        let stage_plan = builder.build_stage_plan(plan)?;
 
         Ok(stage_plan)
     }

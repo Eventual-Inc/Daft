@@ -36,7 +36,7 @@ impl DistributedPhysicalPlan {
         let plan = builder.build();
 
         Ok(Self {
-            stage_plan: Arc::new(StagePlan::from_logical_plan(plan, config.clone())?),
+            stage_plan: Arc::new(StagePlan::from_logical_plan(plan)?),
             config,
         })
     }
@@ -46,6 +46,7 @@ impl DistributedPhysicalPlan {
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         sender: Sender<PartitionRef>,
+        config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
             return Err(DaftError::ValueError(format!(
@@ -55,7 +56,7 @@ impl DistributedPhysicalPlan {
         }
 
         let stage = stage_plan.get_root_stage();
-        let mut running_stage = stage.run_stage(psets, worker_manager)?;
+        let mut running_stage = stage.run_stage(psets, worker_manager, config)?;
         while let Some(partition) = running_stage.next().await {
             if sender.send(partition?).await.is_err() {
                 break;
@@ -76,6 +77,7 @@ impl DistributedPhysicalPlan {
             psets,
             worker_manager,
             result_sender,
+            self.config.clone(),
         ));
         Ok(PlanResult::new(handle, result_receiver))
     }

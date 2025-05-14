@@ -1,6 +1,6 @@
 mod task;
-mod worker_manager;
 mod worker;
+mod worker_manager;
 
 pub(crate) use task::{RayPartitionRef, RaySwordfishTask};
 pub(crate) use worker::RaySwordfishWorker;

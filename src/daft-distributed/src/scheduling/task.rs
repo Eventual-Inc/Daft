@@ -1,4 +1,3 @@
-
 use std::{any::Any, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;

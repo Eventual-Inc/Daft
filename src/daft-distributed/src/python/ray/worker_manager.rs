@@ -85,7 +85,7 @@ impl Drop for RayWorkerManager {
     }
 }
 
-#[pyclass(module= "daft.daft", name = "RayWorkerManager")]
+#[pyclass(module = "daft.daft", name = "RayWorkerManager")]
 #[derive(Clone)]
 pub(crate) struct PyRayWorkerManager {
     pub inner: Arc<RayWorkerManager>,

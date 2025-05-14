@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{
@@ -9,7 +8,6 @@ use daft_logical_plan::{
 };
 
 use super::{Stage, StageID, StagePlan, StageType};
-use crate::pipeline_node::logical_plan_to_pipeline_node;
 
 pub(crate) struct StagePlanBuilder {
     stages: HashMap<StageID, Stage>,
@@ -30,11 +28,7 @@ impl StagePlanBuilder {
         StageID(curr)
     }
 
-    fn build_stages_from_plan(
-        &mut self,
-        plan: LogicalPlanRef,
-        config: Arc<DaftExecutionConfig>,
-    ) -> DaftResult<StageID> {
+    fn build_stages_from_plan(&mut self, plan: LogicalPlanRef) -> DaftResult<StageID> {
         // Match on the type of the logical plan node
         match plan.as_ref() {
             _ => {
@@ -85,10 +79,9 @@ impl StagePlanBuilder {
                 let new_plan = output.data;
                 // Create a MapPipeline stage
                 let stage_id = self.next_stage_id();
-                let pipeline_node = logical_plan_to_pipeline_node(new_plan, config)?;
                 let stage = Stage {
                     id: stage_id.clone(),
-                    type_: StageType::MapPipeline { pipeline_node },
+                    type_: StageType::MapPipeline { plan: new_plan },
                 };
 
                 // TODO: Add upstream stage to output channel stages
@@ -98,12 +91,8 @@ impl StagePlanBuilder {
         }
     }
 
-    pub fn build_stage_plan(
-        mut self,
-        plan: LogicalPlanRef,
-        config: Arc<DaftExecutionConfig>,
-    ) -> DaftResult<StagePlan> {
-        let root_stage_id = self.build_stages_from_plan(plan, config)?;
+    pub fn build_stage_plan(mut self, plan: LogicalPlanRef) -> DaftResult<StagePlan> {
+        let root_stage_id = self.build_stages_from_plan(plan)?;
         Ok(StagePlan {
             stages: self.stages,
             root_stage: root_stage_id,

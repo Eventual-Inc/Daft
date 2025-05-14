@@ -17,10 +17,7 @@ use super::{
 use crate::{
     scheduling::task::{SchedulingStrategy, SwordfishTask},
     stage::StageContext,
-    utils::{
-        channel::{create_channel, Sender},
-        joinset::JoinSet,
-    },
+    utils::channel::{create_channel, Sender},
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -114,8 +111,7 @@ impl CollectNode {
         input: RunningPipelineNode<SwordfishTask>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
-        let mut task_or_partition_ref_stream =
-            materialize_running_pipeline_outputs(input);
+        let mut task_or_partition_ref_stream = materialize_running_pipeline_outputs(input);
         while let Some(result) = task_or_partition_ref_stream.next().await {
             let pipeline_output = result?;
             match pipeline_output {

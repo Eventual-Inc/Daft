@@ -20,9 +20,11 @@ pub use pushdowns::Pushdowns;
 pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ScanState {
+    #[serde(skip)]
     Operator(ScanOperatorRef),
     Tasks(Arc<Vec<ScanTaskLikeRef>>),
 }
@@ -45,7 +47,7 @@ impl ScanState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PhysicalScanInfo {
     pub scan_state: ScanState,
     pub source_schema: SchemaRef,
