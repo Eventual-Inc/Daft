@@ -21,11 +21,11 @@ log = {workspace = true}
 num-format = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
-serde_json.workspace = true
 snafu = {workspace = true}
 tokio = {workspace = true}
 typed-builder = {workspace = true}
 uuid = {version = "1", features = ["v4"]}
+serde_json.workspace = true
 
 [dev-dependencies]
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
