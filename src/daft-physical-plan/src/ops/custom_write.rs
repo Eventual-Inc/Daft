@@ -1,32 +1,36 @@
-use daft_logical_plan::sink_info::CustomInfo;
+use daft_logical_plan::sink_info::DataSinkInfo;
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
 use crate::PhysicalPlanRef;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct CustomWrite {
+pub struct DataSink {
     pub schema: SchemaRef,
-    pub custom_info: CustomInfo,
+    pub data_sink_info: DataSinkInfo,
     // Upstream node.
     pub input: PhysicalPlanRef,
 }
 
-impl CustomWrite {
-    pub(crate) fn new(schema: SchemaRef, custom_info: CustomInfo, input: PhysicalPlanRef) -> Self {
+impl DataSink {
+    pub(crate) fn new(
+        schema: SchemaRef,
+        custom_info: DataSinkInfo,
+        input: PhysicalPlanRef,
+    ) -> Self {
         Self {
             schema,
-            custom_info,
+            data_sink_info: custom_info,
             input,
         }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("CustomWrite:".to_string());
-        res.extend(self.custom_info.multiline_display());
+        res.push("DataSink:".to_string());
+        res.extend(self.data_sink_info.multiline_display());
         res
     }
 }
 
-crate::impl_default_tree_display!(CustomWrite);
+crate::impl_default_tree_display!(DataSink);

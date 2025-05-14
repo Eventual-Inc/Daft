@@ -2,25 +2,25 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use daft_logical_plan::CustomInfo;
+use daft_logical_plan::DataSinkInfo;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use pyo3::{types::PyAnyMethods, Python};
 
 use crate::{AsyncFileWriter, WriterFactory};
 
-pub struct CustomWriter {
+pub struct DataSinkWriter {
     is_closed: bool,
-    custom_info: CustomInfo,
+    data_sink_info: DataSinkInfo,
     results: Vec<RecordBatch>,
     bytes_written: usize,
 }
 
-impl CustomWriter {
-    pub fn new(custom_info: CustomInfo) -> Self {
+impl DataSinkWriter {
+    pub fn new(data_sink_info: DataSinkInfo) -> Self {
         Self {
             is_closed: false,
-            custom_info,
+            data_sink_info,
             results: vec![],
             bytes_written: 0,
         }
@@ -28,14 +28,14 @@ impl CustomWriter {
 }
 
 #[async_trait]
-impl AsyncFileWriter for CustomWriter {
+impl AsyncFileWriter for DataSinkWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         let mut bytes_written = 0;
         let mp_result: PyRecordBatch = Python::with_gil(|py| -> pyo3::PyResult<_> {
-            // Grab the current micropartition and pass it to the custom write sink along with any additional kwargs.
+            // Grab the current micropartition and pass it to the data sink.
             let py_micropartition = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
@@ -45,7 +45,7 @@ impl AsyncFileWriter for CustomWriter {
             let py_iter = py_list.try_iter()?;
 
             let result = self
-                .custom_info
+                .data_sink_info
                 .sink
                 .call_method(py, "write", (py_iter,), None)?;
             let result_list = py
@@ -57,7 +57,7 @@ impl AsyncFileWriter for CustomWriter {
 
             // Save return values into a record batch.
             let results_dict = pyo3::types::PyDict::new(py);
-            results_dict.set_item("custom_write_results", result_list)?;
+            results_dict.set_item("write_results", result_list)?;
             py.import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
                 .getattr(pyo3::intern!(py, "from_pydict"))?
@@ -84,17 +84,17 @@ impl AsyncFileWriter for CustomWriter {
     }
 }
 
-pub fn make_custom_writer_factory(
-    custom_info: CustomInfo,
+pub fn make_data_sink_writer_factory(
+    data_sink_info: DataSinkInfo,
 ) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
-    Arc::new(CustomWriterFactory { custom_info })
+    Arc::new(DataSinkWriterFactory { data_sink_info })
 }
 
-pub struct CustomWriterFactory {
-    pub custom_info: CustomInfo,
+pub struct DataSinkWriterFactory {
+    pub data_sink_info: DataSinkInfo,
 }
 
-impl WriterFactory for CustomWriterFactory {
+impl WriterFactory for DataSinkWriterFactory {
     type Input = Arc<MicroPartition>;
 
     type Result = Vec<RecordBatch>;
@@ -104,7 +104,7 @@ impl WriterFactory for CustomWriterFactory {
         _file_idx: usize,
         _partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
-        let writer = CustomWriter::new(self.custom_info.clone());
+        let writer = DataSinkWriter::new(self.data_sink_info.clone());
         Ok(Box::new(writer))
     }
 }

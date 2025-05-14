@@ -39,7 +39,7 @@ pub use concat::Concat;
 pub use cross_join::CrossJoin;
 pub use csv::TabularWriteCsv;
 #[cfg(feature = "python")]
-pub use custom_write::CustomWrite;
+pub use custom_write::DataSink;
 #[cfg(feature = "python")]
 pub use deltalake_write::DeltaLakeWrite;
 pub use empty_scan::EmptyScan;

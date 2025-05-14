@@ -514,8 +514,8 @@ pub(super) fn translate_single_logical_node(
                     }
                 }
                 #[cfg(feature = "python")]
-                SinkInfo::CustomInfo(custom_info) => Ok(PhysicalPlan::CustomWrite(
-                    CustomWrite::new(schema.clone(), custom_info.clone(), input_physical),
+                SinkInfo::DataSinkInfo(data_sink_info) => Ok(PhysicalPlan::DataSink(
+                    DataSink::new(schema.clone(), data_sink_info.clone(), input_physical),
                 )
                 .arced()),
             }

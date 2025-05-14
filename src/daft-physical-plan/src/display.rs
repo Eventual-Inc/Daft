@@ -39,7 +39,7 @@ impl TreeDisplay for PhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(write) => write.display_as(level),
             #[cfg(feature = "python")]
-            Self::CustomWrite(write) => write.display_as(level),
+            Self::DataSink(write) => write.display_as(level),
         }
     }
 

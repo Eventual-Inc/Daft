@@ -225,13 +225,13 @@ def lance_write(
     )
 
 
-def custom_write(
+def data_sink_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
     sink: DataSink,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into a custom write sink described by `sink`."""
     yield from (
-        step.add_instruction(execution_step.CustomWrite(sink)) if isinstance(step, PartitionTaskBuilder) else step
+        step.add_instruction(execution_step.DataSinkWrite(sink)) if isinstance(step, PartitionTaskBuilder) else step
         for step in child_plan
     )
 

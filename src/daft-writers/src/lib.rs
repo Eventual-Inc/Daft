@@ -15,11 +15,11 @@ pub mod test;
 #[cfg(feature = "python")]
 mod catalog;
 #[cfg(feature = "python")]
-mod custom;
-#[cfg(feature = "python")]
 mod lance;
 #[cfg(feature = "python")]
 mod pyarrow;
+#[cfg(feature = "python")]
+mod sink;
 
 use std::{
     cmp::min,
@@ -31,8 +31,6 @@ use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-#[cfg(feature = "python")]
-pub use custom::make_custom_writer_factory;
 use daft_dsl::ExprRef;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
@@ -43,6 +41,8 @@ use ipc::IPCWriterFactory;
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
+#[cfg(feature = "python")]
+pub use sink::make_data_sink_writer_factory;
 
 pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
 

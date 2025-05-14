@@ -1195,8 +1195,8 @@ class DataFrame:
         write_df.collect()
 
         results = write_df.to_pydict()
-        assert "custom_write_results" in results
-        micropartition = sink.finalize(results["custom_write_results"])
+        assert "write_results" in results
+        micropartition = sink.finalize(results["write_results"])
         if micropartition.schema() != sink.schema():
             raise ValueError(
                 f"Schema mismatch between the data sink's schema and the result's schema:\nSink schema:\n{sink.schema()}\nResult schema:\n{micropartition.schema()}"
@@ -1268,9 +1268,9 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        from daft.dataframe.lance_write_sink import LanceWriteSink
+        from daft.dataframe.lance_data_sink import LanceDataSink
 
-        sink = LanceWriteSink(uri, self.schema(), mode, io_config, **kwargs)
+        sink = LanceDataSink(uri, self.schema(), mode, io_config, **kwargs)
         return self.write_sink(sink)
 
     ###

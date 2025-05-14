@@ -749,9 +749,9 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "python")]
     pub fn custom_write(&self, name: String, sink: Arc<PyObject>) -> DaftResult<Self> {
-        use crate::sink_info::CustomInfo;
+        use crate::sink_info::DataSinkInfo;
 
-        let sink_info = SinkInfo::CustomInfo(CustomInfo { name, sink });
+        let sink_info = SinkInfo::DataSinkInfo(DataSinkInfo { name, sink });
         let logical_plan: LogicalPlan =
             ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
         Ok(self.with_new_plan(logical_plan))

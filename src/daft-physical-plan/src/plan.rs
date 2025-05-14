@@ -48,7 +48,7 @@ pub enum PhysicalPlan {
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
     #[cfg(feature = "python")]
-    CustomWrite(CustomWrite),
+    DataSink(DataSink),
 }
 
 impl PhysicalPlan {
@@ -199,9 +199,7 @@ impl PhysicalPlan {
             Self::IcebergWrite(_)
             | Self::DeltaLakeWrite(_)
             | Self::LanceWrite(_)
-            | Self::CustomWrite(_) => {
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
-            }
+            | Self::DataSink(_) => ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into(),
         }
     }
 
@@ -385,7 +383,7 @@ impl PhysicalPlan {
             Self::IcebergWrite(_)
             | Self::DeltaLakeWrite(_)
             | Self::LanceWrite(_)
-            | Self::CustomWrite(_) => ApproxStats::empty(),
+            | Self::DataSink(_) => ApproxStats::empty(),
         }
     }
 
@@ -415,7 +413,7 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { input, .. }) => vec![input],
             #[cfg(feature = "python")]
-            Self::CustomWrite(CustomWrite { input, .. }) => vec![input],
+            Self::DataSink(DataSink { input, .. }) => vec![input],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
@@ -467,7 +465,7 @@ impl PhysicalPlan {
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
-                Self::CustomWrite(CustomWrite { schema, custom_info, .. }) => Self::CustomWrite(CustomWrite::new(schema.clone(), custom_info.clone(), input.clone())),
+                Self::DataSink(DataSink { schema, data_sink_info: custom_info, .. }) => Self::DataSink(DataSink::new(schema.clone(), custom_info.clone(), input.clone())),
                 Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) | Self::CrossJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
@@ -527,7 +525,7 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(..) => "LanceWrite",
             #[cfg(feature = "python")]
-            Self::CustomWrite(..) => "CustomWrite",
+            Self::DataSink(..) => "CustomWrite",
         };
         name.to_string()
     }
@@ -570,7 +568,7 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(lance_info) => lance_info.multiline_display(),
             #[cfg(feature = "python")]
-            Self::CustomWrite(custom_info) => custom_info.multiline_display(),
+            Self::DataSink(custom_info) => custom_info.multiline_display(),
         }
     }
 

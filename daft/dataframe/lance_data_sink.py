@@ -12,7 +12,7 @@ from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
 
-class LanceWriteSink(DataSink[list[lance.FragmentMetadata]]):
+class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     """WriteSink for writing data to a Lance dataset."""
 
     def _import_lance(self):

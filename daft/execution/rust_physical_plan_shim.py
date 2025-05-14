@@ -418,8 +418,8 @@ def write_lance(
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
 
 
-def write_custom(
+def write_data_sink(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     sink: DataSink,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    return physical_plan.custom_write(input, sink)
+    return physical_plan.data_sink_write(input, sink)

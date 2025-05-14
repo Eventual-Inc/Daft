@@ -9,7 +9,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use daft_logical_plan::InMemoryInfo;
 #[cfg(feature = "python")]
-use daft_logical_plan::{CustomInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+use daft_logical_plan::{DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
 use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_physical_plan::{
@@ -265,7 +265,7 @@ fn lance_write(
 fn custom_write(
     py: Python,
     upstream_iter: PyObject,
-    custom_info: &CustomInfo,
+    custom_info: &DataSinkInfo,
 ) -> PyResult<PyObject> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
@@ -282,9 +282,7 @@ fn physical_plan_to_partition_tasks(
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
     use daft_dsl::Expr;
-    use daft_physical_plan::ops::{
-        CrossJoin, CustomWrite, ShuffleExchange, ShuffleExchangeStrategy,
-    };
+    use daft_physical_plan::ops::{CrossJoin, DataSink, ShuffleExchange, ShuffleExchangeStrategy};
     match physical_plan {
         PhysicalPlan::PreviousStageScan(..) => {
             panic!("PreviousStageScan should be optimized away before reaching the scheduler")
@@ -992,9 +990,9 @@ fn physical_plan_to_partition_tasks(
             lance_info,
         ),
         #[cfg(feature = "python")]
-        PhysicalPlan::CustomWrite(CustomWrite {
+        PhysicalPlan::DataSink(DataSink {
             schema: _,
-            custom_info,
+            data_sink_info: custom_info,
             input,
         }) => custom_write(
             py,

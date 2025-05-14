@@ -49,7 +49,7 @@ pub enum LocalPhysicalPlan {
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
     #[cfg(feature = "python")]
-    CustomWrite(CustomWrite),
+    DataSink(DataSink),
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
     WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
@@ -100,7 +100,7 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. })
-            | Self::CustomWrite(CustomWrite { stats_state, .. }) => stats_state,
+            | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }
 
@@ -564,15 +564,15 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub(crate) fn custom_write(
+    pub(crate) fn data_sink(
         input: LocalPhysicalPlanRef,
-        custom_info: daft_logical_plan::CustomInfo,
+        custom_info: daft_logical_plan::DataSinkInfo,
         file_schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
-        Self::CustomWrite(CustomWrite {
+        Self::DataSink(DataSink {
             input,
-            custom_info,
+            data_sink_info: custom_info,
             file_schema,
             stats_state,
         })
@@ -612,7 +612,7 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
-            Self::CustomWrite(CustomWrite { file_schema, .. }) => file_schema,
+            Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
@@ -821,9 +821,9 @@ pub struct LanceWrite {
 
 #[cfg(feature = "python")]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CustomWrite {
+pub struct DataSink {
     pub input: LocalPhysicalPlanRef,
-    pub custom_info: daft_logical_plan::CustomInfo,
+    pub data_sink_info: daft_logical_plan::DataSinkInfo,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
 }

@@ -53,8 +53,8 @@ impl Sink {
                 }
             }
             #[cfg(feature = "python")]
-            SinkInfo::CustomInfo(_) => {
-                vec![Field::new("custom_write_results", DataType::Python)]
+            SinkInfo::DataSinkInfo(_) => {
+                vec![Field::new("write_results", DataType::Python)]
             }
         };
         let schema = Schema::new(fields).into();
@@ -103,7 +103,7 @@ impl Sink {
                 }
             },
             #[cfg(feature = "python")]
-            SinkInfo::CustomInfo(custom_info) => {
+            SinkInfo::DataSinkInfo(custom_info) => {
                 res.push(format!("Sink: Custom({})", custom_info.name));
             }
         }

@@ -18,7 +18,7 @@ pub enum SinkInfo {
     #[cfg(feature = "python")]
     CatalogInfo(CatalogInfo),
     #[cfg(feature = "python")]
-    CustomInfo(CustomInfo),
+    DataSinkInfo(DataSinkInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -151,7 +151,7 @@ impl LanceCatalogInfo {
 #[cfg(feature = "python")]
 #[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
 #[derivative(PartialEq, Eq, Hash)]
-pub struct CustomInfo {
+pub struct DataSinkInfo {
     pub name: String,
     #[serde(
         serialize_with = "serialize_py_object",
@@ -163,7 +163,7 @@ pub struct CustomInfo {
 }
 
 #[cfg(feature = "python")]
-impl CustomInfo {
+impl DataSinkInfo {
     pub fn multiline_display(&self) -> Vec<String> {
         vec![format!("CustomInfo = {}", self.sink)]
     }

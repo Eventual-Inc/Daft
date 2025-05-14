@@ -803,14 +803,15 @@ pub fn physical_plan_to_pipeline(
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
         }
         #[cfg(feature = "python")]
-        LocalPhysicalPlan::CustomWrite(daft_local_plan::CustomWrite {
+        LocalPhysicalPlan::DataSink(daft_local_plan::DataSink {
             input,
-            custom_info,
+            data_sink_info,
             file_schema,
             stats_state,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory = daft_writers::make_custom_writer_factory(custom_info.clone());
+            let writer_factory =
+                daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
             let write_sink = WriteSink::new(
                 WriteFormat::Custom,
                 writer_factory,
