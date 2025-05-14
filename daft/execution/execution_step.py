@@ -589,10 +589,11 @@ class CustomWrite(SingleOutputInstruction):
         return [mp]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # TODO(desmond): We can potentially do something more useful here. For now, copy the implementation for the other writers.
         assert len(input_metadatas) == 1
         return [
             PartialPartitionMetadata(
-                num_rows=None,
+                num_rows=None,  # we can write more than 1 file per partition
                 size_bytes=None,
             )
         ]

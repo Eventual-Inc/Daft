@@ -33,9 +33,7 @@ impl AsyncFileWriter for CustomWriter {
     type Result = Vec<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
-        self.bytes_written += data
-            .size_bytes()?
-            .expect("MicroPartition should have size_bytes for LanceWriter");
+        let mut bytes_written = 0;
         let mp_result: PyRecordBatch = Python::with_gil(|py| -> pyo3::PyResult<_> {
             // Grab the current micropartition and pass it to the custom write sink along with any additional kwargs.
             let py_micropartition = py
@@ -53,6 +51,9 @@ impl AsyncFileWriter for CustomWriter {
             let result_list = py
                 .import(pyo3::intern!(py, "builtins"))?
                 .call_method1("list", (result,))?;
+            for result in result_list.try_iter()? {
+                bytes_written += result?.getattr("bytes_written")?.extract::<usize>()?;
+            }
 
             // Save return values into a record batch.
             let results_dict = pyo3::types::PyDict::new(py);
@@ -66,7 +67,7 @@ impl AsyncFileWriter for CustomWriter {
         })?;
 
         self.results.push(mp_result.into());
-        Ok(self.bytes_written)
+        Ok(bytes_written)
     }
 
     fn bytes_written(&self) -> usize {

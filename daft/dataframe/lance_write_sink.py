@@ -1,4 +1,5 @@
 import pathlib
+from itertools import chain
 from typing import Iterator, List, Literal, Optional, Union
 
 import lance
@@ -11,7 +12,7 @@ from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
 
-class LanceWriteSink(DataSink[lance.FragmentMetadata]):
+class LanceWriteSink(DataSink[list[lance.FragmentMetadata]]):
     """WriteSink for writing data to a Lance dataset."""
 
     def _import_lance(self):
@@ -74,12 +75,14 @@ class LanceWriteSink(DataSink[lance.FragmentMetadata]):
     def schema(self) -> Schema:
         return self._schema
 
-    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteOutput[lance.FragmentMetadata]]:
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteOutput[list[lance.FragmentMetadata]]]:
         """Writes fragments from the given micropartitions."""
         lance = self._import_lance()
 
         for micropartition in micropartitions:
             arrow_table = micropartition.to_arrow()
+            bytes_written = arrow_table.nbytes
+            rows_written = arrow_table.num_rows
 
             fragments = lance.fragment.write_fragments(
                 arrow_table,
@@ -88,16 +91,19 @@ class LanceWriteSink(DataSink[lance.FragmentMetadata]):
                 storage_options=self._storage_options,
                 **self._args,
             )
+            yield WriteOutput(
+                output=fragments,
+                bytes_written=bytes_written,
+                rows_written=rows_written,
+            )
 
-            yield from fragments
-
-    def finalize(self, write_outputs: List[WriteOutput[lance.FragmentMetadata]]) -> MicroPartition:
+    def finalize(self, write_outputs: List[WriteOutput[list[lance.FragmentMetadata]]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
         from daft.dependencies import pa
 
         lance = self._import_lance()
 
-        fragments = [write_output._output for write_output in write_outputs]
+        fragments = list(chain.from_iterable(write_output.output for write_output in write_outputs))
 
         if self._mode == "create" or self._mode == "overwrite":
             operation = lance.LanceOperation.Overwrite(self._pyarrow_schema, fragments)

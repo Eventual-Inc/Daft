@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Generic, Iterator, TypeVar
 
 from daft.recordbatch import MicroPartition
@@ -7,10 +8,19 @@ from daft.schema import Schema
 T = TypeVar("T")
 
 
+@dataclass
 class WriteOutput(Generic[T]):
-    """Wrapper for output of the DataSink's `.write()` method."""
+    """Wrapper for output of the DataSink's `.write()` method.
 
-    _output: T
+    Attributes:
+        output: The actual output from the write operation
+        bytes_written: Size of the written data in bytes
+        rows_written: Number of rows written
+    """
+
+    output: T
+    bytes_written: int
+    rows_written: int
 
 
 class DataSink(ABC, Generic[T]):
