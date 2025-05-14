@@ -392,6 +392,9 @@ impl<T> FunctionArgs<T> {
 }
 
 impl FunctionArgs<Series> {
+    /// Uses serde to extract a scalar value from the function args.
+    /// This will error if the series is not scalar. (len ==1) or if it is not deserializable to the provided type.
+    /// It will also return an error if the value does not exist.
     pub fn extract<V: FromLiteral, Key: FunctionArgKey>(&self, position: Key) -> DaftResult<V> {
         let value = position.required(self).map_err(|_| {
             DaftError::ValueError(format!(
@@ -405,6 +408,9 @@ impl FunctionArgs<Series> {
         res.map_err(|e| e.into())
     }
 
+    /// Uses serde to extract an optional scalar value from the function args.
+    /// This will error if the series is not scalar. (len ==1) or if it is not deserializable to the provided type.
+    /// if the value does not exist, None is returned.
     pub fn extract_optional<V: FromLiteral, Key: FunctionArgKey>(
         &self,
         position: Key,
@@ -427,6 +433,9 @@ impl FunctionArgs<Series> {
 }
 
 impl FunctionArgs<ExprRef> {
+    /// Uses serde to extract a scalar value from the function args.
+    /// This will error if the the expr is not a literal, or if it is not deserializable to the provided type.
+    /// It will also error if the value does not exist.
     pub fn extract<V: DeserializeOwned, Key: FunctionArgKey>(
         &self,
         position: Key,
@@ -447,7 +456,9 @@ impl FunctionArgs<ExprRef> {
             ))),
         }
     }
-
+    /// Uses serde to extract an optional scalar value from the function args.
+    /// This will error if the the expr is not a literal, or if it is not deserializable to the provided type.
+    /// if the value does not exist, None is returned.
     pub fn extract_optional<V: DeserializeOwned, Key: FunctionArgKey>(
         &self,
         position: Key,
