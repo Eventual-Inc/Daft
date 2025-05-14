@@ -23,6 +23,7 @@ nav:
   - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
+  - I/O: io.md
   - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
   - Advanced:
@@ -51,9 +52,9 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
+  - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md
-  - DataFrame Creation: api/dataframe_creation.md
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
   - Functions:
@@ -67,7 +68,6 @@ nav:
   - Aggregations: api/aggregations.md
   - Series: api/series.md
   - I/O: api/io.md
-  - Pushdowns: api/pushdowns.md
   - Configuration: api/config.md
   - Miscellaneous: api/misc.md
 - SQL Reference:
@@ -96,17 +96,12 @@ theme:
   - content.code.copy   # add copy button to code sections
   - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
   - toc.follow
-  - toc.integrate   # adds page subsections to left-hand menu (instead of right-hand menu)
   - navigation.footer
   - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
   - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
   - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
   - navigation.top   # back-to-top button
   - navigation.instant
-    # - navigation.sections # fixed sections
-    # - navigation.expand # drop down sections
-    # - navigation.path # breadcrumb navigation is rendered above title of each page
-    # - navigation.indexes # section header can also be a doc BUT! clashes with toc.integrate for the top-level page
 
   palette:
   - media: "(prefers-color-scheme)"
@@ -128,11 +123,17 @@ theme:
       icon: material/theme-light-dark
       name: Switch to system preference
   icon:
+    repo: fontawesome/brands/github
     admonition:
       quote: octicons/question-16
+  custom_dir: docs/overrides
 
 # Additional Configuration
 extra:
+  docsearch:
+    app_id: 'CTX8NKR4GC'
+    api_key: 'eb05e80b7739efec7038d98158f39a54'
+    index_name: 'getdaft'
   analytics:
     provider: google
     property: G-YN4QSRPV0K
@@ -168,9 +169,13 @@ extra:
 # Additional Style
 extra_css:
 - css/extra.css
+- css/docsearch.css
+- https://cdn.jsdelivr.net/npm/@docsearch/css@3
 
 extra_javascript:
 - js/custom.js
+- js/docsearch.js
+- https://cdn.jsdelivr.net/npm/@docsearch/js@3
 
 # Extensions
 markdown_extensions:
@@ -196,7 +201,6 @@ markdown_extensions:
 plugins:
 - markdown-exec
 - mkdocs-jupyter:
-    enable: false
     execute: false
     include_source: true
 - search:
@@ -217,6 +221,7 @@ plugins:
           members_order: alphabetical # or source
           separate_signature: true
           show_bases: false
+          show_labels: false
           show_if_no_docstring: true
           show_root_full_path: false
           show_root_heading: true
@@ -231,3 +236,6 @@ plugins:
             functions: true
           extra:
             trim_doctest_flags: true
+- redirects:
+    redirect_maps:
+      "api/dataframe_creation.md": "api/io.md"

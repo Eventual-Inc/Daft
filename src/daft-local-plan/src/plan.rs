@@ -48,6 +48,8 @@ pub enum LocalPhysicalPlan {
     CatalogWrite(CatalogWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    #[cfg(feature = "python")]
+    DataSink(DataSink),
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
     WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
@@ -97,7 +99,8 @@ impl LocalPhysicalPlan {
             | Self::WindowOrderByOnly(WindowOrderByOnly { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
-            | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
+            | Self::LanceWrite(LanceWrite { stats_state, .. })
+            | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }
 
@@ -560,6 +563,22 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn data_sink(
+        input: LocalPhysicalPlanRef,
+        data_sink_info: daft_logical_plan::DataSinkInfo,
+        file_schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::DataSink(DataSink {
+            input,
+            data_sink_info,
+            file_schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -592,6 +611,10 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
+            #[cfg(feature = "python")]
+            Self::DataSink(DataSink { file_schema, .. }) => file_schema,
+            Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
+            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
     }
 
@@ -792,6 +815,15 @@ pub struct LanceWrite {
     pub input: LocalPhysicalPlanRef,
     pub lance_info: daft_logical_plan::LanceCatalogInfo,
     pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataSink {
+    pub input: LocalPhysicalPlanRef,
+    pub data_sink_info: daft_logical_plan::DataSinkInfo,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
 }

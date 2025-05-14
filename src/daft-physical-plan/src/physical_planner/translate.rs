@@ -513,6 +513,11 @@ pub(super) fn translate_single_logical_node(
                         .arced()),
                     }
                 }
+                #[cfg(feature = "python")]
+                SinkInfo::DataSinkInfo(data_sink_info) => Ok(PhysicalPlan::DataSink(
+                    DataSink::new(schema.clone(), data_sink_info.clone(), input_physical),
+                )
+                .arced()),
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {
