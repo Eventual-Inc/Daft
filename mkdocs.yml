@@ -236,6 +236,6 @@ plugins:
             functions: true
           extra:
             trim_doctest_flags: true
-- redirects:
-    redirect_maps:
-      "api/dataframe_creation.md": "api/io.md"
+# - redirects:
+#     redirect_maps:
+#       "api/dataframe_creation.md": "api/io.md"
