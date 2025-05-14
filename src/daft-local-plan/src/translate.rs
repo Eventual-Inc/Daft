@@ -345,6 +345,13 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ))
                     }
                 },
+                #[cfg(feature = "python")]
+                SinkInfo::DataSinkInfo(data_sink_info) => Ok(LocalPhysicalPlan::data_sink(
+                    input,
+                    data_sink_info.clone(),
+                    sink.schema.clone(),
+                    sink.stats_state.clone(),
+                )),
             }
         }
         LogicalPlan::Explode(explode) => {
