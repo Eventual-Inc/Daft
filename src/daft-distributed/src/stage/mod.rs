@@ -53,7 +53,8 @@ impl Stage {
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         config: Arc<DaftExecutionConfig>,
-    ) -> DaftResult<impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static> {
+    ) -> DaftResult<impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static>
+    {
         let mut stage_context = StageContext::try_new(worker_manager)?;
         match &self.type_ {
             StageType::MapPipeline { plan } => {

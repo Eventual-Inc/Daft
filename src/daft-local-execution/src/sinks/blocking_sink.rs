@@ -77,7 +77,7 @@ impl BlockingSinkNode {
             op,
             name,
             child,
-            runtime_stats: RuntimeStatsContext::new(),
+            runtime_stats: RuntimeStatsContext::new(name),
             plan_stats,
         }
     }

@@ -18,13 +18,15 @@ use super::{
     worker::Worker,
 };
 use crate::{
-    pipeline_node::MaterializedOutput, scheduling::worker::WorkerManager, utils::{
+    pipeline_node::MaterializedOutput,
+    scheduling::worker::WorkerManager,
+    utils::{
         channel::{
             create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
             Sender,
         },
         joinset::JoinSet,
-    }
+    },
 };
 // The task dispatcher is responsible for dispatching tasks to workers.
 pub(crate) struct TaskDispatcher<T: Task, W: Worker> {

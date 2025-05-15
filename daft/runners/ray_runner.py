@@ -11,20 +11,21 @@ from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
-# The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
-# import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
-# serializable before importing pa from daft.dependencies.
-from daft.runners.distributed_swordfish import FlotillaScheduler
 import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan, RayPartitionRef
+from daft.daft import DistributedPhysicalPlan
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
+
+# The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
+# import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
+# serializable before importing pa from daft.dependencies.
+from daft.runners.distributed_swordfish import FlotillaScheduler
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -170,7 +171,10 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
                 )
             elif daft_schema[field.name].dtype.is_tensor():
                 assert isinstance(field.type, pa.ExtensionType)
-                new_arrs[idx] = (field.name, ArrowTensorArray.from_numpy(partition.get_column(field.name).to_pylist()))
+                new_arrs[idx] = (
+                    field.name,
+                    ArrowTensorArray.from_numpy(partition.get_column_by_name(field.name).to_pylist()),
+                )
         for idx, (field_name, arr) in new_arrs.items():
             arrow_tbl = arrow_tbl.set_column(idx, pa.field(field_name, arr.type), arr)
 
@@ -1218,8 +1222,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
-        
-        self.flotilla_scheduler : FlotillaScheduler | None = None
+
+        self.flotilla_scheduler: FlotillaScheduler | None = None
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return PartitionSetCache()
@@ -1347,7 +1351,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                 if self.flotilla_scheduler is None:
                     self.flotilla_scheduler = FlotillaScheduler.remote()
 
-                ray.get(self.flotilla_scheduler.run_plan.remote(distributed_plan, self._part_set_cache.get_all_partition_sets()))
+                ray.get(
+                    self.flotilla_scheduler.run_plan.remote(
+                        distributed_plan, self._part_set_cache.get_all_partition_sets()
+                    )
+                )
                 while True:
                     next_partition = ray.get(self.flotilla_scheduler.get_next_partition.remote())
                     if next_partition is None:

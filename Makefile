@@ -59,9 +59,8 @@ build: check-toolchain .venv  ## Compile and install Daft for development
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --extras=all --uv
 
 .PHONY: build-release
-build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
+build-release: check-toolchain frontend .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
-
 
 .PHONY: test
 test: .venv build  ## Run tests
@@ -77,11 +76,16 @@ dsdgen: .venv ## Generate TPC-DS data
 
 .PHONY: docs
 docs: .venv ## Build Daft documentation
-	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs build -f mkdocs.yml
+	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs build -f mkdocs.yml
 
 .PHONY: docs-serve
 docs-serve: .venv ## Build Daft documentation in development server
-	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs serve -f mkdocs.yml
+	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
+
+.PHONY: frontend
+frontend: .venv ## Build daft-dashboard frontend assets
+	cd src/daft-dashboard/frontend && \
+		bun run build
 
 .PHONY: clean
 clean:

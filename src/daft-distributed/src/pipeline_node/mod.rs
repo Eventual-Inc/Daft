@@ -25,7 +25,8 @@ use translate::translate_logical_plan_to_pipeline_plan;
 use crate::{
     scheduling::{
         dispatcher::SubmittedTask,
-        task::{SwordfishTask, Task}, worker::WorkerId,
+        task::{SwordfishTask, Task},
+        worker::WorkerId,
     },
     stage::StageContext,
     utils::channel::Receiver,
@@ -85,7 +86,10 @@ pub(crate) struct MaterializedOutput {
 
 impl MaterializedOutput {
     pub fn new(partition: PartitionRef, worker_id: WorkerId) -> Self {
-        Self { partition, worker_id }
+        Self {
+            partition,
+            worker_id,
+        }
     }
 
     pub fn partition(&self) -> &PartitionRef {

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.io import DataSink
     from daft.recordbatch import MicroPartition
 
 
@@ -216,6 +217,25 @@ def sort(
     )
 
 
+def top_n(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sort_by: list[PyExpr],
+    descending: list[bool],
+    nulls_first: list[bool],
+    limit: int,
+    num_partitions: int,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
+    return physical_plan.top_n(
+        child_plan=input,
+        sort_by=expr_projection,
+        descending=descending,
+        nulls_first=nulls_first,
+        limit=limit,
+        num_partitions=num_partitions,
+    )
+
+
 def fanout_by_hash(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     num_partitions: int,
@@ -396,3 +416,10 @@ def write_lance(
     kwargs: dict | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
+
+
+def write_data_sink(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sink: DataSink,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.data_sink_write(input, sink)

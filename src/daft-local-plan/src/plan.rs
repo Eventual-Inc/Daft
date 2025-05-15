@@ -26,6 +26,7 @@ pub enum LocalPhysicalPlan {
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
+    TopN(TopN),
     // Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
@@ -50,9 +51,12 @@ pub enum LocalPhysicalPlan {
     CatalogWrite(CatalogWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    #[cfg(feature = "python")]
+    DataSink(DataSink),
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
     WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame),
+    WindowOrderByOnly(WindowOrderByOnly),
 }
 
 impl LocalPhysicalPlan {
@@ -80,6 +84,7 @@ impl LocalPhysicalPlan {
             | Self::Explode(Explode { stats_state, .. })
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
+            | Self::TopN(TopN { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
@@ -94,10 +99,12 @@ impl LocalPhysicalPlan {
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
                 stats_state,
                 ..
-            }) => stats_state,
+            })
+            | Self::WindowOrderByOnly(WindowOrderByOnly { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
-            | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
+            | Self::LanceWrite(LanceWrite { stats_state, .. })
+            | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }
 
@@ -321,6 +328,27 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn window_order_by_only(
+        input: LocalPhysicalPlanRef,
+        order_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        functions: Vec<WindowExpr>,
+        aliases: Vec<String>,
+    ) -> LocalPhysicalPlanRef {
+        Self::WindowOrderByOnly(WindowOrderByOnly {
+            input,
+            order_by,
+            descending,
+            schema,
+            stats_state,
+            functions,
+            aliases,
+        })
+        .arced()
+    }
+
     pub fn unpivot(
         input: LocalPhysicalPlanRef,
         ids: Vec<ExprRef>,
@@ -379,6 +407,27 @@ impl LocalPhysicalPlan {
             sort_by,
             descending,
             nulls_first,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub(crate) fn top_n(
+        input: LocalPhysicalPlanRef,
+        sort_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+        limit: i64,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::TopN(TopN {
+            input,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
             schema,
             stats_state,
         })
@@ -526,6 +575,22 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn data_sink(
+        input: LocalPhysicalPlanRef,
+        data_sink_info: daft_logical_plan::DataSinkInfo,
+        file_schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::DataSink(DataSink {
+            input,
+            data_sink_info,
+            file_schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -539,6 +604,7 @@ impl LocalPhysicalPlan {
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Pivot(Pivot { schema, .. })
             | Self::Sort(Sort { schema, .. })
+            | Self::TopN(TopN { schema, .. })
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
@@ -550,8 +616,10 @@ impl LocalPhysicalPlan {
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
                 schema, ..
-            }) => schema,
+            })
+            | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
+            Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
@@ -592,6 +660,9 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { input, .. }) => vec![input.clone()],
+            Self::DataSink(DataSink { input, .. }) => vec![input.clone()],
+            Self::TopN(TopN { input, .. }) => vec![input.clone()],
+            Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
         }
     }
 
@@ -616,6 +687,9 @@ impl LocalPhysicalPlan {
                 Self::WindowPartitionOnly(WindowPartitionOnly {  partition_by, schema, aggregations, aliases, .. }) => Self::window_partition_only(new_child.clone(), partition_by.clone(), schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
                 Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {  partition_by, order_by, descending, schema, functions, aliases, .. }) => Self::window_partition_and_order_by(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
                 Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {  partition_by, order_by, descending, frame, min_periods, schema, aggregations, aliases, .. }) => Self::window_partition_and_dynamic_frame(new_child.clone(), partition_by.clone(), order_by.clone(), descending.clone(), frame.clone(), *min_periods, schema.clone(), StatsState::NotMaterialized, aggregations.clone(), aliases.clone()),
+                Self::WindowOrderByOnly(WindowOrderByOnly {  order_by, descending, schema, functions, aliases, .. }) => Self::window_order_by_only(new_child.clone(), order_by.clone(), descending.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
+                Self::TopN(TopN {  sort_by, descending, nulls_first, limit, schema, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, StatsState::NotMaterialized),
+                Self::DataSink(DataSink {  input, data_sink_info, file_schema, stats_state, .. }) => Self::data_sink(new_child.clone(), data_sink_info.clone(), file_schema.clone(), stats_state.clone()),
                 Self::PhysicalWrite(PhysicalWrite {  data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(new_child.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
                 Self::CatalogWrite(CatalogWrite {  catalog_type, data_schema, file_schema, stats_state, .. }) => Self::catalog_write(new_child.clone(), catalog_type.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
@@ -751,6 +825,17 @@ pub struct Sort {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct TopN {
+    pub input: LocalPhysicalPlanRef,
+    pub sort_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub nulls_first: Vec<bool>,
+    pub limit: i64,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
     pub fraction: f64,
@@ -865,6 +950,15 @@ pub struct LanceWrite {
     pub stats_state: StatsState,
 }
 
+#[cfg(feature = "python")]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataSink {
+    pub input: LocalPhysicalPlanRef,
+    pub data_sink_info: daft_logical_plan::DataSinkInfo,
+    pub file_schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionOnly {
     pub input: LocalPhysicalPlanRef,
@@ -898,5 +992,16 @@ pub struct WindowPartitionAndDynamicFrame {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub aggregations: Vec<AggExpr>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowOrderByOnly {
+    pub input: LocalPhysicalPlanRef,
+    pub order_by: Vec<ExprRef>,
+    pub descending: Vec<bool>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub functions: Vec<WindowExpr>,
     pub aliases: Vec<String>,
 }

@@ -1,3 +1,4 @@
+pub mod bound_expr;
 pub mod window;
 
 mod display;
@@ -19,8 +20,8 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
-        InferDataType,
+        try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+        try_stddev_aggregation_supertype, try_sum_supertype, InferDataType,
     },
     join::JoinSide,
     prelude::*,
@@ -37,7 +38,7 @@ use crate::{
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -350,6 +351,9 @@ pub enum AggExpr {
     #[display("list({_0})")]
     Concat(ExprRef),
 
+    #[display("skew({_0}")]
+    Skew(ExprRef),
+
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     MapGroups {
         func: FunctionExpr,
@@ -441,7 +445,8 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr) => expr.name(),
+            | Self::Concat(expr)
+            | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
@@ -529,6 +534,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
+            Self::Skew(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_skew()"))
+            }
             Self::MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
         }
     }
@@ -551,7 +560,8 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr) => vec![expr.clone()],
+            | Self::Concat(expr)
+            | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
@@ -577,6 +587,7 @@ impl AggExpr {
             Self::List(_) => Self::List(first_child()),
             Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
+            Self::Skew(_) => Self::Skew(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
                 inputs: children,
@@ -710,6 +721,15 @@ impl AggExpr {
                     ))),
                 }
             }
+
+            Self::Skew(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_skew_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+
             Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
         }
     }
@@ -976,6 +996,10 @@ impl Expr {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
     }
 
+    pub fn skew(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Skew(self)).into()
+    }
+
     pub fn agg_list(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::List(self)).into()
     }
@@ -1219,8 +1243,8 @@ impl Expr {
                     .join(",");
                 let frame_details = if let Some(frame) = &window_spec.frame {
                     format!(
-                        ",frame_type={:?},start={:?},end={:?},min_periods={}",
-                        frame.frame_type, frame.start, frame.end, window_spec.min_periods
+                        ",start={:?},end={:?},min_periods={}",
+                        frame.start, frame.end, window_spec.min_periods
                     )
                 } else {
                     String::new()
@@ -1271,7 +1295,7 @@ impl Expr {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
-            Self::ScalarFunction(sf) => sf.inputs.clone(),
+            Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
         }
     }
 
@@ -1288,6 +1312,7 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
+
             Self::IsNull(..) => {
                 Self::IsNull(children.first().expect("Should have 1 child").clone())
             }
@@ -1370,10 +1395,22 @@ impl Expr {
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
                 );
+                let new_children = sf
+                    .inputs
+                    .iter()
+                    .zip(children.into_iter())
+                    .map(|(fn_arg, child)| match fn_arg {
+                        FunctionArg::Named { name, .. } => FunctionArg::Named {
+                            name: name.clone(),
+                            arg: child,
+                        },
+                        FunctionArg::Unnamed(_) => FunctionArg::Unnamed(child),
+                    })
+                    .collect();
 
                 Self::ScalarFunction(crate::functions::ScalarFunction {
                     udf: sf.udf.clone(),
-                    inputs: children,
+                    inputs: FunctionArgs::new_unchecked(new_children),
                 })
             }
         }
@@ -1631,6 +1668,10 @@ impl Expr {
         Ok(self.to_field(schema)?.dtype)
     }
 
+    pub fn get_name(&self, schema: &Schema) -> DaftResult<String> {
+        Ok(self.to_field(schema)?.name)
+    }
+
     pub fn input_mapping(self: &Arc<Self>) -> Option<String> {
         let required_columns = get_required_columns(self);
         let requires_computation = requires_computation(self);
@@ -1652,7 +1693,7 @@ impl Expr {
                     write!(buffer, "{}", name)
                 }
                 Expr::Literal(lit) => lit.display_sql(buffer),
-                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
+                Expr::Alias(expr, ..) => to_sql_inner(expr, buffer),
                 Expr::BinaryOp { op, left, right } => {
                     to_sql_inner(left, buffer)?;
                     let op = match op {
@@ -1792,21 +1833,6 @@ impl Expr {
                 _ => Ok(Transformed::no(e)),
             })?
             .data)
-    }
-
-    pub fn bind(self: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
-        self.transform(|e| match e.as_ref() {
-            // TODO: remove ability to bind unresolved columns once we fix all tests
-            Self::Column(Column::Unresolved(UnresolvedColumn { name, .. }))
-            | Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
-                let index = schema.get_index(name)?;
-                let field = schema.get_field(name)?.clone();
-
-                Ok(Transformed::yes(bound_col(index, field)))
-            }
-            _ => Ok(Transformed::no(e)),
-        })
-        .map(|t| t.data)
     }
 }
 

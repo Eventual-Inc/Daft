@@ -1,11 +1,15 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, prelude::*};
-use daft_dsl::{functions::FunctionExpr, AggExpr, Expr, ExprRef};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    functions::FunctionExpr,
+    AggExpr, Expr,
+};
 
 use crate::RecordBatch;
 
 impl RecordBatch {
-    pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
+    pub fn agg(&self, to_agg: &[BoundExpr], group_by: &[BoundExpr]) -> DaftResult<Self> {
         // Dispatch depending on whether we're doing groupby or just a global agg.
         match group_by.len() {
             0 => self.agg_global(to_agg),
@@ -13,15 +17,15 @@ impl RecordBatch {
         }
     }
 
-    pub fn agg_global(&self, to_agg: &[ExprRef]) -> DaftResult<Self> {
+    pub fn agg_global(&self, to_agg: &[BoundExpr]) -> DaftResult<Self> {
         self.eval_expression_list(to_agg)
     }
 
-    pub fn agg_groupby(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
+    pub fn agg_groupby(&self, to_agg: &[BoundExpr], group_by: &[BoundExpr]) -> DaftResult<Self> {
         let agg_exprs = to_agg
             .iter()
             .map(|e| match e.as_ref() {
-                Expr::Agg(e) => Ok(e),
+                Expr::Agg(e) => Ok(BoundAggExpr::new_unchecked(e.clone())),
                 _ => Err(DaftError::ValueError(format!(
                     "Trying to run non-Agg expression in Grouped Agg! {e}"
                 ))),
@@ -29,8 +33,18 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         #[cfg(feature = "python")]
-        if let [AggExpr::MapGroups { func, inputs }] = &agg_exprs[..] {
-            return self.map_groups(func, inputs, group_by);
+        if let [agg_expr] = &agg_exprs[..]
+            && let AggExpr::MapGroups { func, inputs } = agg_expr.as_ref()
+        {
+            return self.map_groups(
+                func,
+                &inputs
+                    .iter()
+                    .cloned()
+                    .map(BoundExpr::new_unchecked)
+                    .collect::<Vec<_>>(),
+                group_by,
+            );
         }
 
         // Table with just the groupby columns.
@@ -66,8 +80,8 @@ impl RecordBatch {
     pub fn map_groups(
         &self,
         func: &FunctionExpr,
-        inputs: &[ExprRef],
-        group_by: &[ExprRef],
+        inputs: &[BoundExpr],
+        group_by: &[BoundExpr],
     ) -> DaftResult<Self> {
         use daft_core::array::ops::IntoGroups;
         use daft_dsl::functions::python::PythonUDF;

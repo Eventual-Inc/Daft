@@ -31,18 +31,18 @@ impl SQLFunction for SQLHash {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(hash(input, None))
             }
             [input, seed] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 match seed {
                     FunctionArg::Named { name, arg, .. } if name.value == "seed" => {
                         let seed = planner.try_unwrap_function_arg_expr(arg)?;
                         Ok(hash(input, Some(seed)))
                     }
                     arg @ FunctionArg::Unnamed(_) => {
-                        let seed = planner.plan_function_arg(arg)?;
+                        let seed = planner.plan_function_arg(arg)?.into_inner();
                         Ok(hash(input, Some(seed)))
                     }
                     _ => unsupported_sql_err!("Invalid arguments for hash: '{inputs:?}'"),
@@ -122,7 +122,7 @@ impl SQLFunction for SQLMinhash {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args: MinHashFunction = planner.plan_function_args(
                     args,
                     &["num_hashes", "ngram_size", "seed", "hash_function"],

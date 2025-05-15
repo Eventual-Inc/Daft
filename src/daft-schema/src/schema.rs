@@ -79,6 +79,23 @@ impl Schema {
         self.fields.iter().map(|f| f.name.as_str())
     }
 
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    pub fn get_fields_with_name(&self, name: &str) -> Vec<(usize, &Field)> {
+        self.name_to_indices
+            .get(name)
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|i| (*i, &self.fields[*i]))
+            .collect()
+    }
+
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> Self {
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
@@ -138,14 +155,6 @@ impl Schema {
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn names(&self) -> Vec<String> {
         self.fields.iter().map(|f| &f.name).cloned().collect()
-    }
-
-    pub fn len(&self) -> usize {
-        self.fields.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.fields.is_empty()
     }
 
     /// Takes the disjoint union over the `self` and `other` schemas, throwing an error if the

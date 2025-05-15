@@ -136,16 +136,11 @@ impl Window {
         }
 
         if let Some(frame) = &self.window_spec.frame {
-            let frame_type = match frame.frame_type {
-                daft_dsl::expr::window::WindowFrameType::Rows => "ROWS",
-                daft_dsl::expr::window::WindowFrameType::Range => "RANGE",
-            };
-
             let start = match &frame.start {
-                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding => {
                     "UNBOUNDED PRECEDING".to_string()
                 }
-                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing => {
                     "UNBOUNDED FOLLOWING".to_string()
                 }
                 daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
@@ -153,13 +148,16 @@ impl Window {
                     std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
                     std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
                 },
+                daft_dsl::expr::window::WindowBoundary::RangeOffset(n) => {
+                    format!("RANGE {}", n)
+                }
             };
 
             let end = match &frame.end {
-                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding => {
                     "UNBOUNDED PRECEDING".to_string()
                 }
-                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing => {
                     "UNBOUNDED FOLLOWING".to_string()
                 }
                 daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
@@ -167,12 +165,12 @@ impl Window {
                     std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
                     std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
                 },
+                daft_dsl::expr::window::WindowBoundary::RangeOffset(n) => {
+                    format!("RANGE {}", n)
+                }
             };
 
-            lines.push(format!(
-                "  Frame: {} BETWEEN {} AND {}",
-                frame_type, start, end
-            ));
+            lines.push(format!("  Frame: BETWEEN {} AND {}", start, end));
         }
 
         if self.window_spec.min_periods != 1 {

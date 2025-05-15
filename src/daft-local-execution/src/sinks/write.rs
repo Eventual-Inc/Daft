@@ -8,7 +8,7 @@ use daft_dsl::ExprRef;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_writers::{FileWriter, WriterFactory};
+use daft_writers::{AsyncFileWriter, WriterFactory};
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -31,15 +31,16 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
+    DataSink,
 }
 
 struct WriteState {
-    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 }
 
 impl WriteState {
     pub fn new(
-        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     ) -> Self {
         Self { writer }
     }
@@ -96,7 +97,8 @@ impl BlockingSink for WriteSink {
                         .downcast_mut::<WriteState>()
                         .expect("WriteSink should have WriteState")
                         .writer
-                        .write(input)?;
+                        .write(input)
+                        .await?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -121,7 +123,7 @@ impl BlockingSink for WriteSink {
                             .as_any_mut()
                             .downcast_mut::<WriteState>()
                             .expect("State type mismatch");
-                        results.extend(state.writer.close()?);
+                        results.extend(state.writer.close().await?);
                     }
 
                     if let Some(file_info) = &file_info {
@@ -139,9 +141,12 @@ impl BlockingSink for WriteSink {
                                     let file_paths = results
                                         .iter()
                                         .flat_map(|res| {
-                                            let s = res
-                                                .get_column("path")
+                                            let path_index = res
+                                                .schema
+                                                .get_index("path")
                                                 .expect("path to be a column");
+
+                                            let s = res.get_column(path_index);
                                             s.utf8()
                                                 .expect("path to be utf8")
                                                 .into_iter()
@@ -201,6 +206,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::Deltalake => "DeltalakeSink",
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
             WriteFormat::Lance => "LanceSink",
+            WriteFormat::DataSink => "DataSink",
         }
     }
 

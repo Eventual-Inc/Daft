@@ -7,17 +7,19 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
+    expr::bound_expr::BoundExpr,
     join::{get_common_join_cols, infer_join_schema},
-    ExprRef,
 };
 
-use super::{add_non_join_key_columns, match_types_for_tables};
+use super::{
+    add_non_join_key_columns, get_column_by_name, get_columns_by_name, match_types_for_tables,
+};
 use crate::RecordBatch;
 pub(super) fn hash_inner_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
 ) -> DaftResult<RecordBatch> {
     let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Inner)?;
@@ -84,7 +86,7 @@ pub(super) fn hash_inner_join(
     let common_cols: Vec<_> = get_common_join_cols(&left.schema, &right.schema).collect();
 
     let mut join_series = Arc::unwrap_or_clone(
-        left.get_columns(common_cols.as_slice())?
+        get_columns_by_name(left, &common_cols)?
             .take(&lidx)?
             .columns,
     );
@@ -101,8 +103,8 @@ pub(super) fn hash_inner_join(
 pub(super) fn hash_left_right_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
     left_side: bool,
 ) -> DaftResult<RecordBatch> {
@@ -193,8 +195,7 @@ pub(super) fn hash_left_right_join(
     };
 
     let mut join_series = Arc::unwrap_or_clone(
-        common_cols_tbl
-            .get_columns(&common_cols)?
+        get_columns_by_name(common_cols_tbl, &common_cols)?
             .take(common_cols_idx)?
             .columns,
     );
@@ -211,8 +212,8 @@ pub(super) fn hash_left_right_join(
 pub(super) fn hash_semi_anti_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
     is_anti: bool,
 ) -> DaftResult<RecordBatch> {
@@ -272,8 +273,8 @@ pub(super) fn hash_semi_anti_join(
 pub(super) fn hash_outer_join(
     left: &RecordBatch,
     right: &RecordBatch,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
+    left_on: &[BoundExpr],
+    right_on: &[BoundExpr],
     null_equals_nulls: &[bool],
 ) -> DaftResult<RecordBatch> {
     let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Outer)?;
@@ -394,8 +395,8 @@ pub(super) fn hash_outer_join(
         common_cols
             .into_iter()
             .map(|name| {
-                let lcol = left.get_column(name)?.take(&lidx)?;
-                let rcol = right.get_column(name)?.take(&ridx)?;
+                let lcol = get_column_by_name(left, name)?.take(&lidx)?;
+                let rcol = get_column_by_name(right, name)?.take(&ridx)?;
 
                 lcol.if_else(&rcol, &take_from_left)
             })
