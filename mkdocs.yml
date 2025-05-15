@@ -43,8 +43,6 @@ nav:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
     - Pushdowns: advanced/pushdowns.md
-  # - Integrations:
-  #   - Ray: integrations/ray.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
