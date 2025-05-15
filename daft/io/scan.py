@@ -4,12 +4,10 @@ import abc
 from typing import TYPE_CHECKING
 
 from daft.daft import (
-    PartitionField,
-    PartitionTransform,
+    PyPartitionField,
+    PyPartitionTransform,
+    PyPushdowns,
     ScanTask,
-)
-from daft.daft import (
-    Pushdowns as PyPushdowns,
 )
 
 if TYPE_CHECKING:
@@ -19,9 +17,9 @@ if TYPE_CHECKING:
 
 
 def make_partition_field(
-    field: Field, source_field: Field | None = None, transform: PartitionTransform | None = None
-) -> PartitionField:
-    return PartitionField(
+    field: Field, source_field: Field | None = None, transform: PyPartitionTransform | None = None
+) -> PyPartitionField:
+    return PyPartitionField(
         field._field,
         source_field._field if source_field is not None else None,
         transform,
@@ -40,7 +38,7 @@ class ScanOperator(abc.ABC):
         return self.__class__.__name__
 
     @abc.abstractmethod
-    def partitioning_keys(self) -> list[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         """Returns the partitioning keys for this data source."""
         raise NotImplementedError()
 

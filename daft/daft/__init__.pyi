@@ -682,7 +682,7 @@ class ScanTask:
         num_rows: int | None,
         size_bytes: int | None,
         iceberg_delete_files: list[str] | None,
-        pushdowns: Pushdowns | None,
+        pushdowns: PyPushdowns | None,
         partition_values: PyRecordBatch | None,
         stats: PyRecordBatch | None,
     ) -> ScanTask | None:
@@ -697,7 +697,7 @@ class ScanTask:
         storage_config: StorageConfig,
         num_rows: int | None,
         size_bytes: int | None,
-        pushdowns: Pushdowns | None,
+        pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
     ) -> ScanTask:
         """Create a SQL Scan Task."""
@@ -711,7 +711,7 @@ class ScanTask:
         schema: PySchema,
         num_rows: int | None,
         size_bytes: int | None,
-        pushdowns: Pushdowns | None,
+        pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
@@ -742,7 +742,7 @@ class ScanOperatorHandle:
 
 def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 
-class PartitionField:
+class PyPartitionField:
     """Partitioning Field of a Scan Source such as Hive or Iceberg."""
 
     field: PyField
@@ -751,28 +751,28 @@ class PartitionField:
         self,
         field: PyField,
         source_field: PyField | None = None,
-        transform: PartitionTransform | None = None,
+        transform: PyPartitionTransform | None = None,
     ) -> None: ...
 
-class PartitionTransform:
+class PyPartitionTransform:
     """Partitioning Transform from a Data Catalog source field to a Partitioning Columns."""
 
     @staticmethod
-    def identity() -> PartitionTransform: ...
+    def identity() -> PyPartitionTransform: ...
     @staticmethod
-    def year() -> PartitionTransform: ...
+    def year() -> PyPartitionTransform: ...
     @staticmethod
-    def month() -> PartitionTransform: ...
+    def month() -> PyPartitionTransform: ...
     @staticmethod
-    def day() -> PartitionTransform: ...
+    def day() -> PyPartitionTransform: ...
     @staticmethod
-    def hour() -> PartitionTransform: ...
+    def hour() -> PyPartitionTransform: ...
     @staticmethod
-    def iceberg_bucket(n: int) -> PartitionTransform: ...
+    def iceberg_bucket(n: int) -> PyPartitionTransform: ...
     @staticmethod
-    def iceberg_truncate(w: int) -> PartitionTransform: ...
+    def iceberg_truncate(w: int) -> PyPartitionTransform: ...
 
-class Pushdowns:
+class PyPushdowns:
     """Pushdowns from the query optimizer that can optimize scanning data sources."""
 
     columns: list[str] | None

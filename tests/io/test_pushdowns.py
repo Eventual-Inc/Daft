@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.daft import Pushdowns as PyPushdowns
+from daft.daft import PyPushdowns
 from daft.expressions import col, lit
 from daft.io.pushdowns import Pushdowns
 
@@ -23,35 +23,35 @@ def test_projection_pushdowns():
     py_pushdowns = PyPushdowns(columns=["a", "b", "c"])
     pushdowns = Pushdowns._from_pypushdowns(py_pushdowns)
 
-    assert pushdowns.projections
-    assert len(pushdowns.projections) == 3
-    assert_eq(pushdowns.projections[0], col("a"))
-    assert_eq(pushdowns.projections[1], col("b"))
-    assert_eq(pushdowns.projections[2], col("c"))
+    assert pushdowns.columns
+    assert len(pushdowns.columns) == 3
+    assert pushdowns.columns[0] == "a"
+    assert pushdowns.columns[1] == "b"
+    assert pushdowns.columns[2] == "c"
 
     assert pushdowns.limit is None
-    assert pushdowns.predicate is None
+    assert pushdowns.filters is None
 
 
-def test_simple_predicate_pushdown():
-    predicate = col("a") == lit(1)  # (= a 1)
-    py_pushdowns = PyPushdowns(filters=predicate._expr)
+def test_simple_filters_pushdown():
+    filters = col("a") == lit(1)  # (= a 1)
+    py_pushdowns = PyPushdowns(filters=filters._expr)
     pushdowns = Pushdowns._from_pypushdowns(py_pushdowns)
 
-    assert_eq(pushdowns.predicate, predicate)  # <- roundtrip assert
+    assert_eq(pushdowns.filters, filters)  # <- roundtrip assert
 
-    assert pushdowns.projections is None
+    assert pushdowns.columns is None
     assert pushdowns.limit is None
 
 
-def test_complex_predicate_pushdown():
-    predicate = col("a") == (col("b") + col("c"))  # (= a (+ b c))
-    py_pushdowns = PyPushdowns(filters=predicate._expr)
+def test_complex_filters_pushdown():
+    filters = col("a") == (col("b") + col("c"))  # (= a (+ b c))
+    py_pushdowns = PyPushdowns(filters=filters._expr)
     pushdowns = Pushdowns._from_pypushdowns(py_pushdowns)
 
-    assert_eq(pushdowns.predicate, predicate)  # <- roundtrip assert
+    assert_eq(pushdowns.filters, filters)  # <- roundtrip assert
 
-    assert pushdowns.projections is None
+    assert pushdowns.columns is None
     assert pushdowns.limit is None
 
 
@@ -59,32 +59,33 @@ def test_limit_pushdown():
     py_pushdowns = PyPushdowns(limit=1738)
     pushdowns = Pushdowns._from_pypushdowns(py_pushdowns)
 
-    assert pushdowns.projections is None
-    assert pushdowns.predicate is None
+    assert pushdowns.columns is None
+    assert pushdowns.filters is None
     assert pushdowns.limit == 1738
 
 
 def test_simple_partition_pushdown():
-    predicate = col("a") == lit(1)  # (= a 1)
-    py_pushdowns = PyPushdowns(partition_filters=predicate._expr)
+    partition_filters = col("a") == lit(1)  # (= a 1)
+    py_pushdowns = PyPushdowns(partition_filters=partition_filters._expr)
     pushdowns = Pushdowns._from_pypushdowns(py_pushdowns)
 
-    assert_eq(pushdowns.predicate, predicate)  # <- roundtrip assert
+    # roundtrip assert
+    assert_eq(pushdowns.partition_filters, partition_filters)
 
-    assert pushdowns.projections is None
+    assert pushdowns.filters is None
+    assert pushdowns.columns is None
     assert pushdowns.limit is None
 
 
-def test_composite_partition_pushdown():
+def test_composite_predicate_pushdown():
     filters = col("a") == lit(1)  # (= a 1)
     partition_filters = col("b") > lit(2)  # (> b 2)
     py_pushdowns = PyPushdowns(filters=filters._expr, partition_filters=partition_filters._expr)
     pushdowns = Pushdowns._from_pypushdowns(py_pushdowns)
 
-    # translation should combine them like (p1 AND p2)
-    p1 = filters
-    p2 = partition_filters
-    assert_eq(pushdowns.predicate, p1 & p2)
+    # roundtrip assert
+    assert_eq(pushdowns.filters, filters)
+    assert_eq(pushdowns.partition_filters, partition_filters)
 
-    assert pushdowns.projections is None
+    assert pushdowns.columns is None
     assert pushdowns.limit is None
