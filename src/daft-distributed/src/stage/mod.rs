@@ -15,7 +15,7 @@ use crate::{
         DistributedPipelineNode,
     },
     scheduling::{
-        dispatcher::{TaskDispatcher, TaskDispatcherHandle},
+        dispatcher::{TaskDispatcher, TaskDispatcherHandle, TaskDispatcherHandleRef},
         scheduler::LinearScheduler,
         task::SwordfishTask,
         worker::{Worker, WorkerManager},
@@ -164,7 +164,7 @@ impl StagePlan {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct StageContext {
-    task_dispatcher_handle: TaskDispatcherHandle<SwordfishTask>,
+    task_dispatcher_handle: TaskDispatcherHandleRef<SwordfishTask>,
     joinset: JoinSet<DaftResult<()>>,
 }
 
@@ -181,7 +181,7 @@ impl StageContext {
         })
     }
 
-    pub fn get_task_dispatcher_handle(&self) -> TaskDispatcherHandle<SwordfishTask> {
+    pub fn get_task_dispatcher_handle(&self) -> TaskDispatcherHandleRef<SwordfishTask> {
         self.task_dispatcher_handle.clone()
     }
 
@@ -192,7 +192,7 @@ impl StageContext {
         self.joinset.spawn(f);
     }
 
-    pub fn into_inner(self) -> (TaskDispatcherHandle<SwordfishTask>, JoinSet<DaftResult<()>>) {
+    pub fn into_inner(self) -> (TaskDispatcherHandleRef<SwordfishTask>, JoinSet<DaftResult<()>>) {
         (self.task_dispatcher_handle, self.joinset)
     }
 }

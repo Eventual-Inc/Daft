@@ -58,15 +58,12 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
             .map(|r| Arc::new(r) as PartitionRef)
             .collect::<Vec<PartitionRef>>())
     }
-}
 
-impl Drop for RayTaskResultHandle {
-    fn drop(&mut self) {
+    fn cancel_callback(&mut self) -> DaftResult<()> {
         Python::with_gil(|py| {
-            self.handle
-                .call_method0(py, "cancel")
-                .expect("Failed to cancel ray task")
-        });
+            self.handle.call_method0(py, "cancel")?;
+            Ok(())
+        })
     }
 }
 

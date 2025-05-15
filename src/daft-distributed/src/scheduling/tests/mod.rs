@@ -4,6 +4,7 @@ mod scheduler;
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
+    future::Future,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -16,9 +17,12 @@ use common_partitioning::{Partition, PartitionRef};
 use uuid::Uuid;
 
 use super::{
+    dispatcher::{TaskDispatcherHandle, TaskDispatcherHandleRef},
+    scheduler::Scheduler,
     task::{SchedulingStrategy, SwordfishTaskResultHandle, Task, TaskId},
     worker::{Worker, WorkerId, WorkerManager},
 };
+use crate::utils::{channel::OneshotSender, joinset::JoinSet};
 
 #[derive(Debug)]
 pub(crate) struct MockPartition {
@@ -53,14 +57,20 @@ pub(crate) fn create_mock_partition_ref(num_rows: usize, size_bytes: usize) -> P
     Arc::new(MockPartition::new(num_rows, size_bytes))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct MockTask {
     task_id: String,
     scheduling_strategy: SchedulingStrategy,
     task_result: PartitionRef,
-    cancel_marker: Option<Arc<AtomicBool>>,
+    cancel_notifier: Option<OneshotSender<()>>,
     sleep_duration: Option<Duration>,
-    error_message: Option<String>,
+    failure: Option<MockTaskFailure>,
+}
+
+#[derive(Debug)]
+pub(crate) enum MockTaskFailure {
+    Error(String),
+    Panic(String),
 }
 
 /// A builder pattern implementation for creating MockTask instances
@@ -68,9 +78,9 @@ pub(crate) struct MockTaskBuilder {
     task_id: Option<String>,
     scheduling_strategy: SchedulingStrategy,
     task_result: PartitionRef,
-    cancel_marker: Option<Arc<AtomicBool>>,
+    cancel_notifier: Option<OneshotSender<()>>,
     sleep_duration: Option<Duration>,
-    error_message: Option<String>,
+    failure: Option<MockTaskFailure>,
 }
 
 impl MockTaskBuilder {
@@ -80,9 +90,9 @@ impl MockTaskBuilder {
             task_id: None,
             scheduling_strategy,
             task_result: partition_ref,
-            cancel_marker: None,
+            cancel_notifier: None,
             sleep_duration: None,
-            error_message: None,
+            failure: None,
         }
     }
 
@@ -93,8 +103,8 @@ impl MockTaskBuilder {
     }
 
     /// Set a cancel marker
-    pub fn with_cancel_marker(mut self, cancel_marker: Arc<AtomicBool>) -> Self {
-        self.cancel_marker = Some(cancel_marker);
+    pub fn with_cancel_notifier(mut self, cancel_notifier: OneshotSender<()>) -> Self {
+        self.cancel_notifier = Some(cancel_notifier);
         self
     }
 
@@ -104,8 +114,8 @@ impl MockTaskBuilder {
         self
     }
 
-    pub fn with_error(mut self) -> Self {
-        self.error_message = Some("test error".to_string());
+    pub fn with_failure(mut self, failure: MockTaskFailure) -> Self {
+        self.failure = Some(failure);
         self
     }
 
@@ -115,9 +125,9 @@ impl MockTaskBuilder {
             task_id: self.task_id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             scheduling_strategy: self.scheduling_strategy,
             task_result: self.task_result,
-            cancel_marker: self.cancel_marker,
+            cancel_notifier: self.cancel_notifier,
             sleep_duration: self.sleep_duration,
-            error_message: self.error_message,
+            failure: self.failure,
         }
     }
 }
@@ -142,8 +152,8 @@ struct MockTaskResultHandle {
     worker_manager: MockWorkerManager,
     worker_id: WorkerId,
     sleep_duration: Option<Duration>,
-    cancel_marker: Option<Arc<AtomicBool>>,
-    error_message: Option<String>,
+    cancel_notifier: Option<OneshotSender<()>>,
+    failure: Option<MockTaskFailure>,
 }
 
 impl MockTaskResultHandle {
@@ -152,16 +162,16 @@ impl MockTaskResultHandle {
         worker_manager: MockWorkerManager,
         worker_id: WorkerId,
         sleep_duration: Option<Duration>,
-        cancel_marker: Option<Arc<AtomicBool>>,
-        error_message: Option<String>,
+        cancel_notifier: Option<OneshotSender<()>>,
+        failure: Option<MockTaskFailure>,
     ) -> Self {
         Self {
             result,
             worker_manager,
             worker_id,
             sleep_duration,
-            cancel_marker,
-            error_message,
+            cancel_notifier,
+            failure,
         }
     }
 }
@@ -172,25 +182,30 @@ impl SwordfishTaskResultHandle for MockTaskResultHandle {
         if let Some(sleep_duration) = self.sleep_duration {
             tokio::time::sleep(sleep_duration).await;
         }
-        if let Some(error_message) = self.error_message.take() {
-            return Err(DaftError::InternalError(error_message));
+        if let Some(failure) = self.failure.take() {
+            match failure {
+                MockTaskFailure::Error(error_message) => {
+                    return Err(DaftError::InternalError(error_message));
+                }
+                MockTaskFailure::Panic(error_message) => {
+                    panic!("{}", error_message);
+                }
+            }
         }
         self.worker_manager
             .mark_task_finished(TaskId::default(), self.worker_id.clone());
         Ok(vec![self.result.clone()])
     }
-}
 
-impl Drop for MockTaskResultHandle {
-    fn drop(&mut self) {
-        if let Some(cancel_marker) = self.cancel_marker.take() {
-            cancel_marker.store(true, Ordering::SeqCst);
+    fn cancel_callback(&mut self) -> DaftResult<()> {
+        if let Some(cancel_notifier) = self.cancel_notifier.take() {
+            let _ = cancel_notifier.send(());
         }
         self.worker_manager
             .mark_task_finished(TaskId::default(), self.worker_id.clone());
+        Ok(())
     }
 }
-
 /// A mock implementation of the WorkerManager trait for testing
 #[derive(Clone)]
 pub struct MockWorkerManager {
@@ -279,8 +294,8 @@ impl WorkerManager for MockWorkerManager {
             self.clone(),
             worker_id,
             task.sleep_duration,
-            task.cancel_marker,
-            task.error_message,
+            task.cancel_notifier,
+            task.failure,
         ))
     }
 
@@ -305,6 +320,52 @@ impl WorkerManager for MockWorkerManager {
 
     fn shutdown(&self) -> DaftResult<()> {
         self.workers.values().for_each(|w| w.shutdown());
+        Ok(())
+    }
+}
+
+pub(crate) struct TestContext {
+    joinset: JoinSet<DaftResult<()>>,
+    handle: TaskDispatcherHandleRef<MockTask>,
+}
+
+impl TestContext {
+    pub fn new(
+        workers: Vec<(String, usize)>,
+        scheduler: Box<dyn Scheduler<MockTask, MockWorker>>,
+    ) -> DaftResult<Self> {
+        let mut worker_manager = MockWorkerManager::new();
+        for (name, num_workers) in workers {
+            worker_manager.add_worker(name, num_workers)?;
+        }
+        let task_dispatcher = crate::scheduling::dispatcher::TaskDispatcher::new_with_scheduler(
+            Arc::new(worker_manager),
+            scheduler,
+        );
+        let mut joinset = JoinSet::new();
+        let handle = crate::scheduling::dispatcher::TaskDispatcher::spawn_task_dispatcher(
+            task_dispatcher,
+            &mut joinset,
+        );
+        Ok(Self { joinset, handle })
+    }
+
+    pub fn handle(&self) -> &TaskDispatcherHandleRef<MockTask> {
+        &self.handle
+    }
+
+    pub fn spawn_on_joinset(
+        &mut self,
+        future: impl Future<Output = DaftResult<()>> + Send + 'static,
+    ) {
+        self.joinset.spawn(future);
+    }
+
+    pub async fn cleanup(mut self) -> DaftResult<()> {
+        drop(self.handle);
+        while let Some(result) = self.joinset.join_next().await {
+            result.map_err(|e| DaftError::External(e.into()))??;
+        }
         Ok(())
     }
 }

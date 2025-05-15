@@ -90,8 +90,6 @@ enum PipelineInput {
         info: InMemoryInfo,
     },
     ScanTasks {
-        #[allow(dead_code)]
-        source_id: usize,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     },
@@ -129,8 +127,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
             match node.as_ref() {
                 LogicalPlan::Limit(limit) => {
                     let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let pipeline_plan =
-                        translate_logical_plan_to_pipeline_plan(&node, &self.config)?;
+                    let pipeline_plan = translate_logical_plan_to_pipeline_plan(node.clone())?;
                     let collect_node = Box::new(CollectNode::new(
                         self.get_next_node_id(),
                         self.config.clone(),
@@ -182,8 +179,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
         }
         _ => {
             let logical_plan = transformed.data;
-            let pipeline_plan =
-                translate_logical_plan_to_pipeline_plan(&logical_plan, &splitter.config)?;
+            let pipeline_plan = translate_logical_plan_to_pipeline_plan(logical_plan)?;
             let input_nodes = std::mem::take(&mut splitter.current_nodes);
             let collect_node = Box::new(CollectNode::new(
                 splitter.get_next_node_id(),

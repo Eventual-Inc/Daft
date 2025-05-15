@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     scheduling::{
-        dispatcher::TaskDispatcherHandle,
+        dispatcher::TaskDispatcherHandleRef,
         task::{SchedulingStrategy, SwordfishTask},
     },
     stage::StageContext,
@@ -56,7 +56,7 @@ impl LimitNode {
         input: RunningPipelineNode<SwordfishTask>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         mut remaining_limit: usize,
-        task_dispatcher_handle: TaskDispatcherHandle<SwordfishTask>,
+        task_dispatcher_handle: TaskDispatcherHandleRef<SwordfishTask>,
         node_id: usize,
         schema: SchemaRef,
         config: Arc<DaftExecutionConfig>,

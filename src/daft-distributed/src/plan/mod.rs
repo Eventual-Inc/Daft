@@ -113,10 +113,7 @@ impl Stream for PlanResult {
 
         match self.rx.poll_recv(cx) {
             Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(result)) => {
-                println!("received result: {:?}", result);
-                Poll::Ready(Some(Ok(result)))
-            }
+            Poll::Ready(Some(result)) => Poll::Ready(Some(Ok(result))),
             Poll::Ready(None) => {
                 if let Some(mut handle) = self.task.take() {
                     let result = handle.poll_unpin(cx);

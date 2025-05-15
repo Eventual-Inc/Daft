@@ -7,7 +7,7 @@ use futures::{Stream, StreamExt};
 use crate::{
     pipeline_node::PipelineOutput,
     scheduling::{
-        dispatcher::{SubmittedTask, TaskDispatcherHandle},
+        dispatcher::{SubmittedTask, TaskDispatcherHandle, TaskDispatcherHandleRef},
         task::Task,
     },
     utils::{
@@ -19,7 +19,7 @@ use crate::{
 
 pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static,
-    task_dispatcher_handle: TaskDispatcherHandle<T>,
+    task_dispatcher_handle: TaskDispatcherHandleRef<T>,
 ) -> impl Stream<Item = DaftResult<PartitionRef>> {
     enum FinalizedTask {
         Materialized(PartitionRef),
@@ -29,16 +29,17 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     async fn task_finalizer<T: Task>(
         mut input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Unpin,
         tx: Sender<DaftResult<FinalizedTask>>,
-        task_dispatcher_handle: TaskDispatcherHandle<T>,
+        task_dispatcher_handle: TaskDispatcherHandleRef<T>,
     ) -> DaftResult<()> {
         while let Some(pipeline_result) = input.next().await {
-            if let Err(e) = pipeline_result {
-                if tx.send(Err(e)).await.is_err() {
+            let pipeline_output = match pipeline_result {
+                Ok(pipeline_output) => pipeline_output,
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
                     break;
                 }
-                continue;
-            }
-            let pipeline_output = pipeline_result.unwrap();
+            };
+
             let finalized_tasks = match pipeline_output {
                 // If the pipeline output is a materialized partition, we can just send it through the channel
                 PipelineOutput::Materialized(partition) => {
@@ -207,7 +208,6 @@ pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
 #[cfg(test)]
 mod tests {
     use std::{
-        future::Future,
         sync::{Arc, OnceLock},
         time::Duration,
     };
@@ -219,55 +219,20 @@ mod tests {
     use super::*;
     use crate::scheduling::{
         dispatcher::TaskDispatcherHandle,
+        scheduler::DefaultScheduler,
         task::SchedulingStrategy,
-        tests::{create_mock_partition_ref, MockTask, MockTaskBuilder, MockWorkerManager},
+        tests::{
+            create_mock_partition_ref, MockTask, MockTaskBuilder, MockWorkerManager, TestContext,
+        },
     };
-
-    struct TestContext {
-        joinset: JoinSet<DaftResult<()>>,
-        handle: TaskDispatcherHandle<MockTask>,
-    }
-
-    impl TestContext {
-        fn new(workers: Vec<(String, usize)>) -> DaftResult<Self> {
-            let mut worker_manager = MockWorkerManager::new();
-            for (name, num_workers) in workers {
-                worker_manager.add_worker(name, num_workers)?;
-            }
-            let task_dispatcher =
-                crate::scheduling::dispatcher::TaskDispatcher::new(Arc::new(worker_manager));
-            let mut joinset = JoinSet::new();
-            let handle = crate::scheduling::dispatcher::TaskDispatcher::spawn_task_dispatcher(
-                task_dispatcher,
-                &mut joinset,
-            );
-            Ok(Self { joinset, handle })
-        }
-
-        fn handle(&self) -> &TaskDispatcherHandle<MockTask> {
-            &self.handle
-        }
-
-        fn spawn_on_joinset(
-            &mut self,
-            future: impl Future<Output = DaftResult<()>> + Send + 'static,
-        ) {
-            self.joinset.spawn(future);
-        }
-
-        async fn cleanup(mut self) -> DaftResult<()> {
-            drop(self.handle);
-            while let Some(result) = self.joinset.join_next().await {
-                result.map_err(|e| DaftError::External(e.into()))??;
-            }
-            Ok(())
-        }
-    }
 
     #[tokio::test]
     async fn test_materialize_all_pipeline_outputs_basic() -> DaftResult<()> {
         // Setup test context and partitions
-        let test_context = TestContext::new(vec![("worker1".to_string(), 4)])?;
+        let test_context = TestContext::new(
+            vec![("worker1".to_string(), 4)],
+            Box::new(DefaultScheduler::new()),
+        )?;
         let partition_rows_and_bytes = vec![
             (100, 1024), // partition1
             (200, 2048), // partition2
@@ -319,7 +284,10 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_all_pipeline_outputs_large() -> DaftResult<()> {
         // Setup test context and partitions
-        let mut test_context = TestContext::new(vec![("worker1".to_string(), 100)])?;
+        let mut test_context = TestContext::new(
+            vec![("worker1".to_string(), 100)],
+            Box::new(DefaultScheduler::new()),
+        )?;
 
         let num_partitions = 1000;
 
@@ -399,7 +367,10 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_all_pipeline_outputs_with_error() -> DaftResult<()> {
         // Create mock partitions
-        let mut test_context = TestContext::new(vec![("worker1".to_string(), 10)])?;
+        let mut test_context = TestContext::new(
+            vec![("worker1".to_string(), 10)],
+            Box::new(DefaultScheduler::new()),
+        )?;
 
         let num_partitions = 100;
 
@@ -533,7 +504,10 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_running_pipeline_outputs_basic() -> DaftResult<()> {
         // Setup test context and partitions
-        let test_context = TestContext::new(vec![("worker1".to_string(), 4)])?;
+        let test_context = TestContext::new(
+            vec![("worker1".to_string(), 4)],
+            Box::new(DefaultScheduler::new()),
+        )?;
         let partition_rows_and_bytes = vec![
             (100, 1024), // partition1
             (200, 2048), // partition2
@@ -607,7 +581,10 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_running_pipeline_outputs_large() -> DaftResult<()> {
         // Setup test context and partitions
-        let mut test_context = TestContext::new(vec![("worker1".to_string(), 100)])?;
+        let mut test_context = TestContext::new(
+            vec![("worker1".to_string(), 100)],
+            Box::new(DefaultScheduler::new()),
+        )?;
 
         let num_partitions = 1000; // Using fewer partitions than the original test for faster execution
 
@@ -713,7 +690,10 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_running_pipeline_outputs_with_error() -> DaftResult<()> {
         // Create mock partitions
-        let mut test_context = TestContext::new(vec![("worker1".to_string(), 10)])?;
+        let mut test_context = TestContext::new(
+            vec![("worker1".to_string(), 10)],
+            Box::new(DefaultScheduler::new()),
+        )?;
 
         let num_partitions = 100;
 

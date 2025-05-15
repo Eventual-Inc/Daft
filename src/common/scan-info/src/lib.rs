@@ -24,9 +24,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ScanState {
+    Tasks(Arc<Vec<ScanTaskLikeRef>>),
     #[serde(skip)]
     Operator(ScanOperatorRef),
-    Tasks(Arc<Vec<ScanTaskLikeRef>>),
 }
 
 impl ScanState {

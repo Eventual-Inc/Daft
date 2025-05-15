@@ -48,10 +48,6 @@ impl PythonPartitionRefStream {
                         let objref = ray_part_ref.object_ref.clone_ref(py);
                         let size_bytes = ray_part_ref.size_bytes;
                         let num_rows = ray_part_ref.num_rows;
-                        println!(
-                            "objref: {:?}, num_rows: {:?}, size_bytes: {:?}",
-                            objref, num_rows, size_bytes
-                        );
                         let ret = (objref, num_rows, size_bytes);
                         Some(ret)
                     }
@@ -87,7 +83,6 @@ impl PyDistributedPhysicalPlan {
         &self,
         psets: HashMap<String, Vec<RayPartitionRef>>,
         worker_manager: PyRayWorkerManager,
-        py: Python,
     ) -> PyResult<PythonPartitionRefStream> {
         let psets = psets
             .into_iter()
@@ -100,7 +95,6 @@ impl PyDistributedPhysicalPlan {
                 )
             })
             .collect();
-        let daft_execution_config = self.planner.execution_config().clone();
         let part_stream = self
             .planner
             .run_plan(Arc::new(psets), worker_manager.inner())?;

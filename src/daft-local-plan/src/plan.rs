@@ -127,14 +127,9 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn placeholder_scan(
-        schema: SchemaRef,
-        source_id: usize,
-        stats_state: StatsState,
-    ) -> LocalPhysicalPlanRef {
+    pub fn placeholder_scan(schema: SchemaRef, stats_state: StatsState) -> LocalPhysicalPlanRef {
         Self::PlaceholderScan(PlaceholderScan {
             schema,
-            source_id,
             stats_state,
         })
         .arced()
@@ -696,7 +691,6 @@ pub struct PhysicalScan {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
-    pub source_id: usize,
     pub stats_state: StatsState,
 }
 

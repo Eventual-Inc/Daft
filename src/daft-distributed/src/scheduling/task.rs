@@ -23,7 +23,7 @@ pub(crate) trait Task: Send + Sync + 'static {
     fn strategy(&self) -> &SchedulingStrategy;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct SwordfishTask {
     id: String,
     plan: LocalPhysicalPlanRef,
@@ -88,4 +88,6 @@ impl Task for SwordfishTask {
 pub trait SwordfishTaskResultHandle: Send + Sync {
     #[allow(dead_code)]
     async fn get_result(&mut self) -> DaftResult<Vec<PartitionRef>>;
+    #[allow(dead_code)]
+    fn cancel_callback(&mut self) -> DaftResult<()>;
 }
