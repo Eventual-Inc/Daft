@@ -1,14 +1,12 @@
 # I/O
 
-Daft offers a variety of approaches to creating a DataFrame from reading various data sources (in-memory data, files, data catalogs, and integrations) and writing to various data sources.
-
-<!-- Learn more about [I/O](../io.md) page in Daft User Guide.-->
+Daft offers a variety of approaches to creating a DataFrame from reading various data sources (in-memory data, files, data catalogs, and integrations) and writing to various data sources. See more about [I/O](../io.md) page in Daft User Guide.
 
 ## Input
 
 <!-- from_ -->
 
-<!-- ::: daft.from_arrow
+::: daft.from_arrow
     options:
         heading_level: 3
 
@@ -34,11 +32,11 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 ::: daft.from_ray_dataset
     options:
-        heading_level: 3 -->
+        heading_level: 3
 
 <!-- read_ -->
 
-<!-- ::: daft.read_csv
+::: daft.read_csv
     options:
         heading_level: 3
 
@@ -72,7 +70,7 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 ::: daft.read_warc
     options:
-        heading_level: 3 -->
+        heading_level: 3
 
 ## Output
 
