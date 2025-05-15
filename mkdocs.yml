@@ -16,7 +16,6 @@ repo_url: https://github.com/Eventual-Inc/Daft
 nav:
 - Daft User Guide:
   - Overview: index.md
-  - Terminology: terms.md
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md

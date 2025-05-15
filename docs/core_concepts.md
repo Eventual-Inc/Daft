@@ -259,88 +259,6 @@ Daft can display your DataFrame's schema without materializing it. Under the hoo
 
     Under the hood, Daft represents data in the [Apache Arrow](https://arrow.apache.org/) format, which allows it to efficiently represent and work on data using high-performance kernels which are written in Rust.
 
-### Running Computation with Expressions
-
-To run computations on data in our DataFrame, we use Expressions.
-
-The following statement will [`df.show()`][daft.DataFrame.show] a DataFrame that has only one column - the column `A` from our original DataFrame but with every row incremented by 1.
-
-=== "🐍 Python"
-    ``` python
-    df.select(df["A"] + 1).show()
-    ```
-
-=== "⚙️ SQL"
-    ```python
-    daft.sql("SELECT A + 1 FROM df").show()
-    ```
-
-``` {title="Output"}
-
-╭───────╮
-│ A     │
-│ ---   │
-│ Int64 │
-╞═══════╡
-│ 2     │
-├╌╌╌╌╌╌╌┤
-│ 3     │
-├╌╌╌╌╌╌╌┤
-│ 4     │
-├╌╌╌╌╌╌╌┤
-│ 5     │
-╰───────╯
-
-(Showing first 4 of 4 rows)
-```
-
-!!! info "Info"
-
-    A common pattern is to create a new columns using [`DataFrame.with_column`][daft.DataFrame.with_column]:
-
-    === "🐍 Python"
-        ``` python
-        # Creates a new column named "foo" which takes on values
-        # of column "A" incremented by 1
-        df = df.with_column("foo", df["A"] + 1)
-        df.show()
-        ```
-
-    === "⚙️ SQL"
-        ```python
-        # Creates a new column named "foo" which takes on values
-        # of column "A" incremented by 1
-        df = daft.sql("SELECT *, A + 1 AS foo FROM df")
-        df.show()
-        ```
-
-``` {title="Output"}
-
-╭───────┬─────────┬─────────┬───────╮
-│ A     ┆ B       ┆ C       ┆ foo   │
-│ ---   ┆ ---     ┆ ---     ┆ ---   │
-│ Int64 ┆ Float64 ┆ Boolean ┆ Int64 │
-╞═══════╪═════════╪═════════╪═══════╡
-│ 1     ┆ 1.5     ┆ true    ┆ 2     │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ 2     ┆ 2.5     ┆ true    ┆ 3     │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ 3     ┆ 3.5     ┆ false   ┆ 4     │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ 4     ┆ 4.5     ┆ false   ┆ 5     │
-╰───────┴─────────┴─────────┴───────╯
-
-(Showing first 4 of 4 rows)
-```
-
-Congratulations, you have just written your first **Expression**: `df["A"] + 1`! Expressions are a powerful way of describing computation on columns. For more details, check out the next section on [Expressions](core_concepts.md#expressions).
-
-<!-- In a previous section, we covered Expressions which are ways of expressing computation on a single column.
-
-However, the Daft DataFrame is a table containing equal-length columns. Many operations affect the entire table at once, which in turn affects the ordering or sizes of all columns.
-
-This section of the user guide covers these operations, and how to use them. -->
-
 ### Selecting Rows
 
 We can limit the rows to the first ``N`` rows using [`df.limit(N)`][daft.DataFrame.limit]:
@@ -721,29 +639,48 @@ For a full list of available expressions, see [Expressions API Docs](api/express
 
 #### Referring to a column in a DataFrame
 
-Most commonly you will be creating expressions by using the [`daft.col()`][daft.expressions.col] function.
+Most commonly you will be creating expressions by using the [`daft.col()`][daft.expressions.col] function. The following example will create an expressiom referring to a columned named `A` but with every row incremented by 1.
 
 === "🐍 Python"
     ``` python
-    # Refers to column "A"
-    daft.col("A")
+    df = daft.from_pydict({
+        "A": [1, 2, 3, 4]
+    })
+
+    df.select(col("A") + 1).show()
     ```
 
 === "⚙️ SQL"
     ```python
-    daft.sql_expr("A")
+    df = daft.from_pydict({
+        "A": [1, 2, 3, 4]
+    })
+
+    daft.sql("SELECT A + 1 FROM df").show()
     ```
 
 ``` {title="Output"}
 
-col(A)
+╭───────╮
+│ A     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 2     │
+├╌╌╌╌╌╌╌┤
+│ 3     │
+├╌╌╌╌╌╌╌┤
+│ 4     │
+├╌╌╌╌╌╌╌┤
+│ 5     │
+╰───────╯
+
+(Showing first 4 of 4 rows)
 ```
 
-The above code creates an Expression that refers to a column named `"A"`.
+#### Using SQL
 
-### Using SQL
-
-Daft can also parse valid SQL as expressions.
+Daft can also parse valid SQL as expressions. The below example will create an expression representing the column `A` incremented by 1. For many APIs, [`sql_expr`][daft.sql.sql.sql_expr] will actually be applied for you as syntactic sugar!
 
 === "⚙️ SQL"
     ```python
@@ -753,8 +690,6 @@ Daft can also parse valid SQL as expressions.
 
 col(A) + lit(1)
 ```
-
-The above code will create an expression representing "the column named 'x' incremented by 1". For many APIs, [`sql_expr`][daft.sql.sql.sql_expr] will actually be applied for you as syntactic sugar!
 
 #### Literals
 
@@ -1476,6 +1411,80 @@ The [`.dt.truncate()`][daft.expressions.expressions.ExpressionDatetimeNamespace.
 
 Daft can read data from a variety of sources, and write data to many destinations.
 
+## Query Plan
+
+As mentioned earlier, Daft DataFrames are lazy. Under the hood, each DataFrame in Daft is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
+
+You can examine a logical plan using [`df.explain()`][daft.DataFrame.explain], here's an example:
+
+=== "🐍 Python"
+
+    ```python
+    df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
+    df.where(df["country"] == "Canada").explain(show_all=True)
+    ```
+
+```{title="Output"}
+== Unoptimized Logical Plan ==
+
+* Filter: col(country) == lit("Canada")
+|
+* GlobScanOperator
+|   Glob paths = [s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-
+|     partitioned.pq/**]
+|   Coerce int96 timestamp unit = Nanoseconds
+|   IO config = S3 config = { Max connections = 8, Retry initial backoff ms = 1000,
+|     Connect timeout ms = 30000, Read timeout ms = 30000, Max retries = 25, Retry
+|     mode = adaptive, Anonymous = false, Use SSL = true, Verify SSL = true, Check
+|     hostname SSL = true, Requester pays = false, Force Virtual Addressing = false },
+|     Azure config = { Use Fabric Endpoint = false, Anonymous = false, Use SSL =
+|     true }, GCS config = { Anonymous = false, Max connections = 8, Retry initial
+|     backoff ms = 1000, Connect timeout ms = 30000, Read timeout ms = 30000, Max
+|     retries = 5 }, HTTP config = { user_agent = daft/0.0.1 }
+|   Use multithreading = true
+|   File schema = first_name#Utf8, last_name#Utf8, age#Int64, DoB#Date,
+|     country#Utf8, has_dog#Boolean
+|   Partitioning keys = []
+|   Output schema = first_name#Utf8, last_name#Utf8, age#Int64, DoB#Date,
+|     country#Utf8, has_dog#Boolean
+
+
+== Optimized Logical Plan ==
+
+* Num Scan Tasks = 3
+|   File schema = first_name#Utf8, last_name#Utf8, age#Int64, DoB#Date,
+|     country#Utf8, has_dog#Boolean
+|   Partitioning keys = []
+|   Filter pushdown = col(country) == lit("Canada")
+|   Output schema = first_name#Utf8, last_name#Utf8, age#Int64, DoB#Date,
+|     country#Utf8, has_dog#Boolean
+|   Stats = { Approx num rows = 35, Approx size bytes = 2.58 KiB, Accumulated
+|     selectivity = 0.20 }
+
+
+== Physical Plan ==
+
+* ScanTaskSource:
+|   Num Scan Tasks = 3
+|   Estimated Scan Bytes = 6336
+|   Pushdowns: {filter: col(country) == lit("Canada")}
+|   Schema: {first_name#Utf8, last_name#Utf8, age#Int64, DoB#Date, country#Utf8,
+|     has_dog#Boolean}
+|   Scan Tasks: [
+|   {File {s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-
+|     partitioned.pq/country=United Kingdom/7c3b0ed9-135e-47f6-a1ee-10bc6d9a625f-
+|     0.parquet}}
+|   {File {s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-
+|     partitioned.pq/country=Canada/df9639ac-9428-4dc9-bb3d-7ed9e5ed280a-0.parquet}}
+|   {File {s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-
+|     partitioned.pq/country=Germany/ec970a23-f540-4fa1-9b5d-eecfcb8015ba-0.parquet}}
+|   ]
+|   Stats = { Approx num rows = 35, Approx size bytes = 2.58 KiB, Accumulated
+|     selectivity = 0.20 }
+```
+
+Because we are filtering our DataFrame on the partition column country, Daft can optimize the `LogicalPlan` and save time and computing resources by only reading a single partition from disk.
+
 ## Reading Data
 
 ### From Files
@@ -1892,7 +1901,7 @@ These functions are especially useful when you need to calculate statistics acro
 
 ## Window Functions
 
-Daft window functions support several types of window specifications, including:
+Window functions allow you to perform calculations across a set of rows related to the current row. Daft currently supports several types of window specifications, including:
 
 - Partition By
 - Partition By + Order By
@@ -2431,7 +2440,6 @@ UDFs can also be parametrized with new resource requests after being initialized
 
 ## Multimodal Data
 
-
 Daft is built to work comfortably with multimodal data types, including URLs and images.
 
 To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use the [`daft.col()`][daft.expressions.col] mentioned earlier with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
@@ -2533,7 +2541,7 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
     df_family.show()
     ```
 
-## Example: UDFs in ML Workloads + Multimodal Data
+## Example: UDFs in ML + Multimodal Workload
 
 We'll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We'll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.
 
