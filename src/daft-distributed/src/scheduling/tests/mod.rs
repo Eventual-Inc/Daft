@@ -22,8 +22,10 @@ use super::{
     task::{SchedulingStrategy, SwordfishTaskResultHandle, Task, TaskId},
     worker::{Worker, WorkerId, WorkerManager},
 };
-use crate::utils::{channel::OneshotSender, joinset::JoinSet};
-
+use crate::{
+    pipeline_node::MaterializedOutput,
+    utils::{channel::OneshotSender, joinset::JoinSet},
+};
 #[derive(Debug)]
 pub(crate) struct MockPartition {
     num_rows: usize,
@@ -85,15 +87,20 @@ pub(crate) struct MockTaskBuilder {
 
 impl MockTaskBuilder {
     /// Create a new MockTaskBuilder with required parameters
-    pub fn new(scheduling_strategy: SchedulingStrategy, partition_ref: PartitionRef) -> Self {
+    pub fn new(partition_ref: PartitionRef) -> Self {
         Self {
             task_id: None,
-            scheduling_strategy,
+            scheduling_strategy: SchedulingStrategy::Spread,
             task_result: partition_ref,
             cancel_notifier: None,
             sleep_duration: None,
             failure: None,
         }
+    }
+
+    pub fn with_scheduling_strategy(mut self, scheduling_strategy: SchedulingStrategy) -> Self {
+        self.scheduling_strategy = scheduling_strategy;
+        self
     }
 
     /// Set a custom task ID (defaults to a UUID if not specified)
@@ -178,7 +185,7 @@ impl MockTaskResultHandle {
 
 #[async_trait::async_trait]
 impl SwordfishTaskResultHandle for MockTaskResultHandle {
-    async fn get_result(&mut self) -> DaftResult<Vec<PartitionRef>> {
+    async fn get_result(&mut self) -> DaftResult<Vec<MaterializedOutput>> {
         if let Some(sleep_duration) = self.sleep_duration {
             tokio::time::sleep(sleep_duration).await;
         }
@@ -194,7 +201,10 @@ impl SwordfishTaskResultHandle for MockTaskResultHandle {
         }
         self.worker_manager
             .mark_task_finished(TaskId::default(), self.worker_id.clone());
-        Ok(vec![self.result.clone()])
+        Ok(vec![MaterializedOutput::new(
+            self.result.clone(),
+            self.worker_id.clone(),
+        )])
     }
 
     fn cancel_callback(&mut self) -> DaftResult<()> {

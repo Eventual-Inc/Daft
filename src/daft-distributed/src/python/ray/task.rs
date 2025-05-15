@@ -6,7 +6,13 @@ use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
 
-use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle, Task};
+use crate::{
+    pipeline_node::MaterializedOutput,
+    scheduling::{
+        task::{SwordfishTask, SwordfishTaskResultHandle, Task},
+        worker::WorkerId,
+    },
+};
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
 #[allow(dead_code)]
@@ -15,15 +21,22 @@ pub(crate) struct RayTaskResultHandle {
     handle: PyObject,
     /// The task locals, i.e. the asyncio event loop
     task_locals: Option<pyo3_async_runtimes::TaskLocals>,
+
+    worker_id: WorkerId,
 }
 
 impl RayTaskResultHandle {
     /// Create a new TaskHandle from a Python RaySwordfishTaskHandle
     #[allow(dead_code)]
-    pub fn new(handle: PyObject, task_locals: pyo3_async_runtimes::TaskLocals) -> Self {
+    pub fn new(
+        handle: PyObject,
+        task_locals: pyo3_async_runtimes::TaskLocals,
+        worker_id: WorkerId,
+    ) -> Self {
         Self {
             handle,
             task_locals: Some(task_locals),
+            worker_id,
         }
     }
 }
@@ -31,7 +44,7 @@ impl RayTaskResultHandle {
 #[async_trait::async_trait]
 impl SwordfishTaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
-    async fn get_result(&mut self) -> DaftResult<Vec<PartitionRef>> {
+    async fn get_result(&mut self) -> DaftResult<Vec<MaterializedOutput>> {
         // Create a coroutine that will await the result of the task
         let coroutine = Python::with_gil(|py| {
             self.handle
@@ -55,8 +68,8 @@ impl SwordfishTaskResultHandle for RayTaskResultHandle {
             Python::with_gil(|py| materialized_result.extract::<Vec<RayPartitionRef>>(py))?;
         Ok(ray_part_refs
             .into_iter()
-            .map(|r| Arc::new(r) as PartitionRef)
-            .collect::<Vec<PartitionRef>>())
+            .map(|r| MaterializedOutput::new(Arc::new(r), self.worker_id.clone()))
+            .collect::<Vec<MaterializedOutput>>())
     }
 
     fn cancel_callback(&mut self) -> DaftResult<()> {

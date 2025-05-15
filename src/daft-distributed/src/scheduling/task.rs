@@ -5,6 +5,8 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 use uuid::Uuid;
+
+use crate::pipeline_node::MaterializedOutput;
 #[derive(Debug, Clone)]
 pub(crate) enum SchedulingStrategy {
     Spread,
@@ -87,7 +89,7 @@ impl Task for SwordfishTask {
 #[async_trait::async_trait]
 pub trait SwordfishTaskResultHandle: Send + Sync {
     #[allow(dead_code)]
-    async fn get_result(&mut self) -> DaftResult<Vec<PartitionRef>>;
+    async fn get_result(&mut self) -> DaftResult<Vec<MaterializedOutput>>;
     #[allow(dead_code)]
     fn cancel_callback(&mut self) -> DaftResult<()>;
 }

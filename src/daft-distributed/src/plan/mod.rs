@@ -14,6 +14,7 @@ use futures::{FutureExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    pipeline_node::MaterializedOutput,
     scheduling::worker::{Worker, WorkerManager},
     stage::{StagePlan, StagePlanRef},
     utils::{
@@ -57,8 +58,10 @@ impl DistributedPhysicalPlan {
 
         let stage = stage_plan.get_root_stage();
         let mut running_stage = stage.run_stage(psets, worker_manager, config)?;
-        while let Some(partition) = running_stage.next().await {
-            if sender.send(partition?).await.is_err() {
+        while let Some(materialized_output) = running_stage.next().await {
+            let materialized_output = materialized_output?;
+            let (partition, _) = materialized_output.into_inner();
+            if sender.send(partition).await.is_err() {
                 break;
             }
         }

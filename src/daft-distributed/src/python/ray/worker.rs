@@ -61,7 +61,11 @@ impl RaySwordfishWorker {
                 .call_method1(py, pyo3::intern!(py, "submit_task"), (py_task,))
                 .expect("Failed to submit task to RayWorker");
             let task_locals = task_locals.clone_ref(py);
-            Box::new(RayTaskResultHandle::new(py_task_handle, task_locals))
+            Box::new(RayTaskResultHandle::new(
+                py_task_handle,
+                task_locals,
+                self.worker_id.clone(),
+            ))
         });
         self.active_task_ids.lock().unwrap().insert(task_id);
         Ok(py_task_handle)

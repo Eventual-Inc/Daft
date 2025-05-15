@@ -5,10 +5,10 @@ use common_partitioning::PartitionRef;
 use super::MockTaskBuilder;
 use crate::scheduling::{
     dispatcher::SchedulableTask,
-    scheduler::{DefaultScheduler, ScheduleResult, Scheduler},
-    task::{SchedulingStrategy, Task, TaskId},
+    scheduler::{DefaultScheduler, Scheduler},
+    task::SchedulingStrategy,
     tests::{MockPartition, MockTask, MockWorker},
-    worker::{Worker, WorkerId},
+    worker::WorkerId,
 };
 
 // Helper to create a schedulable task
@@ -16,7 +16,9 @@ fn create_schedulable_task(
     strategy: SchedulingStrategy,
     partition_ref: PartitionRef,
 ) -> SchedulableTask<MockTask> {
-    let task = MockTaskBuilder::new(strategy, partition_ref).build();
+    let task = MockTaskBuilder::new(partition_ref)
+        .with_scheduling_strategy(strategy)
+        .build();
     SchedulableTask::new(
         task,
         tokio::sync::oneshot::channel().0,

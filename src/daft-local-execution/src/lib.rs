@@ -16,18 +16,45 @@ mod state_bridge;
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Once, OnceLock},
     task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::{RuntimeRef, RuntimeTask};
+use common_runtime::{PoolType, Runtime, RuntimeRef, RuntimeTask};
 use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStatsContext, TimedFuture};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 use tracing::Instrument;
+
+pub static RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
+pub static PYO3_RUNTIME_INITIALIZED: Once = Once::new();
+
+pub fn get_or_init_runtime() -> &'static Runtime {
+    let runtime_ref = RUNTIME.get_or_init(|| {
+        let mut tokio_runtime_builder = tokio::runtime::Builder::new_multi_thread();
+        tokio_runtime_builder.enable_all();
+        tokio_runtime_builder.worker_threads(1);
+        tokio_runtime_builder.thread_name_fn(move || "Daft-Swordfish".to_string());
+        let tokio_runtime = tokio_runtime_builder
+            .build()
+            .expect("Failed to build runtime");
+        Runtime::new(
+            tokio_runtime,
+            PoolType::Custom("daft-swordfish".to_string()),
+        )
+    });
+    #[cfg(feature = "python")]
+    {
+        PYO3_RUNTIME_INITIALIZED.call_once(|| {
+            pyo3_async_runtimes::tokio::init_with_runtime(&runtime_ref.runtime)
+                .expect("Failed to initialize python runtime");
+        });
+    }
+    runtime_ref
+}
 
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.
@@ -69,7 +96,7 @@ pub(crate) struct TaskSet<T> {
     inner: tokio::task::JoinSet<T>,
 }
 
-impl<T: 'static> TaskSet<T> {
+impl<T: Send + 'static> TaskSet<T> {
     fn new() -> Self {
         Self {
             inner: tokio::task::JoinSet::new(),
@@ -78,9 +105,9 @@ impl<T: 'static> TaskSet<T> {
 
     fn spawn<F>(&mut self, future: F)
     where
-        F: std::future::Future<Output = T> + 'static,
+        F: std::future::Future<Output = T> + Send + 'static,
     {
-        self.inner.spawn_local(future);
+        self.inner.spawn(future);
     }
 
     async fn join_next(&mut self) -> Option<Result<T, tokio::task::JoinError>> {
@@ -137,7 +164,7 @@ impl ExecutionRuntimeContext {
     }
     pub fn spawn(
         &mut self,
-        task: impl std::future::Future<Output = DaftResult<()>> + 'static,
+        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
         node_name: &str,
     ) {
         let node_name = node_name.to_string();

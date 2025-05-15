@@ -12,7 +12,7 @@ use stage_builder::StagePlanBuilder;
 use crate::{
     pipeline_node::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        DistributedPipelineNode,
+        DistributedPipelineNode, MaterializedOutput,
     },
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle, TaskDispatcherHandleRef},
@@ -53,7 +53,7 @@ impl Stage {
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         config: Arc<DaftExecutionConfig>,
-    ) -> DaftResult<impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static> {
+    ) -> DaftResult<impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static> {
         let mut stage_context = StageContext::try_new(worker_manager)?;
         match &self.type_ {
             StageType::MapPipeline { plan } => {
@@ -170,8 +170,7 @@ pub(crate) struct StageContext {
 
 impl StageContext {
     fn try_new<W: Worker>(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> DaftResult<Self> {
-        let task_dispatcher =
-            TaskDispatcher::new_with_scheduler(worker_manager, Box::new(LinearScheduler::new()));
+        let task_dispatcher = TaskDispatcher::new(worker_manager);
         let mut joinset = JoinSet::new();
         let task_dispatcher_handle =
             TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
@@ -192,7 +191,12 @@ impl StageContext {
         self.joinset.spawn(f);
     }
 
-    pub fn into_inner(self) -> (TaskDispatcherHandleRef<SwordfishTask>, JoinSet<DaftResult<()>>) {
+    pub fn into_inner(
+        self,
+    ) -> (
+        TaskDispatcherHandleRef<SwordfishTask>,
+        JoinSet<DaftResult<()>>,
+    ) {
         (self.task_dispatcher_handle, self.joinset)
     }
 }

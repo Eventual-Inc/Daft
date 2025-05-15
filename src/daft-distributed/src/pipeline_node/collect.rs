@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     materialize::materialize_running_pipeline_outputs, translate::PipelinePlan,
-    DistributedPipelineNode, PipelineInput, PipelineOutput, RunningPipelineNode,
+    DistributedPipelineNode, MaterializedOutput, PipelineInput, PipelineOutput,
+    RunningPipelineNode,
 };
 use crate::{
     scheduling::task::{SchedulingStrategy, SwordfishTask},
@@ -52,26 +53,25 @@ impl CollectNode {
     ) -> DaftResult<()> {
         match input {
             PipelineInput::InMemorySource { info } => {
-                let mut tasks = Vec::new();
                 let partition_refs = psets.get(&info.cache_key).unwrap().clone();
 
                 for partition_ref in partition_refs {
-                    let task = make_task_for_partition_ref(
+                    let task = make_task_for_materialized_output(
                         plan.clone(),
-                        partition_ref,
+                        MaterializedOutput::new(partition_ref, "".to_string()),
                         info.cache_key.clone(),
                         config.clone(),
                     )?;
-                    tasks.push(task);
+                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                        break;
+                    }
                 }
-                let _ = result_tx.send(PipelineOutput::Tasks(tasks)).await;
             }
             PipelineInput::ScanTasks {
                 scan_tasks,
                 pushdowns,
                 ..
             } => {
-                let mut tasks = Vec::new();
                 for scan_task in scan_tasks.iter() {
                     let transformed_plan = plan
                         .clone()
@@ -95,9 +95,10 @@ impl CollectNode {
                         psets,
                         SchedulingStrategy::Spread,
                     );
-                    tasks.push(task);
+                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                        break;
+                    }
                 }
-                let _ = result_tx.send(PipelineOutput::Tasks(tasks)).await;
             }
             PipelineInput::Intermediate => todo!(),
         }
@@ -118,29 +119,24 @@ impl CollectNode {
                 PipelineOutput::Running(_) => {
                     unreachable!("All running tasks should be materialized before this point")
                 }
-                PipelineOutput::Materialized(partition_ref) => {
+                PipelineOutput::Materialized(materialized_output) => {
                     // make new task for this partition ref
-                    let task = make_task_for_partition_ref(
+                    let task = make_task_for_materialized_output(
                         plan.clone(),
-                        partition_ref,
+                        materialized_output,
                         node_id.to_string(),
                         config.clone(),
                     )?;
-                    if result_tx
-                        .send(PipelineOutput::Tasks(vec![task]))
-                        .await
-                        .is_err()
-                    {
+                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }
                 }
-                PipelineOutput::Tasks(tasks) => {
+                PipelineOutput::Task(task) => {
                     // append plan to this task
-                    let tasks = tasks
-                        .into_iter()
-                        .map(|task| append_plan_to_task(task, config.clone(), plan.clone()))
-                        .collect::<DaftResult<Vec<_>>>()?;
-                    let _ = result_tx.send(PipelineOutput::Tasks(tasks)).await;
+                    let task = append_plan_to_task(task, config.clone(), plan.clone())?;
+                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                        break;
+                    }
                 }
             }
         }
@@ -230,12 +226,13 @@ impl TreeDisplay for CollectNode {
     }
 }
 
-fn make_task_for_partition_ref(
+fn make_task_for_materialized_output(
     plan: LocalPhysicalPlanRef,
-    partition_ref: PartitionRef,
+    materialized_output: MaterializedOutput,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
 ) -> DaftResult<SwordfishTask> {
+    let (partition_ref, worker_id) = materialized_output.into_inner();
     let info = InMemoryInfo::new(
         plan.schema().clone(),
         cache_key.clone(),
@@ -256,7 +253,15 @@ fn make_task_for_partition_ref(
         .data;
     let mut psets = HashMap::new();
     psets.insert(cache_key, vec![partition_ref]);
-    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    let task = SwordfishTask::new(
+        transformed_plan,
+        config,
+        psets,
+        SchedulingStrategy::NodeAffinity {
+            node_id: worker_id,
+            soft: true,
+        },
+    );
     Ok(task)
 }
 

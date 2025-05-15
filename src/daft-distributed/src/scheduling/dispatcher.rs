@@ -18,14 +18,13 @@ use super::{
     worker::Worker,
 };
 use crate::{
-    scheduling::worker::WorkerManager,
-    utils::{
+    pipeline_node::MaterializedOutput, scheduling::worker::WorkerManager, utils::{
         channel::{
             create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
             Sender,
         },
         joinset::JoinSet,
-    },
+    }
 };
 // The task dispatcher is responsible for dispatching tasks to workers.
 pub(crate) struct TaskDispatcher<T: Task, W: Worker> {
@@ -34,7 +33,7 @@ pub(crate) struct TaskDispatcher<T: Task, W: Worker> {
 }
 
 impl<T: Task, W: Worker> TaskDispatcher<T, W> {
-    const MAX_TASKS_IN_CHANNEL: usize = 512;
+    const MAX_EXTRA_TASKS: usize = 180;
 
     pub fn new(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         let scheduler = Box::new(DefaultScheduler::new());
@@ -58,8 +57,7 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
         task_dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
     ) -> TaskDispatcherHandleRef<T> {
-        let (task_dispatcher_sender, task_dispatcher_receiver) =
-            create_channel(Self::MAX_TASKS_IN_CHANNEL);
+        let (task_dispatcher_sender, task_dispatcher_receiver) = create_channel(1);
         joinset.spawn(Self::run_dispatch_loop(
             task_dispatcher,
             task_dispatcher_receiver,
@@ -69,12 +67,13 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
 
     async fn run_dispatch_loop(
         mut dispatcher: Self,
-        mut task_rx: Receiver<Vec<SchedulableTask<T>>>,
+        mut task_rx: Receiver<SchedulableTask<T>>,
     ) -> DaftResult<()> {
         let mut running_tasks = JoinSet::new();
         let mut running_tasks_by_id = HashMap::new();
-        let mut pending_tasks: Vec<SchedulableTask<T>> =
-            Vec::with_capacity(dispatcher.worker_manager.total_available_cpus());
+        let mut pending_tasks: Vec<SchedulableTask<T>> = Vec::with_capacity(
+            dispatcher.worker_manager.total_available_cpus() + Self::MAX_EXTRA_TASKS,
+        );
 
         loop {
             // 1. Update the scheduler with the current state of the workers
@@ -106,6 +105,7 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
                         },
                         // If the task is finished, return the result and the result_tx
                         result = task_handle.get_result() => {
+                            // Ignore the send error here because the receiver may be dropped, i.e. cancelled
                             let _ = task.result_tx.send(result);
                         }
                     }
@@ -115,17 +115,21 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
             }
 
             // 4. Wait for tasks to finish or receive new tasks
+            let max_tasks_to_wait_for =
+                dispatcher.worker_manager.total_available_cpus() + Self::MAX_EXTRA_TASKS;
+            let current_pending_tasks = pending_tasks.len();
             tokio::select! {
                 biased;
                 Some((joinset_id, finished_task)) = running_tasks.join_next_with_id() => {
                     let (worker_id, task_id) = running_tasks_by_id.remove(&joinset_id).unwrap();
                     dispatcher.worker_manager.mark_task_finished(task_id, worker_id);
+                    // If there is an error here it means there was a panic during the 'get_result' call, which we should propagate
                     if let Err(e) = finished_task {
                         return Err(e);
                     }
                 }
-                Some(next_tasks) = task_rx.recv() => {
-                    pending_tasks.extend(next_tasks);
+                Some(next_task) = task_rx.recv(), if current_pending_tasks < max_tasks_to_wait_for => {
+                    pending_tasks.push(next_task);
                 }
                 else => {
                     assert!(running_tasks.is_empty());
@@ -140,14 +144,14 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
 
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Vec<PartitionRef>>>,
+    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
 impl<T: Task> SchedulableTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Vec<PartitionRef>>>,
+        result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -170,55 +174,46 @@ pub(crate) type TaskDispatcherHandleRef<T> = Arc<TaskDispatcherHandle<T>>;
 
 #[derive(Debug)]
 pub(crate) struct TaskDispatcherHandle<T: Task> {
-    task_dispatcher_sender: Sender<Vec<SchedulableTask<T>>>,
+    task_dispatcher_sender: Sender<SchedulableTask<T>>,
 }
 
 impl<T: Task> TaskDispatcherHandle<T> {
-    fn new(task_dispatcher_sender: Sender<Vec<SchedulableTask<T>>>) -> Self {
+    fn new(task_dispatcher_sender: Sender<SchedulableTask<T>>) -> Self {
         Self {
             task_dispatcher_sender,
         }
     }
 
-    fn prepare_tasks_for_submission(
-        &self,
-        tasks: Vec<T>,
-    ) -> (Vec<SchedulableTask<T>>, Vec<SubmittedTask>) {
-        let mut schedulable_tasks = Vec::with_capacity(tasks.len());
-        let mut submitted_tasks = Vec::with_capacity(tasks.len());
-        for task in tasks {
-            let (result_tx, result_rx) = create_oneshot_channel();
-            let cancel_token = CancellationToken::new();
-            let submitted_task = SubmittedTask::new(
-                task.task_id().to_string(),
-                result_rx,
-                Some(cancel_token.clone()),
-            );
-            let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token);
-            schedulable_tasks.push(schedulable_task);
-            submitted_tasks.push(submitted_task);
-        }
-        (schedulable_tasks, submitted_tasks)
+    fn prepare_task_for_submission(&self, task: T) -> (SchedulableTask<T>, SubmittedTask) {
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let cancel_token = CancellationToken::new();
+        let submitted_task = SubmittedTask::new(
+            task.task_id().to_string(),
+            result_rx,
+            Some(cancel_token.clone()),
+        );
+        let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token);
+        (schedulable_task, submitted_task)
     }
 
     pub async fn submit_task(&self, task: T) -> DaftResult<SubmittedTask> {
-        let (schedulable_tasks, mut submitted_tasks) =
-            self.prepare_tasks_for_submission(vec![task]);
-        let _ = self.task_dispatcher_sender.send(schedulable_tasks).await;
-        Ok(submitted_tasks.pop().unwrap())
-    }
-
-    pub async fn submit_many_tasks(&self, tasks: Vec<T>) -> DaftResult<Vec<SubmittedTask>> {
-        let (schedulable_tasks, submitted_tasks) = self.prepare_tasks_for_submission(tasks);
-        let _ = self.task_dispatcher_sender.send(schedulable_tasks).await;
-        Ok(submitted_tasks)
+        let (schedulable_task, submitted_task) = self.prepare_task_for_submission(task);
+        self.task_dispatcher_sender
+            .send(schedulable_task)
+            .await
+            .map_err(|_| {
+                DaftError::InternalError(format!(
+                    "Failed to send task to task dispatcher: task dispatcher has been dropped",
+                ))
+            })?;
+        Ok(submitted_task)
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
     task_id: TaskId,
-    result_rx: OneshotReceiver<DaftResult<Vec<PartitionRef>>>,
+    result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
     finished: bool,
 }
@@ -226,7 +221,7 @@ pub(crate) struct SubmittedTask {
 impl SubmittedTask {
     fn new(
         task_id: TaskId,
-        result_rx: OneshotReceiver<DaftResult<Vec<PartitionRef>>>,
+        result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
         Self {
@@ -243,7 +238,7 @@ impl SubmittedTask {
 }
 
 impl Future for SubmittedTask {
-    type Output = Option<DaftResult<Vec<PartitionRef>>>;
+    type Output = Option<DaftResult<Vec<MaterializedOutput>>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {

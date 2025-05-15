@@ -139,7 +139,6 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
             and node["Resources"]["memory"] > 0
         ):
             actor = RaySwordfishActor.options(
-                num_cpus=node["Resources"]["CPU"],
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
                     soft=False,

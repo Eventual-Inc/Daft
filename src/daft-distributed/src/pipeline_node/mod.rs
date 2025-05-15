@@ -25,7 +25,7 @@ use translate::translate_logical_plan_to_pipeline_plan;
 use crate::{
     scheduling::{
         dispatcher::SubmittedTask,
-        task::{SwordfishTask, Task},
+        task::{SwordfishTask, Task}, worker::WorkerId,
     },
     stage::StageContext,
     utils::channel::Receiver,
@@ -78,9 +78,33 @@ impl<T: Task> Stream for RunningPipelineNode<T> {
 }
 
 #[derive(Debug)]
+pub(crate) struct MaterializedOutput {
+    partition: PartitionRef,
+    worker_id: WorkerId,
+}
+
+impl MaterializedOutput {
+    pub fn new(partition: PartitionRef, worker_id: WorkerId) -> Self {
+        Self { partition, worker_id }
+    }
+
+    pub fn partition(&self) -> &PartitionRef {
+        &self.partition
+    }
+
+    pub fn worker_id(&self) -> &WorkerId {
+        &self.worker_id
+    }
+
+    pub fn into_inner(self) -> (PartitionRef, WorkerId) {
+        (self.partition, self.worker_id)
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum PipelineOutput<T: Task> {
-    Materialized(PartitionRef),
-    Tasks(Vec<T>),
+    Materialized(MaterializedOutput),
+    Task(T),
     Running(SubmittedTask),
 }
 

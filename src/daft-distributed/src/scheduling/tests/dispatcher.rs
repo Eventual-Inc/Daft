@@ -18,18 +18,14 @@ async fn test_task_dispatch_basic() -> DaftResult<()> {
         Box::new(DefaultScheduler::new()),
     )?;
 
-    let task = MockTaskBuilder::new(
-        SchedulingStrategy::Spread,
-        create_mock_partition_ref(100, 1024),
-    )
-    .build();
+    let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024)).build();
 
     let submitted_task = test_context.handle().submit_task(task).await?;
     let result = submitted_task.await.expect("Task should be completed")?;
 
     assert_eq!(result.len(), 1);
-    assert_eq!(result[0].num_rows().unwrap(), 100);
-    assert_eq!(result[0].size_bytes().unwrap(), Some(1024));
+    assert_eq!(result[0].partition().num_rows().unwrap(), 100);
+    assert_eq!(result[0].partition().size_bytes().unwrap(), Some(1024));
 
     test_context.cleanup().await?;
 
@@ -51,13 +47,10 @@ async fn test_task_dispatch_large() -> DaftResult<()> {
         let mut rng = StdRng::from_entropy();
         let tasks = (0..num_tasks)
             .map(|i| {
-                MockTaskBuilder::new(
-                    SchedulingStrategy::Spread,
-                    create_mock_partition_ref(100 + i, 1024 * (i + 1)),
-                )
-                .with_task_id(format!("task-{}", i))
-                .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(0..100)))
-                .build()
+                MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 * (i + 1)))
+                    .with_task_id(format!("task-{}", i))
+                    .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(0..100)))
+                    .build()
             })
             .collect::<Vec<_>>();
 
@@ -72,8 +65,11 @@ async fn test_task_dispatch_large() -> DaftResult<()> {
     while let Some(submitted_task) = rx.recv().await {
         let result = submitted_task.await.expect("Task should be completed")?;
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].num_rows().unwrap(), 100 + count);
-        assert_eq!(result[0].size_bytes().unwrap(), Some(1024 * (count + 1)));
+        assert_eq!(result[0].partition().num_rows().unwrap(), 100 + count);
+        assert_eq!(
+            result[0].partition().size_bytes().unwrap(),
+            Some(1024 * (count + 1))
+        );
         count += 1;
     }
     assert_eq!(count, num_tasks);
@@ -101,13 +97,12 @@ async fn test_task_dispatch_concurrent_large() -> DaftResult<()> {
             let mut rng = StdRng::from_entropy();
             let tasks = (0..num_tasks_per_worker)
                 .map(|i| {
-                    MockTaskBuilder::new(
-                        SchedulingStrategy::Spread,
-                        create_mock_partition_ref(100 + i, 1024 * (i + 1)),
-                    )
-                    .with_task_id(format!("task-{}-from-{}", i, worker_id))
-                    .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(0..100)))
-                    .build()
+                    MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 * (i + 1)))
+                        .with_task_id(format!("task-{}-from-{}", i, worker_id))
+                        .with_sleep_duration(std::time::Duration::from_millis(
+                            rng.gen_range(0..100),
+                        ))
+                        .build()
                 })
                 .collect::<Vec<_>>();
 
@@ -124,8 +119,11 @@ async fn test_task_dispatch_concurrent_large() -> DaftResult<()> {
     while let Some((i, submitted_task)) = rx.recv().await {
         let result = submitted_task.await.expect("Task should be completed")?;
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].num_rows().unwrap(), 100 + i);
-        assert_eq!(result[0].size_bytes().unwrap(), Some(1024 * (i + 1)));
+        assert_eq!(result[0].partition().num_rows().unwrap(), 100 + i);
+        assert_eq!(
+            result[0].partition().size_bytes().unwrap(),
+            Some(1024 * (i + 1))
+        );
         count += 1;
     }
     assert_eq!(count, num_tasks_per_worker * num_concurrent_workers);
@@ -144,13 +142,10 @@ async fn test_task_cancel_basic() -> DaftResult<()> {
 
     let (cancel_tx, cancel_rx) = create_oneshot_channel();
 
-    let task = MockTaskBuilder::new(
-        SchedulingStrategy::Spread,
-        create_mock_partition_ref(100, 1024),
-    )
-    .with_cancel_notifier(cancel_tx)
-    .with_sleep_duration(std::time::Duration::from_secs(60))
-    .build();
+    let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+        .with_cancel_notifier(cancel_tx)
+        .with_sleep_duration(std::time::Duration::from_secs(60))
+        .build();
 
     let submitted_task = test_context.handle().submit_task(task).await?;
     drop(submitted_task);
@@ -179,14 +174,11 @@ async fn test_task_cancel_large() -> DaftResult<()> {
             .into_iter()
             .enumerate()
             .map(|(i, tx)| {
-                MockTaskBuilder::new(
-                    SchedulingStrategy::Spread,
-                    create_mock_partition_ref(100, 1024),
-                )
-                .with_task_id(format!("task-{}", i))
-                .with_sleep_duration(std::time::Duration::from_secs(60))
-                .with_cancel_notifier(tx)
-                .build()
+                MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+                    .with_task_id(format!("task-{}", i))
+                    .with_sleep_duration(std::time::Duration::from_secs(60))
+                    .with_cancel_notifier(tx)
+                    .build()
             })
             .collect::<Vec<_>>();
 
@@ -218,12 +210,9 @@ async fn test_task_error_basic() -> DaftResult<()> {
         Box::new(DefaultScheduler::new()),
     )?;
 
-    let task = MockTaskBuilder::new(
-        SchedulingStrategy::Spread,
-        create_mock_partition_ref(100, 1024),
-    )
-    .with_failure(MockTaskFailure::Error("test error".to_string()))
-    .build();
+    let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+        .with_failure(MockTaskFailure::Error("test error".to_string()))
+        .build();
 
     let submitted_task = test_context.handle().submit_task(task).await?;
     let result = submitted_task.await.expect("Task should be completed");
@@ -244,16 +233,43 @@ async fn test_task_panic_basic() -> DaftResult<()> {
         Box::new(DefaultScheduler::new()),
     )?;
 
-    let task = MockTaskBuilder::new(
-        SchedulingStrategy::Spread,
-        create_mock_partition_ref(100, 1024),
-    )
-    .with_failure(MockTaskFailure::Panic("test panic".to_string()))
-    .build();
+    let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+        .with_failure(MockTaskFailure::Panic("test panic".to_string()))
+        .build();
 
     let submitted_task = test_context.handle().submit_task(task).await?;
     let result = submitted_task.await;
     assert!(result.is_none());
+
+    let text_context_result = test_context.cleanup().await;
+    assert!(text_context_result.is_err());
+    assert_eq!(
+        text_context_result.err().unwrap().to_string(),
+        "DaftError::External task 2 panicked with message \"test panic\""
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_dispatcher_drops_if_task_panics() -> DaftResult<()> {
+    let test_context = TestContext::new(
+        vec![("worker1".to_string(), 1)],
+        Box::new(DefaultScheduler::new()),
+    )?;
+
+    let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+        .with_failure(MockTaskFailure::Panic("test panic".to_string()))
+        .build();
+
+    let submitted_task = test_context.handle().submit_task(task).await?;
+    let result = submitted_task.await;
+    assert!(result.is_none());
+
+    let new_task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024)).build();
+
+    let submitted_task = test_context.handle().submit_task(new_task).await;
+    assert!(submitted_task.is_err());
 
     let text_context_result = test_context.cleanup().await;
     assert!(text_context_result.is_err());

@@ -11,8 +11,8 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    materialize::materialize_all_pipeline_outputs, DistributedPipelineNode, PipelineOutput,
-    RunningPipelineNode,
+    materialize::materialize_all_pipeline_outputs, DistributedPipelineNode, MaterializedOutput,
+    PipelineOutput, RunningPipelineNode,
 };
 use crate::{
     scheduling::{
@@ -65,7 +65,7 @@ impl LimitNode {
             materialize_all_pipeline_outputs(input, task_dispatcher_handle.clone());
         while let Some(partition_ref) = materialized_result_stream.next().await {
             let partition_ref = partition_ref?;
-            let num_rows = partition_ref.num_rows()?;
+            let num_rows = partition_ref.partition().num_rows()?;
             let (to_send, should_break) = match num_rows.cmp(&remaining_limit) {
                 Ordering::Less => {
                     remaining_limit -= num_rows;
@@ -150,12 +150,13 @@ impl TreeDisplay for LimitNode {
 }
 
 fn make_task_with_limit(
-    partition_ref: PartitionRef,
+    materialized_output: MaterializedOutput,
     limit: usize,
     node_id: usize,
     schema: SchemaRef,
     config: Arc<DaftExecutionConfig>,
 ) -> DaftResult<SwordfishTask> {
+    let (partition, worker_id) = materialized_output.into_inner();
     let in_memory_info = InMemoryInfo::new(schema, node_id.to_string(), None, 1, 0, 0, None, None);
 
     let in_memory_source =
@@ -165,8 +166,16 @@ fn make_task_with_limit(
         LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
 
     let mut mpset = HashMap::new();
-    mpset.insert(node_id.to_string(), vec![partition_ref]);
+    mpset.insert(node_id.to_string(), vec![partition]);
 
-    let task = SwordfishTask::new(limit_plan, config, mpset, SchedulingStrategy::Spread);
+    let task = SwordfishTask::new(
+        limit_plan,
+        config,
+        mpset,
+        SchedulingStrategy::NodeAffinity {
+            node_id: worker_id,
+            soft: true,
+        },
+    );
     Ok(task)
 }

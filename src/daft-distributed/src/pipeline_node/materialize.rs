@@ -1,13 +1,11 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 use futures::{Stream, StreamExt};
 
+use super::MaterializedOutput;
 use crate::{
     pipeline_node::PipelineOutput,
     scheduling::{
-        dispatcher::{SubmittedTask, TaskDispatcherHandle, TaskDispatcherHandleRef},
+        dispatcher::{SubmittedTask, TaskDispatcherHandleRef},
         task::Task,
     },
     utils::{
@@ -20,9 +18,9 @@ use crate::{
 pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static,
     task_dispatcher_handle: TaskDispatcherHandleRef<T>,
-) -> impl Stream<Item = DaftResult<PartitionRef>> {
+) -> impl Stream<Item = DaftResult<MaterializedOutput>> {
     enum FinalizedTask {
-        Materialized(PartitionRef),
+        Materialized(MaterializedOutput),
         Running(SubmittedTask),
     }
 
@@ -40,28 +38,19 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                 }
             };
 
-            let finalized_tasks = match pipeline_output {
+            let finalized_task = match pipeline_output {
                 // If the pipeline output is a materialized partition, we can just send it through the channel
-                PipelineOutput::Materialized(partition) => {
-                    vec![FinalizedTask::Materialized(partition)]
-                }
+                PipelineOutput::Materialized(partition) => FinalizedTask::Materialized(partition),
                 // If the pipeline output is a task, we need to submit it to the task dispatcher
-                PipelineOutput::Tasks(tasks) => {
-                    let submitted_tasks = task_dispatcher_handle.submit_many_tasks(tasks).await?;
-                    submitted_tasks
-                        .into_iter()
-                        .map(FinalizedTask::Running)
-                        .collect()
+                PipelineOutput::Task(task) => {
+                    let submitted_task = task_dispatcher_handle.submit_task(task).await?;
+                    FinalizedTask::Running(submitted_task)
                 }
                 // If the task is already running, we can just send it through the channel
-                PipelineOutput::Running(submitted_task) => {
-                    vec![FinalizedTask::Running(submitted_task)]
-                }
+                PipelineOutput::Running(submitted_task) => FinalizedTask::Running(submitted_task),
             };
-            for finalized_task in finalized_tasks {
-                if tx.send(Ok(finalized_task)).await.is_err() {
-                    break;
-                }
+            if tx.send(Ok(finalized_task)).await.is_err() {
+                break;
             }
         }
         Ok(())
@@ -69,36 +58,34 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
 
     async fn task_materializer(
         mut finalized_tasks_receiver: Receiver<DaftResult<FinalizedTask>>,
-        tx: Sender<PartitionRef>,
-        max_concurrent_tasks: AtomicUsize,
+        tx: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: OrderedJoinSet<Option<DaftResult<Vec<PartitionRef>>>> =
+        let mut pending_tasks: OrderedJoinSet<Option<DaftResult<Vec<MaterializedOutput>>>> =
             OrderedJoinSet::new();
         loop {
             let num_pending = pending_tasks.num_pending();
-            let max_concurrent_tasks = max_concurrent_tasks.load(Ordering::Relaxed);
 
             tokio::select! {
                 biased;
+                Some(finalized_task) = finalized_tasks_receiver.recv() => {
+                    let finalized_task = finalized_task?;
+                    match finalized_task {
+                        FinalizedTask::Materialized(materialized_output) => {
+                            pending_tasks.spawn(async move { Some(Ok(vec![materialized_output])) });
+                        }
+                        FinalizedTask::Running(submitted_task) => {
+                            pending_tasks.spawn(submitted_task);
+                        }
+                    }
+                }
                 Some(result) = pending_tasks.join_next(), if num_pending > 0 => {
                     let result = result?;
                     if let Some(result) = result {
                         let result = result?;
-                        for partition in result {
-                            if tx.send(partition).await.is_err() {
+                        for materialized_output in result {
+                            if tx.send(materialized_output).await.is_err() {
                                 break;
                             }
-                        }
-                    }
-                }
-                Some(finalized_task) = finalized_tasks_receiver.recv(), if num_pending < max_concurrent_tasks => {
-                    let finalized_task = finalized_task?;
-                    match finalized_task {
-                        FinalizedTask::Materialized(partition) => {
-                            pending_tasks.spawn(async move { Some(Ok(vec![partition])) });
-                        }
-                        FinalizedTask::Running(submitted_task) => {
-                            pending_tasks.spawn(submitted_task);
                         }
                     }
                 }
@@ -114,8 +101,6 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     let (finalized_tasks_sender, finalized_tasks_receiver) = create_channel(1);
     let (materialized_results_sender, materialized_results_receiver) = create_channel(1);
 
-    let max_concurrent_tasks = AtomicUsize::new(100);
-
     let mut joinset = JoinSet::new();
     joinset.spawn(task_finalizer(
         input,
@@ -125,7 +110,6 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     joinset.spawn(task_materializer(
         finalized_tasks_receiver,
         materialized_results_sender,
-        max_concurrent_tasks,
     ));
 
     let materialized_result_stream =
@@ -143,35 +127,22 @@ pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
             + Unpin
             + 'static,
         tx: Sender<PipelineOutput<T>>,
-        max_concurrent_tasks: AtomicUsize,
     ) -> DaftResult<()> {
         let mut pending_tasks: OrderedJoinSet<Option<DaftResult<Vec<PipelineOutput<T>>>>> =
             OrderedJoinSet::new();
         loop {
             let num_pending = pending_tasks.num_pending();
-            let max_concurrent_tasks = max_concurrent_tasks.load(Ordering::Relaxed);
 
             tokio::select! {
                 biased;
-                Some(result) = pending_tasks.join_next(), if num_pending > 0 => {
-                    let result = result?;
-                    if let Some(result) = result {
-                        let result = result?;
-                        for pipeline_output in result {
-                            if tx.send(pipeline_output).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-                Some(pipeline_output) = pipeline_output_stream.next(), if num_pending < max_concurrent_tasks => {
+                Some(pipeline_output) = pipeline_output_stream.next() => {
                     let pipeline_output = pipeline_output?;
                     match pipeline_output {
                         PipelineOutput::Materialized(partition) => {
                             pending_tasks.spawn(async move { Some(Ok(vec![PipelineOutput::Materialized(partition)])) });
                         }
-                        PipelineOutput::Tasks(tasks) => {
-                            pending_tasks.spawn(async move { Some(Ok(vec![PipelineOutput::Tasks(tasks)])) });
+                        PipelineOutput::Task(tasks) => {
+                            pending_tasks.spawn(async move { Some(Ok(vec![PipelineOutput::Task(tasks)])) });
                         }
                         PipelineOutput::Running(submitted_task) => {
                             pending_tasks.spawn(async move {
@@ -189,6 +160,17 @@ pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
                         }
                     }
                 }
+                Some(result) = pending_tasks.join_next(), if num_pending > 0 => {
+                    let result = result?;
+                    if let Some(result) = result {
+                        let result = result?;
+                        for pipeline_output in result {
+                            if tx.send(pipeline_output).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
                 else => {
                     break;
                 }
@@ -200,7 +182,7 @@ pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
 
     let (tx, rx) = create_channel(1);
     let mut joinset = JoinSet::new();
-    joinset.spawn(result_awaiter(input, tx, AtomicUsize::new(100)));
+    joinset.spawn(result_awaiter(input, tx));
     let output_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
     JoinableForwardingStream::new(output_stream, joinset)
 }
@@ -244,7 +226,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Create and submit a mock task
-        let task = MockTaskBuilder::new(SchedulingStrategy::Spread, partitions[2].clone())
+        let task = MockTaskBuilder::new(partitions[2].clone())
             .with_task_id("test-task".to_string())
             .with_sleep_duration(Duration::from_millis(50))
             .build();
@@ -252,14 +234,16 @@ mod tests {
 
         // Create input stream with different pipeline output types
         let inputs = vec![
-            Ok(PipelineOutput::Materialized(partitions[0].clone())),
-            Ok(PipelineOutput::Tasks(vec![MockTaskBuilder::new(
-                SchedulingStrategy::Spread,
-                partitions[1].clone(),
-            )
-            .with_task_id("test-task-2".to_string())
-            .with_sleep_duration(Duration::from_millis(100))
-            .build()])),
+            Ok(PipelineOutput::Materialized(MaterializedOutput::new(
+                partitions[0].clone(),
+                "".to_string(),
+            ))),
+            Ok(PipelineOutput::Task(
+                MockTaskBuilder::new(partitions[1].clone())
+                    .with_task_id("test-task-2".to_string())
+                    .with_sleep_duration(Duration::from_millis(100))
+                    .build(),
+            )),
             Ok(PipelineOutput::Running(submitted_task)),
         ];
 
@@ -271,10 +255,16 @@ mod tests {
 
         // Verify results
         assert_eq!(results.len(), 3);
-        for (i, partition) in results.iter().enumerate() {
-            let partition = partition.as_ref().expect("Result should be Ok");
-            assert_eq!(partition.num_rows()?, partition_rows_and_bytes[i].0);
-            assert_eq!(partition.size_bytes()?, Some(partition_rows_and_bytes[i].1));
+        for (i, materialized_output) in results.iter().enumerate() {
+            let materialized_output = materialized_output.as_ref().expect("Result should be Ok");
+            assert_eq!(
+                materialized_output.partition().num_rows()?,
+                partition_rows_and_bytes[i].0
+            );
+            assert_eq!(
+                materialized_output.partition().size_bytes()?,
+                Some(partition_rows_and_bytes[i].1)
+            );
         }
 
         test_context.cleanup().await?;
@@ -310,31 +300,29 @@ mod tests {
                 match which_pipeline_output {
                     0 => {
                         // Materialized output
-                        let pipeline_output =
-                            Ok(PipelineOutput::Materialized(partitions[i].clone()));
+                        let pipeline_output = Ok(PipelineOutput::Materialized(
+                            MaterializedOutput::new(partitions[i].clone(), "".to_string()),
+                        ));
                         tx.send(pipeline_output).await.unwrap();
                     }
                     1 => {
                         // Tasks output - shorter duration
                         let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
-                        let pipeline_output =
-                            Ok(PipelineOutput::Tasks(vec![MockTaskBuilder::new(
-                                SchedulingStrategy::Spread,
-                                partitions[i].clone(),
-                            )
-                            .with_task_id(format!("test-task-{}", i))
-                            .with_sleep_duration(sleep_duration)
-                            .build()]));
+                        let pipeline_output = Ok(PipelineOutput::Task(
+                            MockTaskBuilder::new(partitions[i].clone())
+                                .with_task_id(format!("test-task-{}", i))
+                                .with_sleep_duration(sleep_duration)
+                                .build(),
+                        ));
                         tx.send(pipeline_output).await.unwrap();
                     }
                     2 => {
                         // Running output - longer duration
                         let sleep_duration = Duration::from_millis(rng.gen_range(200..500));
-                        let task =
-                            MockTaskBuilder::new(SchedulingStrategy::Spread, partitions[i].clone())
-                                .with_task_id(format!("test-running-task-{}", i))
-                                .with_sleep_duration(sleep_duration)
-                                .build();
+                        let task = MockTaskBuilder::new(partitions[i].clone())
+                            .with_task_id(format!("test-running-task-{}", i))
+                            .with_sleep_duration(sleep_duration)
+                            .build();
                         let submitted_task = handle.submit_task(task).await?;
                         let pipeline_output = Ok(PipelineOutput::Running(submitted_task));
                         tx.send(pipeline_output).await.unwrap();
@@ -354,10 +342,16 @@ mod tests {
 
         // Verify results
         assert_eq!(results.len(), num_partitions);
-        for (i, partition) in results.iter().enumerate() {
-            let partition = partition.as_ref().expect("Result should be Ok");
-            assert_eq!(partition.num_rows()?, partition_rows_and_bytes[i].0);
-            assert_eq!(partition.size_bytes()?, Some(partition_rows_and_bytes[i].1));
+        for (i, materialized_output) in results.iter().enumerate() {
+            let materialized_output = materialized_output.as_ref().expect("Result should be Ok");
+            assert_eq!(
+                materialized_output.partition().num_rows()?,
+                partition_rows_and_bytes[i].0
+            );
+            assert_eq!(
+                materialized_output.partition().size_bytes()?,
+                Some(partition_rows_and_bytes[i].1)
+            );
         }
 
         test_context.cleanup().await?;
@@ -421,31 +415,29 @@ mod tests {
                 let which_pipeline_output = owned_output_types[i];
                 match which_pipeline_output {
                     0 => {
-                        let pipeline_output =
-                            Ok(PipelineOutput::Materialized(partitions[i].clone()));
+                        let pipeline_output = Ok(PipelineOutput::Materialized(
+                            MaterializedOutput::new(partitions[i].clone(), "".to_string()),
+                        ));
                         if tx.send(pipeline_output).await.is_err() {
                             break;
                         }
                     }
                     1 => {
-                        let pipeline_output =
-                            Ok(PipelineOutput::Tasks(vec![MockTaskBuilder::new(
-                                SchedulingStrategy::Spread,
-                                partitions[i].clone(),
-                            )
-                            .with_task_id(format!("test-task-{}", i))
-                            .with_sleep_duration(Duration::from_millis(100))
-                            .build()]));
+                        let pipeline_output = Ok(PipelineOutput::Task(
+                            MockTaskBuilder::new(partitions[i].clone())
+                                .with_task_id(format!("test-task-{}", i))
+                                .with_sleep_duration(Duration::from_millis(100))
+                                .build(),
+                        ));
                         if tx.send(pipeline_output).await.is_err() {
                             break;
                         }
                     }
                     2 => {
-                        let task =
-                            MockTaskBuilder::new(SchedulingStrategy::Spread, partitions[i].clone())
-                                .with_task_id(format!("test-running-task-{}", i))
-                                .with_sleep_duration(Duration::from_millis(100))
-                                .build();
+                        let task = MockTaskBuilder::new(partitions[i].clone())
+                            .with_task_id(format!("test-running-task-{}", i))
+                            .with_sleep_duration(Duration::from_millis(100))
+                            .build();
                         let submitted_task = handle.submit_task(task).await?;
                         let pipeline_output = Ok(PipelineOutput::Running(submitted_task));
                         if tx.send(pipeline_output).await.is_err() {
@@ -519,7 +511,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Create and submit a mock task
-        let task = MockTaskBuilder::new(SchedulingStrategy::Spread, partitions[2].clone())
+        let task = MockTaskBuilder::new(partitions[2].clone())
             .with_task_id("test-task".to_string())
             .with_sleep_duration(Duration::from_millis(50))
             .build();
@@ -527,14 +519,16 @@ mod tests {
 
         // Create input stream with different pipeline output types
         let inputs = vec![
-            Ok(PipelineOutput::Materialized(partitions[0].clone())),
-            Ok(PipelineOutput::Tasks(vec![MockTaskBuilder::new(
-                SchedulingStrategy::Spread,
-                partitions[1].clone(),
-            )
-            .with_task_id("test-task-2".to_string())
-            .with_sleep_duration(Duration::from_millis(100))
-            .build()])),
+            Ok(PipelineOutput::Materialized(MaterializedOutput::new(
+                partitions[0].clone(),
+                "".to_string(),
+            ))),
+            Ok(PipelineOutput::Task(
+                MockTaskBuilder::new(partitions[1].clone())
+                    .with_task_id("test-task-2".to_string())
+                    .with_sleep_duration(Duration::from_millis(100))
+                    .build(),
+            )),
             Ok(PipelineOutput::Running(submitted_task)),
         ];
 
@@ -548,18 +542,23 @@ mod tests {
 
         // Check that the first result is a materialized partition
         match &results[0] {
-            Ok(PipelineOutput::Materialized(partition)) => {
-                assert_eq!(partition.num_rows()?, partition_rows_and_bytes[0].0);
-                assert_eq!(partition.size_bytes()?, Some(partition_rows_and_bytes[0].1));
+            Ok(PipelineOutput::Materialized(materialized_output)) => {
+                assert_eq!(
+                    materialized_output.partition().num_rows()?,
+                    partition_rows_and_bytes[0].0
+                );
+                assert_eq!(
+                    materialized_output.partition().size_bytes()?,
+                    Some(partition_rows_and_bytes[0].1)
+                );
             }
             _ => panic!("Expected Materialized output"),
         }
 
         // Check that the second result is a tasks output
         match &results[1] {
-            Ok(PipelineOutput::Tasks(tasks)) => {
-                assert_eq!(tasks.len(), 1);
-                assert_eq!(tasks[0].task_id(), "test-task-2");
+            Ok(PipelineOutput::Task(task)) => {
+                assert_eq!(task.task_id(), "test-task-2");
                 // Tasks should pass through
             }
             _ => panic!("Expected Tasks output"),
@@ -567,9 +566,15 @@ mod tests {
 
         // Check that the third result is materialized (from the Running task)
         match &results[2] {
-            Ok(PipelineOutput::Materialized(partition)) => {
-                assert_eq!(partition.num_rows()?, partition_rows_and_bytes[2].0);
-                assert_eq!(partition.size_bytes()?, Some(partition_rows_and_bytes[2].1));
+            Ok(PipelineOutput::Materialized(materialized_output)) => {
+                assert_eq!(
+                    materialized_output.partition().num_rows()?,
+                    partition_rows_and_bytes[2].0
+                );
+                assert_eq!(
+                    materialized_output.partition().size_bytes()?,
+                    Some(partition_rows_and_bytes[2].1)
+                );
             }
             _ => panic!("Expected Materialized output from Running task"),
         }
@@ -616,31 +621,29 @@ mod tests {
                 match which_pipeline_output {
                     0 => {
                         // Materialized output
-                        let pipeline_output =
-                            Ok(PipelineOutput::Materialized(partitions[i].clone()));
+                        let pipeline_output = Ok(PipelineOutput::Materialized(
+                            MaterializedOutput::new(partitions[i].clone(), "".to_string()),
+                        ));
                         tx.send(pipeline_output).await.unwrap();
                     }
                     1 => {
                         // Tasks output - shorter duration
                         let sleep_duration = Duration::from_millis(rng.gen_range(100..300)); // Shorter for test speed
-                        let pipeline_output =
-                            Ok(PipelineOutput::Tasks(vec![MockTaskBuilder::new(
-                                SchedulingStrategy::Spread,
-                                partitions[i].clone(),
-                            )
-                            .with_task_id(format!("test-task-{}", i))
-                            .with_sleep_duration(sleep_duration)
-                            .build()]));
+                        let pipeline_output = Ok(PipelineOutput::Task(
+                            MockTaskBuilder::new(partitions[i].clone())
+                                .with_task_id(format!("test-task-{}", i))
+                                .with_sleep_duration(sleep_duration)
+                                .build(),
+                        ));
                         tx.send(pipeline_output).await.unwrap();
                     }
                     2 => {
                         // Running output - longer duration
                         let sleep_duration = Duration::from_millis(rng.gen_range(200..500)); // Shorter for test speed
-                        let task =
-                            MockTaskBuilder::new(SchedulingStrategy::Spread, partitions[i].clone())
-                                .with_task_id(format!("test-running-task-{}", i))
-                                .with_sleep_duration(sleep_duration)
-                                .build();
+                        let task = MockTaskBuilder::new(partitions[i].clone())
+                            .with_task_id(format!("test-running-task-{}", i))
+                            .with_sleep_duration(sleep_duration)
+                            .build();
                         let submitted_task = handle.submit_task(task).await?;
                         let pipeline_output = Ok(PipelineOutput::Running(submitted_task));
                         tx.send(pipeline_output).await.unwrap();
@@ -667,13 +670,19 @@ mod tests {
         for (i, result) in results.iter().enumerate() {
             let result = result.as_ref().expect("Result should be Ok");
             match result {
-                PipelineOutput::Materialized(partition) => {
-                    assert_eq!(partition.num_rows()?, partition_rows_and_bytes[i].0);
-                    assert_eq!(partition.size_bytes()?, Some(partition_rows_and_bytes[i].1));
+                PipelineOutput::Materialized(materialized_output) => {
+                    assert_eq!(
+                        materialized_output.partition().num_rows()?,
+                        partition_rows_and_bytes[i].0
+                    );
+                    assert_eq!(
+                        materialized_output.partition().size_bytes()?,
+                        Some(partition_rows_and_bytes[i].1)
+                    );
                     // Either it was already materialized (type 0) or it was a running task (type 2)
                     assert!(output_types[i] == 0 || output_types[i] == 2);
                 }
-                PipelineOutput::Tasks(_) => {
+                PipelineOutput::Task(_) => {
                     // Only Tasks outputs should remain Tasks
                     assert_eq!(output_types[i], 1);
                 }
@@ -744,31 +753,29 @@ mod tests {
                 let which_pipeline_output = owned_output_types[i];
                 match which_pipeline_output {
                     0 => {
-                        let pipeline_output =
-                            Ok(PipelineOutput::Materialized(partitions[i].clone()));
+                        let pipeline_output = Ok(PipelineOutput::Materialized(
+                            MaterializedOutput::new(partitions[i].clone(), "".to_string()),
+                        ));
                         if tx.send(pipeline_output).await.is_err() {
                             break;
                         }
                     }
                     1 => {
-                        let pipeline_output =
-                            Ok(PipelineOutput::Tasks(vec![MockTaskBuilder::new(
-                                SchedulingStrategy::Spread,
-                                partitions[i].clone(),
-                            )
-                            .with_task_id(format!("test-task-{}", i))
-                            .with_sleep_duration(Duration::from_millis(100))
-                            .build()]));
+                        let pipeline_output = Ok(PipelineOutput::Task(
+                            MockTaskBuilder::new(partitions[i].clone())
+                                .with_task_id(format!("test-task-{}", i))
+                                .with_sleep_duration(Duration::from_millis(100))
+                                .build(),
+                        ));
                         if tx.send(pipeline_output).await.is_err() {
                             break;
                         }
                     }
                     2 => {
-                        let task =
-                            MockTaskBuilder::new(SchedulingStrategy::Spread, partitions[i].clone())
-                                .with_task_id(format!("test-running-task-{}", i))
-                                .with_sleep_duration(Duration::from_millis(100))
-                                .build();
+                        let task = MockTaskBuilder::new(partitions[i].clone())
+                            .with_task_id(format!("test-running-task-{}", i))
+                            .with_sleep_duration(Duration::from_millis(100))
+                            .build();
                         let submitted_task = handle.submit_task(task).await?;
                         let pipeline_output = Ok(PipelineOutput::Running(submitted_task));
                         if tx.send(pipeline_output).await.is_err() {
