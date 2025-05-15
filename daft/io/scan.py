@@ -27,6 +27,13 @@ def make_partition_field(
 
 
 class ScanOperator(abc.ABC):
+    """ScanOperator is the legacy python DataSource ABC and is being migrated to daft.io.source.DataSource.
+
+    In Daft 0.5.0 we will change the pushdown parameter from daft.daft.Pushdowns to
+    daft.io.Pushdowns. For now, please use `Pushdowns._from_pypushdowns(py_pushdowns)`
+    to convert the rust expressions to this python pushdowns class.
+    """
+
     @abc.abstractmethod
     def schema(self) -> Schema:
         """Returns the schema of the data source."""

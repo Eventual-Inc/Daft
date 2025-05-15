@@ -1190,6 +1190,11 @@ class Expression:
         expr = self._expr.any_value(ignore_nulls)
         return Expression._from_pyexpr(expr)
 
+    def skew(self) -> Expression:
+        """Calculates the skewness of the values from the expression."""
+        expr = self._expr.skew()
+        return Expression._from_pyexpr(expr)
+
     def agg_list(self) -> Expression:
         """Aggregates the values in the expression into a list."""
         expr = self._expr.agg_list()
@@ -4676,7 +4681,10 @@ class ExpressionJsonNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.json_query(self._expr, jq_query))
+        f = native.get_function_from_registry("json_query")
+        query = Expression._to_expression(jq_query)._expr
+
+        return Expression._from_pyexpr(f(self._expr, query=query))
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):

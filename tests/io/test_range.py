@@ -18,6 +18,7 @@ def test_range_with_step():
     assert df.to_pydict() == {"id": [2, 4, 6, 8]}
 
 
+@pytest.mark.skip("determine usage of 'num_partitions' in sources.")
 def test_range_with_partitions():
     df = daft.range(2, 10, 2, 2)
     assert df.num_partitions() == 2

@@ -47,6 +47,8 @@ pub enum PhysicalPlan {
     DeltaLakeWrite(DeltaLakeWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    #[cfg(feature = "python")]
+    DataSink(DataSink),
 }
 
 impl PhysicalPlan {
@@ -194,9 +196,10 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
             #[cfg(feature = "python")]
-            Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
-            }
+            Self::IcebergWrite(_)
+            | Self::DeltaLakeWrite(_)
+            | Self::LanceWrite(_)
+            | Self::DataSink(_) => ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into(),
         }
     }
 
@@ -377,9 +380,10 @@ impl PhysicalPlan {
                 ApproxStats::empty()
             }
             #[cfg(feature = "python")]
-            Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
-                ApproxStats::empty()
-            }
+            Self::IcebergWrite(_)
+            | Self::DeltaLakeWrite(_)
+            | Self::LanceWrite(_)
+            | Self::DataSink(_) => ApproxStats::empty(),
         }
     }
 
@@ -408,6 +412,8 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![input],
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { input, .. }) => vec![input],
+            #[cfg(feature = "python")]
+            Self::DataSink(DataSink { input, .. }) => vec![input],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
@@ -458,6 +464,8 @@ impl PhysicalPlan {
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
+                #[cfg(feature = "python")]
+                Self::DataSink(DataSink { schema, data_sink_info, .. }) => Self::DataSink(DataSink::new(schema.clone(), data_sink_info.clone(), input.clone())),
                 Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) | Self::CrossJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
@@ -516,6 +524,8 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(..) => "DeltaLakeWrite",
             #[cfg(feature = "python")]
             Self::LanceWrite(..) => "LanceWrite",
+            #[cfg(feature = "python")]
+            Self::DataSink(..) => "DataSinkWrite",
         };
         name.to_string()
     }
@@ -557,6 +567,8 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(delta_lake_info) => delta_lake_info.multiline_display(),
             #[cfg(feature = "python")]
             Self::LanceWrite(lance_info) => lance_info.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::DataSink(data_sink_info) => data_sink_info.multiline_display(),
         }
     }
 

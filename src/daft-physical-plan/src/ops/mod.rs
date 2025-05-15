@@ -5,6 +5,8 @@ mod concat;
 mod cross_join;
 mod csv;
 #[cfg(feature = "python")]
+mod data_sink_write;
+#[cfg(feature = "python")]
 mod deltalake_write;
 mod empty_scan;
 mod explode;
@@ -36,6 +38,8 @@ pub use broadcast_join::BroadcastJoin;
 pub use concat::Concat;
 pub use cross_join::CrossJoin;
 pub use csv::TabularWriteCsv;
+#[cfg(feature = "python")]
+pub use data_sink_write::DataSink;
 #[cfg(feature = "python")]
 pub use deltalake_write::DeltaLakeWrite;
 pub use empty_scan::EmptyScan;
