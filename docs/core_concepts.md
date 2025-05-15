@@ -4,11 +4,13 @@ Learn about the core concepts that Daft is built on!
 
 ## DataFrame
 
+The [`DataFrame`][daft.DataFrame] is the core concept in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
+
 If you are coming from other DataFrame libraries such as Pandas or Polars, here are some key differences about Daft DataFrames:
 
 1. **Distributed:** When running in a distributed cluster, Daft splits your data into smaller "chunks" called *Partitions*. This allows Daft to process your data in parallel across multiple machines, leveraging more resources to work with large datasets.
 
-2. **Lazy:** When you write operations on a DataFrame, Daft doesn't execute them immediately. Instead, it creates a plan (called a query plan) of what needs to be done. This plan is optimized and only executed when you specifically request the results, which can lead to more efficient computations.
+2. **Lazy:** When you write operations on a DataFrame, Daft doesn't execute them immediately. Instead, it creates a plan (called a query plan) of what needs to be done. This plan is optimized and only executed when you specifically request the results ([`.show`][daft.DataFrame.show], [`.collect`][daft.DataFrame.collect]), which can lead to more efficient computations.
 
 3. **Multimodal:** Unlike traditional tables that usually contain simple data types like numbers and text, Daft DataFrames can handle complex data types in its columns. This includes things like images, audio files, or even custom Python objects.
 
@@ -355,17 +357,19 @@ We can limit the rows to the first ``N`` rows using [`df.limit(N)`][daft.DataFra
 
 ``` {title="Output"}
 
-+---------+---------+
-|       A |       B |
-|   Int64 |   Int64 |
-+=========+=========+
-|       1 |       6 |
-+---------+---------+
-|       2 |       7 |
-+---------+---------+
-|       3 |       8 |
-+---------+---------+
-(Showing first 3 rows)
+╭───────┬───────╮
+│ A     ┆ B     │
+│ ---   ┆ ---   │
+│ Int64 ┆ Int64 │
+╞═══════╪═══════╡
+│ 1     ┆ 6     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 7     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 3     ┆ 8     │
+╰───────┴───────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 We can also filter rows using [`df.where()`][daft.DataFrame.where], which takes an input a Logical Expression predicate:
@@ -377,15 +381,17 @@ We can also filter rows using [`df.where()`][daft.DataFrame.where], which takes 
 
 ``` {title="Output"}
 
-+---------+---------+
-|       A |       B |
-|   Int64 |   Int64 |
-+=========+=========+
-|       4 |       9 |
-+---------+---------+
-|       5 |      10 |
-+---------+---------+
-(Showing first 2 rows)
+╭───────┬───────╮
+│ A     ┆ B     │
+│ ---   ┆ ---   │
+│ Int64 ┆ Int64 │
+╞═══════╪═══════╡
+│ 4     ┆ 9     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 5     ┆ 10    │
+╰───────┴───────╯
+
+(Showing first 2 of 2 rows)
 ```
 
 ### Selecting Columns
@@ -403,17 +409,16 @@ Select specific columns in a DataFrame using [`df.select()`][daft.DataFrame.sele
 
 ``` {title="Output"}
 
-+---------+
-|       A |
-|   Int64 |
-+=========+
-|       1 |
-+---------+
-|       2 |
-+---------+
-|       3 |
-+---------+
-(Showing first 3 rows)
+# #00 - Data Access
+
+This Feature-of-the-Week tutorial shows the canonical way of accessing data with Daft.
+
+Daft reads from 3 main data sources:
+1. Files (local and remote)
+2. SQL Databases
+3. Data Catalogs
+
+Let's dive into each type of data access in more detail 🪂
 ```
 
 A useful alias for [`df.select()`][daft.DataFrame.select] is indexing a DataFrame with a list of column names or Expressions:
@@ -425,17 +430,19 @@ A useful alias for [`df.select()`][daft.DataFrame.select] is indexing a DataFram
 
 ``` {title="Output"}
 
-+---------+---------+
-|       A |       B |
-|   Int64 |   Int64 |
-+=========+=========+
-|       1 |       4 |
-+---------+---------+
-|       2 |       5 |
-+---------+---------+
-|       3 |       6 |
-+---------+---------+
-(Showing first 3 rows)
+╭───────┬───────╮
+│ A     ┆ B     │
+│ ---   ┆ ---   │
+│ Int64 ┆ Int64 │
+╞═══════╪═══════╡
+│ 1     ┆ 4     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 5     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 3     ┆ 6     │
+╰───────┴───────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 Sometimes, it may be useful to exclude certain columns from a DataFrame. This can be done with [`df.exclude()`][daft.DataFrame.exclude]:
@@ -447,17 +454,19 @@ Sometimes, it may be useful to exclude certain columns from a DataFrame. This ca
 
 ```{title="Output"}
 
-+---------+
-|       B |
-|   Int64 |
-+=========+
-|       4 |
-+---------+
-|       5 |
-+---------+
-|       6 |
-+---------+
-(Showing first 3 rows)
+╭───────╮
+│ B     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 4     │
+├╌╌╌╌╌╌╌┤
+│ 5     │
+├╌╌╌╌╌╌╌┤
+│ 6     │
+╰───────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 Adding a new column can be achieved with [`df.with_column()`][daft.DataFrame.with_column]:
@@ -469,17 +478,19 @@ Adding a new column can be achieved with [`df.with_column()`][daft.DataFrame.wit
 
 ``` {title="Output"}
 
-+---------+---------+---------+
-|       A |       B |       C |
-|   Int64 |   Int64 |   Int64 |
-+=========+=========+=========+
-|       1 |       4 |       5 |
-+---------+---------+---------+
-|       2 |       5 |       7 |
-+---------+---------+---------+
-|       3 |       6 |       9 |
-+---------+---------+---------+
-(Showing first 3 rows)
+╭───────┬───────┬───────╮
+│ A     ┆ B     ┆ C     │
+│ ---   ┆ ---   ┆ ---   │
+│ Int64 ┆ Int64 ┆ Int64 │
+╞═══════╪═══════╪═══════╡
+│ 1     ┆ 4     ┆ 5     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 5     ┆ 7     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 3     ┆ 6     ┆ 9     │
+╰───────┴───────┴───────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 #### Selecting Columns Using Wildcards
@@ -558,17 +569,19 @@ Daft also supports multi-column joins if you have a join key comprising of multi
 
 ``` {title="Output"}
 
-+---------+---------+---------+
-|       A |       B |       C |
-|   Int64 |   Int64 |   Int64 |
-+=========+=========+=========+
-|       1 |       4 |       7 |
-+---------+---------+---------+
-|       2 |       5 |       8 |
-+---------+---------+---------+
-|       3 |       6 |       9 |
-+---------+---------+---------+
-(Showing first 3 rows)
+╭───────┬───────┬───────╮
+│ A     ┆ B     ┆ C     │
+│ ---   ┆ ---   ┆ ---   │
+│ Int64 ┆ Int64 ┆ Int64 │
+╞═══════╪═══════╪═══════╡
+│ 1     ┆ 4     ┆ 7     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 5     ┆ 8     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 3     ┆ 6     ┆ 9     │
+╰───────┴───────┴───────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 ### Reordering Rows
@@ -587,17 +600,19 @@ Rows in a DataFrame can be reordered based on some column using [`df.sort()`][da
 
 ```{title="Output"}
 
-+---------+---------+
-|       A |       B |
-|   Int64 |   Int64 |
-+=========+=========+
-|       3 |       8 |
-+---------+---------+
-|       2 |       7 |
-+---------+---------+
-|       1 |       6 |
-+---------+---------+
-(Showing first 3 rows)
+╭───────┬───────╮
+│ A     ┆ B     │
+│ ---   ┆ ---   │
+│ Int64 ┆ Int64 │
+╞═══════╪═══════╡
+│ 3     ┆ 8     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 7     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 1     ┆ 6     │
+╰───────┴───────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 ### Numbering Rows
@@ -658,26 +673,28 @@ The [`df.explode()`][daft.DataFrame.explode] method can be used to explode a col
 
 ``` {title="Output"}
 
-+---------+---------+
-|       A |       B |
-|   Int64 |   Int64 |
-+=========+=========+
-|       1 |       1 |
-+---------+---------+
-|       1 |       2 |
-+---------+---------+
-|       1 |       3 |
-+---------+---------+
-|       2 |       4 |
-+---------+---------+
-|       2 |       5 |
-+---------+---------+
-|       2 |       6 |
-+---------+---------+
-|       3 |       7 |
-+---------+---------+
-|       3 |       8 |
-+---------+---------+
+╭───────┬───────╮
+│ A     ┆ B     │
+│ ---   ┆ ---   │
+│ Int64 ┆ Int64 │
+╞═══════╪═══════╡
+│ 1     ┆ 1     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 1     ┆ 2     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 1     ┆ 3     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 4     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 5     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 2     ┆ 6     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 3     ┆ 7     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+│ 3     ┆ 8     │
+╰───────┴───────╯
+
 (Showing first 8 rows)
 ```
 
@@ -696,7 +713,9 @@ A good rule of thumb is to keep the number of partitions as twice the number of 
 
 ## Expressions
 
-Expressions are how you can express computations that should be run over columns of data.
+Expressions are a fundamental concept in Daft that allows you to define computations on DataFrame columns. They are the building blocks for transforming and manipulating data within your DataFrame and will be your best friend if you are working with Daft primarily using the Python API.
+
+For a full list of available expressions, see [Expressions API Docs](api/expressions.md).
 
 ### Creating Expressions
 
@@ -759,7 +778,7 @@ You may find yourself needing to hardcode a "single value" oftentimes as an expr
 
 lit(42)
 ```
-This special :func:`~daft.expressions.lit` expression we just created evaluates always to the value ``42``.
+This special [`lit`][daft.expressions.lit] expression we just created evaluates always to the value ``42``.
 
 #### Wildcard Expressions
 
@@ -787,6 +806,8 @@ You can create expressions on multiple columns at once using a wildcard. The exp
 ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
 │ 9     ┆ 18    │
 ╰───────┴───────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 Wildcards also work very well for accessing all members of a struct column:
@@ -827,31 +848,33 @@ Wildcards also work very well for accessing all members of a struct column:
 
 ``` {title="Output"}
 
-╭──────────┬───────╮
-│ name     ┆ age   │
-│ ---      ┆ ---   │
-│ String   ┆ Int64 │
-╞══════════╪═══════╡
-│ Alice    ┆ 30    │
-├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ Bob      ┆ 25    │
-├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-│ Charlie  ┆ 35    │
-╰──────────┴───────╯
+╭───────┬─────────╮
+│ age   ┆ name    │
+│ ---   ┆ ---     │
+│ Int64 ┆ Utf8    │
+╞═══════╪═════════╡
+│ 30    ┆ Alice   │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 25    ┆ Bob     │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 35    ┆ Charlie │
+╰───────┴─────────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 In this example, we use the wildcard `*` to access all fields of the `person` struct column. This is equivalent to selecting each field individually (`person.name`, `person.age`), but is more concise and flexible, especially when dealing with structs that have many fields.
-
-
 
 ### Composing Expressions
 
 #### Numeric Expressions
 
-Since column "A" is an integer, we can run numeric computation such as addition, division and checking its value. Here are some examples where we create new columns using the results of such computations:
+If column `A` is an integer, we can run numeric computation such as addition, division and checking its value. Here are some examples where we create new columns using the results of such computations:
 
 === "🐍 Python"
     ``` python
+    df = daft.from_pydict({"A": [1, 2, 3]})
+
     # Add 1 to each element in column "A"
     df = df.with_column("A_add_one", df["A"] + 1)
 
@@ -879,16 +902,18 @@ Since column "A" is an integer, we can run numeric computation such as addition,
 
 ```{title="Output"}
 
-+---------+-------------+----------------+-----------+
-|       A |   A_add_one |   A_divide_two | A_gt_1    |
-|   Int64 |       Int64 |        Float64 | Boolean   |
-+=========+=============+================+===========+
-|       1 |           2 |            0.5 | false     |
-+---------+-------------+----------------+-----------+
-|       2 |           3 |            1   | true      |
-+---------+-------------+----------------+-----------+
-|       3 |           4 |            1.5 | true      |
-+---------+-------------+----------------+-----------+
+╭───────┬───────────┬──────────────┬─────────╮
+│ A     ┆ A_add_one ┆ A_divide_two ┆ A_gt_1  │
+│ ---   ┆ ---       ┆ ---          ┆ ---     │
+│ Int64 ┆ Int64     ┆ Float64      ┆ Boolean │
+╞═══════╪═══════════╪══════════════╪═════════╡
+│ 1     ┆ 2         ┆ 0.5          ┆ false   │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 2     ┆ 3         ┆ 1            ┆ true    │
+├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 3     ┆ 4         ┆ 1.5          ┆ true    │
+╰───────┴───────────┴──────────────┴─────────╯
+
 (Showing first 3 of 3 rows)
 ```
 
@@ -908,17 +933,19 @@ Daft also lets you have columns of strings in a DataFrame. Let's take a look!
 
 ``` {title="Output"}
 
-+--------+
-| B      |
-| Utf8   |
-+========+
-| foo    |
-+--------+
-| bar    |
-+--------+
-| baz    |
-+--------+
-(Showing first 3 rows)
+╭──────╮
+│ B    │
+│ ---  │
+│ Utf8 │
+╞══════╡
+│ foo  │
+├╌╌╌╌╌╌┤
+│ bar  │
+├╌╌╌╌╌╌┤
+│ baz  │
+╰──────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 Unlike the numeric types, the string type does not support arithmetic operations such as `*` and `/`. The one exception to this is the `+` operator, which is overridden to concatenate two string expressions as is commonly done in Python. Let's try that!
@@ -937,17 +964,19 @@ Unlike the numeric types, the string type does not support arithmetic operations
 
 ``` {title="Output"}
 
-+--------+--------+
-| B      | B2     |
-| Utf8   | Utf8   |
-+========+========+
-| foo    | foofoo |
-+--------+--------+
-| bar    | barfoo |
-+--------+--------+
-| baz    | bazfoo |
-+--------+--------+
-(Showing first 3 rows)
+╭──────┬────────╮
+│ B    ┆ B2     │
+│ ---  ┆ ---    │
+│ Utf8 ┆ Utf8   │
+╞══════╪════════╡
+│ foo  ┆ foofoo │
+├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ bar  ┆ barfoo │
+├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ baz  ┆ bazfoo │
+╰──────┴────────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 There are also many string operators that are accessed through a separate [`.str.*`][daft.expressions.expressions.ExpressionStringNamespace] "method namespace".
@@ -968,17 +997,19 @@ For example, to check if each element in column "B" contains the substring "a", 
 
 ``` {title="Output"}
 
-+--------+--------+-----------------+
-| B      | B2     | B2_contains_B   |
-| Utf8   | Utf8   | Boolean         |
-+========+========+=================+
-| foo    | foofoo | true            |
-+--------+--------+-----------------+
-| bar    | barfoo | true            |
-+--------+--------+-----------------+
-| baz    | bazfoo | true            |
-+--------+--------+-----------------+
-(Showing first 3 rows)
+╭──────┬────────┬───────────────╮
+│ B    ┆ B2     ┆ B2_contains_B │
+│ ---  ┆ ---    ┆ ---           │
+│ Utf8 ┆ Utf8   ┆ Boolean       │
+╞══════╪════════╪═══════════════╡
+│ foo  ┆ foofoo ┆ true          │
+├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ bar  ┆ barfoo ┆ true          │
+├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ baz  ┆ bazfoo ┆ true          │
+╰──────┴────────┴───────────────╯
+
+(Showing first 3 of 3 rows)
 ```
 
 You may find a full list of string operations in the [Expressions API Reference](api/expressions.md).
@@ -1022,20 +1053,16 @@ Daft provides the [`.url.*`](api/expressions.md#daft.expressions.expressions.Exp
 
 ``` {title="Output"}
 
-+----------------------+----------------------+
-| urls                 | data                 |
-| Utf8                 | Binary               |
-+======================+======================+
-| https://www.google.c | b'<!doctype          |
-| om                   | html><html           |
-|                      | itemscope="" itemtyp |
-|                      | e="http://sche...    |
-+----------------------+----------------------+
-| s3://daft-public-    | b'\xff\xd8\xff\xe0\x |
-| data/open-           | 00\x10JFIF\x00\x01\x |
-| images/validation-   | 01\x01\x00H\x00H\... |
-| images/0001e...      |                      |
-+----------------------+----------------------+
+╭────────────────────────────────┬────────────────────────────────╮
+│ urls                           ┆ data                           │
+│ ---                            ┆ ---                            │
+│ Utf8                           ┆ Binary                         │
+╞════════════════════════════════╪════════════════════════════════╡
+│ https://www.google.com         ┆ b"<!doctype html><html itemsc… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ s3://daft-public-data/open-im… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+╰────────────────────────────────┴────────────────────────────────╯
+
 (Showing first 2 of 2 rows)
 ```
 
@@ -2212,7 +2239,6 @@ Let's first create a dataframe that will be used as a running example throughout
     })
     ```
 
-
 ### Per-column per-row functions using [`.apply()`][daft.expressions.Expression.apply]
 
 You can use [`.apply()`][daft.expressions.Expression.apply] to run a Python function on every row in a column.
@@ -2228,19 +2254,16 @@ For example, the following example creates a new `flattened_image` column by cal
     ```
 
 ``` {title="Output"}
+╭───────────────────────────┬──────────────┬─────────────────────────╮
+│ image                     ┆ crop         ┆ flattened_image         │
+│ ---                       ┆ ---          ┆ ---                     │
+│ Tensor(Float64)           ┆ List[Int64]  ┆ Python                  │
+╞═══════════════════════════╪══════════════╪═════════════════════════╡
+│ <Tensor shape=(128, 128)> ┆ [0, 1, 0, 1] ┆ [1. 1. 1. ... 1. 1. 1.] │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ <Tensor shape=(128, 128)> ┆ [0, 1, 0, 1] ┆ [1. 1. 1. ... 1. 1. 1.] │
+╰───────────────────────────┴──────────────┴─────────────────────────╯
 
-+----------------------+---------------+---------------------+
-| image                | crop          | flattened_image     |
-| Python               | List[Int64]   | Python              |
-+======================+===============+=====================+
-| [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [1. 1. 1. ... 1. 1. |
-| 1.]  [1. 1. 1. ...   |               | 1.]                 |
-| 1. 1. 1.]  [1. 1.... |               |                     |
-+----------------------+---------------+---------------------+
-| [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [1. 1. 1. ... 1. 1. |
-| 1.]  [1. 1. 1. ...   |               | 1.]                 |
-| 1. 1. 1.]  [1. 1.... |               |                     |
-+----------------------+---------------+---------------------+
 (Showing first 2 rows)
 ```
 
@@ -2277,18 +2300,18 @@ For example, let's try writing a function that will crop all our images in the `
 
 ``` {title="Output"}
 
-+----------------------+---------------+--------------------+
-| image                | crop          | cropped            |
-| Python               | List[Int64]   | Python             |
-+======================+===============+====================+
-| [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [[1. 1.]  [1. 1.]] |
-| 1.]  [1. 1. 1. ...   |               |                    |
-| 1. 1. 1.]  [1. 1.... |               |                    |
-+----------------------+---------------+--------------------+
-| [[1. 1. 1. ... 1. 1. | [0, 1, 0, 1]  | [[1. 1.]  [1. 1.]] |
-| 1.]  [1. 1. 1. ...   |               |                    |
-| 1. 1. 1.]  [1. 1.... |               |                    |
-+----------------------+---------------+--------------------+
+╭───────────────────────────┬──────────────┬───────────╮
+│ image                     ┆ crop         ┆ cropped   │
+│ ---                       ┆ ---          ┆ ---       │
+│ Tensor(Float64)           ┆ List[Int64]  ┆ Python    │
+╞═══════════════════════════╪══════════════╪═══════════╡
+│ <Tensor shape=(128, 128)> ┆ [0, 1, 0, 1] ┆ [[1. 1.]  │
+│                           ┆              ┆  [1. 1.]] │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ <Tensor shape=(128, 128)> ┆ [0, 1, 0, 1] ┆ [[1. 1.]  │
+│                           ┆              ┆  [1. 1.]] │
+╰───────────────────────────┴──────────────┴───────────╯
+
 (Showing first 2 rows)
 ```
 
@@ -2406,6 +2429,108 @@ UDFs can also be parametrized with new resource requests after being initialized
     )
     ```
 
+## Multimodal Data
+
+
+Daft is built to work comfortably with multimodal data types, including URLs and images. To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use the [`daft.col()`][daft.expressions.col] mentioned earlier with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
+
+
+=== "🐍 Python"
+
+    ```python
+    # Read parquet file containing sample dog owners
+    df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
+
+    # Combine "first_name" and "last_name" to create new column "full_name"
+    df = df.with_column("full_name", daft.col("first_name") + " " + daft.col("last_name"))
+    df.select("full_name", "age", "country", "has_dog").show()
+
+    # Create dataframe of dogs
+    df_dogs = daft.from_pydict(
+        {
+            "urls": [
+                "https://live.staticflickr.com/65535/53671838774_03ba68d203_o.jpg",
+                "https://live.staticflickr.com/65535/53671700073_2c9441422e_o.jpg",
+                "https://live.staticflickr.com/65535/53670606332_1ea5f2ce68_o.jpg",
+                "https://live.staticflickr.com/65535/53671838039_b97411a441_o.jpg",
+                "https://live.staticflickr.com/65535/53671698613_0230f8af3c_o.jpg",
+            ],
+            "full_name": [
+                "Ernesto Evergreen",
+                "James Jale",
+                "Wolfgang Winter",
+                "Shandra Shamas",
+                "Zaya Zaphora",
+            ],
+            "dog_name": ["Ernie", "Jackie", "Wolfie", "Shaggie", "Zadie"],
+        }
+    )
+
+    # Join owners with dogs, dropping some columns
+    df_family = df.join(df_dogs, on="full_name").exclude("first_name", "last_name", "DoB", "country", "age")
+    df_family.show()
+    ```
+
+```{title="Output"}
+╭───────────────────┬─────────┬────────────────────────────────┬──────────╮
+│ full_name         ┆ has_dog ┆ urls                           ┆ dog_name │
+│ ---               ┆ ---     ┆ ---                            ┆ ---      │
+│ Utf8              ┆ Boolean ┆ Utf8                           ┆ Utf8     │
+╞═══════════════════╪═════════╪════════════════════════════════╪══════════╡
+│ Wolfgang Winter   ┆ None    ┆ https://live.staticflickr.com… ┆ Wolfie   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ Shandra Shamas    ┆ true    ┆ https://live.staticflickr.com… ┆ Shaggie  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ Zaya Zaphora      ┆ true    ┆ https://live.staticflickr.com… ┆ Zadie    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ Ernesto Evergreen ┆ true    ┆ https://live.staticflickr.com… ┆ Ernie    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ James Jale        ┆ true    ┆ https://live.staticflickr.com… ┆ Jackie   │
+╰───────────────────┴─────────┴────────────────────────────────┴──────────╯
+
+(Showing first 5 of 5 rows)
+```
+
+You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
+
+<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
+
+=== "🐍 Python"
+
+    ```python
+    df_family = df_family.with_column("image_bytes", df_dogs["urls"].url.download(on_error="null"))
+    df_family.show()
+    ```
+
+```{title="Output"}
+╭───────────────────┬─────────┬────────────────────────────────┬──────────┬────────────────────────────────╮
+│ full_name         ┆ has_dog ┆ urls                           ┆ dog_name ┆ image_bytes                    │
+│ ---               ┆ ---     ┆ ---                            ┆ ---      ┆ ---                            │
+│ Utf8              ┆ Boolean ┆ Utf8                           ┆ Utf8     ┆ Binary                         │
+╞═══════════════════╪═════════╪════════════════════════════════╪══════════╪════════════════════════════════╡
+│ Wolfgang Winter   ┆ None    ┆ https://live.staticflickr.com… ┆ Wolfie   ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Shandra Shamas    ┆ true    ┆ https://live.staticflickr.com… ┆ Shaggie  ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Zaya Zaphora      ┆ true    ┆ https://live.staticflickr.com… ┆ Zadie    ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Ernesto Evergreen ┆ true    ┆ https://live.staticflickr.com… ┆ Ernie    ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ James Jale        ┆ true    ┆ https://live.staticflickr.com… ┆ Jackie   ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+╰───────────────────┴─────────┴────────────────────────────────┴──────────┴────────────────────────────────╯
+
+(Showing first 5 of 5 rows)
+```
+
+Let's turn the bytes into human-readable images using [`image.decode()`][daft.expressions.expressions.ExpressionImageNamespace.decode]:
+
+=== "🐍 Python"
+
+    ```python
+    df_family = df_family.with_column("image", daft.col("image_bytes").image.decode())
+    df_family.show()
+    ```
+
 ### Example: UDFs in ML Workloads
 
 We'll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We'll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.
@@ -2460,42 +2585,6 @@ Now you're ready to call this function on the `urls` column and store the output
     ```
 
 <!-- todo(docs - jay): Insert table of dog urls? or new UDF example? This was from the original 10-min quickstart with multimodal -->
-
-## Multimodal Data
-
-Daft is built to work comfortably with multimodal data types, including URLs and images. You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
-
-=== "🐍 Python"
-
-    ```python
-    df_family = df_family.with_column("image_bytes", df_dogs["urls"].url.download(on_error="null"))
-    df_family.show()
-    ```
-
-```{title="Output"}
-+-------------------+---------+----------+------------------------------------------------------------------+--------------------------------------------+
-| full_name         | has_dog | dog_name | urls                                                             | image_bytes                                |
-| Utf8              | Boolean | Utf8     | Utf8                                                             | Binary                                     |
-+-------------------+---------+----------+------------------------------------------------------------------+--------------------------------------------+
-| Ernesto Evergreen | true    | Ernie    | https://live.staticflickr.com/65535/53671838774_03ba68d203_o.jpg | b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"... |
-| James Jale        | true    | Jackie   | https://live.staticflickr.com/65535/53671700073_2c9441422e_o.jpg | b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"... |
-| Wolfgang Winter   | true    | Wolfie   | https://live.staticflickr.com/65535/53670606332_1ea5f2ce68_o.jpg | b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"... |
-| Shandra Shamas    | true    | Shaggie  | https://live.staticflickr.com/65535/53671838039_b97411a441_o.jpg | b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"... |
-| Zaya Zaphora      | true    | Zadie    | https://live.staticflickr.com/65535/53671698613_0230f8af3c_o.jpg | b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"... |
-+-------------------+---------+----------+------------------------------------------------------------------+--------------------------------------------+
-(Showing first 5 of 5 rows)
-```
-
-Let's turn the bytes into human-readable images using [`image.decode()`][daft.expressions.expressions.ExpressionImageNamespace.decode]:
-
-=== "🐍 Python"
-
-    ```python
-    df_family = df_family.with_column("image", daft.col("image_bytes").image.decode())
-    df_family.show()
-    ```
 
 ## What's Next?
 
