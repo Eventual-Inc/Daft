@@ -2432,7 +2432,9 @@ UDFs can also be parametrized with new resource requests after being initialized
 ## Multimodal Data
 
 
-Daft is built to work comfortably with multimodal data types, including URLs and images. To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use the [`daft.col()`][daft.expressions.col] mentioned earlier with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
+Daft is built to work comfortably with multimodal data types, including URLs and images.
+
+To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use the [`daft.col()`][daft.expressions.col] mentioned earlier with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
 
 
 === "🐍 Python"
@@ -2531,7 +2533,7 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
     df_family.show()
     ```
 
-### Example: UDFs in ML Workloads
+## Example: UDFs in ML Workloads + Multimodal Data
 
 We'll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We'll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.
 
@@ -2557,7 +2559,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
 === "🐍 Python"
 
     ```python
-    @udf(return_dtype=DataType.fixed_size_list(dtype=DataType.string(), size=2))
+    @daft.udf(return_dtype=daft.DataType.fixed_size_list(dtype=daft.DataType.string(), size=2))
     class ClassifyImages:
         def __init__(self):
             # Perform expensive initializations - create and load the pre-trained model
@@ -2583,6 +2585,30 @@ Now you're ready to call this function on the `urls` column and store the output
     classified_images_df = df_family.with_column("classify_breed", ClassifyImages(daft.col("urls")))
     classified_images_df.select("dog_name", "image", "classify_breed").show()
     ```
+
+```{title="Output"}
+╭──────────┬──────────────┬────────────────────────────────╮
+│ dog_name ┆ image        ┆ classify_breed                 │
+│ ---      ┆ ---          ┆ ---                            │
+│ Utf8     ┆ Image[MIXED] ┆ FixedSizeList[Utf8; 2]         │
+╞══════════╪══════════════╪════════════════════════════════╡
+│ Ernie    ┆ <Image>      ┆ [boxer, 52.3%]                 │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Jackie   ┆ <Image>      ┆ [American Staffordshire terri… │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Shaggie  ┆ <Image>      ┆ [standard schnauzer, 29.6%]    │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Zadie    ┆ <Image>      ┆ [Rottweiler, 78.6%]            │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Wolfie   ┆ <Image>      ┆ [collie, 49.6%]                │
+╰──────────┴──────────────┴────────────────────────────────╯
+
+(Showing first 5 of 5 rows)
+```
+
+!!! note "Note"
+
+    Execute in notebook to see properly rendered images.
 
 <!-- todo(docs - jay): Insert table of dog urls? or new UDF example? This was from the original 10-min quickstart with multimodal -->
 
