@@ -76,7 +76,7 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 <!-- write_ -->
 
-<!-- ::: daft.dataframe.DataFrame.write_csv
+::: daft.dataframe.DataFrame.write_csv
     options:
         heading_level: 3
 
@@ -94,7 +94,7 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 ::: daft.dataframe.DataFrame.write_parquet
     options:
-        heading_level: 3 -->
+        heading_level: 3
 
 ## User-Defined
 
