@@ -20,6 +20,20 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
+  - I/O:
+    - Overview: io.md
+    - Input:
+      - Apache Hudi: integrations/hudi.md
+      - Apache Iceberg: integrations/iceberg.md
+      - AWS Glue: integrations/glue.md
+      - Delta Lake: integrations/delta_lake.md
+      - S3 Tables: integrations/s3tables.md
+      - Unity Catalog: integrations/unity_catalog.md
+    - Output:
+      - Amazon Web Services: integrations/aws.md
+      - Hugging Face Datasets: integrations/huggingface.md
+      - Microsoft Azure: integrations/azure.md
+      - SQL: integrations/sql.md
   - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs: catalogs.md
@@ -29,20 +43,8 @@ nav:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
     - Pushdowns: advanced/pushdowns.md
-  - Integrations:
-    - Catalogs & Tables:
-      - Apache Hudi: integrations/hudi.md
-      - Apache Iceberg: integrations/iceberg.md
-      - AWS Glue: integrations/glue.md
-      - Delta Lake: integrations/delta_lake.md
-      - S3 Tables: integrations/s3tables.md
-      - Unity Catalog: integrations/unity_catalog.md
-    - Storage:
-      - Amazon Web Services: integrations/aws.md
-      - Hugging Face Datasets: integrations/huggingface.md
-      - Microsoft Azure: integrations/azure.md
-      - SQL: integrations/sql.md
-    - Ray: integrations/ray.md
+  # - Integrations:
+  #   - Ray: integrations/ray.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
@@ -54,7 +56,7 @@ nav:
   - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md
-  - DataFrame Creation: api/dataframe_creation.md
+  - I/O: api/io.md
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
   - Functions:
