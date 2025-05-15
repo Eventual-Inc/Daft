@@ -46,12 +46,12 @@ pub(crate) fn native_parquet_writer_supported(
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
     let arrow_schema = match file_schema.to_arrow() {
-        Ok(schema) => {
-            for field in &schema.fields {
-                if !field.data_type().can_convert_to_arrow_rs() {
-                    return Ok(false);
-                }
-            }
+        Ok(schema)
+            if schema
+                .fields
+                .iter()
+                .all(|field| field.data_type().can_convert_to_arrow_rs()) =>
+        {
             Arc::new(schema.into())
         }
         Err(_) => return Ok(false),
