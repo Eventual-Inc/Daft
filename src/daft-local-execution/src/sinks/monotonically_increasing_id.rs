@@ -124,6 +124,6 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         _runtime_handle: &ExecutionRuntimeContext,
         _maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(0..=usize::MAX))
+        Arc::new(UnorderedDispatcher::unbounded())
     }
 }

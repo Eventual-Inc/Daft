@@ -1,4 +1,4 @@
-use std::{cmp::max, ops::RangeInclusive, sync::Arc};
+use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_pool_num_threads;
@@ -145,9 +145,11 @@ impl IntermediateOperator for ProjectOperator {
         Ok(self.max_concurrency)
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> RangeInclusive<usize> {
-        0..=self
-            .batch_size
-            .unwrap_or_else(|| runtime_handle.default_morsel_size())
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+        (
+            0,
+            self.batch_size
+                .unwrap_or_else(|| runtime_handle.default_morsel_size()),
+        )
     }
 }

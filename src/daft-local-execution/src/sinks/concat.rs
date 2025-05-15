@@ -67,9 +67,9 @@ impl StreamingSink for ConcatSink {
     ) -> Arc<dyn DispatchSpawner> {
         let default_size = runtime_handle.default_morsel_size();
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(default_size..=default_size))
+            Arc::new(RoundRobinDispatcher::with_fixed_threshold(default_size))
         } else {
-            Arc::new(UnorderedDispatcher::new(default_size..=default_size))
+            Arc::new(UnorderedDispatcher::with_fixed_threshold(default_size))
         }
     }
 }

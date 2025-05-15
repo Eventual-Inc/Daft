@@ -1,4 +1,4 @@
-use std::{ops::RangeInclusive, sync::Arc, vec};
+use std::{sync::Arc, vec};
 
 use common_error::DaftResult;
 #[cfg(feature = "python")]
@@ -219,9 +219,11 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         Ok(self.concurrency)
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> RangeInclusive<usize> {
-        0..=self
-            .batch_size
-            .unwrap_or_else(|| runtime_handle.default_morsel_size())
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+        (
+            0,
+            self.batch_size
+                .unwrap_or_else(|| runtime_handle.default_morsel_size()),
+        )
     }
 }

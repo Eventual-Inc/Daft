@@ -1,4 +1,4 @@
-use std::{ops::RangeInclusive, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
@@ -38,18 +38,30 @@ pub(crate) struct SpawnedDispatchResult {
 /// A dispatcher that distributes morsels to workers in a round-robin fashion.
 /// Used if the operator requires maintaining the order of the input.
 pub(crate) struct RoundRobinDispatcher {
-    morsel_size_range: RangeInclusive<usize>,
+    morsel_size_lower_bound: usize,
+    morsel_size_upper_bound: usize,
 }
 
 impl RoundRobinDispatcher {
-    pub(crate) fn new(morsel_size_range: RangeInclusive<usize>) -> Self {
-        Self { morsel_size_range }
+    pub(crate) fn new(morsel_size_lower_bound: usize, morsel_size_upper_bound: usize) -> Self {
+        Self {
+            morsel_size_lower_bound,
+            morsel_size_upper_bound,
+        }
+    }
+
+    pub(crate) fn with_fixed_threshold(threshold: usize) -> Self {
+        Self {
+            morsel_size_lower_bound: threshold,
+            morsel_size_upper_bound: threshold,
+        }
     }
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
-        morsel_size_range: RangeInclusive<usize>,
+        morsel_size_lower_bound: usize,
+        morsel_size_upper_bound: usize,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
         let mut send_to_next_worker = |data: Arc<MicroPartition>| {
@@ -59,7 +71,7 @@ impl RoundRobinDispatcher {
         };
 
         for receiver in input_receivers {
-            let mut buffer = RowBasedBuffer::new(morsel_size_range.clone());
+            let mut buffer = RowBasedBuffer::new(morsel_size_lower_bound, morsel_size_upper_bound);
 
             while let Some(morsel) = receiver.recv().await {
                 buffer.push(&morsel);
@@ -92,9 +104,16 @@ impl DispatchSpawner for RoundRobinDispatcher {
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
-        let morsel_size_range = self.morsel_size_range.clone();
+        let morsel_size_lower_bound = self.morsel_size_lower_bound;
+        let morsel_size_upper_bound = self.morsel_size_upper_bound;
         let task = runtime_handle.spawn(async move {
-            Self::dispatch_inner(worker_senders, input_receivers, morsel_size_range).await
+            Self::dispatch_inner(
+                worker_senders,
+                input_receivers,
+                morsel_size_lower_bound,
+                morsel_size_upper_bound,
+            )
+            .await
         });
 
         SpawnedDispatchResult {
@@ -107,21 +126,40 @@ impl DispatchSpawner for RoundRobinDispatcher {
 /// A dispatcher that distributes morsels to workers in an unordered fashion.
 /// Used if the operator does not require maintaining the order of the input.
 pub(crate) struct UnorderedDispatcher {
-    morsel_size_range: RangeInclusive<usize>,
+    morsel_size_lower_bound: usize,
+    morsel_size_upper_bound: usize,
 }
 
 impl UnorderedDispatcher {
-    pub(crate) fn new(morsel_size_range: RangeInclusive<usize>) -> Self {
-        Self { morsel_size_range }
+    pub(crate) fn new(morsel_size_lower_bound: usize, morsel_size_upper_bound: usize) -> Self {
+        Self {
+            morsel_size_lower_bound,
+            morsel_size_upper_bound,
+        }
+    }
+
+    pub(crate) fn with_fixed_threshold(threshold: usize) -> Self {
+        Self {
+            morsel_size_lower_bound: threshold,
+            morsel_size_upper_bound: threshold,
+        }
+    }
+
+    pub(crate) fn unbounded() -> Self {
+        Self {
+            morsel_size_lower_bound: 0,
+            morsel_size_upper_bound: usize::MAX,
+        }
     }
 
     async fn dispatch_inner(
         worker_sender: Sender<Arc<MicroPartition>>,
         input_receivers: Vec<CountingReceiver>,
-        morsel_size_range: RangeInclusive<usize>,
+        morsel_size_lower_bound: usize,
+        morsel_size_upper_bound: usize,
     ) -> DaftResult<()> {
         for receiver in input_receivers {
-            let mut buffer = RowBasedBuffer::new(morsel_size_range.clone());
+            let mut buffer = RowBasedBuffer::new(morsel_size_lower_bound, morsel_size_upper_bound);
 
             while let Some(morsel) = receiver.recv().await {
                 buffer.push(&morsel);
@@ -154,10 +192,17 @@ impl DispatchSpawner for UnorderedDispatcher {
     ) -> SpawnedDispatchResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
-        let morsel_size_range = self.morsel_size_range.clone();
+        let morsel_size_lower_bound = self.morsel_size_lower_bound;
+        let morsel_size_upper_bound = self.morsel_size_upper_bound;
 
         let dispatch_task = runtime_handle.spawn(async move {
-            Self::dispatch_inner(worker_sender, receiver, morsel_size_range).await
+            Self::dispatch_inner(
+                worker_sender,
+                receiver,
+                morsel_size_lower_bound,
+                morsel_size_upper_bound,
+            )
+            .await
         });
 
         SpawnedDispatchResult {
