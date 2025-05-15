@@ -88,7 +88,7 @@ See also [Iceberg](integrations/iceberg.md) for detailed integration.
 | [`read_warc`][daft.io.read_warc] | Read a WARC file or multiple WARC files into a DataFrame |
 
 
-<!-- ## User-Defined
+## User-Defined
 
 | Function                                                    | Description                                                        |
 |-------------------------------------------------------------|--------------------------------------------------------------------|
@@ -96,4 +96,4 @@ See also [Iceberg](integrations/iceberg.md) for detailed integration.
 | [`DataSource`][daft.io.source.DataSource]                   | Interface for reading data into DataFrames                         |
 | [`DataSourceTask`][daft.io.source.DataSourceTask]           | Represents a partition of data that can be processed independently |
 | [`WriteOutput`][daft.io.sink.WriteOuput]                    | Wrapper for intermediate results written by a DataSink             |
-| [`write_sink`][daft.dataframe.DataFrame.write_sink]         | Write a DataFrame to the given DataSink                            | -->
+| [`write_sink`][daft.dataframe.DataFrame.write_sink]         | Write a DataFrame to the given DataSink                            |
