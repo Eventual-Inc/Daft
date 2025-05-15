@@ -29,7 +29,7 @@ Generate images from text prompts using a deep learning model (Stable Diffusion)
 
 Compare traditional join operations with more efficient window functions for ranking, calculating deltas, and tracking cumulative sums.
 
-[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions.ipynb)
+[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions/window_functions.ipynb)
 
 
 <!-- .. These can't be run because DeltaLake can't be accessed in anonymous mode from Google Colab
