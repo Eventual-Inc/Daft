@@ -1224,7 +1224,7 @@ impl Iterator for BytesChunker {
             return None;
         }
 
-        let end = std::cmp::min(self.offset + self.chunk_size, self.data.len());
+        let end = (self.offset + self.chunk_size).min(self.data.len());
         let part = self.data.slice(self.offset..end);
         self.offset = end;
         Some(part)
