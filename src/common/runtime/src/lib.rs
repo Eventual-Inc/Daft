@@ -62,6 +62,10 @@ impl<T> RuntimeTask<T> {
         joinset.spawn_on(future, handle);
         Self { joinset }
     }
+
+    pub fn into_inner(self) -> JoinSet<T> {
+        self.joinset
+    }
 }
 
 impl<T: Send + 'static> Future for RuntimeTask<T> {

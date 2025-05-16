@@ -23,7 +23,6 @@ use crate::{
 
 mod collect;
 mod limit;
-pub(crate) mod materialize;
 mod translate;
 
 pub(crate) trait DistributedPipelineNode: Send + Sync {
@@ -50,13 +49,20 @@ impl RunningPipelineNode {
     pub fn into_inner(self) -> Receiver<PipelineOutput> {
         self.result_receiver
     }
+
+    // pub fn materialize(
+    //     self,
+    //     task_dispatcher_handle: TaskDispatcherHandle,
+    // ) -> DaftResult<impl Stream<Item = DaftResult<PartitionRef>>> {
+    //     todo!("FLOTILLA_MS1: Implement materialize for running pipeline node");
+    // }
 }
 
 impl Stream for RunningPipelineNode {
-    type Item = DaftResult<PipelineOutput>;
+    type Item = PipelineOutput;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for running pipeline node");
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.result_receiver.poll_recv(cx)
     }
 }
 

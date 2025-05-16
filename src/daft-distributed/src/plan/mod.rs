@@ -10,14 +10,16 @@ use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_runtime::RuntimeTask;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-use futures::{FutureExt, Stream};
+use futures::{Stream, StreamExt};
 
 use crate::{
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
     utils::{
         channel::{create_channel, Receiver, Sender},
+        joinset::JoinSet,
         runtime::get_or_init_runtime,
+        stream::JoinableForwardingStream,
     },
 };
 
@@ -54,9 +56,16 @@ impl DistributedPhysicalPlan {
             )));
         }
 
+        let worker_manager = worker_manager_factory.create_worker_manager()?;
         let stage = stage_plan.get_root_stage();
-        stage.run_stage(psets, config, worker_manager_factory)?;
-        todo!("FLOTILLA_MS1: Implement execute_stages")
+        let _running_stage = stage.run_stage(psets, config, worker_manager)?;
+        // let materialized_stage = running_stage.materialize(task_dispatcher_handle);
+        // while let Some(output) = materialized_stage.next().await {
+        //     if sender.send(output).await.is_err() {
+        //         break;
+        //     }
+        // }
+        todo!("FLOTILLA_MS1: Implement execute_stages");
     }
 
     pub fn run_plan(
@@ -86,19 +95,18 @@ impl DistributedPhysicalPlan {
     }
 }
 
-// This is the output of a plan, a receiver to receive the results of the plan.
-// And the join handle to the task that runs the plan.
-pub struct PlanResult {
-    task: Option<RuntimeTask<DaftResult<()>>>,
-    rx: Receiver<PartitionRef>,
+pub(crate) struct PlanResult {
+    stream: JoinableForwardingStream<tokio_stream::wrappers::ReceiverStream<PartitionRef>>,
 }
 
 impl PlanResult {
     fn new(task: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
-        Self {
-            task: Some(task),
-            rx,
-        }
+        let inner_joinset = JoinSet::from(task.into_inner());
+        let stream = JoinableForwardingStream::new(
+            tokio_stream::wrappers::ReceiverStream::new(rx),
+            inner_joinset,
+        );
+        Self { stream }
     }
 }
 
@@ -106,25 +114,6 @@ impl Stream for PlanResult {
     type Item = DaftResult<PartitionRef>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if self.task.is_none() {
-            return Poll::Ready(None);
-        }
-
-        match self.rx.poll_recv(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(result)) => Poll::Ready(Some(Ok(result))),
-            Poll::Ready(None) => {
-                if let Some(mut handle) = self.task.take() {
-                    let result = handle.poll_unpin(cx);
-                    match result {
-                        Poll::Pending => Poll::Pending,
-                        Poll::Ready(Ok(Ok(()))) => Poll::Ready(None),
-                        Poll::Ready(Ok(Err(e))) | Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
-                    }
-                } else {
-                    Poll::Ready(None)
-                }
-            }
-        }
+        self.stream.poll_next_unpin(cx)
     }
 }
