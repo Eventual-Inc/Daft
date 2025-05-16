@@ -64,6 +64,12 @@ impl<T: Send + 'static> JoinSet<T> {
     }
 }
 
+impl<T: Send + 'static> From<tokio::task::JoinSet<T>> for JoinSet<T> {
+    fn from(inner: tokio::task::JoinSet<T>) -> Self {
+        Self { inner }
+    }
+}
+
 #[allow(dead_code)]
 pub(crate) fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
     JoinSet::new()

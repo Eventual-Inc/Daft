@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -8,16 +13,20 @@ use daft_logical_plan::{
     partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
 };
 use daft_schema::schema::SchemaRef;
+use futures::{Stream, StreamExt};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    pipeline_node::logical_plan_to_pipeline_node,
+    pipeline_node::{
+        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
+        PipelineOutput, RunningPipelineNode,
+    },
     scheduling::{
         scheduler::{SchedulerActor, SchedulerHandle},
         task::SwordfishTask,
         worker::{Worker, WorkerManager},
     },
-    utils::joinset::JoinSet,
+    utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
 mod stage_builder;
@@ -78,22 +87,42 @@ impl Stage {
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
-    ) -> DaftResult<()> {
-        let mut stage_context = StageContext::try_new(worker_manager)?;
+    ) -> DaftResult<RunningStage> {
+        let mut stage_context = StageContext::new(worker_manager);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
-                let _running_node = pipeline_node.start(&mut stage_context);
-
-                let (_scheduler_handle, _joinset) = stage_context.into_inner();
-                // JoinableForwardingStream::new(
-                //     materialize_all_pipeline_outputs(running_node, scheduler_handle),
-                //     joinset,
-                // );
-                todo!("FLOTILLA_MS2: Implement stage run_stage for MapPipeline")
+                let running_node = pipeline_node.start(&mut stage_context);
+                Ok(RunningStage::new(JoinableForwardingStream::new(
+                    running_node,
+                    stage_context.joinset,
+                )))
             }
-            _ => todo!("FLOTILLA_MS2: Implement other stage types"),
+            _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
         }
+    }
+}
+
+pub(crate) struct RunningStage {
+    stream: JoinableForwardingStream<RunningPipelineNode>,
+}
+
+impl RunningStage {
+    fn new(stream: JoinableForwardingStream<RunningPipelineNode>) -> Self {
+        Self { stream }
+    }
+
+    #[allow(dead_code)]
+    fn materialize(self, scheduler_handle: SchedulerHandle<SwordfishTask>) {
+        materialize_all_pipeline_outputs(self.stream, scheduler_handle);
+    }
+}
+
+impl Stream for RunningStage {
+    type Item = DaftResult<PipelineOutput>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.stream.poll_next_unpin(cx)
     }
 }
 
@@ -188,17 +217,13 @@ pub(crate) struct StageContext {
 
 impl StageContext {
     #[allow(dead_code)]
-    fn try_new<W: Worker>(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> DaftResult<Self> {
-        let scheduler_actor = SchedulerActor::default_scheduler(worker_manager);
+    fn new<W: Worker>(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+        let scheduler = SchedulerActor::default_scheduler(worker_manager);
         let mut joinset = JoinSet::new();
-        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(scheduler_actor, &mut joinset);
-        Ok(Self {
+        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(scheduler, &mut joinset);
+        Self {
             scheduler_handle,
             joinset,
-        })
-    }
-
-    fn into_inner(self) -> (SchedulerHandle<SwordfishTask>, JoinSet<DaftResult<()>>) {
-        (self.scheduler_handle, self.joinset)
+        }
     }
 }

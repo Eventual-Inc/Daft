@@ -11,14 +11,18 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use limit::LimitNode;
+use materialize::materialize_all_pipeline_outputs;
 use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
-    scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskResultHandle},
+    },
     stage::StageContext,
-    utils::channel::Receiver,
+    utils::channel::{Receiver, ReceiverStream},
 };
 
 mod collect;
@@ -50,13 +54,21 @@ impl RunningPipelineNode {
     pub fn into_inner(self) -> Receiver<PipelineOutput> {
         self.result_receiver
     }
+
+    #[allow(dead_code)]
+    pub fn materialize(self, scheduler_handle: SchedulerHandle<SwordfishTask>) {
+        materialize_all_pipeline_outputs(
+            ReceiverStream::new(self.result_receiver).map(Ok),
+            scheduler_handle,
+        );
+    }
 }
 
 impl Stream for RunningPipelineNode {
-    type Item = DaftResult<PipelineOutput>;
+    type Item = PipelineOutput;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for running pipeline node");
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.result_receiver.poll_recv(cx)
     }
 }
 
