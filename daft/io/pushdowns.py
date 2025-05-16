@@ -15,7 +15,7 @@ class Pushdowns:
 
     Attributes:
         filters (Expression | None): Optional filter predicate to apply to rows.
-        partition_filters (Expression | None): Optional partition filter predicate to apply to rows.
+        partition_filters (Expression | None): Optional partition filter predicate to apply to partitions or files.
         columns (list[str] | None): Optional list of column names to project.
         limit (int | None): Optional limit on the number of rows to return.
     """

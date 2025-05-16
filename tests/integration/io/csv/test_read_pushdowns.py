@@ -15,7 +15,7 @@ PRED_PUSHDOWN_FILES = [
 ]
 
 
-@pytest.mark.integration()
+# @pytest.mark.integration()
 @pytest.mark.parametrize(
     "path, pred, limit",
     product(
@@ -40,7 +40,7 @@ def test_csv_filter_pushdowns(path, pred, limit, aws_public_s3_config):
     assert with_pushdown.to_arrow() == after.to_arrow()
 
 
-@pytest.mark.integration()
+# @pytest.mark.integration()
 @pytest.mark.parametrize(
     "path, pred",
     product(

@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
+from daft.daft import IOConfig, PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import PyPartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
