@@ -129,10 +129,6 @@ theme:
 
 # Additional Configuration
 extra:
-  docsearch:
-    app_id: 'CTX8NKR4GC'
-    api_key: 'eb05e80b7739efec7038d98158f39a54'
-    index_name: 'getdaft'
   analytics:
     provider: google
     property: G-YN4QSRPV0K
