@@ -211,6 +211,12 @@ pub enum Error {
         source: daft_stats::Error,
     },
 
+    #[snafu(display(
+        "Parquet file: {} unable to bind expression to schema\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToBindExpression { path: String, source: DaftError },
+
     #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
     JoinError {
         path: String,
@@ -230,6 +236,7 @@ impl From<Error> for DaftError {
         match err {
             Error::DaftIOError { source } => source.into(),
             Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            Error::UnableToBindExpression { source, .. } => source.into(),
             _ => Self::External(err.into()),
         }
     }
