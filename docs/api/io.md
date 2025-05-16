@@ -128,7 +128,7 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 ## Pushdowns
 
-<!-- ::: daft.io.pushdowns.Pushdowns
+::: daft.io.pushdowns.Pushdowns
     options:
         filters: ["!^_"]
         heading_level: 3
@@ -161,4 +161,4 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 ::: daft.io.pushdowns.TermVisitor
     options:
         filters: ["!^_"]
-        heading_level: 3 -->
+        heading_level: 3
