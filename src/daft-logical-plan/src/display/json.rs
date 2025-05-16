@@ -135,14 +135,10 @@ where
         let mut object = Self::to_json_value(node.as_ref());
         // handle all common properties here
         object["type"] = json!(node.name());
-        object["stats"] = json!(node.stats_state());
-        object["plan_id"] = json!(node.plan_id());
         object["children"] = serde_json::Value::Array(vec![]);
 
         if self.with_schema {
             let schema = node.schema();
-
-            object["schema_string"] = json!(schema.short_string());
             object["schema"] = json!(schema.fields());
         }
         self.objects.insert(id, object);
@@ -245,14 +241,10 @@ mod tests {
                           "children": [
                             {
                               "children": [],
-                              "plan_id": null,
-                              "stats": "NotMaterialized",
                               "type": "Source"
                             }
                           ],
-                          "plan_id": null,
                           "predicate": ["col(id) == lit(1)"],
-                          "stats": "NotMaterialized",
                           "type": "Filter"
                         },
                         {
@@ -267,66 +259,46 @@ mod tests {
                                           "children": [
                                             {
                                               "children": [],
-                                              "plan_id": null,
-                                              "stats": "NotMaterialized",
                                               "type": "Source"
                                             }
                                           ],
-                                          "plan_id": null,
                                           "predicate": [
                                             "startswith(col(last_name), lit(\"S\")) & endswith(col(last_name), lit(\"n\"))"
                                           ],
-                                          "stats": "NotMaterialized",
                                           "type": "Filter"
                                         }
                                       ],
                                       "limit": ["lit(1000)"],
-                                      "plan_id": null,
-                                      "stats": "NotMaterialized",
                                       "type": "Limit"
                                     }
                                   ],
                                   "column_name": ["col(id2)"],
-                                  "plan_id": null,
-                                  "stats": "NotMaterialized",
                                   "type": "MonotonicallyIncreasingId"
                                 }
                               ],
-                              "plan_id": null,
-                              "stats": "NotMaterialized",
                               "type": "Distinct"
                             }
                           ],
                           "descending": [false],
                           "nulls_first": [false],
-                          "plan_id": null,
                           "sort_by": ["col(last_name)"],
-                          "stats": "NotMaterialized",
                           "type": "Sort"
                         }
                       ],
                       "on": ["col(left.id#Int32) == col(right.id#Int32)"],
-                      "plan_id": null,
-                      "stats": "NotMaterialized",
                       "strategy": null,
                       "type": "Join"
                     }
                   ],
-                  "plan_id": null,
                   "predicate": ["col(first_name) == lit(\"hello\")"],
-                  "stats": "NotMaterialized",
                   "type": "Filter"
                 }
               ],
-              "plan_id": null,
               "projection": ["col(first_name)"],
-              "stats": "NotMaterialized",
               "type": "Project"
             }
           ],
           "limit": ["lit(10)"],
-          "plan_id": null,
-          "stats": "NotMaterialized",
           "type": "Limit"
         }
         "#).unwrap();
@@ -346,7 +318,6 @@ mod tests {
         let expected = r#"
             {
               "children": [],
-              "plan_id": null,
               "schema": [
                 {
                   "dtype": "Utf8",
@@ -359,8 +330,6 @@ mod tests {
                   "name": "id"
                 }
               ],
-              "schema_string": "text#Utf8, id#Int32",
-              "stats": "NotMaterialized",
               "type": "Source"
             }
          "#;
