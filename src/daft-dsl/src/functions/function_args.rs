@@ -418,6 +418,12 @@ impl<T> FunctionArgs<T> {
     }
 }
 
+#[derive(FunctionArgs)]
+/// A single required argument named `input`
+pub struct UnaryArg<T> {
+    pub input: T,
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
