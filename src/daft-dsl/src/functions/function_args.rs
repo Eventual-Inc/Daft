@@ -637,8 +637,8 @@ mod tests {
         let io_conf = IOConfig::default();
         let count_mode = CountMode::Valid;
         let args = FunctionArgs::new_unchecked(vec![
-            FunctionArg::unnamed(100.lit()),
-            FunctionArg::unnamed(222.lit()),
+            FunctionArg::unnamed(100i64.lit()),
+            FunctionArg::unnamed(222i64.lit()),
             FunctionArg::named("io_config", lit(io_conf.clone())),
             FunctionArg::named("arg2", lit(count_mode.clone())),
         ]);
