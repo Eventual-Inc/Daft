@@ -41,10 +41,6 @@ impl PyRecordBatch {
         })
     }
 
-    pub fn cast_to_schema(&self, schema: &PySchema) -> PyResult<Self> {
-        Ok(self.record_batch.cast_to_schema(&schema.schema)?.into())
-    }
-
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs = self.pyexprs_to_bound(exprs)?;
         py.allow_threads(|| {

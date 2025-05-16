@@ -10,11 +10,14 @@ use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    channel::{
-        create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver, Sender,
-    },
-    runtime::JoinSet,
     scheduling::{task::SwordfishTask, worker::WorkerManager},
+    utils::{
+        channel::{
+            create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
+            Sender,
+        },
+        joinset::JoinSet,
+    },
 };
 // The task dispatcher is responsible for dispatching tasks to workers.
 #[allow(dead_code)]

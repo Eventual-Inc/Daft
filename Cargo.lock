@@ -2234,6 +2234,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-partitioning",
+ "common-runtime",
  "common-treenode",
  "daft-dsl",
  "daft-local-plan",
@@ -2242,7 +2243,9 @@ dependencies = [
  "futures",
  "pyo3",
  "pyo3-async-runtimes",
+ "rand 0.8.5",
  "tokio",
+ "tokio-stream",
  "tokio-util",
 ]
 
@@ -2836,7 +2839,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-recordbatch",
- "indexmap 2.8.0",
  "serde",
  "snafu",
 ]
