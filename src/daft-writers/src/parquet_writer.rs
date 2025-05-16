@@ -54,7 +54,7 @@ pub(crate) fn native_parquet_writer_supported(
         {
             Arc::new(schema.into())
         }
-        Err(_) => return Ok(false),
+        _ => return Ok(false),
     };
     let writer_properties = Arc::new(
         WriterProperties::builder()
