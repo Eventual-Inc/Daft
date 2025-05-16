@@ -2263,6 +2263,7 @@ dependencies = [
  "derive_more",
  "indexmap 2.8.0",
  "itertools 0.11.0",
+ "num-traits",
  "pyo3",
  "serde",
  "typetag",

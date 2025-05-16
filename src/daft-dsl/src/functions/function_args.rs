@@ -638,14 +638,14 @@ mod tests {
         let count_mode = CountMode::Valid;
         let args = FunctionArgs::new_unchecked(vec![
             FunctionArg::unnamed(100i64.lit()),
-            FunctionArg::unnamed(222i64.lit()),
+            FunctionArg::unnamed(222i32.lit()),
             FunctionArg::named("io_config", lit(io_conf.clone())),
             FunctionArg::named("arg2", lit(count_mode.clone())),
         ]);
 
-        let res: i64 = args.extract(0)?;
+        let res: usize = args.extract(0)?;
         assert_eq!(res, 100);
-        let second_pos: i64 = args.extract(1)?;
+        let second_pos: usize = args.extract(1)?;
         assert_eq!(second_pos, 222);
         let io_conf_extracted: IOConfig = args.extract("io_config")?;
         assert_eq!(io_conf_extracted, io_conf);

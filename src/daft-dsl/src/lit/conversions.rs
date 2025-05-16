@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use daft_core::{
@@ -7,6 +5,7 @@ use daft_core::{
     prelude::{CountMode, ImageFormat, ImageMode},
     series::Series,
 };
+use num_traits::cast;
 use serde::de::DeserializeOwned;
 
 use super::{deserializer, serializer, FromLiteral, Literal, LiteralValue};
@@ -58,7 +57,7 @@ impl Literal for Series {
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
     fn literal_value(self) -> LiteralValue {
-        LiteralValue::Python(PyObjectWrapper(Arc::new(self)))
+        LiteralValue::Python(PyObjectWrapper(std::sync::Arc::new(self)))
     }
 }
 
@@ -104,6 +103,23 @@ make_literal!(u32, UInt32);
 make_literal!(i64, Int64);
 make_literal!(u64, UInt64);
 make_literal!(f64, Float64);
+
+impl FromLiteral for usize {
+    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+        match lit {
+            LiteralValue::Int8(i8) => cast(*i8),
+            LiteralValue::UInt8(u8) => cast(*u8),
+            LiteralValue::Int16(i16) => cast(*i16),
+            LiteralValue::UInt16(u16) => cast(*u16),
+            LiteralValue::Int32(i32) => cast(*i32),
+            LiteralValue::UInt32(u32) => cast(*u32),
+            LiteralValue::Int64(i64) => cast(*i64),
+            LiteralValue::UInt64(u64) => cast(*u64),
+            _ => None,
+        }
+        .ok_or_else(|| DaftError::ValueError("Unsupported literal type".to_string()))
+    }
+}
 
 /// Marker trait to allowlist what can be converted to a literal via serde
 trait SerializableLiteral: serde::Serialize {}
