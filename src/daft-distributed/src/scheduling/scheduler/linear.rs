@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{scheduler_actor::SchedulableTask, Scheduler, WorkerSnapshot};
+use super::{scheduler_actor::SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{task::Task, worker::WorkerId};
 
 #[allow(dead_code)]
@@ -35,7 +35,7 @@ impl<T: Task> Scheduler<T> for LinearScheduler {
         todo!("FLOTILLA_MS1: Implement enqueue_tasks for linear scheduler")
     }
 
-    fn get_scheduled_tasks(&mut self) -> Vec<(WorkerId, SchedulableTask<T>)> {
+    fn get_scheduled_tasks(&mut self) -> Vec<ScheduledTask<T>> {
         todo!("FLOTILLA_MS1: Implement get_scheduled_tasks for linear scheduler")
     }
 }

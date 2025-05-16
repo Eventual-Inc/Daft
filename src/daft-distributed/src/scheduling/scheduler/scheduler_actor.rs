@@ -11,7 +11,7 @@ use common_partitioning::PartitionRef;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, Scheduler};
+use super::{default::DefaultScheduler, linear::LinearScheduler, ScheduledTask, Scheduler};
 use crate::{
     scheduling::{
         task::{SchedulingStrategy, Task, TaskId},
@@ -61,6 +61,19 @@ impl<W: Worker, T: Task> SchedulerActor<W, T> {
         SchedulerHandle::new(scheduler_sender)
     }
 
+    #[allow(dead_code)]
+    fn dispatch_tasks(
+        scheduled_tasks: Vec<ScheduledTask<T>>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+        running_tasks: &mut JoinSet<()>,
+    ) -> DaftResult<()> {
+        for scheduled_task in scheduled_tasks {
+            let task_result_future = scheduled_task.submit_task(&worker_manager);
+            running_tasks.spawn(task_result_future);
+        }
+        Ok(())
+    }
+
     async fn run_scheduler_loop(
         _scheduler: Box<dyn Scheduler<T>>,
         _worker_manager: Arc<dyn WorkerManager<Worker = W>>,
@@ -107,14 +120,14 @@ impl<T: Task> SchedulerHandle<T> {
 #[allow(dead_code)]
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Vec<PartitionRef>>>,
+    result_tx: OneshotSender<DaftResult<PartitionRef>>,
     cancel_token: CancellationToken,
 }
 
 impl<T: Task> SchedulableTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Vec<PartitionRef>>>,
+        result_tx: OneshotSender<DaftResult<PartitionRef>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -136,6 +149,16 @@ impl<T: Task> SchedulableTask<T> {
     #[allow(dead_code)]
     pub fn task_id(&self) -> &str {
         self.task.task_id()
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        T,
+        OneshotSender<DaftResult<PartitionRef>>,
+        CancellationToken,
+    ) {
+        (self.task, self.result_tx, self.cancel_token)
     }
 }
 
@@ -162,7 +185,7 @@ impl<T: Task> Ord for SchedulableTask<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
     _task_id: TaskId,
-    result_rx: OneshotReceiver<DaftResult<Vec<PartitionRef>>>,
+    result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
     cancel_token: Option<CancellationToken>,
     finished: bool,
 }
@@ -170,7 +193,7 @@ pub(crate) struct SubmittedTask {
 impl SubmittedTask {
     fn new(
         task_id: TaskId,
-        result_rx: OneshotReceiver<DaftResult<Vec<PartitionRef>>>,
+        result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
         Self {
@@ -188,7 +211,7 @@ impl SubmittedTask {
 }
 
 impl Future for SubmittedTask {
-    type Output = Option<DaftResult<Vec<PartitionRef>>>;
+    type Output = Option<DaftResult<PartitionRef>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {

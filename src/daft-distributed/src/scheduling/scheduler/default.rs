@@ -1,6 +1,6 @@
 use std::collections::{BinaryHeap, HashMap};
 
-use super::{scheduler_actor::SchedulableTask, Scheduler, WorkerSnapshot};
+use super::{scheduler_actor::SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
     task::{SchedulingStrategy, Task},
     worker::WorkerId,
@@ -48,12 +48,12 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         self.pending_tasks.extend(tasks);
     }
 
-    fn get_scheduled_tasks(&mut self) -> Vec<(WorkerId, SchedulableTask<T>)> {
+    fn get_scheduled_tasks(&mut self) -> Vec<ScheduledTask<T>> {
         let mut scheduled = Vec::new();
         while let Some(task_ref) = self.pending_tasks.peek() {
             if let Some(worker_id) = self.try_schedule_task(task_ref) {
                 let task = self.pending_tasks.pop().unwrap();
-                scheduled.push((worker_id, task));
+                scheduled.push(ScheduledTask { task, worker_id });
             }
         }
         scheduled
