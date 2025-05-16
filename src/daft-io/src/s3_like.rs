@@ -1066,11 +1066,11 @@ impl S3LikeSource {
 
         assert!(
             part_size >= MINIMUM_PART_SIZE,
-            "Part size must be greater than or equal to 5MB"
+            "Part size must be greater than or equal to 5MiB"
         );
         assert!(
             part_size <= MAXIMUM_PART_SIZE,
-            "Part size must be less than or equal to 5GB"
+            "Part size must be less than or equal to 5GiB"
         );
 
         let data_len = data.len();
