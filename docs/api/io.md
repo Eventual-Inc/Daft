@@ -102,11 +102,11 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 ## User-Defined
 
-<!-- !!! warning "Warning"
+!!! warning "Warning"
 
-    These APIs are considered experimental. -->
+    These APIs are considered experimental.
 
-<!-- ::: daft.io.source.DataSource
+::: daft.io.source.DataSource
     options:
         filters: ["!^_"]
         heading_level: 3
@@ -114,7 +114,7 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 ::: daft.io.source.DataSourceTask
     options:
         filters: ["!^_"]
-        heading_level: 3 -->
+        heading_level: 3
 
 ## Pushdowns
 
