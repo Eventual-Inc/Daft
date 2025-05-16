@@ -11,18 +11,23 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use limit::LimitNode;
+use materialize::materialize_all_pipeline_outputs;
 use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
-    scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
+    scheduling::{
+        dispatcher::TaskDispatcherHandle,
+        task::{SwordfishTask, SwordfishTaskResultHandle},
+    },
     stage::StageContext,
-    utils::channel::Receiver,
+    utils::channel::{Receiver, ReceiverStream},
 };
 
 mod collect;
 mod limit;
+pub(crate) mod materialize;
 mod translate;
 
 pub(crate) trait DistributedPipelineNode: Send + Sync {
@@ -50,12 +55,13 @@ impl RunningPipelineNode {
         self.result_receiver
     }
 
-    // pub fn materialize(
-    //     self,
-    //     task_dispatcher_handle: TaskDispatcherHandle,
-    // ) -> DaftResult<impl Stream<Item = DaftResult<PartitionRef>>> {
-    //     todo!("FLOTILLA_MS1: Implement materialize for running pipeline node");
-    // }
+    #[allow(dead_code)]
+    pub fn materialize(self, task_dispatcher_handle: TaskDispatcherHandle) {
+        materialize_all_pipeline_outputs(
+            ReceiverStream::new(self.result_receiver).map(Ok),
+            task_dispatcher_handle,
+        );
+    }
 }
 
 impl Stream for RunningPipelineNode {

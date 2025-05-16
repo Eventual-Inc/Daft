@@ -16,7 +16,7 @@ use crate::{
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
     utils::{
-        channel::{create_channel, Receiver, Sender},
+        channel::{create_channel, Receiver, ReceiverStream, Sender},
         joinset::JoinSet,
         runtime::get_or_init_runtime,
         stream::JoinableForwardingStream,
@@ -102,10 +102,7 @@ pub(crate) struct PlanResult {
 impl PlanResult {
     fn new(task: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
         let inner_joinset = JoinSet::from(task.into_inner());
-        let stream = JoinableForwardingStream::new(
-            tokio_stream::wrappers::ReceiverStream::new(rx),
-            inner_joinset,
-        );
+        let stream = JoinableForwardingStream::new(ReceiverStream::new(rx), inner_joinset);
         Self { stream }
     }
 }

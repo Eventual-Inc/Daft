@@ -17,7 +17,10 @@ use futures::{Stream, StreamExt};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    pipeline_node::{logical_plan_to_pipeline_node, PipelineOutput, RunningPipelineNode},
+    pipeline_node::{
+        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
+        PipelineOutput, RunningPipelineNode,
+    },
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
         worker::WorkerManager,
@@ -108,9 +111,10 @@ impl RunningStage {
         Self { stream }
     }
 
-    // fn materialize(self, task_dispatcher_handle: TaskDispatcherHandle) -> impl Stream<Item = DaftResult<PartitionRef>> {
-    //     todo!("FLOTILLA_MS1: Implement materialize for running stage");
-    // }
+    #[allow(dead_code)]
+    fn materialize(self, task_dispatcher_handle: TaskDispatcherHandle) {
+        materialize_all_pipeline_outputs(self.stream, task_dispatcher_handle);
+    }
 }
 
 impl Stream for RunningStage {
