@@ -312,11 +312,8 @@ async fn read_csv_single_into_table(
     };
 
     let schema: arrow2::datatypes::Schema = schema_fields.into();
-    let schema = Arc::new(schema.into());
+    let schema: SchemaRef = Arc::new(schema.into());
 
-    let predicate = predicate
-        .map(|expr| BoundExpr::try_new(expr, &schema))
-        .transpose()?;
     let include_column_indices = include_columns
         .map(|include_columns| {
             include_columns
@@ -328,7 +325,11 @@ async fn read_csv_single_into_table(
 
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
+            let table = table?;
+
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
             if let Some(include_column_indices) = &include_column_indices {
                 Ok(filtered.get_columns(include_column_indices))
             } else {
