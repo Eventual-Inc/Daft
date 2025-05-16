@@ -34,7 +34,6 @@ mod hll_sketch;
 mod if_else;
 mod is_in;
 mod len;
-mod list;
 mod list_agg;
 mod log;
 mod map;

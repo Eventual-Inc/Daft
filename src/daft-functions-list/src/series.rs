@@ -2,17 +2,41 @@ use std::sync::Arc;
 
 use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_schema::field::Field;
-
-use crate::{
-    array::{growable::make_growable, ListArray},
-    datatypes::{DataType, UInt64Array, Utf8Array},
-    prelude::{CountMode, Int64Array},
-    series::{array_impl::IntoSeries, Series},
+use daft_core::{
+    array::{growable::make_growable, ops::GroupIndices, ListArray},
+    prelude::{CountMode, DataType, Field, Int64Array, UInt64Array, Utf8Array},
+    series::{IntoSeries, Series},
 };
 
-impl Series {
-    pub fn list_value_counts(&self) -> DaftResult<Self> {
+use crate::kernels::{ListArrayAggExtension, ListArrayExtension};
+
+pub trait SeriesListExtension: Sized {
+    fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Self>;
+    fn list_value_counts(&self) -> DaftResult<Self>;
+    fn list_bool_and(&self) -> DaftResult<Self>;
+    fn list_bool_or(&self) -> DaftResult<Self>;
+    fn explode(&self) -> DaftResult<Self>;
+    fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
+    fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
+    fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self>;
+    fn list_slice(&self, start: &Self, end: &Self) -> DaftResult<Self>;
+    fn list_chunk(&self, size: usize) -> DaftResult<Self>;
+    fn list_sum(&self) -> DaftResult<Self>;
+    fn list_mean(&self) -> DaftResult<Self>;
+    fn list_min(&self) -> DaftResult<Self>;
+    fn list_max(&self) -> DaftResult<Self>;
+    fn list_sort(&self, desc: &Self, nulls_first: &Self) -> DaftResult<Self>;
+    fn list_count_distinct(&self) -> DaftResult<Self>;
+    fn list_fill(&self, num: &Int64Array) -> DaftResult<Self>;
+    fn list_distinct(&self) -> DaftResult<Self>;
+}
+
+impl SeriesListExtension for Series {
+    fn count_distinct(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        let series = self.agg_list(groups)?.list_count_distinct()?;
+        Ok(series)
+    }
+    fn list_value_counts(&self) -> DaftResult<Self> {
         let series = match self.data_type() {
             DataType::List(_) => self.list()?.value_counts(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.value_counts(),
@@ -28,7 +52,7 @@ impl Series {
         Ok(series)
     }
 
-    pub fn list_bool_and(&self) -> DaftResult<Self> {
+    fn list_bool_and(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => Ok(self.list()?.list_bool_and()?.into_series()),
             DataType::FixedSizeList(..) => {
@@ -41,7 +65,7 @@ impl Series {
         }
     }
 
-    pub fn list_bool_or(&self) -> DaftResult<Self> {
+    fn list_bool_or(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => Ok(self.list()?.list_bool_or()?.into_series()),
             DataType::FixedSizeList(..) => {
@@ -54,7 +78,7 @@ impl Series {
         }
     }
 
-    pub fn explode(&self) -> DaftResult<Self> {
+    fn explode(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.explode(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(),
@@ -65,7 +89,7 @@ impl Series {
         }
     }
 
-    pub fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
+    fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         match self.data_type() {
             DataType::List(_) => self.list()?.count(mode),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.count(mode),
@@ -91,7 +115,7 @@ impl Series {
         }
     }
 
-    pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
+    fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
         match self.data_type() {
             DataType::List(_) => self.list()?.join(delimiter),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.join(delimiter),
@@ -102,7 +126,7 @@ impl Series {
         }
     }
 
-    pub fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self> {
+    fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self> {
         let idx = idx.cast(&DataType::Int64)?;
         let idx_arr = idx.i64().unwrap();
 
@@ -116,7 +140,7 @@ impl Series {
         }
     }
 
-    pub fn list_slice(&self, start: &Self, end: &Self) -> DaftResult<Self> {
+    fn list_slice(&self, start: &Self, end: &Self) -> DaftResult<Self> {
         let start = start.cast(&DataType::Int64)?;
         let start_arr = start.i64().unwrap();
         let end_arr = if end.data_type().is_integer() {
@@ -136,7 +160,7 @@ impl Series {
         }
     }
 
-    pub fn list_chunk(&self, size: usize) -> DaftResult<Self> {
+    fn list_chunk(&self, size: usize) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.get_chunks(size),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.get_chunks(size),
@@ -146,7 +170,7 @@ impl Series {
         }
     }
 
-    pub fn list_sum(&self) -> DaftResult<Self> {
+    fn list_sum(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.sum(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.sum(),
@@ -157,7 +181,7 @@ impl Series {
         }
     }
 
-    pub fn list_mean(&self) -> DaftResult<Self> {
+    fn list_mean(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.mean(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.mean(),
@@ -168,7 +192,7 @@ impl Series {
         }
     }
 
-    pub fn list_min(&self) -> DaftResult<Self> {
+    fn list_min(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.min(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.min(),
@@ -179,7 +203,7 @@ impl Series {
         }
     }
 
-    pub fn list_max(&self) -> DaftResult<Self> {
+    fn list_max(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.max(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.max(),
@@ -190,7 +214,7 @@ impl Series {
         }
     }
 
-    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> DaftResult<Self> {
+    fn list_sort(&self, desc: &Self, nulls_first: &Self) -> DaftResult<Self> {
         let desc_arr = desc.bool()?;
         let nulls_first = nulls_first.bool()?;
 
@@ -216,7 +240,7 @@ impl Series {
     /// ```txt
     /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [3, 1, 1]
     /// ```
-    pub fn list_count_distinct(&self) -> DaftResult<Self> {
+    fn list_count_distinct(&self) -> DaftResult<Self> {
         let field = Field::new(self.name(), DataType::UInt64);
         match self.data_type() {
             DataType::List(..) => {
@@ -254,8 +278,8 @@ impl Series {
     /// ```txt
     /// repeat([1, 2, 3], [2, 0, 1]) --> [[1, 1], [], [3]]
     /// ```
-    pub fn list_fill(&self, num: &Int64Array) -> DaftResult<Self> {
-        ListArray::list_fill(self, num).map(|arr| arr.into_series())
+    fn list_fill(&self, num: &Int64Array) -> DaftResult<Self> {
+        crate::kernels::list_fill(self, num).map(|arr| arr.into_series())
     }
 
     /// Returns a list of unique elements in each list, preserving order of first occurrence and ignoring nulls.
@@ -264,7 +288,7 @@ impl Series {
     /// ```txt
     /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [[1, 2, 3], [1], [5]]
     /// ```
-    pub fn list_distinct(&self) -> DaftResult<Self> {
+    fn list_distinct(&self) -> DaftResult<Self> {
         let input = if let DataType::FixedSizeList(inner_type, _) = self.data_type() {
             self.cast(&DataType::List(inner_type.clone()))?
         } else {

@@ -33,8 +33,6 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
-from daft.daft import list_distinct as _list_distinct
-from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import struct as _struct
@@ -118,6 +116,8 @@ def lit(value: object) -> Expression:
     elif isinstance(value, ImageFormat):
         lit_value = _lit(str(value))
     elif isinstance(value, ImageMode):
+        lit_value = _lit(str(value))
+    elif isinstance(value, CountMode):
         lit_value = _lit(str(value))
     else:
         lit_value = _lit(value)
@@ -617,6 +617,12 @@ class Expression:
             raise TypeError(
                 f"Argument of type {key_type} is not supported in Expression.__getitem__. Only int and string types are supported."
             )
+
+    def _eval_expressions(self, func_name, *args, **kwargs) -> Expression:
+        expr_args = [Expression._to_expression(v)._expr for v in args]
+        expr_kwargs = {k: Expression._to_expression(v)._expr for k, v in kwargs.items() if v is not None}
+        f = native.get_function_from_registry(func_name)
+        return Expression._from_pyexpr(f(self._expr, *expr_args, **expr_kwargs))
 
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name.
@@ -1244,8 +1250,8 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def _explode(self) -> Expression:
-        expr = native.explode(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("explode")
+        return Expression._from_pyexpr(f(self._expr))
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
         """Conditionally choose values between two expressions using the current boolean expression as a condition.
@@ -1832,6 +1838,10 @@ class ExpressionNamespace:
         ns = cls.__new__(cls)
         ns._expr = expr._expr
         return ns
+
+    def _eval_expressions(self, func_name: str, *args, **kwargs) -> Expression:
+        e = Expression._from_pyexpr(self._expr)
+        return e._eval_expressions(func_name, *args, **kwargs)
 
 
 class ExpressionUrlNamespace(ExpressionNamespace):
@@ -3991,8 +4001,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is every element of the list joined on the delimiter
         """
-        delimiter_expr = Expression._to_expression(delimiter)
-        return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
+        return self._eval_expressions("list_join", delimiter)
 
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
@@ -4026,7 +4035,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
-        return Expression._from_pyexpr(native.list_value_counts(self._expr))
+        return self._eval_expressions("list_value_counts")
 
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
@@ -4037,9 +4046,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        if isinstance(mode, str):
-            mode = CountMode.from_count_mode_str(mode)
-        return Expression._from_pyexpr(native.list_count(self._expr, mode))
+        return self._eval_expressions("list_count", mode)
 
     def lengths(self) -> Expression:
         """Gets the length of each list.
@@ -4054,7 +4061,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             category=DeprecationWarning,
         )
 
-        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+        return self._eval_expressions("list_count", CountMode.All)
 
     def length(self) -> Expression:
         """Gets the length of each list.
@@ -4062,7 +4069,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+        return self._eval_expressions("list_count", CountMode.All)
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list.
@@ -4074,9 +4081,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with the type of the list values
         """
-        idx_expr = Expression._to_expression(idx)
-        default_expr = lit(default)
-        return Expression._from_pyexpr(native.list_get(self._expr, idx_expr._expr, default_expr._expr))
+        return self._eval_expressions("list_get", idx, default)
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list.
@@ -4088,9 +4093,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with a list of the type of the list values
         """
-        start_expr = Expression._to_expression(start)
-        end_expr = Expression._to_expression(end)
-        return Expression._from_pyexpr(native.list_slice(self._expr, start_expr._expr, end_expr._expr))
+        return self._eval_expressions("list_slice", start, end)
 
     def chunk(self, size: int) -> Expression:
         """Splits each list into chunks of the given size.
@@ -4100,9 +4103,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with lists of fixed size lists of the type of the list values
         """
-        if not (isinstance(size, int) and size > 0):
-            raise ValueError(f"Invalid value for `size`: {size}")
-        return Expression._from_pyexpr(native.list_chunk(self._expr, size))
+        return self._eval_expressions("list_chunk", size)
 
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
@@ -4110,7 +4111,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_sum(self._expr))
+        return self._eval_expressions("list_sum")
 
     def mean(self) -> Expression:
         """Calculates the mean of each list. If no non-null values in a list, the result is null.
@@ -4118,7 +4119,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_mean(self._expr))
+        return self._eval_expressions("list_mean")
 
     def min(self) -> Expression:
         """Calculates the minimum of each list. If no non-null values in a list, the result is null.
@@ -4126,7 +4127,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_min(self._expr))
+        return self._eval_expressions("list_min")
 
     def max(self) -> Expression:
         """Calculates the maximum of each list. If no non-null values in a list, the result is null.
@@ -4134,7 +4135,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_max(self._expr))
+        return self._eval_expressions("list_max")
 
     def bool_and(self) -> Expression:
         """Calculates the boolean AND of all values in a list.
@@ -4164,7 +4165,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.list_bool_and(self._expr))
+        return self._eval_expressions("list_bool_and")
 
     def bool_or(self) -> Expression:
         """Calculates the boolean OR of all values in a list.
@@ -4194,9 +4195,9 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.list_bool_or(self._expr))
+        return self._eval_expressions("list_bool_or")
 
-    def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
+    def sort(self, desc: bool | Expression | None = None, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
         Args:
@@ -4224,13 +4225,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        if isinstance(desc, bool):
-            desc = Expression._to_expression(desc)
-        if nulls_first is None:
-            nulls_first = desc
-        elif isinstance(nulls_first, bool):
-            nulls_first = Expression._to_expression(nulls_first)
-        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
+        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
     def distinct(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
@@ -4277,7 +4272,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(_list_distinct(self._expr))
+        return self._eval_expressions("list_distinct")
 
     def unique(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.

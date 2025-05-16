@@ -38,5 +38,5 @@ def test_explode_multiple_cols(make_df, data):
 
 def test_explode_bad_col_type(make_df):
     df = make_df({"a": [1, 2, 3]})
-    with pytest.raises(ValueError, match="cannot be exploded"):
+    with pytest.raises(ValueError, match="Input must be a list"):
         df = df.explode(col("a"))

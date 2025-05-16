@@ -607,25 +607,6 @@ impl PySeries {
         Ok(self.series.murmur3_32()?.into_series().into())
     }
 
-    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
-        Ok(self.series.list_count(mode)?.into_series().into())
-    }
-
-    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
-        Ok(self.series.list_get(&idx.series, &default.series)?.into())
-    }
-
-    pub fn list_slice(&self, start: &Self, end: &Self) -> PyResult<Self> {
-        Ok(self.series.list_slice(&start.series, &end.series)?.into())
-    }
-
-    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .list_sort(&desc.series, &nulls_first.series)?
-            .into())
-    }
-
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {
         Ok(self.series.map_get(&key.series)?.into())
     }
