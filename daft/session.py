@@ -169,9 +169,6 @@ class Session:
 
         Args:
             alias (str): catalog alias to detach
-
-        Returns:
-            None
         """
         return self._session.detach_catalog(alias)
 
@@ -180,9 +177,6 @@ class Session:
 
         Args:
             alias (str): catalog alias to detach
-
-        Returns:
-            None
         """
         return self._session.detach_table(alias)
 
@@ -294,9 +288,6 @@ class Session:
 
         Args:
             identifier (Identifier|str): table identifier
-
-        Returns:
-            None
         """
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a namespace without a current catalog")
@@ -307,9 +298,6 @@ class Session:
 
         Args:
             identifier (Identifier|str): table identifier
-
-        Returns:
-            None
         """
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
@@ -337,9 +325,6 @@ class Session:
     def current_catalog(self) -> Catalog | None:
         """Get the session's current catalog or None.
 
-        Args:
-            None
-
         Returns:
             Catalog: current catalog or None if one is not set
         """
@@ -347,9 +332,6 @@ class Session:
 
     def current_namespace(self) -> Identifier | None:
         """Get the session's current namespace or None.
-
-        Args:
-            None
 
         Returns:
             Identifier: current namespace or none if one is not set
@@ -474,9 +456,6 @@ class Session:
         Args:
             identifier (str): sets the current catalog
 
-        Returns:
-            None
-
         Raises:
             ValueError: If the catalog does not exist.
         """
@@ -501,7 +480,7 @@ class Session:
         identifier: Identifier | str,
         df: DataFrame,
         mode: Literal["append", "overwrite"] = "append",
-        **options,
+        **options: dict[str, Any],
     ):
         """Writes the DataFrame to the table specified by the identifier.
 
@@ -509,10 +488,7 @@ class Session:
             identifier (Identifier|str): table identifier
             df (DataFrame): dataframe to write
             mode ("append"|"overwrite"): write mode, defaults to "append"
-            options**: additional, format-specific write options
-
-        Returns:
-            None
+            **options (dict[str,Any]): additional, format-specific write options
         """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)

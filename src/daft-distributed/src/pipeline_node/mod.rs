@@ -16,9 +16,9 @@ use limit::LimitNode;
 use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
-    channel::Receiver,
     scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
     stage::StageContext,
+    utils::channel::Receiver,
 };
 
 mod collect;

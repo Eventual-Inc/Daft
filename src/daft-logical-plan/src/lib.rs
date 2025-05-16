@@ -28,7 +28,9 @@ pub use partitioning::ClusteringSpec;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
-pub use sink_info::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+pub use sink_info::{
+    CatalogType, DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo,
+};
 pub use sink_info::{OutputFileInfo, SinkInfo};
 pub use source_info::{InMemoryInfo, SourceInfo};
 
