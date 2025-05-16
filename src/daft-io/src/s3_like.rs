@@ -1057,7 +1057,7 @@ impl S3LikeSource {
         part_size: usize,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibyte;
+        const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibytes
         const MAXIMUM_PART_SIZE: usize = 5 * 1024 * 1024 * 1024; // 5 Gibibytes
 
         if self.anonymous {
