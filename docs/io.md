@@ -92,8 +92,8 @@ See also [Iceberg](integrations/iceberg.md) for detailed integration.
 
 | Function                                                    | Description                                                        |
 |-------------------------------------------------------------|--------------------------------------------------------------------|
-<!-- | [`DataSink`][daft.io.sink.DataSink]                         | Interface for writing data from DataFrames                         | -->
-<!-- | [`DataSource`][daft.io.source.DataSource]                   | Interface for reading data into DataFrames                         | -->
-<!-- | [`DataSourceTask`][daft.io.source.DataSourceTask]           | Represents a partition of data that can be processed independently | -->
-<!-- | [`WriteOutput`][daft.io.sink.WriteOuput]                    | Wrapper for intermediate results written by a DataSink             | -->
+| [`DataSink`][daft.io.sink.DataSink]                         | Interface for writing data from DataFrames                         |
+| [`DataSource`][daft.io.source.DataSource]                   | Interface for reading data into DataFrames                         |
+| [`DataSourceTask`][daft.io.source.DataSourceTask]           | Represents a partition of data that can be processed independently |
+| [`WriteOutput`][daft.io.sink.WriteOuput]                    | Wrapper for intermediate results written by a DataSink             |
 | [`write_sink`][daft.dataframe.DataFrame.write_sink]         | Write a DataFrame to the given DataSink                            |
