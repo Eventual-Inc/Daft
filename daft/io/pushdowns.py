@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Pushdowns:
-    """Pushdowns is a python-friendly representation of daft's rust Pushdown type.
+    """Pushdowns are sent to scan sources during query planning.
 
     Attributes:
         filters (Expression | None): Optional filter predicate to apply to rows.
