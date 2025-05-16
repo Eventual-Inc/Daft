@@ -208,8 +208,16 @@ def public_storage_io_config() -> daft.io.IOConfig:
 
 @pytest.fixture(scope="session", params=DAFT_CAN_READ_FILES, ids=[name for name, _ in DAFT_CAN_READ_FILES])
 def parquet_file(request) -> tuple[str, str]:
-    """Returns a tuple of (`name`, `url`) of files that Daft should be able to handle. URLs may be HTTPs or S3."""
-    return request.param
+    """Returns a tuple of (`name`, `path`) of files that Daft should be able to handle. Path URLs may be HTTPs or S3.
+
+    Note:
+        We replace raw.githubusercontent.com with our public S3 bucket to avoid Github throttling.
+    """
+    name: str = request[0]
+    path: str = request[1].replace(
+        "https://raw.githubusercontent.com", "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github"
+    )
+    return (name, path)
 
 
 @pytest.fixture(params=[(True, True), (True, False), (False, False)], ids=["split", "merge", "ignore"])
