@@ -2311,7 +2311,6 @@ dependencies = [
  "jaq-interpret",
  "jaq-parse",
  "jaq-std",
- "pyo3",
  "serde",
  "serde_json",
  "typetag",
@@ -2821,7 +2820,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-recordbatch",
- "indexmap 2.8.0",
  "serde",
  "snafu",
 ]

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.table import Table as IcebergTable
 
+    from daft.io import DataSink
     from daft.plan_scheduler.physical_plan_scheduler import (
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,
@@ -391,4 +392,8 @@ class LogicalPlanBuilder:
             io_config,
             kwargs,
         )
+        return LogicalPlanBuilder(builder)
+
+    def write_datasink(self, name: str, sink: DataSink) -> LogicalPlanBuilder:
+        builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)

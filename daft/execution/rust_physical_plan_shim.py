@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.io import DataSink
     from daft.recordbatch import MicroPartition
 
 
@@ -415,3 +416,10 @@ def write_lance(
     kwargs: dict | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
+
+
+def write_data_sink(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sink: DataSink,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.data_sink_write(input, sink)
