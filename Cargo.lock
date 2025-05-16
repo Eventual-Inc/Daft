@@ -1611,6 +1611,7 @@ dependencies = [
  "futures",
  "pyo3",
  "serde",
+ "typetag",
 ]
 
 [[package]]
@@ -2233,18 +2234,27 @@ version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
  "common-daft-config",
+ "common-display",
  "common-error",
  "common-partitioning",
+ "common-py-serde",
+ "common-runtime",
+ "common-scan-info",
  "common-treenode",
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-scan",
  "daft-schema",
  "futures",
  "pyo3",
  "pyo3-async-runtimes",
+ "rand 0.8.5",
+ "serde",
  "tokio",
+ "tokio-stream",
  "tokio-util",
+ "uuid 1.16.0",
 ]
 
 [[package]]
@@ -2474,6 +2484,7 @@ dependencies = [
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",
+ "common-treenode",
  "daft-core",
  "daft-dsl",
  "daft-logical-plan",

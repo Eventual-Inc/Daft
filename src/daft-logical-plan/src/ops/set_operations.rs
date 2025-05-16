@@ -7,19 +7,20 @@ use daft_dsl::{left_col, lit, null_lit, resolved_col, right_col, ExprRef};
 use daft_functions::list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use super::{join::JoinPredicate, Aggregate, Concat, Distinct, Filter, Project};
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SetQuantifier {
     All,
     Distinct,
 }
 
 // todo: rename this to something else if we add support for by name for non-union set operations
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UnionStrategy {
     Positional, // e.g. `select * from t1 union select * from t2`
     ByName,     // e.g. `select a1 from t1 union by name select a1 from t2`
@@ -100,7 +101,7 @@ const V_COL_R: &str = "__v_col_r";
 const V_R_CNT: &str = "__v_r_cnt";
 const V_MIN_COUNT: &str = "__min_count";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Intersect {
     pub plan_id: Option<usize>,
     // Upstream nodes.
@@ -247,7 +248,7 @@ impl Intersect {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Union {
     pub plan_id: Option<usize>,
     // Upstream nodes.
@@ -392,7 +393,7 @@ impl Union {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Except {
     pub plan_id: Option<usize>,
     // Upstream nodes.

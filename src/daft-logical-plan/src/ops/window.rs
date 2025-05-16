@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{expr::window::WindowSpec, WindowExpr};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{LogicalPlan, Result},
@@ -28,7 +29,7 @@ use crate::{
 ///
 /// Multiple window function expressions can be stored in a single Window operator
 /// as long as they share the same window specification.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Window {
     /// An id for the plan.
     pub plan_id: Option<usize>,

@@ -1,140 +1,114 @@
 use std::{
     collections::HashMap,
+    fmt::Debug,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
 
-use collect::CollectNode;
-use common_daft_config::DaftExecutionConfig;
+use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
-use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
 use futures::Stream;
-use limit::LimitNode;
-use translate::translate_pipeline_plan_to_local_physical_plans;
+use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
-    channel::Receiver,
-    scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
+    scheduling::{
+        dispatcher::{SubmittedTask, TaskDispatcherHandle, TaskDispatcherHandleRef},
+        task::{SwordfishTask, Task},
+        worker::WorkerId,
+    },
     stage::StageContext,
+    utils::channel::Receiver,
 };
 
-mod collect;
+mod in_memory_source;
+mod intermediate;
 mod limit;
+pub(crate) mod materialize;
+mod scan_source;
 mod translate;
 
-pub(crate) trait DistributedPipelineNode: Send + Sync {
-    #[allow(dead_code)]
+pub(crate) use translate::logical_plan_to_pipeline_node;
+
+pub(crate) trait DistributedPipelineNode: Send + Sync + Debug {
+    fn as_tree_display(&self) -> &dyn TreeDisplay;
     fn name(&self) -> &'static str;
-    #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
-    #[allow(dead_code)]
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
+    fn start(
+        &self,
+        stage_context: &mut StageContext,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    ) -> RunningPipelineNode<SwordfishTask>;
 }
 
 #[allow(dead_code)]
-pub(crate) struct RunningPipelineNode {
-    result_receiver: Receiver<PipelineOutput>,
+pub(crate) struct RunningPipelineNode<T: Task> {
+    result_receiver: Receiver<PipelineOutput<T>>,
 }
 
-impl RunningPipelineNode {
+impl<T: Task> RunningPipelineNode<T> {
     #[allow(dead_code)]
-    fn new(result_receiver: Receiver<PipelineOutput>) -> Self {
+    fn new(result_receiver: Receiver<PipelineOutput<T>>) -> Self {
         Self { result_receiver }
     }
 
     #[allow(dead_code)]
-    pub fn into_inner(self) -> Receiver<PipelineOutput> {
+    pub fn into_inner(self) -> Receiver<PipelineOutput<T>> {
         self.result_receiver
     }
-}
 
-impl Stream for RunningPipelineNode {
-    type Item = DaftResult<PipelineOutput>;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for running pipeline node");
+    pub fn materialize(
+        self,
+        task_dispatcher_handle: TaskDispatcherHandleRef<T>,
+    ) -> impl Stream<Item = DaftResult<MaterializedOutput>> {
+        materialize_all_pipeline_outputs(self, task_dispatcher_handle)
     }
 }
 
-#[allow(dead_code)]
-pub(crate) enum PipelineOutput {
-    Materialized(PartitionRef),
-    Task(SwordfishTask),
-    Running(Box<dyn SwordfishTaskResultHandle>),
-}
+// instead of directly implementing Stream, we implement an into_stream method that returns an impl stream
+impl<T: Task> Stream for RunningPipelineNode<T> {
+    type Item = DaftResult<PipelineOutput<T>>;
 
-#[allow(dead_code)]
-pub(crate) fn logical_plan_to_pipeline_node(
-    plan: LogicalPlanRef,
-    config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
-) -> DaftResult<Box<dyn DistributedPipelineNode>> {
-    struct PipelineNodeBoundarySplitter {
-        root: LogicalPlanRef,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
-        config: Arc<DaftExecutionConfig>,
-    }
-
-    impl TreeNodeRewriter for PipelineNodeBoundarySplitter {
-        type Node = LogicalPlanRef;
-
-        fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            Ok(Transformed::no(node))
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.result_receiver.poll_recv(cx) {
+            Poll::Ready(Some(result)) => Poll::Ready(Some(Ok(result))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
+    }
+}
 
-        fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            let is_root = Arc::ptr_eq(&node, &self.root);
-            match node.as_ref() {
-                LogicalPlan::Limit(limit) => {
-                    let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let translated_local_physical_plans =
-                        translate_pipeline_plan_to_local_physical_plans(
-                            node.clone(),
-                            &self.config,
-                        )?;
-                    self.current_nodes = vec![Box::new(LimitNode::new(
-                        limit.limit as usize,
-                        translated_local_physical_plans,
-                        input_nodes,
-                        std::mem::take(&mut self.psets),
-                    ))];
-                    // Here we will have to return a placeholder, essentially cutting off the plan
-                    todo!("FLOTILLA_MS1: Implement pipeline node boundary splitter for limit");
-                }
-                _ if is_root => {
-                    let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let translated_local_physical_plans =
-                        translate_pipeline_plan_to_local_physical_plans(
-                            node.clone(),
-                            &self.config,
-                        )?;
-                    self.current_nodes = vec![Box::new(CollectNode::new(
-                        translated_local_physical_plans,
-                        input_nodes,
-                        std::mem::take(&mut self.psets),
-                    ))];
-                    Ok(Transformed::no(node))
-                }
-                _ => Ok(Transformed::no(node)),
-            }
+#[derive(Debug)]
+pub(crate) struct MaterializedOutput {
+    partition: PartitionRef,
+    worker_id: WorkerId,
+}
+
+impl MaterializedOutput {
+    pub fn new(partition: PartitionRef, worker_id: WorkerId) -> Self {
+        Self {
+            partition,
+            worker_id,
         }
     }
 
-    let mut splitter = PipelineNodeBoundarySplitter {
-        root: plan.clone(),
-        current_nodes: vec![],
-        psets,
-        config,
-    };
+    pub fn partition(&self) -> &PartitionRef {
+        &self.partition
+    }
 
-    let _transformed = plan.rewrite(&mut splitter)?;
-    assert!(splitter.current_nodes.len() == 1);
-    Ok(splitter
-        .current_nodes
-        .pop()
-        .expect("Expected exactly one node"))
+    pub fn worker_id(&self) -> &WorkerId {
+        &self.worker_id
+    }
+
+    pub fn into_inner(self) -> (PartitionRef, WorkerId) {
+        (self.partition, self.worker_id)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum PipelineOutput<T: Task> {
+    Materialized(MaterializedOutput),
+    Task(T),
+    Running(SubmittedTask),
 }

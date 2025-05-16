@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{partitioning::RepartitionSpec, stats::StatsState, LogicalPlan};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Repartition {
     pub plan_id: Option<usize>,
     // Upstream node.

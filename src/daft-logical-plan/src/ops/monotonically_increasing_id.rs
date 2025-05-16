@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
@@ -8,7 +9,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {
     pub plan_id: Option<usize>,
     pub input: Arc<LogicalPlan>,

@@ -9,6 +9,7 @@ use daft_dsl::{
 };
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
@@ -16,7 +17,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Project {
     pub plan_id: Option<usize>,
     // Upstream node.

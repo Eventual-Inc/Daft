@@ -3,6 +3,7 @@ use std::sync::Arc;
 use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
@@ -10,7 +11,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Aggregate {
     pub plan_id: Option<usize>,
     // Upstream node.

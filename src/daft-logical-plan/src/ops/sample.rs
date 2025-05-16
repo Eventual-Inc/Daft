@@ -3,12 +3,14 @@ use std::{
     sync::Arc,
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     stats::{PlanStats, StatsState},
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
     pub plan_id: Option<usize>,
     // Upstream node.
