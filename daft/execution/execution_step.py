@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import JoinSide, ResourceRequest
+from daft.daft import JoinSide, PyRecordBatch, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import overwrite_files
-from daft.recordbatch import MicroPartition, recordbatch_io
+from daft.recordbatch import MicroPartition, RecordBatch, recordbatch_io
 from daft.runners.partitioning import (
     Boundaries,
     MaterializedResult,
@@ -16,6 +16,7 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionT,
 )
+from daft.series import Series
 
 if TYPE_CHECKING:
     import pathlib
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.io import DataSink
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
 
@@ -576,6 +578,30 @@ class WriteLance(SingleOutputInstruction):
             io_config=self.io_config,
             kwargs=self.kwargs,
         )
+
+
+@dataclass(frozen=True)
+class DataSinkWrite(SingleOutputInstruction):
+    sink: DataSink
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        result_field_name = "write_results"
+        results = list(self.sink.write(iter(inputs)))
+        results_series = Series.from_pylist(results, result_field_name, pyobj="force")
+        series_dict = {result_field_name: results_series._series}
+        rb = RecordBatch._from_pyrecordbatch(PyRecordBatch.from_pylist_series(series_dict))
+        mp = MicroPartition._from_record_batches([rb])
+        return [mp]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # TODO(desmond): We can potentially do something more useful here. For now, copy the implementation for the other writers.
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # we can write more than 1 file per partition
+                size_bytes=None,
+            )
+        ]
 
 
 @dataclass(frozen=True)

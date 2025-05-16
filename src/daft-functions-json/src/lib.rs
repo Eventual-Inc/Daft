@@ -7,7 +7,10 @@ use daft_core::{
     prelude::{AsArrow, DataType, Utf8Array},
     series::Series,
 };
-use daft_dsl::{functions::ScalarFunction, ExprRef};
+use daft_dsl::{
+    functions::{FunctionModule, FunctionRegistry, ScalarFunction},
+    ExprRef,
+};
 use expr::JsonQuery;
 use itertools::Itertools;
 use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter};
@@ -105,33 +108,16 @@ pub fn json_query_series(s: &Series, query: &str) -> DaftResult<Series> {
 ///
 /// A `DaftResult` containing the resulting UTF-8 array after applying the query.
 #[must_use]
-pub fn json_query(input: ExprRef, query: &str) -> ExprRef {
-    ScalarFunction::new(
-        JsonQuery {
-            query: query.to_string(),
-        },
-        vec![input],
-    )
-    .into()
+pub fn json_query(input: ExprRef, query: ExprRef) -> ExprRef {
+    ScalarFunction::new(JsonQuery, vec![input, query]).into()
 }
 
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{prelude::*, pyfunction, PyResult},
-};
+pub struct JsonFunctions;
 
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "json_query")]
-pub fn py_json_query(expr: PyExpr, query: &str) -> PyResult<PyExpr> {
-    Ok(json_query(expr.into(), query).into())
-}
-
-#[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction!(py_json_query, parent)?)?;
-    Ok(())
+impl FunctionModule for JsonFunctions {
+    fn register(parent: &mut FunctionRegistry) {
+        parent.add_fn(crate::expr::JsonQuery);
+    }
 }
 
 #[cfg(test)]

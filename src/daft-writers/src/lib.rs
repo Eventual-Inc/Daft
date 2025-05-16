@@ -18,6 +18,8 @@ mod catalog;
 mod lance;
 #[cfg(feature = "python")]
 mod pyarrow;
+#[cfg(feature = "python")]
+mod sink;
 
 use std::{
     cmp::min,
@@ -39,6 +41,8 @@ use ipc::IPCWriterFactory;
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
+#[cfg(feature = "python")]
+pub use sink::make_data_sink_writer_factory;
 
 pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
 

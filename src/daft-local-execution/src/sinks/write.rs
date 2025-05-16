@@ -31,6 +31,7 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
+    DataSink,
 }
 
 struct WriteState {
@@ -205,6 +206,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::Deltalake => "DeltalakeSink",
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
             WriteFormat::Lance => "LanceSink",
+            WriteFormat::DataSink => "DataSink",
         }
     }
 

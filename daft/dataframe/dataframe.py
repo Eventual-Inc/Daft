@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     import ray
     import torch
 
-    from daft.io import DataCatalogTable
+    from daft.io import DataCatalogTable, DataSink
     from daft.unity_catalog import UnityCatalogTable
 
 if sys.version_info < (3, 10):
@@ -62,11 +62,11 @@ if sys.version_info < (3, 10):
 else:
     from typing import Concatenate, ParamSpec
 
-from daft.logical.schema import Schema
+from daft.schema import Schema
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
-
 T = TypeVar("T")
+R = TypeVar("R")
 P = ParamSpec("P")
 
 
@@ -1179,6 +1179,35 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
+    def write_sink(self, sink: "DataSink[T]") -> "DataFrame":
+        """Writes the DataFrame to the given DataSink.
+
+        Args:
+            sink: The DataSink to write to.
+
+        Returns:
+            DataFrame: A dataframe from the micropartition returned by the DataSink's `.finalize()` method.
+        """
+        sink.start()
+
+        builder = self._builder.write_datasink(sink.name(), sink)
+        write_df = DataFrame(builder)
+        write_df.collect()
+
+        results = write_df.to_pydict()
+        assert "write_results" in results
+        micropartition = sink.finalize(results["write_results"])
+        if micropartition.schema() != sink.schema():
+            raise ValueError(
+                f"Schema mismatch between the data sink's schema and the result's schema:\nSink schema:\n{sink.schema()}\nResult schema:\n{micropartition.schema()}"
+            )
+        # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
+        # plan from the source all the way to the sink to the sink's results. In theory we can do this
+        # for all other sinks too.
+        write_plan_builder = to_logical_plan_builder(micropartition)
+        return DataFrame(write_plan_builder)
+
+    @DataframePublicAPI
     def write_lance(
         self,
         uri: Union[str, pathlib.Path],
@@ -1239,75 +1268,10 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        from daft import from_pydict
-        from daft.io.object_store_options import io_config_to_storage_options
+        from daft.dataframe.lance_data_sink import LanceDataSink
 
-        try:
-            import lance
-            import pyarrow as pa
-
-        except ImportError:
-            raise ImportError("lance is not installed. Please install lance using `pip install daft[lance]`")
-
-        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-
-        if isinstance(uri, (str, pathlib.Path)):
-            if isinstance(uri, str):
-                table_uri = uri
-            elif isinstance(uri, pathlib.Path):
-                table_uri = str(uri)
-            else:
-                table_uri = uri
-        pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-
-        storage_options = io_config_to_storage_options(io_config, table_uri)
-
-        try:
-            table = lance.dataset(table_uri, storage_options=storage_options)
-
-        except ValueError:
-            table = None
-
-        version = 0
-        if table:
-            table_schema = table.schema
-            version = table.latest_version
-            if pyarrow_schema != table_schema and not (mode == "overwrite"):
-                raise ValueError(
-                    "Schema of data does not match table schema\n"
-                    f"Data schema:\n{pyarrow_schema}\nTable Schema:\n{table_schema}"
-                )
-
-        builder = self._builder.write_lance(
-            table_uri,
-            mode,
-            io_config=io_config,
-            kwargs=kwargs,
-        )
-        write_df = DataFrame(builder)
-        write_df.collect()
-
-        write_result = write_df.to_pydict()
-        assert "fragments" in write_result
-        fragments = write_result["fragments"]
-
-        if mode == "create" or mode == "overwrite":
-            operation = lance.LanceOperation.Overwrite(pyarrow_schema, fragments)
-        elif mode == "append":
-            operation = lance.LanceOperation.Append(fragments)
-
-        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
-        stats = dataset.stats.dataset_stats()
-
-        tbl = from_pydict(
-            {
-                "num_fragments": pa.array([stats["num_fragments"]], type=pa.int64()),
-                "num_deleted_rows": pa.array([stats["num_deleted_rows"]], type=pa.int64()),
-                "num_small_files": pa.array([stats["num_small_files"]], type=pa.int64()),
-                "version": pa.array([dataset.version], type=pa.int64()),
-            }
-        )
-        return tbl
+        sink = LanceDataSink(uri, self.schema(), mode, io_config, **kwargs)
+        return self.write_sink(sink)
 
     ###
     # DataFrame operations
@@ -2487,6 +2451,8 @@ class DataFrame:
             return expr.agg_set()
         elif op == "concat":
             return expr.agg_concat()
+        elif op == "skew":
+            return expr.skew()
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
@@ -3685,6 +3651,14 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped count per column.
         """
         return self.df._apply_agg_fn(Expression.count, cols, self.group_by)
+
+    def skew(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped skew on this GroupedDataFrame.
+
+        Returns:
+            DataFrame: DataFrame with the grouped skew per column.
+        """
+        return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
 
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped list on this GroupedDataFrame.
