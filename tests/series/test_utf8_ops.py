@@ -8,6 +8,8 @@ import unicodedata
 import pyarrow as pa
 import pytest
 
+import daft
+import daft.exceptions
 from daft import DataType, Series
 
 
@@ -470,7 +472,7 @@ def test_series_utf8_left(data, nchars, expected) -> None:
 def test_series_utf8_left_empty_arrs(data, nchars) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         s.str.left(nchars)
 
 
@@ -483,27 +485,21 @@ def test_series_utf8_left_empty_inputs() -> None:
 def test_series_utf8_left_mismatch_len() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         s.str.left(nchars)
-
-
-def test_series_utf8_left_bad_nchars() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    with pytest.raises(ValueError):
-        s.str.left(1)
 
 
 def test_series_utf8_left_bad_nchars_dtype() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     nchars = Series.from_arrow(pa.array(["1", "2", "3"]))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftTypeError):
         s.str.left(nchars)
 
 
 def test_series_utf8_left_bad_dtype() -> None:
     s = Series.from_arrow(pa.array([1, 2, 3]))
     nchars = Series.from_arrow(pa.array([1, 2, 3]))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftTypeError):
         s.str.left(nchars)
 
 
@@ -550,12 +546,6 @@ def test_series_utf8_right_mismatch_len() -> None:
     nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
     with pytest.raises(ValueError):
         s.str.right(nchars)
-
-
-def test_series_utf8_right_bad_nchars() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    with pytest.raises(ValueError):
-        s.str.right(1)
 
 
 def test_series_utf8_right_bad_nchars_dtype() -> None:

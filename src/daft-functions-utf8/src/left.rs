@@ -37,7 +37,7 @@ impl ScalarUDF for Left {
             } else if nchars.data_type().is_null() {
                 Ok(s.clone())
             } else {
-                Err(DaftError::TypeError(format!(
+                Err(DaftError::ValueError(format!(
                     "Left not implemented for nchar type {}",
                     nchars.data_type()
                 )))
