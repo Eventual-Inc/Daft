@@ -236,10 +236,7 @@ async fn read_json_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
-    let daft_schema = Arc::new(schema.into());
-    let predicate = predicate
-        .map(|expr| BoundExpr::try_new(expr, &daft_schema))
-        .transpose()?;
+    let daft_schema: SchemaRef = Arc::new(schema.into());
 
     let include_column_indices = include_columns
         .map(|include_columns| {
@@ -252,7 +249,10 @@ async fn read_json_single_into_table(
 
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
+            let table = table?;
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
             if let Some(include_column_indices) = &include_column_indices {
                 Ok(filtered.get_columns(include_column_indices))
             } else {
