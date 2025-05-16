@@ -146,10 +146,10 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        (
-            0,
-            self.batch_size
-                .unwrap_or_else(|| runtime_handle.default_morsel_size()),
-        )
+        if let Some(batch_size) = self.batch_size {
+            (batch_size, batch_size)
+        } else {
+            IntermediateOperator::morsel_size_range(self, runtime_handle)
+        }
     }
 }

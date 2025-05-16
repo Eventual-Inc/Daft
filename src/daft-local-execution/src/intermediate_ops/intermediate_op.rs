@@ -59,10 +59,7 @@ pub trait IntermediateOperator: Send + Sync {
     }
 
     fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        (
-            runtime_handle.default_morsel_size(),
-            runtime_handle.default_morsel_size(),
-        )
+        (0, runtime_handle.default_morsel_size())
     }
 
     fn dispatch_spawner(

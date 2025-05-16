@@ -57,6 +57,13 @@ impl RoundRobinDispatcher {
         }
     }
 
+    pub(crate) fn unbounded() -> Self {
+        Self {
+            morsel_size_lower_bound: 0,
+            morsel_size_upper_bound: usize::MAX,
+        }
+    }
+
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
