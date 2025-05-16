@@ -731,11 +731,7 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
             Decimal128Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         struct_dtype @ DataType::Struct(_) => {
-            let data = dbg!(values)
-                .iter()
-                .map(|lit| lit.to_series())
-                .collect::<Vec<_>>();
-            dbg!(&data);
+            let data = values.iter().map(|lit| lit.to_series()).collect::<Vec<_>>();
 
             let sa = StructArray::new(Field::new("literal", struct_dtype), data, None);
             sa.into_series()
