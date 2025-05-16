@@ -223,7 +223,7 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         if let Some(batch_size) = self.batch_size {
             (batch_size, batch_size)
         } else {
-            IntermediateOperator::morsel_size_range(self, runtime_handle)
+            (0, runtime_handle.default_morsel_size())
         }
     }
 }
