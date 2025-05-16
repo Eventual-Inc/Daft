@@ -80,3 +80,18 @@ pub fn calculate_stddev(stats: Stats, values: impl Iterator<Item = f64>) -> Opti
         (sum_of_squares / stats.count).sqrt()
     })
 }
+
+pub fn calculate_skew(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
+    let count = stats.count;
+    stats.mean.map(|mean| {
+        // In order to use the same iterator for 2 different calculations
+        let (m3, m2) = values.fold((0., 0.), |(m3_acc, m2_acc), v| {
+            (
+                m3_acc + (v - mean).powi(3),
+                (v - mean).mul_add(v - mean, m2_acc),
+            )
+        });
+
+        (m3 / count) / (m2 / count).powi(3).sqrt()
+    })
+}

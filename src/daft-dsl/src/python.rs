@@ -394,6 +394,10 @@ impl PyExpr {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
     }
 
+    pub fn skew(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().skew().into())
+    }
+
     pub fn agg_list(&self) -> PyResult<Self> {
         Ok(self.expr.clone().agg_list().into())
     }
