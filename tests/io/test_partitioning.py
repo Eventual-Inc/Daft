@@ -21,32 +21,32 @@ def test_partition_field():
 
 
 @pytest.mark.parametrize(
-    "transform_factory,expected_type,expected_params",
+    "transform_factory,transform_type,transform_args",
     [
         (PartitionTransform.identity, "identity", None),
         (PartitionTransform.year, "year", None),
         (PartitionTransform.month, "month", None),
         (PartitionTransform.day, "day", None),
         (PartitionTransform.hour, "hour", None),
-        (PartitionTransform.iceberg_bucket, "iceberg_bucket", {"n": 10}),
-        (PartitionTransform.iceberg_truncate, "iceberg_truncate", {"w": 10}),
+        (PartitionTransform.iceberg_bucket, "iceberg_bucket", [10]),
+        (PartitionTransform.iceberg_truncate, "iceberg_truncate", [10]),
     ],
 )
-def test_partition_transform_types(transform_factory, expected_type, expected_params):
-    if expected_params:
-        transform = transform_factory(**expected_params)
+def test_partition_transform_types(transform_factory, transform_type, transform_args):
+    if transform_args:
+        transform = transform_factory(*transform_args)
     else:
         transform = transform_factory()
 
-    for transform_type in ["identity", "year", "month", "day", "hour", "iceberg_bucket", "iceberg_truncate"]:
-        is_expected = transform_type == expected_type
-        assert getattr(transform, f"is_{transform_type}")() == is_expected
+    for other_transform_type in ["identity", "year", "month", "day", "hour", "iceberg_bucket", "iceberg_truncate"]:
+        is_other_transform = transform_type == other_transform_type
+        assert getattr(transform, f"is_{other_transform_type}")() == is_other_transform
 
-    if expected_type == "iceberg_bucket":
-        assert transform.get_iceberg_bucket_n() == expected_params["n"]
+    if transform_type == "iceberg_bucket":
+        assert transform.num_buckets == transform_args[0]
 
-    if expected_type == "iceberg_truncate":
-        assert transform.get_iceberg_truncate_w() == expected_params["w"]
+    if transform_type == "iceberg_truncate":
+        assert transform.width == transform_args[0]
 
 
 def test_partition_transform_direct_initialization():

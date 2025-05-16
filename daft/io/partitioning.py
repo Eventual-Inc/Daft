@@ -81,7 +81,7 @@ class PartitionTransform:
             PartitionTransform: A new identity partition transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.identity()
             >>> assert transform.is_identity()
         """
@@ -96,7 +96,7 @@ class PartitionTransform:
             PartitionTransform: A new year partition transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.year()
             >>> assert transform.is_year()
         """
@@ -111,7 +111,7 @@ class PartitionTransform:
             PartitionTransform: A new month partition transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.month()
             >>> assert transform.is_month()
         """
@@ -126,7 +126,7 @@ class PartitionTransform:
             PartitionTransform: A new day partition transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.day()
             >>> assert transform.is_day()
         """
@@ -141,7 +141,7 @@ class PartitionTransform:
             PartitionTransform: A new hour partition transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.hour()
             >>> assert transform.is_hour()
         """
@@ -159,10 +159,10 @@ class PartitionTransform:
             PartitionTransform: A new Iceberg bucket partition transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.iceberg_bucket(10)
             >>> assert transform.is_iceberg_bucket()
-            >>> assert transform.get_iceberg_bucket_n() == 10
+            >>> assert transform.num_buckets == 10
         """
         pt = PyPartitionTransform.iceberg_bucket(n)
         return cls._from_py_partition_transform(pt)
@@ -178,10 +178,10 @@ class PartitionTransform:
             PartitionTransform: A new Iceberg truncate partition transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.iceberg_truncate(10)
             >>> assert transform.is_iceberg_truncate()
-            >>> assert transform.get_iceberg_truncate_w() == 10
+            >>> assert transform.width == 10
         """
         pt = PyPartitionTransform.iceberg_truncate(w)
         return cls._from_py_partition_transform(pt)
@@ -193,7 +193,7 @@ class PartitionTransform:
             bool: True if this is an identity transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.identity()
             >>> assert transform.is_identity()
         """
@@ -206,7 +206,7 @@ class PartitionTransform:
             bool: True if this is a year transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.year()
             >>> assert transform.is_year()
         """
@@ -219,7 +219,7 @@ class PartitionTransform:
             bool: True if this is a month transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.month()
             >>> assert transform.is_month()
         """
@@ -232,7 +232,7 @@ class PartitionTransform:
             bool: True if this is a day transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.day()
             >>> assert transform.is_day()
         """
@@ -245,7 +245,7 @@ class PartitionTransform:
             bool: True if this is an hour transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.hour()
             >>> assert transform.is_hour()
         """
@@ -258,7 +258,7 @@ class PartitionTransform:
             bool: True if this is an Iceberg bucket transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.iceberg_bucket(10)
             >>> assert transform.is_iceberg_bucket()
         """
@@ -271,34 +271,36 @@ class PartitionTransform:
             bool: True if this is an Iceberg truncate transform.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.iceberg_truncate(10)
             >>> assert transform.is_iceberg_truncate()
         """
         return self._partition_transform.is_iceberg_truncate()
 
-    def get_iceberg_bucket_n(self) -> int:
-        """Gets the number of buckets for an Iceberg bucket transform.
+    @property
+    def num_buckets(self) -> int:
+        """If this is an iceberg_bucket partition transform, then returns the number of buckets; otherwise an attribute error is raised.
 
         Returns:
             int: Number of buckets.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.iceberg_bucket(10)
-            >>> assert transform.get_iceberg_bucket_n() == 10
+            >>> assert transform.num_buckets == 10
         """
-        return self._partition_transform.get_iceberg_bucket_n()
+        return self._partition_transform.num_buckets()
 
-    def get_iceberg_truncate_w(self) -> int:
-        """Gets the truncation width for an Iceberg truncate transform.
+    @property
+    def width(self) -> int:
+        """If this is an iceberg_truncate partition transform, then returns the truncation width; otherwise an attribute error is raised.
 
         Returns:
             int: Truncation width.
 
         Examples:
-            >>> import daft.io.partitioning PartitionTransform
+            >>> from daft.io.partitioning import PartitionTransform
             >>> transform = PartitionTransform.iceberg_truncate(10)
-            >>> assert transform.get_iceberg_truncate_w() == 10
+            >>> assert transform.width == 10
         """
-        return self._partition_transform.get_iceberg_truncate_w()
+        return self._partition_transform.width()
