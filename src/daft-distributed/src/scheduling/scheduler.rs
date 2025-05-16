@@ -104,7 +104,6 @@ impl<T: Task, W: Worker> Scheduler<T, W> for DefaultScheduler {
                 },
             };
             if let Some(worker_id) = worker_id {
-                println!("scheduled task {} to worker {}", task.task_id(), worker_id);
                 let task_id = task.task_id().to_string();
                 scheduled_tasks.push((worker_id.clone(), task));
                 self.worker_snapshots

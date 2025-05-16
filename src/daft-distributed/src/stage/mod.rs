@@ -62,8 +62,9 @@ impl Stage {
                 let running_node = pipeline_node.start(&mut stage_context, psets.clone());
 
                 let (task_dispatcher_handle, joinset) = stage_context.into_inner();
+                let materialized_output_stream = materialize_all_pipeline_outputs(running_node, task_dispatcher_handle);
                 let partition_ref_stream = JoinableForwardingStream::new(
-                    materialize_all_pipeline_outputs(running_node, task_dispatcher_handle),
+                    materialized_output_stream,
                     joinset,
                 );
                 Ok(partition_ref_stream.map(|result| match result {

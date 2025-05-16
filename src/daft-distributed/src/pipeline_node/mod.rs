@@ -66,6 +66,7 @@ impl<T: Task> RunningPipelineNode<T> {
     }
 }
 
+// instead of directly implementing Stream, we implement an into_stream method that returns an impl stream
 impl<T: Task> Stream for RunningPipelineNode<T> {
     type Item = DaftResult<PipelineOutput<T>>;
 

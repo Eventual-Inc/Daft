@@ -82,6 +82,8 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
             let workers = dispatcher.worker_manager.workers();
             dispatcher.scheduler.update_state(workers);
 
+            // enqueue tasks, task dispatcher does not hold pending tasks
+
             // 2. Get tasks to schedule
             let schedule_result = dispatcher
                 .scheduler
@@ -92,10 +94,12 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
             // 3. Schedule tasks
             for (worker_id, task) in schedulable_task_and_worker_ids.into_iter() {
                 let task_id = task.task_id().to_string();
+                // potentially have a batch method
                 let mut task_handle = dispatcher
                     .worker_manager
                     .submit_task_to_worker(Box::new(task.task), worker_id.clone());
 
+                // hide this away, put it in the task
                 let task_future = async move {
                     tokio::select! {
                         biased;
@@ -129,6 +133,7 @@ impl<T: Task, W: Worker> TaskDispatcher<T, W> {
                     if let Err(e) = finished_task {
                         return Err(e);
                     }
+                    // add boolean to track if worker state changed
                 }
                 Some(next_task) = task_rx.recv(), if current_pending_tasks < max_tasks_to_wait_for => {
                     pending_tasks.push(next_task);
