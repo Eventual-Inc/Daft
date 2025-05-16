@@ -1,5 +1,7 @@
 pub mod agg;
 mod function_args;
+#[cfg(test)]
+mod macro_tests;
 pub mod map;
 pub mod partitioning;
 pub mod python;

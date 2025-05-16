@@ -15,6 +15,9 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 typetag = {workspace = true}
 
+[dev-dependencies]
+rstest = {workspace = true}
+
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-treenode/python", "common-py-serde/python", "common-resource-request/python"]
 test-utils = []
