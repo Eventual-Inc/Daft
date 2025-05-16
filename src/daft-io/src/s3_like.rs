@@ -1,4 +1,7 @@
-use std::{collections::HashMap, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap, num::NonZeroUsize, ops::Range, string::FromUtf8Error, sync::Arc,
+    time::Duration,
+};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -1049,35 +1052,53 @@ impl S3LikeSource {
     ///
     /// This function splits the data into parts of the specified size and uploads all the parts
     /// in parallel.
+    ///
+    /// ## S3
+    /// S3 multipart upload limits are as follows:
+    ///
+    /// * Minimum part size: 5 MiB
+    /// * Maximum part size: 5 GiB
+    /// * Maximum number of parts: 10,000
+    ///
+    /// Source: [Amazon S3 multipart upload limits](https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html)
+    ///
+    /// ## R2
+    /// R2 multipart upload limits are as follows:
+    ///
+    /// * Same as S3 - but each part (except the last one) needs to be the same size. So no support
+    ///   for varying part sizes within a single multi-part upload.
+    ///
+    /// Source: [Multipart Upload Limitations](https://developers.cloudflare.com/r2/objects/multipart-objects/#limitations)
     #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
     pub async fn put_multipart(
         &self,
         uri: &str,
         data: bytes::Bytes,
-        part_size: usize,
+        part_size: NonZeroUsize,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
         const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibytes
         const MAXIMUM_PART_SIZE: usize = 5 * 1024 * 1024 * 1024; // 5 Gibibytes
+        const MAX_PART_COUNT: usize = 10000; // Max parts in a multipart upload
 
         if self.anonymous {
             return Err(Error::UploadsCannotBeAnonymous {}.into());
         }
 
         assert!(
-            part_size >= MINIMUM_PART_SIZE,
+            part_size.get() >= MINIMUM_PART_SIZE,
             "Part size must be greater than or equal to 5MiB"
         );
         assert!(
-            part_size <= MAXIMUM_PART_SIZE,
+            part_size.get() <= MAXIMUM_PART_SIZE,
             "Part size must be less than or equal to 5GiB"
         );
 
         let data_len = data.len();
-        let part_count = data_len.div_ceil(part_size);
+        let part_count = data_len.div_ceil(part_size.get());
 
         assert!(
-            part_count <= 10000,
+            part_count <= MAX_PART_COUNT,
             "Part count must be less than or equal to 10000"
         );
 
@@ -1125,7 +1146,7 @@ impl S3LikeSource {
 
         log::debug!("S3 put multipart upload-id: {upload_id}");
 
-        let parts = BytesChunker::chunked(data, part_size);
+        let parts = BytesChunker::new(data, part_size);
 
         let upload_part_futures = parts
             .enumerate()
@@ -1200,14 +1221,18 @@ impl S3LikeSource {
 #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
 struct BytesChunker {
     data: bytes::Bytes,
-    chunk_size: usize,
+    chunk_size: NonZeroUsize,
     offset: usize,
 }
 
+/// Iterator that splits a `Bytes` object into chunks of a specified size.
+///
+/// Although `Bytes` supports a `chunk` method, it returns `&[u8]` slices, which are cannot be
+/// passed to the S3 client. This implementation uses the `slice` method to create a new `Bytes`
+/// (slices do not make copies, but increment reference count for underlying buffer) for each chunk.
 impl BytesChunker {
     #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
-    fn chunked(data: bytes::Bytes, chunk_size: usize) -> Self {
-        assert!(chunk_size > 0, "Chunk size must be greater than 0");
+    fn new(data: bytes::Bytes, chunk_size: NonZeroUsize) -> Self {
         Self {
             data,
             chunk_size,
@@ -1224,7 +1249,7 @@ impl Iterator for BytesChunker {
             return None;
         }
 
-        let end = (self.offset + self.chunk_size).min(self.data.len());
+        let end = (self.offset + self.chunk_size.get()).min(self.data.len());
         let part = self.data.slice(self.offset..end);
         self.offset = end;
         Some(part)
@@ -1437,6 +1462,8 @@ impl ObjectSource for S3LikeSource {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use bytes::Bytes;
     use common_io_config::S3Config;
 
@@ -1510,7 +1537,8 @@ mod tests {
     #[test]
     fn test_bytes_chunker_happy_even_split() {
         let data = bytes::Bytes::from_static(b"1234567890");
-        let chunks: Vec<Bytes> = BytesChunker::chunked(data.clone(), 5).collect();
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(5).unwrap()).collect();
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0], Bytes::from_static(b"12345"));
         assert_eq!(chunks[1], Bytes::from_static(b"67890"));
@@ -1519,7 +1547,8 @@ mod tests {
     #[test]
     fn test_bytes_chunker_happy_uneven_split() {
         let data = bytes::Bytes::from_static(b"1234567890");
-        let chunks: Vec<Bytes> = BytesChunker::chunked(data.clone(), 3).collect();
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(3).unwrap()).collect();
 
         assert_eq!(chunks.len(), 4);
         assert_eq!(chunks[0], Bytes::from_static(b"123"));
@@ -1531,14 +1560,17 @@ mod tests {
     #[test]
     fn test_bytes_chunker_empty() {
         let data = bytes::Bytes::from_static(b"");
-        let chunks: Vec<Bytes> = BytesChunker::chunked(data.clone(), 3).collect();
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(3).unwrap()).collect();
         assert_eq!(chunks.len(), 0);
     }
 
     #[test]
-    #[should_panic]
-    fn test_bytes_chunker_zero_chunk_size() {
+    fn test_bytes_large_chunk() {
         let data = bytes::Bytes::from_static(b"1234567890");
-        let chunks: Vec<Bytes> = BytesChunker::chunked(data.clone(), 0).collect();
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(20).unwrap()).collect();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], Bytes::from_static(b"1234567890"));
     }
 }
