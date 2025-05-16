@@ -484,6 +484,12 @@ pub trait Literal: Sized {
     fn literal_value(self) -> LiteralValue;
 }
 
+impl Literal for LiteralValue {
+    fn literal_value(self) -> LiteralValue {
+        self
+    }
+}
+
 impl Literal for IntervalValue {
     fn literal_value(self) -> LiteralValue {
         LiteralValue::Interval(self)

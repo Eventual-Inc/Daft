@@ -1,5 +1,7 @@
 pub mod agg;
 mod function_args;
+#[cfg(test)]
+mod macro_tests;
 pub mod map;
 pub mod partitioning;
 pub mod python;
@@ -16,7 +18,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-pub use function_args::{FunctionArg, FunctionArgs};
+pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
 use python::PythonUDF;
 pub use scalar::*;
 use serde::{Deserialize, Serialize};

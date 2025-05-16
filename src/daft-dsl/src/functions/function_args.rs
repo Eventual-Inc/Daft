@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+pub use common_macros::FunctionArgs;
 use serde::{Deserialize, Serialize};
 
 /// Wrapper around T to hold either a named or an unnamed argument.
@@ -149,6 +150,35 @@ impl<T> FunctionArgs<T> {
 
     pub fn first(&self) -> Option<&T> {
         self.0.first().map(|f| f.inner())
+    }
+
+    /// Split a `FunctionArgs` into an ordered list of unnamed arguments and a map of named arguments
+    #[allow(clippy::type_complexity)]
+    pub fn into_unnamed_and_named(self) -> DaftResult<(Vec<T>, HashMap<Arc<str>, T>)> {
+        let mut seen_named = false;
+
+        let mut unnamed = Vec::new();
+        let mut named: HashMap<Arc<str>, T> = HashMap::new();
+
+        for function_arg in self.0 {
+            match function_arg {
+                FunctionArg::Named { name, arg } => {
+                    seen_named = true;
+                    named.insert(name, arg);
+                }
+                FunctionArg::Unnamed(arg) => {
+                    if seen_named {
+                        return Err(DaftError::ValueError(
+                            "Cannot have unnamed arguments after named arguments".to_string(),
+                        ));
+                    }
+
+                    unnamed.push(arg);
+                }
+            }
+        }
+
+        Ok((unnamed, named))
     }
 }
 
@@ -388,11 +418,18 @@ impl<T> FunctionArgs<T> {
     }
 }
 
+#[derive(FunctionArgs)]
+/// A single required argument named `input`
+pub struct UnaryArg<T> {
+    pub input: T,
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
 
     use crate::functions::function_args::{FunctionArg, FunctionArgs};
+
     #[test]
     fn test_function_args_ordering() {
         let res = FunctionArgs::try_new(vec![

@@ -4,7 +4,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -17,12 +17,8 @@ macro_rules! log {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn evaluate(
-                &self,
-                inputs: daft_dsl::functions::FunctionArgs<Series>,
-            ) -> DaftResult<Series> {
-                ensure!(inputs.len() == 1, "Expected 1 argument");
-                let input = inputs.required((0, "input"))?;
+            fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
 
                 input.$name()
             }
@@ -31,14 +27,13 @@ macro_rules! log {
                 stringify!($name)
             }
 
-            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-                if inputs.len() != 1 {
-                    return Err(DaftError::SchemaMismatch(format!(
-                        "Expected 1 input arg, got {}",
-                        inputs.len()
-                    )));
-                };
-                let field = inputs.first().unwrap().to_field(schema)?;
+            fn function_args_to_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
                 let dtype = match field.dtype {
                     DataType::Float32 => DataType::Float32,
                     dt if dt.is_numeric() => DataType::Float64,
