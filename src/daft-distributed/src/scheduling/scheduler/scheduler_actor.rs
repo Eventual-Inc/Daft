@@ -6,7 +6,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
@@ -70,6 +70,40 @@ impl<W: Worker, T: Task> SchedulerActor<W, T> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct SchedulerHandle<T: Task> {
+    scheduler_sender: Sender<SchedulableTask<T>>,
+}
+
+impl<T: Task> SchedulerHandle<T> {
+    fn new(scheduler_sender: Sender<SchedulableTask<T>>) -> Self {
+        Self { scheduler_sender }
+    }
+
+    fn prepare_task_for_submission(&self, task: T) -> (SchedulableTask<T>, SubmittedTask) {
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let cancel_token = CancellationToken::new();
+
+        let task_id = task.task_id().clone();
+        let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token.clone());
+        let submitted_task = SubmittedTask::new(task_id, result_rx, Some(cancel_token));
+
+        (schedulable_task, submitted_task)
+    }
+
+    #[allow(dead_code)]
+    pub async fn submit_task(&self, task: T) -> DaftResult<SubmittedTask> {
+        let (schedulable_task, submitted_task) = self.prepare_task_for_submission(task);
+        self.scheduler_sender
+            .send(schedulable_task)
+            .await
+            .map_err(|_| {
+                DaftError::InternalError("Failed to send task to scheduler".to_string())
+            })?;
+        Ok(submitted_task)
+    }
+}
+
 #[allow(dead_code)]
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
@@ -122,35 +156,6 @@ impl<T: Task> PartialOrd for SchedulableTask<T> {
 impl<T: Task> Ord for SchedulableTask<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.task.priority().cmp(&other.task.priority())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct SchedulerHandle<T: Task> {
-    scheduler_sender: Sender<SchedulableTask<T>>,
-}
-
-impl<T: Task> SchedulerHandle<T> {
-    fn new(scheduler_sender: Sender<SchedulableTask<T>>) -> Self {
-        Self { scheduler_sender }
-    }
-
-    fn prepare_task_for_submission(&self, task: T) -> (SchedulableTask<T>, SubmittedTask) {
-        let (result_tx, result_rx) = create_oneshot_channel();
-        let cancel_token = CancellationToken::new();
-
-        let task_id = task.task_id().clone();
-        let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token.clone());
-        let submitted_task = SubmittedTask::new(task_id, result_rx, Some(cancel_token));
-
-        (schedulable_task, submitted_task)
-    }
-
-    #[allow(dead_code)]
-    pub async fn submit_task(&self, task: T) -> DaftResult<SubmittedTask> {
-        let (schedulable_task, submitted_task) = self.prepare_task_for_submission(task);
-        let _ = self.scheduler_sender.send(schedulable_task).await;
-        Ok(submitted_task)
     }
 }
 
@@ -208,5 +213,45 @@ impl Drop for SubmittedTask {
         if let Some(cancel_token) = self.cancel_token.take() {
             cancel_token.cancel();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scheduler_actor_basic_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor submit task")
+    }
+
+    #[test]
+    fn test_scheduler_actor_multiple_tasks() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor multiple tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_multiple_concurrent_tasks() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor multiple concurrent tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_cancelled_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor cancelled tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_many_cancelled_tasks() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor many cancelled tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_error_from_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor error from task")
+    }
+
+    #[test]
+    fn test_scheduler_actor_panic_from_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor panic from task")
     }
 }

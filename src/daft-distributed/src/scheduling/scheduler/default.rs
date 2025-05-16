@@ -72,3 +72,38 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_scheduler_spread_scheduling() {
+        todo!("FLOTILLA_MS1: Implement test for default scheduler spread scheduling")
+    }
+
+    #[test]
+    fn test_default_scheduler_soft_node_affinity_scheduling() {
+        todo!("FLOTILLA_MS1: Implement test for default scheduler node affinity scheduling")
+    }
+
+    #[test]
+    fn test_default_scheduler_hard_node_affinity_scheduling() {
+        todo!("FLOTILLA_MS1: Implement test for default scheduler node affinity scheduling")
+    }
+
+    #[test]
+    fn test_default_scheduler_with_mixed_scheduling_strategies() {
+        todo!("FLOTILLA_MS1: Implement test for default scheduler with mixed scheduling strategies")
+    }
+
+    #[test]
+    fn test_default_scheduler_with_priority_scheduling() {
+        todo!("FLOTILLA_MS1: Implement test for default scheduler with priority scheduling")
+    }
+
+    #[test]
+    fn test_default_scheduler_with_no_workers() {
+        todo!("FLOTILLA_MS1: Implement test for default scheduler with no workers")
+    }
+}
