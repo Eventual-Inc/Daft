@@ -1,0 +1,280 @@
+use std::{
+    cmp::Ordering,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+
+use common_error::{DaftError, DaftResult};
+use common_partitioning::PartitionRef;
+use futures::FutureExt;
+use tokio_util::sync::CancellationToken;
+
+use super::{default::DefaultScheduler, linear::LinearScheduler, ScheduledTask, Scheduler};
+use crate::{
+    scheduling::{
+        task::{SchedulingStrategy, Task, TaskId},
+        worker::{Worker, WorkerManager},
+    },
+    utils::{
+        channel::{
+            create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
+            Sender,
+        },
+        joinset::JoinSet,
+    },
+};
+
+#[allow(dead_code)]
+pub(crate) struct SchedulerActor<W: Worker, T: Task> {
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+    scheduler: Box<dyn Scheduler<T>>,
+}
+
+impl<W: Worker, T: Task> SchedulerActor<W, T> {
+    pub fn default_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+        Self {
+            worker_manager,
+            scheduler: Box::new(DefaultScheduler::new()),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+        Self {
+            worker_manager,
+            scheduler: Box::new(LinearScheduler::new()),
+        }
+    }
+
+    pub fn spawn_scheduler_actor(
+        scheduler: Self,
+        joinset: &mut JoinSet<DaftResult<()>>,
+    ) -> SchedulerHandle<T> {
+        let (scheduler_sender, scheduler_receiver) = create_channel(1);
+        joinset.spawn(Self::run_scheduler_loop(
+            scheduler.scheduler,
+            scheduler.worker_manager,
+            scheduler_receiver,
+        ));
+        SchedulerHandle::new(scheduler_sender)
+    }
+
+    #[allow(dead_code)]
+    fn dispatch_tasks(
+        scheduled_tasks: Vec<ScheduledTask<T>>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+        running_tasks: &mut JoinSet<()>,
+    ) -> DaftResult<()> {
+        for scheduled_task in scheduled_tasks {
+            let task_result_future = scheduled_task.submit_task(&worker_manager);
+            running_tasks.spawn(task_result_future);
+        }
+        Ok(())
+    }
+
+    async fn run_scheduler_loop(
+        _scheduler: Box<dyn Scheduler<T>>,
+        _worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+        _task_rx: Receiver<SchedulableTask<T>>,
+    ) -> DaftResult<()> {
+        todo!("FLOTILLA_MS1: Implement run scheduler loop");
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SchedulerHandle<T: Task> {
+    scheduler_sender: Sender<SchedulableTask<T>>,
+}
+
+impl<T: Task> SchedulerHandle<T> {
+    fn new(scheduler_sender: Sender<SchedulableTask<T>>) -> Self {
+        Self { scheduler_sender }
+    }
+
+    fn prepare_task_for_submission(&self, task: T) -> (SchedulableTask<T>, SubmittedTask) {
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let cancel_token = CancellationToken::new();
+
+        let task_id = task.task_id().clone();
+        let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token.clone());
+        let submitted_task = SubmittedTask::new(task_id, result_rx, Some(cancel_token));
+
+        (schedulable_task, submitted_task)
+    }
+
+    #[allow(dead_code)]
+    pub async fn submit_task(&self, task: T) -> DaftResult<SubmittedTask> {
+        let (schedulable_task, submitted_task) = self.prepare_task_for_submission(task);
+        self.scheduler_sender
+            .send(schedulable_task)
+            .await
+            .map_err(|_| {
+                DaftError::InternalError("Failed to send task to scheduler".to_string())
+            })?;
+        Ok(submitted_task)
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) struct SchedulableTask<T: Task> {
+    task: T,
+    result_tx: OneshotSender<DaftResult<PartitionRef>>,
+    cancel_token: CancellationToken,
+}
+
+impl<T: Task> SchedulableTask<T> {
+    pub fn new(
+        task: T,
+        result_tx: OneshotSender<DaftResult<PartitionRef>>,
+        cancel_token: CancellationToken,
+    ) -> Self {
+        Self {
+            task,
+            result_tx,
+            cancel_token,
+        }
+    }
+
+    pub fn strategy(&self) -> &SchedulingStrategy {
+        self.task.strategy()
+    }
+
+    #[allow(dead_code)]
+    pub fn priority(&self) -> u32 {
+        self.task.priority()
+    }
+
+    #[allow(dead_code)]
+    pub fn task_id(&self) -> &str {
+        self.task.task_id()
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        T,
+        OneshotSender<DaftResult<PartitionRef>>,
+        CancellationToken,
+    ) {
+        (self.task, self.result_tx, self.cancel_token)
+    }
+}
+
+impl<T: Task> PartialEq for SchedulableTask<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.task.task_id() == other.task.task_id()
+    }
+}
+
+impl<T: Task> Eq for SchedulableTask<T> {}
+
+impl<T: Task> PartialOrd for SchedulableTask<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Task> Ord for SchedulableTask<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.task.priority().cmp(&other.task.priority())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct SubmittedTask {
+    _task_id: TaskId,
+    result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+    cancel_token: Option<CancellationToken>,
+    finished: bool,
+}
+
+impl SubmittedTask {
+    fn new(
+        task_id: TaskId,
+        result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+        cancel_token: Option<CancellationToken>,
+    ) -> Self {
+        Self {
+            _task_id: task_id,
+            result_rx,
+            cancel_token,
+            finished: false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn id(&self) -> &TaskId {
+        &self._task_id
+    }
+}
+
+impl Future for SubmittedTask {
+    type Output = Option<DaftResult<PartitionRef>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.result_rx.poll_unpin(cx) {
+            Poll::Ready(Ok(result)) => {
+                self.finished = true;
+                Poll::Ready(Some(result))
+            }
+            Poll::Ready(Err(_)) => {
+                self.finished = true;
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for SubmittedTask {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        if let Some(cancel_token) = self.cancel_token.take() {
+            cancel_token.cancel();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scheduler_actor_basic_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor submit task")
+    }
+
+    #[test]
+    fn test_scheduler_actor_multiple_tasks() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor multiple tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_multiple_concurrent_tasks() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor multiple concurrent tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_cancelled_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor cancelled tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_many_cancelled_tasks() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor many cancelled tasks")
+    }
+
+    #[test]
+    fn test_scheduler_actor_error_from_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor error from task")
+    }
+
+    #[test]
+    fn test_scheduler_actor_panic_from_task() {
+        todo!("FLOTILLA_MS1: Implement test for scheduler actor panic from task")
+    }
+}

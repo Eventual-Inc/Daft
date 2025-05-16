@@ -83,12 +83,12 @@ impl Partition for RayPartitionRef {
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishTask")]
 pub(crate) struct RaySwordfishTask {
-    task: SwordfishTask,
+    task: Box<SwordfishTask>,
 }
 
 impl RaySwordfishTask {
     #[allow(dead_code)]
-    pub fn new(task: SwordfishTask) -> Self {
+    pub fn new(task: Box<SwordfishTask>) -> Self {
         Self { task }
     }
 }

@@ -1,3 +1,3 @@
-pub mod dispatcher;
-pub mod task;
-pub mod worker;
+pub(super) mod scheduler;
+pub(crate) mod task;
+pub(crate) mod worker;

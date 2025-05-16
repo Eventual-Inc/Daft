@@ -22,8 +22,9 @@ use crate::{
         PipelineOutput, RunningPipelineNode,
     },
     scheduling::{
-        dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-        worker::WorkerManager,
+        scheduler::{SchedulerActor, SchedulerHandle},
+        task::SwordfishTask,
+        worker::{Worker, WorkerManager},
     },
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
@@ -81,11 +82,11 @@ pub(crate) struct Stage {
 }
 
 impl Stage {
-    pub(crate) fn run_stage(
+    pub(crate) fn run_stage<W: Worker>(
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
-        worker_manager: Box<dyn WorkerManager>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     ) -> DaftResult<RunningStage> {
         let mut stage_context = StageContext::new(worker_manager);
         match &self.type_ {
@@ -112,8 +113,8 @@ impl RunningStage {
     }
 
     #[allow(dead_code)]
-    fn materialize(self, task_dispatcher_handle: TaskDispatcherHandle) {
-        materialize_all_pipeline_outputs(self.stream, task_dispatcher_handle);
+    fn materialize(self, scheduler_handle: SchedulerHandle<SwordfishTask>) {
+        materialize_all_pipeline_outputs(self.stream, scheduler_handle);
     }
 }
 
@@ -210,19 +211,18 @@ impl StagePlan {
 
 #[allow(dead_code)]
 pub(crate) struct StageContext {
-    pub task_dispatcher_handle: TaskDispatcherHandle,
+    pub scheduler_handle: SchedulerHandle<SwordfishTask>,
     pub joinset: JoinSet<DaftResult<()>>,
 }
 
 impl StageContext {
     #[allow(dead_code)]
-    fn new(worker_manager: Box<dyn WorkerManager>) -> Self {
-        let task_dispatcher = TaskDispatcher::new(worker_manager);
+    fn new<W: Worker>(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+        let scheduler = SchedulerActor::default_scheduler(worker_manager);
         let mut joinset = JoinSet::new();
-        let task_dispatcher_handle =
-            TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
+        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(scheduler, &mut joinset);
         Self {
-            task_dispatcher_handle,
+            scheduler_handle,
             joinset,
         }
     }

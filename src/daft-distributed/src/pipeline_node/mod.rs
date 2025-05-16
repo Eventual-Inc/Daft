@@ -18,7 +18,7 @@ use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
     scheduling::{
-        dispatcher::TaskDispatcherHandle,
+        scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskResultHandle},
     },
     stage::StageContext,
@@ -56,10 +56,10 @@ impl RunningPipelineNode {
     }
 
     #[allow(dead_code)]
-    pub fn materialize(self, task_dispatcher_handle: TaskDispatcherHandle) {
+    pub fn materialize(self, scheduler_handle: SchedulerHandle<SwordfishTask>) {
         materialize_all_pipeline_outputs(
             ReceiverStream::new(self.result_receiver).map(Ok),
-            task_dispatcher_handle,
+            scheduler_handle,
         );
     }
 }
