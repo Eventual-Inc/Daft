@@ -171,6 +171,6 @@ code.doc-symbol-method::after {
 }
 
 /* Readthedocs flyout */
-.readthedocs-flyout .floating.container.bottom-left {
+:host([position="bottom-left"]) {
   bottom: 70px !important;
 }
