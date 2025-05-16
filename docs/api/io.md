@@ -116,6 +116,16 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
         filters: ["!^_"]
         heading_level: 3
 
+::: daft.io.sink.DataSink
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.io.sink.WriteOutput
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
 ## Pushdowns
 
 <!-- ::: daft.io.pushdowns.Pushdowns
