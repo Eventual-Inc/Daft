@@ -6,10 +6,11 @@ use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 use uuid::Uuid;
 
-pub(crate) type TaskId = String;
-
+pub(crate) type TaskId = Arc<str>;
+pub(crate) type TaskPriority = u32;
 #[allow(dead_code)]
 pub(crate) trait Task: Send + Sync + 'static {
+    fn priority(&self) -> TaskPriority;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
     fn task_id(&self) -> &TaskId;
     fn strategy(&self) -> &SchedulingStrategy;
@@ -41,7 +42,7 @@ impl SwordfishTask {
     ) -> Self {
         let task_id = Uuid::new_v4().to_string();
         Self {
-            id: task_id,
+            id: Arc::from(task_id),
             plan,
             config,
             psets,
@@ -81,6 +82,11 @@ impl Task for SwordfishTask {
 
     fn strategy(&self) -> &SchedulingStrategy {
         &self.strategy
+    }
+
+    fn priority(&self) -> TaskPriority {
+        // Default priority for now, could be enhanced later
+        0
     }
 }
 

@@ -1,10 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 
 use super::task::{SwordfishTaskResultHandle, Task, TaskId};
 
-pub(crate) type WorkerId = String;
+pub(crate) type WorkerId = Arc<str>;
 
 #[allow(dead_code)]
 pub(crate) trait Worker: Send + Sync + 'static {

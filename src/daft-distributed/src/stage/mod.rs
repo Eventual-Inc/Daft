@@ -13,7 +13,7 @@ use stage_builder::StagePlanBuilder;
 use crate::{
     pipeline_node::logical_plan_to_pipeline_node,
     scheduling::{
-        dispatcher::{TaskDispatcher, TaskDispatcherHandle},
+        scheduler::{SchedulerActor, SchedulerHandle},
         task::SwordfishTask,
         worker::{Worker, WorkerManager},
     },
@@ -85,9 +85,9 @@ impl Stage {
                 let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
                 let _running_node = pipeline_node.start(&mut stage_context);
 
-                let (_task_dispatcher_handle, _joinset) = stage_context.into_inner();
+                let (_scheduler_handle, _joinset) = stage_context.into_inner();
                 // JoinableForwardingStream::new(
-                //     materialize_all_pipeline_outputs(running_node, task_dispatcher_handle),
+                //     materialize_all_pipeline_outputs(running_node, scheduler_handle),
                 //     joinset,
                 // );
                 todo!("FLOTILLA_MS2: Implement stage run_stage for MapPipeline")
@@ -182,24 +182,23 @@ impl StagePlan {
 
 #[allow(dead_code)]
 pub(crate) struct StageContext {
-    pub task_dispatcher_handle: TaskDispatcherHandle<SwordfishTask>,
+    pub scheduler_handle: SchedulerHandle<SwordfishTask>,
     pub joinset: JoinSet<DaftResult<()>>,
 }
 
 impl StageContext {
     #[allow(dead_code)]
     fn try_new<W: Worker>(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> DaftResult<Self> {
-        let task_dispatcher = TaskDispatcher::new(worker_manager);
+        let scheduler_actor = SchedulerActor::default_scheduler(worker_manager);
         let mut joinset = JoinSet::new();
-        let task_dispatcher_handle =
-            TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
+        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(scheduler_actor, &mut joinset);
         Ok(Self {
-            task_dispatcher_handle,
+            scheduler_handle,
             joinset,
         })
     }
 
-    fn into_inner(self) -> (TaskDispatcherHandle<SwordfishTask>, JoinSet<DaftResult<()>>) {
-        (self.task_dispatcher_handle, self.joinset)
+    fn into_inner(self) -> (SchedulerHandle<SwordfishTask>, JoinSet<DaftResult<()>>) {
+        (self.scheduler_handle, self.joinset)
     }
 }

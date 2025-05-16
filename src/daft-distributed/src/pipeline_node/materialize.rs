@@ -3,13 +3,13 @@ use futures::Stream;
 
 use crate::{
     pipeline_node::PipelineOutput,
-    scheduling::{dispatcher::TaskDispatcherHandle, task::Task},
+    scheduling::{scheduler::SchedulerHandle, task::Task},
 };
 
 #[allow(dead_code)]
 pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     _input: impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static,
-    _task_dispatcher_handle: TaskDispatcherHandle<T>,
+    _scheduler_handle: SchedulerHandle<T>,
 ) {
     todo!("FLOTILLA_MS1: Implement materialize_all_pipeline_outputs")
 }

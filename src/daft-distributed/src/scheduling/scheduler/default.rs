@@ -1,0 +1,74 @@
+use std::collections::{BinaryHeap, HashMap};
+
+use super::{scheduler_actor::SchedulableTask, Scheduler, WorkerSnapshot};
+use crate::scheduling::{
+    task::{SchedulingStrategy, Task},
+    worker::WorkerId,
+};
+
+#[allow(dead_code)]
+pub(super) struct DefaultScheduler<T: Task> {
+    pending_tasks: BinaryHeap<SchedulableTask<T>>,
+    worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
+}
+
+#[allow(dead_code)]
+impl<T: Task> DefaultScheduler<T> {
+    pub fn new() -> Self {
+        Self {
+            pending_tasks: BinaryHeap::new(),
+            worker_snapshots: HashMap::new(),
+        }
+    }
+    fn try_schedule_spread_task(&self) -> Option<WorkerId> {
+        todo!("FLOTILLA_MS1: Implement scheduling spread task for default scheduler")
+    }
+
+    fn try_schedule_soft_node_affinity_task(&self, _node_id: &str) -> Option<WorkerId> {
+        todo!("FLOTILLA_MS1: Implement scheduling soft node affinity task for default scheduler")
+    }
+
+    fn try_schedule_hard_node_affinity_task(&self, _node_id: &str) -> Option<WorkerId> {
+        todo!("FLOTILLA_MS1: Implement scheduling hard node affinity task for default scheduler")
+    }
+
+    fn try_schedule_task(&self, task: &SchedulableTask<T>) -> Option<WorkerId> {
+        match task.strategy() {
+            SchedulingStrategy::Spread => self.try_schedule_spread_task(),
+            SchedulingStrategy::NodeAffinity { node_id, soft } => match soft {
+                true => self.try_schedule_soft_node_affinity_task(node_id),
+                false => self.try_schedule_hard_node_affinity_task(node_id),
+            },
+        }
+    }
+}
+
+impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
+    fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>) {
+        self.pending_tasks.extend(tasks);
+    }
+
+    fn get_scheduled_tasks(&mut self) -> Vec<(WorkerId, SchedulableTask<T>)> {
+        let mut scheduled = Vec::new();
+        while let Some(task_ref) = self.pending_tasks.peek() {
+            if let Some(worker_id) = self.try_schedule_task(task_ref) {
+                let task = self.pending_tasks.pop().unwrap();
+                scheduled.push((worker_id, task));
+            }
+        }
+        scheduled
+    }
+
+    fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]) {
+        for worker_snapshot in worker_snapshots {
+            if let Some(existing_snapshot) =
+                self.worker_snapshots.get_mut(&worker_snapshot.worker_id)
+            {
+                *existing_snapshot = worker_snapshot.clone();
+            } else {
+                self.worker_snapshots
+                    .insert(worker_snapshot.worker_id.clone(), worker_snapshot.clone());
+            }
+        }
+    }
+}

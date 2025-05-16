@@ -20,20 +20,20 @@ pub(crate) struct RaySwordfishWorker {
     num_cpus: usize,
     #[allow(dead_code)]
     total_memory_bytes: usize,
-    active_task_ids: Arc<Mutex<HashSet<String>>>,
+    active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
 }
 
 #[pymethods]
 impl RaySwordfishWorker {
     #[new]
     pub fn new(
-        worker_id: WorkerId,
+        worker_id: String,
         actor_handle: PyObject,
         num_cpus: usize,
         total_memory_bytes: usize,
     ) -> Self {
         Self {
-            worker_id,
+            worker_id: Arc::from(worker_id),
             actor_handle: Arc::new(actor_handle),
             num_cpus,
             total_memory_bytes,
@@ -44,7 +44,7 @@ impl RaySwordfishWorker {
 
 #[allow(dead_code)]
 impl RaySwordfishWorker {
-    pub fn mark_task_finished(&self, task_id: String) {
+    pub fn mark_task_finished(&self, task_id: TaskId) {
         self.active_task_ids.lock().unwrap().remove(&task_id);
     }
 
@@ -54,7 +54,7 @@ impl RaySwordfishWorker {
         task_locals: &pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Box<dyn SwordfishTaskResultHandle>> {
         let task = task.into_any().downcast::<SwordfishTask>().unwrap();
-        let task_id = task.task_id().to_string();
+        let task_id = task.task_id().clone();
         let py_task = RaySwordfishTask::new(task);
         let py_task_handle = Python::with_gil(|py| {
             let py_task_handle = self

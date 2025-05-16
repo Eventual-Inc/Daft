@@ -44,7 +44,7 @@ impl WorkerManager for RayWorkerManager {
     fn submit_task_to_worker(
         &self,
         task: Box<dyn Task>,
-        worker_id: String,
+        worker_id: WorkerId,
     ) -> Box<dyn SwordfishTaskResultHandle> {
         self.ray_workers
             .get(&worker_id)

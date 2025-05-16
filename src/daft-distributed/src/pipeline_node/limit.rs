@@ -6,7 +6,7 @@ use daft_local_plan::LocalPhysicalPlanRef;
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
-    scheduling::{dispatcher::TaskDispatcherHandle, task::SwordfishTask},
+    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     stage::StageContext,
     utils::channel::{create_channel, Sender},
 };
@@ -44,7 +44,7 @@ impl LimitNode {
 
     #[allow(dead_code)]
     async fn execution_loop(
-        _task_dispatcher_handle: TaskDispatcherHandle<SwordfishTask>,
+        _scheduler_handle: SchedulerHandle<SwordfishTask>,
         _local_physical_plans: Vec<LocalPhysicalPlanRef>,
         _input_node: Option<RunningPipelineNode>,
         _input_psets: HashMap<String, Vec<PartitionRef>>,
@@ -64,7 +64,6 @@ impl DistributedPipelineNode for LimitNode {
     }
 
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let task_dispatcher_handle = stage_context.task_dispatcher_handle.clone();
         let input_node = if let Some(mut input_node) = self.children.pop() {
             assert!(self.children.is_empty());
             let input_running_node = input_node.start(stage_context);
@@ -74,7 +73,7 @@ impl DistributedPipelineNode for LimitNode {
         };
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
-            task_dispatcher_handle,
+            stage_context.scheduler_handle.clone(),
             std::mem::take(&mut self.local_physical_plans),
             input_node,
             std::mem::take(&mut self.input_psets),
