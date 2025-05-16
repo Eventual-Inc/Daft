@@ -14,7 +14,6 @@ use futures::{FutureExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    pipeline_node::MaterializedOutput,
     scheduling::worker::{Worker, WorkerManager},
     stage::{StagePlan, StagePlanRef},
     utils::{

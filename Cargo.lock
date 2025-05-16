@@ -2254,7 +2254,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "typetag",
  "uuid 1.16.0",
 ]
 

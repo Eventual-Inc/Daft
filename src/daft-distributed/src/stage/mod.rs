@@ -10,10 +10,7 @@ use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    pipeline_node::{
-        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        DistributedPipelineNode, MaterializedOutput,
-    },
+    pipeline_node::{logical_plan_to_pipeline_node, DistributedPipelineNode, MaterializedOutput},
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle, TaskDispatcherHandleRef},
         scheduler::LinearScheduler,
@@ -62,11 +59,9 @@ impl Stage {
                 let running_node = pipeline_node.start(&mut stage_context, psets.clone());
 
                 let (task_dispatcher_handle, joinset) = stage_context.into_inner();
-                let materialized_output_stream = materialize_all_pipeline_outputs(running_node, task_dispatcher_handle);
-                let partition_ref_stream = JoinableForwardingStream::new(
-                    materialized_output_stream,
-                    joinset,
-                );
+                let materialized_output_stream = running_node.materialize(task_dispatcher_handle);
+                let partition_ref_stream =
+                    JoinableForwardingStream::new(materialized_output_stream, joinset);
                 Ok(partition_ref_stream.map(|result| match result {
                     Ok(Ok(partition_ref)) => Ok(partition_ref),
                     Ok(Err(e)) => Err(e),

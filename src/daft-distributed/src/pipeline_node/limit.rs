@@ -8,12 +8,8 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use serde::{Deserialize, Serialize};
 
-use super::{
-    materialize::materialize_all_pipeline_outputs, DistributedPipelineNode, MaterializedOutput,
-    PipelineOutput, RunningPipelineNode,
-};
+use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
     scheduling::{
         dispatcher::TaskDispatcherHandleRef,
@@ -26,7 +22,7 @@ use crate::{
     },
 };
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub(crate) struct LimitNode {
     node_id: usize,
     limit: usize,
@@ -61,8 +57,7 @@ impl LimitNode {
         schema: SchemaRef,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<()> {
-        let mut materialized_result_stream =
-            materialize_all_pipeline_outputs(input, task_dispatcher_handle.clone());
+        let mut materialized_result_stream = input.materialize(task_dispatcher_handle.clone());
         while let Some(partition_ref) = materialized_result_stream.next().await {
             let partition_ref = partition_ref?;
             let num_rows = partition_ref.partition().num_rows()?;
@@ -96,7 +91,6 @@ impl LimitNode {
     }
 }
 
-#[typetag::serde(name = "LimitNode")]
 impl DistributedPipelineNode for LimitNode {
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

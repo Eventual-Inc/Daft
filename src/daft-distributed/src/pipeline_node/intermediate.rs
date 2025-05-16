@@ -8,12 +8,10 @@ use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 use futures::StreamExt;
-use serde::{Deserialize, Serialize};
 
 use super::{
-    materialize::materialize_running_pipeline_outputs, translate::PipelinePlan,
-    DistributedPipelineNode, MaterializedOutput, PipelineInput, PipelineOutput,
-    RunningPipelineNode,
+    materialize::materialize_running_pipeline_outputs, DistributedPipelineNode, MaterializedOutput,
+    PipelineOutput, RunningPipelineNode,
 };
 use crate::{
     scheduling::task::{SchedulingStrategy, SwordfishTask},
@@ -21,19 +19,19 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct CollectNode {
+#[derive(Debug)]
+pub(crate) struct IntermediateNode {
     node_id: usize,
     config: Arc<DaftExecutionConfig>,
-    plan: PipelinePlan,
+    plan: LocalPhysicalPlanRef,
     children: Vec<Box<dyn DistributedPipelineNode>>,
 }
 
-impl CollectNode {
+impl IntermediateNode {
     pub fn new(
         node_id: usize,
         config: Arc<DaftExecutionConfig>,
-        plan: PipelinePlan,
+        plan: LocalPhysicalPlanRef,
         children: Vec<Box<dyn DistributedPipelineNode>>,
     ) -> Self {
         Self {
@@ -44,68 +42,7 @@ impl CollectNode {
         }
     }
 
-    async fn source_execution_loop(
-        plan: LocalPhysicalPlanRef,
-        config: Arc<DaftExecutionConfig>,
-        input: PipelineInput,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
-        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    ) -> DaftResult<()> {
-        match input {
-            PipelineInput::InMemorySource { info } => {
-                let partition_refs = psets.get(&info.cache_key).unwrap().clone();
-
-                for partition_ref in partition_refs {
-                    let task = make_task_for_materialized_output(
-                        plan.clone(),
-                        MaterializedOutput::new(partition_ref, "".to_string()),
-                        info.cache_key.clone(),
-                        config.clone(),
-                    )?;
-                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
-                        break;
-                    }
-                }
-            }
-            PipelineInput::ScanTasks {
-                scan_tasks,
-                pushdowns,
-                ..
-            } => {
-                for scan_task in scan_tasks.iter() {
-                    let transformed_plan = plan
-                        .clone()
-                        .transform_up(|p| match p.as_ref() {
-                            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
-                                let physical_scan = LocalPhysicalPlan::physical_scan(
-                                    vec![scan_task.clone()].into(),
-                                    pushdowns.clone(),
-                                    placeholder.schema.clone(),
-                                    StatsState::NotMaterialized,
-                                );
-                                Ok(Transformed::yes(physical_scan))
-                            }
-                            _ => Ok(Transformed::no(p)),
-                        })?
-                        .data;
-                    let psets = HashMap::new();
-                    let task = SwordfishTask::new(
-                        transformed_plan,
-                        config.clone(),
-                        psets,
-                        SchedulingStrategy::Spread,
-                    );
-                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
-                        break;
-                    }
-                }
-            }
-            PipelineInput::Intermediate => todo!(),
-        }
-        Ok(())
-    }
-
-    async fn intermediate_execution_loop(
+    async fn execution_loop(
         node_id: usize,
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
@@ -142,42 +79,15 @@ impl CollectNode {
         }
         Ok(())
     }
-
-    async fn execution_loop(
-        node_id: usize,
-        config: Arc<DaftExecutionConfig>,
-        plan: PipelinePlan,
-        input_node: Option<RunningPipelineNode<SwordfishTask>>,
-        result_tx: Sender<PipelineOutput<SwordfishTask>>,
-        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    ) -> DaftResult<()> {
-        match input_node {
-            Some(input_node) => {
-                Self::intermediate_execution_loop(
-                    node_id,
-                    config,
-                    plan.local_plan,
-                    input_node,
-                    result_tx,
-                )
-                .await
-            }
-            None => {
-                Self::source_execution_loop(plan.local_plan, config, plan.input, result_tx, psets)
-                    .await
-            }
-        }
-    }
 }
 
-#[typetag::serde(name = "CollectNode")]
-impl DistributedPipelineNode for CollectNode {
+impl DistributedPipelineNode for IntermediateNode {
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }
 
     fn name(&self) -> &'static str {
-        "Collect"
+        "Intermediate"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
@@ -189,12 +99,12 @@ impl DistributedPipelineNode for CollectNode {
         stage_context: &mut StageContext,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> RunningPipelineNode<SwordfishTask> {
-        let input_node = if let Some(input_node) = self.children.first() {
-            let input_running_node = input_node.start(stage_context, psets.clone());
-            Some(input_running_node)
-        } else {
-            None
-        };
+        let input_node = self
+            .children
+            .first()
+            .unwrap()
+            .start(stage_context, psets.clone());
+
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
             self.node_id,
@@ -202,7 +112,6 @@ impl DistributedPipelineNode for CollectNode {
             self.plan.clone(),
             input_node,
             result_tx,
-            psets,
         );
         stage_context.spawn_task_on_joinset(execution_loop);
 
@@ -210,11 +119,11 @@ impl DistributedPipelineNode for CollectNode {
     }
 }
 
-impl TreeDisplay for CollectNode {
+impl TreeDisplay for IntermediateNode {
     fn display_as(&self, _level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-        writeln!(display, "{}", "Collect").unwrap();
+        writeln!(display, "{}", "Intermediate").unwrap();
         display
     }
 

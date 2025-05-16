@@ -6,25 +6,15 @@ use std::{
     task::{Context, Poll},
 };
 
-use collect::CollectNode;
-use common_daft_config::DaftExecutionConfig;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
-use daft_logical_plan::{
-    ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, InMemoryInfo, LogicalPlan,
-    LogicalPlanRef, SourceInfo,
-};
 use futures::Stream;
-use limit::LimitNode;
-use serde::{Deserialize, Serialize};
-use translate::translate_logical_plan_to_pipeline_plan;
+use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
     scheduling::{
-        dispatcher::SubmittedTask,
+        dispatcher::{SubmittedTask, TaskDispatcherHandle, TaskDispatcherHandleRef},
         task::{SwordfishTask, Task},
         worker::WorkerId,
     },
@@ -32,12 +22,15 @@ use crate::{
     utils::channel::Receiver,
 };
 
-mod collect;
+mod in_memory_source;
+mod intermediate;
 mod limit;
 pub(crate) mod materialize;
+mod scan_source;
 mod translate;
 
-#[typetag::serde(tag = "type")]
+pub(crate) use translate::logical_plan_to_pipeline_node;
+
 pub(crate) trait DistributedPipelineNode: Send + Sync + Debug {
     fn as_tree_display(&self) -> &dyn TreeDisplay;
     fn name(&self) -> &'static str;
@@ -63,6 +56,13 @@ impl<T: Task> RunningPipelineNode<T> {
     #[allow(dead_code)]
     pub fn into_inner(self) -> Receiver<PipelineOutput<T>> {
         self.result_receiver
+    }
+
+    pub fn materialize(
+        self,
+        task_dispatcher_handle: TaskDispatcherHandleRef<T>,
+    ) -> impl Stream<Item = DaftResult<MaterializedOutput>> {
+        materialize_all_pipeline_outputs(self, task_dispatcher_handle)
     }
 }
 
@@ -111,112 +111,4 @@ pub(crate) enum PipelineOutput<T: Task> {
     Materialized(MaterializedOutput),
     Task(T),
     Running(SubmittedTask),
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-enum PipelineInput {
-    InMemorySource {
-        info: InMemoryInfo,
-    },
-    ScanTasks {
-        pushdowns: Pushdowns,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    },
-    Intermediate,
-}
-
-#[allow(dead_code)]
-pub(crate) fn logical_plan_to_pipeline_node(
-    plan: LogicalPlanRef,
-    config: Arc<DaftExecutionConfig>,
-) -> DaftResult<Box<dyn DistributedPipelineNode>> {
-    struct PipelineNodeBoundarySplitter {
-        root: LogicalPlanRef,
-        current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
-        config: Arc<DaftExecutionConfig>,
-        node_id_counter: usize,
-    }
-
-    impl PipelineNodeBoundarySplitter {
-        fn get_next_node_id(&mut self) -> usize {
-            let node_id = self.node_id_counter;
-            self.node_id_counter += 1;
-            node_id
-        }
-    }
-
-    impl TreeNodeRewriter for PipelineNodeBoundarySplitter {
-        type Node = LogicalPlanRef;
-
-        fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            Ok(Transformed::no(node))
-        }
-
-        fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            match node.as_ref() {
-                LogicalPlan::Limit(limit) => {
-                    let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let pipeline_plan = translate_logical_plan_to_pipeline_plan(node.clone())?;
-                    let collect_node = Box::new(CollectNode::new(
-                        self.get_next_node_id(),
-                        self.config.clone(),
-                        pipeline_plan,
-                        input_nodes,
-                    ));
-                    self.current_nodes = vec![Box::new(LimitNode::new(
-                        self.get_next_node_id(),
-                        limit.limit as usize,
-                        node.schema().clone(),
-                        self.config.clone(),
-                        collect_node,
-                    ))];
-                    // Here we will have to return a placeholder, essentially cutting off the plan
-                    let placeholder = PlaceHolderInfo::new(
-                        node.schema().clone(),
-                        ClusteringSpec::default().into(),
-                    );
-                    Ok(Transformed::yes(
-                        LogicalPlan::Source(Source::new(
-                            node.schema().clone(),
-                            SourceInfo::PlaceHolder(placeholder).into(),
-                        ))
-                        .into(),
-                    ))
-                }
-                _ => Ok(Transformed::no(node)),
-            }
-        }
-    }
-
-    let mut splitter = PipelineNodeBoundarySplitter {
-        root: plan.clone(),
-        current_nodes: vec![],
-        config,
-        node_id_counter: 0,
-    };
-
-    let transformed = plan.rewrite(&mut splitter)?;
-    match transformed.data.as_ref() {
-        LogicalPlan::Source(source)
-            if matches!(source.source_info.as_ref(), SourceInfo::PlaceHolder(_)) =>
-        {
-            assert!(splitter.current_nodes.len() == 1);
-            Ok(splitter
-                .current_nodes
-                .pop()
-                .expect("Expected exactly one node"))
-        }
-        _ => {
-            let logical_plan = transformed.data;
-            let pipeline_plan = translate_logical_plan_to_pipeline_plan(logical_plan)?;
-            let input_nodes = std::mem::take(&mut splitter.current_nodes);
-            let collect_node = Box::new(CollectNode::new(
-                splitter.get_next_node_id(),
-                splitter.config.clone(),
-                pipeline_plan,
-                input_nodes,
-            ));
-            Ok(collect_node)
-        }
-    }
 }

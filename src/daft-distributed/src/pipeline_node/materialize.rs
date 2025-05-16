@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
+pub(super) fn materialize_all_pipeline_outputs<T: Task>(
     input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static,
     task_dispatcher_handle: TaskDispatcherHandleRef<T>,
 ) -> impl Stream<Item = DaftResult<MaterializedOutput>> {
@@ -118,7 +118,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
 }
 
 // This function is responsible for awaiting the results of any running tasks
-pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
+pub(super) fn materialize_running_pipeline_outputs<T: Task>(
     input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static,
 ) -> impl Stream<Item = DaftResult<PipelineOutput<T>>> {
     async fn result_awaiter<T: Task>(
