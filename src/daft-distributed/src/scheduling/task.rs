@@ -62,6 +62,10 @@ impl SwordfishTask {
         self.plan.clone()
     }
 
+    pub fn estimated_memory_cost(&self) -> usize {
+        self.plan.estimated_memory_cost()
+    }
+
     pub fn config(&self) -> &Arc<DaftExecutionConfig> {
         &self.config
     }
@@ -93,5 +97,5 @@ impl Task for SwordfishTask {
 #[async_trait::async_trait]
 pub trait SwordfishTaskResultHandle: Send + Sync {
     #[allow(dead_code)]
-    async fn get_result(&mut self) -> DaftResult<Vec<PartitionRef>>;
+    async fn get_result(&mut self) -> DaftResult<PartitionRef>;
 }
