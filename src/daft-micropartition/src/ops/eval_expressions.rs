@@ -49,7 +49,7 @@ impl MicroPartition {
         let eval_stats = self
             .statistics
             .as_ref()
-            .map(|table_statistics| table_statistics.eval_expression_list(exprs, &expected_schema))
+            .map(|table_statistics| table_statistics.eval_expression_list(&bound_exprs))
             .transpose()?;
 
         Ok(Self::new_loaded(
@@ -84,7 +84,7 @@ impl MicroPartition {
         let eval_stats = self
             .statistics
             .as_ref()
-            .map(|table_statistics| table_statistics.eval_expression_list(exprs, &expected_schema))
+            .map(|table_statistics| table_statistics.eval_expression_list(&bound_exprs))
             .transpose()?;
 
         Ok(Self::new_loaded(
@@ -108,24 +108,30 @@ impl MicroPartition {
             .map(|t| t.explode(&bound_exprs))
             .collect::<DaftResult<Vec<_>>>()?;
         let expected_new_columns = infer_schema(exprs, &self.schema)?;
+
+        let expected_schema = Arc::new(self.schema.non_distinct_union(&expected_new_columns)?);
+
         let eval_stats = if let Some(stats) = &self.statistics {
-            let mut new_stats = stats.columns.clone();
-            for name in expected_new_columns.field_names() {
-                if let Some(v) = new_stats.get_mut(name) {
-                    *v = ColumnRangeStatistics::Missing;
-                } else {
-                    new_stats.insert(name.to_string(), ColumnRangeStatistics::Missing);
-                }
-            }
-            Some(TableStatistics { columns: new_stats })
+            let new_stats = expected_schema
+                .field_names()
+                .map(|name| {
+                    if expected_new_columns.has_field(name) {
+                        ColumnRangeStatistics::Missing
+                    } else if let [(index, _)] = self.schema.get_fields_with_name(name)[..] {
+                        stats[index].clone()
+                    } else {
+                        ColumnRangeStatistics::Missing
+                    }
+                })
+                .collect();
+
+            Some(TableStatistics::new(new_stats, expected_schema.clone()))
         } else {
             None
         };
 
-        let expected_schema = self.schema.non_distinct_union(&expected_new_columns)?;
-
         Ok(Self::new_loaded(
-            Arc::new(expected_schema),
+            expected_schema,
             Arc::new(evaluated_tables),
             eval_stats,
         ))

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_core::prelude::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
@@ -28,8 +30,8 @@ pub fn row_group_metadata_to_table_stats(
     let columns = schema
         .into_iter()
         .map(|field| {
-            if ColumnRangeStatistics::supports_dtype(&field.dtype) {
-                let stats: ColumnRangeStatistics = parquet_column_metadata
+            Ok(if ColumnRangeStatistics::supports_dtype(&field.dtype) {
+                parquet_column_metadata
                     .swap_remove(&field.name)
                     .expect("Cannot find parsed Daft field in Parquet rowgroup metadata")
                     .transpose()
@@ -37,13 +39,12 @@ pub fn row_group_metadata_to_table_stats(
                     .and_then(|v| {
                         parquet_statistics_to_column_range_statistics(v.as_ref(), &field.dtype).ok()
                     })
-                    .unwrap_or(ColumnRangeStatistics::Missing);
-                Ok((field.name.clone(), stats))
+                    .unwrap_or(ColumnRangeStatistics::Missing)
             } else {
-                Ok((field.name.clone(), ColumnRangeStatistics::Missing))
-            }
+                ColumnRangeStatistics::Missing
+            })
         })
-        .collect::<DaftResult<IndexMap<_, _>>>()?;
+        .collect::<DaftResult<_>>()?;
 
-    Ok(TableStatistics { columns })
+    Ok(TableStatistics::new(columns, Arc::new(schema.clone())))
 }

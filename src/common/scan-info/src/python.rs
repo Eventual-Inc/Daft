@@ -125,7 +125,7 @@ pub mod pylib {
             matches!(self.0, PartitionTransform::IcebergTruncate(_))
         }
 
-        pub fn get_iceberg_bucket_n(&self) -> PyResult<u64> {
+        pub fn num_buckets(&self) -> PyResult<u64> {
             match &self.0 {
                 PartitionTransform::IcebergBucket(n) => Ok(*n),
                 _ => Err(PyErr::new::<PyAttributeError, _>(
@@ -134,7 +134,7 @@ pub mod pylib {
             }
         }
 
-        pub fn get_iceberg_truncate_w(&self) -> PyResult<u64> {
+        pub fn width(&self) -> PyResult<u64> {
             match &self.0 {
                 PartitionTransform::IcebergTruncate(n) => Ok(*n),
                 _ => Err(PyErr::new::<PyAttributeError, _>(

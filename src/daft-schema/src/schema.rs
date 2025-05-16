@@ -18,7 +18,7 @@ pub type SchemaRef = Arc<Schema>;
 
 use derivative::Derivative;
 
-#[derive(Debug, Display, Serialize, Deserialize, Derivative, Eq)]
+#[derive(Debug, Display, Serialize, Deserialize, Derivative, Eq, Clone)]
 #[derivative(Hash, PartialEq)]
 #[display("{}\n", make_schema_vertical_table(
     self.fields.iter().map(|field| (field.name.clone(), field.dtype.to_string()))

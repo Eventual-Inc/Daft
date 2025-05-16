@@ -13,11 +13,14 @@ impl MicroPartition {
             return Ok(Self::empty(Some(self.schema.clone())));
         }
         if let Some(statistics) = &self.statistics {
-            let folded_expr = predicate
-                .iter()
-                .cloned()
-                .reduce(daft_dsl::Expr::and)
-                .expect("should have at least 1 expr");
+            let folded_expr = BoundExpr::try_new(
+                predicate
+                    .iter()
+                    .cloned()
+                    .reduce(daft_dsl::Expr::and)
+                    .expect("should have at least 1 expr"),
+                &self.schema,
+            )?;
             let eval_result = statistics.eval_expression(&folded_expr)?;
             let tv = eval_result.to_truth_value();
 
