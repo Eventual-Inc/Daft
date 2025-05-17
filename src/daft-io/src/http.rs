@@ -3,6 +3,7 @@ use std::{
     ops::Range,
     string::FromUtf8Error,
     sync::{Arc, LazyLock},
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -178,7 +179,8 @@ impl HttpSource {
 
         Ok(Self {
             client: reqwest::ClientBuilder::default()
-                .pool_max_idle_per_host(70)
+                .pool_idle_timeout(Duration::from_secs(90))
+                .pool_max_idle_per_host(10)
                 .default_headers(default_headers)
                 .build()
                 .context(UnableToCreateClientSnafu)?,
