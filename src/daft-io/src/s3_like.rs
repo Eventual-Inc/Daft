@@ -1,4 +1,7 @@
-use std::{collections::HashMap, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap, num::NonZeroUsize, ops::Range, string::FromUtf8Error, sync::Arc,
+    time::Duration,
+};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -11,14 +14,20 @@ use aws_credential_types::{
     provider::error::CredentialsError,
 };
 use aws_sdk_s3::{
-    self as s3, error::ProvideErrorMetadata, operation::put_object::PutObjectError,
+    self as s3,
+    error::ProvideErrorMetadata,
+    operation::{
+        complete_multipart_upload::CompleteMultipartUploadError,
+        create_multipart_upload::CreateMultipartUploadError, put_object::PutObjectError,
+        upload_part::UploadPartError,
+    },
     primitives::ByteStreamError,
 };
 use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, FutureExt, StreamExt, TryStreamExt};
 use reqwest::StatusCode;
 use s3::{
     client::customize::Response,
@@ -69,6 +78,46 @@ enum Error {
         path: String,
         source: SdkError<PutObjectError, Response>,
     },
+
+    #[snafu(display(
+        "Unable to do create multipart upload to {}: {}",
+        path,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
+    UnableToCreateMultipartUpload {
+        path: String,
+        source: SdkError<CreateMultipartUploadError, Response>,
+    },
+
+    #[snafu(display(
+        "Unable to upload parts to {}: {}",
+        path,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
+    UnableToUploadParts {
+        path: String,
+        source: SdkError<UploadPartError, Response>,
+    },
+
+    #[snafu(display(
+        "Unable to complete multipart upload to {}: {}",
+        path,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
+    UnableToCompleteMultipartUpload {
+        path: String,
+        source: SdkError<CompleteMultipartUploadError, Response>,
+    },
+
+    #[snafu(display(
+        "Expected multi-part upload ID in CreateMultipartUpload response for {}",
+        path,
+    ))]
+    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
+    MissingUploadIdForMultipartUpload { path: String },
 
     #[snafu(display("Unable to head {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToHeadFile {
@@ -998,6 +1047,213 @@ impl S3LikeSource {
             }
         }
     }
+
+    /// Uploads a file to S3 using multipart upload.
+    ///
+    /// This function splits the data into parts of the specified size and uploads all the parts
+    /// in parallel.
+    ///
+    /// ## S3
+    /// S3 multipart upload limits are as follows:
+    ///
+    /// * Minimum part size: 5 MiB
+    /// * Maximum part size: 5 GiB
+    /// * Maximum number of parts: 10,000
+    ///
+    /// Source: [Amazon S3 multipart upload limits](https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html)
+    ///
+    /// ## R2
+    /// R2 multipart upload limits are as follows:
+    ///
+    /// * Same as S3 - but each part (except the last one) needs to be the same size. So no support
+    ///   for varying part sizes within a single multi-part upload.
+    ///
+    /// Source: [Multipart Upload Limitations](https://developers.cloudflare.com/r2/objects/multipart-objects/#limitations)
+    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
+    pub async fn put_multipart(
+        &self,
+        uri: &str,
+        data: bytes::Bytes,
+        part_size: NonZeroUsize,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibytes
+        const MAXIMUM_PART_SIZE: usize = 5 * 1024 * 1024 * 1024; // 5 Gibibytes
+        const MAX_PART_COUNT: usize = 10000; // Max parts in a multipart upload
+
+        if self.anonymous {
+            return Err(Error::UploadsCannotBeAnonymous {}.into());
+        }
+
+        assert!(
+            part_size.get() >= MINIMUM_PART_SIZE,
+            "Part size must be greater than or equal to 5MiB"
+        );
+        assert!(
+            part_size.get() <= MAXIMUM_PART_SIZE,
+            "Part size must be less than or equal to 5GiB"
+        );
+
+        let data_len = data.len();
+        let part_count = data_len.div_ceil(part_size.get());
+
+        assert!(
+            part_count <= MAX_PART_COUNT,
+            "Part count must be less than or equal to 10000"
+        );
+
+        let region = &self.default_region;
+
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        log::debug!("S3 put multipart request: {uri}, num_parts: {part_count}, part_size: {part_size}, in region: {region}");
+
+        let (_scheme, bucket, key) = parse_url(uri)?;
+
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+
+        log::debug!("S3 put multipart parsed uri: {uri} into Bucket: {bucket}, Key: {key}, part_size: {part_size}, part_count: {part_count} and region {region}");
+
+        let client = self.get_s3_client(region).await?;
+
+        let request_payer = if self.s3_config.requester_pays {
+            Some(s3::types::RequestPayer::Requester)
+        } else {
+            None
+        };
+
+        let create_multipart_upload_response = client
+            .create_multipart_upload()
+            .bucket(&bucket)
+            .key(&key)
+            .set_request_payer(request_payer.clone())
+            .send()
+            .await
+            .context(UnableToCreateMultipartUploadSnafu { path: uri })?;
+
+        let upload_id = create_multipart_upload_response
+            .upload_id()
+            .ok_or_else(|| Error::MissingUploadIdForMultipartUpload {
+                path: uri.to_owned(),
+            })?;
+
+        log::debug!("S3 put multipart upload-id: {upload_id}");
+
+        let parts = BytesChunker::new(data, part_size);
+
+        let upload_part_futures = parts
+            .enumerate()
+            .map(|(part_index, part)| {
+                let part_number = (part_index + 1) as i32;
+                let part_len = part.len();
+                let client = client.clone();
+                let io_stats = io_stats.clone();
+                client
+                    .upload_part()
+                    .bucket(&bucket)
+                    .key(&key)
+                    .part_number(part_number)
+                    .upload_id(upload_id)
+                    .body(part.into())
+                    .set_request_payer(request_payer.clone())
+                    .send()
+                    .inspect(move |response| match response {
+                        Ok(_) => {
+                            if let Some(io_stats) = io_stats.as_ref() {
+                                io_stats.mark_bytes_uploaded(part_len);
+                            }
+                            log::debug!("Successfully uploaded part {part_number}");
+                        }
+                        Err(err) => {
+                            log::debug!("Failed to upload part {part_number}: {err}");
+                        }
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        let upload_part_results = futures::future::join_all(upload_part_futures)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .context(UnableToUploadPartsSnafu { path: uri })?;
+
+        let completed_parts = upload_part_results
+            .into_iter()
+            .enumerate()
+            .map(|(part_index, response)| {
+                let part_number = (part_index + 1) as i32;
+                let etag = response.e_tag().unwrap_or_default();
+                s3::types::CompletedPart::builder()
+                    .part_number(part_number)
+                    .e_tag(etag)
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let completed_multipart_upload = s3::types::CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+
+        client
+            .complete_multipart_upload()
+            .key(&key)
+            .bucket(&bucket)
+            .upload_id(upload_id)
+            .multipart_upload(completed_multipart_upload)
+            .set_request_payer(request_payer)
+            .send()
+            .await
+            .context(UnableToCompleteMultipartUploadSnafu { path: uri })?;
+
+        log::debug!("S3 put multipart completed. upload_id :{upload_id}");
+
+        Ok(())
+    }
+}
+
+#[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
+struct BytesChunker {
+    data: bytes::Bytes,
+    chunk_size: NonZeroUsize,
+    offset: usize,
+}
+
+/// Iterator that splits a `Bytes` object into chunks of a specified size.
+///
+/// Although `Bytes` supports a `chunk` method, it returns `&[u8]` slices, which are cannot be
+/// passed to the S3 client. This implementation uses the `slice` method to create a new `Bytes`
+/// (slices do not make copies, but increment reference count for underlying buffer) for each chunk.
+impl BytesChunker {
+    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
+    fn new(data: bytes::Bytes, chunk_size: NonZeroUsize) -> Self {
+        Self {
+            data,
+            chunk_size,
+            offset: 0,
+        }
+    }
+}
+
+impl Iterator for BytesChunker {
+    type Item = bytes::Bytes;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset >= self.data.len() {
+            return None;
+        }
+
+        let end = (self.offset + self.chunk_size.get()).min(self.data.len());
+        let part = self.data.slice(self.offset..end);
+        self.offset = end;
+        Some(part)
+    }
 }
 
 #[async_trait]
@@ -1206,9 +1462,12 @@ impl ObjectSource for S3LikeSource {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
+    use bytes::Bytes;
     use common_io_config::S3Config;
 
-    use crate::{object_io::ObjectSource, Result, S3LikeSource};
+    use crate::{object_io::ObjectSource, s3_like::BytesChunker, Result, S3LikeSource};
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {
@@ -1273,5 +1532,45 @@ mod tests {
         client.ls(file_path, true, None, None, None).await?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_bytes_chunker_happy_even_split() {
+        let data = bytes::Bytes::from_static(b"1234567890");
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(5).unwrap()).collect();
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], Bytes::from_static(b"12345"));
+        assert_eq!(chunks[1], Bytes::from_static(b"67890"));
+    }
+
+    #[test]
+    fn test_bytes_chunker_happy_uneven_split() {
+        let data = bytes::Bytes::from_static(b"1234567890");
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(3).unwrap()).collect();
+
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0], Bytes::from_static(b"123"));
+        assert_eq!(chunks[1], Bytes::from_static(b"456"));
+        assert_eq!(chunks[2], Bytes::from_static(b"789"));
+        assert_eq!(chunks[3], Bytes::from_static(b"0"));
+    }
+
+    #[test]
+    fn test_bytes_chunker_empty() {
+        let data = bytes::Bytes::from_static(b"");
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(3).unwrap()).collect();
+        assert_eq!(chunks.len(), 0);
+    }
+
+    #[test]
+    fn test_bytes_large_chunk() {
+        let data = bytes::Bytes::from_static(b"1234567890");
+        let chunks: Vec<Bytes> =
+            BytesChunker::new(data.clone(), NonZeroUsize::new(20).unwrap()).collect();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], Bytes::from_static(b"1234567890"));
     }
 }
