@@ -1955,7 +1955,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 self._expr,
                 location_expr,
                 max_connections=max_connections_expr,
-                raise_on_error=on_error_expr,
+                on_error=on_error_expr,
                 multi_thread=multi_thread_expr,
                 is_single_folder=is_single_folder_expr,
                 io_config=io_config_expr,
