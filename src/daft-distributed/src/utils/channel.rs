@@ -1,5 +1,6 @@
 pub type Sender<T> = tokio::sync::mpsc::Sender<T>;
 pub type Receiver<T> = tokio::sync::mpsc::Receiver<T>;
+pub type ReceiverStream<T> = tokio_stream::wrappers::ReceiverStream<T>;
 
 pub fn create_channel<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
     let (sender, receiver) = tokio::sync::mpsc::channel(capacity);

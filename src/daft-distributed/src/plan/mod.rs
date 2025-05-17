@@ -6,18 +6,20 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use common_runtime::RuntimeTask;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 
 use crate::{
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
     utils::{
-        channel::{create_channel, Receiver},
+        channel::{create_channel, Receiver, ReceiverStream, Sender},
+        joinset::JoinSet,
         runtime::get_or_init_runtime,
+        stream::JoinableForwardingStream,
     },
 };
 
@@ -41,11 +43,29 @@ impl DistributedPhysicalPlan {
     }
 
     async fn execute_stages(
-        _stage_plan: StagePlan,
-        _psets: HashMap<String, Vec<PartitionRef>>,
-        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        stage_plan: StagePlan,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        config: Arc<DaftExecutionConfig>,
+        worker_manager_factory: Box<dyn WorkerManagerFactory>,
+        _sender: Sender<PartitionRef>,
     ) -> DaftResult<()> {
-        todo!("FLOTILLA_MS1: Implement execute stages");
+        if stage_plan.num_stages() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Cannot run multiple stages on flotilla yet. Got {} stages",
+                stage_plan.num_stages()
+            )));
+        }
+
+        let worker_manager = worker_manager_factory.create_worker_manager()?;
+        let stage = stage_plan.get_root_stage();
+        let _running_stage = stage.run_stage(psets, config, worker_manager)?;
+        // let materialized_stage = running_stage.materialize(task_dispatcher_handle);
+        // while let Some(output) = materialized_stage.next().await {
+        //     if sender.send(output).await.is_err() {
+        //         break;
+        //     }
+        // }
+        todo!("FLOTILLA_MS1: Implement execute_stages");
     }
 
     pub fn run_plan(
@@ -53,11 +73,19 @@ impl DistributedPhysicalPlan {
         psets: HashMap<String, Vec<PartitionRef>>,
         worker_manager_factory: Box<dyn WorkerManagerFactory>,
     ) -> DaftResult<PlanResult> {
-        let (_result_sender, result_receiver) = create_channel(1);
+        let (result_sender, result_receiver) = create_channel(1);
         let runtime = get_or_init_runtime();
         let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
+        let config = self.config.clone();
         let handle = runtime.spawn(async move {
-            Self::execute_stages(stage_plan, psets, worker_manager_factory).await
+            Self::execute_stages(
+                stage_plan,
+                psets,
+                config,
+                worker_manager_factory,
+                result_sender,
+            )
+            .await
         });
         Ok(PlanResult::new(handle, result_receiver))
     }
@@ -67,26 +95,22 @@ impl DistributedPhysicalPlan {
     }
 }
 
-// This is the output of a plan, a receiver to receive the results of the plan.
-// And the join handle to the task that runs the plan.
-pub struct PlanResult {
-    _handle: Option<RuntimeTask<DaftResult<()>>>,
-    _rx: Receiver<PartitionRef>,
+pub(crate) struct PlanResult {
+    stream: JoinableForwardingStream<tokio_stream::wrappers::ReceiverStream<PartitionRef>>,
 }
 
 impl PlanResult {
-    fn new(handle: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
-        Self {
-            _handle: Some(handle),
-            _rx: rx,
-        }
+    fn new(task: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
+        let inner_joinset = JoinSet::from(task.into_inner());
+        let stream = JoinableForwardingStream::new(ReceiverStream::new(rx), inner_joinset);
+        Self { stream }
     }
 }
 
 impl Stream for PlanResult {
     type Item = DaftResult<PartitionRef>;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for plan result");
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.stream.poll_next_unpin(cx)
     }
 }
