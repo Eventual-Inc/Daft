@@ -3,9 +3,14 @@ use std::{cmp::max, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
-    functions::python::{get_resource_request, try_get_batch_size_from_udf},
-    ExprRef,
+    common_treenode::{self, TreeNode},
+    functions::{
+        python::{get_resource_request, PythonUDF},
+        FunctionExpr, ScalarFunction,
+    },
+    Expr, ExprRef,
 };
+use daft_functions::uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -20,6 +25,44 @@ fn num_parallel_exprs(projection: &[ExprRef]) -> usize {
         projection.iter().filter(|expr| expr.has_compute()).count(),
         1,
     )
+}
+
+fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize> {
+    match (prev, next) {
+        (Some(p), Some(n)) => Some(std::cmp::min(p, n)),
+        (Some(p), None) => Some(p),
+        (None, Some(n)) => Some(n),
+        (None, None) => None,
+    }
+}
+
+const CONNECTION_BATCH_FACTOR: usize = 4;
+
+/// Gets the batch size from the first UDF encountered in a given slice of expressions
+/// Errors if no UDF is found
+pub fn try_get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
+    let mut projection_batch_size = None;
+    for expr in exprs {
+        expr.apply(|e| {
+            let found_batch_size = match e.as_ref() {
+                Expr::Function {
+                    func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+                    ..
+                } => *batch_size,
+                Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "download" => {
+                    let download_args = udf.as_any().downcast_ref::<UrlDownloadArgs>().unwrap();
+                    Some(download_args.max_connections * CONNECTION_BATCH_FACTOR)
+                }
+                _ => None,
+            };
+
+            projection_batch_size = smallest_batch_size(projection_batch_size, found_batch_size);
+            Ok(common_treenode::TreeNodeRecursion::Continue)
+        })
+        .unwrap();
+    }
+
+    projection_batch_size
 }
 
 pub struct ProjectOperator {
@@ -37,7 +80,7 @@ impl ProjectOperator {
             .map(|m| m as u64)
             .unwrap_or(0);
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
-        let batch_size = try_get_batch_size_from_udf(&projection).unwrap_or(None);
+        let batch_size = try_get_batch_size(&projection);
         Ok(Self {
             projection: Arc::new(projection),
             memory_request,
