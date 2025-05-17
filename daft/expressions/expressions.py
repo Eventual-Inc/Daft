@@ -1457,7 +1457,7 @@ class Expression:
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
             series = item_to_series("items", other)
-            other = Expression._from_pyexpr(_series_lit(series._series))
+            other = [Expression._from_pyexpr(_series_lit(series._series))]
         else:
             other = [other]
 
