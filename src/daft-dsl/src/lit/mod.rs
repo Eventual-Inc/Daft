@@ -1,3 +1,4 @@
+mod conversions;
 mod deserializer;
 mod serializer;
 use std::{
@@ -18,7 +19,7 @@ use daft_core::{
     },
 };
 use indexmap::IndexMap;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::pyobj_serde::PyObjectWrapper;
@@ -494,102 +495,6 @@ impl LiteralValue {
             _ => None,
         }
     }
-}
-
-pub trait Literal: Sized {
-    /// [Literal](Expr::Literal) expression.
-    fn lit(self) -> ExprRef {
-        Expr::Literal(self.literal_value()).into()
-    }
-    fn literal_value(self) -> LiteralValue;
-}
-
-impl Literal for IntervalValue {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Interval(self)
-    }
-}
-
-impl Literal for String {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Utf8(self)
-    }
-}
-
-impl Literal for &'_ str {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Utf8(self.to_owned())
-    }
-}
-
-macro_rules! make_literal {
-    ($TYPE:ty, $SCALAR:ident) => {
-        impl Literal for $TYPE {
-            fn literal_value(self) -> LiteralValue {
-                LiteralValue::$SCALAR(self)
-            }
-        }
-    };
-}
-
-impl Literal for &'_ [u8] {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Binary(self.to_vec())
-    }
-}
-
-impl Literal for Series {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Series(self)
-    }
-}
-
-#[cfg(feature = "python")]
-impl Literal for pyo3::PyObject {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Python(PyObjectWrapper(Arc::new(self)))
-    }
-}
-
-impl<T> Literal for Option<T>
-where
-    T: Literal,
-{
-    fn literal_value(self) -> LiteralValue {
-        match self {
-            Some(val) => val.literal_value(),
-            None => LiteralValue::Null,
-        }
-    }
-}
-
-make_literal!(bool, Boolean);
-make_literal!(i8, Int8);
-make_literal!(u8, UInt8);
-make_literal!(i16, Int16);
-make_literal!(u16, UInt16);
-make_literal!(i32, Int32);
-make_literal!(u32, UInt32);
-make_literal!(i64, Int64);
-make_literal!(u64, UInt64);
-make_literal!(f64, Float64);
-
-pub fn lit<L: Literal>(t: L) -> ExprRef {
-    t.lit()
-}
-
-pub fn literal_value<L: Literal>(t: L) -> LiteralValue {
-    t.literal_value()
-}
-
-pub fn null_lit() -> ExprRef {
-    Arc::new(Expr::Literal(LiteralValue::Null))
-}
-
-impl LiteralValue {
-    pub fn into_single_value_series(self) -> DaftResult<Series> {
-        literals_to_series(&[self])
-    }
 
     pub fn try_from_single_value_series(s: &Series) -> DaftResult<Self> {
         ensure!(s.len() == 1, ValueError: "expected a scalar value");
@@ -677,6 +582,30 @@ impl LiteralValue {
             ))),
         }
     }
+}
+
+pub trait Literal: Sized {
+    /// [Literal](Expr::Literal) expression.
+    fn lit(self) -> ExprRef {
+        Expr::Literal(self.literal_value()).into()
+    }
+    fn literal_value(self) -> LiteralValue;
+}
+
+pub trait FromLiteral: Sized {
+    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self>;
+}
+
+pub fn lit<L: Literal>(t: L) -> ExprRef {
+    t.lit()
+}
+
+pub fn literal_value<L: Literal>(t: L) -> LiteralValue {
+    t.literal_value()
+}
+
+pub fn null_lit() -> ExprRef {
+    Arc::new(Expr::Literal(LiteralValue::Null))
 }
 
 /// Convert a slice of literals to a series.
@@ -802,11 +731,7 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
             Decimal128Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         struct_dtype @ DataType::Struct(_) => {
-            let data = dbg!(values)
-                .iter()
-                .map(|lit| lit.to_series())
-                .collect::<Vec<_>>();
-            dbg!(&data);
+            let data = values.iter().map(|lit| lit.to_series()).collect::<Vec<_>>();
 
             let sa = StructArray::new(Field::new("literal", struct_dtype), data, None);
             sa.into_series()
@@ -825,40 +750,15 @@ impl From<LiteralValue> for ExprRef {
         Self::new(Expr::Literal(lit.into()))
     }
 }
-pub fn make_literal<S: Serialize>(s: S) -> DaftResult<LiteralValue> {
-    if std::any::type_name::<S>() == std::any::type_name::<LiteralValue>() {
-        return Err(DaftError::ValueError(
-            "Cannot serialize LiteralValue to LiteralValue".to_string(),
-        ));
-    }
-    s.serialize(serializer::LiteralValueSerializer)
-        .map_err(|e| e.into())
-}
-
-pub trait FromLiteral: Sized {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self>;
-}
-
-impl<D> FromLiteral for D
-where
-    D: DeserializeOwned,
-{
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        let deserializer = deserializer::LiteralValueDeserializer { lit };
-        D::deserialize(deserializer).map_err(|e| e.into())
-    }
-}
 
 #[cfg(test)]
 mod test {
     use common_error::DaftResult;
-    use common_io_config::{AzureConfig, IOConfig, S3Config};
+    use common_io_config::IOConfig;
     use daft_core::prelude::*;
-    use indexmap::IndexMap;
-    use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-    use super::LiteralValue;
-    use crate::lit::{make_literal, FromLiteral};
+    use super::{Literal, LiteralValue};
+    use crate::{lit::FromLiteral, literal_value};
 
     #[test]
     fn test_literals_to_series() {
@@ -934,47 +834,19 @@ mod test {
 
     #[test]
     fn test_lit_value_serde() -> DaftResult<()> {
-        let lit = make_literal(1.0)?;
+        let lit = literal_value(1.0);
         assert_eq!(lit, LiteralValue::Float64(1.0));
 
-        let lit = make_literal(CountMode::All)?;
+        let lit = literal_value(CountMode::All);
         assert_eq!(lit, LiteralValue::Utf8("All".to_string()));
-
-        let lit = make_literal(vec![1.0, 2.0, 3.0])?;
-        let s = Float64Array::from_values("literal", vec![1.0, 2.0, 3.0].into_iter()).into_series();
-        let expected = LiteralValue::Series(s);
-        assert_eq!(lit, expected);
-
-        #[derive(Serialize)]
-        struct Foo {
-            a: i64,
-            b: String,
-        }
-
-        let literal = make_literal(Foo {
-            a: 1,
-            b: "test".to_string(),
-        })?;
-
-        let mut struct_map = IndexMap::new();
-        struct_map.insert(Field::new("a", DataType::Int64), LiteralValue::Int64(1));
-        struct_map.insert(
-            Field::new("b", DataType::Utf8),
-            LiteralValue::Utf8("test".to_string()),
-        );
-        let expected = LiteralValue::Struct(struct_map);
-
-        assert_eq!(literal, expected);
-
-        assert!(false);
 
         Ok(())
     }
 
-    fn roundtrip<V: Serialize + DeserializeOwned + Clone + std::fmt::Debug + PartialEq>(
+    fn roundtrip<V: Literal + FromLiteral + Clone + std::fmt::Debug + PartialEq>(
         value: V,
     ) -> DaftResult<()> {
-        let lit = make_literal(value.clone()).expect("Failed to create LiteralValue");
+        let lit = literal_value(value.clone());
         let deserialized = V::try_from_literal(&lit).expect("Failed to deserialize LiteralValue");
         assert_eq!(value, deserialized);
         Ok(())
@@ -990,28 +862,9 @@ mod test {
         roundtrip(1u16)?;
         roundtrip(1u32)?;
         roundtrip(1u64)?;
-        roundtrip(1f32)?;
         roundtrip(1f64)?;
         roundtrip("test".to_string())?;
-        roundtrip(vec![1.0, 2.0, 3.0])?;
-        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-        struct Foo {
-            a: i32,
-            b: String,
-        }
-        roundtrip(Foo {
-            a: 1,
-            b: "test".to_string(),
-        })?;
-        roundtrip(S3Config::default())?;
-        roundtrip(AzureConfig::default())?;
         roundtrip(IOConfig::default())?;
-
-        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-        enum FooWithVariants {
-            A(i64),
-            B { a: i32, b: Foo },
-        }
         roundtrip(CountMode::All)?;
         roundtrip(ImageFormat::PNG)?;
         roundtrip(ImageMode::L)?;
@@ -1023,14 +876,6 @@ mod test {
         roundtrip(ImageMode::RGBA16)?;
         roundtrip(ImageMode::RGB32F)?;
         roundtrip(ImageMode::RGBA32F)?;
-        roundtrip(FooWithVariants::A(1))?;
-        roundtrip(FooWithVariants::B {
-            a: 1,
-            b: Foo {
-                a: 1,
-                b: "test".to_string(),
-            },
-        })?;
 
         Ok(())
     }

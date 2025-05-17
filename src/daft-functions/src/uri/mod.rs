@@ -1,9 +1,10 @@
 pub mod download;
 pub mod upload;
+use std::sync::Arc;
 
 use daft_dsl::{
     functions::{FunctionModule, ScalarFunction},
-    make_literal, ExprRef,
+    lit, ExprRef,
 };
 use download::{UrlDownload, UrlDownloadArgs};
 use upload::{UrlUpload, UrlUploadArgs};
@@ -20,18 +21,10 @@ pub fn download(input: ExprRef, args: Option<UrlDownloadArgs>) -> ExprRef {
     {
         vec![
             input,
-            make_literal(max_connections)
-                .expect("value is serializable")
-                .into(),
-            make_literal(raise_error_on_failure)
-                .expect("value is serializable")
-                .into(),
-            make_literal(multi_thread)
-                .expect("value is serializable")
-                .into(),
-            make_literal(io_config)
-                .expect("value is serializable")
-                .into(),
+            lit(max_connections as u64),
+            lit(raise_error_on_failure),
+            lit(multi_thread),
+            lit(Arc::unwrap_or_clone(io_config)),
         ]
     } else {
         vec![input]
@@ -54,21 +47,11 @@ pub fn upload(input: ExprRef, location: ExprRef, args: Option<UrlUploadArgs>) ->
         vec![
             input,
             location,
-            make_literal(max_connections)
-                .expect("value is serializable")
-                .into(),
-            make_literal(raise_error_on_failure)
-                .expect("value is serializable")
-                .into(),
-            make_literal(multi_thread)
-                .expect("value is serializable")
-                .into(),
-            make_literal(is_single_folder)
-                .expect("value is serializable")
-                .into(),
-            make_literal(io_config)
-                .expect("value is serializable")
-                .into(),
+            lit(max_connections as u64),
+            lit(raise_error_on_failure),
+            lit(multi_thread),
+            lit(is_single_folder),
+            lit(Arc::unwrap_or_clone(io_config)),
         ]
     } else {
         vec![input, location]

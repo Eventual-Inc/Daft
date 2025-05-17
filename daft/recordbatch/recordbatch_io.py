@@ -66,7 +66,7 @@ def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions,
     if read_options.column_names is not None:
         pruned_schema = Schema._from_fields([schema[name] for name in read_options.column_names])
 
-    table = table.cast_to_schema(pruned_schema)
+    table = MicroPartition._from_pymicropartition(table._micropartition.cast_to_schema(pruned_schema._schema))
     return table
 
 

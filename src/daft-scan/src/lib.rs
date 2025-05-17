@@ -551,7 +551,18 @@ impl ScanTask {
                         acc_size
                             .and_then(|acc_size| curr_size.map(|curr_size| acc_size + curr_size)),
                         acc_stats.and_then(|acc_stats| {
-                            curr_stats.map(|curr_stats| acc_stats.union(&curr_stats).unwrap())
+                            curr_stats
+                                .map(
+                                    #[allow(deprecated)]
+                                    |curr_stats| {
+                                        let acc_stats = acc_stats.cast_to_schema(&schema)?;
+                                        let curr_stats = curr_stats.cast_to_schema(&schema)?;
+                                        acc_stats.union(&curr_stats)
+                                    },
+                                )
+                                .transpose()
+                                .ok()
+                                .flatten()
                         }),
                     )
                 },
@@ -791,7 +802,9 @@ impl ScanTask {
                 .and_then(|s| {
                     // Derive in-memory size estimate from table stats.
                     self.num_rows().and_then(|num_rows| {
-                        let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
+                        #[allow(deprecated)]
+                        let mat_stats = s.cast_to_schema(&mat_schema).ok()?;
+                        let row_size = mat_stats.estimate_row_size().ok()?;
                         let estimate = (num_rows as f64) * row_size;
                         Some(estimate as usize)
                     })

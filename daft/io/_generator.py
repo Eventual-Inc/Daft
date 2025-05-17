@@ -2,9 +2,9 @@
 
 from typing import TYPE_CHECKING, Callable, Iterator, List
 
-from daft.daft import Pushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
+from daft.daft import PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import PyPartitionField, ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
@@ -88,7 +88,7 @@ class GeneratorScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
-    def partitioning_keys(self) -> List[PartitionField]:
+    def partitioning_keys(self) -> List[PyPartitionField]:
         return []
 
     def can_absorb_filter(self) -> bool:
@@ -106,7 +106,7 @@ class GeneratorScanOperator(ScanOperator):
             f"Schema = {self.schema()}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         for generator in self._generators:
             yield ScanTask.python_factory_func_scan_task(
                 module=_generator_factory_function.__module__,

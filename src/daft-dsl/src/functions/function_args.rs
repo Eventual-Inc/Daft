@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::series::Series;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::{lit::FromLiteral, ExprRef, LiteralValue};
 
@@ -436,10 +436,7 @@ impl FunctionArgs<ExprRef> {
     /// Uses serde to extract a scalar value from the function args.
     /// This will error if the the expr is not a literal, or if it is not deserializable to the provided type.
     /// It will also error if the value does not exist.
-    pub fn extract<V: DeserializeOwned, Key: FunctionArgKey>(
-        &self,
-        position: Key,
-    ) -> DaftResult<V> {
+    pub fn extract<V: FromLiteral, Key: FunctionArgKey>(&self, position: Key) -> DaftResult<V> {
         let value = position.required(self).map_err(|_| {
             DaftError::ValueError(format!(
                 "Expected a value for the required argument at position `{position:?}`"
@@ -459,7 +456,7 @@ impl FunctionArgs<ExprRef> {
     /// Uses serde to extract an optional scalar value from the function args.
     /// This will error if the the expr is not a literal, or if it is not deserializable to the provided type.
     /// if the value does not exist, None is returned.
-    pub fn extract_optional<V: DeserializeOwned, Key: FunctionArgKey>(
+    pub fn extract_optional<V: FromLiteral, Key: FunctionArgKey>(
         &self,
         position: Key,
     ) -> DaftResult<Option<V>> {
@@ -492,8 +489,7 @@ mod tests {
 
     use crate::{
         functions::function_args::{FunctionArg, FunctionArgs},
-        lit::make_literal,
-        Literal,
+        lit, Literal,
     };
     #[test]
     fn test_function_args_ordering() {
@@ -641,15 +637,15 @@ mod tests {
         let io_conf = IOConfig::default();
         let count_mode = CountMode::Valid;
         let args = FunctionArgs::new_unchecked(vec![
-            FunctionArg::unnamed(100.lit()),
-            FunctionArg::unnamed(222.lit()),
-            FunctionArg::named("io_config", make_literal(io_conf.clone())?.into()),
-            FunctionArg::named("arg2", make_literal(count_mode.clone())?.into()),
+            FunctionArg::unnamed(100i64.lit()),
+            FunctionArg::unnamed(222i32.lit()),
+            FunctionArg::named("io_config", lit(io_conf.clone())),
+            FunctionArg::named("arg2", lit(count_mode.clone())),
         ]);
 
-        let res: i64 = args.extract(0)?;
+        let res: usize = args.extract(0)?;
         assert_eq!(res, 100);
-        let second_pos: i64 = args.extract(1)?;
+        let second_pos: usize = args.extract(1)?;
         assert_eq!(second_pos, 222);
         let io_conf_extracted: IOConfig = args.extract("io_config")?;
         assert_eq!(io_conf_extracted, io_conf);
