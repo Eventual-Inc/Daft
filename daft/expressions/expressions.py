@@ -49,7 +49,7 @@ from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import Series, item_to_series
+from daft.series import item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -113,8 +113,6 @@ def lit(value: object) -> Expression:
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
-    elif isinstance(value, Series):
-        lit_value = _series_lit(value._series)
     elif isinstance(value, ImageFormat):
         lit_value = _lit(str(value))
     elif isinstance(value, ImageMode):
@@ -1459,7 +1457,7 @@ class Expression:
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
             series = item_to_series("items", other)
-            other = [Expression._to_expression(series)]
+            other = Expression._from_pyexpr(_series_lit(series._series))
         else:
             other = [other]
 
@@ -3974,7 +3972,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             patterns = [patterns]
         if not isinstance(patterns, Expression):
             series = item_to_series("items", patterns)
-            patterns = Expression._to_expression(series)
+            patterns = Expression._from_pyexpr(_series_lit(series._series))
 
         return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
 
