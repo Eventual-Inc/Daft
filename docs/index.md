@@ -116,6 +116,10 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
     Daft is built to work with multimodal data types, including URLs and images.
 
+- [:simple-ray: **Distributed Computing**](distributed.md)
+
+    Daft's native support for Ray enables you to run distributed DataFrame workloads at scale.
+
 </div>
 
 ### More Resources

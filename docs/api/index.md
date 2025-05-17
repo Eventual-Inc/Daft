@@ -4,9 +4,9 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
 <div class="grid cards" markdown>
 
-- [**DataFrame Creation**](dataframe_creation.md)
+- [**I/O**](io.md)
 
-    Variety of approaches to creating a DataFrame from various data sources like in-memory data, files, data catalogs, and integrations.
+    Variety of approaches to creating a DataFrame from reading various data sources like in-memory data, files, data catalogs, and integrations and writing to various data sources.
 
 - [**DataFrame**](dataframe.md)
 

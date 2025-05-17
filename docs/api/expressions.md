@@ -106,3 +106,7 @@ Daft Expressions allow you to express some computation that needs to happen in a
         filters: ["!^_"]
         toc_label: Expression.embedding
         heading: Expression.embedding
+
+::: daft.expressions.visitor.ExpressionVisitor
+    options:
+        filters: ["!^_"]
