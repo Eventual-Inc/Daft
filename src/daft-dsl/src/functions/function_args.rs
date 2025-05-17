@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use daft_core::series::Series;
 use serde::{Deserialize, Serialize};
+
+use crate::{lit::FromLiteral, ExprRef, LiteralValue};
 
 /// Wrapper around T to hold either a named or an unnamed argument.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -388,11 +391,106 @@ impl<T> FunctionArgs<T> {
     }
 }
 
+impl FunctionArgs<Series> {
+    /// Uses serde to extract a scalar value from the function args.
+    /// This will error if the series is not scalar. (len ==1) or if it is not deserializable to the provided type.
+    /// It will also return an error if the value does not exist.
+    pub fn extract<V: FromLiteral, Key: FunctionArgKey>(&self, position: Key) -> DaftResult<V> {
+        let value = position.required(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the required argument at position `{position:?}`"
+            ))
+        })?;
+
+        let lit = LiteralValue::try_from_single_value_series(value)?;
+
+        let res = V::try_from_literal(&lit);
+        res.map_err(|e| e.into())
+    }
+
+    /// Uses serde to extract an optional scalar value from the function args.
+    /// This will error if the series is not scalar. (len ==1) or if it is not deserializable to the provided type.
+    /// if the value does not exist, None is returned.
+    pub fn extract_optional<V: FromLiteral, Key: FunctionArgKey>(
+        &self,
+        position: Key,
+    ) -> DaftResult<Option<V>> {
+        let value = position.optional(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the optional argument at position `{position:?}`"
+            ))
+        })?;
+
+        match value {
+            Some(value) => {
+                let lit = LiteralValue::try_from_single_value_series(value)?;
+                let res = V::try_from_literal(&lit);
+                res.map_err(|e| e.into()).map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+impl FunctionArgs<ExprRef> {
+    /// Uses serde to extract a scalar value from the function args.
+    /// This will error if the the expr is not a literal, or if it is not deserializable to the provided type.
+    /// It will also error if the value does not exist.
+    pub fn extract<V: FromLiteral, Key: FunctionArgKey>(&self, position: Key) -> DaftResult<V> {
+        let value = position.required(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the required argument at position `{position:?}`"
+            ))
+        })?;
+
+        match value.as_literal() {
+            Some(lit) => {
+                let res = V::try_from_literal(lit);
+                res.map_err(|e| e.into())
+            }
+            None => Err(DaftError::ValueError(format!(
+                "Expected a literal value for the optional argument at position `{position:?}`"
+            ))),
+        }
+    }
+    /// Uses serde to extract an optional scalar value from the function args.
+    /// This will error if the the expr is not a literal, or if it is not deserializable to the provided type.
+    /// if the value does not exist, None is returned.
+    pub fn extract_optional<V: FromLiteral, Key: FunctionArgKey>(
+        &self,
+        position: Key,
+    ) -> DaftResult<Option<V>> {
+        let value = position.optional(self).map_err(|_| {
+            DaftError::ValueError(format!(
+                "Expected a value for the optional argument at position `{position:?}`"
+            ))
+        })?;
+
+        match value {
+            Some(value) => match value.as_literal() {
+                Some(lit) => {
+                    let res = V::try_from_literal(lit);
+                    res.map_err(|e| e.into()).map(Some)
+                }
+                None => Err(DaftError::ValueError(format!(
+                    "Expected a literal value for the optional argument at position `{position:?}`"
+                ))),
+            },
+            None => Ok(None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
+    use common_io_config::IOConfig;
+    use daft_core::prelude::CountMode;
 
-    use crate::functions::function_args::{FunctionArg, FunctionArgs};
+    use crate::{
+        functions::function_args::{FunctionArg, FunctionArgs},
+        lit, Literal,
+    };
     #[test]
     fn test_function_args_ordering() {
         let res = FunctionArgs::try_new(vec![
@@ -532,5 +630,27 @@ mod tests {
         let args: FunctionArgs<usize> = FunctionArgs::try_new(Vec::new()).unwrap();
         assert!(args.is_empty());
         assert_eq!(args.len(), 0);
+    }
+
+    #[test]
+    fn test_extract() -> DaftResult<()> {
+        let io_conf = IOConfig::default();
+        let count_mode = CountMode::Valid;
+        let args = FunctionArgs::new_unchecked(vec![
+            FunctionArg::unnamed(100i64.lit()),
+            FunctionArg::unnamed(222i32.lit()),
+            FunctionArg::named("io_config", lit(io_conf.clone())),
+            FunctionArg::named("arg2", lit(count_mode.clone())),
+        ]);
+
+        let res: usize = args.extract(0)?;
+        assert_eq!(res, 100);
+        let second_pos: usize = args.extract(1)?;
+        assert_eq!(second_pos, 222);
+        let io_conf_extracted: IOConfig = args.extract("io_config")?;
+        assert_eq!(io_conf_extracted, io_conf);
+        let count_mode_extracted: CountMode = args.extract("arg2")?;
+        assert_eq!(count_mode_extracted, count_mode);
+        Ok(())
     }
 }

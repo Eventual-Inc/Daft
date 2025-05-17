@@ -64,7 +64,7 @@ build-release: check-toolchain frontend .venv  ## Compile and install a faster D
 
 .PHONY: test
 test: .venv build  ## Run tests
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration
 
 .PHONY: doctests
 doctests:
