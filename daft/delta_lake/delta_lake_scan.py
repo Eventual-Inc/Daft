@@ -49,7 +49,7 @@ def get_s3_bucket_region(bucket_name):
         return bucket_region
     except Exception as e:
         logger.warning(
-            "ailed to get the S3 bucket region using the given S3 uri. Error: %s",
+            "Failed to get the S3 bucket region using the given S3 uri. Error: %s",
             e,
         )
         return None
