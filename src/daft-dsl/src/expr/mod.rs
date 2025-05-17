@@ -1619,6 +1619,7 @@ impl Expr {
     pub fn name(&self) -> &str {
         match self {
             Self::Alias(.., name) => name.as_ref(),
+            // unlike alias, we only use the expr name here for functions,
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),

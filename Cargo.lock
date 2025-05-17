@@ -2010,6 +2010,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-functions-utf8",
  "daft-hash",
  "daft-image",
  "daft-io",
@@ -2095,6 +2096,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-utf8",
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
@@ -2131,7 +2133,6 @@ dependencies = [
 name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
- "aho-corasick",
  "arrow2",
  "bincode",
  "chrono",
@@ -2160,10 +2161,8 @@ dependencies = [
  "numpy",
  "pyo3",
  "rand 0.8.5",
- "regex",
  "serde",
  "sketches-ddsketch",
- "unicode-normalization",
  "xxhash-rust",
 ]
 
@@ -2315,6 +2314,25 @@ dependencies = [
  "serde",
  "serde_json",
  "typetag",
+]
+
+[[package]]
+name = "daft-functions-utf8"
+version = "0.3.0-dev0"
+dependencies = [
+ "aho-corasick",
+ "arrow2",
+ "chrono",
+ "chrono-tz",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "itertools 0.11.0",
+ "num-traits",
+ "regex",
+ "serde",
+ "typetag",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -2506,6 +2524,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-utf8",
  "daft-schema",
  "derivative",
  "indexmap 2.8.0",
@@ -2802,6 +2821,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-functions-utf8",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-scan",
