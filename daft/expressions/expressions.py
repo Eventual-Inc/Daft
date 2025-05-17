@@ -1949,7 +1949,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         multi_thread_expr = Expression._to_expression(multi_thread)._expr
         io_config_expr = Expression._to_expression(io_config)._expr
         is_single_folder_expr = Expression._to_expression(is_single_folder)._expr
-        f = native.get_function_from_registry("url_download")
+        f = native.get_function_from_registry("url_upload")
         return Expression._from_pyexpr(
             f(
                 self._expr,
