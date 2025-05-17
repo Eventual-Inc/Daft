@@ -224,10 +224,6 @@ class RecordBatch:
     # Compute methods (Table -> Table)
     ###
 
-    def cast_to_schema(self, schema: Schema) -> RecordBatch:
-        """Casts a RecordBatch into the provided schema."""
-        return RecordBatch._from_pyrecordbatch(self._recordbatch.cast_to_schema(schema._schema))
-
     def eval_expression_list(self, exprs: ExpressionsProjection) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]

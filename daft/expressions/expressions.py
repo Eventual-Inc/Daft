@@ -115,10 +115,6 @@ def lit(value: object) -> Expression:
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
-    elif isinstance(value, ImageFormat):
-        lit_value = _lit(str(value))
-    elif isinstance(value, ImageMode):
-        lit_value = _lit(str(value))
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)

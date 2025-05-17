@@ -12,15 +12,16 @@ import daft
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
-    PartitionTransform,
-    Pushdowns,
+    PyPartitionField,
+    PyPartitionTransform,
+    PyPushdowns,
     ScanTask,
     StorageConfig,
 )
 from daft.datatype import DataType
 from daft.dependencies import pa
 from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
-from daft.io.scan import PartitionField, ScanOperator, make_partition_field
+from daft.io.scan import ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 def _iceberg_partition_field_to_daft_partition_field(
     iceberg_schema: IcebergSchema, pfield: IcebergPartitionField
-) -> PartitionField:
+) -> PyPartitionField:
     name = pfield.name
     source_id = pfield.source_id
     source_field = iceberg_schema.find_field(source_id)
@@ -59,29 +60,29 @@ def _iceberg_partition_field_to_daft_partition_field(
 
     tfm = None
     if isinstance(transform, IdentityTransform):
-        tfm = PartitionTransform.identity()
+        tfm = PyPartitionTransform.identity()
         result_type = source_type
     elif isinstance(transform, YearTransform):
-        tfm = PartitionTransform.year()
+        tfm = PyPartitionTransform.year()
         result_type = DataType.int32()
     elif isinstance(transform, MonthTransform):
-        tfm = PartitionTransform.month()
+        tfm = PyPartitionTransform.month()
         result_type = DataType.int32()
     elif isinstance(transform, DayTransform):
-        tfm = PartitionTransform.day()
+        tfm = PyPartitionTransform.day()
         # pyiceberg uses date as the result type of a day transform, which is incorrect
         # so we cannot use transform.result_type() here
         result_type = DataType.date()
     elif isinstance(transform, HourTransform):
-        tfm = PartitionTransform.hour()
+        tfm = PyPartitionTransform.hour()
         result_type = DataType.int32()
     elif isinstance(transform, BucketTransform):
         n = transform.num_buckets
-        tfm = PartitionTransform.iceberg_bucket(n)
+        tfm = PyPartitionTransform.iceberg_bucket(n)
         result_type = DataType.int32()
     elif isinstance(transform, TruncateTransform):
         w = transform.width
-        tfm = PartitionTransform.iceberg_truncate(w)
+        tfm = PyPartitionTransform.iceberg_truncate(w)
         result_type = source_type
     else:
         warnings.warn(f"{transform} not implemented, Please make an issue!")
@@ -90,7 +91,9 @@ def _iceberg_partition_field_to_daft_partition_field(
     return make_partition_field(result_field, daft_field, transform=tfm)
 
 
-def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec) -> list[PartitionField]:
+def iceberg_partition_spec_to_fields(
+    iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec
+) -> list[PyPartitionField]:
     return [_iceberg_partition_field_to_daft_partition_field(iceberg_schema, field) for field in spec.fields]
 
 
@@ -121,7 +124,7 @@ class IcebergScanOperator(ScanOperator):
     def display_name(self) -> str:
         return f"IcebergScanOperator({'.'.join(self._table.name())})"
 
-    def partitioning_keys(self) -> list[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
 
     def _iceberg_record_to_partition_spec(
@@ -152,7 +155,7 @@ class IcebergScanOperator(ScanOperator):
             f"Storage config = {self._storage_config}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         limit = pushdowns.limit
         iceberg_tasks = self._table.scan(limit=limit, snapshot_id=self._snapshot_id).plan_files()
 

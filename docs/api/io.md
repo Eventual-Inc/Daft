@@ -102,6 +102,8 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 ## User-Defined
 
+Daft supports diverse input sources and output sinks, this section covers lower-level APIs which we are evolving for more advanced usage.
+
 !!! warning "Warning"
 
     These APIs are considered experimental.
@@ -127,6 +129,8 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
         heading_level: 3
 
 ## Pushdowns
+
+Daft supports predicate, projection, and limit pushdowns. Learn more about [Pushdowns](../advanced/pushdowns.md) in the Daft User Guide.
 
 ::: daft.io.pushdowns.Pushdowns
     options:
@@ -162,3 +166,6 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         filters: ["!^_"]
         heading_level: 3
+::: daft.io.scan.ScanOperator
+    options:
+        filters: ["!^_"]

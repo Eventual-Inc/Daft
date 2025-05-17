@@ -9,11 +9,11 @@ use daft_schema::schema::SchemaRef;
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    runtime::JoinSet,
     scheduling::{
         dispatcher::{TaskDispatcher, TaskDispatcherHandle},
         worker::WorkerManagerFactory,
     },
+    utils::joinset::JoinSet,
 };
 
 mod stage_builder;

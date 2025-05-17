@@ -260,11 +260,11 @@ async fn read_csv_single_into_table(
         (None, _) => None,
         (co, None) => co,
         (Some(mut co), Some(predicate)) => {
-            if let Some(ref mut include_columns) = co.include_columns {
+            if let Some(ref mut co_include_columns) = co.include_columns {
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
-                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc);
+                    if co_include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                        co_include_columns.push(rc);
                     }
                 }
             }
@@ -283,6 +283,7 @@ async fn read_csv_single_into_table(
         io_stats,
     )
     .await?;
+
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
     // with the parsing of chunks on the rayon threadpool.
     let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
@@ -312,11 +313,8 @@ async fn read_csv_single_into_table(
     };
 
     let schema: arrow2::datatypes::Schema = schema_fields.into();
-    let schema = Arc::new(schema.into());
+    let schema: SchemaRef = Arc::new(schema.into());
 
-    let predicate = predicate
-        .map(|expr| BoundExpr::try_new(expr, &schema))
-        .transpose()?;
     let include_column_indices = include_columns
         .map(|include_columns| {
             include_columns
@@ -328,7 +326,11 @@ async fn read_csv_single_into_table(
 
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
+            let table = table?;
+
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
             if let Some(include_column_indices) = &include_column_indices {
                 Ok(filtered.get_columns(include_column_indices))
             } else {
