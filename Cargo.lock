@@ -2801,7 +2801,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-functions-json",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-scan",
