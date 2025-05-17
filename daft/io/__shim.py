@@ -4,7 +4,8 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from daft.daft import (
-    PartitionField,
+    PyPartitionField,
+    PyPushdowns,
     PyRecordBatch,
     ScanTask,
 )
@@ -14,7 +15,6 @@ from daft.io.scan import ScanOperator
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from daft.daft import Pushdowns as PyPushdowns
     from daft.io.source import DataSource, DataSourceTask
     from daft.schema import Schema
 
@@ -34,9 +34,9 @@ class _DataSourceShim(ScanOperator):
         return self._source.name
 
     def display_name(self) -> str:
-        return f"DataFrameSource({self.name()})"
+        return f"DataSource({self.name()})"
 
-    def partitioning_keys(self) -> list[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return []
 
     def can_absorb_filter(self) -> bool:
@@ -55,7 +55,7 @@ class _DataSourceShim(ScanOperator):
         ]
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
-        pds = Pushdowns._from_pypushdowns(pushdowns, self.schema())
+        pds = Pushdowns._from_pypushdowns(pushdowns)
         for task in self._source.get_tasks(pds):
             yield ScanTask.python_factory_func_scan_task(
                 module=_get_record_batches.__module__,

@@ -7,10 +7,7 @@ build:
 
 python:
   install:
-  - requirements: requirements-dev.txt
+  - requirements: requirements-doc.txt
 
 mkdocs:
   configuration: mkdocs.yml
-
-formats:
-- htmlzip

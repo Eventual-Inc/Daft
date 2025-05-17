@@ -6,9 +6,9 @@ use daft_local_plan::LocalPhysicalPlanRef;
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
-    channel::{create_channel, Sender},
     scheduling::dispatcher::TaskDispatcherHandle,
     stage::StageContext,
+    utils::channel::{create_channel, Sender},
 };
 
 #[allow(dead_code)]

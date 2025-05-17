@@ -93,12 +93,11 @@ markdown-exec
 mkdocs-jupyter
 mkdocs-material
 mkdocs-macros-plugin
-mkdocs-redirects
 mkdocs-simple-hooks
 pymdown-extensions
 mkdocs-material[imaging]
 mkdocstrings-python
-ruff # for mkdocstring formatting
+ruff
 mkdocs-minify-plugin
 
 # Daft connect testing
