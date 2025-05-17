@@ -58,8 +58,8 @@ pub trait IntermediateOperator: Send + Sync {
         Ok(get_compute_pool_num_threads())
     }
 
-    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
-        Some(runtime_handle.default_morsel_size())
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+        (0, runtime_handle.default_morsel_size())
     }
 
     fn dispatch_spawner(
@@ -67,10 +67,12 @@ pub trait IntermediateOperator: Send + Sync {
         runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
+        let (lower_bound, upper_bound) = self.morsel_size_range(runtime_handle);
+
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(self.morsel_size(runtime_handle)))
+            Arc::new(RoundRobinDispatcher::new(lower_bound, upper_bound))
         } else {
-            Arc::new(UnorderedDispatcher::new(self.morsel_size(runtime_handle)))
+            Arc::new(UnorderedDispatcher::new(lower_bound, upper_bound))
         }
     }
 }

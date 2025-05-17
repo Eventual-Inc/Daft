@@ -62,17 +62,13 @@ impl StreamingSink for ConcatSink {
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        _runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(RoundRobinDispatcher::unbounded())
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(UnorderedDispatcher::unbounded())
         }
     }
 }

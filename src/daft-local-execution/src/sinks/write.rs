@@ -224,7 +224,7 @@ impl BlockingSink for WriteSink {
         } else {
             // Unnecessary to buffer by morsel size because we are writing.
             // Writers also have their own internal buffering.
-            Arc::new(UnorderedDispatcher::new(None))
+            Arc::new(UnorderedDispatcher::unbounded())
         }
     }
 
