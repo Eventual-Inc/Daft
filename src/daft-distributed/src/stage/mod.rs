@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -13,7 +8,7 @@ use daft_logical_plan::{
     partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
 };
 use daft_schema::schema::SchemaRef;
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use stage_builder::StagePlanBuilder;
 
 use crate::{
@@ -21,10 +16,7 @@ use crate::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
         PipelineOutput, RunningPipelineNode,
     },
-    scheduling::{
-        dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-        worker::WorkerManager,
-    },
+    scheduling::dispatcher::TaskDispatcherHandle,
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
@@ -85,17 +77,14 @@ impl Stage {
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
-        worker_manager: Box<dyn WorkerManager>,
+        task_dispatcher_handle: TaskDispatcherHandle,
     ) -> DaftResult<RunningStage> {
-        let mut stage_context = StageContext::new(worker_manager);
+        let mut stage_context = StageContext::new(task_dispatcher_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
                 let running_node = pipeline_node.start(&mut stage_context);
-                Ok(RunningStage::new(JoinableForwardingStream::new(
-                    running_node,
-                    stage_context.joinset,
-                )))
+                Ok(RunningStage::new(running_node, stage_context.joinset))
             }
             _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
         }
@@ -103,25 +92,31 @@ impl Stage {
 }
 
 pub(crate) struct RunningStage {
-    stream: JoinableForwardingStream<RunningPipelineNode>,
+    running_pipeline_node: RunningPipelineNode,
+    joinset: JoinSet<DaftResult<()>>,
 }
 
 impl RunningStage {
-    fn new(stream: JoinableForwardingStream<RunningPipelineNode>) -> Self {
-        Self { stream }
+    fn new(running_pipeline_node: RunningPipelineNode, joinset: JoinSet<DaftResult<()>>) -> Self {
+        Self {
+            running_pipeline_node,
+            joinset,
+        }
     }
 
     #[allow(dead_code)]
-    fn materialize(self, task_dispatcher_handle: TaskDispatcherHandle) {
-        materialize_all_pipeline_outputs(self.stream, task_dispatcher_handle);
+    pub fn materialize(
+        self,
+        task_dispatcher_handle: TaskDispatcherHandle,
+    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+        let stream = self.into_stream();
+        materialize_all_pipeline_outputs(stream, task_dispatcher_handle)
     }
-}
 
-impl Stream for RunningStage {
-    type Item = DaftResult<PipelineOutput>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.stream.poll_next_unpin(cx)
+    pub fn into_stream(
+        self,
+    ) -> impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static {
+        JoinableForwardingStream::new(self.running_pipeline_node.into_stream(), self.joinset)
     }
 }
 
@@ -216,11 +211,8 @@ pub(crate) struct StageContext {
 
 impl StageContext {
     #[allow(dead_code)]
-    fn new(worker_manager: Box<dyn WorkerManager>) -> Self {
-        let task_dispatcher = TaskDispatcher::new(worker_manager);
-        let mut joinset = JoinSet::new();
-        let task_dispatcher_handle =
-            TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
+    fn new(task_dispatcher_handle: TaskDispatcherHandle) -> Self {
+        let joinset = JoinSet::new();
         Self {
             task_dispatcher_handle,
             joinset,

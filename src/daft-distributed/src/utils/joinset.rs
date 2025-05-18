@@ -23,6 +23,15 @@ impl<T: Send + 'static> JoinSet<T> {
         handle.id()
     }
 
+    pub fn spawn_on(
+        &mut self,
+        task: impl Future<Output = T> + Send + 'static,
+        handle: &tokio::runtime::Handle,
+    ) -> tokio::task::Id {
+        let handle = self.inner.spawn_on(task, handle);
+        handle.id()
+    }
+
     #[allow(dead_code)]
     pub async fn join_next(&mut self) -> Option<DaftResult<T>> {
         let res = self.inner.join_next().await;

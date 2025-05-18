@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use collect::CollectNode;
 use common_daft_config::DaftExecutionConfig;
@@ -56,19 +51,16 @@ impl RunningPipelineNode {
     }
 
     #[allow(dead_code)]
-    pub fn materialize(self, task_dispatcher_handle: TaskDispatcherHandle) {
-        materialize_all_pipeline_outputs(
-            ReceiverStream::new(self.result_receiver).map(Ok),
-            task_dispatcher_handle,
-        );
+    pub fn materialize(
+        self,
+        task_dispatcher_handle: TaskDispatcherHandle,
+    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+        let stream = self.into_stream().map(Ok);
+        materialize_all_pipeline_outputs(stream, task_dispatcher_handle)
     }
-}
 
-impl Stream for RunningPipelineNode {
-    type Item = PipelineOutput;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.result_receiver.poll_recv(cx)
+    pub fn into_stream(self) -> impl Stream<Item = PipelineOutput> + Send + Unpin + 'static {
+        ReceiverStream::new(self.result_receiver)
     }
 }
 

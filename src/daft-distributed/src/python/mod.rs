@@ -10,11 +10,11 @@ use pyo3::prelude::*;
 use ray::{RayPartitionRef, RaySwordfishTask, RayWorkerManagerFactory};
 use tokio::sync::Mutex;
 
-use crate::plan::{DistributedPhysicalPlan, PlanResult};
+use crate::plan::{DistributedPhysicalPlan, PlanResultStream};
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
-    inner: Arc<Mutex<PlanResult>>,
+    inner: Arc<Mutex<PlanResultStream>>,
 }
 
 #[pymethods]
@@ -93,11 +93,11 @@ impl PyDistributedPhysicalPlan {
             pyo3_async_runtimes::tokio::get_current_locals(py)
                 .expect("Failed to get current task locals"),
         );
-        let part_stream = self
+        let plan_result = self
             .planner
             .run_plan(psets, Box::new(worker_manager_factory))?;
         let part_stream = PythonPartitionRefStream {
-            inner: Arc::new(Mutex::new(part_stream)),
+            inner: Arc::new(Mutex::new(plan_result.into_stream())),
         };
         Ok(part_stream)
     }
