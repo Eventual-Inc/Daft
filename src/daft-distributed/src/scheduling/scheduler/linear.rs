@@ -35,8 +35,8 @@ impl<T: Task> Scheduler<T> for LinearScheduler {
         todo!("FLOTILLA_MS1: Implement enqueue_tasks for linear scheduler")
     }
 
-    fn get_scheduled_tasks(&mut self) -> Vec<ScheduledTask<T>> {
-        todo!("FLOTILLA_MS1: Implement get_scheduled_tasks for linear scheduler")
+    fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>> {
+        todo!("FLOTILLA_MS1: Implement get_schedulable_tasks for linear scheduler")
     }
 }
 

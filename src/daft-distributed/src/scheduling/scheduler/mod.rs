@@ -47,7 +47,7 @@ impl<T: Task> ScheduledTask<T> {
 pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>);
-    fn get_scheduled_tasks(&mut self) -> Vec<ScheduledTask<T>>;
+    fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>>;
 }
 
 #[allow(dead_code)]

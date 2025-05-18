@@ -48,11 +48,14 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         self.pending_tasks.extend(tasks);
     }
 
-    fn get_scheduled_tasks(&mut self) -> Vec<ScheduledTask<T>> {
+    fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>> {
         let mut scheduled = Vec::new();
         while let Some(task_ref) = self.pending_tasks.peek() {
             if let Some(worker_id) = self.try_schedule_task(task_ref) {
-                let task = self.pending_tasks.pop().unwrap();
+                let task = self
+                    .pending_tasks
+                    .pop()
+                    .expect("Task should be present in pending tasks");
                 scheduled.push(ScheduledTask { task, worker_id });
             }
         }

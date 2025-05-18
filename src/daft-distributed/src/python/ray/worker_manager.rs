@@ -48,7 +48,7 @@ impl WorkerManager for RayWorkerManager {
     ) -> Box<dyn SwordfishTaskResultHandle> {
         self.ray_workers
             .get(&worker_id)
-            .unwrap()
+            .expect("Worker should be present in RayWorkerManager")
             .submit_task(task, &self.task_locals)
             .expect("Failed to submit task to RayWorkerManager")
     }
@@ -60,7 +60,7 @@ impl WorkerManager for RayWorkerManager {
     fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId) {
         self.ray_workers
             .get(&worker_id)
-            .unwrap()
+            .expect("Worker should be present in RayWorkerManager")
             .mark_task_finished(task_id);
     }
 
@@ -81,7 +81,7 @@ impl WorkerManager for RayWorkerManager {
 
 impl Drop for RayWorkerManager {
     fn drop(&mut self) {
-        self.shutdown().unwrap();
+        self.shutdown().expect("Cannot shutdown RayWorkerManager");
     }
 }
 

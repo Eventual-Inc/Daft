@@ -45,7 +45,10 @@ impl RaySwordfishWorker {
 #[allow(dead_code)]
 impl RaySwordfishWorker {
     pub fn mark_task_finished(&self, task_id: TaskId) {
-        self.active_task_ids.lock().unwrap().remove(&task_id);
+        self.active_task_ids
+            .lock()
+            .expect("Active task ids should be present")
+            .remove(&task_id);
     }
 
     pub fn submit_task(
@@ -53,7 +56,10 @@ impl RaySwordfishWorker {
         task: Box<dyn Task>,
         task_locals: &pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Box<dyn SwordfishTaskResultHandle>> {
-        let task = task.into_any().downcast::<SwordfishTask>().unwrap();
+        let task = task
+            .into_any()
+            .downcast::<SwordfishTask>()
+            .expect("Task should be a SwordfishTask for RaySwordfishWorker");
         let task_id = task.task_id().clone();
         let py_task = RaySwordfishTask::new(task);
         let py_task_handle = Python::with_gil(|py| {
@@ -64,7 +70,10 @@ impl RaySwordfishWorker {
             let task_locals = task_locals.clone_ref(py);
             Box::new(RayTaskResultHandle::new(py_task_handle, task_locals))
         });
-        self.active_task_ids.lock().unwrap().insert(task_id);
+        self.active_task_ids
+            .lock()
+            .expect("Active task ids should be present")
+            .insert(task_id);
         Ok(py_task_handle)
     }
 
@@ -72,7 +81,7 @@ impl RaySwordfishWorker {
         Python::with_gil(|py| {
             self.actor_handle
                 .call_method0(py, pyo3::intern!(py, "shutdown"))
-                .unwrap();
+                .expect("Failed to shutdown RaySwordfishWorker");
         });
     }
 }
@@ -87,6 +96,9 @@ impl Worker for RaySwordfishWorker {
     }
 
     fn active_task_ids(&self) -> HashSet<TaskId> {
-        self.active_task_ids.lock().unwrap().clone()
+        self.active_task_ids
+            .lock()
+            .expect("Active task ids should be present")
+            .clone()
     }
 }
