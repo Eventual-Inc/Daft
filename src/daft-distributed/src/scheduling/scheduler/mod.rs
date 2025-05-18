@@ -10,7 +10,7 @@ mod linear;
 mod scheduler_actor;
 
 use scheduler_actor::SchedulableTask;
-pub(crate) use scheduler_actor::{SchedulerActor, SchedulerHandle};
+pub(crate) use scheduler_actor::{SchedulerActor, SchedulerHandle, SubmittedTask};
 
 pub(super) struct ScheduledTask<T: Task> {
     pub task: SchedulableTask<T>,

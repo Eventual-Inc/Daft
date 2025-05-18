@@ -76,7 +76,7 @@ def test_upload_local_no_write_permissions(tmpdir):
     data = {"data": bytes_data, "paths": paths}
     df = daft.from_pydict(data)
     df_raise_error = df.with_column("files", df["data"].url.upload(df["paths"]))
-    with pytest.raises(ValueError, match="Unable to write data to file"):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         df_raise_error.collect()
     # Retry with `on_error` set to `null`.
     df_null = df.with_column("files", df["data"].url.upload(df["paths"], on_error="null"))

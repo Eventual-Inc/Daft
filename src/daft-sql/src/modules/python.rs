@@ -46,6 +46,7 @@ fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<PyObject> {
             daft_dsl::LiteralValue::Boolean(b) => b.into_py_any(py),
             daft_dsl::LiteralValue::Utf8(s) => s.into_py_any(py),
             daft_dsl::LiteralValue::Binary(_) => unreachable_variant!(Binary),
+            daft_dsl::LiteralValue::FixedSizeBinary(_, _) => unreachable_variant!(FixedSizeBinary),
             daft_dsl::LiteralValue::Int8(_) => unreachable_variant!(Int8),
             daft_dsl::LiteralValue::UInt8(_) => unreachable_variant!(UInt8),
             daft_dsl::LiteralValue::Int16(_) => unreachable_variant!(Int16),

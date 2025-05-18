@@ -10,11 +10,11 @@ use pyo3::prelude::*;
 use ray::{PyRayWorkerManager, RayPartitionRef, RaySwordfishTask, RaySwordfishWorker};
 use tokio::sync::Mutex;
 
-use crate::plan::{DistributedPhysicalPlan, PlanResult};
+use crate::plan::{DistributedPhysicalPlan, PlanResultStream};
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
-    inner: Arc<Mutex<PlanResult>>,
+    inner: Arc<Mutex<PlanResultStream>>,
 }
 
 #[pymethods]
@@ -87,9 +87,9 @@ impl PyDistributedPhysicalPlan {
                 )
             })
             .collect();
-        let part_stream = self.planner.run_plan(psets, worker_manager.inner())?;
+        let plan_result = self.planner.run_plan(psets, worker_manager.inner())?;
         let part_stream = PythonPartitionRefStream {
-            inner: Arc::new(Mutex::new(part_stream)),
+            inner: Arc::new(Mutex::new(plan_result.into_stream())),
         };
         Ok(part_stream)
     }

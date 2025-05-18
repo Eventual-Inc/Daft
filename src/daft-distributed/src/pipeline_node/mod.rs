@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use collect::CollectNode;
 use common_daft_config::DaftExecutionConfig;
@@ -18,8 +13,8 @@ use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
     scheduling::{
-        scheduler::SchedulerHandle,
-        task::{SwordfishTask, SwordfishTaskResultHandle},
+        scheduler::{SchedulerHandle, SubmittedTask},
+        task::SwordfishTask,
     },
     stage::StageContext,
     utils::channel::{Receiver, ReceiverStream},
@@ -56,19 +51,16 @@ impl RunningPipelineNode {
     }
 
     #[allow(dead_code)]
-    pub fn materialize(self, scheduler_handle: SchedulerHandle<SwordfishTask>) {
-        materialize_all_pipeline_outputs(
-            ReceiverStream::new(self.result_receiver).map(Ok),
-            scheduler_handle,
-        );
+    pub fn materialize(
+        self,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+        let stream = self.into_stream().map(Ok);
+        materialize_all_pipeline_outputs(stream, scheduler_handle)
     }
-}
 
-impl Stream for RunningPipelineNode {
-    type Item = PipelineOutput;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.result_receiver.poll_recv(cx)
+    pub fn into_stream(self) -> impl Stream<Item = PipelineOutput> + Send + Unpin + 'static {
+        ReceiverStream::new(self.result_receiver)
     }
 }
 
@@ -76,7 +68,7 @@ impl Stream for RunningPipelineNode {
 pub(crate) enum PipelineOutput {
     Materialized(PartitionRef),
     Task(SwordfishTask),
-    Running(Box<dyn SwordfishTaskResultHandle>),
+    Running(SubmittedTask),
 }
 
 #[allow(dead_code)]
