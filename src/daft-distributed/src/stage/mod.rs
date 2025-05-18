@@ -1,19 +1,23 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::{
     partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
 };
 use daft_schema::schema::SchemaRef;
+use futures::Stream;
 use stage_builder::StagePlanBuilder;
 
 use crate::{
-    scheduling::{
-        dispatcher::{TaskDispatcher, TaskDispatcherHandle},
-        worker::WorkerManagerFactory,
+    pipeline_node::{
+        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
+        PipelineOutput, RunningPipelineNode,
     },
-    utils::joinset::JoinSet,
+    scheduling::dispatcher::TaskDispatcherHandle,
+    utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
 mod stage_builder;
@@ -61,11 +65,59 @@ struct OutputChannel {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-struct Stage {
+pub(crate) struct Stage {
     id: StageID,
     type_: StageType,
     input_channels: Vec<InputChannel>,
     output_channels: Vec<OutputChannel>,
+}
+
+impl Stage {
+    pub(crate) fn run_stage(
+        &self,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        config: Arc<DaftExecutionConfig>,
+        task_dispatcher_handle: TaskDispatcherHandle,
+    ) -> DaftResult<RunningStage> {
+        let mut stage_context = StageContext::new(task_dispatcher_handle);
+        match &self.type_ {
+            StageType::MapPipeline { plan } => {
+                let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
+                let running_node = pipeline_node.start(&mut stage_context);
+                Ok(RunningStage::new(running_node, stage_context.joinset))
+            }
+            _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
+        }
+    }
+}
+
+pub(crate) struct RunningStage {
+    running_pipeline_node: RunningPipelineNode,
+    joinset: JoinSet<DaftResult<()>>,
+}
+
+impl RunningStage {
+    fn new(running_pipeline_node: RunningPipelineNode, joinset: JoinSet<DaftResult<()>>) -> Self {
+        Self {
+            running_pipeline_node,
+            joinset,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn materialize(
+        self,
+        task_dispatcher_handle: TaskDispatcherHandle,
+    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+        let stream = self.into_stream();
+        materialize_all_pipeline_outputs(stream, task_dispatcher_handle)
+    }
+
+    pub fn into_stream(
+        self,
+    ) -> impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static {
+        JoinableForwardingStream::new(self.running_pipeline_node.into_stream(), self.joinset)
+    }
 }
 
 #[allow(dead_code)]
@@ -139,6 +191,16 @@ impl StagePlan {
             });
         }
     }
+
+    pub(crate) fn num_stages(&self) -> usize {
+        self.stages.len()
+    }
+
+    pub fn get_root_stage(&self) -> &Stage {
+        self.stages
+            .get(&self.root_stage)
+            .expect("expect root stage to be in stages")
+    }
 }
 
 #[allow(dead_code)]
@@ -149,15 +211,11 @@ pub(crate) struct StageContext {
 
 impl StageContext {
     #[allow(dead_code)]
-    fn try_new(worker_manager_factory: Box<dyn WorkerManagerFactory>) -> DaftResult<Self> {
-        let worker_manager = worker_manager_factory.create_worker_manager()?;
-        let task_dispatcher = TaskDispatcher::new(worker_manager);
-        let mut joinset = JoinSet::new();
-        let task_dispatcher_handle =
-            TaskDispatcher::spawn_task_dispatcher(task_dispatcher, &mut joinset);
-        Ok(Self {
+    fn new(task_dispatcher_handle: TaskDispatcherHandle) -> Self {
+        let joinset = JoinSet::new();
+        Self {
             task_dispatcher_handle,
             joinset,
-        })
+        }
     }
 }
