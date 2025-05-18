@@ -45,36 +45,43 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_linear_scheduler_spread_scheduling() {
         todo!("FLOTILLA_MS1: Implement test for linear scheduler spread scheduling")
     }
 
     #[test]
+    #[ignore]
     fn test_linear_scheduler_node_affinity_scheduling() {
         todo!("FLOTILLA_MS1: Implement test for linear scheduler node affinity scheduling")
     }
 
     #[test]
+    #[ignore]
     fn test_linear_scheduler_hard_node_affinity_scheduling() {
         todo!("FLOTILLA_MS1: Implement test for linear scheduler hard node affinity scheduling")
     }
 
     #[test]
+    #[ignore]
     fn test_linear_scheduler_soft_node_affinity_scheduling() {
         todo!("FLOTILLA_MS1: Implement test for linear scheduler soft node affinity scheduling")
     }
 
     #[test]
+    #[ignore]
     fn test_linear_scheduler_with_mixed_scheduling_strategies() {
         todo!("FLOTILLA_MS1: Implement test for linear scheduler with mixed scheduling strategies")
     }
 
     #[test]
+    #[ignore]
     fn test_linear_scheduler_with_priority_scheduling() {
         todo!("FLOTILLA_MS1: Implement test for linear scheduler with priority scheduling")
     }
 
     #[test]
+    #[ignore]
     fn test_linear_scheduler_with_no_workers() {
         todo!("FLOTILLA_MS1: Implement test for linear scheduler with no workers")
     }

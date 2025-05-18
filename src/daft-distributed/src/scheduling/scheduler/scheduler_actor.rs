@@ -250,36 +250,43 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_scheduler_actor_basic_task() {
         todo!("FLOTILLA_MS1: Implement test for scheduler actor submit task")
     }
 
     #[test]
+    #[ignore]
     fn test_scheduler_actor_multiple_tasks() {
         todo!("FLOTILLA_MS1: Implement test for scheduler actor multiple tasks")
     }
 
     #[test]
+    #[ignore]
     fn test_scheduler_actor_multiple_concurrent_tasks() {
         todo!("FLOTILLA_MS1: Implement test for scheduler actor multiple concurrent tasks")
     }
 
     #[test]
+    #[ignore]
     fn test_scheduler_actor_cancelled_task() {
         todo!("FLOTILLA_MS1: Implement test for scheduler actor cancelled tasks")
     }
 
     #[test]
+    #[ignore]
     fn test_scheduler_actor_many_cancelled_tasks() {
         todo!("FLOTILLA_MS1: Implement test for scheduler actor many cancelled tasks")
     }
 
     #[test]
+    #[ignore]
     fn test_scheduler_actor_error_from_task() {
         todo!("FLOTILLA_MS1: Implement test for scheduler actor error from task")
     }
 
     #[test]
+    #[ignore]
     fn test_scheduler_actor_panic_from_task() {
         todo!("FLOTILLA_MS1: Implement test for scheduler actor panic from task")
     }
