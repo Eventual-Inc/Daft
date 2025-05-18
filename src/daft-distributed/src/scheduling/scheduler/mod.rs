@@ -36,6 +36,7 @@ impl<T: Task> ScheduledTask<T> {
                 () = cancel_token.cancelled() => {},
                 result = task_handle.get_result() => {
                     // Ignore the send error here because the receiver may be dropped, i.e. cancelled
+                    tracing::debug!("Unable to send result of task, receiver was dropped");
                     let _ = result_tx.send(result);
                 }
             }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use common_error::DaftResult;
 use pyo3::prelude::*;
@@ -82,28 +82,5 @@ impl WorkerManager for RayWorkerManager {
 impl Drop for RayWorkerManager {
     fn drop(&mut self) {
         self.shutdown().expect("Cannot shutdown RayWorkerManager");
-    }
-}
-
-#[pyclass(module = "daft.daft", name = "RayWorkerManager")]
-#[derive(Clone)]
-pub(crate) struct PyRayWorkerManager {
-    pub inner: Arc<RayWorkerManager>,
-}
-
-#[pymethods]
-impl PyRayWorkerManager {
-    #[new]
-    pub fn new() -> DaftResult<Self> {
-        let inner = RayWorkerManager::try_new()?;
-        Ok(Self {
-            inner: Arc::new(inner),
-        })
-    }
-}
-
-impl PyRayWorkerManager {
-    pub fn inner(&self) -> Arc<dyn WorkerManager<Worker = RaySwordfishWorker>> {
-        self.inner.clone()
     }
 }

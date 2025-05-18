@@ -36,14 +36,14 @@ struct DataChannel {
     stats: Option<ApproxStats>,
     // ordering: Option<ExprRef>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct InputChannel {
     from_stage: StageID,
     channel_id: ChannelID,
     data_channel: DataChannel,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct OutputChannel {
     to_stages: Vec<StageID>,
@@ -63,7 +63,7 @@ struct OutputChannel {
 // - We must be able to do re-planning based on new statistics.
 // - We must allow for potential concurrent execution of stages.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub(crate) struct Stage {
     id: StageID,
@@ -121,7 +121,7 @@ impl RunningStage {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum StageType {
     MapPipeline {
         plan: LogicalPlanRef,
@@ -159,7 +159,7 @@ impl StageType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct StagePlan {
     stages: HashMap<StageID, Stage>,
     root_stage: StageID,
