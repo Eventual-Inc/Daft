@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 use super::{default::DefaultScheduler, linear::LinearScheduler, ScheduledTask, Scheduler};
 use crate::{
     scheduling::{
+        dispatcher::{DispatcherActor, DispatcherHandle},
         task::{SchedulingStrategy, Task, TaskId},
         worker::{Worker, WorkerManager},
     },
@@ -52,11 +53,16 @@ impl<W: Worker, T: Task> SchedulerActor<W, T> {
         scheduler: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
     ) -> SchedulerHandle<T> {
+        // Spawn a dispatcher actor to handle task dispatch and await task results
+        let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager);
+        let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(dispatcher_actor, joinset);
+
+        // Spawn the scheduler actor to schedule tasks and dispatch them to the dispatcher
         let (scheduler_sender, scheduler_receiver) = create_channel(1);
         joinset.spawn(Self::run_scheduler_loop(
             scheduler.scheduler,
-            scheduler.worker_manager,
             scheduler_receiver,
+            dispatcher_handle,
         ));
         SchedulerHandle::new(scheduler_sender)
     }
@@ -76,8 +82,8 @@ impl<W: Worker, T: Task> SchedulerActor<W, T> {
 
     async fn run_scheduler_loop(
         _scheduler: Box<dyn Scheduler<T>>,
-        _worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         _task_rx: Receiver<SchedulableTask<T>>,
+        _dispatcher_handle: DispatcherHandle<T>,
     ) -> DaftResult<()> {
         todo!("FLOTILLA_MS1: Implement run scheduler loop");
     }
