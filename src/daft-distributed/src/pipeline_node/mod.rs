@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use collect::CollectNode;
 use common_daft_config::DaftExecutionConfig;
@@ -11,18 +6,23 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use limit::LimitNode;
+use materialize::materialize_all_pipeline_outputs;
 use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
-    scheduling::task::{SwordfishTask, SwordfishTaskResultHandle},
+    scheduling::{
+        scheduler::{SchedulerHandle, SubmittedTask},
+        task::SwordfishTask,
+    },
     stage::StageContext,
-    utils::channel::Receiver,
+    utils::channel::{Receiver, ReceiverStream},
 };
 
 mod collect;
 mod limit;
+pub(crate) mod materialize;
 mod translate;
 
 pub(crate) trait DistributedPipelineNode: Send + Sync {
@@ -49,13 +49,18 @@ impl RunningPipelineNode {
     pub fn into_inner(self) -> Receiver<PipelineOutput> {
         self.result_receiver
     }
-}
 
-impl Stream for RunningPipelineNode {
-    type Item = DaftResult<PipelineOutput>;
+    #[allow(dead_code)]
+    pub fn materialize(
+        self,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+        let stream = self.into_stream().map(Ok);
+        materialize_all_pipeline_outputs(stream, scheduler_handle)
+    }
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for running pipeline node");
+    pub fn into_stream(self) -> impl Stream<Item = PipelineOutput> + Send + Unpin + 'static {
+        ReceiverStream::new(self.result_receiver)
     }
 }
 
@@ -63,7 +68,7 @@ impl Stream for RunningPipelineNode {
 pub(crate) enum PipelineOutput {
     Materialized(PartitionRef),
     Task(SwordfishTask),
-    Running(Box<dyn SwordfishTaskResultHandle>),
+    Running(SubmittedTask),
 }
 
 #[allow(dead_code)]

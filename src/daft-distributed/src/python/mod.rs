@@ -7,14 +7,14 @@ use common_partitioning::Partition;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
 use pyo3::prelude::*;
-use ray::{RayPartitionRef, RaySwordfishTask, RayWorkerManagerFactory};
+use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use tokio::sync::Mutex;
 
-use crate::plan::{DistributedPhysicalPlan, PlanResult};
+use crate::plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner};
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
-    inner: Arc<Mutex<PlanResult>>,
+    inner: Arc<Mutex<PlanResultStream>>,
 }
 
 #[pymethods]
@@ -41,7 +41,7 @@ impl PythonPartitionRefStream {
                         let objref = ray_part_ref.object_ref.clone_ref(py);
                         let size_bytes = ray_part_ref.size_bytes;
                         let num_rows = ray_part_ref.num_rows;
-                        let ret = (objref, size_bytes, num_rows);
+                        let ret = (objref, num_rows, size_bytes);
                         Some(ret)
                     }
                     None => None,
@@ -54,7 +54,7 @@ impl PythonPartitionRefStream {
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan", frozen)]
 struct PyDistributedPhysicalPlan {
-    planner: DistributedPhysicalPlan,
+    plan: DistributedPhysicalPlan,
 }
 
 #[pymethods]
@@ -64,17 +64,33 @@ impl PyDistributedPhysicalPlan {
         builder: &PyLogicalPlanBuilder,
         config: &PyDaftExecutionConfig,
     ) -> PyResult<Self> {
-        let planner = DistributedPhysicalPlan::from_logical_plan_builder(
+        let plan = DistributedPhysicalPlan::from_logical_plan_builder(
             &builder.builder,
             config.config.clone(),
         )?;
-        Ok(Self { planner })
+        Ok(Self { plan })
+    }
+}
+
+#[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
+struct PyDistributedPhysicalPlanRunner {
+    runner: PlanRunner<RaySwordfishWorker>,
+}
+
+#[pymethods]
+impl PyDistributedPhysicalPlanRunner {
+    #[new]
+    fn new() -> PyResult<Self> {
+        let worker_manager = RayWorkerManager::try_new()?;
+        Ok(Self {
+            runner: PlanRunner::new(Arc::new(worker_manager)),
+        })
     }
 
     fn run_plan(
         &self,
+        plan: &PyDistributedPhysicalPlan,
         psets: HashMap<String, Vec<RayPartitionRef>>,
-        py: Python,
     ) -> PyResult<PythonPartitionRefStream> {
         let psets = psets
             .into_iter()
@@ -87,17 +103,9 @@ impl PyDistributedPhysicalPlan {
                 )
             })
             .collect();
-        let daft_execution_config = self.planner.execution_config().clone();
-        let worker_manager_factory = RayWorkerManagerFactory::new(
-            daft_execution_config,
-            pyo3_async_runtimes::tokio::get_current_locals(py)
-                .expect("Failed to get current task locals"),
-        );
-        let part_stream = self
-            .planner
-            .run_plan(psets, Box::new(worker_manager_factory))?;
+        let plan_result = self.runner.run_plan(&plan.plan, psets)?;
         let part_stream = PythonPartitionRefStream {
-            inner: Arc::new(Mutex::new(part_stream)),
+            inner: Arc::new(Mutex::new(plan_result.into_stream())),
         };
         Ok(part_stream)
     }
@@ -105,7 +113,9 @@ impl PyDistributedPhysicalPlan {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
+    parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
+    parent.add_class::<RaySwordfishWorker>()?;
     Ok(())
 }

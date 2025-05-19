@@ -4,7 +4,7 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 pyo3 = {workspace = true, optional = true}
-uuid = {version = "1.10.0", features = ["v4"]}
+uuid.workspace = true
 
 [features]
 python = [

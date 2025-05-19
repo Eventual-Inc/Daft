@@ -1,5 +1,4 @@
 [dependencies]
-async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-partitioning = {path = "../common/partitioning", default-features = false}
@@ -16,6 +15,7 @@ rand = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
+uuid.workspace = true
 
 [features]
 python = [

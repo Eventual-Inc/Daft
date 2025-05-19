@@ -1,3 +1,4 @@
+pub mod json;
 use std::fmt::{self, Display};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
@@ -28,7 +29,7 @@ impl Display for crate::LogicalPlan {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use std::sync::Arc;
 
     use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
@@ -43,7 +44,7 @@ mod test {
         LogicalPlanRef, SourceInfo,
     };
 
-    fn plan_1() -> LogicalPlanRef {
+    pub(crate) fn plan_1() -> LogicalPlanRef {
         let schema = Arc::new(Schema::new(vec![
             Field::new("text", DataType::Utf8),
             Field::new("id", DataType::Int32),
@@ -58,7 +59,7 @@ mod test {
         .arced()
     }
 
-    fn plan_2() -> LogicalPlanRef {
+    pub(crate) fn plan_2() -> LogicalPlanRef {
         let schema = Arc::new(Schema::new(vec![
             Field::new("first_name", DataType::Utf8),
             Field::new("last_name", DataType::Utf8),
