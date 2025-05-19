@@ -16,7 +16,10 @@ use crate::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
         PipelineOutput, RunningPipelineNode,
     },
-    scheduling::dispatcher::TaskDispatcherHandle,
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, Task},
+    },
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
@@ -36,14 +39,14 @@ struct DataChannel {
     stats: Option<ApproxStats>,
     // ordering: Option<ExprRef>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct InputChannel {
     from_stage: StageID,
     channel_id: ChannelID,
     data_channel: DataChannel,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct OutputChannel {
     to_stages: Vec<StageID>,
@@ -63,7 +66,7 @@ struct OutputChannel {
 // - We must be able to do re-planning based on new statistics.
 // - We must allow for potential concurrent execution of stages.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub(crate) struct Stage {
     id: StageID,
@@ -77,9 +80,9 @@ impl Stage {
         &self,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
-        task_dispatcher_handle: TaskDispatcherHandle,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<RunningStage> {
-        let mut stage_context = StageContext::new(task_dispatcher_handle);
+        let mut stage_context = StageContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
@@ -105,12 +108,12 @@ impl RunningStage {
     }
 
     #[allow(dead_code)]
-    pub fn materialize(
+    pub fn materialize<T: Task>(
         self,
-        task_dispatcher_handle: TaskDispatcherHandle,
+        scheduler_handle: SchedulerHandle<T>,
     ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
         let stream = self.into_stream();
-        materialize_all_pipeline_outputs(stream, task_dispatcher_handle)
+        materialize_all_pipeline_outputs(stream, scheduler_handle)
     }
 
     pub fn into_stream(
@@ -121,7 +124,7 @@ impl RunningStage {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum StageType {
     MapPipeline {
         plan: LogicalPlanRef,
@@ -159,7 +162,7 @@ impl StageType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct StagePlan {
     stages: HashMap<StageID, Stage>,
     root_stage: StageID,
@@ -205,16 +208,16 @@ impl StagePlan {
 
 #[allow(dead_code)]
 pub(crate) struct StageContext {
-    pub task_dispatcher_handle: TaskDispatcherHandle,
+    pub scheduler_handle: SchedulerHandle<SwordfishTask>,
     pub joinset: JoinSet<DaftResult<()>>,
 }
 
 impl StageContext {
     #[allow(dead_code)]
-    fn new(task_dispatcher_handle: TaskDispatcherHandle) -> Self {
+    fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
         let joinset = JoinSet::new();
         Self {
-            task_dispatcher_handle,
+            scheduler_handle,
             joinset,
         }
     }

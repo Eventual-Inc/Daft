@@ -2232,7 +2232,6 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
- "async-trait",
  "common-daft-config",
  "common-error",
  "common-partitioning",
@@ -2249,6 +2248,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "uuid 1.16.0",
 ]
 
 [[package]]

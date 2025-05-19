@@ -13,8 +13,8 @@ use translate::translate_pipeline_plan_to_local_physical_plans;
 
 use crate::{
     scheduling::{
-        dispatcher::TaskDispatcherHandle,
-        task::{SwordfishTask, SwordfishTaskResultHandle},
+        scheduler::{SchedulerHandle, SubmittedTask},
+        task::SwordfishTask,
     },
     stage::StageContext,
     utils::channel::{Receiver, ReceiverStream},
@@ -53,10 +53,10 @@ impl RunningPipelineNode {
     #[allow(dead_code)]
     pub fn materialize(
         self,
-        task_dispatcher_handle: TaskDispatcherHandle,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
         let stream = self.into_stream().map(Ok);
-        materialize_all_pipeline_outputs(stream, task_dispatcher_handle)
+        materialize_all_pipeline_outputs(stream, scheduler_handle)
     }
 
     pub fn into_stream(self) -> impl Stream<Item = PipelineOutput> + Send + Unpin + 'static {
@@ -68,7 +68,7 @@ impl RunningPipelineNode {
 pub(crate) enum PipelineOutput {
     Materialized(PartitionRef),
     Task(SwordfishTask),
-    Running(Box<dyn SwordfishTaskResultHandle>),
+    Running(SubmittedTask),
 }
 
 #[allow(dead_code)]
