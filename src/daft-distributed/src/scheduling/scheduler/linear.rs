@@ -12,6 +12,12 @@ pub(super) struct LinearScheduler<T: Task> {
     pending_tasks: BinaryHeap<SchedulableTask<T>>,
 }
 
+impl<T: Task> Default for LinearScheduler<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 impl<T: Task> LinearScheduler<T> {
     pub fn new() -> Self {
@@ -122,13 +128,6 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         self.pending_tasks.len()
     }
 }
-
-impl<T: Task> Default for LinearScheduler<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
