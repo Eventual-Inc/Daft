@@ -9,6 +9,12 @@ pub(super) struct LinearScheduler<T: Task> {
     pending_tasks: BinaryHeap<SchedulableTask<T>>,
 }
 
+impl<T: Task> Default for LinearScheduler<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 impl<T: Task> LinearScheduler<T> {
     pub fn new() -> Self {
