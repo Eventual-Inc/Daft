@@ -2842,6 +2842,321 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.dt_strftime(self._expr, format))
 
+    def total_seconds(self) -> Expression:
+        """Calculates the total number of seconds for a duration column.
+
+        Returns:
+            Expression: a UInt64 expression with the total number of seconds for a duration column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import date, datetime, time, timedelta
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "duration": [
+            ...             timedelta(seconds=1),
+            ...             timedelta(milliseconds=1),
+            ...             timedelta(microseconds=1),
+            ...             timedelta(days=1),
+            ...             timedelta(hours=1),
+            ...             timedelta(minutes=1),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_seconds()).show()
+            ╭────────────────────────┬───────────────╮
+            │ duration               ┆ Total Seconds │
+            │ ---                    ┆ ---           │
+            │ Duration[Microseconds] ┆ Int64         │
+            ╞════════════════════════╪═══════════════╡
+            │ 1s                     ┆ 1             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1000µs                 ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1µs                    ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1d                     ┆ 86400         │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1h                     ┆ 3600          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1m                     ┆ 60            │
+            ╰────────────────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        f = native.get_function_from_registry("total_seconds")
+        return Expression._from_pyexpr(f(self._expr))
+
+    def total_milliseconds(self) -> Expression:
+        """Calculates the total number of milliseconds for a duration column.
+
+        Returns:
+            Expression: a UInt64 expression with the total number of milliseconds for a duration column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import date, datetime, time, timedelta
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "duration": [
+            ...             timedelta(seconds=1),
+            ...             timedelta(milliseconds=1),
+            ...             timedelta(microseconds=1),
+            ...             timedelta(days=1),
+            ...             timedelta(hours=1),
+            ...             timedelta(minutes=1),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_milliseconds()).show()
+            ╭────────────────────────┬───────────────╮
+            │ duration               ┆ Total Seconds │
+            │ ---                    ┆ ---           │
+            │ Duration[Microseconds] ┆ Int64         │
+            ╞════════════════════════╪═══════════════╡
+            │ 1s                     ┆ 1000          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1000µs                 ┆ 1             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1µs                    ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1d                     ┆ 86400000      │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1h                     ┆ 3600000       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1m                     ┆ 60000         │
+            ╰────────────────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        f = native.get_function_from_registry("total_milliseconds")
+        return Expression._from_pyexpr(f(self._expr))
+
+    def total_microseconds(self) -> Expression:
+        """Calculates the total number of microseconds for a duration column.
+
+        Returns:
+            Expression: a UInt64 expression with the total number of microseconds for a duration column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import date, datetime, time, timedelta
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "duration": [
+            ...             timedelta(seconds=1),
+            ...             timedelta(milliseconds=1),
+            ...             timedelta(microseconds=1),
+            ...             timedelta(days=1),
+            ...             timedelta(hours=1),
+            ...             timedelta(minutes=1),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_microseconds()).show()
+            ╭────────────────────────┬───────────────╮
+            │ duration               ┆ Total Seconds │
+            │ ---                    ┆ ---           │
+            │ Duration[Microseconds] ┆ Int64         │
+            ╞════════════════════════╪═══════════════╡
+            │ 1s                     ┆ 1000000       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1000µs                 ┆ 1000          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1µs                    ┆ 1             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1d                     ┆ 86400000000   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1h                     ┆ 3600000000    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1m                     ┆ 60000000      │
+            ╰────────────────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        f = native.get_function_from_registry("total_microseconds")
+        return Expression._from_pyexpr(f(self._expr))
+
+    def total_nanoseconds(self) -> Expression:
+        """Calculates the total number of nanoseconds for a duration column.
+
+        Returns:
+            Expression: a UInt64 expression with the total number of nanoseconds for a duration column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import date, datetime, time, timedelta
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "duration": [
+            ...             timedelta(seconds=1),
+            ...             timedelta(milliseconds=1),
+            ...             timedelta(microseconds=1),
+            ...             timedelta(days=1),
+            ...             timedelta(hours=1),
+            ...             timedelta(minutes=1),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_nanoseconds()).show()
+            ╭────────────────────────┬────────────────╮
+            │ duration               ┆ Total Seconds  │
+            │ ---                    ┆ ---            │
+            │ Duration[Microseconds] ┆ Int64          │
+            ╞════════════════════════╪════════════════╡
+            │ 1s                     ┆ 1000000000     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1000µs                 ┆ 1000000        │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1µs                    ┆ 1000           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1d                     ┆ 86400000000000 │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1h                     ┆ 3600000000000  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1m                     ┆ 60000000000    │
+            ╰────────────────────────┴────────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        f = native.get_function_from_registry("total_nanoseconds")
+        return Expression._from_pyexpr(f(self._expr))
+
+    def total_minutes(self) -> Expression:
+        """Calculates the total number of minutes for a duration column.
+
+        Returns:
+            Expression: a UInt64 expression with the total number of minutes for a duration column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import date, datetime, time, timedelta
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "duration": [
+            ...             timedelta(seconds=1),
+            ...             timedelta(milliseconds=1),
+            ...             timedelta(microseconds=1),
+            ...             timedelta(days=1),
+            ...             timedelta(hours=1),
+            ...             timedelta(minutes=1),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_minutes()).show()
+            ╭────────────────────────┬───────────────╮
+            │ duration               ┆ Total Seconds │
+            │ ---                    ┆ ---           │
+            │ Duration[Microseconds] ┆ Int64         │
+            ╞════════════════════════╪═══════════════╡
+            │ 1s                     ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1000µs                 ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1µs                    ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1d                     ┆ 1440          │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1h                     ┆ 60            │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1m                     ┆ 1             │
+            ╰────────────────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        f = native.get_function_from_registry("total_minutes")
+        return Expression._from_pyexpr(f(self._expr))
+
+    def total_hours(self) -> Expression:
+        """Calculates the total number of hours for a duration column.
+
+        Returns:
+            Expression: a UInt64 expression with the total number of hours for a duration column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import date, datetime, time, timedelta
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "duration": [
+            ...             timedelta(seconds=1),
+            ...             timedelta(milliseconds=1),
+            ...             timedelta(microseconds=1),
+            ...             timedelta(days=1),
+            ...             timedelta(hours=1),
+            ...             timedelta(minutes=1),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_hours()).show()
+            ╭────────────────────────┬───────────────╮
+            │ duration               ┆ Total Seconds │
+            │ ---                    ┆ ---           │
+            │ Duration[Microseconds] ┆ Int64         │
+            ╞════════════════════════╪═══════════════╡
+            │ 1s                     ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1000µs                 ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1µs                    ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1d                     ┆ 24            │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1h                     ┆ 1             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1m                     ┆ 0             │
+            ╰────────────────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        f = native.get_function_from_registry("total_hours")
+        return Expression._from_pyexpr(f(self._expr))
+
+    def total_days(self) -> Expression:
+        """Calculates the total number of days for a duration column.
+
+        Returns:
+            Expression: a UInt64 expression with the total number of days for a duration column
+
+        Examples:
+            >>> import daft
+            >>> from datetime import date, datetime, time, timedelta
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "duration": [
+            ...             timedelta(seconds=1),
+            ...             timedelta(milliseconds=1),
+            ...             timedelta(microseconds=1),
+            ...             timedelta(days=1),
+            ...             timedelta(hours=1),
+            ...             timedelta(minutes=1),
+            ...         ]
+            ...     }
+            ... )
+            >>> df.with_column("Total Seconds", daft.col("duration").dt.total_days()).show()
+            ╭────────────────────────┬───────────────╮
+            │ duration               ┆ Total Seconds │
+            │ ---                    ┆ ---           │
+            │ Duration[Microseconds] ┆ Int64         │
+            ╞════════════════════════╪═══════════════╡
+            │ 1s                     ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1000µs                 ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1µs                    ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1d                     ┆ 1             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1h                     ┆ 0             │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1m                     ┆ 0             │
+            ╰────────────────────────┴───────────────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        f = native.get_function_from_registry("total_days")
+        return Expression._from_pyexpr(f(self._expr))
+
 
 class ExpressionStringNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.str` attribute."""
