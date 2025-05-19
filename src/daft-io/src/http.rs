@@ -9,9 +9,12 @@ use std::{
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
-use hyper::header;
 use regex::Regex;
-use reqwest::header::{CONTENT_LENGTH, RANGE};
+use reqwest_middleware::{
+    reqwest::header::{self, CONTENT_LENGTH, RANGE},
+    ClientBuilder, ClientWithMiddleware,
+};
+use reqwest_retry::{policies::ExponentialBackoff, Jitter, RetryTransientMiddleware};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
@@ -34,13 +37,13 @@ enum Error {
     #[snafu(display("Unable to connect to {}: {}", path, source))]
     UnableToConnect {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::Error,
     },
 
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display("Unable to determine size of {}", path))]
@@ -49,11 +52,13 @@ enum Error {
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display("Unable to create Http Client {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
+    UnableToCreateClient {
+        source: reqwest_middleware::reqwest::Error,
+    },
 
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
@@ -71,7 +76,7 @@ enum Error {
     ))]
     UnableToParseUtf8Body {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display(
@@ -141,8 +146,9 @@ fn get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<File
     Ok(metas.into_iter().flatten().collect())
 }
 
+#[derive(Debug)]
 pub struct HttpSource {
-    pub(crate) client: reqwest::Client,
+    pub(crate) client: ClientWithMiddleware,
 }
 
 impl From<Error> for super::Error {
@@ -177,15 +183,40 @@ impl HttpSource {
                 .context(UnableToCreateHeaderSnafu)?,
         );
 
-        Ok(Self {
-            client: reqwest::ClientBuilder::default()
-                .pool_idle_timeout(Duration::from_secs(90))
-                .pool_max_idle_per_host(10)
-                .default_headers(default_headers)
-                .build()
-                .context(UnableToCreateClientSnafu)?,
+        if let Some(token) = &config.bearer_token {
+            default_headers.append(
+                "Authorization",
+                header::HeaderValue::from_str(&format!("Bearer {}", token.as_string()))
+                    .context(UnableToCreateHeaderSnafu)?,
+            );
         }
-        .into())
+
+        let retry_policy = ExponentialBackoff::builder()
+            .base(2)
+            .jitter(Jitter::Bounded)
+            .retry_bounds(
+                Duration::from_millis(config.retry_initial_backoff_ms),
+                Duration::from_secs(60),
+            )
+            .build_with_max_retries(config.num_tries);
+
+        let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
+            .pool_idle_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(70)
+            .default_headers(default_headers)
+            .build()
+            .context(UnableToCreateClientSnafu)?;
+
+        // reqwest-retry already comes with a default retry strategy that matches http standards
+        // override it only if you need a custom one due to non standard behavior
+        let retry_middleware = RetryTransientMiddleware::new_with_policy(retry_policy)
+            .with_retry_log_level(tracing::Level::DEBUG);
+
+        let client = ClientBuilder::new(base_client)
+            .with(retry_middleware)
+            .build();
+
+        Ok(Self { client }.into())
     }
 }
 
