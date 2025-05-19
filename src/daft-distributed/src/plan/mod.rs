@@ -8,14 +8,17 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
+use common_runtime::RuntimeTask;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use futures::Stream;
 
 use crate::{
-    channel::{create_channel, Receiver},
-    runtime::{get_or_init_runtime, JoinHandle},
     scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
+    utils::{
+        channel::{create_channel, Receiver},
+        runtime::get_or_init_runtime,
+    },
 };
 
 pub struct DistributedPhysicalPlan {
@@ -67,12 +70,12 @@ impl DistributedPhysicalPlan {
 // This is the output of a plan, a receiver to receive the results of the plan.
 // And the join handle to the task that runs the plan.
 pub struct PlanResult {
-    _handle: Option<JoinHandle<DaftResult<()>>>,
+    _handle: Option<RuntimeTask<DaftResult<()>>>,
     _rx: Receiver<PartitionRef>,
 }
 
 impl PlanResult {
-    fn new(handle: JoinHandle<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
+    fn new(handle: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
         Self {
             _handle: Some(handle),
             _rx: rx,
