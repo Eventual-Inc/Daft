@@ -1,6 +1,6 @@
 use std::collections::{BinaryHeap, HashMap};
 
-use super::{scheduler_actor::SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
+use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
     task::{SchedulingStrategy, Task},
     worker::WorkerId,

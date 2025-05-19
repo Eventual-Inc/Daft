@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -11,24 +10,21 @@ use common_partitioning::PartitionRef;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, Scheduler};
+use super::{default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler};
 use crate::{
     scheduling::{
         dispatcher::{DispatcherActor, DispatcherHandle},
-        task::{SchedulingStrategy, Task, TaskId},
+        task::{Task, TaskId},
         worker::{Worker, WorkerManager},
     },
     utils::{
-        channel::{
-            create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
-            Sender,
-        },
+        channel::{create_channel, create_oneshot_channel, OneshotReceiver, Receiver, Sender},
         joinset::JoinSet,
     },
 };
 
 #[allow(dead_code)]
-pub(crate) struct SchedulerActor<W: Worker, S: Scheduler<W::Task>> {
+struct SchedulerActor<W: Worker, S: Scheduler<W::Task>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     scheduler: S,
 }
@@ -57,7 +53,7 @@ where
     W: Worker,
     S: Scheduler<W::Task> + Send + 'static,
 {
-    pub fn spawn_scheduler_actor(
+    fn spawn_scheduler_actor(
         scheduler: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
     ) -> SchedulerHandle<W::Task> {
@@ -132,72 +128,6 @@ impl<T: Task> SchedulerHandle<T> {
                 DaftError::InternalError("Failed to send task to scheduler".to_string())
             })?;
         Ok(submitted_task)
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) struct SchedulableTask<T: Task> {
-    task: T,
-    result_tx: OneshotSender<DaftResult<PartitionRef>>,
-    cancel_token: CancellationToken,
-}
-
-#[allow(dead_code)]
-impl<T: Task> SchedulableTask<T> {
-    pub fn new(
-        task: T,
-        result_tx: OneshotSender<DaftResult<PartitionRef>>,
-        cancel_token: CancellationToken,
-    ) -> Self {
-        Self {
-            task,
-            result_tx,
-            cancel_token,
-        }
-    }
-
-    pub fn strategy(&self) -> &SchedulingStrategy {
-        self.task.strategy()
-    }
-
-    #[allow(dead_code)]
-    pub fn priority(&self) -> u32 {
-        self.task.priority()
-    }
-
-    #[allow(dead_code)]
-    pub fn task_id(&self) -> &str {
-        self.task.task_id()
-    }
-
-    pub fn into_inner(
-        self,
-    ) -> (
-        T,
-        OneshotSender<DaftResult<PartitionRef>>,
-        CancellationToken,
-    ) {
-        (self.task, self.result_tx, self.cancel_token)
-    }
-}
-
-impl<T: Task> PartialEq for SchedulableTask<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.task.task_id() == other.task.task_id()
-    }
-}
-
-impl<T: Task> Eq for SchedulableTask<T> {}
-
-impl<T: Task> PartialOrd for SchedulableTask<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: Task> Ord for SchedulableTask<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.task.priority().cmp(&other.task.priority())
     }
 }
 

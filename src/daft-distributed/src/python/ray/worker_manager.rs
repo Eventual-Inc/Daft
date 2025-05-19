@@ -79,9 +79,11 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn shutdown(&self) -> DaftResult<()> {
-        for worker in self.ray_workers.values() {
-            worker.shutdown();
-        }
+        Python::with_gil(|py| {
+            for worker in self.ray_workers.values() {
+                worker.shutdown(py);
+            }
+        });
         Ok(())
     }
 }

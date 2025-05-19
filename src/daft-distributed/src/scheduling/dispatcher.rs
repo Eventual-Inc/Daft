@@ -13,8 +13,8 @@ use crate::utils::{
 };
 
 #[allow(dead_code)]
-pub(crate) enum TaskResultStatus {
-    Success(WorkerId, TaskId),
+pub(crate) enum TaskStatus {
+    Finished(WorkerId, TaskId),
     Cancelled(WorkerId, TaskId),
 }
 
@@ -33,19 +33,19 @@ impl<W: Worker> DispatcherActor<W> {
         joinset: &mut JoinSet<DaftResult<()>>,
     ) -> DispatcherHandle<W::Task> {
         let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
-        let (task_result_sender, task_result_receiver) = create_channel(1);
+        let (task_status_sender, task_status_receiver) = create_channel(1);
         joinset.spawn(Self::run_dispatcher_loop(
             dispatcher.worker_manager,
             dispatcher_receiver,
-            task_result_sender,
+            task_status_sender,
         ));
-        DispatcherHandle::new(dispatcher_sender, task_result_receiver)
+        DispatcherHandle::new(dispatcher_sender, task_status_receiver)
     }
 
     async fn run_dispatcher_loop(
         _worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         _task_rx: Receiver<Vec<ScheduledTask<W::Task>>>,
-        _task_result_sender: Sender<TaskResultStatus>,
+        _task_status_sender: Sender<TaskStatus>,
     ) -> DaftResult<()> {
         todo!("FLOTILLA_MS1: Implement run scheduler loop");
     }
@@ -54,18 +54,18 @@ impl<W: Worker> DispatcherActor<W> {
 #[allow(dead_code)]
 pub(crate) struct DispatcherHandle<T: Task> {
     dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
-    task_result_receiver: Receiver<TaskResultStatus>,
+    task_status_receiver: Receiver<TaskStatus>,
 }
 
 #[allow(dead_code)]
 impl<T: Task> DispatcherHandle<T> {
     fn new(
         dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
-        task_result_receiver: Receiver<TaskResultStatus>,
+        task_status_receiver: Receiver<TaskStatus>,
     ) -> Self {
         Self {
             dispatcher_sender,
-            task_result_receiver,
+            task_status_receiver,
         }
     }
 
@@ -76,7 +76,7 @@ impl<T: Task> DispatcherHandle<T> {
         Ok(())
     }
 
-    async fn await_task_results(&mut self) -> Option<TaskResultStatus> {
-        self.task_result_receiver.recv().await
+    async fn await_task_status(&mut self) -> Option<TaskStatus> {
+        self.task_status_receiver.recv().await
     }
 }

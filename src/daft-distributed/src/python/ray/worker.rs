@@ -83,12 +83,10 @@ impl RaySwordfishWorker {
         Ok(task_handles)
     }
 
-    pub fn shutdown(&self) {
-        Python::with_gil(|py| {
-            self.actor_handle
-                .call_method0(py, pyo3::intern!(py, "shutdown"))
-                .expect("Failed to shutdown RaySwordfishWorker");
-        });
+    pub fn shutdown(&self, py: Python<'_>) {
+        self.actor_handle
+            .call_method0(py, pyo3::intern!(py, "shutdown"))
+            .expect("Failed to shutdown RaySwordfishWorker");
     }
 }
 

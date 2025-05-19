@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use super::{scheduler_actor::SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
+use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{task::Task, worker::WorkerId};
 
 #[allow(dead_code)]
-pub(crate) struct LinearScheduler {
+pub(super) struct LinearScheduler {
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
 }
 
