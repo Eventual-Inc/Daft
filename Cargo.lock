@@ -426,7 +426,7 @@ dependencies = [
  "tokio",
  "xz2",
  "zstd 0.13.3",
- "zstd-safe 7.2.4",
+ "zstd-safe 7.2.1",
 ]
 
 [[package]]
@@ -1559,6 +1559,7 @@ dependencies = [
 name = "common-error"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "arrow2",
  "parquet2",
  "pyo3",
@@ -2639,6 +2640,7 @@ dependencies = [
 name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "arrow2",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
@@ -2852,19 +2854,24 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "arrow2",
  "async-trait",
  "common-daft-config",
  "common-error",
  "common-file-formats",
+ "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "parquet",
  "pyo3",
  "tokio",
+ "urlencoding",
+ "uuid 1.16.0",
 ]
 
 [[package]]
@@ -4213,6 +4220,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "integer-encoding"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
+
+[[package]]
 name = "inventory"
 version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4645,6 +4658,15 @@ name = "lz4_flex"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a8cbbb2831780bc3b9c15a41f5b49222ef756b6730a95f3decfdd15903eb5a3"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
+name = "lz4_flex"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75761162ae2b0e580d7e7c390558127e5f01b4194debd6221fd8c207fc80e3f5"
 dependencies = [
  "twox-hash",
 ]
@@ -5173,6 +5195,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-float"
+version = "2.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "os_str_bytes"
 version = "6.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5245,6 +5276,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "parquet"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f88838dca3b84d41444a0341b19f347e8098a3898b0f21536654b8b799e11abd"
+dependencies = [
+ "ahash",
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-cast",
+ "arrow-data",
+ "arrow-ipc",
+ "arrow-schema",
+ "arrow-select",
+ "base64 0.22.1",
+ "brotli 7.0.0",
+ "bytes",
+ "chrono",
+ "flate2",
+ "half",
+ "hashbrown 0.15.2",
+ "lz4_flex 0.11.3",
+ "num",
+ "num-bigint 0.4.6",
+ "paste",
+ "seq-macro",
+ "simdutf8",
+ "snap 1.1.1",
+ "thrift",
+ "twox-hash",
+ "zstd 0.13.3",
+ "zstd-sys",
+]
+
+[[package]]
 name = "parquet-format-safe"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5265,7 +5330,7 @@ dependencies = [
  "futures",
  "indexmap 2.8.0",
  "lz4",
- "lz4_flex",
+ "lz4_flex 0.9.5",
  "parquet-format-safe",
  "rand 0.8.5",
  "seq-macro",
@@ -7086,6 +7151,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "thrift"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e54bc85fc7faa8bc175c4bab5b92ba8d9a3ce893d0e9f42cc455c8ab16a9e09"
+dependencies = [
+ "byteorder",
+ "integer-encoding",
+ "ordered-float",
+]
+
+[[package]]
 name = "tiff"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8474,7 +8550,7 @@ version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
 dependencies = [
- "zstd-safe 7.2.4",
+ "zstd-safe 7.2.1",
 ]
 
 [[package]]
@@ -8489,18 +8565,18 @@ dependencies = [
 
 [[package]]
 name = "zstd-safe"
-version = "7.2.4"
+version = "7.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
+checksum = "54a3ab4db68cea366acc5c897c7b4d4d1b8994a9cd6e6f841f8964566a419059"
 dependencies = [
  "zstd-sys",
 ]
 
 [[package]]
 name = "zstd-sys"
-version = "2.0.15+zstd.1.5.7"
+version = "2.0.13+zstd.1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb81183ddd97d0c74cedf1d50d85c8d08c1b8b68ee863bdee9e706eedba1a237"
+checksum = "38ff0f21cfee8f97d94cef41359e0c89aa6113028ab0291aa8ca0038995a95aa"
 dependencies = [
  "cc",
  "pkg-config",

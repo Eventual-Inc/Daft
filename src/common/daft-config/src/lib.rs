@@ -64,6 +64,7 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
+    pub native_parquet_writer: bool,
     pub flotilla: bool,
 }
 
@@ -96,6 +97,7 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
+            native_parquet_writer: true,
             flotilla: false,
         }
     }
@@ -137,6 +139,12 @@ impl DaftExecutionConfig {
         let enable_aggressive_scantask_splitting_env_var_name = "DAFT_SCANTASK_SPLITTING_LEVEL";
         if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
             cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
+        }
+        let native_parquet_writer_env_var_name = "DAFT_NATIVE_PARQUET_WRITER";
+        if let Ok(val) = std::env::var(native_parquet_writer_env_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "0" | "false")
+        {
+            cfg.native_parquet_writer = false;
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
         if let Ok(val) = std::env::var(flotilla_env_var_name)

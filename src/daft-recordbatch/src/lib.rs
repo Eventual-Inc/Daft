@@ -989,6 +989,22 @@ impl RecordBatch {
         chunk
     }
 }
+
+#[cfg(feature = "arrow")]
+impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
+    type Error = DaftError;
+
+    fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
+        let schema = Arc::new(record_batch.schema.to_arrow()?.into());
+        let columns = record_batch
+            .columns
+            .iter()
+            .map(|s| s.to_arrow().into())
+            .collect::<Vec<_>>();
+        Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
+    }
+}
+
 impl TryFrom<RecordBatch> for FileInfos {
     type Error = DaftError;
 
