@@ -45,7 +45,6 @@ nav:
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
-    - Pushdowns: advanced/pushdowns.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
@@ -54,7 +53,7 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
-  # - Daft Road Map: roadmap.md
+  # - Daft Roadmap: roadmap.md
   - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md

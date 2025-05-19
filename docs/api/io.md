@@ -130,42 +130,15 @@ Daft supports diverse input sources and output sinks, this section covers lower-
 
 ## Pushdowns
 
-Daft supports predicate, projection, and limit pushdowns. Learn more about [Pushdowns](../advanced/pushdowns.md) in the Daft User Guide.
+Daft supports predicate, projection, and limit pushdowns.
+
+<!-- Learn more about [Pushdowns](../advanced/pushdowns.md) in the Daft User Guide. -->
 
 ::: daft.io.pushdowns.Pushdowns
     options:
         filters: ["!^_"]
         heading_level: 3
 
-::: daft.io.pushdowns.Term
-    options:
-        filters: ["!^_"]
-        heading_level: 3
-
-::: daft.io.pushdowns.Reference
-    options:
-        filters: ["!^_"]
-        heading_level: 3
-
-::: daft.io.pushdowns.Literal
-    options:
-        filters: ["!^_"]
-        heading_level: 3
-
-::: daft.io.pushdowns.Expr
-    options:
-        filters: ["!^_"]
-        heading_level: 3
-
-::: daft.io.pushdowns.Arg
-    options:
-        filters: ["!^_"]
-        heading_level: 3
-
-::: daft.io.pushdowns.TermVisitor
-    options:
-        filters: ["!^_"]
-        heading_level: 3
 ::: daft.io.scan.ScanOperator
     options:
         filters: ["!^_"]
