@@ -12,6 +12,12 @@ pub(super) struct DefaultScheduler<T: Task> {
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
 }
 
+impl<T: Task> Default for DefaultScheduler<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 impl<T: Task> DefaultScheduler<T> {
     pub fn new() -> Self {
@@ -125,58 +131,13 @@ mod tests {
 
     use super::*;
     use crate::scheduling::{
+        scheduler::test_utils::{
+            create_schedulable_task, create_spread_task, create_worker_affinity_task,
+            setup_scheduler, setup_workers,
+        },
         task::tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
     };
-
-    // Helper function to create workers with given configurations
-    fn setup_workers(configs: &[(WorkerId, usize)]) -> HashMap<WorkerId, MockWorker> {
-        configs
-            .iter()
-            .map(|(id, num_slots)| {
-                let worker = MockWorker::new(id.clone(), *num_slots);
-                (id.clone(), worker)
-            })
-            .collect::<HashMap<_, _>>()
-    }
-
-    // Helper function to setup scheduler with workers
-    fn setup_scheduler(workers: &HashMap<WorkerId, MockWorker>) -> DefaultScheduler<MockTask> {
-        let mut scheduler = DefaultScheduler::<MockTask>::new();
-        scheduler.update_worker_state(
-            workers
-                .values()
-                .map(|w| WorkerSnapshot::from_worker(w))
-                .collect::<Vec<_>>()
-                .as_slice(),
-        );
-        scheduler
-    }
-
-    fn create_schedulable_task(mock_task: MockTask) -> SchedulableTask<MockTask> {
-        SchedulableTask::new(
-            mock_task,
-            tokio::sync::oneshot::channel().0,
-            tokio_util::sync::CancellationToken::new(),
-        )
-    }
-
-    fn create_spread_task() -> SchedulableTask<MockTask> {
-        let task = MockTaskBuilder::default()
-            .with_scheduling_strategy(SchedulingStrategy::Spread)
-            .build();
-        create_schedulable_task(task)
-    }
-
-    fn create_worker_affinity_task(worker_id: &WorkerId, soft: bool) -> SchedulableTask<MockTask> {
-        let task = MockTaskBuilder::default()
-            .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
-                worker_id: worker_id.clone(),
-                soft,
-            })
-            .build();
-        create_schedulable_task(task)
-    }
 
     #[test]
     fn test_default_scheduler_spread_scheduling() {
@@ -190,7 +151,7 @@ mod tests {
             (worker_3.clone(), 3), // 3 slots available
         ]);
 
-        let mut scheduler = setup_scheduler(&workers);
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
 
         // Create tasks with Spread strategy
         let initial_tasks = vec![
@@ -274,7 +235,7 @@ mod tests {
             (worker_3.clone(), 2), // 2 slots available
         ]);
 
-        let mut scheduler = setup_scheduler(&workers);
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
 
         // Create tasks with Node Affinity strategies
         let tasks = vec![
@@ -330,7 +291,7 @@ mod tests {
             (worker_3.clone(), 3), // 3 slots available
         ]);
 
-        let mut scheduler = setup_scheduler(&workers);
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
 
         // Create tasks with Node Affinity strategies
         let tasks = vec![
@@ -389,7 +350,7 @@ mod tests {
             (worker_2.clone(), 1), // 1 slot available
         ]);
 
-        let mut scheduler = setup_scheduler(&workers);
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
 
         // Add a lot of low priority tasks
         let tasks = (0..100)
@@ -428,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_scheduling_with_empty_workers() {
-        let mut scheduler = setup_scheduler(&HashMap::new());
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&HashMap::new());
 
         let tasks = vec![
             create_spread_task(),

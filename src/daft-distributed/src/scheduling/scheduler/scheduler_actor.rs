@@ -33,7 +33,7 @@ impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
     fn default_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: DefaultScheduler::new(),
+            scheduler: DefaultScheduler::default(),
         }
     }
 }
@@ -43,7 +43,7 @@ impl<W: Worker> SchedulerActor<W, LinearScheduler<W::Task>> {
     fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: LinearScheduler::new(),
+            scheduler: LinearScheduler::default(),
         }
     }
 }

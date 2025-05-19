@@ -128,3 +128,69 @@ impl WorkerSnapshot {
         )
     }
 }
+
+#[cfg(test)]
+pub(super) mod test_utils {
+
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::scheduling::{
+        task::tests::{MockTask, MockTaskBuilder},
+        worker::tests::MockWorker,
+    };
+
+    // Helper function to create workers with given configurations
+    pub fn setup_workers(configs: &[(WorkerId, usize)]) -> HashMap<WorkerId, MockWorker> {
+        configs
+            .iter()
+            .map(|(id, num_slots)| {
+                let worker = MockWorker::new(id.clone(), *num_slots);
+                (id.clone(), worker)
+            })
+            .collect::<HashMap<_, _>>()
+    }
+
+    // Helper function to setup scheduler with workers
+    pub fn setup_scheduler<S: Scheduler<MockTask> + Default>(
+        workers: &HashMap<WorkerId, MockWorker>,
+    ) -> S {
+        let mut scheduler = S::default();
+        scheduler.update_worker_state(
+            workers
+                .values()
+                .map(|w| WorkerSnapshot::from_worker(w))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        scheduler
+    }
+
+    pub fn create_schedulable_task(mock_task: MockTask) -> SchedulableTask<MockTask> {
+        SchedulableTask::new(
+            mock_task,
+            tokio::sync::oneshot::channel().0,
+            tokio_util::sync::CancellationToken::new(),
+        )
+    }
+
+    pub fn create_spread_task() -> SchedulableTask<MockTask> {
+        let task = MockTaskBuilder::default()
+            .with_scheduling_strategy(SchedulingStrategy::Spread)
+            .build();
+        create_schedulable_task(task)
+    }
+
+    pub fn create_worker_affinity_task(
+        worker_id: &WorkerId,
+        soft: bool,
+    ) -> SchedulableTask<MockTask> {
+        let task = MockTaskBuilder::default()
+            .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
+                worker_id: worker_id.clone(),
+                soft,
+            })
+            .build();
+        create_schedulable_task(task)
+    }
+}
