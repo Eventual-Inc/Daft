@@ -22,16 +22,14 @@ nav:
   - Core Concepts: core_concepts.md
   - I/O:
     - Overview: io.md
-    - Input:
-      - Apache Hudi: integrations/hudi.md
-      - Apache Iceberg: integrations/iceberg.md
-      - Delta Lake: integrations/delta_lake.md
-      # - LanceDB: integrations/lance.md
-    - Output:
-      - Amazon Web Services: integrations/aws.md
-      - Hugging Face Datasets: integrations/huggingface.md
-      - Microsoft Azure: integrations/azure.md
-      - SQL: integrations/sql.md
+    - Amazon Web Services: integrations/aws.md
+    - Apache Hudi: integrations/hudi.md
+    - Apache Iceberg: integrations/iceberg.md
+    - Delta Lake: integrations/delta_lake.md
+    - Hugging Face Datasets: integrations/huggingface.md
+    # - LanceDB: integrations/lance.md (wip)
+    - Microsoft Azure: integrations/azure.md
+    - SQL: integrations/sql.md
   # - Configuration: config.md
   - SQL: sql_overview.md
   - Sessions: sessions.md
