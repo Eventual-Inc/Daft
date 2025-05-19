@@ -202,6 +202,15 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
         let bytes = pybytes.as_bytes();
         Ok(crate::lit(bytes).into())
+    } else if item.is_instance_of::<common_io_config::python::IOConfig>() {
+        let py_ioconfig = item.extract::<common_io_config::python::IOConfig>()?;
+        Ok(crate::lit(py_ioconfig.config).into())
+    } else if item.is_instance_of::<ImageMode>() {
+        let image_mode = item.extract::<ImageMode>()?;
+        Ok(crate::lit(image_mode).into())
+    } else if item.is_instance_of::<ImageFormat>() {
+        let fmt = item.extract::<ImageFormat>()?;
+        Ok(crate::lit(fmt).into())
     } else if item.is_none() {
         Ok(crate::null_lit().into())
     } else {
@@ -392,6 +401,10 @@ impl PyExpr {
 
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
+    }
+
+    pub fn skew(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().skew().into())
     }
 
     pub fn agg_list(&self) -> PyResult<Self> {

@@ -180,10 +180,6 @@ class MicroPartition:
     # Compute methods (MicroPartition -> MicroPartition)
     ###
 
-    def cast_to_schema(self, schema: Schema) -> MicroPartition:
-        """Casts a MicroPartition into the provided schema."""
-        return MicroPartition._from_pymicropartition(self._micropartition.cast_to_schema(schema._schema))
-
     def eval_expression_list(self, exprs: ExpressionsProjection) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]

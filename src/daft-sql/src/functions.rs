@@ -18,9 +18,8 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
         coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModulePartitioning,
-        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUri,
-        SQLModuleUtf8, SQLModuleWindow,
+        SQLModuleConfig, SQLModuleList, SQLModuleMap, SQLModulePartitioning, SQLModulePython,
+        SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -31,7 +30,6 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleHashing>();
-    functions.register::<SQLModuleJson>();
     functions.register::<SQLModuleList>();
     functions.register::<SQLModuleMap>();
     functions.register::<SQLModulePartitioning>();
@@ -39,7 +37,6 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleTemporal>();
-    functions.register::<SQLModuleUri>();
     functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
@@ -625,19 +622,7 @@ pub(crate) mod args {
     use common_io_config::IOConfig;
 
     use super::SQLFunctionArguments;
-    use crate::{error::PlannerError, modules::config::expr_to_iocfg, unsupported_sql_err};
-
-    /// Parses on_error => Literal['raise', 'null'] = 'raise' or err.
-    pub(crate) fn parse_on_error(args: &SQLFunctionArguments) -> Result<bool, PlannerError> {
-        match args.try_get_named::<String>("on_error")?.as_deref() {
-            None => Ok(true),
-            Some("raise") => Ok(true),
-            Some("null") => Ok(false),
-            Some(other) => {
-                unsupported_sql_err!("Expected on_error to be 'raise' or 'null', found '{other}'")
-            }
-        }
-    }
+    use crate::{error::PlannerError, modules::config::expr_to_iocfg};
 
     /// Parses io_config which is used in several SQL functions.
     pub(crate) fn parse_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {

@@ -24,7 +24,8 @@ serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
 tokio = {workspace = true}
 typed-builder = {workspace = true}
-uuid = {version = "1", features = ["v4"]}
+serde_json.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}

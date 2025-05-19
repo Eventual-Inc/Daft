@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterator, Litera
 from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
+from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
@@ -19,7 +20,6 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.expressions.visitor import ExpressionVisitor
-    from daft.io.pushdowns import Term
     from daft.runners.runner import Runner
 
 R = TypeVar("R")
@@ -27,7 +27,7 @@ R = TypeVar("R")
 class ImageMode(Enum):
     """Supported image modes for Daft's image type.
 
-    .. warning::
+    Warning:
         Currently, only the 8-bit modes (L, LA, RGB, RGBA) can be stored in a DataFrame.
         If your binary image data includes other modes, use the `mode` argument
         in `image.decode` to convert the images to a supported mode.
@@ -683,7 +683,7 @@ class ScanTask:
         num_rows: int | None,
         size_bytes: int | None,
         iceberg_delete_files: list[str] | None,
-        pushdowns: Pushdowns | None,
+        pushdowns: PyPushdowns | None,
         partition_values: PyRecordBatch | None,
         stats: PyRecordBatch | None,
     ) -> ScanTask | None:
@@ -698,7 +698,7 @@ class ScanTask:
         storage_config: StorageConfig,
         num_rows: int | None,
         size_bytes: int | None,
-        pushdowns: Pushdowns | None,
+        pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
     ) -> ScanTask:
         """Create a SQL Scan Task."""
@@ -712,7 +712,7 @@ class ScanTask:
         schema: PySchema,
         num_rows: int | None,
         size_bytes: int | None,
-        pushdowns: Pushdowns | None,
+        pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
@@ -743,7 +743,7 @@ class ScanOperatorHandle:
 
 def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 
-class PartitionField:
+class PyPartitionField:
     """Partitioning Field of a Scan Source such as Hive or Iceberg."""
 
     field: PyField
@@ -752,28 +752,28 @@ class PartitionField:
         self,
         field: PyField,
         source_field: PyField | None = None,
-        transform: PartitionTransform | None = None,
+        transform: PyPartitionTransform | None = None,
     ) -> None: ...
 
-class PartitionTransform:
+class PyPartitionTransform:
     """Partitioning Transform from a Data Catalog source field to a Partitioning Columns."""
 
     @staticmethod
-    def identity() -> PartitionTransform: ...
+    def identity() -> PyPartitionTransform: ...
     @staticmethod
-    def year() -> PartitionTransform: ...
+    def year() -> PyPartitionTransform: ...
     @staticmethod
-    def month() -> PartitionTransform: ...
+    def month() -> PyPartitionTransform: ...
     @staticmethod
-    def day() -> PartitionTransform: ...
+    def day() -> PyPartitionTransform: ...
     @staticmethod
-    def hour() -> PartitionTransform: ...
+    def hour() -> PyPartitionTransform: ...
     @staticmethod
-    def iceberg_bucket(n: int) -> PartitionTransform: ...
+    def iceberg_bucket(n: int) -> PyPartitionTransform: ...
     @staticmethod
-    def iceberg_truncate(w: int) -> PartitionTransform: ...
+    def iceberg_truncate(w: int) -> PyPartitionTransform: ...
 
-class Pushdowns:
+class PyPushdowns:
     """Pushdowns from the query optimizer that can optimize scanning data sources."""
 
     columns: list[str] | None
@@ -790,11 +790,6 @@ class Pushdowns:
     ) -> None: ...
     def filter_required_column_names(self) -> list[str]:
         """List of field names that are required by the filter predicate."""
-        ...
-
-    @staticmethod
-    def _to_term(expr: PyExpr, schema: PySchema | None = None) -> Term:
-        """Converts a PyExpr into a pushdown Term, optionally binding to the given schema."""
         ...
 
 def read_parquet(
@@ -1064,6 +1059,7 @@ class PyExpr:
     def bool_and(self) -> PyExpr: ...
     def bool_or(self) -> PyExpr: ...
     def any_value(self, ignore_nulls: bool) -> PyExpr: ...
+    def skew(self) -> PyExpr: ...
     def agg_list(self) -> PyExpr: ...
     def agg_set(self) -> PyExpr: ...
     def agg_concat(self) -> PyExpr: ...
@@ -1118,8 +1114,8 @@ class PyExpr:
     # Helper methods from Expr from Eq Hash traits
     ###
 
-    def _eq(self) -> bool: ...
-    def _ne(self) -> bool: ...
+    def _eq(self, other: PyExpr) -> bool: ...
+    def _ne(self, other: PyExpr) -> bool: ...
     def _hash(self) -> int: ...
 
     ###
@@ -1466,7 +1462,6 @@ class PyShowOptions:
 
 class PyRecordBatch:
     def schema(self) -> PySchema: ...
-    def cast_to_schema(self, schema: PySchema) -> PyRecordBatch: ...
     def eval_expression_list(self, exprs: list[PyExpr]) -> PyRecordBatch: ...
     def take(self, idx: PySeries) -> PyRecordBatch: ...
     def filter(self, exprs: list[PyExpr]) -> PyRecordBatch: ...
@@ -1821,6 +1816,7 @@ class LogicalPlanBuilder:
         io_config: IOConfig | None = None,
         kwargs: dict[str, Any] | None = None,
     ) -> LogicalPlanBuilder: ...
+    def datasink_write(self, name: str, sink: DataSink) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def describe(self) -> LogicalPlanBuilder: ...
     def summarize(self) -> LogicalPlanBuilder: ...
@@ -1829,6 +1825,7 @@ class LogicalPlanBuilder:
     def to_adaptive_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> AdaptivePhysicalPlanScheduler: ...
     def repr_ascii(self, simple: bool) -> str: ...
     def repr_mermaid(self, options: MermaidOptions) -> str: ...
+    def repr_json(self, include_schema: bool) -> str: ...
 
 class DistributedPhysicalPlan:
     @staticmethod

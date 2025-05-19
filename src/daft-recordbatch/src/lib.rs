@@ -599,6 +599,9 @@ impl RecordBatch {
             AggExpr::Concat(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .agg_concat(groups),
+            AggExpr::Skew(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .skew(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
@@ -842,11 +845,21 @@ impl RecordBatch {
         Self::new_with_size(new_schema, new_series, self.len())
     }
 
+    #[deprecated(note = "name-referenced columns")]
+    /// Casts a `RecordBatch` to a schema.
+    ///
+    /// Note: this method is deprecated because it maps fields by name, which will not work for schemas with duplicate field names.
+    /// It should only be used for scans, and once we support reading files with duplicate column names, we should remove this function.
     pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
+        #[allow(deprecated)]
         self.cast_to_schema_with_fill(schema, None)
     }
 
-    // TODO: reconsider if we should even have a function like this
+    #[deprecated(note = "name-referenced columns")]
+    /// Casts a `RecordBatch` to a schema, using `fill_map` to specify the default expression for a column that doesn't exist.
+    ///
+    /// Note: this method is deprecated because it maps fields by name, which will not work for schemas with duplicate field names.
+    /// It should only be used for scans, and once we support reading files with duplicate column names, we should remove this function.
     pub fn cast_to_schema_with_fill(
         &self,
         schema: &Schema,
@@ -976,6 +989,22 @@ impl RecordBatch {
         chunk
     }
 }
+
+#[cfg(feature = "arrow")]
+impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
+    type Error = DaftError;
+
+    fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
+        let schema = Arc::new(record_batch.schema.to_arrow()?.into());
+        let columns = record_batch
+            .columns
+            .iter()
+            .map(|s| s.to_arrow().into())
+            .collect::<Vec<_>>();
+        Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
+    }
+}
+
 impl TryFrom<RecordBatch> for FileInfos {
     type Error = DaftError;
 

@@ -718,7 +718,10 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory = make_physical_writer_factory(file_info, cfg);
+            let writer_factory = make_physical_writer_factory(file_info, input.schema(), cfg)
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
@@ -795,6 +798,25 @@ pub fn physical_plan_to_pipeline(
             let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
             let write_sink = WriteSink::new(
                 WriteFormat::Lance,
+                writer_factory,
+                None,
+                file_schema.clone(),
+                None,
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone()).boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DataSink(daft_local_plan::DataSink {
+            input,
+            data_sink_info,
+            file_schema,
+            stats_state,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let writer_factory =
+                daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
+            let write_sink = WriteSink::new(
+                WriteFormat::DataSink,
                 writer_factory,
                 None,
                 file_schema.clone(),

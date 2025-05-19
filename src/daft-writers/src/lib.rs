@@ -3,10 +3,12 @@
 mod batch;
 mod file;
 mod ipc;
+mod parquet_writer;
 mod partition;
 mod physical;
 #[cfg(test)]
 mod test;
+mod utils;
 
 // Make test module public for use in other crates' tests
 #[cfg(not(test))]
@@ -18,6 +20,8 @@ mod catalog;
 mod lance;
 #[cfg(feature = "python")]
 mod pyarrow;
+#[cfg(feature = "python")]
+mod sink;
 
 use std::{
     cmp::min,
@@ -29,6 +33,7 @@ use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
@@ -39,6 +44,8 @@ use ipc::IPCWriterFactory;
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
+#[cfg(feature = "python")]
+pub use sink::make_data_sink_writer_factory;
 
 pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
 
@@ -81,10 +88,14 @@ pub trait WriterFactory: Send + Sync {
 
 pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo,
+    file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
-    let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
-
+) -> DaftResult<Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
+    let base_writer_factory = PhysicalWriterFactory::new(
+        file_info.clone(),
+        file_schema.clone(),
+        cfg.native_parquet_writer,
+    )?;
     match file_info.file_format {
         FileFormat::Parquet => {
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
@@ -112,9 +123,9 @@ pub fn make_physical_writer_factory(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
                 );
-                Arc::new(partitioned_writer_factory)
+                Ok(Arc::new(partitioned_writer_factory))
             } else {
-                Arc::new(file_writer_factory)
+                Ok(Arc::new(file_writer_factory))
             }
         }
         FileFormat::Csv => {
@@ -133,9 +144,9 @@ pub fn make_physical_writer_factory(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
                 );
-                Arc::new(partitioned_writer_factory)
+                Ok(Arc::new(partitioned_writer_factory))
             } else {
-                Arc::new(file_writer_factory)
+                Ok(Arc::new(file_writer_factory))
             }
         }
         _ => unreachable!("Physical write should only support Parquet and CSV"),
