@@ -51,6 +51,7 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
+  - Roadmap: roadmap.md
   - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md
