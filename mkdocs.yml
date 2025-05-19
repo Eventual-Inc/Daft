@@ -25,18 +25,21 @@ nav:
     - Input:
       - Apache Hudi: integrations/hudi.md
       - Apache Iceberg: integrations/iceberg.md
-      - AWS Glue: integrations/glue.md
       - Delta Lake: integrations/delta_lake.md
-      - S3 Tables: integrations/s3tables.md
-      - Unity Catalog: integrations/unity_catalog.md
+      # - LanceDB: integrations/lance.md
     - Output:
       - Amazon Web Services: integrations/aws.md
       - Hugging Face Datasets: integrations/huggingface.md
       - Microsoft Azure: integrations/azure.md
       - SQL: integrations/sql.md
+  # - Configuration: config.md
   - SQL: sql_overview.md
   - Sessions: sessions.md
-  - Catalogs: catalogs.md
+  - Catalogs:
+    - Overview: catalogs.md
+    - AWS Glue: integrations/glue.md
+    - S3 Tables: integrations/s3tables.md
+    - Unity Catalog: integrations/unity_catalog.md
   - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
   - Advanced:
@@ -51,6 +54,7 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
+  # - Daft Road Map: roadmap.md
   - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md
