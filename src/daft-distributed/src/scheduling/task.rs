@@ -6,6 +6,8 @@ use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 use uuid::Uuid;
 
+use super::worker::WorkerId;
+
 pub(crate) type TaskId = Arc<str>;
 pub(crate) type TaskPriority = u32;
 #[allow(dead_code)]
@@ -19,7 +21,8 @@ pub(crate) trait Task: Send + Sync + 'static {
 #[allow(dead_code)]
 pub(crate) enum SchedulingStrategy {
     Spread,
-    NodeAffinity { node_id: String, soft: bool },
+    // TODO: In the future if we run multiple workers on the same node, we can have a NodeAffinity strategy or a multi-worker affinity strategy
+    WorkerAffinity { worker_id: WorkerId, soft: bool },
 }
 
 #[derive(Debug, Clone)]
