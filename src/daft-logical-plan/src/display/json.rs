@@ -263,7 +263,7 @@ mod tests {
                                             }
                                           ],
                                           "predicate": [
-                                            "startswith(col(last_name), lit(\"S\")) & endswith(col(last_name), lit(\"n\"))"
+                                            "starts_with(col(last_name), lit(\"S\")) & ends_with(col(last_name), lit(\"n\"))"
                                           ],
                                           "type": "Filter"
                                         }
