@@ -354,57 +354,6 @@ pub(super) mod tests {
         }
     }
 
-    #[derive(Clone)]
-    pub(crate) struct MockWorker {
-        worker_id: WorkerId,
-        num_cpus: usize,
-        num_active_tasks: usize,
-        active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
-        is_shutdown: Arc<AtomicBool>,
-    }
-
-    impl MockWorker {
-        pub fn new(worker_id: WorkerId, num_cpus: usize) -> Self {
-            Self {
-                worker_id,
-                num_cpus,
-                num_active_tasks: 0,
-                active_task_ids: Arc::new(Mutex::new(HashSet::new())),
-                is_shutdown: Arc::new(AtomicBool::new(false)),
-            }
-        }
-
-        pub fn mark_task_finished(&self, task_id: &TaskId) {
-            self.active_task_ids.lock().unwrap().remove(task_id);
-        }
-
-        pub fn add_active_task(&self, task_id: TaskId) {
-            self.active_task_ids.lock().unwrap().insert(task_id);
-        }
-
-        pub fn shutdown(&self) {
-            self.is_shutdown
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-        }
-    }
-
-    impl Worker for MockWorker {
-        type Task = MockTask;
-        type TaskResultHandle = MockTaskResultHandle;
-
-        fn id(&self) -> &WorkerId {
-            &self.worker_id
-        }
-
-        fn num_cpus(&self) -> usize {
-            self.num_cpus
-        }
-
-        fn active_task_ids(&self) -> HashSet<TaskId> {
-            self.active_task_ids.lock().unwrap().clone()
-        }
-    }
-
     impl WorkerManager for MockWorkerManager {
         type Worker = MockWorker;
 
@@ -462,6 +411,57 @@ pub(super) mod tests {
         fn shutdown(&self) -> DaftResult<()> {
             self.workers.values().for_each(|w| w.shutdown());
             Ok(())
+        }
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct MockWorker {
+        worker_id: WorkerId,
+        num_cpus: usize,
+        num_active_tasks: usize,
+        active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
+        is_shutdown: Arc<AtomicBool>,
+    }
+
+    impl MockWorker {
+        pub fn new(worker_id: WorkerId, num_cpus: usize) -> Self {
+            Self {
+                worker_id,
+                num_cpus,
+                num_active_tasks: 0,
+                active_task_ids: Arc::new(Mutex::new(HashSet::new())),
+                is_shutdown: Arc::new(AtomicBool::new(false)),
+            }
+        }
+
+        pub fn mark_task_finished(&self, task_id: &TaskId) {
+            self.active_task_ids.lock().unwrap().remove(task_id);
+        }
+
+        pub fn add_active_task(&self, task_id: TaskId) {
+            self.active_task_ids.lock().unwrap().insert(task_id);
+        }
+
+        pub fn shutdown(&self) {
+            self.is_shutdown
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl Worker for MockWorker {
+        type Task = MockTask;
+        type TaskResultHandle = MockTaskResultHandle;
+
+        fn id(&self) -> &WorkerId {
+            &self.worker_id
+        }
+
+        fn num_cpus(&self) -> usize {
+            self.num_cpus
+        }
+
+        fn active_task_ids(&self) -> HashSet<TaskId> {
+            self.active_task_ids.lock().unwrap().clone()
         }
     }
 }

@@ -212,10 +212,10 @@ mod tests {
                 .or_insert(0) += 1;
         }
 
-        // Verify distribution - worker3 should have 2 tasks (most slots), worker2 should have 1 task
+        // Verify distribution - worker3 should have 2 tasks (most slots), worker2 should have 1 task, worker1 should have 0 tasks
         assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 2);
         assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
-        assert_eq!(*worker_task_counts.get(&worker_1).unwrap_or(&0), 0);
+        assert_eq!(worker_task_counts.get(&worker_1), None);
 
         // Add 3 more tasks with Spread strategy
         let second_round_tasks = vec![
@@ -240,9 +240,9 @@ mod tests {
         }
 
         // Verify distribution - each worker should have 1 task since they all have 1 slot available
-        assert_eq!(*worker_task_counts.get(&worker_3).unwrap_or(&0), 1);
-        assert_eq!(*worker_task_counts.get(&worker_2).unwrap_or(&0), 1);
-        assert_eq!(*worker_task_counts.get(&worker_1).unwrap_or(&0), 1);
+        assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 1);
+        assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
+        assert_eq!(*worker_task_counts.get(&worker_1).unwrap(), 1);
 
         // Add 3 more tasks with Spread strategy
         let third_round_tasks = vec![
@@ -275,8 +275,8 @@ mod tests {
 
         // Create tasks with Node Affinity strategies
         let tasks = vec![
-            create_worker_affinity_task(&worker_1, true),
-            create_worker_affinity_task(&worker_2, true),
+            create_worker_affinity_task(&worker_1, true), // should go to worker 1
+            create_worker_affinity_task(&worker_2, true), // should go to worker 2
         ];
 
         scheduler.enqueue_tasks(tasks);
@@ -297,27 +297,21 @@ mod tests {
         // worker1: 0 slots available
         // worker2: 0 slots available
         // worker3: 2 slots available
-        // Regardless of which worker the task is affinity to, it should go to worker 2
+        // Regardless of which worker the task is affinity to, it should go to worker 3
         let tasks = vec![
-            create_worker_affinity_task(&worker_1, true), // should go to worker 2
-            create_worker_affinity_task(&worker_2, true), // should go to worker 2
-            create_worker_affinity_task(&worker_3, true), // should go to worker 2
+            create_worker_affinity_task(&worker_1, true),
+            create_worker_affinity_task(&worker_2, true),
+            create_worker_affinity_task(&worker_3, true),
         ];
 
         scheduler.enqueue_tasks(tasks);
         let result = scheduler.get_schedulable_tasks();
 
-        // Only 2 tasks should be scheduled, because worker 2 has 2 slots available
+        // Only 2 tasks should be scheduled, because worker 3 has 2 slots available
         assert_eq!(result.len(), 2);
         assert_eq!(scheduler.num_pending_tasks(), 1);
         for scheduled_task in &result {
-            if let SchedulingStrategy::WorkerAffinity { worker_id, .. } =
-                &scheduled_task.task.strategy()
-            {
-                assert_eq!(scheduled_task.worker_id, worker_3);
-            } else {
-                panic!("Task should have worker affinity strategy");
-            }
+            assert_eq!(scheduled_task.worker_id, worker_3);
         }
     }
 
