@@ -7,19 +7,20 @@ use daft_dsl::{left_col, lit, null_lit, resolved_col, right_col, ExprRef};
 use daft_functions_list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use super::{join::JoinPredicate, Aggregate, Concat, Distinct, Filter, Project};
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SetQuantifier {
     All,
     Distinct,
 }
 
 // todo: rename this to something else if we add support for by name for non-union set operations
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UnionStrategy {
     Positional, // e.g. `select * from t1 union select * from t2`
     ByName,     // e.g. `select a1 from t1 union by name select a1 from t2`

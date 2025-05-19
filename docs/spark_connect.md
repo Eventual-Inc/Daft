@@ -4,6 +4,14 @@ The `daft.pyspark` module provides a way to create a PySpark session that can be
 
 For the full PySpark SQL API documentation, see the [official PySpark documentation](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/index.html#spark-sql).
 
+## Installing Daft with Spark Connect support
+
+Daft supports Spark Connect through the optional `spark` dependency.
+
+```bash
+pip install -U "daft[spark]"
+```
+
 ## Example
 
 === "🐍 Python"

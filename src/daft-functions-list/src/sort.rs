@@ -2,7 +2,7 @@ use common_error::{ensure, DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{FunctionArgs, ScalarFunction, ScalarUDF},
-    lit, ExprRef, Literal,
+    lit, literals_to_series, ExprRef, Literal,
 };
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ impl ScalarUDF for ListSort {
         let desc = inputs
             .optional((1, "desc"))?
             .cloned()
-            .unwrap_or_else(|| false.literal_value().into_single_value_series().unwrap());
+            .unwrap_or_else(|| literals_to_series(&[false.literal_value()]).unwrap());
 
         let nulls_first = inputs
             .optional((2, "nulls_first"))?

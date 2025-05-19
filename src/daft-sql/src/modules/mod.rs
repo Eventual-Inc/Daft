@@ -10,7 +10,6 @@ pub mod python;
 pub mod sketch;
 pub mod structs;
 pub mod temporal;
-pub mod uri;
 pub mod utf8;
 pub mod window;
 
@@ -22,7 +21,6 @@ pub use python::SQLModulePython;
 pub use sketch::SQLModuleSketch;
 pub use structs::SQLModuleStructs;
 pub use temporal::SQLModuleTemporal;
-pub use uri::SQLModuleUri;
 pub use utf8::SQLModuleUtf8;
 pub use window::SQLModuleWindow;
 
