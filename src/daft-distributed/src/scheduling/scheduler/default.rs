@@ -124,7 +124,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::scheduling::scheduler::tests::{MockTask, MockTaskBuilder, MockWorker};
+    use crate::scheduling::{
+        task::tests::{MockTask, MockTaskBuilder},
+        worker::tests::MockWorker,
+    };
 
     // Helper function to create workers with given configurations
     fn setup_workers(configs: &[(WorkerId, usize)]) -> HashMap<WorkerId, MockWorker> {
