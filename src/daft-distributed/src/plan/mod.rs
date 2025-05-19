@@ -1,29 +1,24 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_runtime::RuntimeTask;
-use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-use futures::Stream;
+use daft_logical_plan::LogicalPlanBuilder;
 
 use crate::{
-    scheduling::worker::WorkerManagerFactory,
     stage::StagePlan,
     utils::{
-        channel::{create_channel, Receiver},
-        runtime::get_or_init_runtime,
+        channel::{Receiver, ReceiverStream},
+        joinset::JoinSet,
+        stream::JoinableForwardingStream,
     },
 };
 
-pub struct DistributedPhysicalPlan {
-    #[allow(dead_code)]
-    logical_plan: LogicalPlanRef,
+mod runner;
+pub(crate) use runner::PlanRunner;
+
+pub(crate) struct DistributedPhysicalPlan {
+    stage_plan: StagePlan,
     config: Arc<DaftExecutionConfig>,
 }
 
@@ -32,61 +27,34 @@ impl DistributedPhysicalPlan {
         builder: &LogicalPlanBuilder,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
-        let plan = builder.build();
+        let logical_plan = builder.build();
+        let stage_plan = StagePlan::from_logical_plan(logical_plan)?;
 
-        Ok(Self {
-            logical_plan: plan,
-            config,
-        })
-    }
-
-    async fn execute_stages(
-        _stage_plan: StagePlan,
-        _psets: HashMap<String, Vec<PartitionRef>>,
-        _worker_manager_factory: Box<dyn WorkerManagerFactory>,
-    ) -> DaftResult<()> {
-        todo!("FLOTILLA_MS1: Implement execute stages");
-    }
-
-    pub fn run_plan(
-        &self,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        worker_manager_factory: Box<dyn WorkerManagerFactory>,
-    ) -> DaftResult<PlanResult> {
-        let (_result_sender, result_receiver) = create_channel(1);
-        let runtime = get_or_init_runtime();
-        let stage_plan = StagePlan::from_logical_plan(self.logical_plan.clone())?;
-        let handle = runtime.spawn(async move {
-            Self::execute_stages(stage_plan, psets, worker_manager_factory).await
-        });
-        Ok(PlanResult::new(handle, result_receiver))
+        Ok(Self { stage_plan, config })
     }
 
     pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
         &self.config
     }
-}
 
-// This is the output of a plan, a receiver to receive the results of the plan.
-// And the join handle to the task that runs the plan.
-pub struct PlanResult {
-    _handle: Option<RuntimeTask<DaftResult<()>>>,
-    _rx: Receiver<PartitionRef>,
-}
-
-impl PlanResult {
-    fn new(handle: RuntimeTask<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
-        Self {
-            _handle: Some(handle),
-            _rx: rx,
-        }
+    pub fn stage_plan(&self) -> &StagePlan {
+        &self.stage_plan
     }
 }
 
-impl Stream for PlanResult {
-    type Item = DaftResult<PartitionRef>;
+pub(crate) type PlanResultStream = JoinableForwardingStream<ReceiverStream<PartitionRef>>;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!("FLOTILLA_MS1: Implement stream for plan result");
+pub(crate) struct PlanResult {
+    joinset: JoinSet<DaftResult<()>>,
+    rx: Receiver<PartitionRef>,
+}
+
+impl PlanResult {
+    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
+        Self { joinset, rx }
+    }
+
+    pub fn into_stream(self) -> PlanResultStream {
+        JoinableForwardingStream::new(ReceiverStream::new(self.rx), self.joinset)
     }
 }

@@ -43,7 +43,6 @@ from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
-from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
@@ -1889,21 +1888,23 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             ``max_connections`` to get higher throughput with additional parallelism
 
         """
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-
-        if not (isinstance(max_connections, int) and max_connections > 0):
-            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        max_connections_expr = Expression._to_expression(max_connections)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        multi_thread_expr = Expression._to_expression(multi_thread)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
+
+        f = native.get_function_from_registry("url_download")
+
         return Expression._from_pyexpr(
-            _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
+            f(
+                self._expr,
+                multi_thread=multi_thread_expr,
+                on_error=on_error_expr,
+                max_connections=max_connections_expr,
+                io_config=io_config_expr,
+            )
         )
 
     def upload(
@@ -1936,32 +1937,28 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             >>> col("data").url.upload(col("paths"))  # doctest: +SKIP
 
         """
-        if not (isinstance(max_connections, int) and max_connections > 0):
-            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
-        location_expr = Expression._to_expression(location)
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
+        location_expr = Expression._to_expression(location)._expr
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
         # if the user gave an expression, we assume that each row has a specific url to upload to.
         # Consider moving the check for is_single_folder to a lower IR.
         is_single_folder = isinstance(location, str)
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        max_connections_expr = Expression._to_expression(max_connections)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        multi_thread_expr = Expression._to_expression(multi_thread)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
+        is_single_folder_expr = Expression._to_expression(is_single_folder)._expr
+        f = native.get_function_from_registry("url_upload")
         return Expression._from_pyexpr(
-            native.url_upload(
+            f(
                 self._expr,
-                location_expr._expr,
-                max_connections,
-                raise_on_error,
-                multi_thread,
-                is_single_folder,
-                io_config,
+                location_expr,
+                max_connections=max_connections_expr,
+                on_error=on_error_expr,
+                multi_thread=multi_thread_expr,
+                is_single_folder=is_single_folder_expr,
+                io_config=io_config_expr,
             )
         )
 
