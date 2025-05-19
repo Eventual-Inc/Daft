@@ -36,11 +36,11 @@ What is in store for Daft in 2025? This roadmap outlines the big picture of what
 
 - Continue expanding feature set and compatibility of [Daft’s PySpark connector](spark_connect.md#show) so that running Spark workloads on Daft is a simple plug-and-play (see [issue](https://github.com/Eventual-Inc/Daft/issues/3581))
     - Ordinal column references (see [issue](https://github.com/Eventual-Inc/Daft/issues/4270))
-    - Window function support (see [discussion](https://github.com/Eventual-Inc/Daft/discussions/484))
+    - Window function support (see [issue](https://github.com/Eventual-Inc/Daft/issues/2108))
 - Improve catalog and table integrations
-    - Support for Iceberg deletion vectors and upserts
+    - Support for Iceberg deletion vectors and upserts (see [roadmap for Iceberg](https://github.com/Eventual-Inc/Daft/issues/2458), [issue for upsert](https://github.com/Eventual-Inc/Daft/issues/3844))
     - Better Unity Catalog support (see [issue](https://github.com/Eventual-Inc/Daft/issues/2482))
-    - Delta Lake support roadmap (see [issue](https://github.com/Eventual-Inc/Daft/issues/2457))
+    - Better Delta Lake support (see [roadmap for Delta Lake](https://github.com/Eventual-Inc/Daft/issues/2457))
 - Improve observability tools (logging/metrics/traces)
 - Improve experience working with AI tools
     - LLM context file (see [issue](https://github.com/Eventual-Inc/Daft/issues/4293))
