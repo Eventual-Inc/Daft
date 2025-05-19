@@ -12,14 +12,14 @@ import daft.exceptions
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
-    Pushdowns,
+    PyPushdowns,
     S3Config,
     ScanTask,
     StorageConfig,
 )
 from daft.io.aws_config import boto3_client_from_s3_config
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import PyPartitionField, ScanOperator
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
@@ -105,7 +105,7 @@ class DeltaLakeScanOperator(ScanOperator):
         self._schema = Schema.from_pyarrow_schema(self._table.schema().to_pyarrow())
         partition_columns = set(self._table.metadata().partition_columns)
         self._partition_keys = [
-            PartitionField(field._field) for field in self._schema if field.name in partition_columns
+            PyPartitionField(field._field) for field in self._schema if field.name in partition_columns
         ]
 
     def schema(self) -> Schema:
@@ -117,7 +117,7 @@ class DeltaLakeScanOperator(ScanOperator):
     def display_name(self) -> str:
         return f"DeltaLakeScanOperator({self._table.metadata().name})"
 
-    def partitioning_keys(self) -> list[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
 
     def multiline_display(self) -> list[str]:
@@ -129,7 +129,7 @@ class DeltaLakeScanOperator(ScanOperator):
             f"Storage config = {self._storage_config}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         import pyarrow as pa
 
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.

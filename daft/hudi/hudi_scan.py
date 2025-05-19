@@ -7,13 +7,13 @@ import daft
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
-    Pushdowns,
+    PyPushdowns,
     ScanTask,
     StorageConfig,
 )
 from daft.filesystem import _resolve_paths_and_filesystem, join_path
 from daft.hudi.pyhudi.table import HUDI_METAFIELD_PARTITION_PATH, HudiTable, HudiTableMetadata
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import PyPartitionField, ScanOperator
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ class HudiScanOperator(ScanOperator):
         self._schema = Schema.from_pyarrow_schema(self._table.schema)
         partition_fields = set(self._table.props.partition_fields)
         self._partition_keys = [
-            PartitionField(field._field) for field in self._schema if field.name in partition_fields
+            PyPartitionField(field._field) for field in self._schema if field.name in partition_fields
         ]
 
     def schema(self) -> Schema:
@@ -43,7 +43,7 @@ class HudiScanOperator(ScanOperator):
     def display_name(self) -> str:
         return f"HudiScanOperator({self._table.props.name})"
 
-    def partitioning_keys(self) -> list[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
 
     def multiline_display(self) -> list[str]:
@@ -54,7 +54,7 @@ class HudiScanOperator(ScanOperator):
             f"Storage config = {self._storage_config}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         import pyarrow as pa
 
         hudi_table_metadata: HudiTableMetadata = self._table.latest_table_metadata()

@@ -402,6 +402,7 @@ impl OuterHashJoinProbeSink {
         let build_side_table = build_side_growable.build()?;
         let probe_side_table = probe_side_growable.build()?;
 
+        #[allow(deprecated)]
         let join_table = get_columns_by_name(&probe_side_table, common_join_cols)?
             .cast_to_schema(outer_common_col_schema)?;
         let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
@@ -484,6 +485,7 @@ impl OuterHashJoinProbeSink {
         build_on_left: bool,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
+        #[allow(deprecated)]
         let join_table = get_columns_by_name(&build_side_table, common_join_cols)?
             .cast_to_schema(outer_common_col_schema)?;
         let left = get_columns_by_name(&build_side_table, left_non_join_columns)?;
@@ -736,13 +738,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
+            Arc::new(RoundRobinDispatcher::with_fixed_threshold(
                 runtime_handle.default_morsel_size(),
-            )))
+            ))
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
+            Arc::new(UnorderedDispatcher::with_fixed_threshold(
                 runtime_handle.default_morsel_size(),
-            )))
+            ))
         }
     }
 }
