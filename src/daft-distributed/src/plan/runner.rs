@@ -8,7 +8,7 @@ use futures::StreamExt;
 use super::{DistributedPhysicalPlan, PlanResult};
 use crate::{
     scheduling::{
-        scheduler::{SchedulerActor, SchedulerHandle},
+        scheduler::{spawn_default_scheduler_actor, SchedulerHandle},
         task::SwordfishTask,
         worker::{Worker, WorkerManager},
     },
@@ -20,11 +20,11 @@ use crate::{
     },
 };
 
-pub(crate) struct PlanRunner<W: Worker> {
+pub(crate) struct PlanRunner<W: Worker<Task = SwordfishTask>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
 }
 
-impl<W: Worker> PlanRunner<W> {
+impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
     pub fn new(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self { worker_manager }
     }
@@ -45,8 +45,8 @@ impl<W: Worker> PlanRunner<W> {
 
         let stage = stage_plan.get_root_stage();
         let running_stage = stage.run_stage(psets, config, scheduler_handle.clone())?;
-        let mut materialized_stage = running_stage.materialize(scheduler_handle);
-        while let Some(result) = materialized_stage.next().await {
+        let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
+        while let Some(result) = materialized_result_stream.next().await {
             if sender.send(result?).await.is_err() {
                 break;
             }
@@ -65,8 +65,8 @@ impl<W: Worker> PlanRunner<W> {
         let runtime = get_or_init_runtime();
         let mut joinset = create_join_set();
 
-        let scheduler_actor = SchedulerActor::default_scheduler(self.worker_manager.clone());
-        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(scheduler_actor, &mut joinset);
+        let scheduler_handle =
+            spawn_default_scheduler_actor(self.worker_manager.clone(), &mut joinset);
 
         let (result_sender, result_receiver) = create_channel(1);
         joinset.spawn_on(

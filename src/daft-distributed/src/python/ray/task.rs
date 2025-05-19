@@ -5,7 +5,7 @@ use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
 
-use crate::scheduling::task::{SwordfishTask, SwordfishTaskResultHandle};
+use crate::scheduling::task::{SwordfishTask, TaskResultHandle};
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
 #[allow(dead_code)]
@@ -27,8 +27,7 @@ impl RayTaskResultHandle {
     }
 }
 
-#[async_trait::async_trait]
-impl SwordfishTaskResultHandle for RayTaskResultHandle {
+impl TaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
     async fn get_result(&mut self) -> DaftResult<PartitionRef> {
         let handle = self
@@ -89,12 +88,12 @@ impl Partition for RayPartitionRef {
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishTask")]
 pub(crate) struct RaySwordfishTask {
-    task: Box<SwordfishTask>,
+    task: SwordfishTask,
 }
 
 impl RaySwordfishTask {
     #[allow(dead_code)]
-    pub fn new(task: Box<SwordfishTask>) -> Self {
+    pub fn new(task: SwordfishTask) -> Self {
         Self { task }
     }
 }
@@ -114,11 +113,11 @@ impl RaySwordfishTask {
         let psets = self
             .task
             .psets()
-            .into_iter()
+            .iter()
             .map(|(k, v)| {
                 (
-                    k,
-                    v.into_iter()
+                    k.clone(),
+                    v.iter()
                         .map(|v| {
                             let v = v
                                 .as_any()

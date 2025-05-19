@@ -11,7 +11,7 @@ pub(crate) type TaskPriority = u32;
 #[allow(dead_code)]
 pub(crate) trait Task: Send + Sync + 'static {
     fn priority(&self) -> TaskPriority;
-    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+    fn as_any(&self) -> &dyn Any;
     fn task_id(&self) -> &TaskId;
     fn strategy(&self) -> &SchedulingStrategy;
 }
@@ -28,7 +28,7 @@ pub(crate) struct SwordfishTask {
     id: TaskId,
     plan: LocalPhysicalPlanRef,
     config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
+    psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     strategy: SchedulingStrategy,
 }
 
@@ -37,7 +37,7 @@ impl SwordfishTask {
     pub fn new(
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         strategy: SchedulingStrategy,
     ) -> Self {
         let task_id = Uuid::new_v4().to_string();
@@ -70,13 +70,13 @@ impl SwordfishTask {
         &self.config
     }
 
-    pub fn psets(&self) -> HashMap<String, Vec<PartitionRef>> {
-        self.psets.clone()
+    pub fn psets(&self) -> &Arc<HashMap<String, Vec<PartitionRef>>> {
+        &self.psets
     }
 }
 
 impl Task for SwordfishTask {
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 
@@ -94,8 +94,7 @@ impl Task for SwordfishTask {
     }
 }
 
-#[async_trait::async_trait]
-pub trait SwordfishTaskResultHandle: Send + Sync {
+pub trait TaskResultHandle: Send + Sync {
     #[allow(dead_code)]
     async fn get_result(&mut self) -> DaftResult<PartitionRef>;
 }

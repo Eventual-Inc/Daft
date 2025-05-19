@@ -11,7 +11,7 @@ use common_partitioning::PartitionRef;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, ScheduledTask, Scheduler};
+use super::{default::DefaultScheduler, linear::LinearScheduler, Scheduler};
 use crate::{
     scheduling::{
         dispatcher::{DispatcherActor, DispatcherHandle},
@@ -28,31 +28,39 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub(crate) struct SchedulerActor<W: Worker, T: Task> {
+pub(crate) struct SchedulerActor<W: Worker, S: Scheduler<W::Task>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
-    scheduler: Box<dyn Scheduler<T>>,
+    scheduler: S,
 }
 
-impl<W: Worker, T: Task> SchedulerActor<W, T> {
-    pub fn default_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
+    fn default_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: Box::new(DefaultScheduler::new()),
+            scheduler: DefaultScheduler::new(),
         }
     }
+}
 
-    #[allow(dead_code)]
-    pub fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+#[allow(dead_code)]
+impl<W: Worker> SchedulerActor<W, LinearScheduler> {
+    fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: Box::new(LinearScheduler::new()),
+            scheduler: LinearScheduler::new(),
         }
     }
+}
 
+impl<W, S> SchedulerActor<W, S>
+where
+    W: Worker,
+    S: Scheduler<W::Task> + Send + 'static,
+{
     pub fn spawn_scheduler_actor(
         scheduler: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
-    ) -> SchedulerHandle<T> {
+    ) -> SchedulerHandle<W::Task> {
         // Spawn a dispatcher actor to handle task dispatch and await task results
         let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager);
         let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(dispatcher_actor, joinset);
@@ -67,26 +75,30 @@ impl<W: Worker, T: Task> SchedulerActor<W, T> {
         SchedulerHandle::new(scheduler_sender)
     }
 
-    #[allow(dead_code)]
-    fn dispatch_tasks(
-        scheduled_tasks: Vec<ScheduledTask<T>>,
-        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
-        running_tasks: &mut JoinSet<()>,
-    ) -> DaftResult<()> {
-        for scheduled_task in scheduled_tasks {
-            let task_result_future = scheduled_task.submit_task(&worker_manager);
-            running_tasks.spawn(task_result_future);
-        }
-        Ok(())
-    }
-
     async fn run_scheduler_loop(
-        _scheduler: Box<dyn Scheduler<T>>,
-        _task_rx: Receiver<SchedulableTask<T>>,
-        _dispatcher_handle: DispatcherHandle<T>,
+        _scheduler: S,
+        _task_rx: Receiver<SchedulableTask<W::Task>>,
+        _dispatcher_handle: DispatcherHandle<W::Task>,
     ) -> DaftResult<()> {
         todo!("FLOTILLA_MS1: Implement run scheduler loop");
     }
+}
+
+pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+    joinset: &mut JoinSet<DaftResult<()>>,
+) -> SchedulerHandle<W::Task> {
+    let scheduler = SchedulerActor::default_scheduler(worker_manager);
+    SchedulerActor::spawn_scheduler_actor(scheduler, joinset)
+}
+
+#[allow(dead_code)]
+pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+    joinset: &mut JoinSet<DaftResult<()>>,
+) -> SchedulerHandle<W::Task> {
+    let scheduler = SchedulerActor::linear_scheduler(worker_manager);
+    SchedulerActor::spawn_scheduler_actor(scheduler, joinset)
 }
 
 #[derive(Clone, Debug)]
@@ -130,6 +142,7 @@ pub(crate) struct SchedulableTask<T: Task> {
     cancel_token: CancellationToken,
 }
 
+#[allow(dead_code)]
 impl<T: Task> SchedulableTask<T> {
     pub fn new(
         task: T,

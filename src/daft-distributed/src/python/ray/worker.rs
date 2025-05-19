@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, RaySwordfishTask};
 use crate::scheduling::{
-    task::{SwordfishTask, SwordfishTaskResultHandle, Task, TaskId},
+    task::{SwordfishTask, Task, TaskId},
     worker::{Worker, WorkerId},
 };
 
@@ -51,30 +51,36 @@ impl RaySwordfishWorker {
             .remove(&task_id);
     }
 
-    pub fn submit_task(
+    pub fn submit_tasks(
         &self,
-        task: Box<dyn Task>,
+        tasks: Vec<SwordfishTask>,
+        py: Python<'_>,
         task_locals: &pyo3_async_runtimes::TaskLocals,
-    ) -> DaftResult<Box<dyn SwordfishTaskResultHandle>> {
-        let task = task
-            .into_any()
-            .downcast::<SwordfishTask>()
-            .expect("Task should be a SwordfishTask for RaySwordfishWorker");
-        let task_id = task.task_id().clone();
-        let py_task = RaySwordfishTask::new(task);
-        let py_task_handle = Python::with_gil(|py| {
-            let py_task_handle = self
-                .actor_handle
-                .call_method1(py, pyo3::intern!(py, "submit_task"), (py_task,))
-                .expect("Failed to submit task to RayWorker");
-            let task_locals = task_locals.clone_ref(py);
-            Box::new(RayTaskResultHandle::new(py_task_handle, task_locals))
-        });
+    ) -> DaftResult<Vec<RayTaskResultHandle>> {
+        let (task_ids, tasks): (Vec<TaskId>, Vec<RaySwordfishTask>) = tasks
+            .into_iter()
+            .map(|task| (task.task_id().clone(), RaySwordfishTask::new(task)))
+            .unzip();
+
+        let py_task_handles = self
+            .actor_handle
+            .call_method1(py, pyo3::intern!(py, "submit_tasks"), (tasks,))?
+            .extract::<Vec<PyObject>>(py)?;
+
+        let task_handles = py_task_handles
+            .into_iter()
+            .map(|py_task_handle| {
+                let task_locals = task_locals.clone_ref(py);
+                RayTaskResultHandle::new(py_task_handle, task_locals)
+            })
+            .collect::<Vec<_>>();
+
         self.active_task_ids
             .lock()
             .expect("Active task ids should be present")
-            .insert(task_id);
-        Ok(py_task_handle)
+            .extend(task_ids);
+
+        Ok(task_handles)
     }
 
     pub fn shutdown(&self) {
@@ -87,6 +93,9 @@ impl RaySwordfishWorker {
 }
 
 impl Worker for RaySwordfishWorker {
+    type Task = SwordfishTask;
+    type TaskResultHandle = RayTaskResultHandle;
+
     fn id(&self) -> &WorkerId {
         &self.worker_id
     }

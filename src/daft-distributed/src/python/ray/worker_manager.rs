@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use common_error::DaftResult;
 use pyo3::prelude::*;
 
-use super::worker::RaySwordfishWorker;
+use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
-    task::{SwordfishTaskResultHandle, Task, TaskId},
+    task::{SwordfishTask, TaskId},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -41,16 +41,23 @@ impl RayWorkerManager {
 impl WorkerManager for RayWorkerManager {
     type Worker = RaySwordfishWorker;
 
-    fn submit_task_to_worker(
+    fn submit_tasks_to_workers(
         &self,
-        task: Box<dyn Task>,
-        worker_id: WorkerId,
-    ) -> Box<dyn SwordfishTaskResultHandle> {
-        self.ray_workers
-            .get(&worker_id)
-            .expect("Worker should be present in RayWorkerManager")
-            .submit_task(task, &self.task_locals)
-            .expect("Failed to submit task to RayWorkerManager")
+        total_tasks: usize,
+        tasks_per_worker: HashMap<WorkerId, Vec<SwordfishTask>>,
+    ) -> DaftResult<Vec<RayTaskResultHandle>> {
+        Python::with_gil(|py| {
+            let mut task_result_handles = Vec::with_capacity(total_tasks);
+            for (worker_id, tasks) in tasks_per_worker {
+                let handles = self
+                    .ray_workers
+                    .get(&worker_id)
+                    .expect("Worker should be present in RayWorkerManager")
+                    .submit_tasks(tasks, py, &self.task_locals)?;
+                task_result_handles.extend(handles);
+            }
+            DaftResult::Ok(task_result_handles)
+        })
     }
 
     fn workers(&self) -> &HashMap<WorkerId, Self::Worker> {

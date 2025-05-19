@@ -28,13 +28,13 @@ impl<W: Worker> DispatcherActor<W> {
         Self { worker_manager }
     }
 
-    pub fn spawn_dispatcher_actor<T: Task>(
+    pub fn spawn_dispatcher_actor(
         dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
-    ) -> DispatcherHandle<T> {
+    ) -> DispatcherHandle<W::Task> {
         let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
         let (task_result_sender, task_result_receiver) = create_channel(1);
-        joinset.spawn(Self::run_dispatcher_loop::<T>(
+        joinset.spawn(Self::run_dispatcher_loop(
             dispatcher.worker_manager,
             dispatcher_receiver,
             task_result_sender,
@@ -42,9 +42,9 @@ impl<W: Worker> DispatcherActor<W> {
         DispatcherHandle::new(dispatcher_sender, task_result_receiver)
     }
 
-    async fn run_dispatcher_loop<T: Task>(
+    async fn run_dispatcher_loop(
         _worker_manager: Arc<dyn WorkerManager<Worker = W>>,
-        _task_rx: Receiver<Vec<ScheduledTask<T>>>,
+        _task_rx: Receiver<Vec<ScheduledTask<W::Task>>>,
         _task_result_sender: Sender<TaskResultStatus>,
     ) -> DaftResult<()> {
         todo!("FLOTILLA_MS1: Implement run scheduler loop");
