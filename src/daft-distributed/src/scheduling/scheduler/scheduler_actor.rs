@@ -39,7 +39,7 @@ impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
 }
 
 #[allow(dead_code)]
-impl<W: Worker> SchedulerActor<W, LinearScheduler> {
+impl<W: Worker> SchedulerActor<W, LinearScheduler<W::Task>> {
     fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
@@ -72,11 +72,40 @@ where
     }
 
     async fn run_scheduler_loop(
-        _scheduler: S,
-        _task_rx: Receiver<SchedulableTask<W::Task>>,
-        _dispatcher_handle: DispatcherHandle<W::Task>,
+        mut scheduler: S,
+        mut task_rx: Receiver<SchedulableTask<W::Task>>,
+        mut dispatcher_handle: DispatcherHandle<W::Task>,
     ) -> DaftResult<()> {
-        todo!("FLOTILLA_MS1: Implement run scheduler loop");
+        let mut input_exhausted = false;
+        while !input_exhausted && scheduler.num_pending_tasks() > 0 {
+            // 1: Get all tasks that are ready to be scheduled
+            let scheduled_tasks = scheduler.get_schedulable_tasks();
+
+            // 2: Dispatch tasks to the dispatcher
+            if !scheduled_tasks.is_empty() {
+                dispatcher_handle.dispatch_tasks(scheduled_tasks).await?;
+            }
+
+            // 3: Concurrently wait for new tasks or worker updates
+            tokio::select! {
+                maybe_new_task = task_rx.recv() => {
+                    // If there are any new tasks, enqueue them all
+                    if let Some(new_task) = maybe_new_task {
+                        let mut enqueueable_tasks = vec![new_task];
+                        while let Ok(task) = task_rx.try_recv() {
+                            enqueueable_tasks.push(task);
+                        }
+                        scheduler.enqueue_tasks(enqueueable_tasks);
+                    } else {
+                        input_exhausted = true;
+                    }
+                }
+                Some(snapshots) = dispatcher_handle.await_worker_updates() => {
+                    scheduler.update_worker_state(&snapshots);
+                }
+            }
+        }
+        Ok(())
     }
 }
 

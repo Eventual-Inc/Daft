@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
@@ -29,28 +29,34 @@ impl RayTaskResultHandle {
 
 impl TaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
-    async fn get_result(&mut self) -> DaftResult<PartitionRef> {
+    fn get_result_future(
+        &mut self,
+    ) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static {
         let handle = self
             .handle
             .take()
             .expect("Task handle should be present during get_result");
-        let coroutine = Python::with_gil(|py| {
-            let coroutine = handle
-                .call_method0(py, pyo3::intern!(py, "get_result"))?
-                .into_bound(py);
-            pyo3_async_runtimes::tokio::into_future(coroutine)
-        })?;
-
-        // await the rust future in the scope of the asyncio event loop
         let task_locals = self
             .task_locals
             .take()
             .expect("Task locals should be present during get_result");
-        let materialized_result = pyo3_async_runtimes::tokio::scope(task_locals, coroutine).await?;
 
-        let ray_part_ref =
-            Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
-        Ok(Arc::new(ray_part_ref))
+        // await the rust future in the scope of the asyncio event loop
+        async move {
+            let coroutine = Python::with_gil(|py| {
+                let coroutine = handle
+                    .call_method0(py, pyo3::intern!(py, "get_result"))?
+                    .into_bound(py);
+                pyo3_async_runtimes::tokio::into_future(coroutine)
+            })?;
+
+            let materialized_result =
+                pyo3_async_runtimes::tokio::scope(task_locals, coroutine).await?;
+
+            let ray_part_ref =
+                Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
+            Ok(Arc::new(ray_part_ref) as Arc<dyn Partition>)
+        }
     }
 }
 

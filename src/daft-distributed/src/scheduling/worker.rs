@@ -5,7 +5,10 @@ use std::{
 
 use common_error::DaftResult;
 
-use super::task::{Task, TaskId, TaskResultHandle};
+use super::{
+    scheduler::SchedulableTask,
+    task::{Task, TaskId, TaskResultHandle, TaskResultHandleAwaiter},
+};
 
 pub(crate) type WorkerId = Arc<str>;
 
@@ -25,10 +28,14 @@ pub(crate) trait WorkerManager: Send + Sync {
 
     fn submit_tasks_to_workers(
         &self,
-        total_tasks: usize,
-        tasks_per_worker: HashMap<WorkerId, Vec<<<Self as WorkerManager>::Worker as Worker>::Task>>,
-    ) -> DaftResult<Vec<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>;
-    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId);
+        tasks_per_worker: HashMap<
+            WorkerId,
+            Vec<SchedulableTask<<<Self as WorkerManager>::Worker as Worker>::Task>>,
+        >,
+    ) -> DaftResult<
+        Vec<TaskResultHandleAwaiter<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>,
+    >;
+    fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId);
     fn workers(&self) -> &HashMap<WorkerId, Self::Worker>;
     fn total_available_cpus(&self) -> usize;
     #[allow(dead_code)]

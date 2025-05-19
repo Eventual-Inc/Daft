@@ -44,6 +44,10 @@ impl<T: Task> DefaultScheduler<T> {
 }
 
 impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
+    fn num_pending_tasks(&self) -> usize {
+        self.pending_tasks.len()
+    }
+
     fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>) {
         self.pending_tasks.extend(tasks);
     }

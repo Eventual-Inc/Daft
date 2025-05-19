@@ -8,7 +8,8 @@ use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, RaySwordfishTask};
 use crate::scheduling::{
-    task::{SwordfishTask, Task, TaskId},
+    scheduler::SchedulableTask,
+    task::{SwordfishTask, Task, TaskId, TaskResultHandleAwaiter},
     worker::{Worker, WorkerId},
 };
 
@@ -44,41 +45,47 @@ impl RaySwordfishWorker {
 
 #[allow(dead_code)]
 impl RaySwordfishWorker {
-    pub fn mark_task_finished(&self, task_id: TaskId) {
+    pub fn mark_task_finished(&self, task_id: &TaskId) {
         self.active_task_ids
             .lock()
             .expect("Active task ids should be present")
-            .remove(&task_id);
+            .remove(task_id);
     }
 
     pub fn submit_tasks(
         &self,
-        tasks: Vec<SwordfishTask>,
+        tasks: Vec<SchedulableTask<SwordfishTask>>,
         py: Python<'_>,
         task_locals: &pyo3_async_runtimes::TaskLocals,
-    ) -> DaftResult<Vec<RayTaskResultHandle>> {
-        let (task_ids, tasks): (Vec<TaskId>, Vec<RaySwordfishTask>) = tasks
-            .into_iter()
-            .map(|task| (task.task_id().clone(), RaySwordfishTask::new(task)))
-            .unzip();
+    ) -> DaftResult<Vec<TaskResultHandleAwaiter<RayTaskResultHandle>>> {
+        let mut task_handles = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            let (task, result_tx, cancel_token) = task.into_inner();
+            let task_id = task.task_id().clone();
 
-        let py_task_handles = self
-            .actor_handle
-            .call_method1(py, pyo3::intern!(py, "submit_tasks"), (tasks,))?
-            .extract::<Vec<PyObject>>(py)?;
+            let ray_swordfish_task = RaySwordfishTask::new(task);
+            let py_task_handle = self.actor_handle.call_method1(
+                py,
+                pyo3::intern!(py, "submit_task"),
+                (ray_swordfish_task,),
+            )?;
 
-        let task_handles = py_task_handles
-            .into_iter()
-            .map(|py_task_handle| {
-                let task_locals = task_locals.clone_ref(py);
-                RayTaskResultHandle::new(py_task_handle, task_locals)
-            })
-            .collect::<Vec<_>>();
+            self.active_task_ids
+                .lock()
+                .expect("Active task ids should be present")
+                .insert(task_id.clone());
 
-        self.active_task_ids
-            .lock()
-            .expect("Active task ids should be present")
-            .extend(task_ids);
+            let task_locals = task_locals.clone_ref(py);
+            let ray_task_result_handle = RayTaskResultHandle::new(py_task_handle, task_locals);
+            let task_result_handle_awaiter = TaskResultHandleAwaiter::new(
+                task_id,
+                self.worker_id.clone(),
+                ray_task_result_handle,
+                result_tx,
+                cancel_token,
+            );
+            task_handles.push(task_result_handle_awaiter);
+        }
 
         Ok(task_handles)
     }
