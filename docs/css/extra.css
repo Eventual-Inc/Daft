@@ -18,6 +18,7 @@
   --md-accent-fg-color: #ad9fff;
 }
 
+/* hide readthedocs flyout for future versions (>0.4.15) */
 readthedocs-flyout {
   display: none !important;
 }
