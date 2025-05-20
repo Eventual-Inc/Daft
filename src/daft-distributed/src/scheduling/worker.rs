@@ -82,9 +82,7 @@ pub(super) mod tests {
             let mut result = Vec::new();
 
             for (worker_id, tasks) in tasks_per_worker {
-                println!("Submitting tasks to worker: {:?}", worker_id);
                 for task in tasks {
-                    println!("Submitting task: {:?}", task.task_id());
                     let (task, result_tx, cancel_token) = task.into_inner();
                     // Update the worker's active task count
                     if let Some(worker) = self.workers.get(&worker_id) {
