@@ -9,9 +9,5 @@
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "makefile.configureOnOpen": false,
-  "mypy-type-checker.args": [
-    "--strict",
-    "--ignore-missing-imports"
-  ]
+  "makefile.configureOnOpen": false
 }
