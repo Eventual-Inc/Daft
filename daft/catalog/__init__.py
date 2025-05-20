@@ -271,16 +271,16 @@ class Catalog(ABC):
     def from_iceberg(catalog: object) -> Catalog:
         """Create a Daft Catalog from a PyIceberg catalog object.
 
-        Example:
-            >>> from pyiceberg.catalog import load_catalog
-            >>> iceberg_catalog = load_catalog("my_iceberg_catalog")
-            >>> catalog = Catalog.from_iceberg(iceberg_catalog)
-
         Args:
             catalog (object): a PyIceberg catalog instance
 
         Returns:
             Catalog: a new Catalog instance backed by the PyIceberg catalog.
+
+        Examples:
+            >>> from pyiceberg.catalog import load_catalog
+            >>> iceberg_catalog = load_catalog("my_iceberg_catalog")
+            >>> catalog = Catalog.from_iceberg(iceberg_catalog)
         """
         try:
             from daft.catalog.__iceberg import IcebergCatalog
@@ -293,16 +293,17 @@ class Catalog(ABC):
     def from_unity(catalog: object) -> Catalog:
         """Create a Daft Catalog from a Unity Catalog client.
 
-        Example:
-            >>> from unity_sdk import UnityCatalogClient
-            >>> unity_client = UnityCatalogClient(...)
-            >>> catalog = Catalog.from_unity(unity_client)
-
         Args:
             catalog (object): a Unity Catalog client instance
 
         Returns:
             Catalog: a new Catalog instance backed by the Unity catalog.
+
+        Examples:
+            >>> from unity_sdk import UnityCatalogClient
+            >>> unity_client = UnityCatalogClient(...)
+            >>> catalog = Catalog.from_unity(unity_client)
+
         """
         try:
             from daft.catalog.__unity import UnityCatalog
@@ -322,11 +323,6 @@ class Catalog(ABC):
         If neither a boto3 client nor session is provided, the Iceberg REST
         client will be used under the hood.
 
-        Example:
-            >>> arn = "arn:aws:s3:::my-s3tables-bucket"
-            >>> catalog = Catalog.from_s3tables(arn)
-            >>> catalog.list_tables()
-
         Args:
             table_bucket_arn (str): ARN of the S3 Tables bucket
             client (object, optional): a boto3 client
@@ -334,6 +330,11 @@ class Catalog(ABC):
 
         Returns:
             Catalog: a new Catalog instance backed by S3 Tables.
+
+        Examples:
+            >>> arn = "arn:aws:s3:::my-s3tables-bucket"
+            >>> catalog = Catalog.from_s3tables(arn)
+            >>> catalog.list_tables()
         """
         try:
             from daft.catalog.__s3tables import S3Catalog
@@ -364,10 +365,8 @@ class Catalog(ABC):
 
         Args:
             name (str): glue database name
-            type (Literal["iceberg"]): optional catalog type
             client: optional boto3 client
             session: optional boto3 session
-            **options: additional options for boto3 client creation
 
         Returns:
             Catalog: new daft catalog instance backed by AWS Glue.
@@ -410,9 +409,6 @@ class Catalog(ABC):
 
         Args:
             identifier (Identifier | str): namespace identifier
-
-        Returns:
-            None
         """
         raise NotImplementedError
 
@@ -421,9 +417,6 @@ class Catalog(ABC):
 
         Args:
             identifier (Identifier | str): namespace identifier
-
-        Returns:
-            None
         """
         if not self.has_namespace(identifier):
             self.create_namespace(identifier)
@@ -587,13 +580,9 @@ class Identifier(Sequence):
     def __init__(self, *parts: str):
         """Creates an Identifier from its parts.
 
-        Returns:
-            Identifier: A new identifier.
-
         Examples:
             >>> from daft.catalog import Identifier
             >>> Identifier("namespace", "table")
-
         """
         if len(parts) < 1:
             raise ValueError("Identifier requires at least one part.")
@@ -770,7 +759,7 @@ class Table(ABC):
         """Returns a Daft Table instance from a Unity table.
 
         Args:
-            table
+            table (object): unity table instance.
         """
         try:
             from daft.catalog.__unity import UnityTable
@@ -813,11 +802,11 @@ class Table(ABC):
     ###
 
     @abstractmethod
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: dict[str, Any]) -> DataFrame:
         """Creates a new DataFrame from this table.
 
         Args:
-            **options: additional format-dependent read options
+            **options (dict[str,Any]): additional format-dependent read options
 
         Returns:
             DataFrame: new DataFrame instance
@@ -850,25 +839,25 @@ class Table(ABC):
     ###
 
     @abstractmethod
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: dict[str, Any]) -> None:
         """Writes the DataFrame to this table.
 
         Args:
             df (DataFrame): datafram to write
             mode (str): write mode such as 'append' or 'overwrite'
-            **options: additional format-dependent write options
+            **options (dict[str,Any]): additional format-dependent write options
         """
 
-    def append(self, df: DataFrame, **options) -> None:
+    def append(self, df: DataFrame, **options: dict[str, Any]) -> None:
         """Appends the DataFrame to this table.
 
         Args:
             df (DataFrame): dataframe to append
-            **options: additional format-dependent write options
+            **options (dict[str,Any]): additional format-dependent write options
         """
         self.write(df, mode="append", **options)
 
-    def overwrite(self, df: DataFrame, **options) -> None:
+    def overwrite(self, df: DataFrame, **options: dict[str, Any]) -> None:
         """Overwrites this table with the given DataFrame.
 
         Args:

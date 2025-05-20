@@ -42,8 +42,14 @@ class MicroPartition:
     def column_names(self) -> list[str]:
         return self._micropartition.column_names()
 
-    def get_column(self, name: str) -> Series:
-        return Series._from_pyseries(self._micropartition.get_column(name))
+    def get_column_by_name(self, name: str) -> Series:
+        return Series._from_pyseries(self._micropartition.get_column_by_name(name))
+
+    def get_column(self, idx: int) -> Series:
+        return Series._from_pyseries(self._micropartition.get_column(idx))
+
+    def columns(self) -> list[Series]:
+        return [Series._from_pyseries(s) for s in self._micropartition.columns()]
 
     def get_record_batches(self) -> list[RecordBatch]:
         return [RecordBatch._from_pyrecordbatch(t) for t in self._micropartition.get_record_batches()]
@@ -173,10 +179,6 @@ class MicroPartition:
     ###
     # Compute methods (MicroPartition -> MicroPartition)
     ###
-
-    def cast_to_schema(self, schema: Schema) -> MicroPartition:
-        """Casts a MicroPartition into the provided schema."""
-        return MicroPartition._from_pymicropartition(self._micropartition.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in exprs)
@@ -436,7 +438,7 @@ class MicroPartition:
 
     def __reduce__(self) -> tuple:
         names = self.column_names()
-        return MicroPartition.from_pydict, ({name: self.get_column(name) for name in names},)
+        return MicroPartition.from_pydict, ({name: self.get_column_by_name(name) for name in names},)
 
     @classmethod
     def read_parquet_statistics(

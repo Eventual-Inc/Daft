@@ -1,50 +1,51 @@
-// use crate::functions::FunctionExpr;
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_dsl::{
+    functions::{FunctionArgs, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::json_query_series;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct JsonQuery {
-    pub query: String,
-}
+pub struct JsonQuery;
 
 #[typetag::serde]
 impl ScalarUDF for JsonQuery {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    #[allow(
+        deprecated,
+        reason = "temporary while transitioning to new scalarudf impl"
+    )]
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        ensure!(inputs.len() == 2, ComputeError: "json_query requires two arguments: input and query");
+        let input = inputs.required((0, "input"))?;
+        let query = inputs.required((1, "query"))?;
+        ensure!(query.len() == 1, ComputeError: "expected scalar value for query");
+        let query = query.utf8()?.get(0).unwrap();
+
+        json_query_series(input, query)
     }
+
     fn name(&self) -> &'static str {
         "json_query"
     }
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => json_query_series(input, &self.query),
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(inputs.len() == 2, SchemaMismatch: "json_query requires two arguments: input and query");
+        let input = inputs.required((0, "input"))?.to_field(schema)?;
+        ensure!(input.dtype == DataType::Utf8, TypeError: "Input must be a string type");
+        let query = inputs.required((1, "query"))?.to_field(schema)?;
+        ensure!(query.dtype == DataType::Utf8, TypeError: "Query must be a string type");
 
-            _ => Err(DaftError::TypeError(
-                "Json query expects a single argument".to_string(),
-            )),
-        }
+        Ok(Field::new(input.name, DataType::Utf8))
     }
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let input_field = input.to_field(schema)?;
-                match input_field.dtype {
-                    DataType::Utf8 => Ok(Field::new(input_field.name, DataType::Utf8)),
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expected input to be a string type, received: {}",
-                        input_field.dtype
-                    ))),
-                }
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+
+    fn docstring(&self) -> &'static str {
+        "Extracts a JSON object from a JSON string using a JSONPath expression."
     }
 }

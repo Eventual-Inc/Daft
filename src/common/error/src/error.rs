@@ -17,6 +17,14 @@ pub enum DaftError {
     ComputeError(String),
     #[error("DaftError::ArrowError {0}")]
     ArrowError(arrow2::error::Error),
+    #[cfg(feature = "arrow")]
+    #[error("DaftError::ArrowRsError {0}")]
+    ArrowRsError(#[from] arrow_schema::ArrowError),
+    // TODO(desmond): We can't currently implement this as a From<parquet::errors::ParquetError>
+    // because this results in infinite nesting of types in `fixed_size_binary_op` in arithmetic.rs.
+    #[cfg(feature = "arrow")]
+    #[error("DaftError::ParquetError {0}")]
+    ParquetError(String),
     #[error("DaftError::ValueError {0}")]
     ValueError(String),
     #[cfg(feature = "python")]
@@ -60,6 +68,20 @@ impl DaftError {
     pub fn not_implemented<T: std::fmt::Display>(msg: T) -> Self {
         Self::NotImplemented(msg.to_string())
     }
+}
+
+#[macro_export]
+macro_rules! ensure {
+    ($cond:expr, $msg:expr) => {
+        if !$cond {
+            return Err($crate::DaftError::ComputeError($msg.to_string()));
+        }
+    };
+    ($cond:expr, $variant:ident: $($msg:tt)*) => {
+        if !$cond {
+            return Err($crate::DaftError::$variant(format!($($msg)*)));
+        }
+    };
 }
 
 impl From<arrow2::error::Error> for DaftError {

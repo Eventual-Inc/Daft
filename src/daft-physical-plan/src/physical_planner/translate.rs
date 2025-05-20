@@ -11,13 +11,11 @@ use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     estimated_selectivity, functions::agg::merge_mean, is_partition_compatible,
-    join::normalize_join_keys, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef,
+    join::normalize_join_keys, lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     SketchType,
 };
-use daft_functions::{
-    list::{count_distinct, distinct},
-    numeric::sqrt,
-};
+use daft_functions::numeric::sqrt;
+use daft_functions_list::{count_distinct, distinct};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -26,7 +24,8 @@ use daft_logical_plan::{
         Join as LogicalJoin, Limit as LogicalLimit,
         MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-        Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
+        Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
+        Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -139,6 +138,25 @@ pub(super) fn translate_single_logical_node(
                 PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
                     .arced(),
             )
+        }
+        LogicalPlan::TopN(LogicalTopN {
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            let num_partitions = input_physical.clustering_spec().num_partitions();
+            Ok(PhysicalPlan::TopN(TopN::new(
+                input_physical,
+                sort_by.clone(),
+                descending.clone(),
+                nulls_first.clone(),
+                *limit,
+                num_partitions,
+            ))
+            .arced())
         }
         LogicalPlan::Explode(LogicalExplode { to_explode, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -493,6 +511,11 @@ pub(super) fn translate_single_logical_node(
                         .arced()),
                     }
                 }
+                #[cfg(feature = "python")]
+                SinkInfo::DataSinkInfo(data_sink_info) => Ok(PhysicalPlan::DataSink(
+                    DataSink::new(schema.clone(), data_sink_info.clone(), input_physical),
+                )
+                .arced()),
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {
@@ -587,6 +610,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Set(e) => AggExpr::Set(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Skew(e) => AggExpr::Skew(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
                     inputs: inputs
@@ -660,7 +684,7 @@ pub fn populate_aggregation_stages(
             AggExpr::CountDistinct(sub_expr) => {
                 // First stage
                 let list_agg_id = add_to_stage(
-                    AggExpr::List,
+                    AggExpr::Set,
                     sub_expr.clone(),
                     schema,
                     &mut first_stage_aggs,
@@ -917,6 +941,92 @@ pub fn populate_aggregation_stages(
                         resolved_col(concat_id.clone()).alias(concat_of_concat_id.clone()),
                     ));
                 final_exprs.push(resolved_col(concat_of_concat_id.clone()).alias(output_name));
+            }
+            AggExpr::Skew(se) => {
+                // See https://github.com/duckdb/duckdb/blob/93fda3591f4298414fa362c59219c09e03f718ab/extension/core_functions/aggregate/distributive/skew.cpp#L16
+                // Not exactly the same since they normalize by N - 1
+                let se = se.clone().cast(&DataType::Float64);
+
+                // Global count, sum, squared_sum, and cubed_sum are required for final expr
+
+                // First stage: count, sum, squared_sum, cubed_sum
+                let count_id = add_to_stage(
+                    |se| AggExpr::Count(se, CountMode::Valid),
+                    se.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+                let sum_id = add_to_stage(AggExpr::Sum, se.clone(), schema, &mut first_stage_aggs);
+                let squared_sum_id = add_to_stage(
+                    |se| AggExpr::Sum(se.clone().mul(se)),
+                    se.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+                let cubed_sum_id = add_to_stage(
+                    |se| AggExpr::Sum(se.clone().mul(se.clone()).mul(se)),
+                    se.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+
+                // Second stage: sum(count), sum(sum), sum(squared_sum), sum(cubed_sum)
+                let sum_count_id = add_to_stage(
+                    AggExpr::Sum,
+                    resolved_col(count_id),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+                let sum_sum_id = add_to_stage(
+                    AggExpr::Sum,
+                    resolved_col(sum_id),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+                let sum_squared_sum_id = add_to_stage(
+                    AggExpr::Sum,
+                    resolved_col(squared_sum_id),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+                let sum_cubed_sum_id = add_to_stage(
+                    AggExpr::Sum,
+                    resolved_col(cubed_sum_id),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+
+                // Final projection: Given
+                // - sum(count) = N
+                // - sum(sum) = S
+                // - sum(squared_sum) = S2
+                // - sum(cubed_sum) = S3
+                //         S3 - 3 * S2 * S / N + 2 * S^3 / N^2
+                // Skew = -------------------------------------
+                //          N * ((S2 - S^2 / N) / N) ^ (3/2)
+
+                let n = resolved_col(sum_count_id);
+                let s = resolved_col(sum_sum_id);
+                let s2 = resolved_col(sum_squared_sum_id);
+                let s3 = resolved_col(sum_cubed_sum_id);
+
+                let denom_base = s2
+                    .clone()
+                    .sub(s.clone().mul(s.clone()).div(n.clone()))
+                    .div(n.clone());
+                let denom = sqrt::sqrt(denom_base.clone().mul(denom_base.clone()).mul(denom_base));
+
+                let numerator = s3.sub(lit(3).mul(s2).mul(s.clone()).div(n.clone())).add(
+                    lit(2)
+                        .mul(s.clone())
+                        .mul(s.clone())
+                        .mul(s)
+                        .div(n.clone())
+                        .div(n.clone()),
+                );
+
+                let result = numerator.div(denom).div(n).alias(output_name);
+                final_exprs.push(result);
             }
             AggExpr::MapGroups { func, inputs } => {
                 let func_id = agg_expr.semantic_id(schema).id;

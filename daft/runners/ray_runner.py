@@ -170,7 +170,10 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
                 )
             elif daft_schema[field.name].dtype.is_tensor():
                 assert isinstance(field.type, pa.ExtensionType)
-                new_arrs[idx] = (field.name, ArrowTensorArray.from_numpy(partition.get_column(field.name).to_pylist()))
+                new_arrs[idx] = (
+                    field.name,
+                    ArrowTensorArray.from_numpy(partition.get_column_by_name(field.name).to_pylist()),
+                )
         for idx, (field_name, arr) in new_arrs.items():
             arrow_tbl = arrow_tbl.set_column(idx, pa.field(field_name, arr.type), arr)
 

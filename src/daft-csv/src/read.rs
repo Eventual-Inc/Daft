@@ -209,10 +209,8 @@ pub fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
     let new_series = (0..num_columns)
         .into_par_iter()
         .map(|i| {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
+            let series_to_cat: Vec<&Series> =
+                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -262,11 +260,11 @@ async fn read_csv_single_into_table(
         (None, _) => None,
         (co, None) => co,
         (Some(mut co), Some(predicate)) => {
-            if let Some(ref mut include_columns) = co.include_columns {
+            if let Some(ref mut co_include_columns) = co.include_columns {
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
-                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc);
+                    if co_include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                        co_include_columns.push(rc);
                     }
                 }
             }
@@ -285,6 +283,7 @@ async fn read_csv_single_into_table(
         io_stats,
     )
     .await?;
+
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
     // with the parsing of chunks on the rayon threadpool.
     let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
@@ -314,17 +313,26 @@ async fn read_csv_single_into_table(
     };
 
     let schema: arrow2::datatypes::Schema = schema_fields.into();
-    let schema = Arc::new(schema.into());
+    let schema: SchemaRef = Arc::new(schema.into());
 
-    let predicate = predicate
-        .map(|expr| BoundExpr::try_new(expr, &schema))
+    let include_column_indices = include_columns
+        .map(|include_columns| {
+            include_columns
+                .iter()
+                .map(|name| schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()
+        })
         .transpose()?;
 
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
-            if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+            let table = table?;
+
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
+            if let Some(include_column_indices) = &include_column_indices {
+                Ok(filtered.get_columns(include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -437,7 +445,12 @@ pub async fn stream_csv_single(
 
             let filtered = table.filter(&[predicate])?;
             if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+                let include_column_indices = include_columns
+                    .iter()
+                    .map(|name| table.schema.get_index(name))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                Ok(filtered.get_columns(&include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -781,7 +794,7 @@ mod tests {
         let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
         assert_eq!(out.schema.to_arrow().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column_by_index(i).unwrap().to_arrow())
+            .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -1529,7 +1542,7 @@ mod tests {
             ])
             .into(),
         );
-        let null_column = table.get_column("petal.length")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1585,7 +1598,7 @@ mod tests {
             ])
             .into(),
         );
-        let null_column = table.get_column("petal.length")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1672,7 +1685,7 @@ mod tests {
         assert_eq!(num_rows, 20);
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
-            let column = table.get_column_by_index(idx)?;
+            let column = table.get_column(idx);
             assert_eq!(column.to_arrow().null_count(), num_rows);
         }
 
@@ -1743,13 +1756,13 @@ mod tests {
         );
 
         // First 4 cols should have no nulls
-        assert_eq!(table.get_column("sepal.length")?.to_arrow().null_count(), 0);
-        assert_eq!(table.get_column("sepal.width")?.to_arrow().null_count(), 0);
-        assert_eq!(table.get_column("petal.length")?.to_arrow().null_count(), 0);
-        assert_eq!(table.get_column("petal.width")?.to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(0).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(1).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(2).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(3).to_arrow().null_count(), 0);
 
         // Last col should have 3 nulls because of the missing data
-        assert_eq!(table.get_column("variety")?.to_arrow().null_count(), 3);
+        assert_eq!(table.get_column(4).to_arrow().null_count(), 3);
 
         Ok(())
     }
@@ -1870,7 +1883,7 @@ mod tests {
         assert_eq!(table.len(), 3);
 
         assert_eq!(
-            table.get_column("variety")?.to_arrow(),
+            table.get_column(4).to_arrow(),
             Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
                 None,
                 Some("Seratosa"),

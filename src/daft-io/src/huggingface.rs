@@ -9,10 +9,9 @@ use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
 };
-use hyper::header;
-use reqwest::{
-    header::{CONTENT_LENGTH, RANGE},
-    Client,
+use reqwest_middleware::{
+    reqwest::header::{CONTENT_LENGTH, RANGE},
+    ClientWithMiddleware,
 };
 use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt, Snafu};
@@ -31,13 +30,13 @@ enum Error {
     #[snafu(display("Unable to connect to {}: {}", path, source))]
     UnableToConnect {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::Error,
     },
 
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display("Unable to determine size of {}", path))]
@@ -46,11 +45,8 @@ enum Error {
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
-
-    #[snafu(display("Unable to create Http Client {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
 
     #[snafu(display(
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
@@ -62,8 +58,6 @@ enum Error {
     ))]
     UnableToParseInteger { path: String, source: ParseIntError },
 
-    #[snafu(display("Unable to create HTTP header: {source}"))]
-    UnableToCreateHeader { source: header::InvalidHeaderValue },
     #[snafu(display("Invalid path: {}", path))]
     InvalidPath { path: String },
 
@@ -241,29 +235,11 @@ impl From<Error> for super::Error {
 
 impl HFSource {
     pub async fn get_client(config: &HTTPConfig) -> super::Result<Arc<Self>> {
-        let mut default_headers = header::HeaderMap::new();
-        default_headers.append(
-            "user-agent",
-            header::HeaderValue::from_str(config.user_agent.as_str())
-                .context(UnableToCreateHeaderSnafu)?,
-        );
-
-        if let Some(token) = &config.bearer_token {
-            default_headers.append(
-                "Authorization",
-                header::HeaderValue::from_str(&format!("Bearer {}", token.as_string()))
-                    .context(UnableToCreateHeaderSnafu)?,
-            );
-        }
-
+        let http_source = HttpSource::get_client(config).await?;
+        let http_source = Arc::try_unwrap(http_source).expect("Could not unwrap Arc<HttpSource>");
+        let client = http_source.client;
         Ok(Self {
-            http_source: HttpSource {
-                client: reqwest::ClientBuilder::default()
-                    .pool_max_idle_per_host(70)
-                    .default_headers(default_headers)
-                    .build()
-                    .context(UnableToCreateClientSnafu)?,
-            },
+            http_source: HttpSource { client },
         }
         .into())
     }
@@ -492,7 +468,7 @@ async fn try_parquet_api(
     glob_path: &str,
     limit: Option<usize>,
     io_stats: Option<IOStatsRef>,
-    client: &Client,
+    client: &ClientWithMiddleware,
 ) -> Result<Option<BoxStream<'static, super::Result<FileMetadata>>>, Error> {
     let hf_glob_path = glob_path.parse::<HFPathParts>()?;
     if hf_glob_path.path.is_empty() {
@@ -502,9 +478,10 @@ async fn try_parquet_api(
             .get(api_path.clone())
             .send()
             .await
-            .with_context(|_| UnableToOpenFileSnafu {
+            .with_context(|_| UnableToConnectSnafu {
                 path: api_path.to_string(),
             })?;
+
         if response.status() == 400 {
             if let Some(error_message) = response
                 .headers()

@@ -49,9 +49,9 @@ pub trait BlockingSink: Send + Sync {
         &self,
         runtime_handle: &ExecutionRuntimeContext,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(Some(
+        Arc::new(UnorderedDispatcher::with_fixed_threshold(
             runtime_handle.default_morsel_size(),
-        )))
+        ))
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
@@ -77,7 +77,7 @@ impl BlockingSinkNode {
             op,
             name,
             child,
-            runtime_stats: RuntimeStatsContext::new(),
+            runtime_stats: RuntimeStatsContext::new(name),
             plan_stats,
         }
     }

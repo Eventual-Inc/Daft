@@ -1,16 +1,16 @@
 /*https://github.com/squidfunk/mkdocs-material/issues/2574#issuecomment-821979698*/
+/* search bar slash button */
 [data-md-toggle="search"]:not(:checked) ~ .md-header .md-search__form::after {
     position: absolute;
     top: .3rem;
     right: .3rem;
     display: block;
     padding: .1rem .4rem;
-    color: var(--md-default-bg-color);
+    color: #fff;
     font-weight: bold;
     font-size: .8rem;
-    border: .05rem solid var(--md-default-bg-color--lighter);
+    border: .05rem solid #ffffff4d;
     border-radius: .1rem;
-    content: "/";
 }
 
 :root {
@@ -97,7 +97,75 @@ code.doc-symbol-method::after {
   display: none;
 }
 
-/* display width */
+/* body display width */
 .md-grid {
   max-width: 70rem;
+}
+
+/* spacing between slack & github icon in header*/
+[dir=ltr] .md-header__source {
+  margin-left: 0.3rem;
+}
+
+/* spacing between header and body */
+.md-main__inner {
+  margin-top: 0rem;
+}
+
+.md-sidebar .md-sidebar--primary,
+.md-sidebar .md-sidebar--secondary {
+  top: 110px;
+}
+
+.md-content__inner {
+  padding-top: 1rem;
+}
+
+/* sidebar spacing */
+.md-sidebar {
+  width: 10rem;
+}
+
+[dir=ltr] .md-nav--primary .md-nav__item>.md-nav__link {
+  margin-right: 0rem;
+}
+
+/* font size in secondary nav */
+.md-nav--secondary,
+.md-nav--secondary nav.md-nav {
+  font-size: 0.6rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* spacing between items in secondary nav */
+.md-nav--secondary,
+.md-nav--secondary a.md-nav__link {
+  margin-top: .45em;
+}
+
+/* spacing for secondary nav ToC */
+.md-nav--secondary .md-nav__title {
+  box-shadow: 0 0 .2rem .2rem var(--md-default-bg-color);
+}
+
+/* footer */
+.md-footer__link {
+  margin-bottom: 0.2rem;
+  margin-top: 0.5rem;
+}
+
+.md-footer__title {
+  margin-bottom: 0.5rem;
+}
+
+.md-footer .md-social {
+  padding: 0.2rem 0;
+}
+
+.md-footer__inner.md-grid {
+  max-width: 50rem;
+}
+
+.md-footer-meta__inner.md-grid {
+  max-width: 50rem;
 }

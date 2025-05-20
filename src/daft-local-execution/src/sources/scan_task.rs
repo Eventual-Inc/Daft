@@ -6,7 +6,7 @@ use std::{
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::{get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
@@ -276,8 +276,20 @@ async fn get_delete_map(
                 let table = table_result?;
                 // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
                 // https://iceberg.apache.org/spec/#position-delete-files
-                let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-                let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+                let get_column_by_name = |name| {
+                    if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
+                        Ok(table.get_column(idx))
+                    } else {
+                        Err(DaftError::SchemaMismatch(format!(
+                            "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",
+                            table.schema
+                        )))
+                    }
+                };
+
+                let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
+                let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
                 for (file, pos) in file_paths
                     .as_arrow()
@@ -493,6 +505,7 @@ async fn stream_scan_task(
 
     Ok(table_stream.map(move |table| {
         let table = table?;
+        #[allow(deprecated)]
         let casted_table = table.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),
             scan_task
@@ -501,10 +514,20 @@ async fn stream_scan_task(
                 .map(|pspec| pspec.to_fill_map())
                 .as_ref(),
         )?;
+
+        let stats = scan_task
+            .statistics
+            .as_ref()
+            .map(|stats| {
+                #[allow(deprecated)]
+                stats.cast_to_schema(&scan_task.materialized_schema())
+            })
+            .transpose()?;
+
         let mp = Arc::new(MicroPartition::new_loaded(
             scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
-            scan_task.statistics.clone(),
+            stats,
         ));
         Ok(mp)
     }))

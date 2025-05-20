@@ -4,35 +4,34 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
-use super::evaluate_single_numeric;
-
 macro_rules! exp {
-    ($name:ident, $impl:ident, $variant:ident) => {
+    ($name:ident, $impl:ident, $variant:ident, $docstring:literal) => {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
+            fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
+                $impl(input)
             }
+
             fn name(&self) -> &'static str {
                 stringify!($name)
             }
 
-            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-                if inputs.len() != 1 {
-                    return Err(DaftError::SchemaMismatch(format!(
-                        "Expected 1 input arg, got {}",
-                        inputs.len()
-                    )));
-                };
-                let field = inputs.first().unwrap().to_field(schema)?;
+            fn function_args_to_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
                 let dtype = match field.dtype {
                     DataType::Float32 => DataType::Float32,
                     dt if dt.is_numeric() => DataType::Float64,
@@ -46,8 +45,8 @@ macro_rules! exp {
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-                evaluate_single_numeric(inputs, $impl)
+            fn docstring(&self) -> &'static str {
+                $docstring
             }
         }
 
@@ -58,14 +57,24 @@ macro_rules! exp {
     };
 }
 
-exp!(exp, exp_impl, Exp);
-exp!(expm1, expm1_impl, Expm1);
+exp!(
+    exp,
+    exp_impl,
+    Exp,
+    "Calculates the exponential of a number (e^x)."
+);
+exp!(
+    expm1,
+    expm1_impl,
+    Expm1,
+    "Calculates the exponential of a number minus one (e^x - 1)."
+);
 
-fn exp_impl(s: &Series) -> DaftResult<Series> {
+fn exp_impl(s: Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Float32 => Ok(s.f32().unwrap().exp()?.into_series()),
         DataType::Float64 => Ok(s.f64().unwrap().exp()?.into_series()),
-        dt if dt.is_integer() => exp_impl(&s.cast(&DataType::Float64).unwrap()),
+        dt if dt.is_integer() => exp_impl(s.cast(&DataType::Float64).unwrap()),
         dt => Err(DaftError::TypeError(format!(
             "exp not implemented for {}",
             dt
@@ -73,11 +82,11 @@ fn exp_impl(s: &Series) -> DaftResult<Series> {
     }
 }
 
-fn expm1_impl(s: &Series) -> DaftResult<Series> {
+fn expm1_impl(s: Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Float32 => Ok(s.f32().unwrap().expm1()?.into_series()),
         DataType::Float64 => Ok(s.f64().unwrap().expm1()?.into_series()),
-        dt if dt.is_integer() => expm1_impl(&s.cast(&DataType::Float64).unwrap()),
+        dt if dt.is_integer() => expm1_impl(s.cast(&DataType::Float64).unwrap()),
         dt => Err(DaftError::TypeError(format!(
             "expm1 not implemented for {}",
             dt

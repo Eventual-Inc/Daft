@@ -1,9 +1,12 @@
 use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_dsl::{
+    functions::{FunctionArgs, ScalarUDF},
+    ExprRef,
+};
 use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
@@ -16,6 +19,9 @@ pub struct UrlUploadArgs {
     pub is_single_folder: bool,
     pub io_config: Arc<IOConfig>,
 }
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+pub struct UrlUpload;
 
 impl UrlUploadArgs {
     pub fn new(
@@ -48,64 +54,70 @@ impl Default for UrlUploadArgs {
 }
 
 #[typetag::serde]
-impl ScalarUDF for UrlUploadArgs {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+impl ScalarUDF for UrlUpload {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let input = inputs.required((0, "input"))?;
+        let location = inputs.required((1, "location"))?;
 
-    fn name(&self) -> &'static str {
-        "upload"
-    }
+        let max_connections = inputs.extract_optional("max_connections")?.unwrap_or(32);
 
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let Self {
+        let on_error = inputs
+            .extract_optional("on_error")?
+            .unwrap_or_else(|| "raise".to_string());
+
+        let raise_error_on_failure = match on_error.as_str() {
+            "raise" => true,
+            "null" => false,
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                    "Invalid value for 'on_error': {}",
+                    on_error
+                )))
+            }
+        };
+        let multi_thread = inputs.extract_optional("multi_thread")?.unwrap_or(true);
+
+        let is_single_folder = inputs
+            .extract_optional("is_single_folder")?
+            .unwrap_or(false);
+
+        let io_config = inputs.extract_optional("io_config")?.unwrap_or_default();
+
+        url_upload(
+            input,
+            location,
             max_connections,
             raise_error_on_failure,
             multi_thread,
             is_single_folder,
-            io_config,
-        } = self;
-
-        match inputs {
-            [data, location] => url_upload(
-                data,
-                location,
-                *max_connections,
-                *raise_error_on_failure,
-                *multi_thread,
-                *is_single_folder,
-                io_config.clone(),
-                None,
-            ),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
+            Arc::new(io_config),
+            None,
+        )
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [data, location] => {
-                let data_field = data.to_field(schema)?;
-                let location_field = location.to_field(schema)?;
-                match data_field.dtype {
-                    DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Utf8 => (),
-                    _ => return Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {data_field}"))),
-                }
-                if !location_field.dtype.is_string() {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected location to be string, received: {}",
-                        location_field.dtype
-                    )));
-                }
-                Ok(Field::new(data_field.name, DataType::Utf8))
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
+    fn name(&self) -> &'static str {
+        "url_upload"
+    }
+
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let field = inputs.required((0, "input"))?.to_field(schema)?;
+        ensure!(
+            field.dtype.is_binary() || field.dtype.is_fixed_size_binary() || field.dtype.is_string(),
+            TypeError: "input must be a binary, fixed-size binary or utf8"
+        );
+
+        let location = inputs.required((1, "location"))?.to_field(schema)?;
+        ensure!(location.dtype.is_string(), TypeError: "location must be a string");
+        let _ = inputs.extract_optional::<usize, _>("max_connections")?;
+        let _ = inputs.extract_optional::<String, _>("on_error")?;
+        let _ = inputs.extract_optional::<bool, _>("multi_thread")?;
+        let _ = inputs.extract_optional::<bool, _>("is_single_folder")?;
+        let _ = inputs.extract_optional::<IOConfig, _>("io_config")?;
+        Ok(Field::new(field.name, DataType::Utf8))
     }
 }
 

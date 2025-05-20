@@ -43,11 +43,11 @@ class RecordBatch:
     def schema(self) -> Schema:
         return Schema._from_pyschema(self._recordbatch.schema())
 
-    def column_names(self) -> list[str]:
-        return self._recordbatch.column_names()
+    def get_column(self, idx: int) -> Series:
+        return Series._from_pyseries(self._recordbatch.get_column(idx))
 
-    def get_column(self, name: str) -> Series:
-        return Series._from_pyseries(self._recordbatch.get_column(name))
+    def columns(self) -> list[Series]:
+        return [Series._from_pyseries(s) for s in self._recordbatch.columns()]
 
     def size_bytes(self) -> int:
         return self._recordbatch.size_bytes()
@@ -161,23 +161,21 @@ class RecordBatch:
         return self
 
     def to_arrow_record_batch(self) -> pa.RecordBatch:
-        tab = pa.RecordBatch.from_pydict(
-            {colname: self.get_column(colname).to_arrow() for colname in self.column_names()}
-        )
+        tab = pa.RecordBatch.from_pydict({column.name(): column.to_arrow() for column in self.columns()})
         return tab
 
     def to_arrow_table(self) -> pa.Table:
-        tab = pa.Table.from_pydict({colname: self.get_column(colname).to_arrow() for colname in self.column_names()})
+        tab = pa.Table.from_pydict({column.name(): column.to_arrow() for column in self.columns()})
         return tab
 
     def to_pydict(self) -> dict[str, list]:
-        return {colname: self.get_column(colname).to_pylist() for colname in self.column_names()}
+        return {column.name(): column.to_pylist() for column in self.columns()}
 
     def to_pylist(self) -> list[dict[str, Any]]:
         # TODO(Clark): Avoid a double-materialization of the table once the Rust-side table supports
         # by-row selection or iteration.
         table = self.to_pydict()
-        column_names = self.column_names()
+        column_names = table.keys()
         return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
 
     def to_pandas(
@@ -200,8 +198,8 @@ class RecordBatch:
 
         if python_fields or tensor_fields:
             table = {}
-            for colname in self.column_names():
-                column_series = self.get_column(colname)
+            for column_series in self.columns():
+                colname = column_series.name()
                 # Use Python list representation for Python typed columns or tensor columns (return as numpy)
                 if colname in python_fields or colname in tensor_fields:
                     column = column_series.to_pylist()
@@ -225,10 +223,6 @@ class RecordBatch:
     ###
     # Compute methods (Table -> Table)
     ###
-
-    def cast_to_schema(self, schema: Schema) -> RecordBatch:
-        """Casts a RecordBatch into the provided schema."""
-        return RecordBatch._from_pyrecordbatch(self._recordbatch.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
@@ -451,8 +445,7 @@ class RecordBatch:
         return Series._from_pyseries(self._recordbatch.argsort(pyexprs, descending, nulls_first))
 
     def __reduce__(self) -> tuple:
-        names = self.column_names()
-        return RecordBatch.from_pydict, ({name: self.get_column(name) for name in names},)
+        return RecordBatch.from_pydict, ({column.name(): column for column in self.columns()},)
 
     @classmethod
     def read_parquet(

@@ -37,11 +37,11 @@ impl SQLFunction for SQLImageDecode {
     ) -> SQLPlannerResult<ExprRef> {
         match inputs {
             [input] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 Ok(decode(input, None))
             }
             [input, args @ ..] => {
-                let input = planner.plan_function_arg(input)?;
+                let input = planner.plan_function_arg(input)?.into_inner();
                 let args = planner.plan_function_args(args, &["mode", "on_error"], 0)?;
                 Ok(decode(input, Some(args)))
             }

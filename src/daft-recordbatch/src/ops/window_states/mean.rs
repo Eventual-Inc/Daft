@@ -8,7 +8,10 @@ use daft_core::{
 use num_traits::Zero;
 
 use super::WindowAggStateOps;
-use crate::ops::window_states::{CountWindowState, SumWindowState};
+use crate::{
+    ops::window_states::{CountWindowState, SumWindowState},
+    RecordBatch,
+};
 
 pub struct MeanWindowState<T>
 where
@@ -39,12 +42,22 @@ where
     T::Native: Zero + AddAssign + SubAssign + Copy,
 {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         self.sum.add(start_idx, end_idx)?;
         self.count.add(start_idx, end_idx)?;
         Ok(())
     }
 
     fn remove(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
+        assert!(
+            end_idx > start_idx,
+            "end_idx must be greater than start_idx"
+        );
+
         self.sum.remove(start_idx, end_idx)?;
         self.count.remove(start_idx, end_idx)?;
         Ok(())
@@ -65,9 +78,13 @@ where
 }
 
 pub fn create_for_type(
-    source: &Series,
+    sources: &RecordBatch,
     total_length: usize,
 ) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
+    let [source] = sources.columns() else {
+        unreachable!("sum should only have one input")
+    };
+
     let target_type = try_mean_aggregation_supertype(source.data_type())?;
     match target_type {
         DataType::Float64 => {

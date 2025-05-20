@@ -4,7 +4,8 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
-    optimization, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+    functions::FunctionArgs, optimization, resolved_col, AggExpr, ApproxPercentileParams, Column,
+    Expr, ExprRef,
 };
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -278,6 +279,7 @@ fn replace_column_with_semantic_id(
                         |_| e.clone(),
                     )
             }
+
             Expr::Cast(child, datatype) => {
                 replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(
@@ -438,13 +440,19 @@ fn replace_column_with_semantic_id(
                     .inputs
                     .iter()
                     .map(|e| {
-                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
+                        e.map(|e| {
+                            replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
+                        })
                     })
                     .collect::<Vec<_>>();
-                if transforms.iter().all(|e| !e.transformed) {
+                if transforms.iter().all(|e| !e.inner().transformed) {
                     Transformed::no(e)
                 } else {
-                    func.inputs = transforms.iter().map(|t| t.data.clone()).collect();
+                    let inputs = transforms
+                        .iter()
+                        .map(|t| t.map(|t| t.data.clone()))
+                        .collect::<Vec<_>>();
+                    func.inputs = FunctionArgs::new_unchecked(inputs);
                     Transformed::yes(Expr::ScalarFunction(func).into())
                 }
             }
@@ -558,6 +566,10 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::Concat(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Concat, |_| e)
+        }
+        AggExpr::Skew(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Skew, |_| e)
         }
         AggExpr::MapGroups { func, inputs } => {
             let transforms = inputs

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     join::JoinType,
@@ -37,10 +39,6 @@ impl PyRecordBatch {
         Ok(PySchema {
             schema: self.record_batch.schema.clone(),
         })
-    }
-
-    pub fn cast_to_schema(&self, schema: &PySchema) -> PyResult<Self> {
-        Ok(self.record_batch.cast_to_schema(&schema.schema)?.into())
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
@@ -395,30 +393,17 @@ impl PyRecordBatch {
         Ok(self.record_batch.size_bytes()?)
     }
 
-    #[must_use]
-    pub fn column_names(&self) -> Vec<String> {
-        self.record_batch.column_names()
+    pub fn get_column(&self, idx: usize) -> PySeries {
+        self.record_batch.get_column(idx).clone().into()
     }
 
-    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
-        Ok(self.record_batch.get_column(name)?.clone().into())
-    }
-
-    pub fn get_column_by_index(&self, idx: i64) -> PyResult<PySeries> {
-        if idx < 0 {
-            return Err(PyValueError::new_err(format!(
-                "Invalid index, negative numbers not supported: {idx}"
-            )));
-        }
-        let idx = idx as usize;
-        if idx >= self.record_batch.len() {
-            return Err(PyValueError::new_err(format!(
-                "Invalid index, out of bounds: {idx} out of {}",
-                self.record_batch.len()
-            )));
-        }
-
-        Ok(self.record_batch.get_column_by_index(idx)?.clone().into())
+    pub fn columns(&self) -> Vec<PySeries> {
+        self.record_batch
+            .columns()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
     }
 
     #[staticmethod]
@@ -500,12 +485,20 @@ impl PyRecordBatch {
             });
         }
 
-        let num_rows = pycolumns.first().unwrap().series.len();
+        let first = pycolumns.first().unwrap().series.len();
+
+        let num_rows = pycolumns.iter().map(|c| c.series.len()).max().unwrap();
 
         let (fields, columns) = pycolumns
             .into_iter()
             .map(|s| (s.series.field().clone(), s.series))
             .unzip::<_, _, Vec<Field>, Vec<Series>>();
+
+        if first == 0 {
+            return Ok(Self {
+                record_batch: RecordBatch::empty(Some(Arc::new(Schema::new(fields)))).unwrap(),
+            });
+        }
 
         Ok(Self {
             record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,

@@ -5,7 +5,7 @@ from typing import Any, Iterator, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, image
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -340,120 +340,120 @@ class Series:
         return Series._from_pyseries(abs(self._series))
 
     def ceil(self) -> Series:
-        return self._apply_unary_expr(native.ceil)
+        return self._eval_expressions("ceil")
 
     def floor(self) -> Series:
-        return self._apply_unary_expr(native.floor)
+        return self._eval_expressions("floor")
 
     def sign(self) -> Series:
         """The sign of a numeric series."""
-        return self._apply_unary_expr(native.sign)
+        return self._eval_expressions("sign")
 
     def signum(self) -> Series:
         """The signum of a numeric series."""
-        return self._apply_unary_expr(native.sign)
+        return self._eval_expressions("sign")
 
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return self._apply_unary_expr(native.negative)
+        return self._eval_expressions("negative")
 
     def negative(self) -> Series:
         """The negative of a numeric series."""
-        return self._apply_unary_expr(native.negative)
+        return self._eval_expressions("negative")
 
-    def round(self, decimal: int) -> Series:
-        return self._apply_unary_expr(native.round, decimal=decimal)
+    def round(self, decimal: int = 0) -> Series:
+        return self._eval_expressions("round", decimal=decimal)
 
     def clip(self, min: Series, max: Series) -> Series:
-        return self._apply_n_arity_expr([min, max], native.clip)
+        return self._eval_expressions("clip", min, max)
 
     def sqrt(self) -> Series:
-        return self._apply_unary_expr(native.sqrt)
+        return self._eval_expressions("sqrt")
 
     def cbrt(self) -> Series:
-        return self._apply_unary_expr(native.cbrt)
+        return self._eval_expressions("cbrt")
 
     def sin(self) -> Series:
         """The elementwise sine of a numeric series."""
-        return self._apply_unary_expr(native.sin)
+        return self._eval_expressions("sin")
 
     def cos(self) -> Series:
         """The elementwise cosine of a numeric series."""
-        return self._apply_unary_expr(native.cos)
+        return self._eval_expressions("cos")
 
     def tan(self) -> Series:
         """The elementwise tangent of a numeric series."""
-        return self._apply_unary_expr(native.tan)
+        return self._eval_expressions("tan")
 
     def csc(self) -> Series:
         """The elementwise cosecant of a numeric series."""
-        return self._apply_unary_expr(native.csc)
+        return self._eval_expressions("csc")
 
     def sec(self) -> Series:
         """The elementwise secant of a numeric series."""
-        return self._apply_unary_expr(native.sec)
+        return self._eval_expressions("sec")
 
     def cot(self) -> Series:
         """The elementwise cotangent of a numeric series."""
-        return self._apply_unary_expr(native.cot)
+        return self._eval_expressions("cot")
 
     def sinh(self) -> Series:
         """The elementwise hyperbolic sine of a numeric series."""
-        return self._apply_unary_expr(native.sinh)
+        return self._eval_expressions("sinh")
 
     def cosh(self) -> Series:
         """The elementwise hyperbolic cosine of a numeric series."""
-        return self._apply_unary_expr(native.cosh)
+        return self._eval_expressions("cosh")
 
     def tanh(self) -> Series:
         """The elementwise hyperbolic tangent of a numeric series."""
-        return self._apply_unary_expr(native.tanh)
+        return self._eval_expressions("tanh")
 
     def arcsin(self) -> Series:
         """The elementwise arc sine of a numeric series."""
-        return self._apply_unary_expr(native.arcsin)
+        return self._eval_expressions("arcsin")
 
     def arccos(self) -> Series:
         """The elementwise arc cosine of a numeric series."""
-        return self._apply_unary_expr(native.arccos)
+        return self._eval_expressions("arccos")
 
     def arctan(self) -> Series:
         """The elementwise arc tangent of a numeric series."""
-        return self._apply_unary_expr(native.arctan)
+        return self._eval_expressions("arctan")
 
     def arctan2(self, other: Series) -> Series:
         """Calculates the four quadrant arctangent of coordinates (y, x)."""
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
-        return self._apply_binary_expr(other, native.arctan2)
+        return self._eval_expressions("arctan2", other)
 
     def arctanh(self) -> Series:
         """The elementwise inverse hyperbolic tangent of a numeric series."""
-        return self._apply_unary_expr(native.arctanh)
+        return self._eval_expressions("arctanh")
 
     def arccosh(self) -> Series:
         """The elementwise inverse hyperbolic cosine of a numeric series."""
-        return self._apply_unary_expr(native.arccosh)
+        return self._eval_expressions("arccosh")
 
     def arcsinh(self) -> Series:
         """The elementwise inverse hyperbolic sine of a numeric series."""
-        return self._apply_unary_expr(native.arcsinh)
+        return self._eval_expressions("arcsinh")
 
     def radians(self) -> Series:
         """The elementwise radians of a numeric series."""
-        return self._apply_unary_expr(native.radians)
+        return self._eval_expressions("radians")
 
     def degrees(self) -> Series:
         """The elementwise degrees of a numeric series."""
-        return self._apply_unary_expr(native.degrees)
+        return self._eval_expressions("degrees")
 
     def log2(self) -> Series:
         """The elementwise log2 of a numeric series."""
-        return Series._from_pyseries(self._series.log2())
+        return self._eval_expressions("log2")
 
     def log10(self) -> Series:
         """The elementwise log10 of a numeric series."""
-        return Series._from_pyseries(self._series.log10())
+        return self._eval_expressions("log10")
 
     def log(self, base: float) -> Series:
         """The elementwise log with given base, of a numeric series.
@@ -461,23 +461,23 @@ class Series:
         Args:
             base: The base of the logarithm.
         """
-        return Series._from_pyseries(self._series.log(base))
+        return self._eval_expressions("log", base=base)
 
     def ln(self) -> Series:
         """The elementwise ln of a numeric series."""
-        return Series._from_pyseries(self._series.ln())
+        return self._eval_expressions("ln")
 
     def log1p(self) -> Series:
         """The ln(self + 1) of a numeric series."""
-        return Series._from_pyseries(self._series.log1p())
+        return self._eval_expressions("log1p")
 
     def exp(self) -> Series:
         """The e^self of a numeric series."""
-        return self._apply_unary_expr(native.exp)
+        return self._eval_expressions("exp")
 
     def expm1(self) -> Series:
         """The e^self - 1 of a numeric series."""
-        return self._apply_unary_expr(native.expm1)
+        return self._eval_expressions("expm1")
 
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
@@ -725,40 +725,38 @@ class Series:
     def _debug_bincode_deserialize(cls, b: bytes) -> Series:
         return Series._from_pyseries(PySeries._debug_bincode_deserialize(b))
 
-    def _apply_unary_expr(self, func, **kwargs) -> Series:
-        rb = PyRecordBatch.from_pyseries_list([self._series])
-        name = self._series.name()
-        expr = func(native.unresolved_col(name), **kwargs)
-        pyseries = rb.eval_expression_list([expr]).get_column(name)
-        return Series._from_pyseries(pyseries)
+    def _eval_expressions(self, func_name, *others: Series | None, **kwargs) -> Series:
+        from daft.expressions.expressions import lit
 
-    def _apply_binary_expr(self, other, func, **kwargs) -> Series:
-        name = self._series.name()
-        s = self._series
-        other_series = other._series.rename("other")
-        rb = PyRecordBatch.from_pyseries_list([s, other_series])
-        expr = func(native.unresolved_col(name), native.unresolved_col("other"), **kwargs).alias(name)
-        rb = rb.eval_expression_list([expr])
-        pyseries = rb.get_column(name)
-        return Series._from_pyseries(pyseries)
-
-    def _apply_n_arity_expr(self, others, func, **kwargs) -> Series:
         name = self._series.name()
         s = self._series
         other_series_list = []
         col_names = []
         for i, other in enumerate(others):
             col_name = f"c{i}"
-            other_series_list.append(other._series.rename(col_name))
-            col_names.append(col_name)
+
+            if other is None:
+                continue
+            if not isinstance(other, Series):
+                try:
+                    other_series_list.append(Series.from_pylist([other])._series.rename(col_name))
+                    col_names.append(col_name)
+                except AttributeError:
+                    raise ValueError(f"expected another Series but got {type(other)}")
+            else:
+                other_series_list.append(other._series.rename(col_name))
+                col_names.append(col_name)
 
         rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
 
         args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
-        expr = func(*args, **kwargs).alias(name)
+
+        f = native.get_function_from_registry(func_name)
+
+        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items() if v is not None}).alias(name)
 
         rb = rb.eval_expression_list([expr])
-        pyseries = rb.get_column(name)
+        pyseries = rb.get_column(0)
         return Series._from_pyseries(pyseries)
 
 
@@ -793,59 +791,41 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
-    def _apply_unary_expr(self, func) -> Series:
+    def _eval_expressions(self, func_name: str, *others: Series | None, **kwargs) -> Series:
         s = Series._from_pyseries(self._series)
-        return s._apply_unary_expr(func)
-
-    def _apply_binary_expr(self, other: Series, func) -> Series:
-        s = Series._from_pyseries(self._series)
-        return s._apply_binary_expr(other, func)
+        return s._eval_expressions(func_name, *others, **kwargs)
 
 
 class SeriesFloatNamespace(SeriesNamespace):
     def is_nan(self) -> Series:
-        return self._apply_unary_expr(native.is_nan)
+        return self._eval_expressions("is_nan")
 
     def is_inf(self) -> Series:
-        return self._apply_unary_expr(native.is_inf)
+        return self._eval_expressions("is_inf")
 
     def not_nan(self) -> Series:
-        return self._apply_unary_expr(native.not_nan)
+        return self._eval_expressions("not_nan")
 
     def fill_nan(self, fill_value: Series) -> Series:
-        return self._apply_binary_expr(fill_value, native.fill_nan)
+        return self._eval_expressions("fill_nan", fill_value)
 
 
 class SeriesStringNamespace(SeriesNamespace):
     def endswith(self, suffix: Series) -> Series:
-        if not isinstance(suffix, Series):
-            raise ValueError(f"expected another Series but got {type(suffix)}")
-        assert self._series is not None and suffix._series is not None
-        return Series._from_pyseries(self._series.utf8_endswith(suffix._series))
+        return self._eval_expressions("ends_with", suffix)
 
     def startswith(self, prefix: Series) -> Series:
-        if not isinstance(prefix, Series):
-            raise ValueError(f"expected another Series but got {type(prefix)}")
-        assert self._series is not None and prefix._series is not None
-        return Series._from_pyseries(self._series.utf8_startswith(prefix._series))
+        return self._eval_expressions("starts_with", prefix)
 
     def contains(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_contains(pattern._series))
+        return self._eval_expressions("utf8_contains", pattern)
 
     def match(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_match(pattern._series))
+        return self._eval_expressions("regexp_match", pattern)
 
     def split(self, pattern: Series, regex: bool = False) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_split(pattern._series, regex))
+        f_name = "regexp_split" if regex else "split"
+        return self._eval_expressions(f_name, pattern)
 
     def concat(self, other: Series) -> Series:
         if not isinstance(other, Series):
@@ -854,133 +834,71 @@ class SeriesStringNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series) + other
 
     def extract(self, pattern: Series, index: int = 0) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_extract(pattern._series, index))
+        return self._eval_expressions("regexp_extract", pattern, index=index)
 
     def extract_all(self, pattern: Series, index: int = 0) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_extract_all(pattern._series, index))
+        return self._eval_expressions("regexp_extract_all", pattern, index=index)
 
     def replace(self, pattern: Series, replacement: Series, regex: bool = False) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        if not isinstance(replacement, Series):
-            raise ValueError(f"expected another Series but got {type(replacement)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_replace(pattern._series, replacement._series, regex))
+        f_name = "regexp_replace" if regex else "replace"
+        return self._eval_expressions(f_name, pattern, replacement)
 
     def length(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_length())
+        return self._eval_expressions("length")
 
     def length_bytes(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_length_bytes())
+        return self._eval_expressions("length_bytes")
 
     def lower(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_lower())
+        return self._eval_expressions("lower")
 
     def upper(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_upper())
+        return self._eval_expressions("upper")
 
     def lstrip(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_lstrip())
+        return self._eval_expressions("lstrip")
 
     def rstrip(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_rstrip())
+        return self._eval_expressions("rstrip")
 
     def reverse(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_reverse())
+        return self._eval_expressions("reverse")
 
     def capitalize(self) -> Series:
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_capitalize())
+        return self._eval_expressions("capitalize")
 
     def left(self, nchars: Series) -> Series:
-        if not isinstance(nchars, Series):
-            raise ValueError(f"expected another Series but got {type(nchars)}")
-        assert self._series is not None and nchars._series is not None
-        return Series._from_pyseries(self._series.utf8_left(nchars._series))
+        return self._eval_expressions("left", nchars)
 
     def right(self, nchars: Series) -> Series:
-        if not isinstance(nchars, Series):
-            raise ValueError(f"expected another Series but got {type(nchars)}")
-        assert self._series is not None and nchars._series is not None
-        return Series._from_pyseries(self._series.utf8_right(nchars._series))
+        return self._eval_expressions("right", nchars)
 
     def find(self, substr: Series) -> Series:
-        if not isinstance(substr, Series):
-            raise ValueError(f"expected another Series but got {type(substr)}")
-        assert self._series is not None and substr._series is not None
-        return Series._from_pyseries(self._series.utf8_find(substr._series))
+        return self._eval_expressions("find", substr)
 
     def rpad(self, length: Series, pad: Series) -> Series:
-        if not isinstance(length, Series):
-            raise ValueError(f"expected another Series but got {type(length)}")
-        if not isinstance(pad, Series):
-            raise ValueError(f"expected another Series but got {type(pad)}")
-        assert self._series is not None and length._series is not None and pad._series is not None
-        return Series._from_pyseries(self._series.utf8_rpad(length._series, pad._series))
+        return self._eval_expressions("rpad", length, pad)
 
     def lpad(self, length: Series, pad: Series) -> Series:
-        if not isinstance(length, Series):
-            raise ValueError(f"expected another Series but got {type(length)}")
-        if not isinstance(pad, Series):
-            raise ValueError(f"expected another Series but got {type(pad)}")
-        assert self._series is not None and length._series is not None and pad._series is not None
-        return Series._from_pyseries(self._series.utf8_lpad(length._series, pad._series))
+        return self._eval_expressions("lpad", length, pad)
 
     def repeat(self, n: Series) -> Series:
-        if not isinstance(n, Series):
-            raise ValueError(f"expected another Series but got {type(n)}")
-        assert self._series is not None and n._series is not None
-        return Series._from_pyseries(self._series.utf8_repeat(n._series))
+        return self._eval_expressions("repeat", n)
 
     def like(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_like(pattern._series))
+        return self._eval_expressions("like", pattern)
 
     def ilike(self, pattern: Series) -> Series:
-        if not isinstance(pattern, Series):
-            raise ValueError(f"expected another Series but got {type(pattern)}")
-        assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_ilike(pattern._series))
+        return self._eval_expressions("ilike", pattern)
 
     def to_date(self, format: str) -> Series:
-        if not isinstance(format, str):
-            raise ValueError(f"expected str for format but got {type(format)}")
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_to_date(format))
+        return self._eval_expressions("to_date", format=format)
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Series:
-        if not isinstance(format, str):
-            raise ValueError(f"expected str for format but got {type(format)}")
-        if timezone is not None and not isinstance(timezone, str):
-            raise ValueError(f"expected str for timezone but got {type(timezone)}")
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_to_datetime(format, timezone))
+        return self._eval_expressions("to_datetime", format=format, timezone=timezone)
 
     def substr(self, start: Series, length: Series | None = None) -> Series:
-        if not isinstance(start, Series):
-            raise ValueError(f"expected another Series but got {type(start)}")
-        if length is not None and not isinstance(length, Series):
-            raise ValueError(f"expected another Series but got {type(length)}")
-        if length is None:
-            length = Series.from_arrow(pa.array([None]))
-
-        assert self._series is not None and start._series is not None
-        return Series._from_pyseries(self._series.utf8_substr(start._series, length._series))
+        return self._eval_expressions("substr", start, length)
 
     def normalize(
         self,
@@ -990,26 +908,21 @@ class SeriesStringNamespace(SeriesNamespace):
         nfd_unicode: bool = False,
         white_space: bool = False,
     ) -> Series:
-        if not isinstance(remove_punct, bool):
-            raise ValueError(f"expected bool for remove_punct but got {type(remove_punct)}")
-        if not isinstance(lowercase, bool):
-            raise ValueError(f"expected bool for lowercase but got {type(lowercase)}")
-        if not isinstance(nfd_unicode, bool):
-            raise ValueError(f"expected bool for nfd_unicode but got {type(nfd_unicode)}")
-        if not isinstance(white_space, bool):
-            raise ValueError(f"expected bool for white_space but got {type(white_space)}")
-        assert self._series is not None
-        return Series._from_pyseries(self._series.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
+        return self._eval_expressions(
+            "normalize",
+            remove_punct=remove_punct,
+            lowercase=lowercase,
+            nfd_unicode=nfd_unicode,
+            white_space=white_space,
+        )
 
-    def count_matches(self, patterns: Series, whole_words: bool = False, case_sensitive: bool = True) -> Series:
-        if not isinstance(patterns, Series):
-            raise ValueError(f"expected another Series but got {type(patterns)}")
-        if not isinstance(whole_words, bool):
-            raise ValueError(f"expected bool for whole_word but got {type(whole_words)}")
-        if not isinstance(case_sensitive, bool):
-            raise ValueError(f"expected bool for case_sensitive but got {type(case_sensitive)}")
-        assert self._series is not None and patterns._series is not None
-        return Series._from_pyseries(self._series.utf8_count_matches(patterns._series, whole_words, case_sensitive))
+    def count_matches(self, patterns: Series, *, whole_words: bool = False, case_sensitive: bool = True) -> Series:
+        return self._eval_expressions(
+            "count_matches",
+            patterns=patterns,
+            whole_words=whole_words,
+            case_sensitive=case_sensitive,
+        )
 
 
 class SeriesDateNamespace(SeriesNamespace):
@@ -1109,23 +1022,16 @@ class SeriesListNamespace(SeriesNamespace):
             category=DeprecationWarning,
         )
 
-        return Series._from_pyseries(self._series.list_count(CountMode.All))
+        return self._eval_expressions("list_count", count_mode=CountMode.All)
 
     def length(self) -> Series:
-        return Series._from_pyseries(self._series.list_count(CountMode.All))
+        return self._eval_expressions("list_count", count_mode=CountMode.All)
 
     def get(self, idx: Series, default: Series) -> Series:
-        return Series._from_pyseries(self._series.list_get(idx._series, default._series))
+        return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        if isinstance(desc, bool):
-            desc = Series.from_pylist([desc], name="desc")
-        if nulls_first is None:
-            nulls_first = desc
-        elif isinstance(nulls_first, bool):
-            nulls_first = Series.from_pylist([nulls_first], name="nulls_first")
-
-        return Series._from_pyseries(self._series.list_sort(desc._series, nulls_first._series))
+        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
 
 class SeriesMapNamespace(SeriesNamespace):
@@ -1139,38 +1045,17 @@ class SeriesImageNamespace(SeriesNamespace):
         on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Series:
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-        if mode is not None:
-            if isinstance(mode, str):
-                mode = ImageMode.from_mode_string(mode.upper())
-            if not isinstance(mode, ImageMode):
-                raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(image.decode(self._series, raise_error_on_failure=raise_on_error, mode=mode))
+        return self._eval_expressions("image_decode", on_error=on_error, mode=mode)
 
     def encode(self, image_format: str | ImageFormat) -> Series:
-        if isinstance(image_format, str):
-            image_format = ImageFormat.from_format_string(image_format.upper())
-        if not isinstance(image_format, ImageFormat):
-            raise ValueError(f"image_format must be a string or ImageFormat variant, but got: {image_format}")
-        return Series._from_pyseries(image.encode(self._series, image_format))
+        return self._eval_expressions("image_encode", image_format=image_format)
 
     def resize(self, w: int, h: int) -> Series:
-        if not isinstance(w, int):
-            raise TypeError(f"expected int for w but got {type(w)}")
-        if not isinstance(h, int):
-            raise TypeError(f"expected int for h but got {type(h)}")
-
-        return Series._from_pyseries(image.resize(self._series, w, h))
+        return self._eval_expressions("image_resize", w=w, h=h)
 
     def to_mode(self, mode: str | ImageMode) -> Series:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
-        return Series._from_pyseries(image.to_mode(self._series, mode))
+        return self._eval_expressions("to_mode", mode=mode)

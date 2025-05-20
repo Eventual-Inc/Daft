@@ -31,6 +31,7 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
+    DataSink,
 }
 
 struct WriteState {
@@ -140,9 +141,12 @@ impl BlockingSink for WriteSink {
                                     let file_paths = results
                                         .iter()
                                         .flat_map(|res| {
-                                            let s = res
-                                                .get_column("path")
+                                            let path_index = res
+                                                .schema
+                                                .get_index("path")
                                                 .expect("path to be a column");
+
+                                            let s = res.get_column(path_index);
                                             s.utf8()
                                                 .expect("path to be utf8")
                                                 .into_iter()
@@ -202,6 +206,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::Deltalake => "DeltalakeSink",
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
             WriteFormat::Lance => "LanceSink",
+            WriteFormat::DataSink => "DataSink",
         }
     }
 
@@ -219,7 +224,7 @@ impl BlockingSink for WriteSink {
         } else {
             // Unnecessary to buffer by morsel size because we are writing.
             // Writers also have their own internal buffering.
-            Arc::new(UnorderedDispatcher::new(None))
+            Arc::new(UnorderedDispatcher::unbounded())
         }
     }
 
