@@ -30,6 +30,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
+daft-functions-utf8 = {path = "../daft-functions-utf8", default-features = false}
 pretty_assertions = {workspace = true}
 rand = "0.8"
 rstest = {workspace = true}
