@@ -394,6 +394,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 http: HTTPConfig {
                     user_agent,
                     bearer_token,
+                    ..Default::default()
                 },
                 ..Default::default()
             })

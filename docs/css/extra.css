@@ -169,9 +169,3 @@ code.doc-symbol-method::after {
 .md-footer-meta__inner.md-grid {
   max-width: 50rem;
 }
-
-/* Ask AI Widget */
-p.mantine-focus-auto.m_b6d8b162.mantine-Text-root, [class*="mantine-Text-root"] {
-  /* Change the font family to your preferred font */
-  font-family: 'Oxygen', sans-serif !important;
-}
