@@ -366,7 +366,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                     results_buffer_size,
                 )
                 del plan_scheduler
-                results_gen = self._physical_plan_to_partitions(execution_id, tasks)
+                results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen
@@ -402,7 +402,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
                 del psets
                 with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-                    results_gen = self._physical_plan_to_partitions(execution_id, tasks)
+                    results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore
                     yield from results_gen
 
     def run_iter_tables(
