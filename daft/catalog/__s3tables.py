@@ -238,12 +238,7 @@ class S3Catalog(Catalog):
                 namespace=str(path.parent),
                 tableBucketARN=self._table_bucket_arn,
             )
-
-            metadata_location = res.get("metadataLocation")
-            if metadata_location is None:
-                raise ValueError("S3Table metadata location was null.")
-
-            return S3Table(self, path, metadata_location)
+            return S3Table(self, path, res.get("metadataLocation"))
         except ClientError as ex:
             if ex.response["Error"]["Code"] == "NotFoundException":
                 raise NotFoundError(f"Table {identifier} not found")
@@ -324,6 +319,8 @@ class S3Catalog(Catalog):
     ###
 
     def _read_iceberg(self, table: S3Table) -> DataFrame:
+        if table.metadata_location is None:
+            raise ValueError("Cannot read S3Table without a metadata_location")
         return read_iceberg(table=table.metadata_location, io_config=self._io_config)
 
 
@@ -332,13 +329,13 @@ class S3Table(Table):
     _catalog: S3Catalog
     _path: S3Path
     #
-    metadata_location: str
+    metadata_location: str | None
 
     def __init__(
         self,
         catalog: S3Catalog,
         path: S3Path,
-        metadata_location: str,
+        metadata_location: str | None,
     ):
         self._catalog = catalog
         self._path = path
