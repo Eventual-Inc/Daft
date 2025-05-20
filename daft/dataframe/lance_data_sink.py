@@ -1,6 +1,7 @@
 import pathlib
+from collections.abc import Iterator
 from itertools import chain
-from typing import Iterator, List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union
 
 import lance
 

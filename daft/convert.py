@@ -1,6 +1,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Union
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 from daft.api_annotations import PublicAPI
 

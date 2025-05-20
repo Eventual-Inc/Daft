@@ -8,7 +8,7 @@ import uuid
 import warnings
 from concurrent import futures
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, ResourceRequest, SystemInfo
@@ -34,6 +34,8 @@ from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.execution import physical_plan
     from daft.execution.execution_step import Instruction, PartitionTask
     from daft.logical.builder import LogicalPlanBuilder

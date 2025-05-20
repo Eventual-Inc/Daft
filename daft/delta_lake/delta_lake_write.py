@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Tuple
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from daft.context import get_context
 from daft.daft import IOConfig

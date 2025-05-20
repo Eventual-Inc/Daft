@@ -11,6 +11,7 @@ import pathlib
 import sys
 import typing
 import warnings
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
@@ -19,11 +20,8 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Iterable,
-    Iterator,
     List,
     Literal,
-    Mapping,
     Optional,
     Set,
     Tuple,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal
 
 from daft.runners.partitioning import (
     MaterializedResult,
@@ -12,6 +12,8 @@ from daft.runners.partitioning import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.logical.builder import LogicalPlanBuilder
     from daft.recordbatch import MicroPartition
     from daft.runners.runner_io import RunnerIO

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Generator, Iterator, TypeVar
+from collections.abc import Generator, Iterator
+from typing import TypeAlias, TypeVar
 
 import pyarrow as pa
 import pytest
@@ -21,7 +22,7 @@ from pyiceberg.table import Table
 
 T = TypeVar("T")
 
-YieldFixture = Generator[T, None, None]
+YieldFixture: TypeAlias = Generator[T, None, None]
 
 local_tables_names = [
     "test_all_types",

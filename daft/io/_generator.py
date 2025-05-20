@@ -1,6 +1,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterator, List
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Callable, List
 
 from daft.daft import PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame

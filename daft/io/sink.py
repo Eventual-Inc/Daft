@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Generic, Iterator, TypeVar
+from typing import Generic, TypeVar
 
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema

@@ -9,7 +9,7 @@ import time
 import uuid
 from datetime import datetime
 from queue import Full, Queue
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator, cast
+from typing import TYPE_CHECKING, Any, cast
 
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
@@ -30,6 +30,8 @@ from daft.series import Series, item_to_series
 from daft.utils import SyncFromAsyncIterator
 
 if TYPE_CHECKING:
+    from collections.abc import Generator, Iterable, Iterator
+
     import dask
     import dask.dataframe
 

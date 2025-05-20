@@ -1,7 +1,8 @@
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 from daft.daft import (
     LocalPhysicalPlan,

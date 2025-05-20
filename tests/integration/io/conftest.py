@@ -5,7 +5,8 @@ import io
 import os
 import pathlib
 import shutil
-from typing import Generator, TypeVar
+from collections.abc import Generator
+from typing import TypeAlias, TypeVar
 
 import numpy as np
 import pytest
@@ -16,7 +17,7 @@ import daft
 
 T = TypeVar("T")
 
-YieldFixture = Generator[T, None, None]
+YieldFixture: TypeAlias = Generator[T, None, None]
 
 
 ###

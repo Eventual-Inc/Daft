@@ -1,7 +1,8 @@
 import datetime
 import uuid
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from daft import Expression, col, lit
 from daft.datatype import DataType
