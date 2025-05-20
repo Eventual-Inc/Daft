@@ -2,3 +2,8 @@
     left: 20px;
     bottom: 100px !important;
   }
+
+:host[position="inline"] {
+    left: 20px;
+    bottom: 100px !important;
+}
