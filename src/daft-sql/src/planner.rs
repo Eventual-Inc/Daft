@@ -1735,7 +1735,7 @@ impl SQLPlanner<'_> {
                 let expr_field = expr.to_field(schema.as_ref())?;
                 match expr_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => {
-                        Ok(daft_functions::list::get(expr, index, null_lit()))
+                        Ok(daft_functions_list::get(expr, index, null_lit()))
                     }
                     DataType::Struct(_) => {
                         if let Some(s) = index.as_literal().and_then(|l| l.as_str()) {
@@ -1763,7 +1763,7 @@ impl SQLPlanner<'_> {
                         let lower = self.plan_expr(lower)?;
                         let upper = self.plan_expr(upper)?;
                         let expr = self.plan_expr(expr)?;
-                        Ok(daft_functions::list::slice(expr, lower, upper))
+                        Ok(daft_functions_list::slice(expr, lower, upper))
                     }
                     _ => {
                         unsupported_sql_err!("slice with only one bound not yet supported");

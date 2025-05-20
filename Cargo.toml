@@ -23,6 +23,7 @@ daft-distributed = {path = "src/daft-distributed", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
+daft-functions-list = {path = "src/daft-functions-list", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
@@ -73,6 +74,7 @@ python = [
   "daft-distributed/python",
   "daft-dsl/python",
   "daft-functions-json/python",
+  "daft-functions-list/python",
   "daft-functions-utf8/python",
   "daft-functions/python",
   "daft-image/python",
@@ -167,6 +169,7 @@ members = [
   "src/daft-dsl",
   "src/daft-functions",
   "src/daft-functions-json",
+  "src/daft-functions-list",
   "src/daft-functions-utf8",
   "src/daft-hash",
   "src/daft-image",
@@ -219,6 +222,7 @@ daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json"}
+daft-functions-list = {path = "src/daft-functions-list"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}

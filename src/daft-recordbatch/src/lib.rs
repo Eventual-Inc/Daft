@@ -28,6 +28,7 @@ use daft_dsl::{
     null_lit, resolved_col, AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, LiteralValue,
     SketchType,
 };
+use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
 use futures::{StreamExt, TryStreamExt};
 use num_traits::ToPrimitive;

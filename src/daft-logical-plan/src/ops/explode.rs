@@ -30,7 +30,7 @@ impl Explode {
             let explode_exprs = to_explode
                 .iter()
                 .cloned()
-                .map(daft_functions::list::explode)
+                .map(daft_functions_list::explode)
                 .collect::<Vec<_>>();
 
             let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
