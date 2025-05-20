@@ -66,7 +66,7 @@ impl GranularProjections {
                     for child in e.children() {
                         match child.as_ref() {
                             // If child is just a reference, don't do anything
-                            Expr::Column(Column::Resolved(_)) => children.push(child),
+                            Expr::Column(_) | Expr::Literal(_) => children.push(child),
                             _ => {
                                 changed = true;
                                 // Child may not have an alias, so we need to generate a new one
@@ -126,8 +126,6 @@ impl GranularProjections {
             split_exprs.push(res.data);
             all_split_exprs.push(split_exprs);
         }
-
-        eprintln!("all_split_exprs: {:#?}", all_split_exprs);
 
         // In this case, none of the projection columns were split or changed, so we can just continue
         if all_split_exprs.iter().all(|x| x.len() == 1) {
