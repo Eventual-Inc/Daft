@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::ExprRef;
-use daft_functions::list::explode;
+use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};

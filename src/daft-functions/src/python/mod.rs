@@ -15,7 +15,6 @@ macro_rules! simple_python_wrapper {
 mod binary;
 mod coalesce;
 mod distance;
-mod list;
 mod misc;
 mod sequence;
 mod temporal;
@@ -103,23 +102,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::decode);
     add!(binary::try_encode);
     add!(binary::try_decode);
-
-    add!(list::list_chunk);
-    add!(list::list_count);
-    add!(list::explode);
-    add!(list::list_get);
-    add!(list::list_join);
-    add!(list::list_max);
-    add!(list::list_mean);
-    add!(list::list_min);
-    add!(list::list_slice);
-    add!(list::list_sort);
-    add!(list::list_sum);
-    add!(list::list_count_distinct);
-    add!(list::list_value_counts);
-    add!(list::list_distinct);
-    add!(list::list_bool_and);
-    add!(list::list_bool_or);
 
     add!(misc::to_struct);
     add!(misc::hash);

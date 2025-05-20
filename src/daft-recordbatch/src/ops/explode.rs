@@ -8,6 +8,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{expr::bound_expr::BoundExpr, Expr};
+use daft_functions_list::SeriesListExtension;
 
 use crate::RecordBatch;
 
