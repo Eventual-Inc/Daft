@@ -11,6 +11,8 @@ from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to
 if TYPE_CHECKING:
     from deltalake.writer import AddAction
 
+    from daft.dependencies import pafs
+
 
 def sanitize_table_for_deltalake(
     table: MicroPartition, large_dtypes: bool, partition_keys: Optional[List[str]] = None
@@ -54,7 +56,7 @@ def make_deltalake_add_action(
     metadata,
     size,
     partition_values,
-):
+) -> "AddAction":
     import json
     from datetime import datetime
 
@@ -87,8 +89,8 @@ def make_deltalake_add_action(
     )
 
 
-def make_deltalake_fs(path: str, io_config: Optional[IOConfig] = None):
-    from deltalake.writer import DeltaStorageHandler
+def make_deltalake_fs(path: str, io_config: Optional[IOConfig] = None) -> "pafs.PyFileSystem":
+    from deltalake.fs import DeltaStorageHandler
     from pyarrow.fs import PyFileSystem
 
     from daft.io.object_store_options import io_config_to_storage_options
@@ -108,7 +110,7 @@ class DeltaLakeWriteVisitors:
             self.parent = parent
             self.partition_values = partition_values
 
-        def __call__(self, written_file):
+        def __call__(self, written_file) -> None:
             from daft.utils import get_arrow_version
 
             # PyArrow added support for size in 9.0.0
