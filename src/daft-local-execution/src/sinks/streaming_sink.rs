@@ -1,24 +1,20 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, pin::pin, sync::Arc};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
-use tracing::{info_span, instrument};
+use futures::StreamExt;
+use tracing::info_span;
 
 use crate::{
-    channel::{
-        create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
-        Sender,
-    },
-    dispatcher::DispatchSpawner,
+    buffer::buffered_by_morsel_size,
+    channel::{create_channel, Receiver},
     pipeline::PipelineNode,
     progress_bar::ProgressBarColor,
-    resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, OrderableJoinSet,
 };
 
 pub trait StreamingSinkState: Send + Sync {
@@ -67,12 +63,6 @@ pub trait StreamingSink: Send + Sync {
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner>;
 }
 
 pub struct StreamingSinkNode {
@@ -101,71 +91,6 @@ impl StreamingSinkNode {
 
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
-    }
-
-    #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
-    async fn run_worker(
-        op: Arc<dyn StreamingSink>,
-        input_receiver: Receiver<Arc<MicroPartition>>,
-        output_sender: Sender<Arc<MicroPartition>>,
-        rt_context: Arc<RuntimeStatsContext>,
-        memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Box<dyn StreamingSinkState>> {
-        let span = info_span!("StreamingSink::Execute");
-        let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
-        let mut state = op.make_state();
-        while let Some(morsel) = input_receiver.recv().await {
-            loop {
-                let result = op.execute(morsel.clone(), state, &spawner).await??;
-                state = result.0;
-                match result.1 {
-                    StreamingSinkOutput::NeedMoreInput(mp) => {
-                        if let Some(mp) = mp {
-                            if output_sender.send(mp).await.is_err() {
-                                return Ok(state);
-                            }
-                        }
-                        break;
-                    }
-                    StreamingSinkOutput::HasMoreOutput(mp) => {
-                        if output_sender.send(mp).await.is_err() {
-                            return Ok(state);
-                        }
-                    }
-                    StreamingSinkOutput::Finished(mp) => {
-                        if let Some(mp) = mp {
-                            let _ = output_sender.send(mp).await;
-                        }
-                        return Ok(state);
-                    }
-                }
-            }
-        }
-
-        Ok(state)
-    }
-
-    fn spawn_workers(
-        op: Arc<dyn StreamingSink>,
-        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
-        stats: Arc<RuntimeStatsContext>,
-        maintain_order: bool,
-        memory_manager: Arc<MemoryManager>,
-    ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
-        let (output_sender, output_receiver) =
-            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            task_set.spawn(Self::run_worker(
-                op.clone(),
-                input_receiver,
-                output_sender,
-                stats.clone(),
-                memory_manager.clone(),
-            ));
-        }
-        output_receiver
     }
 }
 
@@ -234,60 +159,109 @@ impl PipelineNode for StreamingSinkNode {
             ));
         }
 
-        let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
+        let (destination_sender, destination_receiver) = create_channel(1);
 
         let op = self.op.clone();
-        let runtime_stats = self.runtime_stats.clone();
-        let num_workers = op.max_concurrency();
-
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle, maintain_order);
-        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            child_result_receivers,
-            num_workers,
-            &mut runtime_handle.handle(),
-        );
-        runtime_handle.spawn(
-            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
-        );
-
-        let memory_manager = runtime_handle.memory_manager();
+        let task_spawner = ExecutionTaskSpawner {
+            runtime_ref: get_compute_runtime(),
+            memory_manager: runtime_handle.memory_manager(),
+            runtime_context: self.runtime_stats.clone(),
+            outer_span: info_span!("streaming_sink"),
+        };
+        let progress_bar = progress_bar.clone();
+        let stats = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
-                let mut task_set = TaskSet::new();
-                let mut output_receiver = Self::spawn_workers(
-                    op.clone(),
-                    spawned_dispatch_result.worker_receivers,
-                    &mut task_set,
-                    runtime_stats.clone(),
-                    maintain_order,
-                    memory_manager.clone(),
-                );
+                let flattened_stream = pin!(futures::stream::iter(
+                    child_result_receivers.into_iter().map(|v| v.into_stream()),
+                )
+                .flatten());
 
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
-                        break;
+                let mut buffered_stream = buffered_by_morsel_size(flattened_stream, None);
+
+                let mut pending_tasks = OrderableJoinSet::new(maintain_order);
+                let mut states = (0..op.max_concurrency())
+                    .map(|_| op.make_state())
+                    .collect::<VecDeque<_>>();
+                let sender = destination_sender.into_inner();
+
+                loop {
+                    let num_pending = pending_tasks.num_pending();
+                    let can_spawn = !states.is_empty();
+                    let output_task = async {
+                        let mut should_break = false;
+                        if let Ok(permit) = sender.reserve().await {
+                            let finished_task =
+                                pending_tasks.join_next().await.expect("No finished task");
+                            let (state, result) = finished_task???;
+                            match result {
+                                StreamingSinkOutput::NeedMoreInput(Some(output)) => {
+                                    states.push_back(state);
+                                    stats.mark_rows_emitted(output.len() as u64);
+                                    if let Some(ref pb) = progress_bar {
+                                        pb.render();
+                                    }
+                                    permit.send(output);
+                                }
+                                StreamingSinkOutput::NeedMoreInput(None) => {
+                                    states.push_back(state);
+                                }
+                                StreamingSinkOutput::Finished(Some(output)) => {
+                                    stats.mark_rows_emitted(output.len() as u64);
+                                    if let Some(ref pb) = progress_bar {
+                                        pb.render();
+                                    }
+                                    permit.send(output);
+                                    should_break = true;
+                                }
+                                StreamingSinkOutput::Finished(None) => {
+                                    states.push_back(state);
+                                    should_break = true;
+                                }
+                                StreamingSinkOutput::HasMoreOutput(output) => {
+                                    pending_tasks.spawn_first(op.execute(
+                                        output.clone(),
+                                        state,
+                                        &task_spawner,
+                                    ));
+                                    stats.mark_rows_emitted(output.len() as u64);
+                                    if let Some(ref pb) = progress_bar {
+                                        pb.render();
+                                    }
+                                    permit.send(output);
+                                }
+                            }
+                        } else {
+                            should_break = true;
+                        }
+                        DaftResult::Ok(should_break)
+                    };
+                    tokio::select! {
+                        biased;
+                        Some(new_input) = buffered_stream.next(), if can_spawn => {
+                            let input = new_input?;
+                            let next_state = states.pop_front().unwrap();
+                            pending_tasks.spawn(op.execute(input, next_state, &task_spawner));
+                        }
+                        result = output_task , if num_pending > 0 => {
+                            let should_break = result?;
+                            if should_break {
+                                return Ok(());
+                            }
+                        }
+                        else => {
+                            break;
+                        }
                     }
                 }
+                assert!(buffered_stream.next().await.is_none());
+                assert!(pending_tasks.num_pending() == 0);
 
-                let mut finished_states = Vec::with_capacity(num_workers);
-                while let Some(result) = task_set.join_next().await {
-                    let state = result.context(JoinSnafu)??;
-                    finished_states.push(state);
-                }
-
-                let compute_runtime = get_compute_runtime();
-                let spawner = ExecutionTaskSpawner::new(
-                    compute_runtime,
-                    memory_manager,
-                    runtime_stats.clone(),
-                    info_span!("StreamingSink::Finalize"),
-                );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                let final_output = op.finalize(states.into(), &task_spawner).await??;
+                if let Some(output) = final_output {
+                    if sender.send(output).await.is_err() {
+                        return Ok(());
+                    }
                 }
                 Ok(())
             },

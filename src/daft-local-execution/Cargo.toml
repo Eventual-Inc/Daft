@@ -1,5 +1,6 @@
 [dependencies]
 async-trait = {workspace = true}
+async-channel = "2.3.1"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -27,7 +28,6 @@ futures = {workspace = true}
 indexmap = {workspace = true}
 indicatif = "0.17.9"
 itertools = {workspace = true}
-kanal = "0.1"
 log = {workspace = true}
 num-format = {workspace = true}
 opentelemetry = {workspace = true}

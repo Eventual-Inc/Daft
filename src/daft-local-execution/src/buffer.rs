@@ -1,17 +1,24 @@
-use std::{cmp::Ordering::*, collections::VecDeque, sync::Arc};
+use std::{
+    cmp::Ordering::*,
+    collections::VecDeque,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use futures::{Stream, StreamExt};
 
-// A buffer that accumulates morsels until a threshold is reached
-pub struct RowBasedBuffer {
-    pub buffer: VecDeque<Arc<MicroPartition>>,
-    pub curr_len: usize,
-    pub threshold: usize,
+/// A buffer that accumulates morsels until a threshold is reached and yields individual MicroPartitions
+struct RowBasedBuffer {
+    buffer: VecDeque<Arc<MicroPartition>>,
+    curr_len: usize,
+    threshold: usize,
 }
 
 impl RowBasedBuffer {
-    pub fn new(threshold: usize) -> Self {
+    fn new(threshold: usize) -> Self {
         assert!(threshold > 0);
         Self {
             buffer: VecDeque::new(),
@@ -20,57 +27,35 @@ impl RowBasedBuffer {
         }
     }
 
-    // Push a morsel to the buffer
-    pub fn push(&mut self, part: &Arc<MicroPartition>) {
+    fn push(&mut self, part: Arc<MicroPartition>) {
         self.curr_len += part.len();
-        self.buffer.push_back(part.clone());
+        self.buffer.push_back(part);
     }
 
-    // Pop enough morsels that reach the threshold
-    // - If the buffer currently has not enough morsels, return None
-    // - If the buffer has exactly enough morsels, return the morsels
-    // - If the buffer has more than enough morsels, return a vec of morsels, each correctly sized to the threshold.
-    //   The remaining morsels will be pushed back to the buffer
-    pub fn pop_enough(&mut self) -> DaftResult<Option<Vec<Arc<MicroPartition>>>> {
+    fn pop_next(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         match self.curr_len.cmp(&self.threshold) {
             Less => Ok(None),
             Equal => {
+                self.curr_len = 0;
                 if self.buffer.len() == 1 {
                     let part = self.buffer.pop_front().unwrap();
-                    self.curr_len = 0;
-                    Ok(Some(vec![part]))
+                    Ok(Some(part))
                 } else {
                     let chunk = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
-                    self.curr_len = 0;
-                    Ok(Some(vec![chunk.into()]))
+                    Ok(Some(chunk.into()))
                 }
             }
             Greater => {
-                let num_ready_chunks = self.curr_len / self.threshold;
                 let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
-                let mut start = 0;
-                let mut parts_to_return = Vec::with_capacity(num_ready_chunks);
-                for _ in 0..num_ready_chunks {
-                    let end = start + self.threshold;
-                    let part = concated.slice(start, end)?;
-                    parts_to_return.push(part.into());
-                    start = end;
-                }
-                if start < concated.len() {
-                    let part = concated.slice(start, concated.len())?;
-                    self.curr_len = part.len();
-                    self.buffer.push_back(part.into());
-                } else {
-                    self.curr_len = 0;
-                }
-                Ok(Some(parts_to_return))
+                let (part, remaining) = concated.split_at(self.threshold)?;
+                self.curr_len = remaining.len();
+                self.buffer.push_back(remaining.into());
+                Ok(Some(part.into()))
             }
         }
     }
 
-    // Pop all morsels in the buffer regardless of the threshold
-    pub fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        assert!(self.curr_len < self.threshold);
+    fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         if self.buffer.is_empty() {
             Ok(None)
         } else {
@@ -78,5 +63,97 @@ impl RowBasedBuffer {
             self.curr_len = 0;
             Ok(Some(concated.into()))
         }
+    }
+}
+
+/// Creates a buffered stream that accumulates morsels until they reach the specified threshold size.
+///
+/// # Arguments
+///
+/// * `stream` - A stream of MicroPartitions to buffer
+/// * `threshold` - The target size in rows for each buffered chunk
+///
+/// # Returns
+///
+/// A stream that yields individual MicroPartitions, each containing approximately `threshold` rows
+/// #
+pub fn buffered_by_morsel_size<S>(
+    stream: S,
+    threshold: Option<usize>,
+) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>>
+where
+    S: Stream<Item = Arc<MicroPartition>> + Unpin,
+{
+    struct BufferedStream<S> {
+        stream: S,
+        buffer: Option<RowBasedBuffer>,
+        finished: bool,
+    }
+
+    impl<S> Stream for BufferedStream<S>
+    where
+        S: Stream<Item = Arc<MicroPartition>> + Unpin,
+    {
+        type Item = DaftResult<Arc<MicroPartition>>;
+
+        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            if self.finished {
+                return Poll::Ready(None);
+            }
+            // If there is no buffer, just pass through the stream directly
+            if self.buffer.is_none() {
+                match self.stream.poll_next_unpin(cx) {
+                    Poll::Ready(Some(part)) => return Poll::Ready(Some(Ok(part))),
+                    Poll::Ready(None) => {
+                        self.finished = true;
+                        return Poll::Ready(None);
+                    }
+                    Poll::Pending => return Poll::Pending,
+                }
+            } else {
+                // First try to get a buffered chunk
+                match self.buffer.as_mut().unwrap().pop_next() {
+                    Ok(Some(part)) => return Poll::Ready(Some(Ok(part))),
+                    Err(e) => return Poll::Ready(Some(Err(e))),
+                    Ok(None) => (),
+                }
+
+                // If no buffered chunk is ready, try to get more items from the input stream
+                loop {
+                    match self.stream.poll_next_unpin(cx) {
+                        Poll::Ready(Some(part)) => {
+                            let buffer = self.buffer.as_mut().unwrap();
+                            buffer.push(part);
+                            // Check if we have enough data now
+                            match buffer.pop_next() {
+                                Ok(Some(part)) => return Poll::Ready(Some(Ok(part))),
+                                Ok(None) => continue, // Continue polling the stream for more data
+                                Err(e) => return Poll::Ready(Some(Err(e))),
+                            }
+                        }
+                        Poll::Ready(None) => {
+                            // Stream is exhausted, and pop_next already returned None above
+                            // Safe to call pop_all now
+                            let buffer = self.buffer.as_mut().unwrap();
+                            match buffer.pop_all() {
+                                Ok(Some(part)) => return Poll::Ready(Some(Ok(part))),
+                                Ok(None) => {
+                                    self.finished = true;
+                                    return Poll::Ready(None);
+                                }
+                                Err(e) => return Poll::Ready(Some(Err(e))),
+                            }
+                        }
+                        Poll::Pending => return Poll::Pending,
+                    }
+                }
+            }
+        }
+    }
+
+    BufferedStream {
+        stream,
+        buffer: threshold.map(RowBasedBuffer::new),
+        finished: false,
     }
 }

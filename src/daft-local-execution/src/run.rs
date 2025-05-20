@@ -268,88 +268,91 @@ impl NativeExecutor {
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
-        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
+        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
 
         let rt = self.runtime.clone();
         let pb_manager = self.pb_manager.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
-        let handle = std::thread::spawn(move || {
-            let runtime = rt.unwrap_or_else(|| {
-                Arc::new(
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("Failed to create tokio runtime"),
-                )
-            });
-            let execution_task = async {
-                let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle = ExecutionRuntimeContext::new(
-                    cfg.default_morsel_size,
-                    memory_manager.clone(),
-                    pb_manager,
-                );
-                let receiver = pipeline.start(true, &mut runtime_handle)?;
+        let thread_builder = std::thread::Builder::new().name("daft-local-execution".to_string());
+        let handle = thread_builder
+            .spawn(move || {
+                let runtime = rt.unwrap_or_else(|| {
+                    Arc::new(
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .expect("Failed to create tokio runtime"),
+                    )
+                });
+                let execution_task = async {
+                    let memory_manager = get_or_init_memory_manager();
+                    let mut runtime_handle = ExecutionRuntimeContext::new(
+                        cfg.default_morsel_size,
+                        memory_manager.clone(),
+                        pb_manager,
+                    );
+                    let mut receiver = pipeline.start(true, &mut runtime_handle)?;
 
-                while let Some(val) = receiver.recv().await {
-                    if tx.send(val).await.is_err() {
-                        break;
-                    }
-                }
-
-                while let Some(result) = runtime_handle.join_next().await {
-                    match result {
-                        Ok(Err(e)) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(e.into());
+                    while let Some(val) = receiver.recv().await {
+                        if tx.send(val).await.is_err() {
+                            break;
                         }
-                        Err(e) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(Error::JoinError { source: e }.into());
-                        }
-                        _ => {}
                     }
-                }
-                if enable_explain_analyze {
-                    let curr_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_millis();
-                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                    let mut file = File::create(file_name)?;
-                    writeln!(
-                        file,
-                        "```mermaid\n{}\n```",
-                        viz_pipeline_mermaid(
-                            pipeline.as_ref(),
-                            DisplayLevel::Verbose,
-                            true,
-                            Default::default()
-                        )
-                    )?;
-                }
-                flush_opentelemetry_providers();
-                Ok(())
-            };
 
-            let local_set = tokio::task::LocalSet::new();
-            local_set.block_on(&runtime, async {
-                tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => {
-                        log::info!("Execution engine cancelled");
-                        Ok(())
+                    while let Some(result) = runtime_handle.join_next().await {
+                        match result {
+                            Ok(Err(e)) => {
+                                runtime_handle.shutdown().await;
+                                return DaftResult::Err(e.into());
+                            }
+                            Err(e) => {
+                                runtime_handle.shutdown().await;
+                                return DaftResult::Err(Error::JoinError { source: e }.into());
+                            }
+                            _ => {}
+                        }
                     }
-                    _ = tokio::signal::ctrl_c() => {
-                        log::info!("Received Ctrl-C, shutting down execution engine");
-                        Ok(())
+                    if enable_explain_analyze {
+                        let curr_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .expect("Time went backwards")
+                            .as_millis();
+                        let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                        let mut file = File::create(file_name)?;
+                        writeln!(
+                            file,
+                            "```mermaid\n{}\n```",
+                            viz_pipeline_mermaid(
+                                pipeline.as_ref(),
+                                DisplayLevel::Verbose,
+                                true,
+                                Default::default()
+                            )
+                        )?;
                     }
-                    result = execution_task => result,
-                }
+                    flush_opentelemetry_providers();
+                    Ok(())
+                };
+
+                let local_set = tokio::task::LocalSet::new();
+                local_set.block_on(&runtime, async {
+                    tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => {
+                            log::info!("Execution engine cancelled");
+                            Ok(())
+                        }
+                        _ = tokio::signal::ctrl_c() => {
+                            log::info!("Received Ctrl-C, shutting down execution engine");
+                            Ok(())
+                        }
+                        result = execution_task => result,
+                    }
+                })
             })
-        });
+            .unwrap();
 
         Ok(ExecutionEngineResult {
             handle,
@@ -425,7 +428,7 @@ fn should_enable_progress_bar() -> bool {
 }
 
 pub struct ExecutionEngineReceiverIterator {
-    receiver: kanal::Receiver<Arc<MicroPartition>>,
+    receiver: Receiver<Arc<MicroPartition>>,
     handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
 }
 
@@ -433,7 +436,7 @@ impl Iterator for ExecutionEngineReceiverIterator {
     type Item = DaftResult<Arc<MicroPartition>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.receiver.recv().ok() {
+        match self.receiver.blocking_recv() {
             Some(part) => Some(Ok(part)),
             None => {
                 if self.handle.is_some() {
@@ -502,7 +505,7 @@ impl IntoIterator for ExecutionEngineResult {
 
     fn into_iter(self) -> Self::IntoIter {
         ExecutionEngineReceiverIterator {
-            receiver: self.receiver.into_inner().to_sync(),
+            receiver: self.receiver,
             handle: Some(self.handle),
         }
     }

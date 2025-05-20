@@ -2,7 +2,6 @@
 
 mod buffer;
 mod channel;
-mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
 mod progress_bar;
@@ -14,6 +13,7 @@ mod sources;
 mod state_bridge;
 
 use std::{
+    collections::{HashMap, VecDeque},
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -102,18 +102,6 @@ impl<T> Future for SpawnedTask<T> {
     }
 }
 
-struct RuntimeHandle(tokio::runtime::Handle);
-impl RuntimeHandle {
-    fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let join_handle = self.0.spawn(future);
-        SpawnedTask(join_handle)
-    }
-}
-
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
@@ -175,10 +163,6 @@ impl ExecutionRuntimeContext {
         } else {
             None
         }
-    }
-
-    pub(crate) fn handle(&self) -> RuntimeHandle {
-        RuntimeHandle(tokio::runtime::Handle::current())
     }
 
     #[must_use]
@@ -252,6 +236,133 @@ impl ExecutionTaskSpawner {
             self.outer_span.clone(),
         );
         self.runtime_ref.spawn(timed_fut)
+    }
+}
+
+struct OrderedJoinSet<T> {
+    join_set: tokio::task::JoinSet<T>,
+    order: VecDeque<tokio::task::Id>,
+    finished: HashMap<tokio::task::Id, T>,
+}
+
+impl<T: 'static> OrderedJoinSet<T> {
+    fn new() -> Self {
+        Self {
+            join_set: tokio::task::JoinSet::new(),
+            order: VecDeque::new(),
+            finished: HashMap::new(),
+        }
+    }
+
+    fn spawn(&mut self, task: impl Future<Output = T> + 'static) {
+        let abort_handle = self.join_set.spawn_local(task);
+        let id = abort_handle.id();
+        self.order.push_back(id);
+    }
+
+    fn spawn_first(&mut self, task: impl Future<Output = T> + 'static) {
+        let abort_handle = self.join_set.spawn_local(task);
+        let id = abort_handle.id();
+        self.order.push_front(id);
+    }
+
+    async fn join_next(&mut self) -> Option<DaftResult<T>> {
+        let id = self.order.front()?;
+        if let Some(result) = self.finished.remove(&id) {
+            self.order.pop_front();
+            return Some(Ok(result));
+        }
+        while let Some(result) = self.join_set.join_next_with_id().await {
+            if let Err(e) = result {
+                return Some(Err(DaftError::External(e.into())));
+            }
+            let (next_id, result) = result.unwrap();
+            if next_id == *id {
+                self.order.pop_front();
+                return Some(Ok(result));
+            }
+            self.finished.insert(next_id, result);
+        }
+        None
+    }
+
+    pub fn num_pending(&self) -> usize {
+        self.join_set.len() + self.order.len()
+    }
+}
+
+pub(crate) struct JoinSet<T> {
+    inner: tokio::task::JoinSet<T>,
+}
+
+impl<T: 'static> JoinSet<T> {
+    fn new() -> Self {
+        Self {
+            inner: tokio::task::JoinSet::new(),
+        }
+    }
+
+    fn spawn<F>(&mut self, future: F)
+    where
+        F: std::future::Future<Output = T> + 'static,
+    {
+        self.inner.spawn_local(future);
+    }
+
+    async fn join_next(&mut self) -> Option<DaftResult<T>> {
+        let result = self.inner.join_next().await;
+        match result {
+            Some(Ok(v)) => Some(Ok(v)),
+            Some(Err(e)) => Some(Err(DaftError::External(e.into()))),
+            None => None,
+        }
+    }
+
+    fn num_pending(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+pub(crate) enum OrderableJoinSet<T> {
+    Ordered(OrderedJoinSet<T>),
+    Unordered(JoinSet<T>),
+}
+
+impl<T: 'static> OrderableJoinSet<T> {
+    fn new(ordered: bool) -> Self {
+        if ordered {
+            Self::Ordered(OrderedJoinSet::new())
+        } else {
+            Self::Unordered(JoinSet::new())
+        }
+    }
+
+    fn spawn(&mut self, task: impl Future<Output = T> + 'static) {
+        match self {
+            Self::Ordered(join_set) => join_set.spawn(task),
+            Self::Unordered(join_set) => join_set.spawn(task),
+        }
+    }
+
+    fn spawn_first(&mut self, task: impl Future<Output = T> + 'static) {
+        match self {
+            Self::Ordered(join_set) => join_set.spawn_first(task),
+            Self::Unordered(join_set) => join_set.spawn(task),
+        }
+    }
+
+    async fn join_next(&mut self) -> Option<DaftResult<T>> {
+        match self {
+            Self::Ordered(join_set) => join_set.join_next().await,
+            Self::Unordered(join_set) => join_set.join_next().await,
+        }
+    }
+
+    pub fn num_pending(&self) -> usize {
+        match self {
+            Self::Ordered(join_set) => join_set.num_pending(),
+            Self::Unordered(join_set) => join_set.num_pending(),
+        }
     }
 }
 

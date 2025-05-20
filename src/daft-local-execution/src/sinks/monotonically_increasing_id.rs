@@ -9,7 +9,6 @@ use super::streaming_sink::{
     StreamingSinkState,
 };
 use crate::{
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -117,13 +116,5 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     // Furthermore, it is much simpler to implement as a single-threaded operation, since we can just keep track of the current id offset without synchronization.
     fn max_concurrency(&self) -> usize {
         1
-    }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        _maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(None))
     }
 }

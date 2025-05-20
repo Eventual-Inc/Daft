@@ -141,8 +141,8 @@ impl IntermediateOperator for ProjectOperator {
         res
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.max_concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.max_concurrency
     }
 
     fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {

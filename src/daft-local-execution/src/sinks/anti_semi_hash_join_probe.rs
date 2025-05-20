@@ -16,11 +16,7 @@ use super::{
         StreamingSink, StreamingSinkExecuteResult, StreamingSinkOutput, StreamingSinkState,
     },
 };
-use crate::{
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    state_bridge::BroadcastStateBridgeRef,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 
 enum AntiSemiProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -329,21 +325,5 @@ impl StreamingSink for AntiSemiProbeSink {
         Box::new(AntiSemiProbeState::Building(
             self.probe_state_bridge.clone(),
         ))
-    }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
-        } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
-        }
     }
 }

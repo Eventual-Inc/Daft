@@ -215,8 +215,8 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         }))
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.concurrency
     }
 
     fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {

@@ -1,24 +1,21 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, pin::pin, sync::Arc};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
-use tracing::{info_span, instrument};
+use futures::StreamExt;
+use tracing::info_span;
 
 use crate::{
-    channel::{
-        create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
-        Sender,
-    },
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    buffer::buffered_by_morsel_size,
+    channel::{create_channel, Receiver},
     pipeline::PipelineNode,
     progress_bar::ProgressBarColor,
-    resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, OrderableJoinSet,
+    PipelineExecutionSnafu,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -54,24 +51,12 @@ pub trait IntermediateOperator: Send + Sync {
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
     /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(get_compute_pool_num_threads())
+    fn max_concurrency(&self) -> usize {
+        get_compute_pool_num_threads()
     }
 
     fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
         Some(runtime_handle.default_morsel_size())
-    }
-
-    fn dispatch_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeContext,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(self.morsel_size(runtime_handle)))
-        } else {
-            Arc::new(UnorderedDispatcher::new(self.morsel_size(runtime_handle)))
-        }
     }
 }
 
@@ -108,68 +93,6 @@ impl IntermediateNode {
 
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
-    }
-
-    #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
-    pub async fn run_worker(
-        op: Arc<dyn IntermediateOperator>,
-        receiver: Receiver<Arc<MicroPartition>>,
-        sender: Sender<Arc<MicroPartition>>,
-        rt_context: Arc<RuntimeStatsContext>,
-        memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<()> {
-        let span = info_span!("IntermediateOp::execute");
-        let compute_runtime = get_compute_runtime();
-        let task_spawner =
-            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
-        let mut state = op.make_state()?;
-        while let Some(morsel) = receiver.recv().await {
-            loop {
-                let result = op.execute(morsel.clone(), state, &task_spawner).await??;
-                state = result.0;
-                match result.1 {
-                    IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
-                        }
-                        break;
-                    }
-                    IntermediateOperatorResult::NeedMoreInput(None) => {
-                        break;
-                    }
-                    IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub fn spawn_workers(
-        &self,
-        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        runtime_handle: &mut ExecutionRuntimeContext,
-        maintain_order: bool,
-        memory_manager: Arc<MemoryManager>,
-    ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
-        let (output_sender, output_receiver) =
-            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            runtime_handle.spawn(
-                Self::run_worker(
-                    self.intermediate_op.clone(),
-                    input_receiver,
-                    output_sender,
-                    self.runtime_stats.clone(),
-                    memory_manager.clone(),
-                ),
-                self.intermediate_op.name(),
-            );
-        }
-        output_receiver
     }
 }
 
@@ -237,42 +160,94 @@ impl PipelineNode for IntermediateNode {
             ));
         }
         let op = self.intermediate_op.clone();
-        let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
-            node_name: self.name(),
-        })?;
-        let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
-
-        let dispatch_spawner = self
-            .intermediate_op
-            .dispatch_spawner(runtime_handle, maintain_order);
-        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            child_result_receivers,
-            num_workers,
-            &mut runtime_handle.handle(),
-        );
-        runtime_handle.spawn(
-            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
-        );
-
-        let mut output_receiver = self.spawn_workers(
-            spawned_dispatch_result.worker_receivers,
-            runtime_handle,
-            maintain_order,
-            runtime_handle.memory_manager(),
-        );
+        let (destination_sender, destination_receiver) = create_channel(1);
+        // let counting_sender =
+        //     CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
+        let task_spawner = ExecutionTaskSpawner {
+            runtime_ref: get_compute_runtime(),
+            memory_manager: runtime_handle.memory_manager(),
+            runtime_context: self.runtime_stats.clone(),
+            outer_span: info_span!("intermediate_op"),
+        };
+        let name = op.name();
+        let morsel_size = op.morsel_size(runtime_handle);
+        let stats = self.runtime_stats.clone();
+        let progress_bar = progress_bar.clone();
         runtime_handle.spawn(
             async move {
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
-                        return Ok(());
+                let flattened_stream = pin!(futures::stream::iter(
+                    child_result_receivers.into_iter().map(|v| v.into_stream()),
+                )
+                .flatten());
+
+                let mut buffered_stream = buffered_by_morsel_size(flattened_stream, morsel_size);
+
+                let mut pending_tasks = OrderableJoinSet::new(true);
+                let mut states = (0..op.max_concurrency())
+                    .map(|_| op.make_state())
+                    .collect::<DaftResult<VecDeque<_>>>()?;
+
+                let sender = destination_sender.into_inner();
+                loop {
+                    let num_pending = pending_tasks.num_pending();
+                    let can_spawn = !states.is_empty();
+                    let output_task = async {
+                        if let Ok(permit) = sender.reserve().await {
+                            let finished_task =
+                                pending_tasks.join_next().await.expect("No finished task");
+                            let (state, result) = finished_task???;
+                            match result {
+                                IntermediateOperatorResult::NeedMoreInput(Some(output)) => {
+                                    states.push_back(state);
+                                    stats.mark_rows_emitted(output.len() as u64);
+                                    if let Some(ref pb) = progress_bar {
+                                        pb.render();
+                                    }
+                                    permit.send(output);
+                                }
+                                IntermediateOperatorResult::NeedMoreInput(None) => {
+                                    states.push_back(state);
+                                }
+                                IntermediateOperatorResult::HasMoreOutput(output) => {
+                                    pending_tasks.spawn_first(op.execute(
+                                        output.clone(),
+                                        state,
+                                        &task_spawner,
+                                    ));
+                                    stats.mark_rows_emitted(output.len() as u64);
+                                    if let Some(ref pb) = progress_bar {
+                                        pb.render();
+                                    }
+                                    permit.send(output);
+                                }
+                            }
+                            DaftResult::Ok(false)
+                        } else {
+                            DaftResult::Ok(true)
+                        }
+                    };
+
+                    tokio::select! {
+                        biased;
+                        Some(new_input) = buffered_stream.next(), if can_spawn => {
+                            let next_state = states.pop_front().unwrap();
+                            pending_tasks.spawn(op.execute(new_input?, next_state, &task_spawner));
+                        }
+                        result = output_task, if num_pending > 0 => {
+                            if result? {
+                                return Ok(());
+                            }
+                        }
+                        else => {
+                            break;
+                        }
                     }
                 }
+                assert!(buffered_stream.next().await.is_none());
+                assert!(pending_tasks.num_pending() == 0);
                 Ok(())
             },
-            op.name(),
+            name,
         );
         Ok(destination_receiver)
     }

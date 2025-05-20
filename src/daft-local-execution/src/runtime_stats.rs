@@ -10,7 +10,7 @@ use std::{
 
 use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
-use kanal::SendError;
+use futures::{stream, Stream};
 use opentelemetry::{global, metrics::Counter, KeyValue};
 use tracing::{instrument::Instrumented, Instrument};
 
@@ -25,7 +25,7 @@ pub struct RuntimeStatsContext {
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
     name: String,
-    subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
+    subscribers: Arc<Vec<Box<dyn RuntimeStatsSubscriber>>>,
 }
 
 pub trait RuntimeStatsSubscriber: Send + Sync {
@@ -123,7 +123,7 @@ impl RuntimeStatsContext {
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
             name: name.to_string(),
-            subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
+            subscribers: Arc::new(subscribers),
         })
     }
     pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
@@ -131,7 +131,7 @@ impl RuntimeStatsContext {
             elapsed.as_micros() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
-        for subscriber in self.subscribers.read().iter() {
+        for subscriber in self.subscribers.iter() {
             subscriber.on_cpu_time_elapsed(&self.name, elapsed.as_micros() as u64);
         }
     }
@@ -139,7 +139,7 @@ impl RuntimeStatsContext {
     pub(crate) fn mark_rows_received(&self, rows: u64) {
         self.rows_received
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-        for subscriber in self.subscribers.read().iter() {
+        for subscriber in self.subscribers.iter() {
             subscriber.on_rows_received(&self.name, rows);
         }
     }
@@ -147,7 +147,7 @@ impl RuntimeStatsContext {
     pub(crate) fn mark_rows_emitted(&self, rows: u64) {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
-        for subscriber in self.subscribers.read().iter() {
+        for subscriber in self.subscribers.iter() {
             subscriber.on_rows_emitted(&self.name, rows);
         }
     }
@@ -236,7 +236,10 @@ impl CountingSender {
         }
     }
     #[inline]
-    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
+    pub(crate) async fn send(
+        &self,
+        v: Arc<MicroPartition>,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<Arc<MicroPartition>>> {
         self.rt.mark_rows_emitted(v.len() as u64);
         if let Some(ref pb) = self.progress_bar {
             pb.render();
@@ -264,15 +267,35 @@ impl CountingReceiver {
             progress_bar,
         }
     }
+
+    fn handle_recv(
+        runtime_stats: &Arc<RuntimeStatsContext>,
+        progress_bar: &Option<Arc<OperatorProgressBar>>,
+        v: &Arc<MicroPartition>,
+    ) {
+        runtime_stats.mark_rows_received(v.len() as u64);
+        if let Some(ref pb) = progress_bar {
+            pb.render();
+        }
+    }
+
     #[inline]
-    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
+    pub(crate) async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
-            self.rt.mark_rows_received(v.len() as u64);
-            if let Some(ref pb) = self.progress_bar {
-                pb.render();
-            }
+            Self::handle_recv(&self.rt, &self.progress_bar, v);
         }
         v
+    }
+
+    pub(crate) fn into_stream(self) -> impl Stream<Item = Arc<MicroPartition>> {
+        stream::unfold(self, |mut state| async move {
+            let v = state.recv().await;
+            if let Some(v) = v {
+                Some((v, state))
+            } else {
+                None
+            }
+        })
     }
 }
