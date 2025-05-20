@@ -70,7 +70,9 @@ Currently there are limitations of reading Hudi tables
 
 Support for more Hudi features are tracked as below:
 
-1. Support incremental query for Copy-on-Write tables [issue](https://github.com/Eventual-Inc/Daft/issues/2153)).
+1. Support incremental query for Copy-on-Write tables ([issue](https://github.com/Eventual-Inc/Daft/issues/2153)).
 2. Read support for 1.0 table format ([issue](https://github.com/Eventual-Inc/Daft/issues/2152)).
 3. Read support (snapshot) for Merge-on-Read tables ([issue](https://github.com/Eventual-Inc/Daft/issues/2154)).
 4. Write support ([issue](https://github.com/Eventual-Inc/Daft/issues/2155)).
+
+We're looking for any open source contributors who would like to take these on! You can track the Delta Lake roadmap for Daft on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/4389). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).

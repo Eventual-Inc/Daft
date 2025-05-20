@@ -81,9 +81,7 @@ Here are some features of Iceberg that are works-in-progress:
 
 1. Reading Iceberg V2 equality deletes
 2. More extensive usage of Iceberg-provided statistics to further optimize queries
-3. Copy-on-write and merge-on-read writes
-
-<!-- 4. upserts -->
+3. Copy-on-write and merge-on-read writes (upserts)
 
 A more detailed Iceberg roadmap for Daft can be found on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/2458). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 

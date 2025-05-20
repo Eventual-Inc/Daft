@@ -125,6 +125,4 @@ Here are Delta Lake features that are on our roadmap. Please let us know if you 
 
 2. Read support for [column mappings](https://docs.delta.io/latest/delta-column-mapping.html) ([issue](https://github.com/Eventual-Inc/Daft/issues/1955)).
 
-3. Writing new Delta Lake tables ([issue](https://github.com/Eventual-Inc/Daft/issues/1967)).
-
-4. Writing back to an existing table with appends, overwrites, upserts, or deletes ([issue](https://github.com/Eventual-Inc/Daft/issues/1968)).
+A more detailed Delta Lake roadmap for Daft can be found on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/2457). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
