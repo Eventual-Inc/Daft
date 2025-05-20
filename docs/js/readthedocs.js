@@ -1,4 +1,4 @@
-// Use CustomEvent to generate the version selector
+// Use CustomEvent to generate the version selector and inject CSS to hide readthedocs-flyout
 document.addEventListener(
         "readthedocs-addons-data-ready",
         function (event) {
@@ -21,4 +21,9 @@ document.addEventListener(
             </div>`;
 
           document.querySelector(".md-header__topic").insertAdjacentHTML("beforeend", versioning);
+
+          // Inject CSS to hide readthedocs-flyout
+          const style = document.createElement('style');
+          style.innerHTML = '.readthedocs-flyout { display: none; }';
+          document.getElementsByTagName('head')[0].appendChild(style);
  });
