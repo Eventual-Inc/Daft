@@ -2242,12 +2242,14 @@ dependencies = [
  "daft-logical-plan",
  "daft-schema",
  "futures",
+ "log",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tracing",
  "uuid 1.16.0",
 ]
 

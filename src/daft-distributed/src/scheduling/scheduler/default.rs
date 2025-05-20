@@ -133,10 +133,10 @@ mod tests {
     use crate::scheduling::{
         scheduler::test_utils::{
             create_schedulable_task, create_spread_task, create_worker_affinity_task,
-            setup_scheduler, setup_workers,
+            setup_scheduler,
         },
         task::tests::{MockTask, MockTaskBuilder},
-        worker::tests::MockWorker,
+        worker::tests::{setup_workers, MockWorker},
     };
     #[test]
     fn test_default_scheduler_spread_scheduling() {

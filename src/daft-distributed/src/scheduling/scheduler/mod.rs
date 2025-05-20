@@ -24,7 +24,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
 }
 
 #[allow(dead_code)]
-pub(super) struct SchedulableTask<T: Task> {
+pub(crate) struct SchedulableTask<T: Task> {
     task: T,
     result_tx: OneshotSender<DaftResult<PartitionRef>>,
     cancel_token: CancellationToken,
@@ -91,14 +91,18 @@ impl<T: Task> Ord for SchedulableTask<T> {
 
 #[allow(dead_code)]
 pub(super) struct ScheduledTask<T: Task> {
-    pub task: SchedulableTask<T>,
-    pub worker_id: WorkerId,
+    task: SchedulableTask<T>,
+    worker_id: WorkerId,
 }
 
 #[allow(dead_code)]
 impl<T: Task> ScheduledTask<T> {
     pub fn new(task: SchedulableTask<T>, worker_id: WorkerId) -> Self {
         Self { task, worker_id }
+    }
+
+    pub fn into_inner(self) -> (WorkerId, SchedulableTask<T>) {
+        (self.worker_id, self.task)
     }
 }
 
@@ -139,17 +143,6 @@ pub(super) mod test_utils {
         task::tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
     };
-
-    // Helper function to create workers with given configurations
-    pub fn setup_workers(configs: &[(WorkerId, usize)]) -> HashMap<WorkerId, MockWorker> {
-        configs
-            .iter()
-            .map(|(id, num_slots)| {
-                let worker = MockWorker::new(id.clone(), *num_slots);
-                (id.clone(), worker)
-            })
-            .collect::<HashMap<_, _>>()
-    }
 
     // Helper function to setup scheduler with workers
     pub fn setup_scheduler<S: Scheduler<MockTask> + Default>(
