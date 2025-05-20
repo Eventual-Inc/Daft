@@ -169,6 +169,7 @@ extra:
 extra_css:
 - css/extra.css
 - css/docsearch.css
+- css/flyout.css
 - https://cdn.jsdelivr.net/npm/@docsearch/css@3
 
 extra_javascript:
