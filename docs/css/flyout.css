@@ -3,7 +3,7 @@
     bottom: 100px !important;
   }
 
-:host[position="inline"] {
+:host[position="bottom-left"] {
     left: 20px;
     bottom: 100px !important;
 }
