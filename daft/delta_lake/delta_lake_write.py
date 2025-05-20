@@ -1,6 +1,4 @@
-from typing import Dict, Iterator, List, Optional, Tuple
-
-from deltalake.writer import AddAction
+from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Tuple
 
 from daft.context import get_context
 from daft.daft import IOConfig
@@ -9,6 +7,9 @@ from daft.dependencies import pa, pafs
 from daft.io.common import _get_schema_from_dict
 from daft.recordbatch.micropartition import MicroPartition
 from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to_path
+
+if TYPE_CHECKING:
+    from deltalake.writer import AddAction
 
 
 def sanitize_table_for_deltalake(
@@ -53,7 +54,7 @@ def make_deltalake_add_action(
     metadata,
     size,
     partition_values,
-) -> AddAction:
+) -> "AddAction":
     import json
     from datetime import datetime
 
