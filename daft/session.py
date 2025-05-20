@@ -71,7 +71,7 @@ class Session:
 
     _session: PySession
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._session = PySession.empty()
 
     ###

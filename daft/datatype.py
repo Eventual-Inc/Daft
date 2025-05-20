@@ -1129,10 +1129,10 @@ DataTypeLike = Union[DataType, type, str]
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()
 _EXT_TYPE_REGISTERED = False
-_STATIC_DAFT_EXTENSION = None
+_STATIC_DAFT_EXTENSION: pa.ExtensionType | None = None
 
 
-def _ensure_registered_super_ext_type():
+def _ensure_registered_super_ext_type() -> None:
     global _EXT_TYPE_REGISTERED
     global _STATIC_DAFT_EXTENSION
 
@@ -1167,6 +1167,7 @@ def _ensure_registered_super_ext_type():
                 _EXT_TYPE_REGISTERED = True
 
 
-def get_super_ext_type():
+def get_super_ext_type() -> type[pa.ExtensionType]:
     _ensure_registered_super_ext_type()
+    assert _STATIC_DAFT_EXTENSION is not None
     return _STATIC_DAFT_EXTENSION
