@@ -20,29 +20,29 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
+  - I/O:
+    - Overview: io.md
+    - Amazon Web Services: integrations/aws.md
+    - Apache Hudi: integrations/hudi.md
+    - Apache Iceberg: integrations/iceberg.md
+    - Delta Lake: integrations/delta_lake.md
+    - Hugging Face Datasets: integrations/huggingface.md
+    # - LanceDB: integrations/lance.md (wip)
+    - Microsoft Azure: integrations/azure.md
+    - SQL: integrations/sql.md
+  # - Configuration: config.md
   - SQL: sql_overview.md
   - Sessions: sessions.md
-  - Catalogs: catalogs.md
+  - Catalogs:
+    - Overview: catalogs.md
+    - AWS Glue: integrations/glue.md
+    - S3 Tables: integrations/s3tables.md
+    - Unity Catalog: integrations/unity_catalog.md
   - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
-    - Pushdowns: advanced/pushdowns.md
-  - Integrations:
-    - Catalogs & Tables:
-      - Apache Hudi: integrations/hudi.md
-      - Apache Iceberg: integrations/iceberg.md
-      - AWS Glue: integrations/glue.md
-      - Delta Lake: integrations/delta_lake.md
-      - S3 Tables: integrations/s3tables.md
-      - Unity Catalog: integrations/unity_catalog.md
-    - Storage:
-      - Amazon Web Services: integrations/aws.md
-      - Hugging Face Datasets: integrations/huggingface.md
-      - Microsoft Azure: integrations/azure.md
-      - SQL: integrations/sql.md
-    - Ray: integrations/ray.md
   - Resources:
     - Architecture: resources/architecture.md
     - DataFrame Comparison: resources/dataframe_comparison.md
@@ -51,10 +51,11 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
+  # - Daft Roadmap: roadmap.md
   - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md
-  - DataFrame Creation: api/dataframe_creation.md
+  - I/O: api/io.md
   - DataFrame: api/dataframe.md
   - Expressions: api/expressions.md
   - Functions:
@@ -129,10 +130,6 @@ theme:
 
 # Additional Configuration
 extra:
-  docsearch:
-    app_id: 'CTX8NKR4GC'
-    api_key: 'eb05e80b7739efec7038d98158f39a54'
-    index_name: 'getdaft'
   analytics:
     provider: google
     property: G-YN4QSRPV0K
@@ -181,7 +178,7 @@ extra_javascript:
 markdown_extensions:
 - admonition
 - toc:
-    toc_depth: 3
+    toc_depth: 4
     permalink: "#"
 - pymdownx.tabbed:
     alternate_style: true
