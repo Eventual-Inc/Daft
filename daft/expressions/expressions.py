@@ -43,7 +43,6 @@ from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
-from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
@@ -2868,8 +2867,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(native.utf8_contains(self._expr, substr_expr._expr))
+        substr_expr = Expression._to_expression(substr)._expr
+        f = native.get_function_from_registry("utf8_contains")
+        return Expression._from_pyexpr(f(self._expr, substr_expr))
 
     def match(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given regular expression pattern in a string column.
@@ -2900,7 +2900,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_match(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("regexp_match")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
         """Checks whether each string ends with the given pattern in a string column.
@@ -2930,8 +2931,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        suffix_expr = Expression._to_expression(suffix)
-        return Expression._from_pyexpr(native.utf8_endswith(self._expr, suffix_expr._expr))
+        suffix_expr = Expression._to_expression(suffix)._expr
+        f = native.get_function_from_registry("ends_with")
+
+        return Expression._from_pyexpr(f(self._expr, suffix_expr))
 
     def startswith(self, prefix: str | Expression) -> Expression:
         """Checks whether each string starts with the given pattern in a string column.
@@ -2961,8 +2964,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        prefix_expr = Expression._to_expression(prefix)
-        return Expression._from_pyexpr(native.utf8_startswith(self._expr, prefix_expr._expr))
+        prefix_expr = Expression._to_expression(prefix)._expr
+        f = native.get_function_from_registry("starts_with")
+
+        return Expression._from_pyexpr(f(self._expr, prefix_expr))
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
         r"""Splits each string on the given literal or regex pattern, into a list of strings.
@@ -3014,7 +3019,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_split(self._expr, pattern_expr._expr, regex))
+        f_name = "regexp_split" if regex else "split"
+        f = native.get_function_from_registry(f_name)
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together.
@@ -3107,7 +3114,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             [extract_all](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_extract(self._expr, pattern_expr._expr, index))
+        idx = Expression._to_expression(index)
+        f = native.get_function_from_registry("regexp_extract")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
@@ -3163,7 +3172,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             [extract](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_extract_all(self._expr, pattern_expr._expr, index))
+        idx = Expression._to_expression(index)
+        f = native.get_function_from_registry("regexp_extract_all")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
     def replace(
         self,
@@ -3221,9 +3232,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         replacement_expr = Expression._to_expression(replacement)
-        return Expression._from_pyexpr(
-            native.utf8_replace(self._expr, pattern_expr._expr, replacement_expr._expr, regex)
-        )
+        if regex:
+            f_name = "regexp_replace"
+        else:
+            f_name = "replace"
+        f = native.get_function_from_registry(f_name)
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, replacement_expr._expr))
 
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column.
@@ -3251,7 +3265,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_length(self._expr))
+        f = native.get_function_from_registry("length")
+        return Expression._from_pyexpr(f(self._expr))
 
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
@@ -3279,7 +3294,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_length_bytes(self._expr))
+        f = native.get_function_from_registry("length_bytes")
+        return Expression._from_pyexpr(f(self._expr))
 
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase.
@@ -3307,7 +3323,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_lower(self._expr))
+        f = native.get_function_from_registry("lower")
+        return Expression._from_pyexpr(f(self._expr))
 
     def upper(self) -> Expression:
         """Convert UTF-8 string to all upper.
@@ -3335,7 +3352,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_upper(self._expr))
+        f = native.get_function_from_registry("upper")
+        return Expression._from_pyexpr(f(self._expr))
 
     def lstrip(self) -> Expression:
         """Strip whitespace from the left side of a UTF-8 string.
@@ -3363,7 +3381,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_lstrip(self._expr))
+        f = native.get_function_from_registry("lstrip")
+        return Expression._from_pyexpr(f(self._expr))
 
     def rstrip(self) -> Expression:
         """Strip whitespace from the right side of a UTF-8 string.
@@ -3391,7 +3410,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_rstrip(self._expr))
+        f = native.get_function_from_registry("rstrip")
+        return Expression._from_pyexpr(f(self._expr))
 
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.
@@ -3419,7 +3439,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_reverse(self._expr))
+        f = native.get_function_from_registry("reverse")
+        return Expression._from_pyexpr(f(self._expr))
 
     def capitalize(self) -> Expression:
         """Capitalize a UTF-8 string.
@@ -3447,7 +3468,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_capitalize(self._expr))
+        f = native.get_function_from_registry("capitalize")
+        return Expression._from_pyexpr(f(self._expr))
 
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
@@ -3476,7 +3498,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(native.utf8_left(self._expr, nchars_expr._expr))
+        f = native.get_function_from_registry("left")
+        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
     def right(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) right-most characters of each string.
@@ -3505,7 +3528,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(native.utf8_right(self._expr, nchars_expr._expr))
+        f = native.get_function_from_registry("right")
+        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string.
@@ -3537,7 +3561,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(native.utf8_find(self._expr, substr_expr._expr))
+        f = native.get_function_from_registry("find")
+        return Expression._from_pyexpr(f(self._expr, substr_expr._expr))
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Right-pads each string by truncating or padding with the character.
@@ -3571,7 +3596,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(native.utf8_rpad(self._expr, length_expr._expr, pad_expr._expr))
+        f = native.get_function_from_registry("rpad")
+
+        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Left-pads each string by truncating on the right or padding with the character.
@@ -3605,7 +3632,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(native.utf8_lpad(self._expr, length_expr._expr, pad_expr._expr))
+        f = native.get_function_from_registry("lpad")
+        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
     def repeat(self, n: int | Expression) -> Expression:
         """Repeats each string n times.
@@ -3634,7 +3662,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         n_expr = Expression._to_expression(n)
-        return Expression._from_pyexpr(native.utf8_repeat(self._expr, n_expr._expr))
+        f = native.get_function_from_registry("repeat")
+        return Expression._from_pyexpr(f(self._expr, n_expr._expr))
 
     def like(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
@@ -3666,7 +3695,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_like(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("like")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def ilike(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case insensitive.
@@ -3698,7 +3728,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_ilike(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("ilike")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
         """Extract a substring from a string, starting at a specified index and extending for a given length.
@@ -3731,7 +3762,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(native.utf8_substr(self._expr, start_expr._expr, length_expr._expr))
+        f = native.get_function_from_registry("substr")
+        return Expression._from_pyexpr(f(self._expr, start_expr._expr, length_expr._expr))
 
     def to_date(self, format: str) -> Expression:
         """Converts a string to a date using the specified format.
@@ -3762,7 +3794,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_to_date(self._expr, format))
+        format_expr = Expression._to_expression(format)._expr
+        f = native.get_function_from_registry("to_date")
+        return Expression._from_pyexpr(f(self._expr, format=format_expr))
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
         """Converts a string to a datetime using the specified format and timezone.
@@ -3814,7 +3848,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_to_datetime(self._expr, format, timezone))
+        format_expr = Expression._to_expression(format)._expr
+        timezone_expr = Expression._to_expression(timezone)._expr
+        f = native.get_function_from_registry("to_datetime")
+        return Expression._from_pyexpr(f(self._expr, format=format_expr, timezone=timezone_expr))
 
     def normalize(
         self,
@@ -3861,8 +3898,19 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
+        remove_punct_expr = Expression._to_expression(remove_punct)._expr
+        lowercase_expr = Expression._to_expression(lowercase)._expr
+        nfd_unicode_expr = Expression._to_expression(nfd_unicode)._expr
+        white_space_expr = Expression._to_expression(white_space)._expr
+        f = native.get_function_from_registry("normalize")
         return Expression._from_pyexpr(
-            native.utf8_normalize(self._expr, remove_punct, lowercase, nfd_unicode, white_space)
+            f(
+                self._expr,
+                remove_punct=remove_punct_expr,
+                lowercase=lowercase_expr,
+                nfd_unicode=nfd_unicode_expr,
+                white_space=white_space_expr,
+            )
         )
 
     def tokenize_encode(
@@ -3940,6 +3988,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def count_matches(
         self,
         patterns: Any,
+        *,
         whole_words: bool = False,
         case_sensitive: bool = True,
     ):
@@ -3969,7 +4018,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
             series = item_to_series("items", patterns)
             patterns = Expression._to_expression(series)
 
-        return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
+        whole_words_expr = Expression._to_expression(whole_words)._expr
+        case_sensitive_expr = Expression._to_expression(case_sensitive)._expr
+        f = native.get_function_from_registry("count_matches")
+
+        return Expression._from_pyexpr(
+            f(self._expr, patterns._expr, whole_words=whole_words_expr, case_sensitive=case_sensitive_expr)
+        )
 
 
 class ExpressionListNamespace(ExpressionNamespace):
