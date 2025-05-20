@@ -136,7 +136,7 @@ impl<T: Task> SchedulerHandle<T> {
         Self { scheduler_sender }
     }
 
-    fn prepare_task_for_submission(&self, task: T) -> (SchedulableTask<T>, SubmittedTask) {
+    pub fn prepare_task_for_submission(task: T) -> (SchedulableTask<T>, SubmittedTask) {
         let (result_tx, result_rx) = create_oneshot_channel();
         let cancel_token = CancellationToken::new();
 
@@ -149,7 +149,7 @@ impl<T: Task> SchedulerHandle<T> {
 
     #[allow(dead_code)]
     pub async fn submit_task(&self, task: T) -> DaftResult<SubmittedTask> {
-        let (schedulable_task, submitted_task) = self.prepare_task_for_submission(task);
+        let (schedulable_task, submitted_task) = Self::prepare_task_for_submission(task);
         self.scheduler_sender
             .send(schedulable_task)
             .await

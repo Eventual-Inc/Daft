@@ -9,6 +9,12 @@ pub(super) struct LinearScheduler<T: Task> {
     pending_tasks: BinaryHeap<SchedulableTask<T>>,
 }
 
+impl<T: Task> Default for LinearScheduler<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 impl<T: Task> LinearScheduler<T> {
     pub fn new() -> Self {
@@ -20,10 +26,6 @@ impl<T: Task> LinearScheduler<T> {
 }
 
 impl<T: Task> Scheduler<T> for LinearScheduler<T> {
-    fn num_pending_tasks(&self) -> usize {
-        self.pending_tasks.len()
-    }
-
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]) {
         for worker_snapshot in worker_snapshots {
             if let Some(existing_snapshot) =
@@ -43,6 +45,10 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
 
     fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>> {
         todo!("FLOTILLA_MS1: Implement get_schedulable_tasks for linear scheduler")
+    }
+
+    fn num_pending_tasks(&self) -> usize {
+        self.pending_tasks.len()
     }
 }
 

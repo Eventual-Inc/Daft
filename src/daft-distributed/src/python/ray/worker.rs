@@ -76,7 +76,8 @@ impl RaySwordfishWorker {
                 .insert(task_id.clone());
 
             let task_locals = task_locals.clone_ref(py);
-            let ray_task_result_handle = RayTaskResultHandle::new(py_task_handle, task_locals);
+            let ray_task_result_handle =
+                RayTaskResultHandle::new(py_task_handle, task_locals, self.worker_id.clone());
             let task_result_handle_awaiter = TaskResultHandleAwaiter::new(
                 task_id,
                 self.worker_id.clone(),

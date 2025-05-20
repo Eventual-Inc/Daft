@@ -19,8 +19,8 @@ use tokio_util::sync::CancellationToken;
 pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>);
-    fn num_pending_tasks(&self) -> usize;
     fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>>;
+    fn num_pending_tasks(&self) -> usize;
 }
 
 #[allow(dead_code)]
@@ -54,7 +54,7 @@ impl<T: Task> SchedulableTask<T> {
     }
 
     #[allow(dead_code)]
-    pub fn task_id(&self) -> &str {
+    pub fn task_id(&self) -> &TaskId {
         self.task.task_id()
     }
 
@@ -116,11 +116,74 @@ pub(super) struct WorkerSnapshot {
 
 #[allow(dead_code)]
 impl WorkerSnapshot {
-    pub fn new(worker: &impl Worker) -> Self {
+    pub fn new(worker_id: WorkerId, num_cpus: usize, active_task_ids: HashSet<TaskId>) -> Self {
         Self {
-            worker_id: worker.id().clone(),
-            active_task_ids: worker.active_task_ids(),
-            num_cpus: worker.num_cpus(),
+            worker_id,
+            num_cpus,
+            active_task_ids,
         }
+    }
+
+    pub fn from_worker(worker: &impl Worker) -> Self {
+        Self::new(
+            worker.id().clone(),
+            worker.num_cpus(),
+            worker.active_task_ids(),
+        )
+    }
+}
+
+#[cfg(test)]
+pub(super) mod test_utils {
+
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::scheduling::{
+        task::tests::{MockTask, MockTaskBuilder},
+        worker::tests::MockWorker,
+    };
+
+    // Helper function to setup scheduler with workers
+    pub fn setup_scheduler<S: Scheduler<MockTask> + Default>(
+        workers: &HashMap<WorkerId, MockWorker>,
+    ) -> S {
+        let mut scheduler = S::default();
+        scheduler.update_worker_state(
+            workers
+                .values()
+                .map(|w| WorkerSnapshot::from_worker(w))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        scheduler
+    }
+
+    pub fn create_schedulable_task(mock_task: MockTask) -> SchedulableTask<MockTask> {
+        SchedulableTask::new(
+            mock_task,
+            tokio::sync::oneshot::channel().0,
+            tokio_util::sync::CancellationToken::new(),
+        )
+    }
+
+    pub fn create_spread_task() -> SchedulableTask<MockTask> {
+        let task = MockTaskBuilder::default()
+            .with_scheduling_strategy(SchedulingStrategy::Spread)
+            .build();
+        create_schedulable_task(task)
+    }
+
+    pub fn create_worker_affinity_task(
+        worker_id: &WorkerId,
+        soft: bool,
+    ) -> SchedulableTask<MockTask> {
+        let task = MockTaskBuilder::default()
+            .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
+                worker_id: worker_id.clone(),
+                soft,
+            })
+            .build();
+        create_schedulable_task(task)
     }
 }
