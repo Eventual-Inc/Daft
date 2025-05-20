@@ -115,7 +115,7 @@ class RecordBatch:
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> RecordBatch:
-        if not pd.module_available():
+        if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
         assert isinstance(pd_df, pd.DataFrame)
         try:
@@ -185,7 +185,7 @@ class RecordBatch:
     ) -> pd.DataFrame:
         from packaging.version import parse
 
-        if not pd.module_available():
+        if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
 
         python_fields = set()

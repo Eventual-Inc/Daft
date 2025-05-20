@@ -72,7 +72,7 @@ class PartitionTask(Generic[PartitionT]):
         """Whether the PartitionT result of this task is available."""
         return self.is_done
 
-    def set_done(self):
+    def set_done(self) -> None:
         """Sets the PartitionTask as done."""
         assert not self.is_done, "Cannot set PartitionTask as done more than once"
         self.is_done = True
@@ -125,7 +125,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         actor_pool_id: str | None = None,
         node_id: str | None = None,
     ) -> None:
-        self.inputs = inputs
+        self.inputs: list[PartitionT] = inputs
         if partial_metadatas is not None:
             self.partial_metadatas = partial_metadatas
         else:

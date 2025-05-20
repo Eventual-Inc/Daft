@@ -123,7 +123,7 @@ class Series:
         # Workaround: wrap list of np.datetime64 in an np.array
         #   - https://github.com/apache/arrow/issues/40580
         #   - https://github.com/Eventual-Inc/Daft/issues/3826
-        if data and np.module_available() and isinstance(data[0], np.datetime64):
+        if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
             data = np.array(data)
 
         try:
@@ -763,13 +763,13 @@ class Series:
 def item_to_series(name: str, item: Any) -> Series:
     if isinstance(item, list):
         series = Series.from_pylist(item, name)
-    elif np.module_available() and isinstance(item, np.ndarray):
+    elif np.module_available() and isinstance(item, np.ndarray):  # type: ignore[attr-defined]
         series = Series.from_numpy(item, name)
     elif isinstance(item, Series):
         series = item
     elif isinstance(item, (pa.Array, pa.ChunkedArray)):
         series = Series.from_arrow(item, name)
-    elif pd.module_available() and isinstance(item, pd.Series):
+    elif pd.module_available() and isinstance(item, pd.Series):  # type: ignore[attr-defined]
         series = Series.from_pandas(item, name)
     else:
         raise ValueError(f"Creating a Series from data of type {type(item)} not implemented")

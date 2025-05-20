@@ -170,7 +170,7 @@ def run_udf(
             return Series.from_pylist(result_list, name=name, pyobj="force")._series
         else:
             return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
-    elif np.module_available() and isinstance(results[0], np.ndarray):
+    elif np.module_available() and isinstance(results[0], np.ndarray):  # type: ignore[attr-defined]
         result_np = np.concatenate(results)
         return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
