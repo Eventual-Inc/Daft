@@ -26,7 +26,7 @@ For more advanced installation options, please see [Installation](install.md).
 
 ### Create Your First Daft DataFrame
 
-See also [DataFrame Creation API Docs](api/dataframe_creation.md). Let's create a DataFrame from a dictionary of columns:
+See also [I/O API Docs](api/io.md). Let's create a DataFrame from a dictionary of columns:
 
 === "🐍 Python"
     ```python
@@ -436,7 +436,6 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 
 <div class="grid cards" markdown>
 
-- [:simple-ray: **Ray**](integrations/ray.md)
 - [**Unity Catalog**](integrations/unity_catalog.md)
 - [**Apache Iceberg**](integrations/iceberg.md)
 - [**Delta Lake**](integrations/delta_lake.md)

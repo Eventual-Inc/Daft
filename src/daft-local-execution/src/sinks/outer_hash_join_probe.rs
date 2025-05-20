@@ -738,13 +738,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
+            Arc::new(RoundRobinDispatcher::with_fixed_threshold(
                 runtime_handle.default_morsel_size(),
-            )))
+            ))
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
+            Arc::new(UnorderedDispatcher::with_fixed_threshold(
                 runtime_handle.default_morsel_size(),
-            )))
+            ))
         }
     }
 }

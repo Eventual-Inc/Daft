@@ -33,8 +33,6 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
-from daft.daft import list_distinct as _list_distinct
-from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import struct as _struct
@@ -43,8 +41,6 @@ from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
-from daft.daft import url_download as _url_download
-from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
@@ -115,10 +111,6 @@ def lit(value: object) -> Expression:
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
-    elif isinstance(value, ImageFormat):
-        lit_value = _lit(str(value))
-    elif isinstance(value, ImageMode):
-        lit_value = _lit(str(value))
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -617,6 +609,12 @@ class Expression:
             raise TypeError(
                 f"Argument of type {key_type} is not supported in Expression.__getitem__. Only int and string types are supported."
             )
+
+    def _eval_expressions(self, func_name, *args, **kwargs) -> Expression:
+        expr_args = [Expression._to_expression(v)._expr for v in args]
+        expr_kwargs = {k: Expression._to_expression(v)._expr for k, v in kwargs.items() if v is not None}
+        f = native.get_function_from_registry(func_name)
+        return Expression._from_pyexpr(f(self._expr, *expr_args, **expr_kwargs))
 
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name.
@@ -1244,8 +1242,8 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def _explode(self) -> Expression:
-        expr = native.explode(self._expr)
-        return Expression._from_pyexpr(expr)
+        f = native.get_function_from_registry("explode")
+        return Expression._from_pyexpr(f(self._expr))
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
         """Conditionally choose values between two expressions using the current boolean expression as a condition.
@@ -1833,6 +1831,10 @@ class ExpressionNamespace:
         ns._expr = expr._expr
         return ns
 
+    def _eval_expressions(self, func_name: str, *args, **kwargs) -> Expression:
+        e = Expression._from_pyexpr(self._expr)
+        return e._eval_expressions(func_name, *args, **kwargs)
+
 
 class ExpressionUrlNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.url` attribute."""
@@ -1893,21 +1895,23 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             ``max_connections`` to get higher throughput with additional parallelism
 
         """
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
-
-        if not (isinstance(max_connections, int) and max_connections > 0):
-            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        max_connections_expr = Expression._to_expression(max_connections)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        multi_thread_expr = Expression._to_expression(multi_thread)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
+
+        f = native.get_function_from_registry("url_download")
+
         return Expression._from_pyexpr(
-            _url_download(self._expr, max_connections, raise_on_error, multi_thread, io_config)
+            f(
+                self._expr,
+                multi_thread=multi_thread_expr,
+                on_error=on_error_expr,
+                max_connections=max_connections_expr,
+                io_config=io_config_expr,
+            )
         )
 
     def upload(
@@ -1940,32 +1944,28 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             >>> col("data").url.upload(col("paths"))  # doctest: +SKIP
 
         """
-        if not (isinstance(max_connections, int) and max_connections > 0):
-            raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
-
-        location_expr = Expression._to_expression(location)
-        raise_on_error = False
-        if on_error == "raise":
-            raise_on_error = True
-        elif on_error == "null":
-            raise_on_error = False
-        else:
-            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
+        location_expr = Expression._to_expression(location)._expr
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
         # if the user gave an expression, we assume that each row has a specific url to upload to.
         # Consider moving the check for is_single_folder to a lower IR.
         is_single_folder = isinstance(location, str)
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        max_connections_expr = Expression._to_expression(max_connections)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        multi_thread_expr = Expression._to_expression(multi_thread)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
+        is_single_folder_expr = Expression._to_expression(is_single_folder)._expr
+        f = native.get_function_from_registry("url_upload")
         return Expression._from_pyexpr(
-            native.url_upload(
+            f(
                 self._expr,
-                location_expr._expr,
-                max_connections,
-                raise_on_error,
-                multi_thread,
-                is_single_folder,
-                io_config,
+                location_expr,
+                max_connections=max_connections_expr,
+                on_error=on_error_expr,
+                multi_thread=multi_thread_expr,
+                is_single_folder=is_single_folder_expr,
+                io_config=io_config_expr,
             )
         )
 
@@ -2875,8 +2875,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(native.utf8_contains(self._expr, substr_expr._expr))
+        substr_expr = Expression._to_expression(substr)._expr
+        f = native.get_function_from_registry("utf8_contains")
+        return Expression._from_pyexpr(f(self._expr, substr_expr))
 
     def match(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given regular expression pattern in a string column.
@@ -2907,7 +2908,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_match(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("regexp_match")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
         """Checks whether each string ends with the given pattern in a string column.
@@ -2937,8 +2939,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        suffix_expr = Expression._to_expression(suffix)
-        return Expression._from_pyexpr(native.utf8_endswith(self._expr, suffix_expr._expr))
+        suffix_expr = Expression._to_expression(suffix)._expr
+        f = native.get_function_from_registry("ends_with")
+
+        return Expression._from_pyexpr(f(self._expr, suffix_expr))
 
     def startswith(self, prefix: str | Expression) -> Expression:
         """Checks whether each string starts with the given pattern in a string column.
@@ -2968,8 +2972,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        prefix_expr = Expression._to_expression(prefix)
-        return Expression._from_pyexpr(native.utf8_startswith(self._expr, prefix_expr._expr))
+        prefix_expr = Expression._to_expression(prefix)._expr
+        f = native.get_function_from_registry("starts_with")
+
+        return Expression._from_pyexpr(f(self._expr, prefix_expr))
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
         r"""Splits each string on the given literal or regex pattern, into a list of strings.
@@ -3021,7 +3027,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_split(self._expr, pattern_expr._expr, regex))
+        f_name = "regexp_split" if regex else "split"
+        f = native.get_function_from_registry(f_name)
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together.
@@ -3114,7 +3122,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             [extract_all](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_extract(self._expr, pattern_expr._expr, index))
+        idx = Expression._to_expression(index)
+        f = native.get_function_from_registry("regexp_extract")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
@@ -3170,7 +3180,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             [extract](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_extract_all(self._expr, pattern_expr._expr, index))
+        idx = Expression._to_expression(index)
+        f = native.get_function_from_registry("regexp_extract_all")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
     def replace(
         self,
@@ -3228,9 +3240,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         replacement_expr = Expression._to_expression(replacement)
-        return Expression._from_pyexpr(
-            native.utf8_replace(self._expr, pattern_expr._expr, replacement_expr._expr, regex)
-        )
+        if regex:
+            f_name = "regexp_replace"
+        else:
+            f_name = "replace"
+        f = native.get_function_from_registry(f_name)
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, replacement_expr._expr))
 
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column.
@@ -3258,7 +3273,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_length(self._expr))
+        f = native.get_function_from_registry("length")
+        return Expression._from_pyexpr(f(self._expr))
 
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
@@ -3286,7 +3302,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_length_bytes(self._expr))
+        f = native.get_function_from_registry("length_bytes")
+        return Expression._from_pyexpr(f(self._expr))
 
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase.
@@ -3314,7 +3331,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_lower(self._expr))
+        f = native.get_function_from_registry("lower")
+        return Expression._from_pyexpr(f(self._expr))
 
     def upper(self) -> Expression:
         """Convert UTF-8 string to all upper.
@@ -3342,7 +3360,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_upper(self._expr))
+        f = native.get_function_from_registry("upper")
+        return Expression._from_pyexpr(f(self._expr))
 
     def lstrip(self) -> Expression:
         """Strip whitespace from the left side of a UTF-8 string.
@@ -3370,7 +3389,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_lstrip(self._expr))
+        f = native.get_function_from_registry("lstrip")
+        return Expression._from_pyexpr(f(self._expr))
 
     def rstrip(self) -> Expression:
         """Strip whitespace from the right side of a UTF-8 string.
@@ -3398,7 +3418,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_rstrip(self._expr))
+        f = native.get_function_from_registry("rstrip")
+        return Expression._from_pyexpr(f(self._expr))
 
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.
@@ -3426,7 +3447,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_reverse(self._expr))
+        f = native.get_function_from_registry("reverse")
+        return Expression._from_pyexpr(f(self._expr))
 
     def capitalize(self) -> Expression:
         """Capitalize a UTF-8 string.
@@ -3454,7 +3476,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_capitalize(self._expr))
+        f = native.get_function_from_registry("capitalize")
+        return Expression._from_pyexpr(f(self._expr))
 
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
@@ -3483,7 +3506,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(native.utf8_left(self._expr, nchars_expr._expr))
+        f = native.get_function_from_registry("left")
+        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
     def right(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) right-most characters of each string.
@@ -3512,7 +3536,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(native.utf8_right(self._expr, nchars_expr._expr))
+        f = native.get_function_from_registry("right")
+        return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string.
@@ -3544,7 +3569,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(native.utf8_find(self._expr, substr_expr._expr))
+        f = native.get_function_from_registry("find")
+        return Expression._from_pyexpr(f(self._expr, substr_expr._expr))
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Right-pads each string by truncating or padding with the character.
@@ -3578,7 +3604,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(native.utf8_rpad(self._expr, length_expr._expr, pad_expr._expr))
+        f = native.get_function_from_registry("rpad")
+
+        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Left-pads each string by truncating on the right or padding with the character.
@@ -3612,7 +3640,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(native.utf8_lpad(self._expr, length_expr._expr, pad_expr._expr))
+        f = native.get_function_from_registry("lpad")
+        return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
     def repeat(self, n: int | Expression) -> Expression:
         """Repeats each string n times.
@@ -3641,7 +3670,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         n_expr = Expression._to_expression(n)
-        return Expression._from_pyexpr(native.utf8_repeat(self._expr, n_expr._expr))
+        f = native.get_function_from_registry("repeat")
+        return Expression._from_pyexpr(f(self._expr, n_expr._expr))
 
     def like(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
@@ -3673,7 +3703,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_like(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("like")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def ilike(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case insensitive.
@@ -3705,7 +3736,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(native.utf8_ilike(self._expr, pattern_expr._expr))
+        f = native.get_function_from_registry("ilike")
+        return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
         """Extract a substring from a string, starting at a specified index and extending for a given length.
@@ -3738,7 +3770,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(native.utf8_substr(self._expr, start_expr._expr, length_expr._expr))
+        f = native.get_function_from_registry("substr")
+        return Expression._from_pyexpr(f(self._expr, start_expr._expr, length_expr._expr))
 
     def to_date(self, format: str) -> Expression:
         """Converts a string to a date using the specified format.
@@ -3769,7 +3802,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_to_date(self._expr, format))
+        format_expr = Expression._to_expression(format)._expr
+        f = native.get_function_from_registry("to_date")
+        return Expression._from_pyexpr(f(self._expr, format=format_expr))
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
         """Converts a string to a datetime using the specified format and timezone.
@@ -3821,7 +3856,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.utf8_to_datetime(self._expr, format, timezone))
+        format_expr = Expression._to_expression(format)._expr
+        timezone_expr = Expression._to_expression(timezone)._expr
+        f = native.get_function_from_registry("to_datetime")
+        return Expression._from_pyexpr(f(self._expr, format=format_expr, timezone=timezone_expr))
 
     def normalize(
         self,
@@ -3868,8 +3906,19 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
+        remove_punct_expr = Expression._to_expression(remove_punct)._expr
+        lowercase_expr = Expression._to_expression(lowercase)._expr
+        nfd_unicode_expr = Expression._to_expression(nfd_unicode)._expr
+        white_space_expr = Expression._to_expression(white_space)._expr
+        f = native.get_function_from_registry("normalize")
         return Expression._from_pyexpr(
-            native.utf8_normalize(self._expr, remove_punct, lowercase, nfd_unicode, white_space)
+            f(
+                self._expr,
+                remove_punct=remove_punct_expr,
+                lowercase=lowercase_expr,
+                nfd_unicode=nfd_unicode_expr,
+                white_space=white_space_expr,
+            )
         )
 
     def tokenize_encode(
@@ -3947,6 +3996,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def count_matches(
         self,
         patterns: Any,
+        *,
         whole_words: bool = False,
         case_sensitive: bool = True,
     ):
@@ -3976,7 +4026,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
             series = item_to_series("items", patterns)
             patterns = Expression._to_expression(series)
 
-        return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
+        whole_words_expr = Expression._to_expression(whole_words)._expr
+        case_sensitive_expr = Expression._to_expression(case_sensitive)._expr
+        f = native.get_function_from_registry("count_matches")
+
+        return Expression._from_pyexpr(
+            f(self._expr, patterns._expr, whole_words=whole_words_expr, case_sensitive=case_sensitive_expr)
+        )
 
 
 class ExpressionListNamespace(ExpressionNamespace):
@@ -3991,8 +4047,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is every element of the list joined on the delimiter
         """
-        delimiter_expr = Expression._to_expression(delimiter)
-        return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
+        return self._eval_expressions("list_join", delimiter)
 
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
@@ -4026,7 +4081,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
-        return Expression._from_pyexpr(native.list_value_counts(self._expr))
+        return self._eval_expressions("list_value_counts")
 
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
@@ -4037,9 +4092,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        if isinstance(mode, str):
-            mode = CountMode.from_count_mode_str(mode)
-        return Expression._from_pyexpr(native.list_count(self._expr, mode))
+        return self._eval_expressions("list_count", mode)
 
     def lengths(self) -> Expression:
         """Gets the length of each list.
@@ -4054,7 +4107,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             category=DeprecationWarning,
         )
 
-        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+        return self._eval_expressions("list_count", CountMode.All)
 
     def length(self) -> Expression:
         """Gets the length of each list.
@@ -4062,7 +4115,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+        return self._eval_expressions("list_count", CountMode.All)
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list.
@@ -4074,9 +4127,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with the type of the list values
         """
-        idx_expr = Expression._to_expression(idx)
-        default_expr = lit(default)
-        return Expression._from_pyexpr(native.list_get(self._expr, idx_expr._expr, default_expr._expr))
+        return self._eval_expressions("list_get", idx, default)
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list.
@@ -4088,9 +4139,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with a list of the type of the list values
         """
-        start_expr = Expression._to_expression(start)
-        end_expr = Expression._to_expression(end)
-        return Expression._from_pyexpr(native.list_slice(self._expr, start_expr._expr, end_expr._expr))
+        return self._eval_expressions("list_slice", start, end)
 
     def chunk(self, size: int) -> Expression:
         """Splits each list into chunks of the given size.
@@ -4100,9 +4149,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with lists of fixed size lists of the type of the list values
         """
-        if not (isinstance(size, int) and size > 0):
-            raise ValueError(f"Invalid value for `size`: {size}")
-        return Expression._from_pyexpr(native.list_chunk(self._expr, size))
+        return self._eval_expressions("list_chunk", size)
 
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
@@ -4110,7 +4157,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_sum(self._expr))
+        return self._eval_expressions("list_sum")
 
     def mean(self) -> Expression:
         """Calculates the mean of each list. If no non-null values in a list, the result is null.
@@ -4118,7 +4165,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_mean(self._expr))
+        return self._eval_expressions("list_mean")
 
     def min(self) -> Expression:
         """Calculates the minimum of each list. If no non-null values in a list, the result is null.
@@ -4126,7 +4173,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_min(self._expr))
+        return self._eval_expressions("list_min")
 
     def max(self) -> Expression:
         """Calculates the maximum of each list. If no non-null values in a list, the result is null.
@@ -4134,7 +4181,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(native.list_max(self._expr))
+        return self._eval_expressions("list_max")
 
     def bool_and(self) -> Expression:
         """Calculates the boolean AND of all values in a list.
@@ -4164,7 +4211,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.list_bool_and(self._expr))
+        return self._eval_expressions("list_bool_and")
 
     def bool_or(self) -> Expression:
         """Calculates the boolean OR of all values in a list.
@@ -4194,9 +4241,9 @@ class ExpressionListNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.list_bool_or(self._expr))
+        return self._eval_expressions("list_bool_or")
 
-    def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
+    def sort(self, desc: bool | Expression | None = None, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
         Args:
@@ -4224,13 +4271,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        if isinstance(desc, bool):
-            desc = Expression._to_expression(desc)
-        if nulls_first is None:
-            nulls_first = desc
-        elif isinstance(nulls_first, bool):
-            nulls_first = Expression._to_expression(nulls_first)
-        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
+        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
     def distinct(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
@@ -4277,7 +4318,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(_list_distinct(self._expr))
+        return self._eval_expressions("list_distinct")
 
     def unique(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.

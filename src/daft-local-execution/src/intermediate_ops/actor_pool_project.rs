@@ -219,8 +219,11 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         Ok(self.concurrency)
     }
 
-    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
-        self.batch_size
-            .or_else(|| Some(runtime_handle.default_morsel_size()))
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+        if let Some(batch_size) = self.batch_size {
+            (batch_size, batch_size)
+        } else {
+            (0, runtime_handle.default_morsel_size())
+        }
     }
 }
