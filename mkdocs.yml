@@ -171,7 +171,6 @@ extra_css:
 extra_javascript:
 - js/custom.js
 - js/docsearch.js
-- js/readthedocs.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
 
 # Extensions
