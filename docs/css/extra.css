@@ -18,7 +18,7 @@
   --md-accent-fg-color: #ad9fff;
 }
 
-:host(readthedocs-flyout) {
+readthedocs-flyout {
   display: none !important;
 }
 
