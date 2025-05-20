@@ -3,6 +3,8 @@ import uuid
 import warnings
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
 
+from pyiceberg.manifest import DataFile
+
 from daft import Expression, col, lit
 from daft.datatype import DataType
 from daft.expressions.expressions import ExpressionsProjection
@@ -12,7 +14,6 @@ from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
@@ -138,7 +139,7 @@ def to_partition_representation(value: Any):
         return value
 
 
-def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id, schema, properties):
+def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id, schema, properties) -> DataFile:
     import pyiceberg
     from packaging.version import parse
     from pyiceberg.io.pyarrow import (
