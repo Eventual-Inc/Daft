@@ -42,7 +42,7 @@ Please note that items on this roadmap are subject to change any time. If there 
     - Ordinal column references ([issue #4270](https://github.com/Eventual-Inc/Daft/issues/4270))
     - Window function support ([issue #2108](https://github.com/Eventual-Inc/Daft/issues/2108))
 - Improve catalog and table integrations
-    - Support for Iceberg deletion vectors and upserts (see [roadmap for Iceberg](integrations/iceberg.md#roadmap))
+    - Support for Iceberg deletion vectors and upserts (see [roadmap for Iceberg](https://github.com/Eventual-Inc/Daft/issues/2458))
     - Better Unity Catalog support ([issue #2482](https://github.com/Eventual-Inc/Daft/issues/2482))
 - Improve observability tools (logging/metrics/traces) ([issue #4380](https://github.com/Eventual-Inc/Daft/issues/4380))
 - Improve experience working with AI tools

@@ -1,14 +1,14 @@
 # Apache Iceberg
 
-[Apache Iceberg](https://iceberg.apache.org/) is an open-source table format originally developed at Netflix for large-scale analytical datasets.
-
-## Support
+[Apache Iceberg](https://iceberg.apache.org/) is an open-source table format originally developed at Netflix for large-scale analytical tables and datasets. It provides a way to manage and organize data files (like Parquet and ORC) as tables, offering benefits like ACID transactions, time travel, and schema evolution.
 
 Daft currently natively supports:
 
 1. **Distributed Reads:** Daft will fully distribute the I/O of reads over your compute resources (whether Ray or on local multithreading)
 2. **Skipping Filtered Data:** Daft uses [`df.where()`][daft.DataFrame.where] filter calls to only read data that matches your predicates
 3. **All Catalogs From PyIceberg:** Daft is natively integrated with PyIceberg, and supports all the catalogs that PyIceberg does
+
+A detailed Iceberg roadmap for Daft can be found on [our Github issues](https://github.com/Eventual-Inc/Daft/issues/2458). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 
 ## Tutorial
 
@@ -74,16 +74,6 @@ This call will then return a DataFrame containing the operations that were perfo
 │ ADD       ┆ 5     ┆ 707       ┆ 2f1a2bb1-3e64-49da-accd-1074e… │
 ╰───────────┴───────┴───────────┴────────────────────────────────╯
 ```
-
-## Roadmap
-
-Here are some features of Iceberg that are works-in-progress:
-
-1. Reading Iceberg V2 equality deletes
-2. More extensive usage of Iceberg-provided statistics to further optimize queries
-3. Copy-on-write and merge-on-read writes (upserts)
-
-A more detailed Iceberg roadmap for Daft can be found on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/2458). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 
 ## Type System
 
@@ -224,7 +214,7 @@ applied (COW) or deleting (MOR) then including the updated in the insert. All
 records which were not matched (did not exist) are inserted like a normal
 insert.
 
-### Tables Reads
+### Table Reads
 
 Iceberg reads begin by fetching the latest metadata file to then locate the
 "current snapshot id". The current snapshot is a manifest list which has the
