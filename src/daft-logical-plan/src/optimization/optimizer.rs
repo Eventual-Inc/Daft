@@ -159,11 +159,6 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(MaterializeScans::new())],
                     RuleExecutionStrategy::Once,
                 ),
-                // --- Split Projections with expensive expressions ---
-                RuleBatch::new(
-                    vec![Box::new(SplitExpensiveProjections::new())],
-                    RuleExecutionStrategy::Once,
-                ),
                 // --- Enrich logical plan with stats ---
                 RuleBatch::new(
                     vec![Box::new(EnrichWithStats::new())],
@@ -209,6 +204,14 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![Box::new(SimplifyExpressionsRule::new())],
             RuleExecutionStrategy::FixedPoint(None),
+        ));
+        self
+    }
+
+    pub fn split_expensive_projections(mut self) -> Self {
+        self.rule_batches.push(RuleBatch::new(
+            vec![Box::new(SplitExpensiveProjections::new())],
+            RuleExecutionStrategy::Once,
         ));
         self
     }
