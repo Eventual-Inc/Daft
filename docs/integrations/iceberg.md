@@ -10,16 +10,6 @@ Daft currently natively supports:
 2. **Skipping Filtered Data:** Daft uses [`df.where()`][daft.DataFrame.where] filter calls to only read data that matches your predicates
 3. **All Catalogs From PyIceberg:** Daft is natively integrated with PyIceberg, and supports all the catalogs that PyIceberg does
 
-## Roadmap
-
-Here are some features of Iceberg that are works-in-progress:
-
-1. Reading Iceberg V2 equality deletes
-2. More extensive usage of Iceberg-provided statistics to further optimize queries
-3. Copy-on-write and merge-on-read writes
-
-A more detailed Iceberg roadmap for Daft can be found on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/2458).
-
 ## Tutorial
 
 ### Reading a Table
@@ -84,6 +74,18 @@ This call will then return a DataFrame containing the operations that were perfo
 │ ADD       ┆ 5     ┆ 707       ┆ 2f1a2bb1-3e64-49da-accd-1074e… │
 ╰───────────┴───────┴───────────┴────────────────────────────────╯
 ```
+
+## Roadmap
+
+Here are some features of Iceberg that are works-in-progress:
+
+1. Reading Iceberg V2 equality deletes
+2. More extensive usage of Iceberg-provided statistics to further optimize queries
+3. Copy-on-write and merge-on-read writes
+
+<!-- 4. upserts -->
+
+A more detailed Iceberg roadmap for Daft can be found on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/2458). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 
 ## Type System
 
