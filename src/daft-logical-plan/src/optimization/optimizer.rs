@@ -7,11 +7,11 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DetectMonotonicId, DropRepartition, EliminateCrossJoin, EliminateSubqueryAliasRule,
-        EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
-        MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
+        EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, GranularProjections,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
         SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
-        SplitExpensiveProjections, UnnestPredicateSubquery, UnnestScalarSubquery,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -208,9 +208,9 @@ impl OptimizerBuilder {
         self
     }
 
-    pub fn split_expensive_projections(mut self) -> Self {
+    pub fn split_granular_projections(mut self) -> Self {
         self.rule_batches.push(RuleBatch::new(
-            vec![Box::new(SplitExpensiveProjections::new())],
+            vec![Box::new(GranularProjections::new())],
             RuleExecutionStrategy::Once,
         ));
         self

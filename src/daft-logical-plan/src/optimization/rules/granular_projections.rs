@@ -11,20 +11,19 @@ use itertools::Itertools;
 use super::OptimizerRule;
 use crate::{ops::Project, LogicalPlan};
 
+/// This rule will split projections into multiple projections such that expressions that
+/// need their own granular morsel sizing will be isolated. Right now, those would be
+/// URL downloads and Python UDFs, but this may be extended in the future.
 #[derive(Debug)]
-pub struct SplitExpensiveProjections {}
+pub struct GranularProjections {}
 
-impl OptimizerRule for SplitExpensiveProjections {
+impl OptimizerRule for GranularProjections {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        // eprintln!("Input: {:#?}", plan);
-        let out = plan.transform_up(|node| self.try_optimize_node(node));
-        eprintln!("Is Error: {}", out.is_err());
-        eprintln!("{}", out.as_ref().unwrap().data.repr_ascii(false));
-        out
+        plan.transform_up(|node| self.try_optimize_node(node))
     }
 }
 
-impl SplitExpensiveProjections {
+impl GranularProjections {
     pub fn new() -> Self {
         Self {}
     }
@@ -59,7 +58,7 @@ impl SplitExpensiveProjections {
                     }
                 ) || matches!(
                     e.as_ref(),
-                    Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "download"
+                    Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "url_download"
                 ) {
                     // Split and save child expression
                     let child_name = (split.len()).to_string();
