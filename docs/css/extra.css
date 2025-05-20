@@ -18,6 +18,10 @@
   --md-accent-fg-color: #ad9fff;
 }
 
+:host(readthedocs-flyout) {
+  display: none !important;
+}
+
 [data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
   --md-typeset-a-color: #7862FF;
 }
