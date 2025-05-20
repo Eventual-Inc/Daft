@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", function () {
   script.setAttribute("runllm-name", "Daft");
   script.setAttribute("runllm-position", "BOTTOM_LEFT");
   script.setAttribute("runllm-position-x", "20px");
-  script.setAttribute("runllm-position-y", "98px");
+  script.setAttribute("runllm-position-y", "20px");
   script.setAttribute("runllm-assistant-id", "160");
   script.setAttribute("runllm-preset", "mkdocs");
   script.setAttribute("runllm-theme-color", "#7862ff");
