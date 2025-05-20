@@ -131,10 +131,6 @@ code.doc-symbol-method::after {
   width: 10rem;
 }
 
-.md-sidebar .md-sidebar--primary .md-sidebar__scrollwrap {
-  height: 600px;
-}
-
 [dir=ltr] .md-nav--primary .md-nav__item>.md-nav__link {
   margin-right: 0rem;
 }
