@@ -1,9 +1,13 @@
-.container.bottom-left {
+/* .container.bottom-left {
     left: 20px;
     bottom: 100px !important;
   }
 
 :host[position="bottom-left"] {
     left: 20px;
+    bottom: 100px !important;
+} */
+
+readthedocs-flyout position {
     bottom: 100px !important;
 }
