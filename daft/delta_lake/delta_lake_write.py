@@ -3,13 +3,15 @@ from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Tuple
 from daft.context import get_context
 from daft.daft import IOConfig
 from daft.datatype import DataType
-from daft.dependencies import pa, pafs
+from daft.dependencies import pa
 from daft.io.common import _get_schema_from_dict
 from daft.recordbatch.micropartition import MicroPartition
 from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to_path
 
 if TYPE_CHECKING:
     from deltalake.writer import AddAction
+
+    from daft.dependencies import pafs
 
 
 def sanitize_table_for_deltalake(
@@ -87,7 +89,7 @@ def make_deltalake_add_action(
     )
 
 
-def make_deltalake_fs(path: str, io_config: Optional[IOConfig] = None) -> pafs.PyFileSystem:
+def make_deltalake_fs(path: str, io_config: Optional[IOConfig] = None) -> "pafs.PyFileSystem":
     from deltalake.fs import DeltaStorageHandler
     from pyarrow.fs import PyFileSystem
 
