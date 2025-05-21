@@ -43,7 +43,7 @@ import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from daft.daft import PyIdentifier, View as _View
+from daft.daft import PyIdentifier
 
 from daft.dataframe import DataFrame
 
@@ -58,7 +58,6 @@ if TYPE_CHECKING:
     from daft.catalog.__memory import MemoryCatalog
     from daft.catalog.__iceberg import IcebergCatalog
     from daft.catalog.__unity import UnityCatalog
-    from daft.catalog.__s3tables import S3Catalog
     from daft.catalog.__glue import GlueCatalog
 
 

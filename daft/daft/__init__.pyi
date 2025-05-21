@@ -3,7 +3,6 @@ import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterator, Literal, TypeVar
 
-from daft.catalog import Catalog, Table
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io import DataSink
@@ -19,6 +18,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.catalog import Catalog, Table
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
 
