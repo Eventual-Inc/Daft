@@ -61,6 +61,10 @@ def broadcast_query_information(
     }
 
     url = os.environ.get("DAFT_DASHBOARD_URL") if os.environ.get("DAFT_DASHBOARD_URL") else native.DAFT_DASHBOARD_URL
+    auth_token = os.environ.get("DAFT_DASHBOARD_AUTH_TOKEN") if os.environ.get("DAFT_DASHBOARD_AUTH_TOKEN") else None
+
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
 
     queries_url = f"{url}/api/queries"
 
