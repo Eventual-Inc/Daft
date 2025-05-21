@@ -50,7 +50,8 @@ def launch(noop_if_initialized: bool = False):
 
 
 def broadcast_query_information(
-    plan: str,
+    unoptimized_plan: str,
+    optimized_plan: str,
     mermaid_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
@@ -66,17 +67,14 @@ def broadcast_query_information(
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
-            "plan": plan,
+            "unoptimized_plan": unoptimized_plan,
+            "optimized_plan": optimized_plan,
             "mermaid_plan": mermaid_plan,
             "plan_time_start": str(plan_time_start),
             "plan_time_end": str(plan_time_end),
             "logs": "",  # todo: implement logs
         }
     ).encode("utf-8")
-
-    import pprint
-
-    pprint.pprint(data)
 
     req = request.Request(queries_url, headers=headers, data=data)
 
