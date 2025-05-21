@@ -28,3 +28,18 @@ else:
     flight = LazyImport("pyarrow.flight")
 
 unity_catalog = LazyImport("daft.unity_catalog")
+
+__all__ = [
+    "flight",
+    "fsspec",
+    "np",
+    "pa",
+    "pacsv",
+    "pads",
+    "pafs",
+    "pajson",
+    "pd",
+    "pil_image",
+    "pq",
+    "unity_catalog",
+]
