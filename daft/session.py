@@ -243,7 +243,7 @@ class Session:
 
         return catalog.create_table_if_not_exists(identifier, source, properties)
 
-    def create_temp_table(self, identifier: str, source: Schema | DataFrame) -> None:
+    def create_temp_table(self, identifier: str, source: Schema | DataFrame) -> Table:
         """Creates a temp table scoped to this session's lifetime.
 
         Args:
@@ -277,7 +277,7 @@ class Session:
             raise ValueError(
                 f"Unsupported create_temp_table source, {type(source)}, expected either Schema or DataFrame."
             )
-        self._session.create_temp_table(identifier, py_source, replace=True)
+        return self._session.create_temp_table(identifier, py_source, replace=True)
 
     ###
     # drop_*

@@ -46,9 +46,11 @@ impl PySession {
         name: String,
         source: &PyTableSource,
         replace: bool,
-    ) -> PyResult<()> {
-        self.0.create_temp_table(name, source.as_ref(), replace)?;
-        Ok(())
+        py: Python,
+    ) -> PyResult<PyObject> {
+        self.0
+            .create_temp_table(name, source.as_ref(), replace)?
+            .to_py(py)
     }
 
     pub fn current_catalog(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
