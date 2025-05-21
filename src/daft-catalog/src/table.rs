@@ -58,6 +58,7 @@ pub trait Table: Sync + Send + std::fmt::Debug {
 
 /// View is an immutable Table backed by a DataFrame.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct View {
     name: String,
     plan: LogicalPlanBuilder,
@@ -70,21 +71,29 @@ impl View {
             plan: plan.into(),
         }
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn plan(&self) -> LogicalPlanBuilder {
+        self.plan.clone()
+    }
 }
 
 impl Table for View {
     fn name(&self) -> String {
-        self.name.clone()
+        self.name().to_string()
     }
 
     /// Returns a reference to the inner plan's schema
     fn schema(&self) -> CatalogResult<SchemaRef> {
-        Ok(self.plan.schema())
+        Ok(self.plan().schema())
     }
 
     /// Returns a reference to the inner plan
     fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder> {
-        Ok(self.plan.clone())
+        Ok(self.plan())
     }
 
     fn write(&self, _plan: LogicalPlanBuilder, _mode: &str) -> CatalogResult<()> {
@@ -95,10 +104,13 @@ impl Table for View {
 
     /// This is a little ugly .. it creates a PyObject which implements the daft.catalog.Table ABC
     #[cfg(feature = "python")]
-    fn to_py(&self, _: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        Err(common_error::DaftError::NotImplemented(
-            "Cannot convert view into Python table object.".to_string(),
-        )
-        .into())
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+        use pyo3::{intern, types::PyAnyMethods};
+
+        Ok(py
+            .import(intern!(py, "daft.catalog"))?
+            .getattr("View")?
+            .call1((self.clone(),))?
+            .unbind())
     }
 }

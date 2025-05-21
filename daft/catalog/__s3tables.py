@@ -259,14 +259,14 @@ class S3Catalog(Catalog):
 
         # need to return qualified names, so stitch the parts (str for now).
         def to_ident(table_summary) -> Identifier:
-            return Identifier(table_summary["namespace"], table_summary["name"])
+            return Identifier(*table_summary["namespace"], table_summary["name"])
 
         # we must split the pattern and use the last part as the table preefix.
         if prefix:
             if len(prefix) == 1:
                 req["namespace"] = prefix[0]
             else:
-                req["namespace"] = tuple(prefix)[:-1]
+                req["namespace"] = ".".join(list(prefix)[:-1])
                 req["prefix"] = prefix[-1]
 
         # loop each page

@@ -49,11 +49,13 @@ from daft.dataframe import DataFrame
 
 from typing import TYPE_CHECKING, Any, Literal
 
+from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import ColumnInputType
     from daft.convert import InputListType
+    from daft.daft import View as _View
 
     from daft.catalog.__memory import MemoryCatalog
     from daft.catalog.__iceberg import IcebergCatalog
@@ -954,3 +956,19 @@ class Table(ABC):
             category=DeprecationWarning,
         )
         return self.read()
+
+
+class View(Table):
+    def __init__(self, view: _View):
+        self._view = view
+
+    @property
+    def name(self):
+        return self._view.name()
+
+    def read(self, **options):
+        builder = LogicalPlanBuilder(self._view.plan())
+        return DataFrame(builder)
+
+    def write(self, df, mode="append", **options):
+        raise TypeError("Cannot write to a view")

@@ -1976,6 +1976,10 @@ class PyTableSource:
     def from_pybuilder(builder: LogicalPlanBuilder):
         PyTableSource
 
+class View:
+    def name(self) -> str: ...
+    def plan(self) -> LogicalPlanBuilder: ...
+
 ###
 # daft-session
 ###

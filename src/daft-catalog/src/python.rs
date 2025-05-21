@@ -4,28 +4,13 @@ use std::sync::Arc;
 
 use daft_core::{prelude::SchemaRef, python::PySchema};
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
-use pyo3::{exceptions::PyIndexError, intern, prelude::*};
+use pyo3::{exceptions::PyIndexError, intern, prelude::*, types::PyList};
 
-use crate::{error::CatalogResult, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource};
+use crate::{
+    error::CatalogResult, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource, View,
+};
 
-/// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
-#[pyclass]
-pub struct PySqlCatalog(CatalogRef);
-
-impl From<CatalogRef> for PySqlCatalog {
-    fn from(catalog: CatalogRef) -> Self {
-        Self(catalog)
-    }
-}
-
-#[pymethods]
-impl PySqlCatalog {
-    fn name(&self) -> String {
-        self.0.name()
-    }
-}
-
-/// PyCatalogWrapper wraps a `daft.catalog.Catalog` implementation (py->rust).
+/// PyCatalog wraps a `daft.catalog.Catalog` implementation (py->rust).
 #[derive(Debug)]
 pub struct PyCatalog(PyObject);
 
@@ -87,8 +72,25 @@ impl Catalog for PyCatalog {
         })
     }
 
-    fn list_namespaces(&self, _prefix: Option<&Identifier>) -> CatalogResult<Vec<Identifier>> {
-        unimplemented!()
+    fn list_namespaces(&self, prefix: Option<&Identifier>) -> CatalogResult<Vec<Identifier>> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let prefix = prefix
+                .map(|p| PyIdentifier(p.clone()).to_pyobj(py))
+                .transpose()?;
+            let namespaces_py = catalog.call_method1(intern!(py, "_list_namespaces"), (prefix,))?;
+            Ok(namespaces_py
+                .downcast::<PyList>()
+                .expect("Catalog._list_namespaces must return a list")
+                .into_iter()
+                .map(|ident| {
+                    Ok(ident
+                        .getattr(intern!(py, "_ident"))?
+                        .extract::<PyIdentifier>()?
+                        .0)
+                })
+                .collect::<PyResult<Vec<_>>>()?)
+        })
     }
 
     fn create_table(&mut self, ident: &Identifier, schema: &SchemaRef) -> CatalogResult<TableRef> {
@@ -127,8 +129,25 @@ impl Catalog for PyCatalog {
         })
     }
 
-    fn list_tables(&self, _prefix: Option<&Identifier>) -> CatalogResult<Vec<Identifier>> {
-        unimplemented!()
+    fn list_tables(&self, prefix: Option<&Identifier>) -> CatalogResult<Vec<Identifier>> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let prefix = prefix
+                .map(|p| PyIdentifier(p.clone()).to_pyobj(py))
+                .transpose()?;
+            let namespaces_py = catalog.call_method1(intern!(py, "_list_tables"), (prefix,))?;
+            Ok(namespaces_py
+                .downcast::<PyList>()
+                .expect("Catalog._list_tables must return a list")
+                .into_iter()
+                .map(|ident| {
+                    Ok(ident
+                        .getattr(intern!(py, "_ident"))?
+                        .extract::<PyIdentifier>()?
+                        .0)
+                })
+                .collect::<PyResult<Vec<_>>>()?)
+        })
     }
 
     fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef> {
@@ -251,8 +270,10 @@ impl Table for PyTable {
             let table = self.0.bind(py);
             // df = table.read()
             let df = table.call_method0(intern!(py, "read"))?;
-            // builder = df._builder._builder
-            let builder_py = df.getattr(intern!(py, "_builder"))?;
+            // builder = df._builder()
+            let builder_py = df
+                .getattr(intern!(py, "_builder"))?
+                .getattr(intern!(py, "_builder"))?;
             // builder as PyLogicalPlanBuilder
             let builder = builder_py
                 .downcast::<PyLogicalPlanBuilder>()
@@ -311,9 +332,20 @@ impl PyTableSource {
 }
 
 pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
-    #[allow(deprecated)]
-    parent.add_class::<PySqlCatalog>()?;
     parent.add_class::<PyIdentifier>()?;
     parent.add_class::<PyTableSource>()?;
     Ok(())
+}
+
+#[pymethods]
+impl View {
+    #[pyo3(name = "name")]
+    fn name_py(&self) -> &str {
+        self.name()
+    }
+
+    #[pyo3(name = "plan")]
+    fn plan_py(&self) -> PyLogicalPlanBuilder {
+        PyLogicalPlanBuilder::new(self.plan())
+    }
 }
