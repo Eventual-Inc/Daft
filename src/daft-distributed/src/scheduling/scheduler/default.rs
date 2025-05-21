@@ -2,8 +2,8 @@ use std::collections::{BinaryHeap, HashMap};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
-    task::{SchedulingStrategy, Task},
-    worker::WorkerId,
+    task::{SchedulingStrategy, Task, TaskDetails},
+    worker::{Worker, WorkerId},
 };
 
 #[allow(dead_code)]
@@ -27,45 +27,41 @@ impl<T: Task> DefaultScheduler<T> {
         }
     }
 
-    // Spread scheduling: Schedule tasks to the worker with the most available slots
+    // Spread scheduling: Schedule tasks to the worker with the least available slots, to
     // TODO: Change the approach to instead spread based on tasks of the same 'type', i.e. from the same pipeline node.
-    fn try_schedule_spread_task(&self) -> Option<WorkerId> {
-        let mut worker_id = None;
-        let mut max_available_slots = 0;
-
-        for (id, worker) in &self.worker_snapshots {
-            let available_slots = worker.num_cpus - worker.active_task_ids.len();
-            if available_slots > max_available_slots {
-                max_available_slots = available_slots;
-                worker_id = Some(id.clone());
-            }
-        }
-        worker_id
+    fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
+        self.worker_snapshots
+            .iter()
+            .filter(|(_, worker)| worker.available_num_cpus() >= task.resource_request().num_cpus())
+            .min_by_key(|(_, worker)| worker.available_num_cpus())
+            .map(|(id, _)| id.clone())
     }
 
     // Soft worker affinity scheduling: Schedule task to the worker if it has capacity
-    // Otherwise, try to schedule to any worker with capacity
-    fn try_schedule_soft_worker_affinity_task(&self, worker_id: &WorkerId) -> Option<WorkerId> {
+    // Otherwise, fallback to spread scheduling
+    fn try_schedule_soft_worker_affinity_task(
+        &self,
+        task: &T,
+        worker_id: &WorkerId,
+    ) -> Option<WorkerId> {
         if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.active_task_ids.len() < worker.num_cpus {
+            if worker.available_num_cpus() >= task.resource_request().num_cpus() {
                 return Some(worker.worker_id.clone());
             }
         }
-        let mut worker_id = None;
-        for (id, slots) in &self.worker_snapshots {
-            if slots.active_task_ids.len() < slots.num_cpus {
-                worker_id = Some(id.clone());
-                break;
-            }
-        }
-        worker_id
+        // Fallback to spread scheduling
+        self.try_schedule_spread_task(task)
     }
 
     // Hard worker affinity scheduling: Schedule task to the worker if it has capacity
     // Otherwise, return None
-    fn try_schedule_hard_worker_affinity_task(&self, worker_id: &WorkerId) -> Option<WorkerId> {
+    fn try_schedule_hard_worker_affinity_task(
+        &self,
+        task: &T,
+        worker_id: &WorkerId,
+    ) -> Option<WorkerId> {
         if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.active_task_ids.len() < worker.num_cpus {
+            if worker.available_num_cpus() >= task.resource_request().num_cpus() {
                 return Some(worker.worker_id.clone());
             }
         }
@@ -74,10 +70,10 @@ impl<T: Task> DefaultScheduler<T> {
 
     fn try_schedule_task(&self, task: &SchedulableTask<T>) -> Option<WorkerId> {
         match task.strategy() {
-            SchedulingStrategy::Spread => self.try_schedule_spread_task(),
+            SchedulingStrategy::Spread => self.try_schedule_spread_task(&task.task),
             SchedulingStrategy::WorkerAffinity { worker_id, soft } => match soft {
-                true => self.try_schedule_soft_worker_affinity_task(worker_id),
-                false => self.try_schedule_hard_worker_affinity_task(worker_id),
+                true => self.try_schedule_soft_worker_affinity_task(&task.task, worker_id),
+                false => self.try_schedule_hard_worker_affinity_task(&task.task, worker_id),
             },
         }
     }
@@ -95,9 +91,9 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
             if let Some(worker_id) = self.try_schedule_task(&task) {
                 self.worker_snapshots
                     .get_mut(&worker_id)
-                    .unwrap()
-                    .active_task_ids
-                    .insert(task.task_id().clone());
+                    .expect("Worker should be present in DefaultScheduler")
+                    .active_task_details
+                    .insert(task.task_id().clone(), TaskDetails::from(&task.task));
                 scheduled.push(ScheduledTask { task, worker_id });
             } else {
                 unscheduled.push(task);
@@ -128,6 +124,8 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
+    use common_resource_request::ResourceRequest;
 
     use super::*;
     use crate::scheduling::{
@@ -376,7 +374,7 @@ mod tests {
         // Update scheduler state to add a new worker with 1 slot available
         let worker_3: WorkerId = Arc::from("worker3");
         let new_worker = MockWorker::new(worker_3.clone(), 1);
-        let new_worker_snapshot = WorkerSnapshot::from_worker(&new_worker);
+        let new_worker_snapshot = WorkerSnapshot::from(&new_worker);
         scheduler.update_worker_state(&[new_worker_snapshot]);
 
         // The high-priority task should now be scheduled to the new worker
@@ -386,6 +384,63 @@ mod tests {
         assert_eq!(result[0].worker_id, worker_3);
     }
 
+    #[test]
+    fn test_default_scheduler_with_resource_request_scheduling() {
+        let worker_1: WorkerId = Arc::from("worker1");
+        let worker_2: WorkerId = Arc::from("worker2");
+        let worker_3: WorkerId = Arc::from("worker3");
+
+        let workers = setup_workers(&[
+            (worker_1.clone(), 1), // 1 slot available
+            (worker_2.clone(), 2), // 2 slots available
+            (worker_3.clone(), 3), // 3 slots available
+        ]);
+
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
+
+        let tasks = vec![
+            create_schedulable_task(
+                MockTaskBuilder::default()
+                    .with_task_id(Arc::from("task1"))
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(),
+                    )
+                    .build(),
+            ),
+            create_schedulable_task(
+                MockTaskBuilder::default()
+                    .with_task_id(Arc::from("task2"))
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap(),
+                    )
+                    .build(),
+            ),
+            create_schedulable_task(
+                MockTaskBuilder::default()
+                    .with_task_id(Arc::from("task3"))
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(3.0), None, None).unwrap(),
+                    )
+                    .build(),
+            ),
+        ];
+
+        scheduler.enqueue_tasks(tasks);
+        let result = scheduler.get_schedulable_tasks();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(scheduler.num_pending_tasks(), 0);
+        for scheduled_task in &result {
+            if scheduled_task.worker_id == worker_1 {
+                assert_eq!(scheduled_task.task.task_id().to_string(), "task1");
+            } else if scheduled_task.worker_id == worker_2 {
+                assert_eq!(scheduled_task.task.task_id().to_string(), "task2");
+            } else if scheduled_task.worker_id == worker_3 {
+                assert_eq!(scheduled_task.task.task_id().to_string(), "task3");
+            }
+        }
+    }
+    
     #[test]
     fn test_scheduling_with_empty_workers() {
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&HashMap::new());

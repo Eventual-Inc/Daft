@@ -2235,6 +2235,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-partitioning",
+ "common-resource-request",
  "common-runtime",
  "common-treenode",
  "daft-dsl",

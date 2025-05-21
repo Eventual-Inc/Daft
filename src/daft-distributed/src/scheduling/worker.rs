@@ -5,7 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 
-use super::task::{Task, TaskId, TaskResultHandle};
+use super::task::{Task, TaskDetails, TaskId, TaskResultHandle};
 
 pub(crate) type WorkerId = Arc<str>;
 
@@ -15,8 +15,10 @@ pub(crate) trait Worker: Send + Sync + 'static {
     type TaskResultHandle: TaskResultHandle;
 
     fn id(&self) -> &WorkerId;
-    fn num_cpus(&self) -> usize;
-    fn active_task_ids(&self) -> HashSet<TaskId>;
+    fn active_task_details(&self) -> HashMap<TaskId, TaskDetails>;
+    fn total_num_cpus(&self) -> usize;
+    fn active_num_cpus(&self) -> usize;
+    fn available_num_cpus(&self) -> usize;
 }
 
 #[allow(dead_code)]
@@ -82,7 +84,7 @@ pub(super) mod tests {
                 for task in tasks {
                     // Update the worker's active task count
                     if let Some(worker) = self.workers.get(&worker_id) {
-                        worker.add_active_task(task.task_id().clone());
+                        worker.add_active_task(&task);
                     }
 
                     result.push(MockTaskResultHandle::new(
@@ -107,7 +109,10 @@ pub(super) mod tests {
         }
 
         fn total_available_cpus(&self) -> usize {
-            self.workers.values().map(|w| w.num_cpus).sum()
+            self.workers
+                .values()
+                .map(|w| w.total_num_cpus() - w.active_num_cpus())
+                .sum()
         }
 
         fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
@@ -124,29 +129,30 @@ pub(super) mod tests {
     #[derive(Clone)]
     pub struct MockWorker {
         worker_id: WorkerId,
-        num_cpus: usize,
-        num_active_tasks: usize,
-        active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
+        total_num_cpus: usize,
+        active_task_details: Arc<Mutex<HashMap<TaskId, TaskDetails>>>,
         is_shutdown: Arc<AtomicBool>,
     }
 
     impl MockWorker {
-        pub fn new(worker_id: WorkerId, num_cpus: usize) -> Self {
+        pub fn new(worker_id: WorkerId, total_num_cpus: usize) -> Self {
             Self {
                 worker_id,
-                num_cpus,
-                num_active_tasks: 0,
-                active_task_ids: Arc::new(Mutex::new(HashSet::new())),
+                total_num_cpus,
+                active_task_details: Arc::new(Mutex::new(HashMap::new())),
                 is_shutdown: Arc::new(AtomicBool::new(false)),
             }
         }
 
         pub fn mark_task_finished(&self, task_id: &TaskId) {
-            self.active_task_ids.lock().unwrap().remove(task_id);
+            self.active_task_details.lock().unwrap().remove(task_id);
         }
 
-        pub fn add_active_task(&self, task_id: TaskId) {
-            self.active_task_ids.lock().unwrap().insert(task_id);
+        pub fn add_active_task(&self, task: &impl Task) {
+            self.active_task_details
+                .lock()
+                .unwrap()
+                .insert(task.task_id().clone(), TaskDetails::from(task));
         }
 
         pub fn shutdown(&self) {
@@ -163,12 +169,28 @@ pub(super) mod tests {
             &self.worker_id
         }
 
-        fn num_cpus(&self) -> usize {
-            self.num_cpus
+        fn total_num_cpus(&self) -> usize {
+            self.total_num_cpus
         }
 
-        fn active_task_ids(&self) -> HashSet<TaskId> {
-            self.active_task_ids.lock().unwrap().clone()
+        fn active_num_cpus(&self) -> usize {
+            let active_task_details = self.active_task_details.lock().unwrap();
+
+            active_task_details
+                .values()
+                .map(|details| details.num_cpus())
+                .sum()
+        }
+
+        fn available_num_cpus(&self) -> usize {
+            self.total_num_cpus() - self.active_num_cpus()
+        }
+
+        fn active_task_details(&self) -> HashMap<TaskId, TaskDetails> {
+            self.active_task_details
+                .lock()
+                .expect("Active task ids should be present")
+                .clone()
         }
     }
 }

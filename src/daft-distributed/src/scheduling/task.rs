@@ -3,10 +3,34 @@ use std::{collections::HashMap, sync::Arc};
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
+use common_resource_request::ResourceRequest;
 use daft_local_plan::LocalPhysicalPlanRef;
 use uuid::Uuid;
 
 use super::worker::WorkerId;
+
+#[derive(Debug, Clone)]
+pub(crate) struct TaskResourceRequest {
+    resource_request: ResourceRequest,
+}
+
+impl TaskResourceRequest {
+    pub fn new(resource_request: ResourceRequest) -> Self {
+        Self { resource_request }
+    }
+
+    pub fn num_cpus(&self) -> usize {
+        self.resource_request.num_cpus().unwrap_or(1.0) as usize
+    }
+
+    pub fn num_gpus(&self) -> usize {
+        self.resource_request.num_gpus().unwrap_or(0.0) as usize
+    }
+
+    pub fn memory_bytes(&self) -> usize {
+        self.resource_request.memory_bytes().unwrap_or(0)
+    }
+}
 
 pub(crate) type TaskId = Arc<str>;
 pub(crate) type TaskPriority = u32;
@@ -14,7 +38,29 @@ pub(crate) type TaskPriority = u32;
 pub(crate) trait Task: Send + Sync + 'static {
     fn priority(&self) -> TaskPriority;
     fn task_id(&self) -> &TaskId;
+    fn resource_request(&self) -> &TaskResourceRequest;
     fn strategy(&self) -> &SchedulingStrategy;
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TaskDetails {
+    pub id: TaskId,
+    pub resource_request: TaskResourceRequest,
+}
+
+impl TaskDetails {
+    pub fn num_cpus(&self) -> usize {
+        self.resource_request.num_cpus()
+    }
+}
+
+impl<T: Task> From<&T> for TaskDetails {
+    fn from(task: &T) -> Self {
+        Self {
+            id: task.task_id().clone(),
+            resource_request: task.resource_request().clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +75,7 @@ pub(crate) enum SchedulingStrategy {
 pub(crate) struct SwordfishTask {
     id: TaskId,
     plan: LocalPhysicalPlanRef,
+    resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
@@ -43,9 +90,11 @@ impl SwordfishTask {
         strategy: SchedulingStrategy,
     ) -> Self {
         let task_id = Uuid::new_v4().to_string();
+        let resource_request = TaskResourceRequest::new(plan.resource_request());
         Self {
             id: Arc::from(task_id),
             plan,
+            resource_request,
             config,
             psets,
             strategy,
@@ -64,10 +113,6 @@ impl SwordfishTask {
         self.plan.clone()
     }
 
-    pub fn estimated_memory_cost(&self) -> usize {
-        self.plan.estimated_memory_cost()
-    }
-
     pub fn config(&self) -> &Arc<DaftExecutionConfig> {
         &self.config
     }
@@ -80,6 +125,10 @@ impl SwordfishTask {
 impl Task for SwordfishTask {
     fn task_id(&self) -> &TaskId {
         &self.id
+    }
+
+    fn resource_request(&self) -> &TaskResourceRequest {
+        &self.resource_request
     }
 
     fn strategy(&self) -> &SchedulingStrategy {
@@ -145,6 +194,7 @@ pub(super) mod tests {
         task_id: TaskId,
         priority: u32,
         scheduling_strategy: SchedulingStrategy,
+        resource_request: TaskResourceRequest,
         task_result: PartitionRef,
         cancel_notifier: Option<OneshotSender<()>>,
         sleep_duration: Option<std::time::Duration>,
@@ -163,6 +213,7 @@ pub(super) mod tests {
         priority: u32,
         scheduling_strategy: SchedulingStrategy,
         task_result: PartitionRef,
+        resource_request: TaskResourceRequest,
         cancel_notifier: Option<OneshotSender<()>>,
         sleep_duration: Option<Duration>,
         failure: Option<MockTaskFailure>,
@@ -181,6 +232,7 @@ pub(super) mod tests {
                 task_id: Arc::from(Uuid::new_v4().to_string()),
                 priority: 0,
                 scheduling_strategy: SchedulingStrategy::Spread,
+                resource_request: TaskResourceRequest::new(ResourceRequest::default()),
                 task_result: partition_ref,
                 cancel_notifier: None,
                 sleep_duration: None,
@@ -190,6 +242,11 @@ pub(super) mod tests {
 
         pub fn with_priority(mut self, priority: u32) -> Self {
             self.priority = priority;
+            self
+        }
+
+        pub fn with_resource_request(mut self, resource_request: ResourceRequest) -> Self {
+            self.resource_request = TaskResourceRequest::new(resource_request);
             self
         }
 
@@ -227,6 +284,7 @@ pub(super) mod tests {
                 task_id: self.task_id,
                 priority: self.priority,
                 scheduling_strategy: self.scheduling_strategy,
+                resource_request: self.resource_request,
                 task_result: self.task_result,
                 cancel_notifier: self.cancel_notifier,
                 sleep_duration: self.sleep_duration,
@@ -242,6 +300,10 @@ pub(super) mod tests {
 
         fn task_id(&self) -> &TaskId {
             &self.task_id
+        }
+
+        fn resource_request(&self) -> &TaskResourceRequest {
+            &self.resource_request
         }
 
         fn strategy(&self) -> &SchedulingStrategy {
