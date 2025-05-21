@@ -136,6 +136,7 @@ mod tests {
         task::tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
     };
+
     #[test]
     fn test_default_scheduler_spread_scheduling() {
         let worker_1: WorkerId = Arc::from("worker1");
