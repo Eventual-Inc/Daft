@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.dataframe.dataframe import DataFrame
 
@@ -33,7 +35,7 @@ class MemoryCatalog(Catalog):
     # create_*
     ###
 
-    def create_namespace(self, identifier: Identifier | str):
+    def create_namespace(self, identifier: Identifier | str) -> None:
         raise NotImplementedError("Memory create_namespace not yet supported.")
 
     def create_table(
@@ -48,24 +50,24 @@ class MemoryCatalog(Catalog):
     # drop_*
     ###
 
-    def drop_namespace(self, identifier: Identifier | str):
+    def drop_namespace(self, identifier: Identifier | str) -> None:
         raise NotImplementedError("Memory drop_namespace not yet supported.")
 
-    def drop_table(self, identifier: Identifier | str):
+    def drop_table(self, identifier: Identifier | str) -> None:
         raise NotImplementedError("Memory drop_table not yet supported.")
 
     ###
     # has_*
     ###
 
-    def has_namespace(self, identifier: Identifier | str):
+    def has_namespace(self, identifier: Identifier | str) -> bool:
         prefix = str(identifier)
         for ident in self._tables.keys():
             if ident.startswith(prefix):
                 return True
         return False
 
-    def has_table(self, identifier: Identifier | str):
+    def has_table(self, identifier: Identifier | str) -> bool:
         return str(identifier) in self._tables
 
     ###
@@ -130,12 +132,12 @@ class MemoryTable(Table):
     # read methods
     ###
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         return self._inner
 
     ###
     # write methods
     ###
 
-    def write(self, df: DataFrame, mode: str = "append", **options):
+    def write(self, df: DataFrame, mode: str = "append", **options: Any) -> None:
         raise NotImplementedError("Writes to in-memory tables are not yet supported.")
