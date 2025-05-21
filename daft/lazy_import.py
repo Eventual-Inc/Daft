@@ -29,7 +29,7 @@ class LazyImport:
         self._module_name = module_name
         self._module = None
 
-    def module_available(self):
+    def module_available(self) -> bool:
         return self._load_module() is not None
 
     def _load_module(self):

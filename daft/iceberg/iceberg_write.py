@@ -138,7 +138,7 @@ def to_partition_representation(value: Any):
         return value
 
 
-def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id, schema, properties):
+def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id, schema, properties) -> "DataFile":
     import pyiceberg
     from packaging.version import parse
     from pyiceberg.io.pyarrow import (

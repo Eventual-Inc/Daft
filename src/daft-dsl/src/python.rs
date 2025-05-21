@@ -211,6 +211,9 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
     } else if item.is_instance_of::<ImageFormat>() {
         let fmt = item.extract::<ImageFormat>()?;
         Ok(crate::lit(fmt).into())
+    } else if item.is_instance_of::<CountMode>() {
+        let mode = item.extract::<CountMode>()?;
+        Ok(crate::lit(mode).into())
     } else if item.is_none() {
         Ok(crate::null_lit().into())
     } else {
