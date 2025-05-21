@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 import os
 import platform
 import threading
 import urllib.parse
 import urllib.request
-from typing import Optional
 
 
-def _track_on_scarf(endpoint: str, extra_params: Optional[dict] = None) -> tuple[Optional[threading.Thread], dict]:
+def _track_on_scarf(endpoint: str, extra_params: dict | None = None) -> tuple[threading.Thread | None, dict]:
     """Common implementation for Scarf telemetry tracking. Executes the request in a separate daemon thread to avoid blocking the main thread.
 
     Args:
@@ -68,11 +69,11 @@ def _track_on_scarf(endpoint: str, extra_params: Optional[dict] = None) -> tuple
     return thread, result_container
 
 
-def track_runner_on_scarf(runner: str) -> tuple[Optional[threading.Thread], dict]:
+def track_runner_on_scarf(runner: str) -> tuple[threading.Thread | None, dict]:
     """Track analytics for Daft usage via Scarf."""
     return _track_on_scarf("daft-runner", {"runner": runner})
 
 
-def track_import_on_scarf() -> tuple[Optional[threading.Thread], dict]:
+def track_import_on_scarf() -> tuple[threading.Thread | None, dict]:
     """Track analytics for Daft imports via Scarf."""
     return _track_on_scarf("daft-import")

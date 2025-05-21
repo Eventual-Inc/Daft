@@ -1,8 +1,6 @@
 fix = true
 indent-width = 4
 line-length = 120
-# TODO: clean up typing code and update to py39
-target-version = "py38"
 
 [format]
 docstring-code-format = true
@@ -22,6 +20,7 @@ extend-select = [
   "LOG",  # flake8-logging
   "G",  # flake8-logging-format
   "I",  # isort
+  "D",  # pydocstyle rules
   "RUF010",  # Use explicit conversion flag
   "RUF013",  # PEP 484 prohibits implicit Optional
   "RUF015",  # Prefer next({iterable}) over single element slice
@@ -31,8 +30,7 @@ extend-select = [
   "RUF034",  # Useless if-else condition
   "RUF041",  # Unnecessary nested Literal
   "RUF100",  # unused-noqa"
-  "T10",  # flake8-debugger
-  "D"  # pydocstyle rules
+  "T10"  # flake8-debugger
 ]
 ignore = [
   "E402",  # Module level import not at top of file [TODO(sammy): We want to fix this]
@@ -47,6 +45,9 @@ ignore = [
   "D107"  # Missing docstring in __init__
 ]
 preview = true
+
+[lint.isort]
+required-imports = ["from __future__ import annotations"]
 
 [lint.per-file-ignores]
 # Do not enforce usage and import order rules in init files

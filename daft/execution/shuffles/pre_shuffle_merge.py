@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import logging
 from collections import defaultdict
-from typing import Dict
 
 import ray.experimental  # noqa: TID253
 
@@ -37,7 +38,7 @@ def pre_shuffle_merge(
     NUM_MAPS_THRESHOLD = 4
 
     stage_id = next(stage_id_counter)
-    in_flight_maps: Dict[str, SingleOutputPartitionTask[PartitionT]] = {}
+    in_flight_maps: dict[str, SingleOutputPartitionTask[PartitionT]] = {}
     no_more_input = False
 
     while True:

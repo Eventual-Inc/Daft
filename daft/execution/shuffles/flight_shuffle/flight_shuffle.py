@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 import logging
 import random
 from collections import defaultdict, deque
-from typing import Optional
 
 from daft.daft import (
     FlightClientManager,
@@ -51,7 +52,7 @@ class ShuffleActorManager:
         shuffle_stage_id: int,
         storage_dirs: list[str],
         num_output_partitions: int,
-        partition_by: Optional[list[PyExpr]] = None,
+        partition_by: list[PyExpr] | None = None,
     ):
         self.shuffle_stage_id = shuffle_stage_id
         self.storage_dirs = storage_dirs
@@ -188,7 +189,7 @@ class ShuffleActor:
         shuffle_stage_id: int,
         storage_dirs: list[str],
         num_output_partitions: int,
-        partition_by: Optional[list[PyExpr]] = None,
+        partition_by: list[PyExpr] | None = None,
     ):
         self.shuffle_actor_manager = shuffle_actor_manager
         self.node_id = ray.get_runtime_context().get_node_id()
@@ -198,7 +199,7 @@ class ShuffleActor:
         self.partition_by = partition_by
 
         # create a shuffle cache to store the partitions
-        self.in_progress_shuffle_cache: Optional[InProgressShuffleCache] = InProgressShuffleCache.try_new(
+        self.in_progress_shuffle_cache: InProgressShuffleCache | None = InProgressShuffleCache.try_new(
             num_output_partitions,
             storage_dirs,
             self.node_id,
@@ -207,11 +208,11 @@ class ShuffleActor:
             compression=None,
             partition_by=partition_by,
         )
-        self.shuffle_cache: Optional[ShuffleCache] = None
-        self.client_manager: Optional[FlightClientManager] = None
+        self.shuffle_cache: ShuffleCache | None = None
+        self.client_manager: FlightClientManager | None = None
 
-        self.server: Optional[FlightServerConnectionHandle] = None
-        self.port: Optional[int] = None
+        self.server: FlightServerConnectionHandle | None = None
+        self.port: int | None = None
 
     def get_address(self) -> str:
         return f"grpc://{self.host}:{self.port}"
@@ -345,7 +346,7 @@ def flight_shuffle(
     fanout_plan: InProgressPhysicalPlan[ray.ObjectRef],
     num_output_partitions: int,
     shuffle_dirs: list[str],
-    partition_by: Optional[list[PyExpr]] = None,
+    partition_by: list[PyExpr] | None = None,
 ):
     map_stage_id = next(stage_id_counter)
     shuffle_stage_id = next(stage_id_counter)

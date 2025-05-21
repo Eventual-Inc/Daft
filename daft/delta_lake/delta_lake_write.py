@@ -1,22 +1,24 @@
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import IOConfig
 from daft.datatype import DataType
-from daft.dependencies import pa
 from daft.io.common import _get_schema_from_dict
 from daft.recordbatch.micropartition import MicroPartition
 from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to_path
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from deltalake.writer import AddAction
 
-    from daft.dependencies import pafs
+    from daft.daft import IOConfig
+    from daft.dependencies import pa, pafs
 
 
 def sanitize_table_for_deltalake(
-    table: MicroPartition, large_dtypes: bool, partition_keys: Optional[List[str]] = None
+    table: MicroPartition, large_dtypes: bool, partition_keys: list[str] | None = None
 ) -> pa.Table:
     from deltalake.schema import _convert_pa_schema_to_delta
 
@@ -34,7 +36,7 @@ def sanitize_table_for_deltalake(
 
 def partitioned_table_to_deltalake_iter(
     partitioned: PartitionedTable, large_dtypes: bool
-) -> Iterator[Tuple[pa.Table, str, Dict[str, Optional[str]]]]:
+) -> Iterator[tuple[pa.Table, str, dict[str, str | None]]]:
     """Iterates over partitions, yielding each partition as an Arrow table, along with their respective paths and partition values."""
     partition_values = partitioned.partition_values()
 
@@ -57,7 +59,7 @@ def make_deltalake_add_action(
     metadata,
     size,
     partition_values,
-) -> "AddAction":
+) -> AddAction:
     import json
     from datetime import datetime
 
@@ -90,7 +92,7 @@ def make_deltalake_add_action(
     )
 
 
-def make_deltalake_fs(path: str, io_config: Optional[IOConfig] = None) -> "pafs.PyFileSystem":
+def make_deltalake_fs(path: str, io_config: IOConfig | None = None) -> pafs.PyFileSystem:
     from deltalake.fs import DeltaStorageHandler
     from pyarrow.fs import PyFileSystem
 
@@ -105,8 +107,8 @@ class DeltaLakeWriteVisitors:
     class FileVisitor:
         def __init__(
             self,
-            parent: "DeltaLakeWriteVisitors",
-            partition_values: Dict[str, Optional[str]],
+            parent: DeltaLakeWriteVisitors,
+            partition_values: dict[str, str | None],
         ):
             self.parent = parent
             self.partition_values = partition_values
@@ -129,10 +131,10 @@ class DeltaLakeWriteVisitors:
             self.parent.add_actions.append(add_action)
 
     def __init__(self, fs: pa.fs.FileSystem):
-        self.add_actions: List[AddAction] = []
+        self.add_actions: list[AddAction] = []
         self.fs = fs
 
-    def visitor(self, partition_values: Dict[str, Optional[str]]) -> "DeltaLakeWriteVisitors.FileVisitor":
+    def visitor(self, partition_values: dict[str, str | None]) -> DeltaLakeWriteVisitors.FileVisitor:
         return self.FileVisitor(self, partition_values)
 
     def to_metadata(self) -> MicroPartition:

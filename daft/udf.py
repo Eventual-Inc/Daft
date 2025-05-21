@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 import daft
 from daft.daft import PyDataType, ResourceRequest
@@ -12,7 +12,7 @@ from daft.dependencies import np, pa
 from daft.expressions import Expression
 from daft.series import PySeries, Series
 
-InitArgsType = Optional[Tuple[Tuple[Any, ...], Dict[str, Any]]]
+InitArgsType = Optional[tuple[tuple[Any, ...], dict[str, Any]]]
 UdfReturnType = Union[Series, list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
 UserDefinedPyFunc = Callable[..., UdfReturnType]
 UserDefinedPyFuncLike = Union[UserDefinedPyFunc, type]

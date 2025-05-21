@@ -1,10 +1,14 @@
-from abc import ABC, abstractmethod
-from collections.abc import Iterator
-from dataclasses import dataclass
-from typing import Generic, TypeVar
+from __future__ import annotations
 
-from daft.recordbatch import MicroPartition
-from daft.schema import Schema
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from daft.recordbatch import MicroPartition
+    from daft.schema import Schema
 
 T = TypeVar("T")
 
