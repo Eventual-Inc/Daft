@@ -31,7 +31,7 @@ class AnalyticsEvent:
     data: dict[str, Any]
 
 
-def _get_session_key():
+def _get_session_key() -> str:
     # Restrict the cardinality of keys to 800
     return f"anon-{random.randint(1, 800)}"
 
@@ -186,11 +186,11 @@ def init_analytics(daft_version: str, daft_build_type: str, user_opted_out: bool
     return _ANALYTICS_CLIENT
 
 
-def time_df_method(method):
+def time_df_method(method: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to track metrics about Dataframe method calls."""
 
     @functools.wraps(method)
-    def tracked_method(*args, **kwargs):
+    def tracked_method(*args: Any, **kwargs: Any) -> Any:
         if _ANALYTICS_CLIENT is None:
             return method(*args, **kwargs)
 
@@ -212,11 +212,11 @@ def time_df_method(method):
     return tracked_method
 
 
-def time_func(fn):
+def time_func(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to track metrics for daft API calls."""
 
     @functools.wraps(fn)
-    def tracked_fn(*args, **kwargs):
+    def tracked_fn(*args: Any, **kwargs: Any) -> Any:
         __tracebackhide__ = True
         if _ANALYTICS_CLIENT is None:
             return fn(*args, **kwargs)
