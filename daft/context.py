@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generator
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
 from daft.daft import get_context as _get_context
@@ -12,6 +12,7 @@ from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
+    from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
 
 logger = logging.getLogger(__name__)
@@ -28,11 +29,11 @@ class DaftContext:
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
     @property
-    def _runner(self) -> Runner:
+    def _runner(self) -> Runner[PartitionT]:
         return self._ctx._runner
 
     @_runner.setter
-    def _runner(self, runner: Runner):
+    def _runner(self, runner: Runner[PartitionT]) -> None:
         self._ctx._runner = runner
 
     @staticmethod
@@ -45,7 +46,7 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
-    def get_or_create_runner(self) -> Runner:
+    def get_or_create_runner(self) -> Runner[PartitionT]:
         return self._ctx.get_or_create_runner()
 
     @property
@@ -133,7 +134,7 @@ def set_runner_native(num_threads: int | None = None) -> DaftContext:
 
 
 @contextlib.contextmanager
-def planning_config_ctx(**kwargs):
+def planning_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_planning_config to reset the config to its original setting afternwards."""
     original_config = get_context().daft_planning_config
     try:
@@ -170,7 +171,7 @@ def set_planning_config(
 
 
 @contextlib.contextmanager
-def execution_config_ctx(**kwargs):
+def execution_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_execution_config to reset the config to its original setting afternwards."""
     original_config = get_context()._ctx._daft_execution_config
     try:

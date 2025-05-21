@@ -30,7 +30,7 @@ def _should_run() -> bool:
     return True
 
 
-def launch(noop_if_initialized: bool = False):
+def launch(noop_if_initialized: bool = False) -> None:
     """Launches the Daft dashboard server on port 3238.
 
     The server serves HTML/CSS/JS bundles, so you are able to point your browser towards `http://localhost:3238` and view information regarding your queries.
@@ -55,7 +55,7 @@ def broadcast_query_information(
     mermaid_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
-):
+) -> None:
     headers = {
         "Content-Type": "application/json",
     }
