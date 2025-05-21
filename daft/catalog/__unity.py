@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from unitycatalog import NotFoundError as UnityNotFoundError
 
@@ -142,7 +142,7 @@ class UnityTable(Table):
 
     @property
     def name(self) -> str:
-        return self._inner.table_info.name
+        return self._inner.table_info.name  # type: ignore
 
     @staticmethod
     def _from_obj(obj: object) -> UnityTable:
@@ -157,7 +157,7 @@ class UnityTable(Table):
     # read methods
     ###
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         Table._validate_options("Unity read", options, UnityTable._read_options)
 
         return read_deltalake(self._inner, version=options.get("version"))
@@ -166,10 +166,12 @@ class UnityTable(Table):
     # write methods
     ###
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite", "error", "ignore"] = "append", **options):
+    def write(
+        self, df: DataFrame, mode: Literal["append", "overwrite", "error", "ignore"] = "append", **options: Any
+    ) -> None:
         self._validate_options("Unity write", options, UnityTable._write_options)
 
-        return df.write_deltalake(
+        df.write_deltalake(
             self._inner,
             mode=mode,
             schema_mode=options.get("schema_mode"),

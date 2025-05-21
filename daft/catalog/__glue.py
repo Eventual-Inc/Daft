@@ -89,7 +89,7 @@ class GlueCatalog(Catalog):
     # !! PATCH HERE TO PROVIDE CUSTOM GLUE TABLE IMPLEMENTATIONS !!
     _table_impls: list[type[GlueTable]] = []
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls) -> GlueCatalog:
         if cls is GlueCatalog:
             cls._table_impls = [
                 GlueCsvTable,
@@ -99,7 +99,7 @@ class GlueCatalog(Catalog):
             ]
         return super().__new__(cls)
 
-    def __init__(self):
+    def __init__(self) -> None:
         raise ValueError("GlueCatalog.__init__() not supported!")
 
     @staticmethod

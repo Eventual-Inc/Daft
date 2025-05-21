@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.catalog import load_catalog
@@ -40,7 +40,7 @@ class IcebergCatalog(Catalog):
         raise ValueError(f"Unsupported iceberg catalog type: {type(obj)}")
 
     @staticmethod
-    def _load_catalog(name: str, **options) -> IcebergCatalog:
+    def _load_catalog(name: str, **options: str | None) -> IcebergCatalog:
         c = IcebergCatalog.__new__(IcebergCatalog)
         c._inner = load_catalog(name, **options)
         return c
@@ -162,12 +162,11 @@ class IcebergTable(Table):
             return t
         raise ValueError(f"Unsupported iceberg table type: {type(obj)}")
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any | None) -> DataFrame:
         Table._validate_options("Iceberg read", options, IcebergTable._read_options)
-
         return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
 
-    def write(self, df: DataFrame, mode: str = "append", **options):
+    def write(self, df: DataFrame, mode: str = "append", **options: Any) -> None:
         self._validate_options("Iceberg write", options, IcebergTable._write_options)
 
         df.write_iceberg(self._inner, mode=mode)

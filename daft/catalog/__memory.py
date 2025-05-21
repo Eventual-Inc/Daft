@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.dataframe.dataframe import DataFrame
 
@@ -131,12 +133,12 @@ class MemoryTable(Table):
     # read methods
     ###
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         return self._inner
 
     ###
     # write methods
     ###
 
-    def write(self, df: DataFrame, mode: str = "append", **options):
+    def write(self, df: DataFrame, mode: str = "append", **options: Any) -> None:
         raise NotImplementedError("Writes to in-memory tables are not yet supported.")
