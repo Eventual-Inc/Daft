@@ -174,3 +174,12 @@ code.doc-symbol-method::after {
 .md-footer-meta__inner.md-grid {
   max-width: 50rem;
 }
+
+/* readthedocs version selector */
+.md-version__list {
+  display: none;
+}
+
+.md-version__list--active {
+  display: block;
+}
