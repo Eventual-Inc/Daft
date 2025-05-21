@@ -94,7 +94,12 @@ class IcebergCatalog(Catalog):
 
     def _has_table(self, identifier: Identifier) -> bool:
         ident = _to_pyiceberg_ident(identifier)
-        return self._inner.table_exists(ident)
+        try:
+            # using load_table instead of table_exists because table_exists does not work with an instance of the `tabulario/iceberg-rest` Docker image
+            self._inner.load_table(ident)
+            return True
+        except NoSuchTableError:
+            return False
 
     ###
     # get_*
