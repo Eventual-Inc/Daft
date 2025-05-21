@@ -3,23 +3,23 @@
 use std::sync::Arc;
 
 use daft_core::{prelude::SchemaRef, python::PySchema};
-use daft_logical_plan::{LogicalPlanRef, PyLogicalPlanBuilder};
+use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::{exceptions::PyIndexError, intern, prelude::*};
 
-use crate::{error::Result, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource, View};
+use crate::{error::CatalogResult, Catalog, CatalogRef, Identifier, Table, TableRef, TableSource};
 
 /// PyCatalog implements the Catalog ABC for some Catalog trait impl (rust->py).
 #[pyclass]
-pub struct PyCatalog(CatalogRef);
+pub struct PySqlCatalog(CatalogRef);
 
-impl From<CatalogRef> for PyCatalog {
+impl From<CatalogRef> for PySqlCatalog {
     fn from(catalog: CatalogRef) -> Self {
         Self(catalog)
     }
 }
 
 #[pymethods]
-impl PyCatalog {
+impl PySqlCatalog {
     fn name(&self) -> String {
         self.0.name()
     }
@@ -27,76 +27,117 @@ impl PyCatalog {
 
 /// PyCatalogWrapper wraps a `daft.catalog.Catalog` implementation (py->rust).
 #[derive(Debug)]
-pub struct PyCatalogWrapper(PyObject);
+pub struct PyCatalog(PyObject);
 
-impl From<PyObject> for PyCatalogWrapper {
+impl From<PyObject> for PyCatalog {
     fn from(obj: PyObject) -> Self {
         Self(obj)
     }
 }
 
-impl PyCatalogWrapper {
+impl PyCatalog {
     pub fn wrap(obj: PyObject) -> CatalogRef {
         Arc::new(Self::from(obj))
     }
 }
 
-impl Catalog for PyCatalogWrapper {
+impl Catalog for PyCatalog {
     fn name(&self) -> String {
         Python::with_gil(|py| {
             // catalog = 'python catalog object'
             let catalog = self.0.bind(py);
             // name = catalog.name
-            let name = catalog.getattr("name").expect(".name should never fail");
+            let name = catalog
+                .getattr(intern!(py, "name"))
+                .expect("Catalog.name should never fail");
             let name: String = name.extract().expect("name must be a string");
             name
         })
     }
 
-    fn get_table(&self, ident: &Identifier) -> Result<Option<Box<dyn Table>>> {
-        Python::with_gil(|py| {
-            // catalog = 'python catalog object'
-            let catalog = self.0.bind(py);
-            // TODO chore: create a python identifier here.
-            let identifier = ident.to_string();
-            // table = catalog.get_table(ident)
-            let result = catalog.getattr("get_table")?.call1((identifier,));
-            // wrap py table object so it's an impl Table
-            if let Ok(table) = result {
-                let table = PyTableWrapper::from(table.unbind());
-                return Ok(Some(Box::new(table) as Box<dyn Table>));
-            }
-            // check if NotFounderError otherwise return the python error.
-            let err = result.unwrap_err();
-            let table_not_found_error = py
-                .import(intern!(py, "daft.catalog"))?
-                .getattr(intern!(py, "NotFoundError"))?;
-            if err.is_instance(py, &table_not_found_error) {
-                Ok(None)
-            } else {
-                Err(err.into())
-            }
-        })
-    }
-
-    fn list_tables(&self, pattern: Option<String>) -> Result<Vec<Identifier>> {
-        Python::with_gil(|py| {
-            // catalog = 'python catalog object'
-            let catalog = self.0.bind(py);
-            // call the list_tables method with the pattern
-            let tables = catalog.getattr("list_tables")?.call1((pattern,))?;
-            // convert the Python list of strings to Vec<Identifier>
-            let tables: Vec<String> = tables.extract()?;
-            let identifiers = tables
-                .into_iter()
-                .map(|table| Identifier::from_sql(&table, false))
-                .collect::<std::result::Result<Vec<Identifier>, _>>()?;
-            Ok(identifiers)
-        })
-    }
-
     fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.0.extract(py)
+        Ok(self.0.clone_ref(py))
+    }
+
+    fn create_namespace(&mut self, ident: &Identifier) -> CatalogResult<()> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            catalog.call_method1(intern!(py, "_create_namespace"), (ident,))?;
+            Ok(())
+        })
+    }
+
+    fn has_namespace(&self, ident: &Identifier) -> CatalogResult<bool> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            Ok(catalog
+                .call_method1(intern!(py, "_has_namespace"), (ident,))?
+                .extract()?)
+        })
+    }
+
+    fn drop_namespace(&mut self, ident: &Identifier) -> CatalogResult<()> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            catalog.call_method1(intern!(py, "_drop_namespace"), (ident,))?;
+            Ok(())
+        })
+    }
+
+    fn list_namespaces(&self, _prefix: Option<&Identifier>) -> CatalogResult<Vec<Identifier>> {
+        unimplemented!()
+    }
+
+    fn create_table(&mut self, ident: &Identifier, schema: &SchemaRef) -> CatalogResult<TableRef> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let schema = PySchema {
+                schema: schema.clone(),
+            };
+            let schema_py = py
+                .import(intern!(py, "daft.schema"))?
+                .getattr(intern!(py, "Schema"))?
+                .call_method1(intern!(py, "_from_pyschema"), (schema,))?;
+
+            let table = catalog.call_method1(intern!(py, "_create_table"), (ident, schema_py))?;
+            Ok(Arc::new(PyTable(table.unbind())) as Arc<dyn Table>)
+        })
+    }
+
+    fn has_table(&self, ident: &Identifier) -> CatalogResult<bool> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            Ok(catalog
+                .call_method1(intern!(py, "_has_table"), (ident,))?
+                .extract()?)
+        })
+    }
+
+    fn drop_table(&mut self, ident: &Identifier) -> CatalogResult<()> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            catalog.call_method1(intern!(py, "_drop_table"), (ident,))?;
+            Ok(())
+        })
+    }
+
+    fn list_tables(&self, _prefix: Option<&Identifier>) -> CatalogResult<Vec<Identifier>> {
+        unimplemented!()
+    }
+
+    fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef> {
+        Python::with_gil(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let table = catalog.call_method1(intern!(py, "_get_table"), (ident,))?;
+            Ok(Arc::new(PyTable(table.unbind())) as Arc<dyn Table>)
+        })
     }
 }
 
@@ -144,6 +185,14 @@ impl PyIdentifier {
     }
 }
 
+impl PyIdentifier {
+    pub fn to_pyobj(self, py: Python) -> PyResult<Bound<PyAny>> {
+        py.import(intern!(py, "daft.catalog"))?
+            .getattr(intern!(py, "Identifier"))?
+            .call_method1(intern!(py, "_from_pyidentifier"), (self,))
+    }
+}
+
 impl From<Identifier> for PyIdentifier {
     fn from(value: Identifier) -> Self {
         Self(value)
@@ -155,88 +204,79 @@ impl AsRef<Identifier> for PyIdentifier {
         &self.0
     }
 }
-
-/// PyTable implements the `daft.catalog.Table`` ABC for some Table trait impl (rust->py).
-#[pyclass]
-#[allow(unused)]
-pub struct PyTable(TableRef);
-
-impl PyTable {
-    pub fn new(table: TableRef) -> Self {
-        Self(table)
-    }
-}
-
-#[pymethods]
-impl PyTable {
-    /// Create an immutable table backed by the logical plan.
-    #[staticmethod]
-    fn from_builder(builder: &PyLogicalPlanBuilder) -> PyResult<PyTable> {
-        let view = builder.builder.build();
-        let view = View::from(view).arced();
-        Ok(PyTable::new(view))
-    }
-
-    /// Creates a python DataFrame for this table, likely easier with python-side helpers.
-    fn read(&self, py: Python<'_>) -> PyResult<PyObject> {
-        // builder = 'compiled plan'
-        let builder = self.0.get_logical_plan()?;
-        let builder = PyLogicalPlanBuilder::new(builder.into());
-        // builder = LogicalPlanBuilder.__init__(builder)
-        let builder = py
-            .import(intern!(py, "daft.logical.builder"))?
-            .getattr(intern!(py, "LogicalPlanBuilder"))?
-            .call1((builder,))?;
-        // df = DataFrame.__init__(builder)
-        let df = py
-            .import(intern!(py, "daft.dataframe"))?
-            .getattr(intern!(py, "DataFrame"))?
-            .call1((builder,))?;
-        // df as object
-        df.extract()
-    }
-}
-
 /// PyTableWrapper wraps a `daft.catalog.Table` implementation (py->rust).
 #[derive(Debug)]
-pub struct PyTableWrapper(PyObject);
+pub struct PyTable(PyObject);
 
-impl From<PyObject> for PyTableWrapper {
+impl From<PyObject> for PyTable {
     fn from(obj: PyObject) -> Self {
         Self(obj)
     }
 }
 
-impl PyTableWrapper {
+impl PyTable {
     pub fn wrap(obj: PyObject) -> TableRef {
         Arc::new(Self::from(obj))
     }
 }
 
-impl Table for PyTableWrapper {
-    fn get_schema(&self) -> SchemaRef {
-        todo!("get_schema")
+impl Table for PyTable {
+    fn name(&self) -> String {
+        Python::with_gil(|py| {
+            let table = self.0.bind(py);
+            table
+                .getattr(intern!(py, "name"))
+                .expect("Table.name() should never fail")
+                .extract()
+                .expect("Table.name() must return a string")
+        })
     }
 
-    fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
+    fn schema(&self) -> CatalogResult<SchemaRef> {
+        Python::with_gil(|py| {
+            let table = self.0.bind(py);
+            let schema_py = table.call_method0(intern!(py, "schema"))?;
+            let schema = schema_py
+                .getattr(intern!(py, "_schema"))?
+                .downcast::<PySchema>()
+                .expect("downcast to PySchema failed")
+                .borrow();
+            Ok(schema.schema.clone())
+        })
+    }
+
+    fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder> {
         Python::with_gil(|py| {
             // table = 'python table object'
             let table = self.0.bind(py);
             // df = table.read()
-            let df = table.call_method0("read")?;
+            let df = table.call_method0(intern!(py, "read"))?;
             // builder = df._builder._builder
-            let builder = df.getattr("_builder")?.getattr("_builder")?;
+            let builder_py = df.getattr(intern!(py, "_builder"))?;
             // builder as PyLogicalPlanBuilder
-            let builder = builder
+            let builder = builder_py
                 .downcast::<PyLogicalPlanBuilder>()
                 .expect("downcast to PyLogicalPlanBuilder failed")
                 .borrow();
-            Ok(builder.builder.plan.clone())
+            Ok(builder.builder.clone())
+        })
+    }
+
+    fn write(&self, plan: LogicalPlanBuilder, mode: &str) -> CatalogResult<()> {
+        Python::with_gil(|py| {
+            let table = self.0.bind(py);
+            let plan_py = PyLogicalPlanBuilder { builder: plan };
+            let df = py
+                .import(intern!(py, "daft.dataframe"))?
+                .getattr(intern!(py, "DataFrame"))?
+                .call1((plan_py,))?;
+            table.call_method1(intern!(py, "write"), (df, mode))?;
+            Ok(())
         })
     }
 
     fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
-        self.0.extract(py)
+        Ok(self.0.clone_ref(py))
     }
 }
 
@@ -271,9 +311,9 @@ impl PyTableSource {
 }
 
 pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
-    parent.add_class::<PyCatalog>()?;
+    #[allow(deprecated)]
+    parent.add_class::<PySqlCatalog>()?;
     parent.add_class::<PyIdentifier>()?;
-    parent.add_class::<PyTable>()?;
     parent.add_class::<PyTableSource>()?;
     Ok(())
 }

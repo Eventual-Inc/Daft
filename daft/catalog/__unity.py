@@ -36,22 +36,20 @@ class UnityCatalog(Catalog):
     def _from_obj(obj: object) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
-            c = UnityCatalog.__new__(UnityCatalog)
-            c._inner = obj
-            return c
+            return UnityCatalog(obj)
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
     ###
     # create_*
     ###
 
-    def create_namespace(self, identifier: Identifier | str):
+    def _create_namespace(self, identifier: Identifier):
         raise NotImplementedError("Unity create_namespace not yet supported.")
 
-    def create_table(
+    def _create_table(
         self,
-        identifier: Identifier | str,
-        source: Schema | DataFrame,
+        identifier: Identifier,
+        source: Schema,
         properties: Properties | None = None,
     ) -> Table:
         raise NotImplementedError("Unity create_table not yet supported.")
@@ -60,21 +58,19 @@ class UnityCatalog(Catalog):
     # drop_*
     ###
 
-    def drop_namespace(self, identifier: Identifier | str):
+    def _drop_namespace(self, identifier: Identifier):
         raise NotImplementedError("Unity drop_namespace not yet supported.")
 
-    def drop_table(self, identifier: Identifier | str):
+    def _drop_table(self, identifier: Identifier):
         raise NotImplementedError("Unity drop_table not yet supported.")
 
     ###
     # get_*
     ###
 
-    def get_table(self, ident: Identifier | str) -> UnityTable:
-        if isinstance(ident, Identifier):
-            ident = ".".join(ident)  # TODO unity qualified identifiers
+    def _get_table(self, ident: Identifier) -> UnityTable:
         try:
-            return UnityTable(self._inner.load_table(ident))
+            return UnityTable(self._inner.load_table(str(ident)))
         except UnityNotFoundError:
             raise NotFoundError(f"Table {ident} not found!")
 
@@ -82,28 +78,44 @@ class UnityCatalog(Catalog):
     # list_.*
     ###
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError("Unity list_namespaces not yet supported.")
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
-        if pattern is None or pattern == "":
+    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
+        if prefix is None:
             return [
                 tbl
                 for cat in self._inner.list_catalogs()
                 for schema in self._inner.list_schemas(cat)
                 for tbl in self._inner.list_tables(schema)
             ]
-        num_namespaces = pattern.count(".")
-        if num_namespaces == 0:
-            catalog_name = pattern
-            return [tbl for schema in self._inner.list_schemas(catalog_name) for tbl in self._inner.list_tables(schema)]
-        elif num_namespaces == 1:
-            schema_name = pattern
-            return [tbl for tbl in self._inner.list_tables(schema_name)]
+        if len(prefix) == 1:
+            catalog_name = prefix[0]
+            return [
+                Identifier.from_str(tbl)
+                for schema in self._inner.list_schemas(catalog_name)
+                for tbl in self._inner.list_tables(schema)
+            ]
+        elif len(prefix) == 2:
+            schema_name = str(prefix)
+            return [Identifier.from_str(tbl) for tbl in self._inner.list_tables(schema_name)]
         else:
             raise ValueError(
-                f"Unrecognized catalog name or schema name, expected a '.'-separated namespace but received: {pattern}"
+                f"Unrecognized catalog name or schema name, expected a '.'-separated namespace but received: {prefix}"
             )
+
+    ###
+    # has_.*
+    ###
+    def _has_namespace(self, ident):
+        raise NotImplementedError("Unity has_namespace not yet supported.")
+
+    def _has_table(self, ident):
+        try:
+            self._inner.load_table(str(ident))
+            return True
+        except UnityNotFoundError:
+            return False
 
 
 class UnityTable(Table):

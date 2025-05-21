@@ -6,7 +6,7 @@ from typing import Optional
 import daft
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.daft import PyCatalog as _PyCatalog
+from daft.daft import PySqlCatalog as _PyCatalog
 from daft.daft import sql as _sql
 from daft.daft import sql_expr as _sql_expr
 from daft.dataframe import DataFrame

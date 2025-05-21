@@ -136,15 +136,7 @@ class GlueCatalog(Catalog):
     def name(self) -> str:
         return self._name
 
-    def create_namespace(self, identifier: Identifier | str):
-        """Creates a namespace (database) in AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the database to create.
-
-        Returns:
-            None
-        """
+    def _create_namespace(self, identifier: Identifier):
         try:
             self._client.create_database(
                 DatabaseInput={
@@ -154,50 +146,22 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.AlreadyExistsException:
             raise ValueError(f"Namespace {identifier} already exists")
 
-    def create_table(
+    def _create_table(
         self,
-        identifier: Identifier | str,
-        source: Schema | DataFrame,
+        identifier: Identifier,
+        schema: Schema,
         properties: Properties | None = None,
     ) -> Table:
-        """Creates a table in AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the table to create.
-            source (Schema | DataFrame): The source data for the table.
-            properties (Properties): Additional table properties.
-
-        Returns:
-            Table: The created table.
-        """
         # Table creation implementation will be added later
         raise NotImplementedError("Table creation not yet implemented")
 
-    def drop_namespace(self, identifier: Identifier | str):
-        """Drops a namespace (database) from AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the database to drop.
-
-        Returns:
-            None
-        """
+    def _drop_namespace(self, identifier: Identifier):
         try:
             self._client.delete_database(Name=str(identifier))
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Namespace {identifier} not found")
 
-    def drop_table(self, identifier: Identifier | str):
-        """Drops a table from AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the table to drop.
-
-        Returns:
-            None
-        """
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
+    def _drop_table(self, identifier: Identifier):
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
         database_name: str = str(identifier[0])
@@ -208,14 +172,7 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
-    def get_table(self, identifier: Identifier | str) -> Table:
-        """Gets a table by its identifier (<database_name>.<table_name>).
-
-        Args:
-            identifier (Identifier | str): the name of the table to get
-        """
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
+    def _get_table(self, identifier: Identifier) -> Table:
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
         database_name: str = str(identifier[0])
@@ -237,34 +194,25 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
-    def has_namespace(self, identifier: Identifier | str) -> bool:
-        """Checks if a namespace (database) exists in AWS Glue.
+    def _has_table(self, identifier: Identifier) -> bool:
+        try:
+            self._get_table(identifier)
+            return True
+        except self._client.exceptions.EntityNotFoundException:
+            return False
 
-        Args:
-            identifier (Identifier | str): The name of the database to check.
-
-        Returns:
-            bool: True if the namespace (database) exists, False otherwise.
-        """
+    def _has_namespace(self, identifier: Identifier) -> bool:
         try:
             self._client.get_database(Name=str(identifier))
             return True
         except self._client.exceptions.EntityNotFoundException:
             return False
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        """Lists namespaces (databases) in AWS Glue.
-
-        Args:
-            pattern (str | None): Pattern is NOT supported by Glue.
-
-        Returns:
-            list[Identifier]: List of namespace identifiers.
-        """
-        if pattern is not None:
+    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
+        if prefix is not None:
             # Glue may add some kind of pattern to get_databases, then we can use their scheme.
             # Rather than making something up now which could later be broken.
-            raise ValueError("GlueCatalog does not support using pattern filters with get_databases.")
+            raise ValueError("GlueCatalog does not support using prefix filters with get_databases.")
 
         try:
             req = {}  # type: ignore
@@ -281,24 +229,25 @@ class GlueCatalog(Catalog):
         except ClientError as e:
             raise ValueError("Failed to list namespaces.") from e
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
-        if pattern is None:
-            raise ValueError("GlueCatalog requires the pattern to contain a namespace.")
+    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
+        if prefix is None:
+            raise ValueError("GlueCatalog requires the prefix to contain a namespace.")
 
         req = {}
-        if "." in pattern:
-            database_name, expression = pattern.split(".", 1)
-            req["DatabaseName"] = database_name
-            req["Expression"] = expression
+        if len(prefix) == 1:
+            req["DatabaseName"] = prefix[0]
+        elif len(prefix) == 2:
+            req["DatabaseName"] = prefix[0]
+            req["Expression"] = prefix[1]
         else:
-            req["DatabaseName"] = pattern
+            raise ValueError(f"GlueCatalog.list_tables expected prefix to contain one or two parts, received: {prefix}")
 
         try:
             tables = []
             while True:
                 res = self._client.get_tables(**req)
                 for table in res["TableList"]:
-                    tables.append(f'{table["DatabaseName"]}.{table["Name"]}')
+                    tables.append(Identifier(table["DatabaseName"], table["Name"]))
                 if next_token := res.get("NextToken"):
                     req["NextToken"] = next_token
                 else:

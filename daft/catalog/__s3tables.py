@@ -9,7 +9,6 @@ from botocore.exceptions import ClientError
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__iceberg import IcebergCatalog
-from daft.dataframe import DataFrame
 from daft.io import read_iceberg
 
 if TYPE_CHECKING:
@@ -17,7 +16,9 @@ if TYPE_CHECKING:
     from mypy_boto3_s3tables import S3TablesClient
 
     from daft.daft import IOConfig
+    from daft.dataframe import DataFrame
     from daft.dependencies import pa
+
 else:
     S3TablesClient = object
 
@@ -29,14 +30,9 @@ class S3Path(Sequence):
         self._parts = tuple(parts)
 
     @staticmethod
-    def from_ident(ident: Identifier | str) -> S3Path:
+    def from_ident(ident: Identifier) -> S3Path:
         path = S3Path.__new__(S3Path)
-        if isinstance(ident, Identifier):
-            path._parts = tuple(ident)
-        elif isinstance(ident, str):
-            path._parts = tuple(ident.split("."))
-        else:
-            raise ValueError("expected Identifier or str")
+        path._parts = tuple(ident)
         return path
 
     @staticmethod
@@ -125,8 +121,7 @@ class S3Catalog(Catalog):
     # create_*
     ###
 
-    def create_namespace(self, identifier: Identifier | str):
-        """Creates a namespace in the S3 Tables catalog."""
+    def _create_namespace(self, identifier: Identifier):
         try:
             path = S3Path.from_ident(identifier)
             self._client.create_namespace(
@@ -136,20 +131,12 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to create namespace: {e}") from e
 
-    def create_table(
+    def _create_table(
         self,
-        identifier: Identifier | str,
-        source: Schema | DataFrame,
+        ident: Identifier,
+        schema: Schema,
         properties: Properties | None = None,
     ) -> Table:
-        if isinstance(source, Schema):
-            return self._create_table_from_schema(identifier, source)
-        elif isinstance(source, DataFrame):
-            raise ValueError("S3 Tables create table from DataFrame not yet supported.")
-        else:
-            raise Exception(f"Unknown table source: {source}")
-
-    def _create_table_from_schema(self, ident: Identifier | str, source: Schema) -> Table:
         path = S3Path.from_ident(ident)
         if len(path) < 2:
             raise ValueError(f"Table identifier is missing a namespace, {path!s}")
@@ -160,7 +147,7 @@ class S3Catalog(Catalog):
                 namespace=str(path.parent),
                 name=path.name,
                 format="ICEBERG",  # <-- only supported value
-                metadata=_to_metadata(source),
+                metadata=_to_metadata(schema),
             )
             return self.get_table(ident)
         except Exception as e:
@@ -170,7 +157,7 @@ class S3Catalog(Catalog):
     # has_*
     ###
 
-    def has_namespace(self, identifier: Identifier | str):
+    def _has_namespace(self, identifier: Identifier):
         try:
             _ = self._client.get_namespace(
                 namespace=str(identifier),
@@ -183,12 +170,18 @@ class S3Catalog(Catalog):
             else:
                 raise ex
 
+    def _has_table(self, identifier: Identifier):
+        try:
+            self._get_table(identifier)
+            return True
+        except Exception:
+            return False
+
     ###
     # drop_*
     ###
 
-    def drop_namespace(self, identifier: Identifier | str):
-        """Drops a namespace from the S3 Tables catalog."""
+    def _drop_namespace(self, identifier: Identifier):
         path = S3Path.from_ident(identifier)
         try:
             self._client.delete_namespace(
@@ -198,8 +191,7 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to drop namespace: {e}") from e
 
-    def drop_table(self, identifier: Identifier | str):
-        """Drops a table from the S3 Tables catalog."""
+    def _drop_table(self, identifier: Identifier):
         path = S3Path.from_ident(identifier)
         try:
             self._client.delete_table(
@@ -214,7 +206,7 @@ class S3Catalog(Catalog):
     # get_*
     ###
 
-    def get_table(self, identifier: Identifier | str) -> S3Table:
+    def _get_table(self, identifier: Identifier) -> S3Table:
         path = S3Path.from_ident(identifier)
         try:
             res = self._client.get_table(
@@ -233,8 +225,7 @@ class S3Catalog(Catalog):
     # list_*
     ###
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        """Lists namespaces in the S3 Tables catalog."""
+    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
         # base request
         req = {
             "tableBucketARN": self._table_bucket_arn,
@@ -242,8 +233,8 @@ class S3Catalog(Catalog):
         }
 
         # pattern here just represents the namespace prefix
-        if pattern:
-            req["prefix"] = pattern
+        if prefix:
+            req["prefix"] = str(prefix)
 
         try:
             namespaces = []
@@ -259,8 +250,7 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to list namespaces: {e}")
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
-        """Lists tables in the S3 Tables catalog."""
+    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
         # base request
         req = {
             "tableBucketARN": self._table_bucket_arn,
@@ -268,20 +258,16 @@ class S3Catalog(Catalog):
         }
 
         # need to return qualified names, so stitch the parts (str for now).
-        def to_ident(table_summary) -> str:
-            parts = []
-            parts.extend(table_summary["namespace"])
-            parts.append(table_summary["name"])
-            return ".".join(parts)
+        def to_ident(table_summary) -> Identifier:
+            return Identifier(table_summary["namespace"], table_summary["name"])
 
         # we must split the pattern and use the last part as the table preefix.
-        if pattern:
-            parts = pattern.split(".")
-            if len(parts) == 1:
-                req["namespace"] = parts[0]
+        if prefix:
+            if len(prefix) == 1:
+                req["namespace"] = prefix[0]
             else:
-                req["namespace"] = ".".join(parts[:-1])
-                req["prefix"] = parts[-1]
+                req["namespace"] = tuple(prefix)[:-1]
+                req["prefix"] = prefix[-1]
 
         # loop each page
         try:

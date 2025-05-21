@@ -3,7 +3,7 @@ use std::sync::Arc;
 use daft_core::prelude::SchemaRef;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 
-use crate::error::Result;
+use crate::error::{CatalogError, CatalogResult};
 
 /// Table implementation reference.
 pub type TableRef = Arc<dyn Table>;
@@ -37,60 +37,68 @@ impl From<LogicalPlanBuilder> for TableSource {
 
 /// TODO consider moving out to daft-table, but this isn't necessary or helpful right now.
 pub trait Table: Sync + Send + std::fmt::Debug {
+    /// Returns the table name.
+    fn name(&self) -> String;
+
     /// Returns the table schema
-    fn get_schema(&self) -> SchemaRef;
+    fn schema(&self) -> CatalogResult<SchemaRef> {
+        Ok(self.to_logical_plan()?.schema())
+    }
 
     /// Returns a logical plan for this table.
-    fn get_logical_plan(&self) -> Result<LogicalPlanRef>;
+    fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder>;
+
+    /// Write the plan to this table.
+    fn write(&self, plan: LogicalPlanBuilder, mode: &str) -> CatalogResult<()>;
 
     /// Leverage dynamic dispatch to return the inner object for a PyTableImpl (generics?)
     #[cfg(feature = "python")]
-    fn to_py(&self, _: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        panic!("missing to_py implementation, consider PyTable(self) as the blanket implementation")
-    }
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject>;
 }
 
 /// View is an immutable Table backed by a DataFrame.
 #[derive(Debug, Clone)]
-pub struct View(LogicalPlanRef);
-
-impl From<LogicalPlanRef> for View {
-    fn from(plan: LogicalPlanRef) -> Self {
-        Self(plan)
-    }
-}
-
-impl From<LogicalPlanBuilder> for View {
-    fn from(value: LogicalPlanBuilder) -> Self {
-        Self(value.plan)
-    }
+pub struct View {
+    name: String,
+    plan: LogicalPlanBuilder,
 }
 
 impl View {
-    pub fn arced(self) -> Arc<View> {
-        Arc::new(self)
+    pub fn new(name: impl Into<String>, plan: impl Into<LogicalPlanBuilder>) -> Self {
+        Self {
+            name: name.into(),
+            plan: plan.into(),
+        }
     }
 }
 
 impl Table for View {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
     /// Returns a reference to the inner plan's schema
-    fn get_schema(&self) -> SchemaRef {
-        self.0.schema().clone()
+    fn schema(&self) -> CatalogResult<SchemaRef> {
+        Ok(self.plan.schema())
     }
 
     /// Returns a reference to the inner plan
-    fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
-        Ok(self.0.clone())
+    fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder> {
+        Ok(self.plan.clone())
+    }
+
+    fn write(&self, _plan: LogicalPlanBuilder, _mode: &str) -> CatalogResult<()> {
+        Err(CatalogError::unsupported(
+            "cannot modify the data in a view",
+        ))
     }
 
     /// This is a little ugly .. it creates a PyObject which implements the daft.catalog.Table ABC
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        use pyo3::{types::PyAnyMethods, IntoPyObject};
-
-        use crate::python::PyTable;
-        PyTable::new(self.clone().arced())
-            .into_pyobject(py)?
-            .extract()
+    fn to_py(&self, _: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+        Err(common_error::DaftError::NotImplemented(
+            "Cannot convert view into Python table object.".to_string(),
+        )
+        .into())
     }
 }

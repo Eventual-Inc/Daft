@@ -43,7 +43,7 @@ import warnings
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from daft.daft import PyIdentifier
+from daft.daft import PyIdentifier, View as _View
 
 from daft.dataframe import DataFrame
 
@@ -54,6 +54,12 @@ from daft.logical.schema import Schema
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import ColumnInputType
     from daft.convert import InputListType
+
+    from daft.catalog.__memory import MemoryCatalog
+    from daft.catalog.__iceberg import IcebergCatalog
+    from daft.catalog.__unity import UnityCatalog
+    from daft.catalog.__s3tables import S3Catalog
+    from daft.catalog.__glue import GlueCatalog
 
 
 __all__ = [
@@ -232,8 +238,44 @@ class Catalog(ABC):
     def name(self) -> str:
         """Returns the catalog's name."""
 
+    @abstractmethod
+    def _create_namespace(self, ident: Identifier):
+        """Create a namespace in the catalog, erroring if the namespace already exists."""
+
+    @abstractmethod
+    def _has_namespace(self, ident: Identifier) -> bool:
+        """Check if a namespace exists in the catalog."""
+
+    @abstractmethod
+    def _drop_namespace(self, ident: Identifier):
+        """Remove a namespace from the catalog, erroring if the namespace did not exist."""
+
+    @abstractmethod
+    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
+        """List all namespaces in the catalog. When a prefix is specified, list only nested namespaces with the prefix."""
+
+    @abstractmethod
+    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+        """Create a table in the catalog, erroring if the table already exists."""
+
+    @abstractmethod
+    def _has_table(self, ident: Identifier) -> bool:
+        """Check if a table exists in the catalog."""
+
+    @abstractmethod
+    def _drop_table(self, ident: Identifier):
+        """Remove a table from the catalog, erroring if the table did not exist."""
+
+    @abstractmethod
+    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
+        """List all tables in the catalog. When a prefix is specified, list only tables with the prefix."""
+
+    @abstractmethod
+    def _get_table(self, ident: Identifier) -> Table:
+        """Get a table from the catalog."""
+
     @staticmethod
-    def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
+    def from_pydict(tables: dict[str, object], name: str = "default") -> MemoryCatalog:
         """Returns an in-memory catalog from a dictionary of table-like objects.
 
         The table-like objects can be pydicts, dataframes, or a Table implementation.
@@ -268,7 +310,7 @@ class Catalog(ABC):
         return MemoryCatalog._from_pydict(name, tables)
 
     @staticmethod
-    def from_iceberg(catalog: object) -> Catalog:
+    def from_iceberg(catalog: object) -> IcebergCatalog:
         """Create a Daft Catalog from a PyIceberg catalog object.
 
         Args:
@@ -290,7 +332,7 @@ class Catalog(ABC):
             raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
     @staticmethod
-    def from_unity(catalog: object) -> Catalog:
+    def from_unity(catalog: object) -> UnityCatalog:
         """Create a Daft Catalog from a Unity Catalog client.
 
         Args:
@@ -355,7 +397,7 @@ class Catalog(ABC):
         name: str,
         client: object | None = None,
         session: object | None = None,
-    ) -> Catalog:
+    ) -> GlueCatalog:
         """Creates a Daft Catalog backed by the AWS Glue service, with optional client or session.
 
         Terms:
@@ -403,14 +445,16 @@ class Catalog(ABC):
     # create_*
     ###
 
-    @abstractmethod
     def create_namespace(self, identifier: Identifier | str):
         """Creates a namespace in this catalog.
 
         Args:
             identifier (Identifier | str): namespace identifier
         """
-        raise NotImplementedError
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        self._create_namespace(identifier)
 
     def create_namespace_if_not_exists(self, identifier: Identifier | str):
         """Creates a namespace in this catalog if it does not already exist.
@@ -421,7 +465,6 @@ class Catalog(ABC):
         if not self.has_namespace(identifier):
             self.create_namespace(identifier)
 
-    @abstractmethod
     def create_table(
         self,
         identifier: Identifier | str,
@@ -437,7 +480,15 @@ class Catalog(ABC):
         Returns:
             Table: new table instance.
         """
-        raise NotImplementedError
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+        schema = source.schema() if isinstance(source, DataFrame) else source
+
+        table = self._create_table(identifier, schema, properties)
+        if isinstance(source, DataFrame):
+            table.append(source)
+
+        return table
 
     def create_table_if_not_exists(
         self,
@@ -454,9 +505,9 @@ class Catalog(ABC):
         Returns:
             Table: the existing table (if exists) or the new table instance.
         """
-        try:
+        if self.has_table(identifier):
             return self.get_table(identifier)
-        except NotFoundError:
+        else:
             return self.create_table(identifier, source, properties)
 
     ###
@@ -465,31 +516,38 @@ class Catalog(ABC):
 
     def has_namespace(self, identifier: Identifier | str):
         """Returns True if the namespace exists, otherwise False."""
-        raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._has_namespace(identifier)
 
     def has_table(self, identifier: Identifier | str) -> bool:
         """Returns True if the table exists, otherwise False."""
-        try:
-            _ = self.get_table(identifier)
-            return True
-        except NotFoundError:
-            return False
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._has_table(identifier)
 
     ###
     # drop_*
     ###
 
-    @abstractmethod
-    def drop_namespace(self, identifier: Identifier | str): ...
+    def drop_namespace(self, identifier: Identifier | str):
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
 
-    @abstractmethod
-    def drop_table(self, identifier: Identifier | str): ...
+        self._drop_namespace(identifier)
+
+    def drop_table(self, identifier: Identifier | str):
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        self._drop_table(identifier)
 
     ###
     # get_*
     ###
 
-    @abstractmethod
     def get_table(self, identifier: Identifier | str) -> Table:
         """Get a table by its identifier or raises if the table does not exist.
 
@@ -499,13 +557,16 @@ class Catalog(ABC):
         Returns:
             Table: matched table or raises if the table does not exist.
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._get_table(identifier)
 
     ###
     # list_*
     ###
 
-    @abstractmethod
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+    def list_namespaces(self, prefix: str | Identifier | None = None) -> list[Identifier]:
         """List namespaces in the catalog which match the given pattern.
 
         Args:
@@ -514,9 +575,12 @@ class Catalog(ABC):
         Returns:
             list[Identifier]: list of namespace identifiers matching the pattern.
         """
+        if isinstance(prefix, str):
+            prefix = Identifier.from_str(prefix)
 
-    @abstractmethod
-    def list_tables(self, pattern: str | None = None) -> list[str]:
+        return self._list_namespaces(prefix)
+
+    def list_tables(self, prefix: str | Identifier | None = None) -> list[Identifier]:
         """List tables in the catalog which match the given pattern.
 
         Args:
@@ -525,6 +589,10 @@ class Catalog(ABC):
         Returns:
             list[str]: list of table identifiers matching the pattern.
         """
+        if isinstance(prefix, str):
+            prefix = Identifier.from_str(prefix)
+
+        return self._list_tables(prefix)
 
     ###
     # read_*
@@ -657,7 +725,7 @@ class Identifier(Sequence):
             return False
         return self._ident.eq(other._ident)
 
-    def __getitem__(self, index: int | slice) -> str | Sequence[str]:
+    def __getitem__(self, index: int | slice) -> str:
         if isinstance(index, slice):
             raise IndexError("slicing not supported")
         if isinstance(index, int):
@@ -683,6 +751,9 @@ class Table(ABC):
     @abstractmethod
     def name(self) -> str:
         """Returns the table's name."""
+
+    def schema(self) -> Schema:
+        return self.read().schema()
 
     @staticmethod
     def from_pydict(name: str, data: dict[str, InputListType]) -> Table:
