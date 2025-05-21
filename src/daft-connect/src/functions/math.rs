@@ -6,6 +6,7 @@ use daft_functions::numeric::{
     exp::{Exp, Expm1},
     floor::Floor,
     log::{log, Ln, Log10, Log1p, Log2},
+    pow::Pow,
     round::Round,
     sign::{Negative, Sign},
     sqrt::Sqrt,
@@ -61,8 +62,8 @@ impl FunctionModule for MathFunctions {
         parent.add_fn("negative", Negative {});
         parent.add_fn("pi", TODO_FUNCTION);
         parent.add_fn("pmod", TODO_FUNCTION);
-        parent.add_fn("pow", TODO_FUNCTION);
-        parent.add_fn("power", TODO_FUNCTION);
+        parent.add_fn("pow", Pow {});
+        parent.add_fn("power", Pow {});
         parent.add_fn("rint", TODO_FUNCTION);
         parent.add_fn("round", RoundFunction);
         parent.add_fn("bround", TODO_FUNCTION);

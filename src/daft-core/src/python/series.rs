@@ -138,6 +138,10 @@ impl PySeries {
         Ok(self.series.floor_div(&other.series)?.into())
     }
 
+    pub fn pow(&self, exp: f64) -> PyResult<Self> {
+        Ok(self.series.pow(exp)?.into())
+    }
+
     pub fn log2(&self) -> PyResult<Self> {
         Ok(self.series.log2()?.into())
     }

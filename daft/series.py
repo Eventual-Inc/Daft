@@ -471,6 +471,14 @@ class Series:
         """The ln(self + 1) of a numeric series."""
         return self._eval_expressions("log1p")
 
+    def pow(self, by: Series) -> Series:
+        """The elementwise self^by of a numeric series. Shorthand for `.power(by)`."""
+        return self._eval_expressions("power", by)
+
+    def power(self, by: Series) -> Series:
+        """The elementwise self^by of a numeric series."""
+        return self._eval_expressions("power", by)
+
     def exp(self) -> Series:
         """The e^self of a numeric series."""
         return self._eval_expressions("exp")
