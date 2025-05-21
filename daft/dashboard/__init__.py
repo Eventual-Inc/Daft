@@ -50,6 +50,7 @@ def launch(noop_if_initialized: bool = False):
 
 
 def broadcast_query_information(
+    plan: str,
     mermaid_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
@@ -57,9 +58,15 @@ def broadcast_query_information(
     headers = {
         "Content-Type": "application/json",
     }
+
+    url = os.environ.get("DAFT_DASHBOARD_URL") if os.environ.get("DAFT_DASHBOARD_URL") else native.DAFT_DASHBOARD_URL
+
+    queries_url = f"{url}/api/queries"
+
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
+            "plan": plan,
             "mermaid_plan": mermaid_plan,
             "plan_time_start": str(plan_time_start),
             "plan_time_end": str(plan_time_end),
@@ -67,12 +74,16 @@ def broadcast_query_information(
         }
     ).encode("utf-8")
 
-    req = request.Request(native.DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
+    import pprint
+
+    pprint.pprint(data)
+
+    req = request.Request(queries_url, headers=headers, data=data)
 
     try:
         request.urlopen(req, timeout=1)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {native.DAFT_DASHBOARD_QUERIES_URL}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {queries_url}: {e}")
 
 
 __all__ = [

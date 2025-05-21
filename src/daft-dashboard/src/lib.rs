@@ -52,6 +52,7 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
 struct QueryInformation {
     id: StrRef,
     mermaid_plan: StrRef,
+    plan: Option<StrRef>,
     plan_time_start: DateTime<Utc>,
     plan_time_end: DateTime<Utc>,
     logs: StrRef,
