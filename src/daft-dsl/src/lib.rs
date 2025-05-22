@@ -25,7 +25,9 @@ pub use expr::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, Operator, PlanRef, ResolvedColumn,
     SketchType, Subquery, SubqueryPlan, UnresolvedColumn, WindowExpr,
 };
-pub use lit::{lit, literal_value, literals_to_series, null_lit, Literal, LiteralValue};
+pub use lit::{
+    lit, literal_value, literals_to_series, null_lit, FromLiteral, Literal, LiteralValue,
+};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 

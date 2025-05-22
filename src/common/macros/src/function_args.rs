@@ -125,14 +125,15 @@ fn derive_for_type(
                         .ok_or_else(|| common_error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?
                 },
                 (ArgCardinality::Required, ArgType::Concrete(_)) => quote! {
-                    to_lit(
-                        unnamed
-                            .pop_front()
-                            .or_else(|| named.remove(#n))
-                            .ok_or_else(|| common_error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?,
-                        #n
+                    #daft_dsl::FromLiteral::try_from_literal(
+                        &to_lit(
+                            unnamed
+                                .pop_front()
+                                .or_else(|| named.remove(#n))
+                                .ok_or_else(|| common_error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?,
+                            #n
+                        )?
                     )?
-                    .try_into()?
                 },
                 (ArgCardinality::Optional, ArgType::Generic) => quote! {
                     unnamed
@@ -143,7 +144,7 @@ fn derive_for_type(
                     unnamed
                         .pop_front()
                         .or_else(|| named.remove(#n))
-                        .map(|val| to_lit(val, #n)?.try_into())
+                        .map(|val| #daft_dsl::FromLiteral::try_from_literal(&to_lit(val, #n)?))
                         .transpose()?
 
                 },
@@ -153,7 +154,7 @@ fn derive_for_type(
                 (ArgCardinality::Variadic, ArgType::Concrete(_)) => quote! {
                     unnamed
                         .drain(..)
-                        .map(|val| to_lit(val, #n)?.try_into())
+                        .map(|val| #daft_dsl::FromLiteral::try_from_literal(&to_lit(val, #n)?))
                         .collect::<common_error::DaftResult<_>>()?
                 },
             }

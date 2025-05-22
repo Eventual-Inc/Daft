@@ -4,8 +4,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
-    lit, ExprRef, LiteralValue,
+    functions::{FunctionArgs, ScalarUDF},
+    ExprRef, LiteralValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -57,9 +57,4 @@ impl ScalarUDF for ListCount {
 
         Ok(Field::new(input_field.name, DataType::UInt64))
     }
-}
-
-#[must_use]
-pub fn list_count(expr: ExprRef, mode: CountMode) -> ExprRef {
-    ScalarFunction::new(ListCount, vec![expr, lit(mode)]).into()
 }

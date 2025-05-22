@@ -4,7 +4,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        functions::{function_args::IntArg, FunctionArg, FunctionArgs},
+        functions::{FunctionArg, FunctionArgs},
         lit, literal_value, ExprRef,
     };
 
@@ -42,24 +42,32 @@ mod tests {
     #[derive(FunctionArgs)]
     struct LiteralArgs<T> {
         arg1: T,
-        arg2: IntArg<usize>,
+        arg2: usize,
     }
 
     #[derive(FunctionArgs)]
     struct OnlyLiteralArgs {
-        arg1: IntArg<usize>,
+        arg1: usize,
     }
 
     #[derive(FunctionArgs)]
     struct OptionalLiteralArgs {
         #[arg(optional)]
-        arg1: Option<IntArg<usize>>,
+        arg1: Option<usize>,
     }
 
     #[derive(FunctionArgs)]
     struct VariadicLiteralArgs {
         #[arg(variadic)]
-        arg1: Vec<IntArg<usize>>,
+        arg1: Vec<usize>,
+    }
+
+    #[derive(FunctionArgs)]
+    struct RenamedArgs<T> {
+        #[arg(name = "arg2")]
+        arg1: T,
+        #[arg(name = "arg1")]
+        arg2: T,
     }
 
     #[rstest]
@@ -285,7 +293,7 @@ mod tests {
 
         let parsed_args = LiteralArgs::try_from(function_args).expect("should succeed");
         assert_eq!(parsed_args.arg1, lit(1));
-        assert_eq!(parsed_args.arg2.0, 2);
+        assert_eq!(parsed_args.arg2, 2);
     }
 
     #[rstest]
@@ -306,7 +314,7 @@ mod tests {
 
         let parsed_args = LiteralArgs::try_from(function_args).expect("should succeed");
         assert_eq!(parsed_args.arg1, literal_value(1).to_series());
-        assert_eq!(parsed_args.arg2.0, 2);
+        assert_eq!(parsed_args.arg2, 2);
     }
 
     #[rstest]
@@ -335,7 +343,7 @@ mod tests {
         let function_args = FunctionArgs::try_new(args).unwrap();
 
         let parsed_args = OnlyLiteralArgs::try_from(function_args).expect("should succeed");
-        assert_eq!(parsed_args.arg1.0, 1);
+        assert_eq!(parsed_args.arg1, 1);
     }
 
     #[rstest]
@@ -355,7 +363,7 @@ mod tests {
         let function_args = FunctionArgs::try_new(args).unwrap();
 
         let parsed_args = OptionalLiteralArgs::try_from(function_args).expect("should succeed");
-        assert_eq!(parsed_args.arg1.map(|arg| arg.0), expected);
+        assert_eq!(parsed_args.arg1, expected);
     }
 
     #[rstest]
@@ -375,13 +383,26 @@ mod tests {
         let function_args = FunctionArgs::try_new(args).unwrap();
 
         let parsed_args = VariadicLiteralArgs::try_from(function_args).expect("should succeed");
-        assert_eq!(
-            parsed_args
-                .arg1
-                .into_iter()
-                .map(|arg| arg.0)
-                .collect::<Vec<_>>(),
-            expected
-        );
+        assert_eq!(parsed_args.arg1, expected);
+    }
+    #[rstest]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::unnamed(lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::named("arg1", lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg2", lit(1)), FunctionArg::named("arg1", lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg1", lit(2)), FunctionArg::named("arg2", lit(1))],
+    )]
+    fn test_renamed(#[case] args: Vec<FunctionArg<ExprRef>>) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+        let parsed_args = RenamedArgs::try_from(function_args).expect("should succeed");
+
+        assert_eq!(parsed_args.arg1, lit(1));
+        assert_eq!(parsed_args.arg2, lit(2));
     }
 }
