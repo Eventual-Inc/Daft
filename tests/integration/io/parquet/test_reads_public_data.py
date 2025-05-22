@@ -234,7 +234,15 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
 
     fs = get_filesystem_from_path(path, **kwargs)
 
-    table = pq.read_table(path, filesystem=fs, use_threads=False)
+    table = None
+    retries = 0
+    while not table:
+        try:
+            table = pq.read_table(path, filesystem=fs)
+        except Exception as e:
+            retries += 1
+            if retries > 5:
+                raise e
     return table
 
 
