@@ -13,6 +13,10 @@ env:
   DAFT_ANALYTICS_ENABLED: '0'
   RUST_BACKTRACE: 1
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit-test:
     runs-on: ${{ matrix.os }}
