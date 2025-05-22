@@ -1,5 +1,3 @@
-#![allow(unused)] // todo: remove once encode is moved over
-
 use std::{fmt::Display, str::FromStr};
 
 use common_error::{DaftError, DaftResult};

@@ -1,6 +1,7 @@
 mod codecs;
 mod concat;
 mod decode;
+mod encode;
 mod kernels;
 mod utils;
 
@@ -13,5 +14,7 @@ impl FunctionModule for BinaryFunctions {
         parent.add_fn(concat::BinaryConcat);
         parent.add_fn(decode::BinaryDecode);
         parent.add_fn(decode::BinaryTryDecode);
+        parent.add_fn(encode::BinaryEncode);
+        parent.add_fn(encode::BinaryTryEncode);
     }
 }

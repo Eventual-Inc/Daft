@@ -97,9 +97,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::binary_length);
     add!(binary::binary_slice);
 
-    add!(binary::encode);
-    add!(binary::try_encode);
-
     add!(misc::to_struct);
     add!(misc::hash);
     add!(misc::minhash);

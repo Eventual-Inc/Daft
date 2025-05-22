@@ -1,5 +1,3 @@
-pub mod codecs;
-pub mod encode;
 pub mod length;
 pub mod slice;
 

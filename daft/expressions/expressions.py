@@ -1593,8 +1593,7 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        expr = native.encode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("binary_encode", codec=codec)
 
     def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
@@ -1630,8 +1629,7 @@ class Expression:
 
     def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Encodes or returns null, see `Expression.encode`."""
-        expr = native.try_encode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("binary_try_encode", codec=codec)
 
     def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes or returns null, see `Expression.decode`."""
