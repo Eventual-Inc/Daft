@@ -1,12 +1,8 @@
-use std::{
-    any::{Any, TypeId},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
-use daft_functions::uri::download::UrlDownload;
 use itertools::Itertools;
 
 use super::OptimizerRule;
@@ -46,7 +42,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "url_download"
         )
     }
 
