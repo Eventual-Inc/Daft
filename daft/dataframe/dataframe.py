@@ -171,13 +171,16 @@ class DataFrame:
         else:
             return self._result_cache.value
 
-    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime) -> None:
+    def _broadcast_query_plan(self):
         from daft import dashboard
         from daft.dataframe.display import MermaidFormatter
 
         if not dashboard._should_run():
             return
-
+        unoptimized_plan = self._builder._builder.repr_json(True)
+        plan_time_start = _utc_now()
+        optimized_plan = self._builder.optimize()._builder.repr_json(True)
+        plan_time_end = _utc_now()
         is_cached = self._result_cache is not None
         mermaid_plan: str = MermaidFormatter(
             builder=self.__builder,
@@ -187,6 +190,8 @@ class DataFrame:
         )._repr_markdown_()
 
         dashboard.broadcast_query_information(
+            unoptimized_plan=unoptimized_plan,
+            optimized_plan=optimized_plan,
             mermaid_plan=mermaid_plan,
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
@@ -3093,10 +3098,8 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
         """
-        plan_time_start = _utc_now()
+        self._broadcast_query_plan()
         self._materialize_results()
-        plan_time_end = _utc_now()
-        self._broadcast_query_plan(plan_time_start, plan_time_end)
         assert self._result is not None
         dataframe_len = len(self._result)
         if num_preview_rows is not None:
