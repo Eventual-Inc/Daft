@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import time
+
 import fsspec
 import pandas as pd
 import pyarrow as pa
 import pytest
+from aiohttp.client_exceptions import ClientPayloadError
 from pyarrow import parquet as pq
 
 import daft
@@ -239,10 +242,11 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
     while not table:
         try:
             table = pq.read_table(path, filesystem=fs)
-        except Exception as e:
-            retries += 1
+        except ClientPayloadError as e:
             if retries > 5:
                 raise e
+            time.sleep(0.1 * (2**retries))
+            retries += 1
     return table
 
 
