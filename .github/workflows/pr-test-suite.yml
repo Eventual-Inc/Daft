@@ -14,8 +14,8 @@ env:
   RUST_BACKTRACE: 1
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event.pull_request.number != '' }}
 
 jobs:
   unit-test:
