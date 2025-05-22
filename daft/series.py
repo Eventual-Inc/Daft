@@ -1062,10 +1062,10 @@ class SeriesListNamespace(SeriesNamespace):
             category=DeprecationWarning,
         )
 
-        return self._eval_expressions("list_count", count_mode=CountMode.All)
+        return self._eval_expressions("list_count", mode=CountMode.All)
 
     def length(self) -> Series:
-        return self._eval_expressions("list_count", count_mode=CountMode.All)
+        return self._eval_expressions("list_count", mode=CountMode.All)
 
     def get(self, idx: Series, default: Series) -> Series:
         return self._eval_expressions("list_get", idx=idx, default=default)
