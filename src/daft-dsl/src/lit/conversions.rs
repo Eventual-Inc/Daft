@@ -181,6 +181,19 @@ macro_rules! impl_pyobj_fromliteral {
     };
 }
 
+impl<T> FromLiteral for Option<T>
+where
+    T: FromLiteral,
+{
+    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+        if *lit == LiteralValue::Null {
+            Ok(None)
+        } else {
+            T::try_from_literal(lit).map(Some)
+        }
+    }
+}
+
 impl_strict_fromliteral!(String, Utf8);
 impl_strict_fromliteral!(bool, Boolean);
 impl_int_fromliteral!(i8);

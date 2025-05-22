@@ -17,7 +17,7 @@ pub struct Round;
 struct RoundArgs<T> {
     input: T,
     #[arg(optional)]
-    decimal: Option<i32>,
+    decimal: Option<u32>,
 }
 
 #[typetag::serde]
@@ -27,7 +27,7 @@ impl ScalarUDF for Round {
 
         let decimal = decimal.unwrap_or(0);
 
-        series_round(&input, decimal)
+        series_round(&input, decimal as i32)
     }
 
     fn name(&self) -> &'static str {

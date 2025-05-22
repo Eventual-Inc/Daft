@@ -146,6 +146,7 @@ fn derive_for_type(
                         .or_else(|| named.remove(#n))
                         .map(|val| #daft_dsl::FromLiteral::try_from_literal(&to_lit(val, #n)?))
                         .transpose()?
+                        .flatten()
 
                 },
                 (ArgCardinality::Variadic, ArgType::Generic) => quote! {
