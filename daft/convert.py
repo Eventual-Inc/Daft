@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from daft.dataframe import DataFrame
 
 
-InputListType = Union[list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
+InputListType = Union[list[Any], "np.ndarray", "pa.Array", "pa.ChunkedArray"]
 
 
 @PublicAPI

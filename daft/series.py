@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Iterator, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
@@ -9,6 +9,9 @@ from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
+
+if TYPE_CHECKING:
+    import builtins
 
 
 class SeriesIterable:
@@ -21,19 +24,19 @@ class SeriesIterable:
         dt = self.series.datatype()
         if dt == DataType.python():
 
-            def yield_pylist():
+            def yield_pylist() -> Iterator[Any]:
                 yield from self.series._series.to_pylist()
 
             return yield_pylist()
         elif dt._should_cast_to_python():
 
-            def yield_pylist():
+            def yield_pylist() -> Iterator[Any]:
                 yield from self.series._series.cast(DataType.python()._dtype).to_pylist()
 
             return yield_pylist()
         else:
 
-            def arrow_to_py():
+            def arrow_to_py() -> Iterator[Any]:
                 # We directly call .to_arrow() on the internal PySeries object since the case
                 # above has already captured the fixed shape tensor case.
                 arrow_data = self.series._series.to_arrow()
@@ -95,7 +98,11 @@ class Series:
             raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 
     @staticmethod
-    def from_pylist(data: list, name: str = "list_series", pyobj: str = "allow") -> Series:
+    def from_pylist(
+        data: list[Any],
+        name: str = "list_series",
+        pyobj: Literal["allow", "disallow", "force"] = "allow",
+    ) -> Series:
         """Construct a Series from a Python list.
 
         The resulting type depends on the setting of pyobjects:
@@ -262,7 +269,7 @@ class Series:
 
         return arrow_arr
 
-    def to_pylist(self) -> list:
+    def to_pylist(self) -> list[Any]:
         """Convert this Series to a Python list."""
         if self.datatype().is_python():
             return self._series.to_pylist()
@@ -712,7 +719,29 @@ class Series:
     def partitioning(self) -> SeriesPartitioningNamespace:
         return SeriesPartitioningNamespace.from_series(self)
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(
+        self,
+    ) -> (
+        tuple[
+            Callable[
+                [
+                    builtins.list[Any],
+                    builtins.str,
+                    Literal["allow", "disallow", "force"],
+                ],
+                Series,
+            ],
+            tuple[
+                builtins.list[Any],
+                builtins.str,
+                Literal["allow", "disallow", "force"],
+            ],
+        ]
+        | tuple[
+            Callable[[pa.Array | pa.ChunkedArray, builtins.str], Series],
+            tuple[pa.Array | pa.ChunkedArray, builtins.str],
+        ]
+    ):
         if self.datatype().is_python():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
@@ -725,7 +754,12 @@ class Series:
     def _debug_bincode_deserialize(cls, b: bytes) -> Series:
         return Series._from_pyseries(PySeries._debug_bincode_deserialize(b))
 
-    def _eval_expressions(self, func_name, *others: Series | None, **kwargs) -> Series:
+    def _eval_expressions(
+        self,
+        func_name: builtins.str,
+        *others: Series | None,
+        **kwargs: Any,
+    ) -> Series:
         from daft.expressions.expressions import lit
 
         name = self._series.name()
@@ -791,7 +825,7 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
-    def _eval_expressions(self, func_name: str, *others: Series | None, **kwargs) -> Series:
+    def _eval_expressions(self, func_name: builtins.str, *others: Series | None, **kwargs: Any) -> Series:
         s = Series._from_pyseries(self._series)
         return s._eval_expressions(func_name, *others, **kwargs)
 
@@ -916,7 +950,13 @@ class SeriesStringNamespace(SeriesNamespace):
             white_space=white_space,
         )
 
-    def count_matches(self, patterns: Series, *, whole_words: bool = False, case_sensitive: bool = True) -> Series:
+    def count_matches(
+        self,
+        patterns: Series,
+        *,
+        whole_words: bool = False,
+        case_sensitive: bool = True,
+    ) -> Series:
         return self._eval_expressions(
             "count_matches",
             patterns=patterns,

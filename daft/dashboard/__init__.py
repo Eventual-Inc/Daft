@@ -30,7 +30,7 @@ def _should_run() -> bool:
     return True
 
 
-def launch(noop_if_initialized: bool = False):
+def launch(noop_if_initialized: bool = False) -> None:
     """Launches the Daft dashboard server on port 3238.
 
     The server serves HTML/CSS/JS bundles, so you are able to point your browser towards `http://localhost:3238` and view information regarding your queries.
@@ -50,16 +50,31 @@ def launch(noop_if_initialized: bool = False):
 
 
 def broadcast_query_information(
+    unoptimized_plan: str,
+    optimized_plan: str,
     mermaid_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
-):
+) -> None:
     headers = {
         "Content-Type": "application/json",
     }
+
+    if (url := os.environ.get("DAFT_DASHBOARD_URL")) is not None:
+        url = f"{url}/queries"
+    else:
+        url = native.DAFT_DASHBOARD_QUERIES_URL
+
+    if (auth_token := os.environ.get("DAFT_DASHBOARD_AUTH_TOKEN")) is not None:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    queries_url = f"{url}/api/queries"
+
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
+            "unoptimized_plan": unoptimized_plan,
+            "optimized_plan": optimized_plan,
             "mermaid_plan": mermaid_plan,
             "plan_time_start": str(plan_time_start),
             "plan_time_end": str(plan_time_end),
@@ -67,12 +82,12 @@ def broadcast_query_information(
         }
     ).encode("utf-8")
 
-    req = request.Request(native.DAFT_DASHBOARD_QUERIES_URL, headers=headers, data=data)
+    req = request.Request(queries_url, headers=headers, data=data)
 
     try:
         request.urlopen(req, timeout=1)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {native.DAFT_DASHBOARD_QUERIES_URL}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {queries_url}: {e}")
 
 
 __all__ = [

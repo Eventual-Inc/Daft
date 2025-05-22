@@ -25,6 +25,12 @@ Generate images from text prompts using a deep learning model (Stable Diffusion)
 
 [Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
 
+## Window Functions
+
+Compare traditional join operations with more efficient window functions for ranking, calculating deltas, and tracking cumulative sums.
+
+[Run this tutorial on Google Colab](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions/window_functions.ipynb)
+
 
 <!-- .. These can't be run because DeltaLake can't be accessed in anonymous mode from Google Colab
 .. ML model batch inference/training on a Data Catalog

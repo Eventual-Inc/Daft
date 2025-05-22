@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from daft.arrow_utils import ensure_table
 from daft.daft import (
@@ -12,6 +12,7 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
+    PySeries,
 )
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.daft import ScanTask as _ScanTask
@@ -129,8 +130,8 @@ class RecordBatch:
         return RecordBatch.from_pydict(df_as_dict)
 
     @staticmethod
-    def from_pydict(data: dict) -> RecordBatch:
-        series_dict = dict()
+    def from_pydict(data: dict[str, Any]) -> RecordBatch:
+        series_dict: dict[str, PySeries] = dict()
         for k, v in data.items():
             series = item_to_series(k, v)
             series_dict[k] = series._series
@@ -168,7 +169,7 @@ class RecordBatch:
         tab = pa.Table.from_pydict({column.name(): column.to_arrow() for column in self.columns()})
         return tab
 
-    def to_pydict(self) -> dict[str, list]:
+    def to_pydict(self) -> dict[str, list[Any]]:
         return {column.name(): column.to_pylist() for column in self.columns()}
 
     def to_pylist(self) -> list[dict[str, Any]]:
@@ -444,7 +445,7 @@ class RecordBatch:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._recordbatch.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], RecordBatch], tuple[dict[str, Series]]]:
         return RecordBatch.from_pydict, ({column.name(): column for column in self.columns()},)
 
     @classmethod
