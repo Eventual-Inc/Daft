@@ -21,19 +21,14 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9', '3.10']
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         enable-aqe: [1, 0]
         os: [ubuntu-latest, macos-latest]
         exclude:
-        - daft-runner: py
-          enable-aqe: 1
         - daft-runner: native
           enable-aqe: 1
         - daft-runner: ray
-          pyarrow-version: 8.0.0
-        - daft-runner: py
-          python-version: '3.10'
           pyarrow-version: 8.0.0
         - daft-runner: native
           python-version: '3.10'
@@ -211,11 +206,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9']
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
         enable-aqe: [1, 0]
         exclude:
-        - daft-runner: py
-          enable-aqe: 1
         - daft-runner: native
           enable-aqe: 1
     steps:
@@ -291,11 +284,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
         enable-aqe: [1, 0]
         exclude:
-        - daft-runner: py
-          enable-aqe: 1
         - daft-runner: native
           enable-aqe: 1
     steps:
@@ -375,11 +366,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
         enable-aqe: [1, 0]
         exclude:
-        - daft-runner: py
-          enable-aqe: 1
         - daft-runner: native
           enable-aqe: 1
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
@@ -475,11 +464,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
         enable-aqe: [1, 0]
         exclude:
-        - daft-runner: py
-          enable-aqe: 1
         - daft-runner: native
           enable-aqe: 1
     steps:
@@ -558,11 +545,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9'] # can't use 3.7 due to requiring anon mode for adlfs
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
         enable-aqe: [1, 0]
         exclude:
-        - daft-runner: py
-          enable-aqe: 1
         - daft-runner: native
           enable-aqe: 1
     steps:
