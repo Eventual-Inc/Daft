@@ -5,7 +5,7 @@ mod function_args;
 use proc_macro_error::proc_macro_error;
 
 #[proc_macro_error]
-#[proc_macro_derive(FunctionArgs)]
+#[proc_macro_derive(FunctionArgs, attributes(arg))]
 /// Proc macro for deriving `TryFrom<FunctionArgs<T>>` for an argument struct.
 ///
 /// Tests are located at `src/daft-dsl/src/functions/macro_tests.rs`

@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::{DaftError, DaftResult};
 pub use common_macros::FunctionArgs;
 use daft_core::series::Series;
+use num_traits::{Float, PrimInt};
 use serde::{Deserialize, Serialize};
 
 use crate::{lit::FromLiteral, ExprRef, LiteralValue};
@@ -167,6 +168,12 @@ impl<T> FunctionArgs<T> {
             match function_arg {
                 FunctionArg::Named { name, arg } => {
                     seen_named = true;
+
+                    if named.contains_key(&name) {
+                        return Err(DaftError::ValueError(format!(
+                            "Received multiple arguments with the same name: {name}"
+                        )));
+                    }
                     named.insert(name, arg);
                 }
                 FunctionArg::Unnamed(arg) => {
@@ -214,6 +221,7 @@ where
     }
 }
 /// trait to look up either positional or named values
+///
 /// We use a trait here so the user can access function args by different values such as by name (str), or by position (usize),
 /// or by a combination, (position, name), (name, fallback_name), (position, name, fallback_name)
 pub trait FunctionArgKey: std::fmt::Debug {
@@ -515,6 +523,84 @@ impl FunctionArgs<ExprRef> {
 /// A single required argument named `input`
 pub struct UnaryArg<T> {
     pub input: T,
+}
+
+pub struct IntArg<T: PrimInt>(pub T);
+
+impl<T> TryFrom<LiteralValue> for IntArg<T>
+where
+    T: PrimInt,
+{
+    type Error = DaftError;
+
+    fn try_from(value: LiteralValue) -> Result<Self, Self::Error> {
+        let casted = match value {
+            LiteralValue::Int8(v) => num_traits::cast(v),
+            LiteralValue::UInt8(v) => num_traits::cast(v),
+            LiteralValue::Int16(v) => num_traits::cast(v),
+            LiteralValue::UInt16(v) => num_traits::cast(v),
+            LiteralValue::Int32(v) => num_traits::cast(v),
+            LiteralValue::UInt32(v) => num_traits::cast(v),
+            LiteralValue::Int64(v) => num_traits::cast(v),
+            LiteralValue::UInt64(v) => num_traits::cast(v),
+            LiteralValue::Float64(v) => {
+                if v.fract() == 0.0 {
+                    num_traits::cast(v)
+                } else {
+                    None
+                }
+            }
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                    "Expected integer number, received: {value}"
+                )))
+            }
+        };
+
+        casted.map(Self).ok_or_else(|| {
+            DaftError::ValueError(format!(
+                "failed to cast {} to type {}",
+                value,
+                std::any::type_name::<T>()
+            ))
+        })
+    }
+}
+
+pub struct FloatArg<T: Float>(pub T);
+
+impl<T> TryFrom<LiteralValue> for FloatArg<T>
+where
+    T: Float,
+{
+    type Error = DaftError;
+
+    fn try_from(value: LiteralValue) -> Result<Self, Self::Error> {
+        let casted = match value {
+            LiteralValue::Int8(v) => num_traits::cast(v),
+            LiteralValue::UInt8(v) => num_traits::cast(v),
+            LiteralValue::Int16(v) => num_traits::cast(v),
+            LiteralValue::UInt16(v) => num_traits::cast(v),
+            LiteralValue::Int32(v) => num_traits::cast(v),
+            LiteralValue::UInt32(v) => num_traits::cast(v),
+            LiteralValue::Int64(v) => num_traits::cast(v),
+            LiteralValue::UInt64(v) => num_traits::cast(v),
+            LiteralValue::Float64(v) => num_traits::cast(v),
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                    "Expected floating point number, received: {value}"
+                )))
+            }
+        };
+
+        casted.map(Self).ok_or_else(|| {
+            DaftError::ValueError(format!(
+                "failed to cast {} to type {}",
+                value,
+                std::any::type_name::<T>()
+            ))
+        })
+    }
 }
 
 #[cfg(test)]
