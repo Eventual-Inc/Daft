@@ -4560,7 +4560,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         raise_on_error = lit(on_error)._expr
         f = native.get_function_from_registry("image_decode")
 
-        return Expression._from_pyexpr(f(self._expr, raise_on_error=raise_on_error, mode=image_mode))
+        return Expression._from_pyexpr(f(self._expr, on_error=raise_on_error, mode=image_mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.

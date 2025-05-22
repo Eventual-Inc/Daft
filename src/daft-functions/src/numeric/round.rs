@@ -17,17 +17,17 @@ pub struct Round;
 struct RoundArgs<T> {
     input: T,
     #[arg(optional)]
-    precision: Option<i32>,
+    decimal: Option<i32>,
 }
 
 #[typetag::serde]
 impl ScalarUDF for Round {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let RoundArgs { input, precision } = inputs.try_into()?;
+        let RoundArgs { input, decimal } = inputs.try_into()?;
 
-        let precision = precision.unwrap_or(0);
+        let decimal = decimal.unwrap_or(0);
 
-        series_round(&input, precision)
+        series_round(&input, decimal)
     }
 
     fn name(&self) -> &'static str {
