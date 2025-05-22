@@ -66,4 +66,4 @@ See also [Delta Lake](delta_lake.md) for more information about how to work with
 
 2. Unity Iceberg integration for reading tables using the Iceberg interface instead of the Delta Lake interface
 
-Please make issues on the [Daft repository](https://github.com/Eventual-Inc/Daft) if you have any use-cases that Daft does not currently cover!
+Please make issues on the [Daft repository](https://github.com/Eventual-Inc/Daft) if you have any use-cases that Daft does not currently cover! For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
