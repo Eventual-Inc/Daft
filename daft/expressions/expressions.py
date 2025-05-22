@@ -4783,7 +4783,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.binary_length(self._expr))
+        return self._eval_expressions("binary_length")
 
     def concat(self, other: Expression) -> Expression:
         r"""Concatenates two binary strings.

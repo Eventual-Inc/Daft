@@ -94,7 +94,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
 
     add!(coalesce::coalesce);
     add!(distance::cosine_distance);
-    add!(binary::binary_length);
     add!(binary::binary_slice);
 
     add!(misc::to_struct);
