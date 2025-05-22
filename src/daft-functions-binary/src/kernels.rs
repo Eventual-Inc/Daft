@@ -1,4 +1,3 @@
-#![allow(unused)] // todo: remove once all func†ions are moved over
 use std::iter;
 
 use arrow2::{

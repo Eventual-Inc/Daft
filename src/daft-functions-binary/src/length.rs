@@ -10,6 +10,8 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::kernels::BinaryArrayExtension;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryLength;
 

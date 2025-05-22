@@ -11,6 +11,7 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 use super::codecs::Codec;
+use crate::kernels::BinaryArrayExtension;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryEncode;
