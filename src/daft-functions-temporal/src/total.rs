@@ -23,7 +23,7 @@ macro_rules! impl_total {
             }
 
             fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-                ensure!(inputs.len() == 1, format!("{} expects 1 argument", self.name()));
+                ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
                 let s = inputs.required((0, "input"))?;
                 match s.data_type() {
                     DataType::Duration(_) => {
@@ -34,7 +34,7 @@ macro_rules! impl_total {
             }
 
             fn function_args_to_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
-                ensure!(inputs.len() == 1, format!("{} expects 1 argument", self.name()));
+                ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
                 let input = inputs.required((0, "input"))?.to_field(schema)?;
                 ensure!(input.dtype.is_duration(), "expected duration");
                 Ok(Field::new(input.name, DataType::Int64))
