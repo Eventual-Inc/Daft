@@ -170,7 +170,7 @@ class Boundaries:
         return self_upper < other_upper
 
 
-PartitionT = TypeVar("PartitionT", ray.ObjectRef[Any], MicroPartition)
+PartitionT = TypeVar("PartitionT", ray.ObjectRef, MicroPartition)
 
 
 class MaterializedResult(Generic[PartitionT]):
