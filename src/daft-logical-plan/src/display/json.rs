@@ -172,7 +172,7 @@ where
             write!(
                 self.f,
                 "{}",
-                serde_json::to_string_pretty(&plan).map_err(DaftError::SerdeJsonError)?
+                serde_json::to_string(&plan).map_err(DaftError::SerdeJsonError)?
             )?;
         }
         Ok(common_treenode::TreeNodeRecursion::Continue)

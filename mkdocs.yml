@@ -51,7 +51,7 @@ nav:
     - Telemetry: resources/telemetry.md
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
-  # - Daft Roadmap: roadmap.md
+  - Roadmap: roadmap.md
   - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md
@@ -172,6 +172,7 @@ extra_javascript:
 - js/custom.js
 - js/docsearch.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
+- js/readthedocs.js
 
 # Extensions
 markdown_extensions:

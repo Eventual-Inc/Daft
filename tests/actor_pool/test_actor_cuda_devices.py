@@ -45,6 +45,7 @@ def reset_runner_with_gpus(num_gpus, monkeypatch):
 
 @pytest.mark.parametrize("concurrency", [1, 2])
 @pytest.mark.parametrize("num_gpus", [1, 2])
+@pytest.mark.skipif(get_tests_daft_runner_name() == "py", reason="Test is flaky on MacOS PyRunner")
 def test_actor_pool_udf_cuda_env_var(monkeypatch, concurrency, num_gpus):
     with reset_runner_with_gpus(concurrency * num_gpus, monkeypatch):
 
