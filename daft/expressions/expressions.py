@@ -4850,6 +4850,4 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        start_expr = Expression._to_expression(start)
-        length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(native.binary_slice(self._expr, start_expr._expr, length_expr._expr))
+        return self._eval_expressions("binary_slice", start, length)

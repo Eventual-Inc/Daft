@@ -4,6 +4,7 @@ mod decode;
 mod encode;
 mod kernels;
 mod length;
+mod slice;
 mod utils;
 
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
@@ -18,5 +19,6 @@ impl FunctionModule for BinaryFunctions {
         parent.add_fn(encode::BinaryEncode);
         parent.add_fn(encode::BinaryTryEncode);
         parent.add_fn(length::BinaryLength);
+        parent.add_fn(slice::BinarySlice);
     }
 }

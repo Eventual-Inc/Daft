@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     datatypes::DataType,
     prelude::{Field, IntoSeries, Schema},
@@ -6,59 +6,51 @@ use daft_core::{
     with_match_integer_daft_types,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct BinarySlice {}
+pub struct BinarySlice;
 
 #[typetag::serde]
 impl ScalarUDF for BinarySlice {
     fn name(&self) -> &'static str {
         "binary_slice"
     }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(inputs.len() == 3, SchemaMismatch: "expected 3 inputs");
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [data, start, length] => {
-                let data = data.to_field(schema)?;
-                let start = start.to_field(schema)?;
-                let length = length.to_field(schema)?;
-
-                match &data.dtype {
-                    DataType::Binary | DataType::FixedSizeBinary(_) => {
-                        if start.dtype.is_integer() && (length.dtype.is_integer() || length.dtype.is_null()) {
-                            Ok(Field::new(data.name, DataType::Binary))
-                        } else {
-                            Err(DaftError::TypeError(format!(
-                                "Expects inputs to binary_slice to be binary, integer and integer or null but received {}, {} and {}",
-                                data.dtype, start.dtype, length.dtype
-                            )))
-                        }
-                    }
-                    _ => Err(DaftError::TypeError(format!(
+        let input = inputs.required((0, "input"))?.to_field(schema)?;
+        let start = inputs.required((1, "start"))?.to_field(schema)?;
+        let length = inputs.required((2, "length"))?.to_field(schema)?;
+        match &input.dtype {
+            DataType::Binary | DataType::FixedSizeBinary(_) => {
+                if start.dtype.is_integer() && (length.dtype.is_integer() || length.dtype.is_null()) {
+                    Ok(Field::new(input.name, DataType::Binary))
+                } else {
+                    Err(DaftError::TypeError(format!(
                         "Expects inputs to binary_slice to be binary, integer and integer or null but received {}, {} and {}",
-                        data.dtype, start.dtype, length.dtype
-                    ))),
+                        input.dtype, start.dtype, length.dtype
+                    )))
                 }
             }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 3 input args, got {}",
-                inputs.len()
+            _ => Err(DaftError::TypeError(format!(
+                "Expects inputs to binary_slice to be binary, integer and integer or null but received {}, {} and {}",
+                input.dtype, start.dtype, length.dtype
             ))),
         }
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
-    }
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let data = &inputs[0];
-        let start = &inputs[1];
-        let length = &inputs[2];
 
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let data = inputs.required((0, "input"))?;
+        let start = inputs.required((1, "start"))?;
+        let length = inputs.required((2, "length"))?;
         match data.data_type() {
             DataType::Binary | DataType::FixedSizeBinary(_) => {
                 let binary_data = match data.data_type() {
@@ -88,9 +80,4 @@ impl ScalarUDF for BinarySlice {
             ))),
         }
     }
-}
-
-#[must_use]
-pub fn binary_slice(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
-    ScalarFunction::new(BinarySlice {}, vec![input, start, length]).into()
 }
