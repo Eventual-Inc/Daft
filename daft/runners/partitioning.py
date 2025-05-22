@@ -4,13 +4,8 @@ import threading
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
 from uuid import uuid4
-
-try:
-    import ray
-except ImportError:
-    pass
 
 from daft.datatype import TimeUnit
 from daft.recordbatch import MicroPartition
@@ -18,6 +13,7 @@ from daft.recordbatch import MicroPartition
 if TYPE_CHECKING:
     import pandas as pd
     import pyarrow as pa
+    from ray import ObjectRef
 
     from daft.daft import PyMicroPartitionSet
     from daft.expressions.expressions import Expression
@@ -170,7 +166,7 @@ class Boundaries:
         return self_upper < other_upper
 
 
-PartitionT = TypeVar("PartitionT", ray.ObjectRef, MicroPartition)
+PartitionT = TypeVar("PartitionT", bound="Union[ObjectRef, MicroPartition]")
 
 
 class MaterializedResult(Generic[PartitionT]):
