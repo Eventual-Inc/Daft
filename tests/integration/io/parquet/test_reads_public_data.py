@@ -233,7 +233,8 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
         kwargs["anon"] = True
 
     fs = get_filesystem_from_path(path, **kwargs)
-    table = pq.read_table(path, filesystem=fs)
+
+    table = pq.read_table(path, filesystem=fs, use_threads=False)
     return table
 
 
