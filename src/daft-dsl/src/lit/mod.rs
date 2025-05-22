@@ -230,7 +230,7 @@ impl LiteralValue {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
             Self::Interval(_) => DataType::Interval,
-            Self::Series(series) => series.data_type().clone(),
+            Self::Series(series) => DataType::List(Box::new(series.data_type().clone())),
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
             Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
@@ -329,7 +329,9 @@ impl LiteralValue {
                 let field = Field::new("literal", dtype);
                 Decimal128Array::from_values_iter(field, std::iter::once(*val)).into_series()
             }
-            Self::Series(series) => series.clone().rename("literal"),
+            Self::Series(series) => ListArray::try_from_series(series.clone())
+                .unwrap()
+                .into_series(),
             #[cfg(feature = "python")]
             Self::Python(val) => PythonArray::from(("literal", vec![val.0.clone()])).into_series(),
             Self::Struct(entries) => {
