@@ -2,7 +2,7 @@
 
 Welcome to **Daft**!
 
-Daft is a simple, reliable, and performant data engine that can seamlessly scale from local to petabyte-scale distributed workloads without compromising on capability. The core engine is written in Rust and exposes both SQL and Python DataFrame interfaces as first-class citizens.
+Daft is a simple, reliable, and performant data engine for any modality or scale, from local to petabyte-scale distributed workloads without compromising on capability. The core engine is written in Rust and exposes both SQL and Python DataFrame interfaces as first-class citizens.
 
 ## Why Daft?
 
