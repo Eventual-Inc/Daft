@@ -1,5 +1,4 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::DataType;
 use serde::{Deserialize, Serialize};
 use simdutf8::basic::from_utf8;
 
@@ -30,31 +29,6 @@ impl Codec {
             Self::Gzip => gzip_encoder,
             Self::Utf8 => utf8_encoder,
             Self::Zlib => zlib_encoder,
-        }
-    }
-
-    pub(crate) fn decoder(&self) -> Transform {
-        match self {
-            Self::Deflate => deflate_decoder,
-            Self::Gzip => gzip_decoder,
-            Self::Utf8 => utf8_decoder,
-            Self::Zlib => zlib_decoder,
-        }
-    }
-
-    pub(crate) fn kind(&self) -> CodecKind {
-        match self {
-            Self::Deflate => CodecKind::Binary,
-            Self::Gzip => CodecKind::Binary,
-            Self::Utf8 => CodecKind::Text,
-            Self::Zlib => CodecKind::Binary,
-        }
-    }
-
-    pub(crate) fn returns(&self) -> DataType {
-        match self.kind() {
-            CodecKind::Binary => DataType::Binary,
-            CodecKind::Text => DataType::Utf8,
         }
     }
 }
@@ -119,55 +93,6 @@ fn zlib_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)
-}
-
-//
-// DECODERS
-//
-
-#[inline]
-fn deflate_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    use std::io::Read;
-
-    use flate2::read::DeflateDecoder;
-    let mut decoder = DeflateDecoder::new(input);
-    let mut decoded = Vec::new();
-    decoder.read_to_end(&mut decoded)?;
-    Ok(decoded)
-}
-
-#[inline]
-fn gzip_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    use std::io::Read;
-
-    use flate2::read::GzDecoder;
-    let mut decoder = GzDecoder::new(input);
-    let mut decoded = Vec::new();
-    decoder.read_to_end(&mut decoded)?;
-    Ok(decoded)
-}
-
-#[inline]
-fn utf8_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    // zero-copy utf-8 validation using simdutf8
-    if input.is_ascii() || from_utf8(input).is_ok() {
-        Ok(input.to_vec())
-    } else {
-        Err(DaftError::InternalError(
-            "invalid utf-8 sequence".to_string(),
-        ))
-    }
-}
-
-#[inline]
-fn zlib_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
-    use std::io::Read;
-
-    use flate2::read::ZlibDecoder;
-    let mut decoder = ZlibDecoder::new(input);
-    let mut decoded = Vec::new();
-    decoder.read_to_end(&mut decoded)?;
-    Ok(decoded)
 }
 
 #[cfg(test)]

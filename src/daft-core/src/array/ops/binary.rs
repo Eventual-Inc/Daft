@@ -1,7 +1,7 @@
 use std::iter;
 
 use arrow2::{
-    array::{BinaryArray as ArrowBinaryArray, Utf8Array as ArrowUtf8Array},
+    array::BinaryArray as ArrowBinaryArray,
     bitmap::{
         utils::{BitmapIter, ZipValidity},
         MutableBitmap,
@@ -16,7 +16,6 @@ use crate::{
     datatypes::{
         BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray, UInt64Array,
     },
-    prelude::Utf8Array,
 };
 
 enum BroadcastedBinaryIter<'a> {
@@ -28,11 +27,6 @@ enum BroadcastedBinaryIter<'a> {
             arrow2::bitmap::utils::BitmapIter<'a>,
         >,
     ),
-}
-
-enum BroadcastedFixedSizeBinaryIter<'a> {
-    Repeat(std::iter::RepeatN<Option<&'a [u8]>>),
-    NonRepeat(ZipValidity<&'a [u8], std::slice::ChunksExact<'a, u8>, BitmapIter<'a>>),
 }
 
 enum BroadcastedNumericIter<'a, T: 'a, U>
@@ -52,17 +46,6 @@ where
         >,
         std::marker::PhantomData<U>,
     ),
-}
-
-impl<'a> Iterator for BroadcastedFixedSizeBinaryIter<'a> {
-    type Item = Option<&'a [u8]>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            BroadcastedFixedSizeBinaryIter::Repeat(iter) => iter.next(),
-            BroadcastedFixedSizeBinaryIter::NonRepeat(iter) => iter.next(),
-        }
-    }
 }
 
 impl<'a> Iterator for BroadcastedBinaryIter<'a> {
@@ -117,17 +100,6 @@ fn create_broadcasted_binary_iter(arr: &BinaryArray, len: usize) -> BroadcastedB
     }
 }
 
-fn create_broadcasted_fixed_size_binary_iter(
-    arr: &FixedSizeBinaryArray,
-    len: usize,
-) -> BroadcastedFixedSizeBinaryIter<'_> {
-    if arr.len() == 1 {
-        BroadcastedFixedSizeBinaryIter::Repeat(iter::repeat_n(arr.as_arrow().get(0), len))
-    } else {
-        BroadcastedFixedSizeBinaryIter::NonRepeat(arr.as_arrow().iter())
-    }
-}
-
 fn create_broadcasted_numeric_iter<T, O>(
     arr: &DataArray<T>,
     len: usize,
@@ -156,39 +128,6 @@ impl BinaryArray {
         )
         .with_validity(self_arrow.validity().cloned());
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
-    }
-
-    pub fn binary_concat(&self, other: &Self) -> DaftResult<Self> {
-        let self_arrow = self.as_arrow();
-        let other_arrow = other.as_arrow();
-
-        if self_arrow.len() == 0 || other_arrow.len() == 0 {
-            return Ok(Self::from((
-                self.name(),
-                Box::new(arrow2::array::BinaryArray::<i64>::new_empty(
-                    self_arrow.data_type().clone(),
-                )),
-            )));
-        }
-
-        let output_len = if self_arrow.len() == 1 || other_arrow.len() == 1 {
-            std::cmp::max(self_arrow.len(), other_arrow.len())
-        } else {
-            self_arrow.len()
-        };
-
-        let self_iter = create_broadcasted_binary_iter(self, output_len);
-        let other_iter = create_broadcasted_binary_iter(other, output_len);
-
-        let arrow_result = self_iter
-            .zip(other_iter)
-            .map(|(left_val, right_val)| match (left_val, right_val) {
-                (Some(left), Some(right)) => Some([left, right].concat()),
-                _ => None,
-            })
-            .collect::<arrow2::array::BinaryArray<i64>>();
-
-        Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 
     pub fn binary_slice<I, J>(
@@ -326,75 +265,6 @@ impl BinaryArray {
         let array = Box::new(array);
         Ok(Self::from((self.name(), array)))
     }
-
-    /// For binary-to-text decoding.
-    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
-    where
-        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
-    {
-        let input = self.as_arrow();
-        let buffer = input.values();
-        let validity = input.validity().cloned();
-
-        let mut values = Vec::<u8>::new();
-        let mut offsets = Offsets::<i64>::new();
-
-        for span in input.offsets().windows(2) {
-            let s = span[0] as usize;
-            let e = span[1] as usize;
-            let bytes = decoder(&buffer[s..e])?;
-            offsets.try_push(bytes.len() as i64)?;
-            values.extend(bytes);
-        }
-
-        let array = ArrowUtf8Array::new(
-            ArrowType::LargeUtf8,
-            offsets.into(),
-            values.into(),
-            validity,
-        );
-        let array = Box::new(array);
-        Ok(Utf8Array::from((self.name(), array)))
-    }
-
-    /// For binary-to-text decoding, but inserts null on failures.
-    pub fn try_decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
-    where
-        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
-    {
-        let input = self.as_arrow();
-        let buffer = input.values();
-        let mut validity = match input.validity() {
-            Some(bitmap) => bitmap.clone().make_mut(),
-            None => MutableBitmap::from_len_set(input.len()),
-        };
-        //
-        let mut values = Vec::<u8>::new();
-        let mut offsets = Offsets::<i64>::new();
-        for (i, span) in input.offsets().windows(2).enumerate() {
-            let s = span[0] as usize;
-            let e = span[1] as usize;
-            match decoder(&buffer[s..e]) {
-                Ok(bytes) => {
-                    offsets.try_push(bytes.len() as i64)?;
-                    values.extend(bytes);
-                }
-                Err(_) => {
-                    offsets.try_push(0)?;
-                    validity.set(i, false);
-                }
-            }
-        }
-        //
-        let array = ArrowUtf8Array::new(
-            ArrowType::LargeUtf8,
-            offsets.into(),
-            values.into(),
-            Some(validity.into()),
-        );
-        let array = Box::new(array);
-        Ok(Utf8Array::from((self.name(), array)))
-    }
 }
 
 impl FixedSizeBinaryArray {
@@ -407,50 +277,6 @@ impl FixedSizeBinaryArray {
         ))
         .with_validity(self_arrow.validity().cloned());
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
-    }
-
-    pub fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {
-        let self_arrow = self.as_arrow();
-        let other_arrow = other.as_arrow();
-        let self_size = self_arrow.size();
-        let other_size = other_arrow.size();
-        let combined_size = self_size + other_size;
-
-        // Create a new FixedSizeBinaryArray with the combined size
-        let mut values = Vec::with_capacity(self_arrow.len() * combined_size);
-        let mut validity = arrow2::bitmap::MutableBitmap::new();
-
-        let output_len = if self_arrow.len() == 1 || other_arrow.len() == 1 {
-            std::cmp::max(self_arrow.len(), other_arrow.len())
-        } else {
-            self_arrow.len()
-        };
-
-        let self_iter = create_broadcasted_fixed_size_binary_iter(self, output_len);
-        let other_iter = create_broadcasted_fixed_size_binary_iter(other, output_len);
-
-        for (val1, val2) in self_iter.zip(other_iter) {
-            match (val1, val2) {
-                (Some(val1), Some(val2)) => {
-                    values.extend_from_slice(val1);
-                    values.extend_from_slice(val2);
-                    validity.push(true);
-                }
-                _ => {
-                    values.extend(std::iter::repeat_n(0u8, combined_size));
-                    validity.push(false);
-                }
-            }
-        }
-
-        // Create a new FixedSizeBinaryArray with the combined size
-        let result = arrow2::array::FixedSizeBinaryArray::try_new(
-            arrow2::datatypes::DataType::FixedSizeBinary(combined_size),
-            values.into(),
-            Some(validity.into()),
-        )?;
-
-        Ok(Self::from((self.name(), Box::new(result))))
     }
 
     /// For binary-to-binary transforms (both encode & decode).
@@ -524,78 +350,5 @@ impl FixedSizeBinaryArray {
         );
         let array = Box::new(array);
         Ok(BinaryArray::from((self.name(), array)))
-    }
-
-    /// For binary-to-text decoding.
-    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
-    where
-        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
-    {
-        let input = self.as_arrow();
-        let size = input.size();
-        let buffer = input.values();
-        let chunks = buffer.len() / size;
-        let validity = input.validity().cloned();
-
-        let mut values = Vec::<u8>::new();
-        let mut offsets = Offsets::<i64>::new();
-
-        for i in 0..chunks {
-            let s = i * size;
-            let e = s + size;
-            let bytes = decoder(&buffer[s..e])?;
-            offsets.try_push(bytes.len() as i64)?;
-            values.extend(bytes);
-        }
-
-        let array = ArrowUtf8Array::new(
-            ArrowType::LargeUtf8,
-            offsets.into(),
-            values.into(),
-            validity,
-        );
-        let array = Box::new(array);
-        Ok(Utf8Array::from((self.name(), array)))
-    }
-
-    /// For binary-to-text decoding, but inserts null on failures.
-    pub fn try_decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
-    where
-        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
-    {
-        let input = self.as_arrow();
-        let size = input.size();
-        let buffer = input.values();
-        let chunks = buffer.len() / size;
-        let mut validity = match input.validity() {
-            Some(bitmap) => bitmap.clone().make_mut(),
-            None => MutableBitmap::from_len_set(input.len()),
-        };
-
-        let mut values = Vec::<u8>::new();
-        let mut offsets = Offsets::<i64>::new();
-        for i in 0..chunks {
-            let s = i * size;
-            let e = s + size;
-            match decoder(&buffer[s..e]) {
-                Ok(bytes) => {
-                    offsets.try_push(bytes.len() as i64)?;
-                    values.extend(bytes);
-                }
-                Err(_) => {
-                    offsets.try_push(0)?;
-                    validity.set(i, false);
-                }
-            }
-        }
-
-        let array = ArrowUtf8Array::new(
-            ArrowType::LargeUtf8,
-            offsets.into(),
-            values.into(),
-            Some(validity.into()),
-        );
-        let array = Box::new(array);
-        Ok(Utf8Array::from((self.name(), array)))
     }
 }

@@ -1626,8 +1626,7 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        expr = native.decode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("binary_decode", codec=codec)
 
     def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Encodes or returns null, see `Expression.encode`."""
@@ -1636,8 +1635,7 @@ class Expression:
 
     def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         """Decodes or returns null, see `Expression.decode`."""
-        expr = native.try_decode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("binary_try_decode", codec=codec)
 
     def name(self) -> builtins.str:
         return self._expr.name()
@@ -4822,8 +4820,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 4 of 4 rows)
 
         """
-        other_expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(native.binary_concat(self._expr, other_expr._expr))
+        return self._eval_expressions("binary_concat", other)
 
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a slice of each binary string.
