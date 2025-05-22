@@ -794,7 +794,7 @@ class Expression:
         assert isinstance(decimals, int)
         f = native.get_function_from_registry("round")
         decimals_expr = Expression._to_expression(decimals)._expr
-        return Expression._from_pyexpr(f(self._expr, decimals=decimals_expr))
+        return Expression._from_pyexpr(f(self._expr, decimal=decimals_expr))
 
     def sqrt(self) -> Expression:
         """The square root of a numeric expression."""
