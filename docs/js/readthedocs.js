@@ -27,6 +27,11 @@
 document.addEventListener(
   "readthedocs-addons-data-ready",
   function (event) {
+    // Check if version selector already exists
+    if (document.querySelector('.md-version')) {
+      return;
+    }
+
     const config = event.detail.data();
     const versioning = `
             <div class="md-version">
