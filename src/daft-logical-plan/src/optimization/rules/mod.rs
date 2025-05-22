@@ -27,7 +27,7 @@ pub use eliminate_subquery_alias::EliminateSubqueryAliasRule;
 pub use enrich_with_stats::EnrichWithStats;
 pub use extract_window_function::ExtractWindowFunction;
 pub use filter_null_join_key::FilterNullJoinKey;
-pub use granular_projections::GranularProjections;
+pub use granular_projections::SplitGranularProjection;
 pub use lift_project_from_agg::LiftProjectFromAgg;
 pub use materialize_scans::MaterializeScans;
 pub use push_down_anti_semi_join::PushDownAntiSemiJoin;

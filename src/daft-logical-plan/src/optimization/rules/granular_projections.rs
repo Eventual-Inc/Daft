@@ -1,8 +1,12 @@
-use std::sync::Arc;
+use std::{
+    any::{Any, TypeId},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{functions::ScalarFunction, Column, Expr, ResolvedColumn};
+use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
+use daft_functions::uri::download::UrlDownload;
 use itertools::Itertools;
 
 use super::OptimizerRule;
@@ -11,16 +15,28 @@ use crate::{ops::Project, LogicalPlan};
 /// This rule will split projections into multiple projections such that expressions that
 /// need their own granular morsel sizing will be isolated. Right now, those would be
 /// URL downloads, but this may be extended in the future to other functions and Python UDFs.
+///
+/// Example of Original Plan:
+///     3) Sink
+///     2) Project(decode(url_download("s3://bucket/" + key)) as image, name)
+///     1) Source
+///
+/// New Plan:
+///     5) Sink
+///     4) Project(decode(data) as image, name)
+///     3) Project(url_download(url), name)
+///     2) Project("s3://bucket/" + key as url, name)
+///     1) Source
 #[derive(Debug)]
-pub struct GranularProjections {}
+pub struct SplitGranularProjection {}
 
-impl OptimizerRule for GranularProjections {
+impl OptimizerRule for SplitGranularProjection {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_up(|node| self.try_optimize_node(node))
     }
 }
 
-impl GranularProjections {
+impl SplitGranularProjection {
     pub fn new() -> Self {
         Self {}
     }
@@ -30,7 +46,7 @@ impl GranularProjections {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "url_download"
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.type_id() == TypeId::of::<UrlDownload>()
         )
     }
 
@@ -40,7 +56,10 @@ impl GranularProjections {
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // Only apply to Project nodes, skip others
         let LogicalPlan::Project(Project {
-            projection, input, ..
+            projection,
+            input,
+            projected_schema,
+            ..
         }) = plan.as_ref()
         else {
             return Ok(Transformed::no(plan));
@@ -71,13 +90,11 @@ impl GranularProjections {
                                 changed = true;
                                 // Child may not have an alias, so we need to generate a new one
                                 // TODO: Remove with ordinals
-                                let child_name = format!("id-{}", uuid::Uuid::new_v4());
-                                let child = child.alias(child_name.as_str());
+                                let child_name = child.semantic_id(projected_schema).id;
+                                let child = child.alias(child_name.clone());
                                 split_exprs.push(child);
 
-                                children.push(Arc::new(Expr::Column(Column::Resolved(
-                                    ResolvedColumn::Basic(child_name.into()),
-                                ))));
+                                children.push(resolved_col(child_name));
                             }
                         }
                     }
@@ -101,13 +118,11 @@ impl GranularProjections {
                             // Split and save child expression
                             // Child may not have an alias, so we need to generate a new one
                             // TODO: Remove with ordinals
-                            let child_name = format!("id-{}", uuid::Uuid::new_v4());
+                            let child_name = child.semantic_id(projected_schema).id;
 
-                            let child = child.alias(child_name.as_str());
+                            let child = child.alias(child_name.clone());
                             split_exprs.push(child);
-                            new_children[idx] = Arc::new(Expr::Column(daft_dsl::Column::Resolved(
-                                daft_dsl::ResolvedColumn::Basic(child_name.into()),
-                            )));
+                            new_children[idx] = resolved_col(child_name);
                         }
                     }
 
@@ -201,7 +216,7 @@ mod tests {
         .unwrap()
         .build();
 
-        let optimizer = GranularProjections::new();
+        let optimizer = SplitGranularProjection::new();
         let new_plan = optimizer.try_optimize(plan.clone())?;
 
         assert!(!new_plan.transformed);
@@ -224,7 +239,7 @@ mod tests {
         .unwrap()
         .build();
 
-        let optimizer = GranularProjections::new();
+        let optimizer = SplitGranularProjection::new();
         let new_plan = optimizer.try_optimize(plan.clone())?;
 
         assert!(!new_plan.transformed);
@@ -255,7 +270,7 @@ mod tests {
         .unwrap()
         .build();
 
-        let optimizer = GranularProjections::new();
+        let optimizer = SplitGranularProjection::new();
 
         let new_plan = optimizer.try_optimize(plan)?;
 
@@ -322,7 +337,7 @@ mod tests {
         .unwrap()
         .build();
 
-        let optimizer = GranularProjections::new();
+        let optimizer = SplitGranularProjection::new();
 
         let new_plan = optimizer.try_optimize(plan)?;
 
