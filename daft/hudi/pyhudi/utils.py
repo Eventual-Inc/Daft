@@ -30,7 +30,7 @@ class FsFileMetadata:
         return pa.schema(extracted_fields)
 
     @staticmethod
-    def _extract_arrow_schema(metadata: pa.FileMetadata) -> pa.Schema:
+    def _extract_arrow_schema(metadata: pq.FileMetaData) -> pa.Schema:
         return metadata.schema.to_arrow_schema().remove_metadata()
 
     @staticmethod
@@ -41,8 +41,8 @@ class FsFileMetadata:
     def _extract_min_max(metadata: pq.FileMetaData):
         num_columns = metadata.num_columns
         num_row_groups = metadata.num_row_groups
-        min_vals = [None] * num_columns
-        max_vals = [None] * num_columns
+        min_vals: list[int | None] = [None] * num_columns
+        max_vals: list[int | None] = [None] * num_columns
         colstats_field_names = set()
         for rg in range(num_row_groups):
             row_group = metadata.row_group(rg)
@@ -50,14 +50,17 @@ class FsFileMetadata:
                 column = row_group.column(col)
                 if (
                     column.is_stats_set
+                    and column.statistics is not None
                     and column.statistics.has_min_max
                     and not FsFileMetadata._is_nested(column.path_in_schema)
                 ):
+                    stats = column.statistics
+                    assert stats is not None
                     colstats_field_names.add(column.path_in_schema)
-                    if min_vals[col] is None or column.statistics.min < min_vals[col]:
-                        min_vals[col] = column.statistics.min
-                    if max_vals[col] is None or column.statistics.max > max_vals[col]:
-                        max_vals[col] = column.statistics.max
+                    if min_vals[col] is None or (stats.min and stats.min < min_vals[col]):
+                        min_vals[col] = stats.min
+                    if max_vals[col] is None or (stats.max and stats.max > max_vals[col]):
+                        max_vals[col] = stats.max
         filtered_min_vals = list(filter(lambda v: v is not None, min_vals))
         filtered_max_vals = list(filter(lambda v: v is not None, max_vals))
 
