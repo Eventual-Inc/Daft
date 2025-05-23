@@ -73,8 +73,7 @@ impl ImageMode {
             "LA" => Ok(LA),
             "RGB" => Ok(RGB),
             "RGBA" => Ok(RGBA),
-            "1" | "P" |
-             "CMYK" | "YCbCr" | "LAB" | "HSV" | "I" | "F" | "PA" | "RGBX" | "RGBa" | "La" | "I;16" | "I;16L" | "I;16B" | "I;16N" | "BGR;15" | "BGR;16" | "BGR;24" => Err(DaftError::TypeError(format!(
+            "1" | "P" | "CMYK" | "YCbCr" | "LAB" | "HSV" | "I" | "F" | "PA" | "RGBX" | "RGBa" | "La" | "I;16" | "I;16L" | "I;16B" | "I;16N" | "BGR;15" | "BGR;16" | "BGR;24" => Err(DaftError::TypeError(format!(
                 "PIL image mode {} is not supported; only the following modes are supported: {:?}",
                 mode,
                 Self::iterator().as_slice()
