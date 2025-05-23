@@ -368,8 +368,8 @@ class Series:
         """The negative of a numeric series."""
         return self._eval_expressions("negative")
 
-    def round(self, decimal: int = 0) -> Series:
-        return self._eval_expressions("round", decimal=decimal)
+    def round(self, decimals: int = 0) -> Series:
+        return self._eval_expressions("round", decimals=decimals)
 
     def clip(self, min: Series, max: Series) -> Series:
         return self._eval_expressions("clip", min, max)
@@ -1083,10 +1083,10 @@ class SeriesListNamespace(SeriesNamespace):
             category=DeprecationWarning,
         )
 
-        return self._eval_expressions("list_count", count_mode=CountMode.All)
+        return self._eval_expressions("list_count", mode=CountMode.All)
 
     def length(self) -> Series:
-        return self._eval_expressions("list_count", count_mode=CountMode.All)
+        return self._eval_expressions("list_count", mode=CountMode.All)
 
     def get(self, idx: Series, default: Series) -> Series:
         return self._eval_expressions("list_get", idx=idx, default=default)

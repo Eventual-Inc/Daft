@@ -19,7 +19,6 @@ mod misc;
 mod sequence;
 mod temporal;
 mod tokenize;
-mod uri;
 
 use std::sync::Arc;
 
@@ -132,9 +131,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
 
     add!(tokenize::tokenize_encode);
     add!(tokenize::tokenize_decode);
-
-    add!(uri::url_download);
-    add!(uri::url_upload);
 
     Ok(())
 }

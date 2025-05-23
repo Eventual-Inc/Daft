@@ -794,7 +794,7 @@ class Expression:
         assert isinstance(decimals, int)
         f = native.get_function_from_registry("round")
         decimals_expr = Expression._to_expression(decimals)._expr
-        return Expression._from_pyexpr(f(self._expr, decimal=decimals_expr))
+        return Expression._from_pyexpr(f(self._expr, decimals=decimals_expr))
 
     def sqrt(self) -> Expression:
         """The square root of a numeric expression."""
@@ -4875,7 +4875,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         raise_on_error = lit(on_error)._expr
         f = native.get_function_from_registry("image_decode")
 
-        return Expression._from_pyexpr(f(self._expr, raise_on_error=raise_on_error, mode=image_mode))
+        return Expression._from_pyexpr(f(self._expr, on_error=raise_on_error, mode=image_mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.

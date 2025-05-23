@@ -19,7 +19,7 @@ mod value_counts;
 pub use bool_and::{list_bool_and as bool_and, ListBoolAnd};
 pub use bool_or::{list_bool_or as bool_or, ListBoolOr};
 pub use chunk::{list_chunk as chunk, ListChunk};
-pub use count::{list_count as count, ListCount};
+pub use count::ListCount;
 pub use count_distinct::{list_count_distinct as count_distinct, ListCountDistinct};
 pub use distinct::{list_distinct as distinct, ListDistinct};
 pub use explode::{explode, Explode};

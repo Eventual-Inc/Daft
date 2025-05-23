@@ -12,58 +12,42 @@ use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-pub struct UrlUploadArgs {
-    pub max_connections: usize,
-    pub raise_error_on_failure: bool,
-    pub multi_thread: bool,
-    pub is_single_folder: bool,
-    pub io_config: Arc<IOConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlUpload;
 
-impl UrlUploadArgs {
-    pub fn new(
-        max_connections: usize,
-        raise_error_on_failure: bool,
-        multi_thread: bool,
-        is_single_folder: bool,
-        io_config: Option<IOConfig>,
-    ) -> Self {
-        Self {
-            max_connections,
-            raise_error_on_failure,
-            multi_thread,
-            is_single_folder,
-            io_config: io_config.unwrap_or_default().into(),
-        }
-    }
-}
-
-impl Default for UrlUploadArgs {
-    fn default() -> Self {
-        Self {
-            max_connections: 32,
-            raise_error_on_failure: true,
-            multi_thread: true,
-            is_single_folder: false,
-            io_config: IOConfig::default().into(),
-        }
-    }
+#[derive(FunctionArgs)]
+struct UrlUploadArgs<T> {
+    input: T,
+    location: T,
+    #[arg(optional)]
+    max_connections: Option<usize>,
+    #[arg(optional)]
+    on_error: Option<String>,
+    #[arg(optional)]
+    multi_thread: Option<bool>,
+    #[arg(optional)]
+    is_single_folder: Option<bool>,
+    #[arg(optional)]
+    io_config: Option<IOConfig>,
 }
 
 #[typetag::serde]
 impl ScalarUDF for UrlUpload {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let location = inputs.required((1, "location"))?;
+        let UrlUploadArgs {
+            input,
+            location,
+            max_connections,
+            on_error,
+            multi_thread,
+            is_single_folder,
+            io_config,
+        } = inputs.try_into()?;
 
-        let max_connections = inputs.extract_optional("max_connections")?.unwrap_or(32);
-
-        let on_error = inputs
-            .extract_optional("on_error")?
-            .unwrap_or_else(|| "raise".to_string());
+        let max_connections = max_connections.unwrap_or(32);
+        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
+        let multi_thread = multi_thread.unwrap_or(true);
+        let is_single_folder = is_single_folder.unwrap_or(false);
+        let io_config = io_config.unwrap_or_default();
 
         let raise_error_on_failure = match on_error.as_str() {
             "raise" => true,
@@ -75,17 +59,10 @@ impl ScalarUDF for UrlUpload {
                 )))
             }
         };
-        let multi_thread = inputs.extract_optional("multi_thread")?.unwrap_or(true);
-
-        let is_single_folder = inputs
-            .extract_optional("is_single_folder")?
-            .unwrap_or(false);
-
-        let io_config = inputs.extract_optional("io_config")?.unwrap_or_default();
 
         url_upload(
-            input,
-            location,
+            &input,
+            &location,
             max_connections,
             raise_error_on_failure,
             multi_thread,
@@ -104,19 +81,19 @@ impl ScalarUDF for UrlUpload {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let field = inputs.required((0, "input"))?.to_field(schema)?;
+        let UrlUploadArgs {
+            input, location, ..
+        } = inputs.try_into()?;
+
+        let field = input.to_field(schema)?;
         ensure!(
             field.dtype.is_binary() || field.dtype.is_fixed_size_binary() || field.dtype.is_string(),
             TypeError: "input must be a binary, fixed-size binary or utf8"
         );
 
-        let location = inputs.required((1, "location"))?.to_field(schema)?;
-        ensure!(location.dtype.is_string(), TypeError: "location must be a string");
-        let _ = inputs.extract_optional::<usize, _>("max_connections")?;
-        let _ = inputs.extract_optional::<String, _>("on_error")?;
-        let _ = inputs.extract_optional::<bool, _>("multi_thread")?;
-        let _ = inputs.extract_optional::<bool, _>("is_single_folder")?;
-        let _ = inputs.extract_optional::<IOConfig, _>("io_config")?;
+        let location_field = location.to_field(schema)?;
+        ensure!(location_field.dtype.is_string(), TypeError: "location must be a string");
+
         Ok(Field::new(field.name, DataType::Utf8))
     }
 }
