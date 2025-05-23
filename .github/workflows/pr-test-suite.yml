@@ -776,58 +776,6 @@ jobs:
       if: ${{ contains(needs.*.result, 'failure') }}
       run: exit 1
 
-  check-unused-cargo-deps:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v1
-      with:
-        cache: false
-        channel: stable
-
-    - name: Install Machete
-      run: cargo +stable install cargo-machete@0.7.0 --locked
-    - name: Run Machete
-      run: cargo machete --with-metadata
-
-  doctests:
-    runs-on: ubuntu-latest
-    env:
-      python-version: '3.10'
-    steps:
-    - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v1
-      with:
-        cache: false
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
-    - name: Set up Python ${{ env.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.python-version }}
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
-    - name: Install dependencies
-      run: |
-        uv pip install -r requirements-dev.txt
-    - name: Run doctests
-      run: |
-        source activate
-        maturin develop
-        make doctests
-      env:
-        DAFT_RUNNER: native
-
-
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
     runs-on: ubuntu-latest
@@ -963,15 +911,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      python-version: '3.9'
+      python-version: '3.10'
     steps:
     - uses: actions/checkout@v4
     - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
-    - name: Install pre-commit
-      run: uv pip install pre-commit
+        enable-cache: true
+        cache-dependency-glob: |
+          **/pyproject.toml
+          **/requirements-dev.txt
+    - name: Install deps & pre-commit
+      run: |
+        uv pip install pre-commit
+        uv pip install -r requirements-dev.txt
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -980,9 +934,25 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - name: Python And Rust Style Check
+    - name: Rust Style Check
       run: |
-        pre-commit run --all-files cargo-check-all-features clippy check-for-rustls
+        pre-commit run --all-files fmt
+        pre-commit run --all-files cargo-check-all-features
+        pre-commit run --all-files clippy
+        pre-commit run --all-files check-for-rustls
+
+    - name: Install Machete
+      run: cargo install cargo-machete@0.8.0 --locked
+    - name: Run Machete
+      run: cargo machete --with-metadata
+
+    - name: Run doctests
+      run: |
+        source activate
+        maturin develop
+        make doctests
+      env:
+        DAFT_RUNNER: native
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
@@ -995,7 +965,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Style Checks <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Lint Checks <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
                 }
               }
             ]
