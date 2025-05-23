@@ -266,7 +266,7 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
         raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
 
 
-class RayPartitionSet(PartitionSet[ray.ObjectRef[Any]]):
+class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     _results: dict[PartID, RayMaterializedResult]
 
     def __init__(self) -> None:
@@ -1447,7 +1447,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         return RayRunnerIO()
 
 
-class RayMaterializedResult(MaterializedResult[ray.ObjectRef[Any]]):
+class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     def __init__(
         self,
         partition: ray.ObjectRef[Any],

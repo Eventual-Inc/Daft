@@ -1190,7 +1190,7 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write_sink(self, sink: "DataSink"[T]) -> "DataFrame":
+    def write_sink(self, sink: "DataSink[T]") -> "DataFrame":
         """Writes the DataFrame to the given DataSink.
 
         Args:
