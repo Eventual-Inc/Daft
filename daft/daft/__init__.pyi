@@ -1168,6 +1168,7 @@ def udf(
     expressions: list[PyExpr],
     return_dtype: PyDataType,
     init_args: InitArgsType,
+    scalar_udf: bool,
     resource_request: ResourceRequest | None,
     batch_size: int | None,
     concurrency: int | None,

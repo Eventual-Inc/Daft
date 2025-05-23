@@ -898,7 +898,7 @@ where
             })
             .collect::<DaftResult<Vec<Series>>>()?;
         let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
-        let table = RecordBatch::new_unchecked(read_schema.clone(), chunk, num_rows);
+        let table = RecordBatch::new_unchecked(read_schema.clone(), chunk, num_rows, None);
         let table = if let Some(predicate) = &predicate {
             let predicate = BoundExpr::try_new(predicate.clone(), &read_schema)?;
             let filtered = table.filter(&[predicate.clone()])?;

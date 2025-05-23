@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
-use super::super::FunctionEvaluator;
+use super::super::{FunctionEvaluator, FunctionResult};
 use crate::{functions::partitioning::PartitioningExpr, ExprRef};
 
 macro_rules! impl_func_evaluator_for_partitioning {
@@ -39,9 +39,9 @@ macro_rules! impl_func_evaluator_for_partitioning {
                 }
             }
 
-            fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+            fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<FunctionResult> {
                 match inputs {
-                    [input] => input.$kernel(),
+                    [input] => Ok(input.$kernel()?.into()),
                     _ => Err(DaftError::ValueError(format!(
                         "Expected 1 input arg for {}, got {}",
                         stringify!($op),
@@ -98,14 +98,14 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<FunctionResult> {
         let n = match expr {
             FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)) => n,
             _ => panic!("Expected PartitioningExpr::IcebergBucket Expr, got {expr}"),
         };
 
         match inputs {
-            [input] => input.partitioning_iceberg_bucket(*n),
+            [input] => Ok(input.partitioning_iceberg_bucket(*n)?.into()),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -142,14 +142,14 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<FunctionResult> {
         let w = match expr {
             FunctionExpr::Partitioning(PartitioningExpr::IcebergTruncate(w)) => w,
             _ => panic!("Expected PartitioningExpr::IcebergTruncate Expr, got {expr}"),
         };
 
         match inputs {
-            [input] => input.partitioning_iceberg_truncate(*w),
+            [input] => Ok(input.partitioning_iceberg_truncate(*w)?.into()),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

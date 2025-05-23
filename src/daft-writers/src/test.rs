@@ -80,6 +80,7 @@ impl AsyncFileWriter for DummyWriter {
             ]),
             vec![path_series.into(), write_count_series.into()],
             1,
+            None,
         );
         if let Some(partition_values) = self.partition_values.take() {
             let unioned = path_table.union(&partition_values)?;
@@ -192,6 +193,7 @@ impl AsyncFileWriter for FailingWriter {
             ]),
             vec![path_series.into(), write_count_series.into()],
             1,
+            None,
         );
         if let Some(partition_values) = self.partition_values.take() {
             let unioned = path_table.union(&partition_values)?;
@@ -221,7 +223,7 @@ pub fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
         .unwrap()
         .into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]));
-    let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
+    let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes, None);
     Arc::new(MicroPartition::new_loaded(
         schema.into(),
         vec![table].into(),

@@ -687,7 +687,7 @@ fn parse_into_column_array_chunk_stream(
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
                     let num_rows = chunk.first().map_or(0, daft_core::series::Series::len);
-                    Ok(RecordBatch::new_unchecked(read_schema, chunk, num_rows))
+                    Ok(RecordBatch::new_unchecked(read_schema, chunk, num_rows, None))
                 })();
                 let _ = send.send(result);
             });

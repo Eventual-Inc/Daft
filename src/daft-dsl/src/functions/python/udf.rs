@@ -7,7 +7,10 @@ use pyo3::{
 };
 
 use super::{super::FunctionEvaluator, PythonUDF};
-use crate::{functions::FunctionExpr, ExprRef};
+use crate::{
+    functions::{FunctionExpr, FunctionResult},
+    ExprRef,
+};
 
 #[cfg(feature = "python")]
 fn run_udf(
@@ -58,9 +61,56 @@ fn run_udf(
     }
 }
 
+#[cfg(feature = "python")]
+fn run_scalar_udf(
+    py: pyo3::Python,
+    inputs: &[Series],
+    func: pyo3::Py<PyAny>,
+    bound_args: pyo3::Py<PyAny>,
+    return_dtype: &DataType,
+) -> DaftResult<(Series, Series)> {
+    use daft_core::python::{PyDataType, PySeries};
+
+    // Convert input Rust &[Series] to wrapped Python Vec<Bound<PyAny>>
+    let py_series_module = PyModule::import(py, pyo3::intern!(py, "daft.series"))?;
+    let py_series_class = py_series_module.getattr(pyo3::intern!(py, "Series"))?;
+    let pyseries: PyResult<Vec<Bound<PyAny>>> = inputs
+        .iter()
+        .map(|s| {
+            py_series_class.call_method(
+                pyo3::intern!(py, "_from_pyseries"),
+                (PySeries { series: s.clone() },),
+                None,
+            )
+        })
+        .collect();
+    let pyseries = pyseries?;
+
+    // Run the function on the converted Vec<Bound<PyAny>>
+    let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.scalar_udf"))?;
+    let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_scalar_udf"))?;
+    let result = run_udf_func.call1((
+        func,                                   // Function to run
+        bound_args,                             // Arguments bound to the function
+        pyseries,                               // evaluated_expressions
+        PyDataType::from(return_dtype.clone()), // Returned datatype
+    ));
+
+    match result {
+        Ok(pyany) => {
+            let ok_and_error_series = pyany.extract::<(PySeries, PySeries)>();
+            match ok_and_error_series {
+                Ok((ok_series, error_series)) => Ok((ok_series.series, error_series.series)),
+                Err(e) => Err(DaftError::ValueError(format!("Internal error occurred when coercing the results of running UDF to Series:\n\n{e}"))),
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 impl PythonUDF {
     #[cfg(feature = "python")]
-    pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<Series> {
+    pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<FunctionResult> {
         use pyo3::Python;
 
         use crate::functions::python::{py_udf_initialize, MaybeInitializedUDF};
@@ -83,14 +133,29 @@ impl PythonUDF {
                 }
             };
 
-            run_udf(
-                py,
-                inputs,
-                func,
-                self.bound_args.clone().unwrap().clone_ref(py),
-                &self.return_dtype,
-                self.batch_size,
-            )
+            if self.scalar_udf {
+                let (ok, error) = run_scalar_udf(
+                    py,
+                    inputs,
+                    func,
+                    self.bound_args.clone().unwrap().clone_ref(py),
+                    &self.return_dtype,
+                )?;
+                Ok(FunctionResult {
+                    ok,
+                    error: Some(error),
+                })
+            } else {
+                let result = run_udf(
+                    py,
+                    inputs,
+                    func,
+                    self.bound_args.clone().unwrap().clone_ref(py),
+                    &self.return_dtype,
+                    self.batch_size,
+                )?;
+                Ok(result.into())
+            }
         })
     }
 }
@@ -116,7 +181,7 @@ impl FunctionEvaluator for PythonUDF {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<FunctionResult> {
         #[cfg(not(feature = "python"))]
         {
             panic!("Cannot evaluate a PythonUDF without compiling for Python");

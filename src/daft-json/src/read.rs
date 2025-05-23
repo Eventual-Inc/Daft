@@ -568,6 +568,7 @@ fn parse_into_column_array_chunk_stream(
                         daft_schema.clone(),
                         all_series,
                         num_rows,
+                        None,
                     ))
                 })();
                 let _ = send.send(result);

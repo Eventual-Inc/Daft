@@ -60,9 +60,21 @@ macro_rules! value_err {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Errors {
+    errors: Series,
+}
+
+impl Errors {
+    fn new(errors: Series) -> Self {
+        Self { errors }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RecordBatch {
     pub schema: SchemaRef,
     columns: Arc<Vec<Series>>,
+    errors: Option<Errors>,
     num_rows: usize,
 }
 
@@ -105,6 +117,7 @@ impl RecordBatch {
         schema: S,
         columns: Vec<Series>,
         num_rows: usize,
+        errors: Option<Errors>,
     ) -> DaftResult<Self> {
         let schema: SchemaRef = schema.into();
         validate_schema(schema.as_ref(), columns.as_slice())?;
@@ -128,7 +141,7 @@ impl RecordBatch {
             })
             .collect();
 
-        Ok(Self::new_unchecked(schema, columns?, num_rows))
+        Ok(Self::new_unchecked(schema, columns?, num_rows, errors))
     }
 
     pub fn get_inner_arrow_arrays(
@@ -161,7 +174,7 @@ impl RecordBatch {
             }
         }
 
-        Ok(Self::new_unchecked(schema, columns, num_rows))
+        Ok(Self::new_unchecked(schema, columns, num_rows, None))
     }
 
     /// Create a new [`RecordBatch`] without any validations
@@ -172,13 +185,30 @@ impl RecordBatch {
     /// already does its own validations.
     pub fn new_unchecked<S: Into<SchemaRef>>(
         schema: S,
-        columns: Vec<Series>,
+        mut columns: Vec<Series>,
         num_rows: usize,
+        errors: Option<Errors>,
     ) -> Self {
-        Self {
-            schema: schema.into(),
-            columns: Arc::new(columns),
-            num_rows,
+        if let Some(errors) = errors {
+            let error = errors.errors.is_null().unwrap();
+            for col in columns.iter_mut() {
+                let null = Series::full_null("null", col.data_type(), 1);
+                let nulled_col = col.if_else(&null, &error).unwrap();
+                *col = nulled_col;
+            }
+            Self {
+                schema: schema.into(),
+                columns: Arc::new(columns),
+                errors: Some(errors),
+                num_rows,
+            }
+        } else {
+            Self {
+                schema: schema.into(),
+                columns: Arc::new(columns),
+                errors: None,
+                num_rows,
+            }
         }
     }
 
@@ -189,7 +219,7 @@ impl RecordBatch {
             let series = Series::empty(&field.name, &field.dtype);
             columns.push(series);
         }
-        Ok(Self::new_unchecked(schema, columns, 0))
+        Ok(Self::new_unchecked(schema, columns, 0, None))
     }
 
     /// Create a RecordBatch from a set of columns.
@@ -221,6 +251,7 @@ impl RecordBatch {
         Ok(Self {
             schema,
             columns,
+            errors: None,
             num_rows,
         })
     }
@@ -256,6 +287,7 @@ impl RecordBatch {
         Ok(Self {
             schema,
             columns: Arc::new(columns),
+            errors: None,
             num_rows,
         })
     }
@@ -288,6 +320,7 @@ impl RecordBatch {
             return Ok(Self {
                 schema: self.schema.clone(),
                 columns: self.columns.clone(),
+                errors: None,
                 num_rows: self.len(),
             });
         }
@@ -501,7 +534,7 @@ impl RecordBatch {
 
         let new_schema = Schema::new(indices.iter().map(|i| self.schema[*i].clone()));
 
-        Self::new_unchecked(new_schema, new_columns, self.num_rows)
+        Self::new_unchecked(new_schema, new_columns, self.num_rows, None)
     }
 
     pub fn columns(&self) -> &[Series] {
@@ -687,7 +720,8 @@ impl RecordBatch {
                     .iter()
                     .map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
                     .collect::<DaftResult<Vec<_>>>()?;
-                func.evaluate(evaluated_inputs.as_slice(), func)
+                let result = func.evaluate(evaluated_inputs.as_slice(), func)?;
+                Ok(result.ok)
             }
             Expr::ScalarFunction(func) => {
                 let args = func.inputs
@@ -752,13 +786,179 @@ impl RecordBatch {
         Ok(series)
     }
 
-    pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
-        let result_series: Vec<_> = exprs
-            .iter()
-            .map(|e| self.eval_expression(e))
-            .try_collect()?;
+    fn eval_expression2(&self, expr: &BoundExpr) -> DaftResult<(Series, Option<Errors>)> {
+        let expected_field = expr.inner().to_field(self.schema.as_ref())?;
+        let (series, error) = match expr.as_ref() {
+            Expr::Alias(child, name) => {
+                let (series, error) = self.eval_expression2(&BoundExpr::new_unchecked(child.clone()))?;
+                Ok((series.rename(name), error))
+            }
+            Expr::Agg(agg_expr) => {
+                let series = self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None)?;
+                Ok((series, None))
+            }
+            Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
+            Expr::WindowFunction(..) => Err(DaftError::ComputeError("Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string())),
+            Expr::Cast(child, dtype) => Ok((self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.cast(dtype)?, None)),
+            Expr::Column(Column::Bound(BoundColumn { index, .. })) => Ok((self.columns[*index].clone(), None)),
+            Expr::Not(child) => {
+                let series = self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?;
+                let negated = !(series);
+                Ok((negated?, None))
+            }
+            Expr::IsNull(child) => Ok((self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.is_null()?, None)),
+            Expr::NotNull(child) => Ok((self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.not_null()?, None)),
+            Expr::FillNull(child, fill_value) => {
+                let fill_value = self.eval_expression(&BoundExpr::new_unchecked(fill_value.clone()))?;
+                let series = self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?;
+                let filled = series.fill_null(&fill_value)?;
+                Ok((filled, None))
+            }
+            Expr::IsIn(child, items) => {
+                if items.is_empty() {
+                    return Ok((BooleanArray::from_iter(&child.get_name(&self.schema)?, std::iter::once(Some(false))).into_series().broadcast(self.len())?, None));
+                }
+                let items = items.iter().map(|i| self.eval_expression(&BoundExpr::new_unchecked(i.clone()))).collect::<DaftResult<Vec<_>>>()?;
 
-        self.process_eval_results(exprs, result_series)
+                let items = items.iter().collect::<Vec<&Series>>();
+                let s = Series::concat(items.as_slice())?;
+                let series = self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?;
+                let is_in = series.is_in(&s)?;
+                Ok((is_in, None))
+            }
+            Expr::List(items) => {
+                // compute list type to determine each child cast
+                let field = expr.inner().to_field(&self.schema)?;
+                // extract list child type (could be de-duped with zip and moved to impl DataType)
+                let dtype = if let DataType::List(dtype) = &field.dtype {
+                    dtype
+                } else {
+                    return Err(DaftError::ComputeError("List expression must be of type List(T)".to_string()))
+                };
+                // compute child series with explicit casts to the supertype
+                let items = items.iter().map(|i| i.clone().cast(dtype)).collect::<Vec<_>>();
+                let items = items.iter().map(|i| self.eval_expression(&BoundExpr::new_unchecked(i.clone()))).collect::<DaftResult<Vec<_>>>()?;
+                let items = items.iter().collect::<Vec<&Series>>();
+                // zip the series into a single series of lists
+                let series = Series::zip(field, items.as_slice())?;
+                Ok((series, None))
+            }
+            Expr::Between(child, lower, upper) => {
+                let series = self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?;
+                let between = series.between(&self.eval_expression(&BoundExpr::new_unchecked(lower.clone()))?, &self.eval_expression(&BoundExpr::new_unchecked(upper.clone()))?)?;
+                Ok((between, None))
+            }
+            Expr::BinaryOp { op, left, right } => {
+                let lhs = self.eval_expression(&BoundExpr::new_unchecked(left.clone()))?;
+                let rhs = self.eval_expression(&BoundExpr::new_unchecked(right.clone()))?;
+                use daft_core::array::ops::{DaftCompare, DaftLogical};
+                use daft_dsl::Operator::*;
+                let result = match op {
+                    Plus => lhs + rhs,
+                    Minus => lhs - rhs,
+                    TrueDivide => lhs / rhs,
+                    FloorDivide => lhs.floor_div(&rhs),
+                    Multiply => lhs * rhs,
+                    Modulus => lhs % rhs,
+                    Lt => Ok(lhs.lt(&rhs)?.into_series()),
+                    LtEq => Ok(lhs.lte(&rhs)?.into_series()),
+                    Eq => Ok(lhs.equal(&rhs)?.into_series()),
+                    EqNullSafe => Ok(lhs.eq_null_safe(&rhs)?.into_series()),
+                    NotEq => Ok(lhs.not_equal(&rhs)?.into_series()),
+                    GtEq => Ok(lhs.gte(&rhs)?.into_series()),
+                    Gt => Ok(lhs.gt(&rhs)?.into_series()),
+                    And => lhs.and(&rhs),
+                    Or => lhs.or(&rhs),
+                    Xor => lhs.xor(&rhs),
+                    ShiftLeft => lhs.shift_left(&rhs),
+                    ShiftRight => lhs.shift_right(&rhs),
+                };
+                Ok((result?, None))
+            }
+            Expr::Function { func, inputs } => {
+                let evaluated_inputs = inputs
+                    .iter()
+                    .map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let result = func.evaluate(evaluated_inputs.as_slice(), func)?;
+                Ok((result.ok, result.error.map(|e| Errors::new(e))))
+            }
+            Expr::ScalarFunction(func) => {
+                let args = func.inputs
+                    .iter()
+                    .map(|e| {
+                        e.map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
+                    })
+                    .collect::<DaftResult<FunctionArgs<Series>>>()?;
+
+
+                Ok((func.udf.evaluate(args)?, None))
+            }
+            Expr::Literal(lit_value) => Ok((lit_value.to_series(), None)),
+            Expr::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => match predicate.as_ref() {
+                // TODO: move this into simplify expression
+                Expr::Literal(LiteralValue::Boolean(true)) => Ok((self.eval_expression(&BoundExpr::new_unchecked(if_true.clone()))?, None)),
+                Expr::Literal(LiteralValue::Boolean(false)) => {
+                    let series = self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?;
+                    let renamed = series.rename(if_true.get_name(&self.schema)?);
+                    Ok((renamed, None))
+                }
+                _ => {
+                    let if_true_series = self.eval_expression(&BoundExpr::new_unchecked(if_true.clone()))?;
+                    let if_false_series = self.eval_expression(&BoundExpr::new_unchecked(if_false.clone()))?;
+                    let predicate_series = self.eval_expression(&BoundExpr::new_unchecked(predicate.clone()))?;
+                    let result = if_true_series.if_else(&if_false_series, &predicate_series)?;
+                    Ok((result, None))
+                }
+            },
+            Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
+                "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
+                "IN <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::Exists(_subquery) => Err(DaftError::ComputeError(
+                "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::Column(_) => unreachable!("bound expressions should not have unbound columns"),
+        }?;
+
+        if expected_field.name != series.field().name {
+            return Err(DaftError::ComputeError(format!(
+                "Mismatch of expected expression name and name from computed series ({} vs {}) for expression: {expr}",
+                expected_field.name,
+                series.field().name
+            )));
+        }
+
+        assert!(
+            !(expected_field.dtype != series.field().dtype),
+            "Data type mismatch in expression evaluation:\n\
+                Expected type: {}\n\
+                Computed type: {}\n\
+                Expression: {}\n\
+                This likely indicates an internal error in type inference or computation.",
+            expected_field.dtype,
+            series.field().dtype,
+            expr
+        );
+        Ok((series, error))
+    }
+
+    pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+        let mut result_series: Vec<Series> = Vec::new();
+        let mut errors: Option<Errors> = None;
+        for e in exprs {
+            let (series, error) = self.eval_expression2(e)?;
+            result_series.push(series);
+            errors = error;
+        }
+
+        self.process_eval_results(exprs, result_series, errors)
     }
 
     pub async fn par_eval_expression_list(
@@ -776,40 +976,81 @@ impl RecordBatch {
         // Evaluate non-compute expressions
         let non_compute_results = non_compute_exprs
             .into_iter()
-            .map(|(i, e)| (i, self.eval_expression(&e)))
-            .collect::<Vec<_>>();
+            .map(|(i, e)| {
+                Ok((
+                    i,
+                    match e.as_ref() {
+                        Expr::Function { func, inputs } => {
+                            let evaluated_inputs = inputs
+                                .iter()
+                                .map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
+                                .collect::<DaftResult<Vec<_>>>()?;
+                            let result = func.evaluate(evaluated_inputs.as_slice(), func)?;
+                            (result.ok, result.error.map(|e| Errors::new(e)))
+                        }
+                        _ => {
+                            let result = self.eval_expression(&e)?;
+                            (result, None)
+                        }
+                    },
+                ))
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // Spawn tasks for the compute expressions
         let compute_runtime = get_compute_runtime();
         let compute_futures = compute_exprs.into_iter().map(|(i, e)| {
             let table = self.clone();
-            compute_runtime.spawn(async move { (i, table.eval_expression(&e)) })
+            compute_runtime.spawn(async move {
+                DaftResult::Ok((
+                    i,
+                    match e.as_ref() {
+                        Expr::Function { func, inputs } => {
+                            let evaluated_inputs = inputs
+                                .iter()
+                                .map(|e| {
+                                    table.eval_expression(&BoundExpr::new_unchecked(e.clone()))
+                                })
+                                .collect::<DaftResult<Vec<_>>>()?;
+                            let result = func.evaluate(evaluated_inputs.as_slice(), func)?;
+                            (result.ok, result.error.map(|e| Errors::new(e)))
+                        }
+                        _ => {
+                            let result = table.eval_expression(&e)?;
+                            (result, None)
+                        }
+                    },
+                ))
+            })
         });
 
         // Collect the results of the compute expressions
         let compute_results = futures::stream::iter(compute_futures)
             .buffered(num_parallel_tasks)
             .try_collect::<Vec<_>>()
-            .await?;
+            .await?
+            .into_iter()
+            .try_collect::<Vec<_>>()?;
 
-        // Combine and sort by original index
         let mut all_results = non_compute_results;
         all_results.extend(compute_results);
         all_results.sort_by_key(|(i, _)| *i);
 
-        // Extract just the results in order
-        let result_series = all_results
-            .into_iter()
-            .map(|(_, result)| result)
-            .collect::<DaftResult<Vec<_>>>()?;
+        let mut results = Vec::new();
+        let mut errors = None;
+        for (_, (result, error)) in all_results {
+            results.push(result);
+            errors = error;
+        }
 
-        self.process_eval_results(exprs, result_series)
+        self.process_eval_results(exprs, results, errors)
     }
 
     fn process_eval_results(
         &self,
         exprs: &[BoundExpr],
         result_series: Vec<Series>,
+        errors: Option<Errors>,
     ) -> DaftResult<Self> {
         let fields = result_series.iter().map(|s| s.field().clone());
 
@@ -833,7 +1074,7 @@ impl RecordBatch {
             (true, _) => result_series.iter().map(|s| s.len()).max().unwrap(),
         };
 
-        Self::new_with_broadcast(new_schema, result_series, num_rows)
+        Self::new_with_broadcast(new_schema, result_series, num_rows, errors)
     }
 
     pub fn as_physical(&self) -> DaftResult<Self> {

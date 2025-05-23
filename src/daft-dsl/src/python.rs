@@ -234,9 +234,10 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     expressions,
     return_dtype,
     init_args,
+    scalar_udf,
     resource_request=None,
     batch_size=None,
-    concurrency=None
+    concurrency=None,
 ))]
 pub fn udf(
     name: &str,
@@ -245,6 +246,7 @@ pub fn udf(
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
     init_args: PyObject,
+    scalar_udf: bool,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
@@ -268,6 +270,7 @@ pub fn udf(
             &expressions_map,
             return_dtype.dtype,
             init_args.into(),
+            scalar_udf,
             resource_request,
             batch_size,
             concurrency,

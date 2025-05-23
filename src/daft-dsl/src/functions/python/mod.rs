@@ -74,6 +74,7 @@ pub struct PythonUDF {
     pub bound_args: RuntimePyObject,
     pub num_expressions: usize,
     pub return_dtype: DataType,
+    pub scalar_udf: bool,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
@@ -87,6 +88,7 @@ pub fn udf(
     expressions: &[ExprRef],
     return_dtype: DataType,
     init_args: RuntimePyObject,
+    scalar_udf: bool,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
@@ -101,6 +103,7 @@ pub fn udf(
             resource_request,
             batch_size,
             concurrency,
+            scalar_udf,
         }),
         inputs: expressions.into(),
     })

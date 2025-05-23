@@ -474,7 +474,7 @@ impl PyRecordBatch {
         }
 
         Ok(Self {
-            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
+            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows, None)?,
         })
     }
     #[staticmethod]
@@ -501,7 +501,7 @@ impl PyRecordBatch {
         }
 
         Ok(Self {
-            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
+            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows, None)?,
         })
     }
 
