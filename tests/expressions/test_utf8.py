@@ -91,16 +91,3 @@ def test_substr(test_expression):
         sql_name="substr",
         args=[2, None],
     )
-
-
-def test_substr_full_null(test_expression):
-    test_data = [None, None, None]
-    expected = [None, None, None]
-    test_expression(
-        data=test_data,
-        expected=expected,
-        name="substr",
-        namespace="str",
-        sql_name="substr",
-        args=[2],
-    )

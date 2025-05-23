@@ -84,8 +84,8 @@ impl ScalarUDF for Substr {
         let data = input.to_field(schema)?;
         let start = start.to_field(schema)?;
 
-        ensure!(data.dtype.is_null_or(DataType::is_string), TypeError: "Expected input to be utf8 but received {}", data.dtype);
-        ensure!(start.dtype.is_null_or(DataType::is_integer), TypeError: "Expected start to be an integer but received {}", start.dtype);
+        ensure!(data.dtype.is_string(), TypeError: "Expected input to be utf8 but received {}", data.dtype);
+        ensure!(start.dtype.is_integer(), TypeError: "Expected start to be an integer but received {}", start.dtype);
 
         if let Some(length) = length {
             let length = length.to_field(schema)?;
