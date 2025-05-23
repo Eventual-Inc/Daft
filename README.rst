@@ -1,4 +1,4 @@
-
+|Banner|
 
 |CI| |PyPI| |Latest Tag| |Coverage| |Slack|
 
