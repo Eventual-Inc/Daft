@@ -585,9 +585,9 @@ def create_table_if_not_exists(identifier: Identifier | str, source: Schema | Da
     return _session().create_table_if_not_exists(identifier, source, **properties)
 
 
-def create_temp_table(identifier: str, source: Schema | DataFrame) -> Table:
+def create_temp_table(identifier: str, source: Schema | DataFrame):
     """Creates a temp table scoped to current session's lifetime."""
-    return _session().create_temp_table(identifier, source)
+    _session().create_temp_table(identifier, source)
 
 
 ###

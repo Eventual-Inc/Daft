@@ -5,7 +5,7 @@ use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
-    error::Result,
+    error::CatalogResult,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
     unsupported_err,
@@ -83,7 +83,7 @@ impl Session {
     }
 
     /// Attaches a catalog to this session, err if already exists.
-    pub fn attach_catalog(&self, catalog: CatalogRef, alias: String) -> Result<()> {
+    pub fn attach_catalog(&self, catalog: CatalogRef, alias: String) -> CatalogResult<()> {
         if self.state().catalogs.contains(&alias) {
             obj_already_exists_err!("Catalog", &alias.into())
         }
@@ -96,8 +96,8 @@ impl Session {
     }
 
     /// Attaches a table to this session, err if already exists.
-    pub fn attach_table(&self, table: TableRef, alias: impl Into<String>) -> Result<()> {
-        let alias = alias.into();
+    pub fn attach_table(&self, table: TableRef, alias: impl Into<String>) -> CatalogResult<()> {
+        let alias: String = alias.into();
         if self.state().tables.contains(&alias) {
             obj_already_exists_err!("Table", &alias.into())
         }
@@ -117,22 +117,22 @@ impl Session {
         name: impl Into<String>,
         source: &TableSource,
         replace: bool,
-    ) -> Result<TableRef> {
-        let name = name.into();
+    ) -> CatalogResult<TableRef> {
+        let name: String = name.into();
         if !replace && self.state().tables.contains(&name) {
             obj_already_exists_err!("Temporary table", &name.into())
         }
         // we don't have mutable temporary tables, only immutable views over dataframes.
         let table = match source {
             TableSource::Schema(_) => unsupported_err!("temporary table with schema"),
-            TableSource::View(plan) => View::from(plan.clone()).arced(),
+            TableSource::View(plan) => Arc::new(View::new(&name, plan.clone())),
         };
         self.state_mut().tables.bind(name, table.clone());
         Ok(table)
     }
 
     /// Returns the session's current catalog.
-    pub fn current_catalog(&self) -> Result<Option<CatalogRef>> {
+    pub fn current_catalog(&self) -> CatalogResult<Option<CatalogRef>> {
         if let Some(catalog) = &self.state().options.curr_catalog {
             self.get_catalog(catalog).map(Some)
         } else {
@@ -141,12 +141,12 @@ impl Session {
     }
 
     /// Returns the session's current namespace.
-    pub fn current_namespace(&self) -> Result<Option<Vec<String>>> {
+    pub fn current_namespace(&self) -> CatalogResult<Option<Vec<String>>> {
         Ok(self.state().options.curr_namespace.clone())
     }
 
     /// Detaches a table from this session, err if does not exist.
-    pub fn detach_table(&self, alias: &str) -> Result<()> {
+    pub fn detach_table(&self, alias: &str) -> CatalogResult<()> {
         if !self.state().tables.contains(alias) {
             obj_not_found_err!("Table", &alias.into())
         }
@@ -155,7 +155,7 @@ impl Session {
     }
 
     /// Detaches a catalog from this session, err if does not exist.
-    pub fn detach_catalog(&self, alias: &str) -> Result<()> {
+    pub fn detach_catalog(&self, alias: &str) -> CatalogResult<()> {
         if !self.state().catalogs.contains(alias) {
             obj_not_found_err!("Catalog", &alias.into())
         }
@@ -168,7 +168,7 @@ impl Session {
     }
 
     /// Returns the catalog or an object not found error.
-    pub fn get_catalog(&self, name: &str) -> Result<CatalogRef> {
+    pub fn get_catalog(&self, name: &str) -> CatalogResult<CatalogRef> {
         if let Some(catalog) = self.state().get_attached_catalog(name)? {
             Ok(catalog.clone())
         } else {
@@ -177,7 +177,7 @@ impl Session {
     }
 
     /// Returns the table or an object not found error.
-    pub fn get_table(&self, name: &Identifier) -> Result<TableRef> {
+    pub fn get_table(&self, name: &Identifier) -> CatalogResult<TableRef> {
         //
         // Rule 0: check temp tables.
         if !name.has_qualifier() {
@@ -195,14 +195,15 @@ impl Session {
         //
         // Rule 1: try to resolve using the current catalog and current schema.
         if let Some(qualifier) = curr_namespace {
-            if let Some(table) = curr_catalog.get_table(&name.qualify(qualifier))? {
-                return Ok(table.into());
-            };
+            let ident = name.qualify(qualifier);
+            if curr_catalog.has_table(&ident)? {
+                return curr_catalog.get_table(&ident);
+            }
         }
         //
         // Rule 2: try to resolve as schema-qualified using the current catalog.
-        if let Some(table) = curr_catalog.get_table(name)? {
-            return Ok(table.into());
+        if curr_catalog.has_table(name)? {
+            return curr_catalog.get_table(name);
         }
         //
         // The next resolution rule requires a qualifier.
@@ -212,8 +213,9 @@ impl Session {
         //
         // Rule 3: try to resolve as catalog-qualified.
         if let Ok(catalog) = self.get_catalog(name.get(0)) {
-            if let Some(table) = catalog.get_table(&name.drop(1))? {
-                return Ok(table.into());
+            let ident = name.drop(1);
+            if catalog.has_table(&ident)? {
+                return catalog.get_table(&ident);
             }
         }
         obj_not_found_err!("Table", name)
@@ -230,17 +232,17 @@ impl Session {
     }
 
     /// Lists all catalogs matching the pattern.
-    pub fn list_catalogs(&self, pattern: Option<&str>) -> Result<Vec<String>> {
+    pub fn list_catalogs(&self, pattern: Option<&str>) -> CatalogResult<Vec<String>> {
         Ok(self.state().catalogs.list(pattern))
     }
 
     /// Lists all tables matching the pattern.
-    pub fn list_tables(&self, pattern: Option<&str>) -> Result<Vec<String>> {
+    pub fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<String>> {
         Ok(self.state().tables.list(pattern))
     }
 
     /// Sets the current_catalog.
-    pub fn set_catalog(&self, ident: Option<&str>) -> Result<()> {
+    pub fn set_catalog(&self, ident: Option<&str>) -> CatalogResult<()> {
         if let Some(ident) = ident {
             if !self.has_catalog(ident) {
                 obj_not_found_err!("Catalog", &ident.into())
@@ -253,7 +255,7 @@ impl Session {
     }
 
     /// Sets the current_namespace.
-    pub fn set_namespace(&self, ident: Option<&Identifier>) -> Result<()> {
+    pub fn set_namespace(&self, ident: Option<&Identifier>) -> CatalogResult<()> {
         if let Some(ident) = ident {
             self.state_mut().options.curr_namespace = Some(ident.clone().path());
         } else {
@@ -271,7 +273,11 @@ impl Session {
         }
     }
 
-    pub fn attach_function(&self, function: WrappedUDFClass, alias: Option<String>) -> Result<()> {
+    pub fn attach_function(
+        &self,
+        function: WrappedUDFClass,
+        alias: Option<String>,
+    ) -> CatalogResult<()> {
         #[cfg(feature = "python")]
         {
             let name = match alias {
@@ -284,25 +290,25 @@ impl Session {
         }
         #[cfg(not(feature = "python"))]
         {
-            Err(daft_catalog::error::Error::unsupported(
+            Err(daft_catalog::error::CatalogError::unsupported(
                 "attach_function without python",
             ))
         }
     }
 
-    pub fn detach_function(&self, name: &str) -> Result<()> {
+    pub fn detach_function(&self, name: &str) -> CatalogResult<()> {
         self.state_mut().functions.remove(name);
         Ok(())
     }
 
-    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
         self.state().get_function(name)
     }
 }
 
 impl SessionState {
     /// Get an attached catalog by name using the session's identifier mode.
-    pub fn get_attached_catalog(&self, name: &str) -> Result<Option<CatalogRef>> {
+    pub fn get_attached_catalog(&self, name: &str) -> CatalogResult<Option<CatalogRef>> {
         match self.catalogs.lookup(name, self.options.find_mode()) {
             catalogs if catalogs.is_empty() => Ok(None),
             catalogs if catalogs.len() == 1 => Ok(Some(catalogs[0].clone())),
@@ -311,7 +317,7 @@ impl SessionState {
     }
 
     /// Get an attached table by name using the session's identifier mode.
-    pub fn get_attached_table(&self, name: &str) -> Result<Option<TableRef>> {
+    pub fn get_attached_table(&self, name: &str) -> CatalogResult<Option<TableRef>> {
         match self.tables.lookup(name, self.options.find_mode()) {
             tables if tables.is_empty() => Ok(None),
             tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
@@ -320,7 +326,7 @@ impl SessionState {
     }
 
     #[cfg(feature = "python")]
-    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
         let mut items = self
             .functions
             .lookup(name, daft_catalog::LookupMode::Insensitive)
@@ -337,7 +343,7 @@ impl SessionState {
     }
 
     #[cfg(not(feature = "python"))]
-    pub fn get_function(&self, name: &str) -> Result<Option<WrappedUDFClass>> {
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
         Ok(None)
     }
 }
@@ -381,7 +387,7 @@ mod tests {
     fn test_attach_table() {
         let sess = Session::empty();
         let plan = LogicalPlanBuilder::from(mock_plan());
-        let view = View::from(plan).arced();
+        let view = Arc::new(View::new("view", plan));
 
         // Register a table
         assert!(sess.attach_table(view, "test_table").is_ok());
@@ -391,7 +397,7 @@ mod tests {
     fn test_get_table() {
         let sess = Session::empty();
         let plan = LogicalPlanBuilder::from(mock_plan());
-        let view = View::from(plan).arced();
+        let view = Arc::new(View::new("view", plan));
 
         sess.attach_table(view, "test_table")
             .expect("failed to attach table");

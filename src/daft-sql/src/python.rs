@@ -57,7 +57,7 @@ pub fn sql_exec(
 #[pyfunction]
 pub fn sql(
     sql: &str,
-    catalog: PyCatalog,
+    catalog: PySqlCatalog,
     py_session: &PySession,
     daft_planning_config: PyDaftPlanningConfig,
 ) -> PyResult<PyLogicalPlanBuilder> {
@@ -107,12 +107,12 @@ pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
 /// PyCatalog is the Python interface to the Catalog.
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone)]
-pub struct PyCatalog {
+pub struct PySqlCatalog {
     tables: HashMap<String, Arc<LogicalPlan>>,
 }
 
 #[pymethods]
-impl PyCatalog {
+impl PySqlCatalog {
     /// Construct an empty PyCatalog.
     #[staticmethod]
     pub fn new() -> Self {
@@ -146,7 +146,7 @@ impl PyCatalog {
     }
 }
 
-impl Default for PyCatalog {
+impl Default for PySqlCatalog {
     fn default() -> Self {
         Self::new()
     }

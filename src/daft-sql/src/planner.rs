@@ -210,7 +210,7 @@ impl SQLPlanner<'_> {
         } else {
             let table = self.session().get_table(name)?;
 
-            let plan = table.get_logical_plan()?;
+            let plan = table.to_logical_plan()?;
             Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
         }
     }

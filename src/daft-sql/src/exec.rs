@@ -56,7 +56,7 @@ fn execute_show_tables(
     };
 
     // this returns identifiers which we need to split into our columns
-    let tables = catalog.list_tables(show_tables.pattern)?;
+    let tables = catalog.list_tables(show_tables.pattern.map(Into::into).as_ref())?;
 
     // these are typical `show` columns which are simplififed INFORMATION_SCHEMA.TABLES columns
     use daft_core::prelude::{DataType, Field, Schema};
