@@ -13,6 +13,13 @@ env:
   DAFT_ANALYTICS_ENABLED: '0'
   RUST_BACKTRACE: 1
 
+# Cancel in-progress CI runs for outdated PR pushes to save resources.
+# For pull requests, use the PR number to group runs.
+# For pushes to main, i.e. not PRs, use the unique commit SHA to avoid canceling other CI runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   unit-test:
     runs-on: ${{ matrix.os }}
