@@ -3,12 +3,12 @@ name: PR test suite
 on:
   push:
     branches: [main]
-    paths:
-    - '!docs/**'
+    paths-ignore:
+    - 'docs/**'
   pull_request:
     branches: [main]
-    paths:
-    - '!docs/**'
+    paths-ignore:
+    - 'docs/**'
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
