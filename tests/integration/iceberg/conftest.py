@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import Generator, Iterator
-from typing import TypeAlias, TypeVar
+from typing import TypeVar
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 import pyarrow as pa
 import pytest

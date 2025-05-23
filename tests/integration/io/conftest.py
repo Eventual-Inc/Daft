@@ -5,8 +5,14 @@ import io
 import os
 import pathlib
 import shutil
+import sys
 from collections.abc import Generator
-from typing import TypeAlias, TypeVar
+from typing import TypeVar
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 import numpy as np
 import pytest
