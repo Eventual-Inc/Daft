@@ -35,7 +35,7 @@ jobs:
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         enable-aqe: [1, 0]
-        os: [ubuntu-24.04-arm, macos-latest]
+        os: [ubuntu-latest, macos-latest]
         exclude:
         - daft-runner: native
           enable-aqe: 1
@@ -197,9 +197,13 @@ jobs:
         bun install
         bun run build
 
-    # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
-      run: maturin build --release --compatibility linux --out dist
+      run: maturin build $BUILD_MODE --compatibility linux --out dist
+      env:
+        # Note: In PRs, we build in dev mode to reduce CI times
+        # In main and manual triggers, we build in release, but not LTO cause it takes too long
+        BUILD_MODE: ${{ github.event_name == 'pull_request' && '' || '--release' }}
+
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
