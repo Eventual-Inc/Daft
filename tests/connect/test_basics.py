@@ -354,17 +354,17 @@ def test_with_column_renamed_preserves_other_columns(spark_session):
     # Create a DataFrame with multiple columns
     data = [(1, "alice", 25), (2, "bob", 30), (3, "charlie", 35)]
     df = spark_session.createDataFrame(data, ["id", "name", "age"])
-    
+
     # Rename only the 'name' column to 'full_name'
     renamed_df = df.withColumnRenamed("name", "full_name")
-    
+
     # Verify the schema has all columns
     assert "id" in renamed_df.columns, "Original 'id' column should be preserved"
-    assert "age" in renamed_df.columns, "Original 'age' column should be preserved" 
+    assert "age" in renamed_df.columns, "Original 'age' column should be preserved"
     assert "full_name" in renamed_df.columns, "Renamed column should exist"
     assert "name" not in renamed_df.columns, "Original 'name' column should be gone"
     assert len(renamed_df.columns) == 3, "Should have same number of columns"
-    
+
     # Verify the data is correct
     collected = renamed_df.collect()
     assert len(collected) == 3
@@ -378,12 +378,10 @@ def test_with_column_renamed_chained(spark_session):
     # Create a DataFrame with multiple columns
     data = [(1, "alice", 25), (2, "bob", 30), (3, "charlie", 35)]
     df = spark_session.createDataFrame(data, ["id", "name", "age"])
-    
+
     # Chain multiple renames
-    renamed_df = (df
-                  .withColumnRenamed("name", "full_name")
-                  .withColumnRenamed("age", "years"))
-    
+    renamed_df = df.withColumnRenamed("name", "full_name").withColumnRenamed("age", "years")
+
     # Verify the schema has all columns with correct names
     assert "id" in renamed_df.columns, "Original 'id' column should be preserved"
     assert "full_name" in renamed_df.columns, "First renamed column should exist"
@@ -391,7 +389,7 @@ def test_with_column_renamed_chained(spark_session):
     assert "name" not in renamed_df.columns, "Original 'name' column should be gone"
     assert "age" not in renamed_df.columns, "Original 'age' column should be gone"
     assert len(renamed_df.columns) == 3, "Should have same number of columns"
-    
+
     # Verify the data is correct
     collected = renamed_df.collect()
     assert len(collected) == 3
