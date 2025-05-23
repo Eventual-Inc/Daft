@@ -22,6 +22,7 @@ daft-dashboard = {path = "src/daft-dashboard", default-features = false}
 daft-distributed = {path = "src/daft-distributed", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
+daft-functions-binary = {path = "src/daft-functions-binary", default-features = false}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
 daft-functions-list = {path = "src/daft-functions-list", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
@@ -73,6 +74,7 @@ python = [
   "daft-dashboard/python",
   "daft-distributed/python",
   "daft-dsl/python",
+  "daft-functions-binary/python",
   "daft-functions-json/python",
   "daft-functions-list/python",
   "daft-functions-utf8/python",
@@ -168,6 +170,7 @@ members = [
   "src/daft-dashboard",
   "src/daft-dsl",
   "src/daft-functions",
+  "src/daft-functions-binary",
   "src/daft-functions-json",
   "src/daft-functions-list",
   "src/daft-functions-utf8",
@@ -221,6 +224,7 @@ daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-functions = {path = "src/daft-functions"}
+daft-functions-binary = {path = "src/daft-functions-binary"}
 daft-functions-json = {path = "src/daft-functions-json"}
 daft-functions-list = {path = "src/daft-functions-list"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
@@ -261,6 +265,7 @@ regex = "1.10.4"
 rstest = "0.18.2"
 serde_json = "1.0.133"
 sha1 = "0.11.0-pre.4"
+simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}

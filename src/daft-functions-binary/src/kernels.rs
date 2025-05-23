@@ -2,153 +2,50 @@ use std::iter;
 
 use arrow2::{
     array::{BinaryArray as ArrowBinaryArray, Utf8Array as ArrowUtf8Array},
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        MutableBitmap,
-    },
+    bitmap::MutableBitmap,
     datatypes::DataType as ArrowType,
     offset::Offsets,
 };
 use common_error::{DaftError, DaftResult};
-
-use crate::{
+use daft_core::{
     array::ops::as_arrow::AsArrow,
     datatypes::{
         BinaryArray, DaftIntegerType, DaftNumericType, DataArray, FixedSizeBinaryArray, UInt64Array,
     },
-    prelude::Utf8Array,
+    prelude::{DataType, Utf8Array},
 };
 
-enum BroadcastedBinaryIter<'a> {
-    Repeat(std::iter::RepeatN<Option<&'a [u8]>>),
-    NonRepeat(
-        ZipValidity<
-            &'a [u8],
-            arrow2::array::ArrayValuesIter<'a, arrow2::array::BinaryArray<i64>>,
-            arrow2::bitmap::utils::BitmapIter<'a>,
-        >,
-    ),
+use crate::utils::*;
+
+pub trait BinaryArrayExtension: Sized {
+    fn length(&self) -> DaftResult<UInt64Array>;
+    fn binary_concat(&self, other: &Self) -> DaftResult<Self>;
+    fn binary_slice<I, J>(
+        &self,
+        start: &DataArray<I>,
+        length: Option<&DataArray<J>>,
+    ) -> DaftResult<BinaryArray>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord + TryInto<usize>,
+        J: DaftIntegerType,
+        <J as DaftNumericType>::Native: Ord + TryInto<usize>;
+    fn transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
+    where
+        Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>;
+    fn try_transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
+    where
+        Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>;
+    fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    where
+        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>;
+    fn try_decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    where
+        Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>;
 }
 
-enum BroadcastedFixedSizeBinaryIter<'a> {
-    Repeat(std::iter::RepeatN<Option<&'a [u8]>>),
-    NonRepeat(ZipValidity<&'a [u8], std::slice::ChunksExact<'a, u8>, BitmapIter<'a>>),
-}
-
-enum BroadcastedNumericIter<'a, T: 'a, U>
-where
-    T: DaftIntegerType,
-    T::Native: TryInto<U> + Ord,
-{
-    Repeat(
-        std::iter::RepeatN<Option<<T as DaftNumericType>::Native>>,
-        std::marker::PhantomData<U>,
-    ),
-    NonRepeat(
-        ZipValidity<
-            &'a <T as DaftNumericType>::Native,
-            std::slice::Iter<'a, <T as DaftNumericType>::Native>,
-            BitmapIter<'a>,
-        >,
-        std::marker::PhantomData<U>,
-    ),
-}
-
-impl<'a> Iterator for BroadcastedFixedSizeBinaryIter<'a> {
-    type Item = Option<&'a [u8]>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            BroadcastedFixedSizeBinaryIter::Repeat(iter) => iter.next(),
-            BroadcastedFixedSizeBinaryIter::NonRepeat(iter) => iter.next(),
-        }
-    }
-}
-
-impl<'a> Iterator for BroadcastedBinaryIter<'a> {
-    type Item = Option<&'a [u8]>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            BroadcastedBinaryIter::Repeat(iter) => iter.next(),
-            BroadcastedBinaryIter::NonRepeat(iter) => iter.next(),
-        }
-    }
-}
-
-impl<'a, T: 'a, U> Iterator for BroadcastedNumericIter<'a, T, U>
-where
-    T: DaftIntegerType + Clone,
-    T::Native: TryInto<U> + Ord,
-{
-    type Item = DaftResult<Option<U>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            BroadcastedNumericIter::Repeat(iter, _) => iter.next().map(|x| {
-                x.map(|x| {
-                    x.try_into().map_err(|_| {
-                        DaftError::ComputeError(
-                            "Failed to cast numeric value to target type".to_string(),
-                        )
-                    })
-                })
-                .transpose()
-            }),
-            BroadcastedNumericIter::NonRepeat(iter, _) => iter.next().map(|x| {
-                x.map(|x| {
-                    (*x).try_into().map_err(|_| {
-                        DaftError::ComputeError(
-                            "Failed to cast numeric value to target type".to_string(),
-                        )
-                    })
-                })
-                .transpose()
-            }),
-        }
-    }
-}
-
-fn create_broadcasted_binary_iter(arr: &BinaryArray, len: usize) -> BroadcastedBinaryIter<'_> {
-    if arr.len() == 1 {
-        BroadcastedBinaryIter::Repeat(std::iter::repeat_n(arr.as_arrow().get(0), len))
-    } else {
-        BroadcastedBinaryIter::NonRepeat(arr.as_arrow().iter())
-    }
-}
-
-fn create_broadcasted_fixed_size_binary_iter(
-    arr: &FixedSizeBinaryArray,
-    len: usize,
-) -> BroadcastedFixedSizeBinaryIter<'_> {
-    if arr.len() == 1 {
-        BroadcastedFixedSizeBinaryIter::Repeat(iter::repeat_n(arr.as_arrow().get(0), len))
-    } else {
-        BroadcastedFixedSizeBinaryIter::NonRepeat(arr.as_arrow().iter())
-    }
-}
-
-fn create_broadcasted_numeric_iter<T, O>(
-    arr: &DataArray<T>,
-    len: usize,
-) -> BroadcastedNumericIter<T, O>
-where
-    T: DaftIntegerType,
-    T::Native: TryInto<O> + Ord,
-{
-    if arr.len() == 1 {
-        BroadcastedNumericIter::Repeat(
-            iter::repeat_n(arr.as_arrow().get(0), len),
-            std::marker::PhantomData,
-        )
-    } else {
-        let x = arr.as_arrow().iter();
-        BroadcastedNumericIter::NonRepeat(x, std::marker::PhantomData)
-    }
-}
-
-impl BinaryArray {
-    pub fn length(&self) -> DaftResult<UInt64Array> {
+impl BinaryArrayExtension for BinaryArray {
+    fn length(&self) -> DaftResult<UInt64Array> {
         let self_arrow = self.as_arrow();
         let offsets = self_arrow.offsets();
         let arrow_result = arrow2::array::UInt64Array::from_iter(
@@ -158,7 +55,7 @@ impl BinaryArray {
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
-    pub fn binary_concat(&self, other: &Self) -> DaftResult<Self> {
+    fn binary_concat(&self, other: &Self) -> DaftResult<Self> {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
 
@@ -191,7 +88,7 @@ impl BinaryArray {
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 
-    pub fn binary_slice<I, J>(
+    fn binary_slice<I, J>(
         &self,
         start: &DataArray<I>,
         length: Option<&DataArray<J>>,
@@ -259,7 +156,7 @@ impl BinaryArray {
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 
-    pub fn transform<Transform>(&self, transform: Transform) -> DaftResult<Self>
+    fn transform<Transform>(&self, transform: Transform) -> DaftResult<Self>
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -289,7 +186,7 @@ impl BinaryArray {
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
-    pub fn try_transform<Transform>(&self, transform: Transform) -> DaftResult<Self>
+    fn try_transform<Transform>(&self, transform: Transform) -> DaftResult<Self>
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -328,7 +225,7 @@ impl BinaryArray {
     }
 
     /// For binary-to-text decoding.
-    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -358,7 +255,7 @@ impl BinaryArray {
     }
 
     /// For binary-to-text decoding, but inserts null on failures.
-    pub fn try_decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    fn try_decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -397,8 +294,8 @@ impl BinaryArray {
     }
 }
 
-impl FixedSizeBinaryArray {
-    pub fn length(&self) -> DaftResult<UInt64Array> {
+impl BinaryArrayExtension for FixedSizeBinaryArray {
+    fn length(&self) -> DaftResult<UInt64Array> {
         let self_arrow = self.as_arrow();
         let size = self_arrow.size();
         let arrow_result = arrow2::array::UInt64Array::from_iter(iter::repeat_n(
@@ -409,7 +306,7 @@ impl FixedSizeBinaryArray {
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
-    pub fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {
+    fn binary_concat(&self, other: &Self) -> std::result::Result<Self, DaftError> {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
         let self_size = self_arrow.size();
@@ -454,7 +351,7 @@ impl FixedSizeBinaryArray {
     }
 
     /// For binary-to-binary transforms (both encode & decode).
-    pub fn transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
+    fn transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -486,7 +383,7 @@ impl FixedSizeBinaryArray {
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
-    pub fn try_transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
+    fn try_transform<Transform>(&self, transform: Transform) -> DaftResult<BinaryArray>
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -527,7 +424,7 @@ impl FixedSizeBinaryArray {
     }
 
     /// For binary-to-text decoding.
-    pub fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    fn decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -559,7 +456,7 @@ impl FixedSizeBinaryArray {
     }
 
     /// For binary-to-text decoding, but inserts null on failures.
-    pub fn try_decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
+    fn try_decode<Decoder>(&self, decoder: Decoder) -> DaftResult<Utf8Array>
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
@@ -597,5 +494,21 @@ impl FixedSizeBinaryArray {
         );
         let array = Box::new(array);
         Ok(Utf8Array::from((self.name(), array)))
+    }
+
+    fn binary_slice<I, J>(
+        &self,
+        start: &DataArray<I>,
+        length: Option<&DataArray<J>>,
+    ) -> DaftResult<BinaryArray>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord + TryInto<usize>,
+        J: DaftIntegerType,
+        <J as DaftNumericType>::Native: Ord + TryInto<usize>,
+    {
+        self.cast(&DataType::Binary)?
+            .binary()?
+            .binary_slice(start, length)
     }
 }
