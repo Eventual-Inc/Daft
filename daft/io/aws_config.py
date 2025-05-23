@@ -1,12 +1,14 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
 
-from daft.daft import S3Config
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import boto3
 
+    from daft.daft import S3Config
 
-def boto3_client_from_s3_config(service: str, s3_config: S3Config) -> "boto3.client":
+
+def boto3_client_from_s3_config(service: str, s3_config: S3Config) -> boto3.client:
     import boto3
 
     return boto3.client(

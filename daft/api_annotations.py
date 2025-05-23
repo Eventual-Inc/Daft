@@ -60,12 +60,13 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         if isinstance(T, (str, ForwardRef)):
             return True
 
-        # T is a simple type, like `int`
-        if isinstance(T, type):
+        origin_T = get_origin(T)
+
+        # T is a builtin primitive type, like `int`
+        if origin_T is None:
             return isinstance(value, T)
 
-        # T is a generic type, like `typing.List`
-        origin_T = get_origin(T)
+        # T is a generic type, like `typing.List` or builtin container like `list`
         if isinstance(origin_T, type):
             return isinstance(value, origin_T)
 

@@ -1,5 +1,7 @@
 """Run TPC-H benchmarks with Ray runner on local Parquet data and upload results to Google sheets."""
 
+from __future__ import annotations
+
 import asyncio
 import os
 import sys

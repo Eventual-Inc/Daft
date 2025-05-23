@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 def test_pipe(make_df):
     df = make_df({"x": [1, 2, 3]})
 

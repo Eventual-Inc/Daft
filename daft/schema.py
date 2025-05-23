@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Callable
 
 from daft.daft import CsvParseOptions, JsonParseOptions, PySchema
 from daft.daft import PyField as _PyField
@@ -11,6 +12,8 @@ from daft.daft import read_parquet_schema as _read_parquet_schema
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import pyarrow as pa
 
     from daft.io import IOConfig

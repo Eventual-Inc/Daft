@@ -1,7 +1,11 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.logical.builder import LogicalPlanBuilder
+
+if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
 
 
 class AsciiOptions:
@@ -14,9 +18,9 @@ class AsciiOptions:
 class SubgraphOptions:
     name: str
     subgraph_id: str
-    metadata: Optional[str]
+    metadata: str | None
 
-    def __init__(self, name: str, subgraph_id: str, metadata: Optional[str] = None):
+    def __init__(self, name: str, subgraph_id: str, metadata: str | None = None):
         self.name = name
         self.subgraph_id = subgraph_id
         self.metadata = metadata
@@ -25,16 +29,16 @@ class SubgraphOptions:
 class MermaidOptions:
     simple: bool
     bottom_up: bool
-    subgraph_options: Optional[SubgraphOptions]
+    subgraph_options: SubgraphOptions | None
 
     def __init__(
-        self, simple: bool = False, bottom_up: bool = False, subgraph_options: Optional[SubgraphOptions] = None
+        self, simple: bool = False, bottom_up: bool = False, subgraph_options: SubgraphOptions | None = None
     ) -> None:
         self.simple = simple
         self.bottom_up = bottom_up
         self.subgraph_options = subgraph_options
 
-    def with_subgraph_options(self, name: str, subgraph_id: str, metadata: Optional[str] = None) -> "MermaidOptions":
+    def with_subgraph_options(self, name: str, subgraph_id: str, metadata: str | None = None) -> MermaidOptions:
         opts = MermaidOptions(self.simple, subgraph_options=SubgraphOptions(name, subgraph_id, metadata))
 
         return opts

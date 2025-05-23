@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterable, Union
+from collections.abc import AsyncIterator, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.dependencies import pa
 

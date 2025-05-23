@@ -11,6 +11,7 @@
 # limitations under the License.
 #
 # Borrowed and modified from [`skypilot`](https://github.com/skypilot-org/skypilot/blob/master/sky/adaptors/common.py).
+from __future__ import annotations
 
 import importlib
 from typing import Any

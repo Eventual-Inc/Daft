@@ -1,5 +1,6 @@
 # Do not modify or delete these exceptions before checking where they are used in rust
 # src/common/error/src/python.rs
+from __future__ import annotations
 
 
 class DaftCoreException(ValueError):

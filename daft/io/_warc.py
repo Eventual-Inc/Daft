@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -17,7 +18,7 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_warc(
-    path: Union[str, List[str]],
+    path: Union[str, list[str]],
     io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     _multithreaded_io: Optional[bool] = None,

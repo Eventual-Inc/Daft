@@ -12,8 +12,9 @@ import json
 import logging
 import pathlib
 import time
+from collections.abc import Iterator
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Iterator, TextIO
+from typing import TYPE_CHECKING, Any, Callable, TextIO
 
 try:
     import ray
@@ -24,6 +25,8 @@ from daft.execution.execution_step import PartitionTask
 from daft.runners import ray_metrics
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft import ResourceRequest
     from daft.daft import PyDaftExecutionConfig
     from daft.execution.physical_plan import MaterializedPhysicalPlan

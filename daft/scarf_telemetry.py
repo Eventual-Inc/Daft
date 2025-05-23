@@ -1,14 +1,15 @@
+from __future__ import annotations
+
 import os
 import platform
 import threading
 import urllib.parse
 import urllib.request
-from typing import Optional
 
 
 def _track_on_scarf(
-    endpoint: str, extra_params: Optional[dict[str, str]] = None
-) -> tuple[Optional[threading.Thread], dict[str, Optional[str]]]:
+    endpoint: str, extra_params: dict[str, str] | None = None
+) -> tuple[threading.Thread | None, dict[str, str | None]]:
     """Common implementation for Scarf telemetry tracking. Executes the request in a separate daemon thread to avoid blocking the main thread.
 
     Args:
@@ -26,13 +27,13 @@ def _track_on_scarf(
     build_type = get_build_type()
     scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
     daft_analytics_disabled = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-    result_container: dict[str, Optional[str]] = {"response_status": None, "extra_value": None}
+    result_container: dict[str, str | None] = {"response_status": None, "extra_value": None}
 
     # Skip analytics for dev builds or if user opted out
     if build_type == "dev" or scarf_opt_out or daft_analytics_disabled:
         return None, result_container
 
-    def send_request(result_container: dict[str, Optional[str]]) -> None:
+    def send_request(result_container: dict[str, str | None]) -> None:
         response_status = None
         extra_value = extra_params.get("runner") if extra_params else None
 
@@ -70,11 +71,11 @@ def _track_on_scarf(
     return thread, result_container
 
 
-def track_runner_on_scarf(runner: str) -> tuple[Optional[threading.Thread], dict[str, Optional[str]]]:
+def track_runner_on_scarf(runner: str) -> tuple[threading.Thread | None, dict[str, str | None]]:
     """Track analytics for Daft usage via Scarf."""
     return _track_on_scarf("daft-runner", {"runner": runner})
 
 
-def track_import_on_scarf() -> tuple[Optional[threading.Thread], dict[str, Optional[str]]]:
+def track_import_on_scarf() -> tuple[threading.Thread | None, dict[str, str | None]]:
     """Track analytics for Daft imports via Scarf."""
     return _track_on_scarf("daft-import")

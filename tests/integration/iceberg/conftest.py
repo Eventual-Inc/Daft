@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from typing import Generator, Iterator, TypeVar
+import sys
+from collections.abc import Generator, Iterator
+from typing import TypeVar
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 import pyarrow as pa
 import pytest
@@ -21,7 +28,7 @@ from pyiceberg.table import Table
 
 T = TypeVar("T")
 
-YieldFixture = Generator[T, None, None]
+YieldFixture: TypeAlias = Generator[T, None, None]
 
 local_tables_names = [
     "test_all_types",

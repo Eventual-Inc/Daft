@@ -1,5 +1,5 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
-
 
 from typing import Optional
 

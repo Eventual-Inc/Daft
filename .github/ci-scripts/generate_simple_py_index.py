@@ -17,6 +17,8 @@ It will generate these files in `dist/indices/`:
 Then, put these files in the same bucket with a Cloudfront distribution configured to serve via HTTPS and serve index.html for directory paths.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import urllib.parse

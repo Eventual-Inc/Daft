@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import os
 import pathlib
 import shutil
 import uuid
-from typing import List, Optional
 
 import pytest
 import s3fs
@@ -43,8 +44,8 @@ def write(
     path: str,
     format: str,
     write_mode: str,
-    partition_cols: Optional[List[str]] = None,
-    io_config: Optional[daft.io.IOConfig] = None,
+    partition_cols: list[str] | None = None,
+    io_config: daft.io.IOConfig | None = None,
 ):
     if format == "parquet":
         return df.write_parquet(
@@ -64,7 +65,7 @@ def write(
         raise ValueError(f"Unsupported format: {format}")
 
 
-def read(path: str, format: str, io_config: Optional[daft.io.IOConfig] = None):
+def read(path: str, format: str, io_config: daft.io.IOConfig | None = None):
     if format == "parquet":
         return daft.read_parquet(path, io_config=io_config)
     elif format == "csv":

@@ -3,15 +3,13 @@ from __future__ import annotations
 import builtins
 import math
 import warnings
+from collections.abc import Collection, Iterable, Iterator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Collection,
-    Iterable,
-    Iterator,
     Literal,
     TypeVar,
     overload,

@@ -1,4 +1,6 @@
-from typing import Any, Literal, Optional
+from __future__ import annotations
+
+from typing import Any, Literal
 
 from daft import DataType, Expression, Series, udf
 
@@ -9,8 +11,8 @@ def llm_generate(
     provider: Literal["vllm"] = "vllm",  # vllm is the only supported provider for now
     concurrency: int = 1,
     batch_size: int = 1024,
-    num_cpus: Optional[int] = None,
-    num_gpus: Optional[int] = None,
+    num_cpus: int | None = None,
+    num_gpus: int | None = None,
     **generation_config: dict[str, Any],
 ) -> Expression:
     """A UDF for running LLM inference over an input column of strings.

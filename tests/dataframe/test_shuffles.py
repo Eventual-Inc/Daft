@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import random
 import tempfile
 from contextlib import contextmanager
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable
 
 import numpy as np
 import pyarrow as pa
@@ -40,7 +42,7 @@ def generator(
 def pre_shuffle_merge_ctx():
     """Fixture that provides a context manager for pre-shuffle merge testing."""
 
-    def _ctx(threshold: Optional[int] = None):
+    def _ctx(threshold: int | None = None):
         return daft.execution_config_ctx(shuffle_algorithm="pre_shuffle_merge", pre_shuffle_merge_threshold=threshold)
 
     return _ctx

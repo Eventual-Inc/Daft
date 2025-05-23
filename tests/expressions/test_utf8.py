@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 def test_endswith(test_expression):
     test_data = ["hello", "world", "python"]
     expected = [False, False, True]

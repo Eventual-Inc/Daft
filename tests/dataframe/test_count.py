@@ -1,4 +1,5 @@
 # corner cases for df.count()
+from __future__ import annotations
 
 import pytest
 

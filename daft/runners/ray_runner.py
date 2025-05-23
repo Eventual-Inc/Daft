@@ -7,9 +7,10 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Generator, Iterable, Iterator
 from datetime import datetime
 from queue import Full, Queue
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator, Union, cast
+from typing import TYPE_CHECKING, Any, Union, cast
 
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
@@ -30,6 +31,8 @@ from daft.series import Series, item_to_series
 from daft.utils import SyncFromAsyncIterator
 
 if TYPE_CHECKING:
+    from collections.abc import Generator, Iterable, Iterator
+
     import dask
     import dask.dataframe
 
@@ -510,10 +513,13 @@ def single_partition_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with execution_config_ctx(
-        config=daft_execution_config,
-    ), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(
+            config=daft_execution_config,
+        ),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
@@ -527,8 +533,11 @@ def fanout_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(config=daft_execution_config),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
@@ -544,8 +553,11 @@ def reduce_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(config=daft_execution_config),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
@@ -561,8 +573,11 @@ def reduce_and_fanout(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(config=daft_execution_config),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
@@ -1435,7 +1450,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     def __init__(
         self,
-        partition: ray.ObjectRef,
+        partition: ray.ObjectRef[Any],
         metadatas: PartitionMetadataAccessor | None = None,
         metadata_idx: int | None = None,
     ):
