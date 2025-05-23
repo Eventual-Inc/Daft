@@ -4,7 +4,7 @@
 
 pub use common_error::{ensure, DaftResult};
 pub use daft_core::{
-    prelude::{Field, Schema, SchemaRef, Utf8Array},
+    prelude::{DataType, Field, Schema, SchemaRef},
     series::Series,
 };
 pub use serde::{Deserialize, Serialize};
