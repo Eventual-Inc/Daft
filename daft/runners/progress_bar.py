@@ -26,7 +26,7 @@ def get_tqdm(use_ray_tqdm: bool) -> Any:
             # source: https://github.com/tqdm/tqdm/blob/74722959a8626fd2057be03e14dcf899c25a3fd5/tqdm/autonotebook.py#L14
             if ipython is not None and "IPKernelApp" in ipython.config:
 
-                class tqdm(_tqdm[Any]):  # type: ignore
+                class tqdm(_tqdm):  # type: ignore
                     def __init__(self, *args: Any, **kwargs: Any) -> None:
                         kwargs = kwargs.copy()
                         if "file" not in kwargs:
