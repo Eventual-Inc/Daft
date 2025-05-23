@@ -959,7 +959,7 @@ jobs:
       run: exit 1
 
 
-  style:
+  lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -980,14 +980,9 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - uses: actions/cache@v4
-      id: pre-commit-cache
-      with:
-        path: ~/.cache/pre-commit/
-        key: ${{ runner.os }}-python-${{ env.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
     - name: Python And Rust Style Check
       run: |
-        pre-commit run --all-files
+        pre-commit run --all-files cargo-check-all-features clippy check-for-rustls
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
