@@ -23,7 +23,7 @@ on:
 env:
   PYTHON_VERSION: 3.11
   DAFT_ANALYTICS_ENABLED: '0'
-  UV_SYSTEM_PYTHON: l
+  UV_SYSTEM_PYTHON: 1
   RUST_DAFT_PKG_BUILD_TYPE: ${{ inputs.build_type }}
 
 defaults:
