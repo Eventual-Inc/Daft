@@ -127,12 +127,6 @@ class Series:
             pys = PySeries.from_pylist(name, data, pyobj=pyobj)
             return Series._from_pyseries(pys)
 
-        # Workaround: wrap list of np.datetime64 in an np.array
-        #   - https://github.com/apache/arrow/issues/40580
-        #   - https://github.com/Eventual-Inc/Daft/issues/3826
-        if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
-            data = np.array(data)
-
         try:
             # Workaround: wrap list of np.datetime64 in an np.array
             #   - https://github.com/apache/arrow/issues/40580
