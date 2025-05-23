@@ -134,7 +134,14 @@ class Series:
             data = np.array(data)
 
         try:
-            arrow_array = pa.array(data)
+            # Workaround: wrap list of np.datetime64 in an np.array
+            #   - https://github.com/apache/arrow/issues/40580
+            #   - https://github.com/Eventual-Inc/Daft/issues/3826
+            if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
+                np_arr = np.array(data)
+                arrow_array = pa.array(np_arr)
+            else:
+                arrow_array = pa.array(data)
             return Series.from_arrow(arrow_array, name=name)
         except pa.lib.ArrowInvalid:
             if pyobj == "disallow":
