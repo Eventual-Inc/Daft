@@ -131,7 +131,7 @@ class Series:
         #   - https://github.com/apache/arrow/issues/40580
         #   - https://github.com/Eventual-Inc/Daft/issues/3826
         if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
-            data = np.array(data)
+            data = np.array(data)  # type: ignore[assignment]
 
         try:
             arrow_array = pa.array(data)
