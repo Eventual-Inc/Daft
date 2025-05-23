@@ -552,7 +552,7 @@ def _write_tabular_arrow_table(
     file_visitor: Callable[[pads.WrittenFile], None] | None,
     version: int | None = None,
 ) -> None:
-    kwargs = dict()
+    kwargs: dict[str, Any] = {}
 
     kwargs["max_rows_per_file"] = rows_per_file
     kwargs["min_rows_per_group"] = rows_per_row_group
@@ -572,7 +572,7 @@ def _write_tabular_arrow_table(
             format=format,
             partitioning=None,
             file_options=opts,
-            file_visitor=file_visitor,
+            file_visitor=file_visitor,  # type: ignore[arg-type]
             use_threads=True,
             existing_data_behavior="overwrite_or_ignore",
             filesystem=fs,
@@ -612,7 +612,7 @@ def write_empty_tabular(
             pq.write_table(
                 table,
                 file_path,
-                compression=compression,
+                compression=compression,  # type: ignore[arg-type]
                 use_compliant_nested_type=False,
                 filesystem=fs,
             )

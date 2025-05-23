@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 from daft.arrow_utils import ensure_table
 from daft.daft import (
@@ -116,7 +116,7 @@ class RecordBatch:
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> RecordBatch:
-        if not pd.module_available():
+        if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
         assert isinstance(pd_df, pd.DataFrame)
         try:
@@ -127,7 +127,10 @@ class RecordBatch:
             return RecordBatch.from_arrow_table(arrow_table)
         # Fall back to pydict path.
         df_as_dict = pd_df.to_dict(orient="series")
-        return RecordBatch.from_pydict(df_as_dict)
+        if any(not isinstance(k, str) for k in df_as_dict.keys()):
+            raise ValueError("pandas.DataFrame column names must be of type `str` to convert to a daft.RecordBatch.")
+        df_as_dict_str = cast("dict[str, Any]", df_as_dict)
+        return RecordBatch.from_pydict(df_as_dict_str)
 
     @staticmethod
     def from_pydict(data: dict[str, Any]) -> RecordBatch:
@@ -186,7 +189,7 @@ class RecordBatch:
     ) -> pd.DataFrame:
         from packaging.version import parse
 
-        if not pd.module_available():
+        if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
 
         python_fields = set()

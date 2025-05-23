@@ -5,7 +5,7 @@ repos:
   rev: v1.15.0
   hooks:
   - id: mypy
-    additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
     files: daft
     exclude: daft/pickle/.*\.py
 
