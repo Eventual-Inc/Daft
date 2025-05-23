@@ -1,7 +1,7 @@
 # See https://pre-commit.ci/#configuration-autofix_prs for more info
 ci:
   autofix_prs: false
-  skip: [clippy, cargo-check-default, cargo-check-all-features, check-for-rustls]
+  skip: [fmt, clippy, cargo-check-default, cargo-check-all-features, check-for-rustls]
 
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
@@ -10,7 +10,7 @@ repos:
   rev: v1.15.0
   hooks:
   - id: mypy
-    additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
     files: daft
     exclude: daft/pickle/.*\.py
 
@@ -70,15 +70,16 @@ repos:
           # Run the formatter.
   - id: ruff-format
 
-- repo: https://github.com/doublify/pre-commit-rust
-  rev: v1.0
+- repo: local
   hooks:
   - id: fmt
     name: fmt
     description: Format files with cargo fmt.
+    entry: cargo fmt
+    language: system
+    types: [rust]
+    args: [--]
 
-- repo: local
-  hooks:
   - id: cargo-check-default
     name: cargo check (default)
     description: Check the package for errors with default features.
