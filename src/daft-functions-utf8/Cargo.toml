@@ -4,7 +4,6 @@ arrow2 = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
-common-macros = {path = "../common/macros", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 itertools = {workspace = true}

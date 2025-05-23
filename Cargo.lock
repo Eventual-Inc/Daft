@@ -2366,7 +2366,6 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "common-error",
- "common-macros",
  "daft-core",
  "daft-dsl",
  "itertools 0.11.0",
