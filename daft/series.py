@@ -1034,6 +1034,27 @@ class SeriesDateNamespace(SeriesNamespace):
     def strftime(self, fmt: str | None = None) -> Series:
         return Series._from_pyseries(self._series.dt_strftime(fmt))
 
+    def total_seconds(self) -> Series:
+        return self._eval_expressions("total_seconds")
+
+    def total_milliseconds(self) -> Series:
+        return self._eval_expressions("total_milliseconds")
+
+    def total_microseconds(self) -> Series:
+        return self._eval_expressions("total_microseconds")
+
+    def total_nanoseconds(self) -> Series:
+        return self._eval_expressions("total_nanoseconds")
+
+    def total_minutes(self) -> Series:
+        return self._eval_expressions("total_minutes")
+
+    def total_hours(self) -> Series:
+        return self._eval_expressions("total_hours")
+
+    def total_days(self) -> Series:
+        return self._eval_expressions("total_days")
+
 
 class SeriesPartitioningNamespace(SeriesNamespace):
     def days(self) -> Series:
