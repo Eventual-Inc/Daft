@@ -131,7 +131,7 @@ class Series:
         #   - https://github.com/apache/arrow/issues/40580
         #   - https://github.com/Eventual-Inc/Daft/issues/3826
         if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
-            data = np.array(data)  # type: ignore[assignment]
+            data = np.array(data)
 
         try:
             arrow_array = pa.array(data)
@@ -143,7 +143,7 @@ class Series:
             return Series._from_pyseries(pys)
 
     @classmethod
-    def from_numpy(cls, data: np.ndarray, name: str = "numpy_series") -> Series:
+    def from_numpy(cls, data: np.ndarray[Any, Any], name: str = "numpy_series") -> Series:
         """Construct a Series from a NumPy ndarray.
 
         If the provided NumPy ndarray is 1-dimensional, Daft will attempt to store the ndarray
@@ -169,7 +169,7 @@ class Series:
         return cls.from_pylist(list_ndarray, name=name, pyobj="allow")
 
     @classmethod
-    def from_pandas(cls, data: pd.Series, name: str = "pd_series") -> Series:
+    def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series") -> Series:
         """Construct a Series from a pandas Series.
 
         This will first try to convert the series into a pyarrow array, then will fall

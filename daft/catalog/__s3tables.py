@@ -264,7 +264,7 @@ class S3Catalog(Catalog):
         try:
             namespaces = []
             while True:
-                res = self._client.list_namespaces(**req)  # type: ignore
+                res = self._client.list_namespaces(**req)
                 for namespace in res["namespaces"]:
                     namespaces.append(Identifier(*namespace["namespace"]))
                 if cont_token := res.get("continuationToken"):
@@ -303,7 +303,7 @@ class S3Catalog(Catalog):
         try:
             tables = []
             while True:
-                res = self._client.list_tables(**req)  # type: ignore
+                res = self._client.list_tables(**req)
                 for table in res["tables"]:
                     tables.append(to_ident(table))
                 if cont_token := res.get("continuationToken"):
@@ -377,7 +377,7 @@ def _to_metadata(schema: Schema) -> TableMetadataTypeDef:
     return {
         "iceberg": {
             "schema": {
-                "fields": [_to_field(f) for f in ic_schema.fields],  # type: ignore
+                "fields": [_to_field(f) for f in ic_schema.fields],
             }
         }
     }

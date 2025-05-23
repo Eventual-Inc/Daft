@@ -590,7 +590,7 @@ class _RayFunctionWrapper:
         return _RayRunnableFunctionWrapper(f=self.f, runner_tracer=runner_tracer, task=task)
 
     def options(self, *args: Any, **kwargs: Any) -> _RayFunctionWrapper:
-        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))  # type: ignore[no-untyped-call]
+        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
 
 def ray_remote_traced(f: ray.remote_function.RemoteFunction) -> _RayFunctionWrapper:
@@ -617,7 +617,7 @@ class _RayRunnableFunctionWrapper:
     task: PartitionTask[Any]
 
     def options(self, *args: Any, **kwargs: Any) -> _RayRunnableFunctionWrapper:
-        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))  # type: ignore[no-untyped-call]
+        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
     def remote(self, *args: Any, **kwargs: Any) -> ray.ObjectRef[Any]:
         self.runner_tracer.task_dispatched(self.task.id())
