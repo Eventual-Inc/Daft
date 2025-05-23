@@ -1,5 +1,7 @@
 mod expr;
 
+mod from_json;
+
 use std::sync::{LazyLock, Mutex};
 
 use common_error::{DaftError, DaftResult};

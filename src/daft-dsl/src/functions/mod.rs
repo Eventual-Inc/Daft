@@ -4,10 +4,12 @@ pub mod function_args;
 mod macro_tests;
 pub mod map;
 pub mod partitioning;
+pub mod prelude;
 pub mod python;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
+
 
 use std::{
     collections::HashMap,
