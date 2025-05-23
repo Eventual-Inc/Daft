@@ -14,7 +14,7 @@ quote-style = "double"
 skip-magic-trailing-comma = false
 
 [lint]
-exclude = ["daft/pickle/cloudpickle.py", "daft/pickle/cloudpickle_fast.py", "daft/pickle/compat.py"]
+exclude = ["daft/pickle/cloudpickle.py", "daft/pickle/cloudpickle_fast.py", "daft/pickle/compat.py", "tutorials/**.ipynb"]
 extend-select = [
   "UP",  # pyupgrade
   "LOG",  # flake8-logging

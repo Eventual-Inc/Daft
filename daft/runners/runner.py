@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal
 
 from daft.runners.partitioning import (

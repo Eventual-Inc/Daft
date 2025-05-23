@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 from collections import defaultdict, deque
+from typing import TYPE_CHECKING
 
 from daft.daft import (
     FlightClientManager,
@@ -13,6 +14,7 @@ from daft.daft import (
     start_flight_server,
 )
 from daft.execution.execution_step import (
+    PartitionTask,
     PartitionTaskBuilder,
     SingleOutputPartitionTask,
 )
@@ -20,6 +22,9 @@ from daft.execution.physical_plan import InProgressPhysicalPlan, stage_id_counte
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import PartitionMetadata
 from daft.runners.ray_runner import _ray_num_cpus_provider
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +120,7 @@ class ShuffleActorManager:
         return actor.push_partitions.remote(*objects)
 
     # Push a list of objects to the actors
-    def push_objects(self, objects: list[ray.ObjectRef]):
+    def push_objects(self, objects: list[ray.ObjectRef]) -> None:
         object_locations = ray.experimental.get_object_locations(objects)
         assert len(object_locations) == len(objects)
 
@@ -155,13 +160,13 @@ class ShuffleActorManager:
         return merged_metadatas
 
     # Clear the given partitions from the shuffle actors
-    def clear_partition(self, partition_idx: int):
+    def clear_partition(self, partition_idx: int) -> None:
         self.clear_partition_futures.extend(
             self.active_actors[node_id].clear_partition.remote(partition_idx) for node_id in self.active_actors
         )
 
     # Shutdown the shuffle actor manager and all the shuffle actors
-    def shutdown(self):
+    def shutdown(self) -> None:
         ray.get(self.clear_partition_futures)
         self.clear_partition_futures.clear()
 
@@ -218,7 +223,7 @@ class ShuffleActor:
         return f"grpc://{self.host}:{self.port}"
 
     # Push a partition to the shuffle cache asynchronously
-    async def push_partitions(self, *partitions: MicroPartition):
+    async def push_partitions(self, *partitions: MicroPartition) -> None:
         assert self.in_progress_shuffle_cache is not None, "Shuffle cache not initialized"
         await self.in_progress_shuffle_cache.push_partitions([partition._micropartition for partition in partitions])
 
@@ -237,7 +242,7 @@ class ShuffleActor:
         ]
         return metadatas
 
-    def initialize_client_manager(self, addresses: list[str], num_parallel_fetches: int = 2):
+    def initialize_client_manager(self, addresses: list[str], num_parallel_fetches: int = 2) -> None:
         assert self.client_manager is None, "Client manager already initialized"
         assert self.shuffle_cache is not None, "Shuffle cache not initialized"
         schema = self.shuffle_cache.schema()
@@ -250,7 +255,7 @@ class ShuffleActor:
         return MicroPartition._from_pymicropartition(py_mp), clear_partition_future
 
     # Clean up the shuffle files for the given partition
-    def clear_partition(self, partition_idx: int):
+    def clear_partition(self, partition_idx: int) -> None:
         if self.shuffle_cache is not None:
             try:
                 self.shuffle_cache.clear_partition(partition_idx)
@@ -258,7 +263,7 @@ class ShuffleActor:
                 print(f"failed to clean up shuffle files: {e} for partition {partition_idx}")
 
     # Shutdown the shuffle actor
-    def shutdown(self):
+    def shutdown(self) -> None:
         if self.server is not None:
             self.server.shutdown()
         if self.shuffle_cache is not None:
@@ -272,11 +277,13 @@ def run_map_phase(
     plan: InProgressPhysicalPlan[ray.ObjectRef],
     map_stage_id: int,
     shuffle_actor_manager: ray.actor.ActorHandle,
-):
+) -> Generator[
+    None | PartitionTask[ray.ObjectRef] | PartitionTaskBuilder[ray.ObjectRef], None, list[PartitionMetadata]
+]:
     # Maps tasks we have not emitted
-    pending_map_tasks: deque[SingleOutputPartitionTask] = deque()
+    pending_map_tasks: deque[SingleOutputPartitionTask[ray.ObjectRef]] = deque()
     # Maps tasks we have emitted but not yet completed
-    in_flight_map_tasks: dict[str, SingleOutputPartitionTask] = {}
+    in_flight_map_tasks: dict[str, SingleOutputPartitionTask[ray.ObjectRef]] = {}
 
     # Collect all the map tasks
     for step in plan:
@@ -316,7 +323,7 @@ def run_reduce_phase(
     num_output_partitions: int,
     shuffle_actor_manager: ray.actor.ActorHandle,
     metadatas: list[PartitionMetadata],
-):
+) -> Generator[PartitionTaskBuilder[ray.ObjectRef], None, None]:
     # only the active actors have data from the map
     active_actor_addresses = ray.get(shuffle_actor_manager.get_active_actor_addresses.remote())
     # but we can do reduce on all actors
@@ -347,7 +354,7 @@ def flight_shuffle(
     num_output_partitions: int,
     shuffle_dirs: list[str],
     partition_by: list[PyExpr] | None = None,
-):
+) -> Generator[None | PartitionTask[ray.ObjectRef] | PartitionTaskBuilder[ray.ObjectRef], None, None]:
     map_stage_id = next(stage_id_counter)
     shuffle_stage_id = next(stage_id_counter)
     # Try to schedule the manager on the current node, which should be the head node

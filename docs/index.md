@@ -2,45 +2,35 @@
 
 Welcome to **Daft**!
 
-Daft is a unified data engine for **data engineering, analytics, and ML/AI**. It exposes both **SQL and Python DataFrame interfaces** as first-class citizens and is written in Rust. Daft provides a **snappy and delightful local interactive experience**, but also seamlessly **scales to petabyte-scale distributed workloads**.
+Daft is a simple, reliable, and performant data engine for any modality or scale, from local to petabyte-scale distributed workloads without compromising on capability. The core engine is written in Rust and exposes both SQL and Python DataFrame interfaces as first-class citizens.
 
-## Use Cases
+## Why Daft?
 
-**:material-database-settings: Data Engineering**
+**:octicons-image-24: Unified multimodal data processing**
 
-*Combine the performance of DuckDB, Pythonic UX of Polars and scalability of Apache Spark for data engineering from MB to PB scale*
+Break down data silos with a single framework that handles structured tables, unstructured text, and rich media like images—all with the same intuitive API. Why juggle multiple tools when one can do it all?
 
-- Scale ETL workflows effortlessly from local to distributed environments
-- Enjoy a Python-first experience without JVM dependency hell
-- Leverage native integrations with cloud storage, open catalogs, and data formats
----
+**:material-language-python: Python-native, no JVM required**
 
-**:simple-simpleanalytics: Data Analytics**
+Built for modern AI/ML workflows with Python at its core and Rust under the hood. Skip the JVM complexity, version conflicts, and memory tuning to achieve 20x faster start times—get the performance without the Java tax.
 
-*Blend the snappiness of DuckDB with the scalability of Spark/Trino for unified local and distributed analytics*
+**:fontawesome-solid-laptop: Seamless scaling, from laptop to cluster**
 
-- Utilize complementary SQL and Python interfaces for versatile analytics
-- Perform snappy local exploration with DuckDB-like performance
-- Seamlessly scale to the cloud, outperforming distributed engines like Spark and Trino
----
+Start local, scale global—without changing a line of code. Daft's Rust-powered engine delivers blazing performance on a single machine and effortlessly extends to distributed clusters with when you need more horsepower.
 
-**:fontawesome-solid-gear: ML/AI**
+## Key Features
 
-*Streamline ML/AI workflows with efficient dataloading from open formats like Parquet and JPEG*
+* **Native Multimodal Processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, embeddings, and tensors in a single, unified framework.
 
-- Load data efficiently from open formats directly into PyTorch or NumPy
-- Schedule large-scale model batch inference on distributed GPU clusters
-- Optimize data curation with advanced clustering, deduplication, and filtering
+* **Rust-Powered Performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
 
-## Technology
+* **Seamless ML Ecosystem Integration**: Slot directly into your existing ML workflows with zero friction—whether you're using [PyTorch](https://pytorch.org/), [NumPy](https://numpy.org/), [Pandas](https://pola.rs/), or [HuggingFace models](https://huggingface.co/models), Daft works where you work.
 
-Daft boasts strong integrations with technologies common across these workloads:
+* **Universal Data Connectivity**: Access data anywhere it lives—cloud storage ([S3](https://aws.amazon.com/s3/), [Azure](https://azure.microsoft.com/en-us/), [GCS](https://cloud.google.com/storage)), modern table formats ([Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/), [Apache Hudi](https://hudi.apache.org/)), or enterprise catalogs ([Unity](https://www.unitycatalog.io/), [AWS Glue](https://aws.amazon.com/glue/))—all with zero configuration.
 
-* **Cloud Object Storage:** Record-setting I/O performance for integrations with S3 cloud storage, [battle-tested at exabyte-scale at Amazon](https://aws.amazon.com/blogs/opensource/amazons-exabyte-scale-migration-from-apache-spark-to-ray-on-amazon-ec2/)
-* **ML/AI Python Ecosystem:** First-class integrations with [PyTorch](https://pytorch.org/) and [NumPy](https://numpy.org/) for efficient interoperability with your ML/AI stack
-* **Data Catalogs/Table Formats:** Capabilities to effectively query table formats such as [Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/) and [Apache Hudi](https://hudi.apache.org/)
-* **Seamless Data Interchange:** Zero-copy integration with [Apache Arrow](https://arrow.apache.org/docs/index.html)
-* **Multimodal/ML Data:** Native functionality for data modalities such as tensors, images, URLs, long-form text and embeddings
+* **Push your code to your data**: Bring your Python functions directly to your data with zero-copy UDFs powered by [Apache Arrow](https://arrow.apache.org/), eliminating data movement overhead and accelerating processing speeds.
+
+* **Out of the Box reliability**: Deploy with confidence—intelligent memory management prevents OOM errors while sensible defaults eliminate configuration headaches, letting you focus on results, not infrastructure.
 
 ## Learning Daft
 

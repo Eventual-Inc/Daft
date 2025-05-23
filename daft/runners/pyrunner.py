@@ -6,6 +6,7 @@ import multiprocessing as mp
 import threading
 import uuid
 import warnings
+from collections.abc import Iterator
 from concurrent import futures
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
@@ -362,13 +363,13 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             while not adaptive_planner.is_done():
                 source_id, plan_scheduler = adaptive_planner.next()
                 # don't store partition sets in variable to avoid reference
-                tasks = plan_scheduler.to_partition_tasks(
+                tasks = plan_scheduler.to_partition_tasks(  # type: ignore
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
                     self,
                     results_buffer_size,
                 )
                 del plan_scheduler
-                results_gen = self._physical_plan_to_partitions(execution_id, tasks)
+                results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen
@@ -401,10 +402,10 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 # Get executable tasks from planner.
-                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
+                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)  # type: ignore
                 del psets
                 with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-                    results_gen = self._physical_plan_to_partitions(execution_id, tasks)
+                    results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore
                     yield from results_gen
 
     def run_iter_tables(

@@ -43,12 +43,12 @@ def partition_values_to_str_mapping(
 
 class PartitionedTable:
     def __init__(self, table: MicroPartition, partition_keys: ExpressionsProjection | None):
-        self.table = table
-        self.partition_keys = partition_keys
-        self._partitions = None
-        self._partition_values = None
+        self.table: MicroPartition = table
+        self.partition_keys: ExpressionsProjection | None = partition_keys
+        self._partitions: list[MicroPartition] | None = None
+        self._partition_values: MicroPartition | None = None
 
-    def _create_partitions(self):
+    def _create_partitions(self) -> None:
         if self.partition_keys is None or len(self.partition_keys) == 0:
             self._partitions = [self.table]
             self._partition_values = None

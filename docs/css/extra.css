@@ -18,6 +18,11 @@
   --md-accent-fg-color: #ad9fff;
 }
 
+/* hide readthedocs flyout for future versions (>0.4.15) */
+readthedocs-flyout {
+  display: none !important;
+}
+
 [data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
   --md-typeset-a-color: #7862FF;
 }
@@ -168,4 +173,13 @@ code.doc-symbol-method::after {
 
 .md-footer-meta__inner.md-grid {
   max-width: 50rem;
+}
+
+/* readthedocs version selector */
+.md-version__list {
+  display: none;
+}
+
+.md-version__list--active {
+  display: block;
 }

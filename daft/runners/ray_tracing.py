@@ -12,6 +12,7 @@ import json
 import logging
 import pathlib
 import time
+from collections.abc import Iterator
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, TextIO
 

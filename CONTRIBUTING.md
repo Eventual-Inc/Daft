@@ -147,21 +147,26 @@ Add your function to the appropriate crate (`daft-functions-json`, `daft-functio
 For more advanced use cases, see existing implementations in [daft-functions-utf8](src/daft-functions-utf8/src/lib.rs)
 
 ```rs
-// we need these for the trait.
+// This prelude defines all required ScalarUDF dependencies.
+use daft_dsl::functions::prelude::*;
+
+// We need these for the trait.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct MyToUpperCase;
 
 #[typetag::serde]
 impl ScalarUDF for MyToUpperCase {
-    // start by giving the function a name.
-    // this will be the name used in SQL when calling the function
+
+    // Start by giving the function a name.
+    // This will be the name used in SQL when calling the function.
     fn name(&self) -> &'static str {
         "to_uppercase"
     }
-    // then we add an implementation for it
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
+
+    // Then we add an implementation for it.
+    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let s = inputs.required(0)?;
-        // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance
+        // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
         let arr = s
             .utf8()
             .expect("type should have been validated already during `function_args_to_field`")
@@ -170,7 +175,8 @@ impl ScalarUDF for MyToUpperCase {
             .collect::<Utf8Array>();
         Ok(arr.into_series())
     }
-    // We also need a `function_args_to_field` which is used during planning to ensure that the args and datatypes are compatible
+
+    // We also need a `function_args_to_field` which is used during planning to ensure that the args and datatypes are compatible.
     fn function_args_to_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
@@ -184,7 +190,7 @@ impl ScalarUDF for MyToUpperCase {
         Ok(input)
     }
 
-    // finally we want a brief docstring for the function. This is used when generating the sql documentation.
+    // Finally, we want a brief docstring for the function. This is used when generating the sql documentation.
     fn docstring(&self) -> &'static str {
         "Converts a string to uppercase."
     }

@@ -40,7 +40,7 @@ class Window:
     unbounded_following = _PyWindowBoundary.unbounded_following()
     current_row = _PyWindowBoundary.offset(0)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._spec = _WindowSpec.new()
 
     def partition_by(self, *cols: ManyColumnsInputType) -> Window:

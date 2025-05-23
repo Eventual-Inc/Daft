@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from daft import DataType, Expression, Series, udf
 
@@ -13,8 +13,8 @@ def llm_generate(
     batch_size: int = 1024,
     num_cpus: int | None = None,
     num_gpus: int | None = None,
-    **generation_config,
-):
+    **generation_config: dict[str, Any],
+) -> Expression:
     """A UDF for running LLM inference over an input column of strings.
 
     This UDF provides a flexible interface for text generation using various LLM providers.
@@ -70,8 +70,8 @@ class _vLLMGenerator:
     def __init__(
         self,
         model: str = "facebook/opt-125m",
-        generation_config: dict = {},
-    ):
+        generation_config: dict[str, Any] = {},
+    ) -> None:
         try:
             from vllm import LLM
         except ImportError:
@@ -80,7 +80,7 @@ class _vLLMGenerator:
         self.generation_config = generation_config
         self.llm = LLM(model=self.model)
 
-    def __call__(self, input_prompt_column: Series):
+    def __call__(self, input_prompt_column: Series) -> list[str]:
         from vllm import SamplingParams
 
         prompts = input_prompt_column.to_pylist()
