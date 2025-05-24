@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union, cast
 
 import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
@@ -81,7 +81,7 @@ class BoundUDFArgs:
 def run_udf(
     func: UserDefinedPyFunc,
     bound_args: BoundUDFArgs,
-    evaluated_expressions: list[Series],
+    input_series_list: list[Series],
     py_return_dtype: PyDataType,
     batch_size: int | None,
 ) -> PySeries:
@@ -89,76 +89,78 @@ def run_udf(
     return_dtype = DataType._from_pydatatype(py_return_dtype)
     kwarg_keys = list(bound_args.bound_args.kwargs.keys())
     arg_keys = bound_args.arg_keys()
-    pyvalues = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
-    expressions = bound_args.expressions()
 
-    assert len(evaluated_expressions) == len(
-        expressions
-    ), "Computed series must map 1:1 to the expressions that were evaluated"
-    function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
+    py_args = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
+    expression_args = bound_args.expressions()
+
+    assert len(input_series_list) == len(expression_args), "Evaluated series must map 1:1 to the input expressions"
+    function_parameter_name_to_arg_order = {name: i for i, name in enumerate(expression_args)}
+
+    input_series_length = len(input_series_list[0])
+    assert all(
+        len(input_series) == input_series_length for input_series in input_series_list
+    ), "All input series must be of the same length"
 
     def get_args_for_slice(start: int, end: int) -> tuple[list[Series | Any], dict[str, Any]]:
         args = []
-        must_slice = start > 0 or end < len(evaluated_expressions[0])
+        must_slice = start > 0 or end < input_series_length
         for name in arg_keys:
             # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
             if name == "self":
                 continue
 
-            assert name in pyvalues or name in function_parameter_name_to_index
-            if name in pyvalues:
-                args.append(pyvalues[name])
+            assert name in py_args or name in function_parameter_name_to_arg_order
+            if name in py_args:
+                args.append(py_args[name])
             else:
                 # we fill in expressions later
-                series = evaluated_expressions[function_parameter_name_to_index[name]]
+                order_of_argument = function_parameter_name_to_arg_order[name]
+                series = input_series_list[order_of_argument]
                 if must_slice:
                     series = series.slice(start, end)
                 args.append(series)
 
         kwargs = {}
         for name in kwarg_keys:
-            assert name in pyvalues or name in function_parameter_name_to_index
-            if name in pyvalues:
-                kwargs[name] = pyvalues[name]
+            assert name in py_args or name in function_parameter_name_to_arg_order
+            if name in py_args:
+                kwargs[name] = py_args[name]
             else:
-                series = evaluated_expressions[function_parameter_name_to_index[name]]
+                order_of_argument = function_parameter_name_to_arg_order[name]
+                series = input_series_list[order_of_argument]
                 if must_slice:
                     series = series.slice(start, end)
                 kwargs[name] = series
 
         return args, kwargs
 
-    if batch_size is None or len(evaluated_expressions[0]) <= batch_size:
-        args, kwargs = get_args_for_slice(0, len(evaluated_expressions[0]))
-        try:
-            results = [func(*args, **kwargs)]
-        except Exception as user_function_exception:
-            raise RuntimeError(
-                f"User-defined function `{func}` failed when executing on inputs with lengths: {tuple(len(series) for series in evaluated_expressions)}"
-            ) from user_function_exception
-    else:
-        # all inputs must have the same lengths for batching
-        # not sure this error can possibly be triggered but it's here
-        if len(set(len(s) for s in evaluated_expressions)) != 1:
-            raise RuntimeError(
-                f"User-defined function `{func}` failed: cannot run in batches when inputs are different lengths: {tuple(len(series) for series in evaluated_expressions)}"
-            )
+    def make_batches(batch_size: int | None) -> Generator[tuple[int, int], None, None]:
+        if batch_size is None or input_series_length <= batch_size:
+            yield 0, input_series_length
+        else:
+            for i in range(0, input_series_length, batch_size):
+                cur_batch_size = min(batch_size, input_series_length - i)
+                yield i, i + cur_batch_size
 
-        results = []
-        for i in range(0, len(evaluated_expressions[0]), batch_size):
-            cur_batch_size = min(batch_size, len(evaluated_expressions[0]) - i)
-            args, kwargs = get_args_for_slice(i, i + cur_batch_size)
-            try:
-                results.append(func(*args, **kwargs))
-            except Exception as user_function_exception:
-                raise RuntimeError(
-                    f"User-defined function `{func}` failed when executing on inputs with lengths: {tuple(cur_batch_size for _ in evaluated_expressions)}"
-                ) from user_function_exception
+    results = []
+    for start, end in make_batches(batch_size):
+        args, kwargs = get_args_for_slice(start, end)
+        try:
+            results.append(func(*args, **kwargs))
+        except Exception as user_function_exception:
+            series_info = [
+                f"{series.name()} ({series.datatype()}, length={input_series_length})" for series in input_series_list
+            ]
+            error_note = f"User-defined function `{func}` failed when executing on inputs:\n" + "\n".join(
+                f"  - {info}" for info in series_info
+            )
+            user_function_exception.args = (str(user_function_exception) + "\n" + error_note,)
+            raise
 
     # HACK: Series have names and the logic for naming fields/series in a UDF is to take the first
     # Expression's name. Note that this logic is tied to the `to_field` implementation of the Rust PythonUDF
     # and is quite error prone! If our Series naming logic here is wrong, things will break when the UDF is run on a table.
-    name = evaluated_expressions[0].name()
+    name = input_series_list[0].name()
 
     # Post-processing of results into a Series of the appropriate dtype
     if isinstance(results[0], Series):
