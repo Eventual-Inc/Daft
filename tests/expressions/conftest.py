@@ -33,7 +33,9 @@ def test_expression():
 
         sql_args = ["c0"]
         for arg in fn_args:
-            if isinstance(arg, str):
+            if arg is None:
+                sql_args.append("NULL")
+            elif isinstance(arg, str):
                 sql_args.append(f"'{arg}'")
             elif isinstance(arg, list):
                 items = [f"'{item}'" if isinstance(item, str) else str(item) for item in arg]

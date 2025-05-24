@@ -21,6 +21,14 @@ use crate::utils::{create_broadcasted_str_iter, parse_inputs, BroadcastedStrIter
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Substr;
 
+#[derive(FunctionArgs)]
+struct SubstrArgs<T> {
+    input: T,
+    start: T,
+    #[arg(optional)]
+    length: Option<T>,
+}
+
 #[typetag::serde]
 impl ScalarUDF for Substr {
     fn name(&self) -> &'static str {
@@ -28,16 +36,13 @@ impl ScalarUDF for Substr {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        ensure!(
-            inputs.len() == 2 || inputs.len() == 3,
-            "substr expects 2 or 3 arguments"
-        );
-        let data = inputs.required((0, "input"))?;
-        let start = inputs.required((1, "start"))?;
-        let length = inputs
-            .optional((2, "length"))?
-            .cloned()
-            .unwrap_or_else(|| Series::full_null("length", &DataType::Null, data.len()));
+        let SubstrArgs {
+            input: data,
+            start,
+            length,
+        } = inputs.try_into()?;
+        let length =
+            length.unwrap_or_else(|| Series::full_null("length", &DataType::Null, data.len()));
 
         data.with_utf8_array(|arr| {
                 if start.data_type().is_integer() {
@@ -71,19 +76,20 @@ impl ScalarUDF for Substr {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(
-            inputs.len() == 2 || inputs.len() == 3,
-            "substr expects 2 or 3 arguments"
-        );
+        let SubstrArgs {
+            input,
+            start,
+            length,
+        } = inputs.try_into()?;
+        let data = input.to_field(schema)?;
+        let start = start.to_field(schema)?;
 
-        let data = inputs.required((0, "input"))?.to_field(schema)?;
-        ensure!(data.dtype == DataType::Utf8, TypeError: "Expected input to be utf8 but received {}", data.dtype);
-        let start = inputs.required((1, "start"))?.to_field(schema)?;
+        ensure!(data.dtype.is_string(), TypeError: "Expected input to be utf8 but received {}", data.dtype);
         ensure!(start.dtype.is_integer(), TypeError: "Expected start to be an integer but received {}", start.dtype);
 
-        if let Some(length) = inputs.optional((2, "length"))? {
+        if let Some(length) = length {
             let length = length.to_field(schema)?;
-            ensure!(length.dtype.is_integer(), TypeError: "Expected length to be an integer but received {}", length.dtype);
+            ensure!(length.dtype.is_null_or(DataType::is_integer), TypeError: "Expected length to be an integer but received {}", length.dtype);
         }
 
         Ok(data)
