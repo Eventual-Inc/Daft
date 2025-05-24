@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 
@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, RaySwordfishTask};
 use crate::scheduling::{
-    task::{SwordfishTask, Task, TaskId},
+    task::{SwordfishTask, TaskDetails, TaskId},
     worker::{Worker, WorkerId},
 };
 
@@ -20,7 +20,7 @@ pub(crate) struct RaySwordfishWorker {
     num_cpus: usize,
     #[allow(dead_code)]
     total_memory_bytes: usize,
-    active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
+    active_task_details: Arc<Mutex<HashMap<TaskId, TaskDetails>>>,
 }
 
 #[pymethods]
@@ -37,7 +37,7 @@ impl RaySwordfishWorker {
             actor_handle: Arc::new(actor_handle),
             num_cpus,
             total_memory_bytes,
-            active_task_ids: Arc::new(Mutex::new(HashSet::new())),
+            active_task_details: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -45,7 +45,7 @@ impl RaySwordfishWorker {
 #[allow(dead_code)]
 impl RaySwordfishWorker {
     pub fn mark_task_finished(&self, task_id: TaskId) {
-        self.active_task_ids
+        self.active_task_details
             .lock()
             .expect("Active task ids should be present")
             .remove(&task_id);
@@ -57,14 +57,18 @@ impl RaySwordfishWorker {
         py: Python<'_>,
         task_locals: &pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Vec<RayTaskResultHandle>> {
-        let (task_ids, tasks): (Vec<TaskId>, Vec<RaySwordfishTask>) = tasks
+        let (task_details, ray_swordfish_tasks) = tasks
             .into_iter()
-            .map(|task| (task.task_id().clone(), RaySwordfishTask::new(task)))
-            .unzip();
+            .map(|task| (TaskDetails::from(&task), RaySwordfishTask::new(task)))
+            .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let py_task_handles = self
             .actor_handle
-            .call_method1(py, pyo3::intern!(py, "submit_tasks"), (tasks,))?
+            .call_method1(
+                py,
+                pyo3::intern!(py, "submit_tasks"),
+                (ray_swordfish_tasks,),
+            )?
             .extract::<Vec<PyObject>>(py)?;
 
         let task_handles = py_task_handles
@@ -75,10 +79,14 @@ impl RaySwordfishWorker {
             })
             .collect::<Vec<_>>();
 
-        self.active_task_ids
+        self.active_task_details
             .lock()
             .expect("Active task ids should be present")
-            .extend(task_ids);
+            .extend(
+                task_details
+                    .into_iter()
+                    .map(|details| (details.id.clone(), details)),
+            );
 
         Ok(task_handles)
     }
@@ -98,14 +106,27 @@ impl Worker for RaySwordfishWorker {
         &self.worker_id
     }
 
-    fn num_cpus(&self) -> usize {
+    fn total_num_cpus(&self) -> usize {
         self.num_cpus
     }
 
-    fn active_task_ids(&self) -> HashSet<TaskId> {
-        self.active_task_ids
+    fn active_num_cpus(&self) -> usize {
+        self.active_task_details
             .lock()
-            .expect("Active task ids should be present")
+            .expect("Active task details should be present")
+            .values()
+            .map(|details| details.num_cpus())
+            .sum()
+    }
+
+    fn available_num_cpus(&self) -> usize {
+        self.total_num_cpus() - self.active_num_cpus()
+    }
+
+    fn active_task_details(&self) -> HashMap<TaskId, TaskDetails> {
+        self.active_task_details
+            .lock()
+            .expect("Active task details should be present")
             .clone()
     }
 }
