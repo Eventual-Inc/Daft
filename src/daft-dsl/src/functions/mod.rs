@@ -36,6 +36,25 @@ pub enum FunctionExpr {
     Partitioning(PartitioningExpr),
 }
 
+pub struct FunctionResult {
+    pub ok: Series,
+    pub error: Option<Series>,
+}
+
+impl FunctionResult {
+    pub fn into_inner(self) -> (Series, Option<Series>) {
+        (self.ok, self.error)
+    }
+}
+
+impl From<Series> for FunctionResult {
+    fn from(series: Series) -> Self {
+        FunctionResult { ok: series, error: None }
+    }
+}
+
+
+
 pub trait FunctionEvaluator {
     fn fn_name(&self) -> &'static str;
     fn to_field(
@@ -44,7 +63,7 @@ pub trait FunctionEvaluator {
         schema: &Schema,
         expr: &FunctionExpr,
     ) -> DaftResult<Field>;
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series>;
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<FunctionResult>;
 }
 
 impl FunctionExpr {
@@ -80,7 +99,7 @@ impl FunctionEvaluator for FunctionExpr {
         self.get_evaluator().to_field(inputs, schema, expr)
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<FunctionResult> {
         self.get_evaluator().evaluate(inputs, expr)
     }
 }

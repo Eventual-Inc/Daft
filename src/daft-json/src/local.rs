@@ -229,7 +229,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
+        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows, None);
 
         if let Some(pred) = &self.predicate {
             let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;
