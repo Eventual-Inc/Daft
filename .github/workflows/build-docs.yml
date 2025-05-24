@@ -6,9 +6,13 @@ name: Build docs
 on:
   push:
     branches: [main]
+    paths:
+    - 'docs/**'
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled]
+    paths:
+    - 'docs/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
