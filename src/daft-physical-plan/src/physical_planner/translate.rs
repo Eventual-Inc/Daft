@@ -644,8 +644,12 @@ pub fn populate_aggregation_stages_bound(
     let mut first_stage_aggs = IndexSet::new();
     let mut second_stage_aggs = IndexSet::new();
 
-    let mut first_stage_schema = Schema::empty();
-    let mut second_stage_schema = Schema::empty();
+    let group_by_fields = group_by
+        .iter()
+        .map(|expr| expr.inner().to_field(schema))
+        .collect::<DaftResult<Vec<_>>>()?;
+    let mut first_stage_schema = Schema::new(group_by_fields);
+    let mut second_stage_schema = first_stage_schema.clone();
 
     let mut final_exprs = group_by
         .iter()
@@ -664,9 +668,11 @@ pub fn populate_aggregation_stages_bound(
         stage: &mut IndexSet<BoundAggExpr>,
         input_schema: &Schema,
         output_schema: &mut Schema,
+        groupby_count: usize,
         expr: AggExpr,
     ) -> DaftResult<ExprRef> {
         let (index, is_new) = stage.insert_full(BoundAggExpr::new_unchecked(expr.clone()));
+        let index = index + groupby_count;
 
         if is_new {
             let field = expr.to_field(input_schema)?;
@@ -684,6 +690,7 @@ pub fn populate_aggregation_stages_bound(
                 &mut first_stage_aggs,
                 schema,
                 &mut first_stage_schema,
+                group_by.len(),
                 $expr,
             )?
         };
@@ -695,6 +702,7 @@ pub fn populate_aggregation_stages_bound(
                 &mut second_stage_aggs,
                 &first_stage_schema,
                 &mut second_stage_schema,
+                group_by.len(),
                 $expr,
             )?
         };
