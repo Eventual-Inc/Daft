@@ -357,7 +357,7 @@ impl PyMicroPartition {
         null_equals_nulls: Option<Vec<bool>>,
     ) -> PyResult<Self> {
         let left_exprs = self.pyexprs_to_bound(left_on)?;
-        let right_exprs = self.pyexprs_to_bound(right_on)?;
+        let right_exprs = right.pyexprs_to_bound(right_on)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -381,7 +381,7 @@ impl PyMicroPartition {
         is_sorted: bool,
     ) -> PyResult<Self> {
         let left_exprs = self.pyexprs_to_bound(left_on)?;
-        let right_exprs = self.pyexprs_to_bound(right_on)?;
+        let right_exprs = right.pyexprs_to_bound(right_on)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
