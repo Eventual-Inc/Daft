@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -59,7 +59,7 @@ class PreviewOptions:
 
     _options: dict[str, object]  # normalized options
 
-    def __init__(self, **options) -> None:
+    def __init__(self, **options: Any) -> None:
         self._options = {
             "verbose": options.get("verbose", False),
             "null": options.get("null", "None"),
@@ -88,7 +88,7 @@ class PreviewFormatter:
         preview: Preview,
         schema: Schema,
         format: PreviewFormat | None = None,
-        **options,
+        **options: Any,
     ) -> None:
         self._preview = preview
         self._schema = schema

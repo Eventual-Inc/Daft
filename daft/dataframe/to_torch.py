@@ -29,10 +29,10 @@ class DaftTorchDataset(MAP_DATASET_CLASS):  # type: ignore
         self.data = data
         self.length = length
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.length
 
-    def __getitem__(self, i):
+    def __getitem__(self, i: int) -> dict[str, Any]:
         return {key: vallist[i] for (key, vallist) in self.data.items()}
 
 

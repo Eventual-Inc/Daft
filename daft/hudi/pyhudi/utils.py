@@ -38,7 +38,7 @@ class FsFileMetadata:
         return path_in_schema.find(".") != -1
 
     @staticmethod
-    def _extract_min_max(metadata: pq.FileMetaData):
+    def _extract_min_max(metadata: pq.FileMetaData) -> tuple[pa.Schema, list[int | None], list[int | None]]:
         num_columns = metadata.num_columns
         num_row_groups = metadata.num_row_groups
         min_vals: list[int | None] = [None] * num_columns

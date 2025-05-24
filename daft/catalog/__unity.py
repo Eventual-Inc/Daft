@@ -130,7 +130,7 @@ class UnityTable(Table):
 
     @property
     def name(self) -> str:
-        return self._inner.table_info.name  # type: ignore
+        return self._inner.table_info.name
 
     @staticmethod
     def _from_obj(obj: object) -> UnityTable:

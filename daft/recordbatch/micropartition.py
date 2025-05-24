@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Mapping
 
 from daft.daft import (
     CsvConvertOptions,
@@ -115,7 +115,7 @@ class MicroPartition:
         return MicroPartition._from_record_batches([table])
 
     @staticmethod
-    def from_pydict(data: dict[str, Any]) -> MicroPartition:
+    def from_pydict(data: Mapping[str, Any]) -> MicroPartition:
         table = RecordBatch.from_pydict(data)
         return MicroPartition._from_record_batches([table])
 

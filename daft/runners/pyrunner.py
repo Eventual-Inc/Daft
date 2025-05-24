@@ -360,7 +360,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             while not adaptive_planner.is_done():
                 source_id, plan_scheduler = adaptive_planner.next()
                 # don't store partition sets in variable to avoid reference
-                tasks = plan_scheduler.to_partition_tasks(  # type: ignore
+                tasks = plan_scheduler.to_partition_tasks(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
                     self,
                     results_buffer_size,
@@ -399,7 +399,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 # Get executable tasks from planner.
-                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)  # type: ignore
+                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
                 del psets
                 with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
                     results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore

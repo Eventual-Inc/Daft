@@ -50,7 +50,7 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
     _CACHED_FSES[(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
 
 
-def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
+def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
     if protocol == "s3" or protocol == "s3a":
         try:
             import botocore.session
@@ -202,7 +202,7 @@ def _infer_filesystem(
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
 
-    def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None):
+    def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None) -> None:
         """Helper method used when setting kwargs for pyarrow."""
         if val is not None:
             kwargs[key] = val
@@ -308,7 +308,7 @@ def _infer_filesystem(
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
 
 
-def _unwrap_protocol(path):
+def _unwrap_protocol(path: str) -> str:
     """Slice off any protocol prefixes on path."""
     parsed = urllib.parse.urlparse(path, allow_fragments=False)  # support '#' in path
     query = "?" + parsed.query if parsed.query else ""  # support '?' in path

@@ -23,7 +23,7 @@ class SQLCatalog:
 
     _catalog: _PyCatalog = None  # type: ignore
 
-    def __init__(self, tables: dict) -> None:
+    def __init__(self, tables: dict[str, DataFrame]) -> None:
         """Create a new SQLCatalog from a dictionary of table names to dataframes."""
         self._catalog = _PyCatalog.new()
         for name, df in tables.items():
@@ -32,7 +32,7 @@ class SQLCatalog:
     def __str__(self) -> str:
         return str(self._catalog)
 
-    def register_table(self, name: str, df: DataFrame):
+    def register_table(self, name: str, df: DataFrame) -> None:
         self._catalog.register_table(name, df._get_current_builder()._builder)
 
     def _copy_from(self, other: "SQLCatalog") -> None:

@@ -68,7 +68,7 @@ class RaySwordfishTaskHandle:
 
     async def _get_result(self) -> RayPartitionRef:
         results = []
-        async for result in self.result_handle:  # type: ignore[attr-defined]
+        async for result in self.result_handle:
             results.append(result)
 
         metadata, result = self.actor_handle.concat_and_get_metadata.options(num_returns=2).remote(*results)

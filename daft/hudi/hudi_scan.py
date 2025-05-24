@@ -4,16 +4,10 @@ import logging
 from typing import TYPE_CHECKING
 
 import daft
-from daft.daft import (
-    FileFormatConfig,
-    ParquetSourceConfig,
-    PyPushdowns,
-    ScanTask,
-    StorageConfig,
-)
+from daft.daft import FileFormatConfig, ParquetSourceConfig, PyPartitionField, PyPushdowns, ScanTask, StorageConfig
 from daft.filesystem import _resolve_paths_and_filesystem, join_path
 from daft.hudi.pyhudi.table import HUDI_METAFIELD_PARTITION_PATH, HudiTable, HudiTableMetadata
-from daft.io.scan import PyPartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
