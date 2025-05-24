@@ -41,7 +41,7 @@ impl From<ScalarFunction> for ExprRef {
 }
 
 #[typetag::serde(tag = "type")]
-pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
+pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     /// The name of the function.
     fn name(&self) -> &'static str;
     fn aliases(&self) -> &'static [&'static str] {
