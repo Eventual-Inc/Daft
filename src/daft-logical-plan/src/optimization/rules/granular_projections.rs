@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{any::TypeId, collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
+use daft_functions::uri::download::UrlDownload;
 use itertools::Itertools;
 
 use super::OptimizerRule;
@@ -42,7 +43,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "url_download"
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
         )
     }
 
@@ -52,10 +53,7 @@ impl SplitGranularProjection {
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // Only apply to Project nodes, skip others
         let LogicalPlan::Project(Project {
-            projection,
-            input,
-            projected_schema,
-            ..
+            projection, input, ..
         }) = plan.as_ref()
         else {
             return Ok(Transformed::no(plan));
@@ -86,7 +84,7 @@ impl SplitGranularProjection {
                                 changed = true;
                                 // Child may not have an alias, so we need to generate a new one
                                 // TODO: Remove with ordinals
-                                let child_name = child.semantic_id(projected_schema).id;
+                                let child_name = format!("id-{}", uuid::Uuid::new_v4());
                                 let child = child.alias(child_name.clone());
                                 split_exprs.push(child);
 
@@ -114,8 +112,7 @@ impl SplitGranularProjection {
                             // Split and save child expression
                             // Child may not have an alias, so we need to generate a new one
                             // TODO: Remove with ordinals
-                            let child_name = child.semantic_id(projected_schema).id;
-
+                            let child_name = format!("id-{}", uuid::Uuid::new_v4());
                             let child = child.alias(child_name.clone());
                             split_exprs.push(child);
                             new_children[idx] = resolved_col(child_name);
@@ -157,24 +154,47 @@ impl SplitGranularProjection {
         // Passthrough means just passing the original column through unchanged
 
         let mut last_child = input.clone();
-        for i in 0..max_projections {
-            let exprs = all_split_exprs
-                .iter()
-                .map(|split| {
-                    split.get(i).cloned().unwrap_or_else(|| {
-                        let passthrough_name = split.last().unwrap().name();
+        let input_cols = input
+            .schema()
+            .field_names()
+            .map(Arc::from)
+            .collect::<Vec<Arc<str>>>();
 
-                        Arc::new(Expr::Column(daft_dsl::Column::Resolved(
-                            daft_dsl::ResolvedColumn::Basic(passthrough_name.into()),
-                        )))
-                    })
-                })
-                .collect_vec();
+        for i in 0..max_projections {
+            let mut out_names = HashSet::new();
+            let mut out_exprs = vec![];
+
+            for split in &all_split_exprs {
+                let expr = split.get(i).cloned().unwrap_or_else(|| {
+                    let passthrough_name = split.last().unwrap().name();
+                    resolved_col(passthrough_name)
+                });
+                out_names.insert(expr.name().to_string());
+                out_exprs.push(expr);
+            }
+
+            for name in &input_cols {
+                if !out_names.contains(name.as_ref()) {
+                    out_names.insert(name.to_string());
+                    out_exprs.push(resolved_col(name.clone()));
+                }
+            }
 
             last_child = Arc::new(LogicalPlan::Project(
-                Project::try_new(last_child, exprs).unwrap(),
+                Project::try_new(last_child, out_exprs).unwrap(),
             ));
         }
+
+        // Only expose the columns that are in the original projection, not the inputs
+        let last_fields = last_child
+            .schema()
+            .field_names()
+            .take(projection.len())
+            .map(|c| resolved_col(Arc::from(c)))
+            .collect_vec();
+        last_child = Arc::new(LogicalPlan::Project(
+            Project::try_new(last_child, last_fields).unwrap(),
+        ));
 
         Ok(Transformed::yes(last_child))
     }
