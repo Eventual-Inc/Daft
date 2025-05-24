@@ -6,7 +6,11 @@ use daft_core::{
     prelude::*,
     python::{series::PySeries, PySchema},
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    python::PyExpr,
+    Expr,
+};
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -101,7 +105,19 @@ impl PyRecordBatch {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg = self.pyexprs_to_bound(to_agg)?;
+        let converted_to_agg = self
+            .pyexprs_to_bound(to_agg)?
+            .into_iter()
+            .map(|expr| {
+                if let Expr::Agg(agg_expr) = expr.as_ref() {
+                    Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
+                } else {
+                    Err(DaftError::ValueError(
+                        format!("RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"),
+                    ))
+                }
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
         let converted_group_by = self.pyexprs_to_bound(group_by)?;
         py.allow_threads(|| {
             Ok(self

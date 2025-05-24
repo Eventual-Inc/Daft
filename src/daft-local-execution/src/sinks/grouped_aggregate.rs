@@ -7,9 +7,11 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::{resolved_col, Expr, ExprRef};
+use daft_dsl::expr::{
+    bound_col,
+    bound_expr::{BoundAggExpr, BoundExpr},
+};
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::extract_agg_expr;
 use itertools::Itertools;
 use tracing::{instrument, Span};
 
@@ -235,14 +237,14 @@ impl BlockingSinkState for GroupedAggregateState {
 
 struct GroupedAggregateParams {
     // The original aggregations and group by expressions
-    original_aggregations: Vec<ExprRef>,
-    group_by: Vec<ExprRef>,
+    original_aggregations: Vec<BoundAggExpr>,
+    group_by: Vec<BoundExpr>,
     // The expressions for to be used for partial aggregation
-    partial_agg_exprs: Vec<ExprRef>,
+    partial_agg_exprs: Vec<BoundAggExpr>,
     // The expressions for the final aggregation
-    final_agg_exprs: Vec<ExprRef>,
-    final_group_by: Vec<ExprRef>,
-    final_projections: Vec<ExprRef>,
+    final_agg_exprs: Vec<BoundAggExpr>,
+    final_group_by: Vec<BoundExpr>,
+    final_projections: Vec<BoundExpr>,
 }
 
 pub struct GroupedAggregateSink {
@@ -254,30 +256,26 @@ pub struct GroupedAggregateSink {
 
 impl GroupedAggregateSink {
     pub fn new(
-        aggregations: &[ExprRef],
-        group_by: &[ExprRef],
-        schema: &SchemaRef,
+        aggregations: &[BoundAggExpr],
+        group_by: &[BoundExpr],
+        input_schema: &SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> DaftResult<Self> {
-        let aggregations = aggregations
-            .iter()
-            .map(extract_agg_expr)
-            .collect::<DaftResult<Vec<_>>>()?;
-        let (partial_aggs, final_aggs, final_projections) =
-            daft_physical_plan::populate_aggregation_stages(&aggregations, schema, group_by);
-        let partial_agg_exprs = partial_aggs
-            .into_values()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect::<Vec<_>>();
-        let final_agg_exprs = final_aggs
-            .into_values()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect::<Vec<_>>();
+        let (partial_agg_exprs, final_agg_exprs, final_projections) =
+            daft_physical_plan::populate_aggregation_stages_bound(
+                aggregations,
+                input_schema,
+                group_by,
+            )?;
         let final_group_by = if !partial_agg_exprs.is_empty() {
             group_by
                 .iter()
-                .map(|e| resolved_col(e.name()))
-                .collect::<Vec<_>>()
+                .enumerate()
+                .map(|(i, e)| {
+                    let field = e.as_ref().to_field(input_schema)?;
+                    Ok(BoundExpr::new_unchecked(bound_col(i, field)))
+                })
+                .collect::<DaftResult<Vec<_>>>()?
         } else {
             group_by.to_vec()
         };
@@ -288,10 +286,7 @@ impl GroupedAggregateSink {
         };
         Ok(Self {
             grouped_aggregate_params: Arc::new(GroupedAggregateParams {
-                original_aggregations: aggregations
-                    .into_iter()
-                    .map(|e| Expr::Agg(e).into())
-                    .collect(),
+                original_aggregations: aggregations.to_vec(),
                 group_by: group_by.to_vec(),
                 partial_agg_exprs,
                 final_agg_exprs,

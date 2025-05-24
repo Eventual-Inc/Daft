@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -19,14 +20,14 @@ enum WriterType {
 
 /// PhysicalWriterFactory is a factory for creating physical writers, i.e. parquet, csv writers.
 pub struct PhysicalWriterFactory {
-    output_file_info: OutputFileInfo,
+    output_file_info: OutputFileInfo<BoundExpr>,
     schema: SchemaRef,
     writer_type: WriterType,
 }
 
 impl PhysicalWriterFactory {
     pub fn new(
-        output_file_info: OutputFileInfo,
+        output_file_info: OutputFileInfo<BoundExpr>,
         file_schema: SchemaRef,
         native_enabled: bool,
     ) -> DaftResult<Self> {

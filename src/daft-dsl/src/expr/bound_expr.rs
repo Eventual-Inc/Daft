@@ -4,12 +4,13 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 use daft_core::prelude::Schema;
 use derive_more::derive::Display;
+use serde::{Deserialize, Serialize};
 
 use super::{
     bound_col, AggExpr, Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowExpr,
 };
 
-#[derive(Clone, Display)]
+#[derive(Clone, Display, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 /// A simple newtype around ExprRef that ensures that all of the columns in the held expression are bound.
 ///
 /// We have several column variants: unresolved, resolved, and bound.
@@ -68,6 +69,25 @@ impl BoundExpr {
     pub fn inner(&self) -> &ExprRef {
         &self.0
     }
+
+    pub fn bind_all(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Vec<Self>> {
+        exprs
+            .iter()
+            .map(|expr| Self::try_new(expr.clone(), schema))
+            .collect()
+    }
+}
+
+impl From<BoundExpr> for ExprRef {
+    fn from(value: BoundExpr) -> Self {
+        value.0
+    }
+}
+
+impl<'a> From<&'a BoundExpr> for &'a ExprRef {
+    fn from(value: &'a BoundExpr) -> &'a ExprRef {
+        &value.0
+    }
 }
 
 impl AsRef<Expr> for BoundExpr {
@@ -78,7 +98,7 @@ impl AsRef<Expr> for BoundExpr {
 
 macro_rules! impl_bound_wrapper {
     ($name:ident, $inner:ty, $expr_variant:ident) => {
-        #[derive(Clone, Display)]
+        #[derive(Clone, Display, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
         /// See [`BoundExpr`] for details about how this newtype pattern.
         pub struct $name($inner);
 
@@ -107,11 +127,29 @@ macro_rules! impl_bound_wrapper {
 
                 Self(inner)
             }
+
+            pub fn bind_all(exprs: &[$inner], schema: &Schema) -> DaftResult<Vec<Self>> {
+                exprs.iter()
+                    .map(|expr| Self::try_new(expr.clone(), schema))
+                    .collect()
+            }
         }
 
         impl AsRef<$inner> for $name {
             fn as_ref(&self) -> &$inner {
                 &self.0
+            }
+        }
+
+        impl From<$name> for $inner {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+
+        impl<'a> From<&'a $name> for &'a $inner {
+            fn from(value: &'a $name) -> Self {
+                &value.0
             }
         }
     };

@@ -12,7 +12,8 @@ mod treenode;
 mod test;
 
 pub use physical_planner::{
-    extract_agg_expr, logical_to_physical, populate_aggregation_stages, AdaptivePlanner,
-    MaterializedResults, QueryStageOutput, StageStats,
+    extract_agg_expr, logical_to_physical, populate_aggregation_stages,
+    populate_aggregation_stages_bound, AdaptivePlanner, MaterializedResults, QueryStageOutput,
+    StageStats,
 };
 pub use plan::{PhysicalPlan, PhysicalPlanRef};

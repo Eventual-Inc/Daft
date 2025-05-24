@@ -16,7 +16,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn, WindowSpec,
+    left_col, resolved_col, right_col, unresolved_col, Column, Expr, ExprRef, UnresolvedColumn,
+    WindowSpec,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
@@ -704,6 +705,15 @@ impl LogicalPlanBuilder {
         partition_cols: Option<Vec<String>>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
+        let partition_cols = partition_cols
+            .map(|cols| {
+                let expr_resolver = ExprResolver::default();
+
+                let cols = cols.into_iter().map(unresolved_col).collect();
+                expr_resolver.resolve(cols, self.plan.clone())
+            })
+            .transpose()?;
+
         use crate::sink_info::DeltaLakeCatalogInfo;
         let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
             catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {

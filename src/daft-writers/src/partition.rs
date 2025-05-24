@@ -6,7 +6,7 @@ use std::{
 use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::{array::ops::as_arrow::AsArrow, utils::identity_hash_set::IndexHash};
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -23,7 +23,7 @@ struct PartitionedWriter {
     >,
     saved_partition_values: Vec<RecordBatch>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-    partition_by: Vec<ExprRef>,
+    partition_by: Vec<BoundExpr>,
     is_closed: bool,
 }
 
@@ -32,7 +32,7 @@ impl PartitionedWriter {
         writer_factory: Arc<
             dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
         >,
-        partition_by: Vec<ExprRef>,
+        partition_by: Vec<BoundExpr>,
     ) -> Self {
         Self {
             per_partition_writers: HashMap::new(),
@@ -44,17 +44,13 @@ impl PartitionedWriter {
     }
 
     fn partition(
-        partition_cols: &[ExprRef],
+        partition_cols: &[BoundExpr],
         data: Arc<MicroPartition>,
     ) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
         let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
         let table = data.first().unwrap();
-        let partition_cols = partition_cols
-            .iter()
-            .map(|expr| BoundExpr::try_new(expr.clone(), &table.schema))
-            .collect::<DaftResult<Vec<_>>>()?;
 
-        let (split_tables, partition_values) = table.partition_by_value(&partition_cols)?;
+        let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
         Ok((split_tables, partition_values))
     }
 }
@@ -153,7 +149,7 @@ impl AsyncFileWriter for PartitionedWriter {
 
 pub(crate) struct PartitionedWriterFactory {
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-    partition_cols: Vec<ExprRef>,
+    partition_cols: Vec<BoundExpr>,
 }
 
 impl PartitionedWriterFactory {
@@ -161,7 +157,7 @@ impl PartitionedWriterFactory {
         writer_factory: Arc<
             dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
         >,
-        partition_cols: Vec<ExprRef>,
+        partition_cols: Vec<BoundExpr>,
     ) -> Self {
         Self {
             writer_factory,

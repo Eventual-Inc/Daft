@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -15,7 +15,7 @@ use crate::ExecutionTaskSpawner;
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
     // Sort By Parameters
-    sort_by: Vec<ExprRef>,
+    sort_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
     // Limit Parameters
@@ -65,7 +65,7 @@ pub struct TopNSink {
 
 impl TopNSink {
     pub fn new(
-        sort_by: Vec<ExprRef>,
+        sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         limit: usize,

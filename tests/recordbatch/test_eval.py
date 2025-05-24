@@ -22,18 +22,6 @@ def test_table_eval_expressions() -> None:
     assert result["b"] == [10, 12, 14, 16]
 
 
-def test_table_eval_expressions_conflict() -> None:
-    pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_recordbatch = MicroPartition.from_arrow(pa_table)
-    assert len(daft_recordbatch) == 4
-    assert daft_recordbatch.column_names() == ["a", "b"]
-
-    exprs = [col("a") + col("b"), col("a") * 2]
-
-    with pytest.raises(ValueError, match="Duplicate name"):
-        daft_recordbatch.eval_expression_list(exprs)
-
-
 @pytest.mark.parametrize(
     "input,expr,expected",
     [

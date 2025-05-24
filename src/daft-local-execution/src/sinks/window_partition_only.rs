@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
-    AggExpr, ExprRef,
-};
+use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -20,9 +17,9 @@ use super::{
 use crate::ExecutionTaskSpawner;
 
 struct WindowPartitionOnlyParams {
-    agg_exprs: Vec<AggExpr>,
+    agg_exprs: Vec<BoundAggExpr>,
     aliases: Vec<String>,
-    partition_by: Vec<ExprRef>,
+    partition_by: Vec<BoundExpr>,
     original_schema: SchemaRef,
 }
 
@@ -31,7 +28,7 @@ impl WindowSinkParams for WindowPartitionOnlyParams {
         &self.original_schema
     }
 
-    fn partition_by(&self) -> &[ExprRef] {
+    fn partition_by(&self) -> &[BoundExpr] {
         &self.partition_by
     }
 
@@ -46,9 +43,9 @@ pub struct WindowPartitionOnlySink {
 
 impl WindowPartitionOnlySink {
     pub fn new(
-        agg_exprs: &[AggExpr],
+        agg_exprs: &[BoundAggExpr],
         aliases: &[String],
-        partition_by: &[ExprRef],
+        partition_by: &[BoundExpr],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
         Ok(Self {
@@ -124,29 +121,15 @@ impl BlockingSink for WindowPartitionOnlySink {
                             continue;
                         }
 
-                        let input_schema = &all_partitions[0].schema;
-
                         let params = params.clone();
-
-                        let partition_by = params
-                            .partition_by
-                            .iter()
-                            .map(|expr| BoundExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        let agg_exprs = params
-                            .agg_exprs
-                            .iter()
-                            .map(|expr| BoundAggExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
 
                         per_partition_tasks.spawn(async move {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             let result = input_data.window_grouped_agg(
-                                &agg_exprs,
+                                &params.agg_exprs,
                                 &params.aliases,
-                                &partition_by,
+                                &params.partition_by,
                             )?;
 
                             Ok(result)

@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -55,10 +55,10 @@ impl BlockingSinkState for WriteState {
 pub(crate) struct WriteSink {
     write_format: WriteFormat,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-    partition_by: Option<Vec<ExprRef>>,
+    partition_by: Option<Vec<BoundExpr>>,
     file_schema: SchemaRef,
     /// File information is needed for overwriting files.
-    file_info: Option<OutputFileInfo>,
+    file_info: Option<OutputFileInfo<BoundExpr>>,
 }
 
 impl WriteSink {
@@ -67,9 +67,9 @@ impl WriteSink {
         writer_factory: Arc<
             dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
         >,
-        partition_by: Option<Vec<ExprRef>>,
+        partition_by: Option<Vec<BoundExpr>>,
         file_schema: SchemaRef,
-        file_info: Option<OutputFileInfo>,
+        file_info: Option<OutputFileInfo<BoundExpr>>,
     ) -> Self {
         Self {
             write_format,

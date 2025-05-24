@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -12,8 +12,8 @@ use super::intermediate_op::{
 use crate::ExecutionTaskSpawner;
 
 struct UnpivotParams {
-    ids: Vec<ExprRef>,
-    values: Vec<ExprRef>,
+    ids: Vec<BoundExpr>,
+    values: Vec<BoundExpr>,
     variable_name: String,
     value_name: String,
 }
@@ -23,8 +23,8 @@ pub struct UnpivotOperator {
 
 impl UnpivotOperator {
     pub fn new(
-        ids: Vec<ExprRef>,
-        values: Vec<ExprRef>,
+        ids: Vec<BoundExpr>,
+        values: Vec<BoundExpr>,
         variable_name: String,
         value_name: String,
     ) -> Self {

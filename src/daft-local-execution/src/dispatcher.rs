@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 
 use crate::{
@@ -222,18 +222,18 @@ impl DispatchSpawner for UnorderedDispatcher {
 /// A dispatcher that distributes morsels to workers based on a partitioning expression.
 /// Used if the operator requires partitioning the input, i.e. partitioned writes.
 pub(crate) struct PartitionedDispatcher {
-    partition_by: Vec<ExprRef>,
+    partition_by: Vec<BoundExpr>,
 }
 
 impl PartitionedDispatcher {
-    pub(crate) fn new(partition_by: Vec<ExprRef>) -> Self {
+    pub(crate) fn new(partition_by: Vec<BoundExpr>) -> Self {
         Self { partition_by }
     }
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
-        partition_by: Vec<ExprRef>,
+        partition_by: Vec<BoundExpr>,
     ) -> DaftResult<()> {
         for receiver in input_receivers {
             while let Some(morsel) = receiver.recv().await {
