@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use common_error::{DaftError, DaftResult};
 use common_partitioning::{Partition, PartitionId, PartitionSet};
 use daft_core::{
     join::JoinSide,
@@ -7,7 +8,11 @@ use daft_core::{
     python::{PySchema, PySeries, PyTimeUnit},
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr};
+use daft_dsl::{
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    python::PyExpr,
+    Expr,
+};
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -29,6 +34,16 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct PyMicroPartition {
     pub inner: Arc<MicroPartition>,
+}
+
+impl PyMicroPartition {
+    fn pyexpr_to_bound(&self, expr: PyExpr) -> DaftResult<BoundExpr> {
+        BoundExpr::try_new(expr.into(), &self.inner.schema)
+    }
+
+    fn pyexprs_to_bound(&self, exprs: Vec<PyExpr>) -> DaftResult<Vec<BoundExpr>> {
+        exprs.into_iter().map(|e| self.pyexpr_to_bound(e)).collect()
+    }
 }
 
 #[pymethods]
@@ -220,8 +235,7 @@ impl PyMicroPartition {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let converted_exprs = self.pyexprs_to_bound(exprs)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -235,8 +249,7 @@ impl PyMicroPartition {
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let converted_exprs = self.pyexprs_to_bound(exprs)?;
         py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
     }
 
@@ -247,10 +260,7 @@ impl PyMicroPartition {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let converted_exprs = self.pyexprs_to_bound(sort_keys)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -270,10 +280,7 @@ impl PyMicroPartition {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let converted_exprs = self.pyexprs_to_bound(sort_keys)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -287,10 +294,20 @@ impl PyMicroPartition {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg: Vec<daft_dsl::ExprRef> =
-            to_agg.into_iter().map(std::convert::Into::into).collect();
-        let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(std::convert::Into::into).collect();
+        let converted_to_agg: Vec<_> = self
+            .pyexprs_to_bound(to_agg)?
+            .into_iter()
+            .map(|expr| {
+                if let Expr::Agg(agg_expr) = expr.as_ref() {
+                    Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
+                } else {
+                    Err(DaftError::ValueError(
+                        format!("RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"),
+                    ))
+                }
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        let converted_group_by: Vec<_> = self.pyexprs_to_bound(group_by)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -307,10 +324,9 @@ impl PyMicroPartition {
         values_col: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
-        let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(std::convert::Into::into).collect();
-        let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
-        let converted_values_col: daft_dsl::ExprRef = values_col.into();
+        let converted_group_by = self.pyexprs_to_bound(group_by)?;
+        let converted_pivot_col = self.pyexpr_to_bound(pivot_col)?;
+        let converted_values_col = self.pyexpr_to_bound(values_col)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -340,10 +356,8 @@ impl PyMicroPartition {
         how: JoinType,
         null_equals_nulls: Option<Vec<bool>>,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> =
-            left_on.into_iter().map(std::convert::Into::into).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> =
-            right_on.into_iter().map(std::convert::Into::into).collect();
+        let left_exprs = self.pyexprs_to_bound(left_on)?;
+        let right_exprs = self.pyexprs_to_bound(right_on)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -366,10 +380,8 @@ impl PyMicroPartition {
         right_on: Vec<PyExpr>,
         is_sorted: bool,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> =
-            left_on.into_iter().map(std::convert::Into::into).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> =
-            right_on.into_iter().map(std::convert::Into::into).collect();
+        let left_exprs = self.pyexprs_to_bound(left_on)?;
+        let right_exprs = self.pyexprs_to_bound(right_on)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -393,8 +405,7 @@ impl PyMicroPartition {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_explode: Vec<daft_dsl::ExprRef> =
-            to_explode.into_iter().map(|e| e.expr).collect();
+        let converted_to_explode = self.pyexprs_to_bound(to_explode)?;
 
         py.allow_threads(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
     }
@@ -407,10 +418,8 @@ impl PyMicroPartition {
         variable_name: &str,
         value_name: &str,
     ) -> PyResult<Self> {
-        let converted_ids: Vec<daft_dsl::ExprRef> =
-            ids.into_iter().map(std::convert::Into::into).collect();
-        let converted_values: Vec<daft_dsl::ExprRef> =
-            values.into_iter().map(std::convert::Into::into).collect();
+        let converted_ids = self.pyexprs_to_bound(ids)?;
+        let converted_values = self.pyexprs_to_bound(values)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -504,8 +513,7 @@ impl PyMicroPartition {
                 "Can not partition into negative number of partitions: {num_partitions}"
             )));
         }
-        let exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let exprs = self.pyexprs_to_bound(exprs)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -550,10 +558,7 @@ impl PyMicroPartition {
         boundaries: &PyRecordBatch,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let exprs = self.pyexprs_to_bound(partition_keys)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -573,10 +578,7 @@ impl PyMicroPartition {
         py: Python,
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let exprs = self.pyexprs_to_bound(partition_keys)?;
         py.allow_threads(|| {
             let (mps, values) = self.inner.partition_by_value(exprs.as_slice())?;
             let mps = mps
