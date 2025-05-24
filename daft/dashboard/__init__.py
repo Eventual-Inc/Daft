@@ -68,8 +68,6 @@ def broadcast_query_information(
     if (auth_token := os.environ.get("DAFT_DASHBOARD_AUTH_TOKEN")) is not None:
         headers["Authorization"] = f"Bearer {auth_token}"
 
-    queries_url = f"{url}/api/queries"
-
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
@@ -82,12 +80,12 @@ def broadcast_query_information(
         }
     ).encode("utf-8")
 
-    req = request.Request(queries_url, headers=headers, data=data)
+    req = request.Request(url, headers=headers, data=data)
 
     try:
         request.urlopen(req, timeout=1)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {queries_url}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {url}: {e}")
 
 
 __all__ = [
