@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 
+use super::prelude::{AsArrow, Int64Array};
 use crate::{
     array::growable::{Growable, GrowableArray},
     datatypes::{DaftArrayType, DataType, Field},
@@ -58,6 +60,19 @@ impl ListArray {
             offsets,
             validity,
         }
+    }
+
+    /// Creates a new ListArray of a length 1 from an existing Series.
+    pub fn try_from_series(series: Series) -> DaftResult<Self> {
+        let field = Field::new(
+            "literal",
+            DataType::List(Box::new(series.data_type().clone())),
+        );
+        let offsets_array = Int64Array::from(("literal", [0, series.len() as i64].as_slice()));
+        let offsets = OffsetsBuffer::<i64>::try_from(offsets_array.as_arrow().values().clone())?;
+        // The element here cannot be None, because we know the series exists and is the only element.
+        // Even if the series is empty, the first element will just be an empty list.
+        Ok(Self::new(field, series, offsets, None))
     }
 
     pub fn offsets(&self) -> &arrow2::offset::OffsetsBuffer<i64> {
