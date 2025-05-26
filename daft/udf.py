@@ -90,10 +90,14 @@ def run_udf(
     kwarg_keys = list(bound_args.bound_args.kwargs.keys())
     arg_keys = bound_args.arg_keys()
 
+    # Arguments to the UDF that are not expressions
     py_args = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
+    # Arguments to the UDF that are expressions
     expression_args = bound_args.expressions()
 
-    assert len(input_series_list) == len(expression_args), "Evaluated series must map 1:1 to the input expressions"
+    assert len(input_series_list) == len(expression_args), "Input series must map 1:1 to the input expressions"
+
+    # Map from the name of the expression to the order of the argument in the function signature
     function_parameter_name_to_arg_order = {name: i for i, name in enumerate(expression_args)}
 
     input_series_length = len(input_series_list[0])
@@ -101,36 +105,30 @@ def run_udf(
         len(input_series) == input_series_length for input_series in input_series_list
     ), "All input series must be of the same length"
 
+    # For each call to the UDF, get the arguments to pass to the UDF in the order that they should be passed
     def get_args_for_slice(start: int, end: int) -> tuple[list[Series | Any], dict[str, Any]]:
-        args = []
-        must_slice = start > 0 or end < input_series_length
-        for name in arg_keys:
-            # special-case to skip `self` since that would be a redundant argument in a method call to a class-UDF
-            if name == "self":
-                continue
+        needs_slice = start > 0 or end < input_series_length
 
+        # Extract an argument by name
+        def extract_argument(name: str) -> Series | Any:
             assert name in py_args or name in function_parameter_name_to_arg_order
-            if name in py_args:
-                args.append(py_args[name])
-            else:
-                # we fill in expressions later
-                order_of_argument = function_parameter_name_to_arg_order[name]
-                series = input_series_list[order_of_argument]
-                if must_slice:
-                    series = series.slice(start, end)
-                args.append(series)
 
-        kwargs = {}
-        for name in kwarg_keys:
-            assert name in py_args or name in function_parameter_name_to_arg_order
+            # If the param is not an expression, we can just pass it directly
             if name in py_args:
-                kwargs[name] = py_args[name]
+                return py_args[name]
+            # If the param is an expression, we get the Series from the input_series_list and slice it if necessary
             else:
                 order_of_argument = function_parameter_name_to_arg_order[name]
                 series = input_series_list[order_of_argument]
-                if must_slice:
+                if needs_slice:
                     series = series.slice(start, end)
-                kwargs[name] = series
+                return series
+
+        # Extract positional arguments, ignoring `self`
+        args = [extract_argument(name) for name in arg_keys if name != "self"]
+
+        # Extract keyword arguments
+        kwargs = {name: extract_argument(name) for name in kwarg_keys}
 
         return args, kwargs
 
