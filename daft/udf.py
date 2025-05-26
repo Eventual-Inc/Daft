@@ -92,9 +92,9 @@ def run_udf(
     pyvalues = {key: val for key, val in bound_args.bound_args.arguments.items() if not isinstance(val, Expression)}
     expressions = bound_args.expressions()
 
-    assert len(evaluated_expressions) == len(
-        expressions
-    ), "Computed series must map 1:1 to the expressions that were evaluated"
+    assert len(evaluated_expressions) == len(expressions), (
+        "Computed series must map 1:1 to the expressions that were evaluated"
+    )
     function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
 
     def get_args_for_slice(start: int, end: int) -> tuple[list[Series | Any], dict[str, Any]]:

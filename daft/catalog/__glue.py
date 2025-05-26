@@ -298,7 +298,7 @@ class GlueCatalog(Catalog):
             while True:
                 res = self._client.get_tables(**req)
                 for table in res["TableList"]:
-                    tables.append(f'{table["DatabaseName"]}.{table["Name"]}')
+                    tables.append(f"{table['DatabaseName']}.{table['Name']}")
                 if next_token := res.get("NextToken"):
                     req["NextToken"] = next_token
                 else:

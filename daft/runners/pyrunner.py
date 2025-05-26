@@ -197,9 +197,9 @@ class PyActorSingleton:
         partial_metadata: PartialPartitionMetadata,
     ) -> list[MaterializedResult[MicroPartition]]:
         # Bind the expressions to the initialized actor pool UDFs, which should already have been initialized at process start-up
-        assert (
-            PyActorSingleton.initialized_projection is not None
-        ), "PyActor process must be initialized with actor pool UDFs before execution"
+        assert PyActorSingleton.initialized_projection is not None, (
+            "PyActor process must be initialized with actor pool UDFs before execution"
+        )
 
         new_part = partition.eval_expression_list(PyActorSingleton.initialized_projection)
         return [
@@ -542,9 +542,9 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                                 )
                             else:
                                 actor_pool = self._actor_pools.get(next_step.actor_pool_id)
-                                assert (
-                                    actor_pool is not None
-                                ), f"PyActorPool={next_step.actor_pool_id} must outlive the tasks that need to be run on it."
+                                assert actor_pool is not None, (
+                                    f"PyActorPool={next_step.actor_pool_id} must outlive the tasks that need to be run on it."
+                                )
                                 future = actor_pool.submit(
                                     next_step.instructions,
                                     next_step.inputs,

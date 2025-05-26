@@ -128,9 +128,9 @@ def read_parquet(
     """
     # TODO: move this logic into Rust
     config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
-    assert isinstance(
-        file, (str, pathlib.Path)
-    ), "Native downloader only works on string or Path inputs to read_parquet"
+    assert isinstance(file, (str, pathlib.Path)), (
+        "Native downloader only works on string or Path inputs to read_parquet"
+    )
     tbl = MicroPartition.read_parquet(
         str(file),
         columns=read_options.column_names,

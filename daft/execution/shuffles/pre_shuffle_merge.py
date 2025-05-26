@@ -3,7 +3,6 @@ from collections import defaultdict
 from typing import Union
 
 import ray.experimental  # noqa: TID253
-
 from daft.daft import ResourceRequest
 from daft.execution import execution_step
 from daft.execution.execution_step import (

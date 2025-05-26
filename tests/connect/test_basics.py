@@ -19,9 +19,9 @@ def test_alias(spark_session):
     # Verify the data is unchanged but column name is different
     df_rows = df.collect()
     df_renamed_rows = df_renamed.collect()
-    assert [row.id for row in df_rows] == [
-        row.my_number for row in df_renamed_rows
-    ], "Data should be unchanged after alias"
+    assert [row.id for row in df_rows] == [row.my_number for row in df_renamed_rows], (
+        "Data should be unchanged after alias"
+    )
 
 
 @pytest.mark.skip(

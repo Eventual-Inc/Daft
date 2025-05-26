@@ -260,7 +260,7 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
     elif isinstance(df, ray.ObjectRef):
         return df
     else:
-        raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
+        raise ValueError(f"Expected a Ray object ref or a Pandas DataFrame, got {type(df)}")
 
 
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
@@ -734,9 +734,9 @@ class Scheduler(ActorPoolManager):
                 # Just run it locally immediately.
                 elif len(next_step.instructions) == 0:
                     logger.debug("Running task synchronously in main thread: %s", next_step)
-                    assert (
-                        len(next_step.partial_metadatas) == 1
-                    ), "No-op tasks must have one output by definition, since there are no instructions to run"
+                    assert len(next_step.partial_metadatas) == 1, (
+                        "No-op tasks must have one output by definition, since there are no instructions to run"
+                    )
                     [single_partial] = next_step.partial_metadatas
                     if single_partial.num_rows is None:
                         [single_meta] = ray.get(get_metas.remote(next_step.inputs))  # type: ignore[call-arg]
@@ -864,8 +864,7 @@ class Scheduler(ActorPoolManager):
 
         start = datetime.now()
         profile_filename = (
-            f"profile_RayRunner.run()_"
-            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+            f"profile_RayRunner.run()_{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
 
         with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:

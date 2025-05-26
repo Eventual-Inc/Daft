@@ -16,7 +16,7 @@ if "COV_CORE_SOURCE" in os.environ:
         import sys
 
         sys.stderr.write(
-            "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
+            "pytest-cov: Failed to setup subprocess coverage. Environ: {!r} Exception: {!r}\n".format(
                 {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
             )
         )

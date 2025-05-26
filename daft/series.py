@@ -325,7 +325,7 @@ class Series:
 
     def __bool__(self) -> bool:
         raise ValueError(
-            "Series don't have a truth value." "If you reached this error using `and` / `or`, use `&` / `|` instead."
+            "Series don't have a truth value.If you reached this error using `and` / `or`, use `&` / `|` instead."
         )
 
     def __len__(self) -> int:

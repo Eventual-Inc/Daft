@@ -27,9 +27,9 @@ def parse_questions_str(questions: str) -> list[int]:
             nums.add(num)
         except ValueError:
             ints = split.split("-")
-            assert (
-                len(ints) == 2
-            ), f"A range must include two numbers split by a dash (i.e., '-'); instead got '{split}'"
+            assert len(ints) == 2, (
+                f"A range must include two numbers split by a dash (i.e., '-'); instead got '{split}'"
+            )
             [lower, upper] = ints
             try:
                 lower = int(lower)

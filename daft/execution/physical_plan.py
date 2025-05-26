@@ -1489,9 +1489,9 @@ def split(
     This performs a naive split, which might lead to data skews but does not require a full materialization of
     input partitions when performing the split.
     """
-    assert (
-        num_output_partitions >= num_input_partitions
-    ), f"Cannot split from {num_input_partitions} to {num_output_partitions}."
+    assert num_output_partitions >= num_input_partitions, (
+        f"Cannot split from {num_input_partitions} to {num_output_partitions}."
+    )
 
     base_splits_per_partition, num_partitions_with_extra_output = divmod(num_output_partitions, num_input_partitions)
 
@@ -1519,9 +1519,9 @@ def coalesce(
 
     The current implementation only does partition merging, no rebalancing.
     """
-    assert (
-        to_num_partitions <= from_num_partitions
-    ), f"Cannot coalesce upwards from {from_num_partitions} to {to_num_partitions} partitions."
+    assert to_num_partitions <= from_num_partitions, (
+        f"Cannot coalesce upwards from {from_num_partitions} to {to_num_partitions} partitions."
+    )
 
     boundaries = [math.ceil((from_num_partitions / to_num_partitions) * i) for i in range(to_num_partitions + 1)]
     starts, stops = boundaries[:-1], boundaries[1:]

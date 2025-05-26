@@ -15,13 +15,12 @@ from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
 if TYPE_CHECKING:
     import pyarrow as pa
     import ray
-    from pyiceberg.schema import Schema as IcebergSchema
-    from pyiceberg.table import TableProperties as IcebergTableProperties
-
     from daft.dataframe import DataFrame
     from daft.expressions.visitor import ExpressionVisitor
     from daft.io.sink import T
     from daft.runners.runner import Runner
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table import TableProperties as IcebergTableProperties
 
 R = TypeVar("R")
 

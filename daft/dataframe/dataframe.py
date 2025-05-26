@@ -148,9 +148,9 @@ class DataFrame:
             num_rows = self._result_cache.num_rows()
 
             # Partition set should always be set on cache entry.
-            assert (
-                num_partitions is not None and size_bytes is not None and num_rows is not None
-            ), "Partition set should always be set on cache entry"
+            assert num_partitions is not None and size_bytes is not None and num_rows is not None, (
+                "Partition set should always be set on cache entry"
+            )
 
             return self.__builder.from_in_memory_scan(
                 self._result_cache,
@@ -2069,7 +2069,9 @@ class DataFrame:
             >>> from daft import col
             >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
             >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], prefix="right_")
+            >>> joined_df = df1.join(
+            ...     df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], prefix="right_"
+            ... )
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ right_b │
@@ -2087,7 +2089,9 @@ class DataFrame:
             >>> from daft import col
             >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
             >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], suffix="_right")
+            >>> joined_df = df1.join(
+            ...     df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], suffix="_right"
+            ... )
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ b_right │
@@ -2435,9 +2439,9 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(
-            result, DataFrame
-        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
+        assert isinstance(result, DataFrame), (
+            f"Func returned an instance of type [{type(result)}], should have been DataFrame."
+        )
         return result
 
     def _agg(

@@ -26,7 +26,7 @@ def local_recursive_list(fs, path) -> list:
 
 def compare_local_result(daft_ls_result: list, fs_result: list):
     daft_files = [(f["path"], f["type"].lower()) for f in daft_ls_result]
-    fs_files = [(f'file://{f["name"]}', f["type"]) for f in fs_result]
+    fs_files = [(f"file://{f['name']}", f["type"]) for f in fs_result]
 
     # io_glob does not return directories
     fs_files = [(p, t) for p, t in fs_files if t == "file"]
