@@ -44,7 +44,7 @@ jobs:
         timeout_minutes: 10
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt --verbose
+        command: uv pip install -r requirements-dev.txt
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest

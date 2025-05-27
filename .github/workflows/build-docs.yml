@@ -49,7 +49,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source venv/bin/activate
-          uv pip install -r requirements-dev.txt --verbose
+          uv pip install -r requirements-dev.txt
     - name: Build Daft in development mode and generate docs
       run: |
         source activate
