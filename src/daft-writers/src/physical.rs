@@ -29,13 +29,14 @@ impl PhysicalWriterFactory {
         output_file_info: OutputFileInfo,
         file_schema: SchemaRef,
         native_enabled: bool,
+        native_remote_enabled: bool,
     ) -> DaftResult<Self> {
         let writer_type = if native_enabled
             && native_parquet_writer_supported(
                 output_file_info.file_format,
                 &output_file_info.root_dir,
                 &file_schema,
-                false,
+                native_remote_enabled,
             )? {
             WriterType::Native
         } else {
