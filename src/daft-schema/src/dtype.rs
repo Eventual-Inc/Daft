@@ -5,7 +5,7 @@ use common_error::{DaftError, DaftResult};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
-use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
+use crate::{field::Field, image_mode::ImageMode, sql::try_parse_dtype, time_unit::TimeUnit};
 
 pub type DaftDataType = DataType;
 
@@ -879,6 +879,16 @@ impl DataType {
                 "DataType {self:?} does not have a `value_type` property",
             ))),
         }
+    }
+
+    /// Parses a DataType from a SQL string.
+    pub fn try_from_sql<S : AsRef<str>>(input: S) -> DaftResult<Self> {
+        try_parse_dtype(input)
+    }
+
+    /// Returns the SQL representation of this DataType.
+    pub fn to_sql(&self) -> String {
+        "TODO!".to_string()
     }
 }
 

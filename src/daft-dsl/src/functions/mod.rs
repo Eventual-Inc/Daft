@@ -10,7 +10,6 @@ pub mod scalar;
 pub mod sketch;
 pub mod struct_;
 
-
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter, Result, Write},
@@ -126,11 +125,12 @@ pub fn function_semantic_id(func: &FunctionExpr, inputs: &[ExprRef], schema: &Sc
 
 #[derive(Default)]
 pub struct FunctionRegistry {
-    // Todo: Use the Bindings object instead, so we can get aliases and case handling.
+    /// Consider using Bindings or similar for case-insensitive lookup when resolving function's from SQL.
     map: HashMap<String, Arc<dyn ScalarUDF>>,
 }
+
 pub trait FunctionModule {
-    /// Register this module to the given [SQLFunctions] table.
+    /// Register this module to the given [FunctionRegistry].
     fn register(_parent: &mut FunctionRegistry);
 }
 

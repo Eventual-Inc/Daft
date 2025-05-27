@@ -2,7 +2,7 @@
 //!
 //! This is so we don't have to manually import all each time we implement a function.
 
-pub use common_error::{ensure, DaftResult};
+pub use common_error::{ensure, value_err, DaftResult};
 pub use daft_core::{
     prelude::{DataType, Field, Schema, SchemaRef},
     series::Series,

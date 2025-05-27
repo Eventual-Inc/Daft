@@ -7,4 +7,5 @@ pub mod prelude;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod schema;
+pub mod sql;
 pub mod time_unit;
