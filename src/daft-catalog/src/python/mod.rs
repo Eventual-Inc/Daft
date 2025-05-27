@@ -185,6 +185,8 @@ impl PyTableSource {
 }
 
 pub fn register_modules(parent: &Bound<'_, PyModule>) -> PyResult<()> {
+    parent.add_class::<PyCatalog>()?;
+    parent.add_class::<PyTable>()?;
     parent.add_class::<PyIdentifier>()?;
     parent.add_class::<PyTableSource>()?;
     Ok(())

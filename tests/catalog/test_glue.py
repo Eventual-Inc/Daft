@@ -164,7 +164,7 @@ def test_list_tables(glue_catalog, glue_client):
     assert Identifier("test_database", "table1") in tables
 
     # test listing tables with no pattern
-    with pytest.raises(ValueError, match="requires the prefix to contain a namespace"):
+    with pytest.raises(ValueError, match="requires the pattern to contain a namespace"):
         glue_catalog.list_tables(None)
 
 
