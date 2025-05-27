@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -13,6 +12,8 @@ from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
 
