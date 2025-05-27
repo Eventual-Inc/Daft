@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
@@ -13,7 +13,7 @@ from daft.expressions import Expression
 from daft.series import Series
 
 InitArgsType = Optional[Tuple[Tuple[Any, ...], Dict[str, Any]]]
-UdfReturnType = Union[Series, List[Any], "np.ndarray", "pa.Array", "pa.ChunkedArray"]
+UdfReturnType = Union[Series, List[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
 UserDefinedPyFunc = Callable[..., UdfReturnType]
 UserDefinedPyFuncLike = Union[UserDefinedPyFunc, type]
 
@@ -170,8 +170,9 @@ def run_udf(
             return Series.from_pylist(result_list, name=name, pyobj="force")._series
         else:
             return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
-    elif np.module_available() and isinstance(results[0], np.ndarray):
-        result_np = np.concatenate(results)
+    elif np.module_available() and isinstance(results[0], np.ndarray):  # type: ignore[attr-defined]
+        np_results = cast("list[np.ndarray[Any, Any]]", results)
+        result_np = np.concatenate(np_results)
         return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
         result_pa = pa.concat_arrays(results)

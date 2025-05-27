@@ -23,39 +23,17 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlDownload;
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-pub struct UrlDownloadArgs {
-    pub max_connections: usize,
-    pub raise_error_on_failure: bool,
-    pub multi_thread: bool,
-    pub io_config: Arc<IOConfig>,
-}
-
-impl UrlDownloadArgs {
-    pub fn new(
-        max_connections: usize,
-        raise_error_on_failure: bool,
-        multi_thread: bool,
-        io_config: Option<IOConfig>,
-    ) -> Self {
-        Self {
-            max_connections,
-            raise_error_on_failure,
-            multi_thread,
-            io_config: io_config.unwrap_or_default().into(),
-        }
-    }
-}
-
-impl Default for UrlDownloadArgs {
-    fn default() -> Self {
-        Self {
-            max_connections: 32,
-            raise_error_on_failure: true,
-            multi_thread: true,
-            io_config: IOConfig::default().into(),
-        }
-    }
+#[derive(FunctionArgs)]
+pub struct UrlDownloadArgs<T> {
+    pub input: T,
+    #[arg(optional)]
+    pub multi_thread: Option<bool>,
+    #[arg(optional)]
+    pub io_config: Option<IOConfig>,
+    #[arg(optional)]
+    pub max_connections: Option<usize>,
+    #[arg(optional)]
+    pub on_error: Option<String>,
 }
 
 #[typetag::serde]
@@ -64,13 +42,18 @@ impl ScalarUDF for UrlDownload {
         "url_download"
     }
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let max_connections = inputs
-            .extract_optional::<usize, _>("max_connections")?
-            .unwrap_or(32);
-        let on_error = inputs
-            .extract_optional::<String, _>("on_error")?
-            .unwrap_or_else(|| "raise".to_string());
+        let UrlDownloadArgs {
+            input,
+            multi_thread,
+            io_config,
+            max_connections,
+            on_error,
+        } = inputs.try_into()?;
+
+        let max_connections = max_connections.unwrap_or(32);
+        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
+        let multi_thread = multi_thread.unwrap_or(true);
+        let io_config = io_config.unwrap_or_default();
 
         let raise_error_on_failure = match on_error.as_str() {
             "raise" => true,
@@ -82,13 +65,6 @@ impl ScalarUDF for UrlDownload {
                 )))
             }
         };
-
-        let multi_thread = inputs
-            .extract_optional::<bool, _>("multi_thread")?
-            .unwrap_or(true);
-        let io_config = inputs
-            .extract_optional::<IOConfig, _>("io_config")?
-            .unwrap_or_default();
 
         let array = input.utf8()?;
         let io_stats = IOStatsContext::new("download");
@@ -108,11 +84,8 @@ impl ScalarUDF for UrlDownload {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let field = inputs.required((0, "input"))?.to_field(schema)?;
-        let _ = inputs.extract_optional::<bool, _>("multi_thread")?;
-        let _ = inputs.extract_optional::<IOConfig, _>("io_config")?;
-        let _ = inputs.extract_optional::<usize, _>("max_connections")?;
-        let _ = inputs.extract_optional::<String, _>("on_error")?;
+        let UrlDownloadArgs { input, .. } = inputs.try_into()?;
+        let field = input.to_field(schema)?;
         ensure!(field.dtype.is_string(), TypeError: "Input must be a string");
         Ok(Field::new(field.name, DataType::Binary))
     }

@@ -1,9 +1,9 @@
-from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from daft.context import get_context
 from daft.daft import IOConfig
 from daft.datatype import DataType
-from daft.dependencies import pa
+from daft.dependencies import pa, pafs
 from daft.io.common import _get_schema_from_dict
 from daft.recordbatch.micropartition import MicroPartition
 from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to_path
@@ -11,7 +11,7 @@ from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to
 if TYPE_CHECKING:
     from deltalake.writer import AddAction
 
-    from daft.dependencies import pafs
+    from daft.dependencies import pads
 
 
 def sanitize_table_for_deltalake(
@@ -52,10 +52,10 @@ def partitioned_table_to_deltalake_iter(
 
 
 def make_deltalake_add_action(
-    path,
-    metadata,
-    size,
-    partition_values,
+    path: str,
+    metadata: Any,
+    size: int,
+    partition_values: Mapping[str, Optional[str]],
 ) -> "AddAction":
     import json
     from datetime import datetime
@@ -110,7 +110,7 @@ class DeltaLakeWriteVisitors:
             self.parent = parent
             self.partition_values = partition_values
 
-        def __call__(self, written_file) -> None:
+        def __call__(self, written_file: "pads.WrittenFile") -> None:
             from daft.utils import get_arrow_version
 
             # PyArrow added support for size in 9.0.0

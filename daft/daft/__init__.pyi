@@ -8,6 +8,7 @@ from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io import DataSink
 from daft.io.scan import ScanOperator
+from daft.io.sink import WriteResultType
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
 
     from daft.dataframe import DataFrame
     from daft.expressions.visitor import ExpressionVisitor
-    from daft.io.sink import T
     from daft.runners.runner import Runner
 
 R = TypeVar("R")
@@ -1177,22 +1177,6 @@ def get_udf_names(expression: PyExpr) -> list[str]: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
 def hash(expr: PyExpr, seed: Any | None = None) -> PyExpr: ...
 def cosine_distance(expr: PyExpr, other: PyExpr) -> PyExpr: ...
-def url_download(
-    expr: PyExpr,
-    max_connections: int,
-    raise_error_on_failure: bool,
-    multi_thread: bool,
-    config: IOConfig,
-) -> PyExpr: ...
-def url_upload(
-    expr: PyExpr,
-    folder_location: PyExpr,
-    max_connections: int,
-    raise_error_on_failure: bool,
-    multi_thread: bool,
-    is_single_folder: bool,
-    io_config: IOConfig | None,
-) -> PyExpr: ...
 def tokenize_encode(
     expr: PyExpr,
     tokens_path: str,
@@ -1771,7 +1755,7 @@ class LogicalPlanBuilder:
         io_config: IOConfig | None = None,
         kwargs: dict[str, Any] | None = None,
     ) -> LogicalPlanBuilder: ...
-    def datasink_write(self, name: str, sink: DataSink[T]) -> LogicalPlanBuilder: ...
+    def datasink_write(self, name: str, sink: DataSink[WriteResultType]) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def describe(self) -> LogicalPlanBuilder: ...
     def summarize(self) -> LogicalPlanBuilder: ...

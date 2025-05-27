@@ -1798,7 +1798,7 @@ def _best_effort_next_step(
             return (None, False)
 
 
-class Materialize:
+class Materialize(Generic[PartitionT]):
     """Materialize the child plan.
 
     Repeatedly yields either a PartitionTask (to produce an intermediate partition)
@@ -1810,11 +1810,11 @@ class Materialize:
         child_plan: InProgressPhysicalPlan[PartitionT],
         results_buffer_size: int | None,
     ):
-        self.child_plan = child_plan
+        self.child_plan: InProgressPhysicalPlan[PartitionT] = child_plan
         self.materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
         self.results_buffer_size = results_buffer_size
 
-    def __iter__(self) -> MaterializedPhysicalPlan:
+    def __iter__(self) -> MaterializedPhysicalPlan[PartitionT]:
         num_materialized_yielded = 0
         num_intermediate_yielded = 0
         num_final_yielded = 0

@@ -184,13 +184,10 @@ impl SplitGranularProjection {
 mod tests {
 
     use common_scan_info::Pushdowns;
-    use daft_dsl::{
-        functions::{FunctionArg, FunctionArgs},
-        Column, LiteralValue, ResolvedColumn,
-    };
+    use daft_dsl::{Column, ResolvedColumn};
     use daft_functions::{
         binary::{codecs::Codec, decode::decode},
-        uri::download,
+        uri::download::UrlDownload,
     };
     use daft_functions_utf8::{capitalize, lower};
     use daft_schema::{dtype::DataType, field::Field};
@@ -228,10 +225,11 @@ mod tests {
             dummy_scan_operator(vec![Field::new("url", DataType::Utf8)]),
             Pushdowns::default(),
         )
-        .with_columns(vec![download(
-            Expr::Column(Column::Resolved(ResolvedColumn::Basic("url".into()))).arced(),
-            None,
-        )])
+        .with_columns(vec![ScalarFunction::new(
+            UrlDownload,
+            vec![resolved_col("url")],
+        )
+        .into()])
         .unwrap()
         .build();
 
@@ -255,10 +253,7 @@ mod tests {
         )
         .with_columns(vec![
             decode(
-                download(
-                    Expr::Column(Column::Resolved(ResolvedColumn::Basic("url".into()))).arced(),
-                    None,
-                ),
+                ScalarFunction::new(UrlDownload, vec![resolved_col("url")]).into(),
                 Codec::Utf8,
             ),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced()),
@@ -320,12 +315,7 @@ mod tests {
         )
         .with_columns(vec![
             decode(
-                download(
-                    capitalize(
-                        Expr::Column(Column::Resolved(ResolvedColumn::Basic("url".into()))).arced(),
-                    ),
-                    None,
-                ),
+                ScalarFunction::new(UrlDownload, vec![capitalize(resolved_col("url"))]).into(),
                 Codec::Utf8,
             ),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced()),

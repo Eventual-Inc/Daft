@@ -2023,6 +2023,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-json",
  "daft-functions-list",
+ "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-hash",
  "daft-image",
@@ -2340,6 +2341,18 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "indexmap 2.8.0",
+ "serde",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-temporal"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "paste",
  "serde",
  "typetag",
 ]

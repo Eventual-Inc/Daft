@@ -14,13 +14,14 @@ import daft.exceptions
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
+    PyPartitionField,
     PyPushdowns,
     S3Config,
     ScanTask,
     StorageConfig,
 )
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import PyPartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def get_s3_bucket_region(bucket_name):
+def get_s3_bucket_region(bucket_name: str) -> str | None:
     # When making a https request to https://{bucket_name}.s3.amazonaws.com/, aws returns either a 200 response, 403 response, or 404 response.
     # In the header of the 200 and 403 responses, there is an `x-amz-bucket-region` field from which we can extract the bucket's region.
     url = f"https://{bucket_name}.s3.amazonaws.com"

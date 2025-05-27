@@ -16,8 +16,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum CountMode {
+    #[serde(alias = "all")]
     All = 1,
+    #[serde(alias = "valid")]
     Valid = 2,
+    #[serde(alias = "null")]
     Null = 3,
 }
 

@@ -65,13 +65,7 @@ pub(crate) fn native_parquet_writer_supported(
     if !matches!(file_format, FileFormat::Parquet) {
         return Ok(false);
     }
-    // TODO(desmond): Currently we only support local writes.
-    // TODO(desmond): We return false on an error because S3n is incorrectly reported to be unsupported
-    // in parse_url. I'll fix this in another PR.
-    let source_type = match parse_url(root_dir) {
-        Ok((st, _)) => st,
-        _ => return Ok(false),
-    };
+    let (source_type, _) = parse_url(root_dir)?;
     match source_type {
         SourceType::File => {}
         SourceType::S3 if remote_writes_enabled => {}

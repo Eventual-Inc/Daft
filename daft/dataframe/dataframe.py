@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     import torch
 
     from daft.io import DataCatalogTable, DataSink
+    from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
 
 if sys.version_info < (3, 10):
@@ -171,9 +172,8 @@ class DataFrame:
         else:
             return self._result_cache.value
 
-    def _broadcast_query_plan(self):
+    def _broadcast_query_plan(self) -> None:
         from daft import dashboard
-        from daft.dataframe.display import MermaidFormatter
 
         if not dashboard._should_run():
             return
@@ -181,18 +181,10 @@ class DataFrame:
         plan_time_start = _utc_now()
         optimized_plan = self._builder.optimize()._builder.repr_json(True)
         plan_time_end = _utc_now()
-        is_cached = self._result_cache is not None
-        mermaid_plan: str = MermaidFormatter(
-            builder=self.__builder,
-            show_all=True,
-            simple=False,
-            is_cached=is_cached,
-        )._repr_markdown_()
 
         dashboard.broadcast_query_information(
             unoptimized_plan=unoptimized_plan,
             optimized_plan=optimized_plan,
-            mermaid_plan=mermaid_plan,
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
         )
@@ -464,7 +456,7 @@ class DataFrame:
     @DataframePublicAPI
     def iter_partitions(
         self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
-    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
+    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.recordbatch object (if using Python runner backend)
@@ -590,7 +582,7 @@ class DataFrame:
         return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
 
     @classmethod
-    def _from_pydict(cls, data: Dict[str, InputListType]) -> "DataFrame":
+    def _from_pydict(cls, data: Mapping[str, InputListType]) -> "DataFrame":
         """Creates a DataFrame from a Python dictionary."""
         column_lengths = {key: len(data[key]) for key in data}
         if len(set(column_lengths.values())) > 1:
@@ -664,7 +656,7 @@ class DataFrame:
         Returns:
             DataFrame: Daft DataFrame with "column_name" and "type" fields.
         """
-        pydict: Dict = {"column_name": [], "type": []}
+        pydict: dict[str, list[str]] = {"column_name": [], "type": []}
         for field in schema:
             pydict["column_name"].append(field.name)
             pydict["type"].append(str(field.dtype))
@@ -879,7 +871,9 @@ class DataFrame:
             deleted_files = []
 
         schema = table.schema()
-        partitioning: Dict[str, list] = {schema.find_field(field.source_id).name: [] for field in table.spec().fields}
+        partitioning: Dict[str, list[Any]] = {
+            schema.find_field(field.source_id).name: [] for field in table.spec().fields
+        }
 
         for data_file in data_files:
             operations.append("ADD")
@@ -1017,7 +1011,7 @@ class DataFrame:
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
-        def _create_metadata_param(metadata: Optional[Dict[str, str]]):
+        def _create_metadata_param(metadata: Optional[Dict[str, str]]) -> Any:
             """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
 
             Args:
@@ -1043,7 +1037,7 @@ class DataFrame:
 
         # Retrieve table_uri and storage_options from various backends
         table_uri: str
-        storage_options: dict
+        storage_options: dict[str, str]
 
         if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
@@ -1195,7 +1189,7 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write_sink(self, sink: "DataSink[T]") -> "DataFrame":
+    def write_sink(self, sink: "DataSink[WriteResultType]") -> "DataFrame":
         """Writes the DataFrame to the given DataSink.
 
         Args:
@@ -1229,7 +1223,7 @@ class DataFrame:
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
@@ -2162,7 +2156,7 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def drop_nan(self, *cols: ColumnInputType):
+    def drop_nan(self, *cols: ColumnInputType) -> "DataFrame":
         """Drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
 
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
@@ -2234,7 +2228,7 @@ class DataFrame:
         )
 
     @DataframePublicAPI
-    def drop_null(self, *cols: ColumnInputType):
+    def drop_null(self, *cols: ColumnInputType) -> "DataFrame":
         """Drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
 
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
@@ -3226,7 +3220,7 @@ class DataFrame:
             print(preview_formatter)
         return None
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Returns the count of rows when dataframe is materialized.
 
         If dataframe is not materialized yet, raises a runtime error.
@@ -3467,7 +3461,7 @@ class DataFrame:
         self,
         meta: Union[
             "pandas.DataFrame",
-            "pandas.Series",
+            "pandas.Series[Any]",
             Dict[str, Any],
             Iterable[Any],
             Tuple[Any],
@@ -3561,7 +3555,7 @@ class GroupedDataFrame:
     df: DataFrame
     group_by: ExpressionsProjection
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         resolved_groupby_schema = self.group_by.resolve_schema(self.df._builder.schema())
         for field, e in zip(resolved_groupby_schema, self.group_by):
             if field.dtype == DataType.null():
