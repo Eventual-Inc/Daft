@@ -2,8 +2,6 @@
 # requires-python = ">=3.12"
 # dependencies = ["PyGithub"]
 # ///
-from __future__ import annotations
-
 import argparse
 import os
 import pathlib

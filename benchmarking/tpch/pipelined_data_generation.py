@@ -11,8 +11,6 @@ Example call:
         --parallelism=8
 """
 
-from __future__ import annotations
-
 import argparse
 import glob
 import logging
