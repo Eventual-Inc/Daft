@@ -1033,6 +1033,12 @@ impl From<config::IOConfig> for IOConfig {
     }
 }
 
+impl From<IOConfig> for config::IOConfig {
+    fn from(value: IOConfig) -> Self {
+        value.config
+    }
+}
+
 #[pymethods]
 impl HTTPConfig {
     #[new]

@@ -136,7 +136,7 @@ class GlueCatalog(Catalog):
     def name(self) -> str:
         return self._name
 
-    def _create_namespace(self, identifier: Identifier):
+    def _create_namespace(self, identifier: Identifier) -> None:
         try:
             self._client.create_database(
                 DatabaseInput={
@@ -155,13 +155,13 @@ class GlueCatalog(Catalog):
         # Table creation implementation will be added later
         raise NotImplementedError("Table creation not yet implemented")
 
-    def _drop_namespace(self, identifier: Identifier):
+    def _drop_namespace(self, identifier: Identifier) -> None:
         try:
             self._client.delete_database(Name=str(identifier))
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Namespace {identifier} not found")
 
-    def _drop_table(self, identifier: Identifier):
+    def _drop_table(self, identifier: Identifier) -> None:
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
         database_name: str = str(identifier[0])
@@ -292,7 +292,7 @@ class GlueCsvTable(GlueTable):
     _hive_partitioning: bool = False
     _hive_partitioning_cols: list[str] = []
 
-    def __init__(self):
+    def __init__(self) -> None:
         raise ValueError("GlueCsvTable.__init__() not supported!")
 
     @classmethod
@@ -322,7 +322,7 @@ class GlueCsvTable(GlueTable):
 
         return t
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         from daft.io._csv import read_csv
 
         return read_csv(
@@ -341,7 +341,7 @@ class GlueCsvTable(GlueTable):
             hive_partitioning=self._hive_partitioning,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
         df.write_csv(
             root_dir=self._path,
             write_mode=mode,
@@ -358,7 +358,7 @@ class GlueParquetTable(GlueTable):
     _hive_partitioning: bool = False
     _hive_partitioning_cols: list[str] = []
 
-    def __init__(self):
+    def __init__(self) -> None:
         raise ValueError("GlueParquetTable.__init__() not supported!")
 
     @classmethod
@@ -384,7 +384,7 @@ class GlueParquetTable(GlueTable):
 
         return t
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         from daft.io._parquet import read_parquet
 
         return read_parquet(
@@ -399,7 +399,7 @@ class GlueParquetTable(GlueTable):
             schema_hints=None,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
         df.write_parquet(
             root_dir=self._path,
             compression="snappy",
@@ -415,7 +415,7 @@ class GlueIcebergTable(GlueTable):
     _io_config: IOConfig | None
     _pyiceberg_table: PyIcebergTable
 
-    def __init__(self):
+    def __init__(self) -> None:
         raise ValueError("GlueIcebergTable.__init__() not supported!")
 
     @classmethod
@@ -451,14 +451,14 @@ class GlueIcebergTable(GlueTable):
         # the pyiceberg table will hold a ref to gc
         return gc._convert_glue_to_iceberg(table)
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         from daft.io._iceberg import read_iceberg
 
         return read_iceberg(
             table=self._pyiceberg_table, snapshot_id=options.get("snapshot_id"), io_config=self._io_config
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
         df.write_iceberg(self._pyiceberg_table, mode=mode)
 
 
@@ -468,7 +468,7 @@ class GlueDeltaTable(GlueTable):
     _io_config: IOConfig | None
     _unity_catalog_table: UnityCatalogTable
 
-    def __init__(self):
+    def __init__(self) -> None:
         raise ValueError("GlueDeltaTable.__init__() not supported!")
 
     @classmethod
@@ -509,7 +509,7 @@ class GlueDeltaTable(GlueTable):
 
         return UnityCatalogTable(table_info, table_uri, io_config)
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         from daft.io._deltalake import read_deltalake
 
         return read_deltalake(
@@ -518,7 +518,7 @@ class GlueDeltaTable(GlueTable):
             io_config=self._io_config,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options) -> None:
+    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
         raise NotImplementedError
 
 

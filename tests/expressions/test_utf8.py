@@ -78,3 +78,16 @@ def test_extract(test_expression):
         sql_name="regexp_extract",
         args=[regex],
     )
+
+
+def test_substr(test_expression):
+    test_data = ["daft", "query", "engine"]
+    expected = [s[2:] for s in test_data]
+    test_expression(
+        data=test_data,
+        expected=expected,
+        name="substr",
+        namespace="str",
+        sql_name="substr",
+        args=[2, None],
+    )

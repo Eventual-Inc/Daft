@@ -10,6 +10,9 @@ Daft currently supports:
 
 3. **Multi-cloud Support:** Daft supports reading Hudi tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 
+
+A detailed Apache Hudi roadmap for Daft can be found on [our Github Issues page](https://github.com/Eventual-Inc/Daft/issues/4389). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
+
 ## Installing Daft with Apache Hudi Support
 
 Daft supports installing Hudi through optional dependency.
@@ -32,6 +35,12 @@ To read from an Apache Hudi table, use the [`daft.read_hudi()`][daft.read_hudi] 
     df = df.where(df["foo"] > 5)
     df.show()
     ```
+
+Currently there are limitations of reading Hudi tables:
+
+- Only support snapshot read of Copy-on-Write tables
+- Only support reading table version 5 & 6 (tables created using release 0.12.x - 0.15.x)
+- Table must not have `hoodie.datasource.write.drop.partition.columns=true`
 
 ## Type System
 
@@ -59,18 +68,3 @@ When reading from a Hudi table into Daft:
 | `struct(fields)`            | [`daft.DataType.struct(fields)`][daft.datatype.DataType.struct] |
 | `list(child_type)`          | [`daft.DataType.list(child_type)`][daft.datatype.DataType.list] |
 | `map(K, V)`                 | [`daft.DataType.struct({"key": K, "value": V})`][daft.datatype.DataType.struct] |
-
-## Roadmap
-
-Currently there are limitations of reading Hudi tables
-
-- Only support snapshot read of Copy-on-Write tables
-- Only support reading table version 5 & 6 (tables created using release 0.12.x - 0.15.x)
-- Table must not have `hoodie.datasource.write.drop.partition.columns=true`
-
-Support for more Hudi features are tracked as below:
-
-1. Support incremental query for Copy-on-Write tables [issue](https://github.com/Eventual-Inc/Daft/issues/2153)).
-2. Read support for 1.0 table format ([issue](https://github.com/Eventual-Inc/Daft/issues/2152)).
-3. Read support (snapshot) for Merge-on-Read tables ([issue](https://github.com/Eventual-Inc/Daft/issues/2154)).
-4. Write support ([issue](https://github.com/Eventual-Inc/Daft/issues/2155)).

@@ -123,7 +123,7 @@ Daft supports diverse input sources and output sinks, this section covers lower-
         filters: ["!^_"]
         heading_level: 3
 
-::: daft.io.sink.WriteOutput
+::: daft.io.sink.WriteResult
     options:
         filters: ["!^_"]
         heading_level: 3

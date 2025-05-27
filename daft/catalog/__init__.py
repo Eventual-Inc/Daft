@@ -233,7 +233,7 @@ class Catalog(ABC):
         """Returns the catalog's name."""
 
     @abstractmethod
-    def _create_namespace(self, ident: Identifier):
+    def _create_namespace(self, ident: Identifier) -> None:
         """Create a namespace in the catalog, erroring if the namespace already exists."""
 
     @abstractmethod
@@ -241,7 +241,7 @@ class Catalog(ABC):
         """Check if a namespace exists in the catalog."""
 
     @abstractmethod
-    def _drop_namespace(self, ident: Identifier):
+    def _drop_namespace(self, ident: Identifier) -> None:
         """Remove a namespace from the catalog, erroring if the namespace did not exist."""
 
     @abstractmethod
@@ -257,7 +257,7 @@ class Catalog(ABC):
         """Check if a table exists in the catalog."""
 
     @abstractmethod
-    def _drop_table(self, ident: Identifier):
+    def _drop_table(self, ident: Identifier) -> None:
         """Remove a table from the catalog, erroring if the table did not exist."""
 
     @abstractmethod
@@ -378,9 +378,9 @@ class Catalog(ABC):
             if client is not None and session is not None:
                 raise ValueError("Can provide either a client or session but not both.")
             elif client is not None:
-                return S3Catalog.from_client(table_bucket_arn, client)  # type: ignore
+                return S3Catalog.from_client(table_bucket_arn, client)
             elif session is not None:
-                return S3Catalog.from_session(table_bucket_arn, session)  # type: ignore
+                return S3Catalog.from_session(table_bucket_arn, session)
             else:
                 return S3Catalog.from_arn(table_bucket_arn)
         except ImportError:
@@ -413,9 +413,9 @@ class Catalog(ABC):
             if client is not None and session is not None:
                 raise ValueError("Can provide either a client or session but not both.")
             elif client is not None:
-                return GlueCatalog.from_client(name, client)  # type: ignore
+                return GlueCatalog.from_client(name, client)
             elif session is not None:
-                return GlueCatalog.from_session(name, session)  # type: ignore
+                return GlueCatalog.from_session(name, session)
             else:
                 raise ValueError("Must provide either a client or session.")
         except ImportError:
@@ -439,7 +439,7 @@ class Catalog(ABC):
     # create_*
     ###
 
-    def create_namespace(self, identifier: Identifier | str):
+    def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in this catalog.
 
         Args:
@@ -526,13 +526,13 @@ class Catalog(ABC):
     # drop_*
     ###
 
-    def drop_namespace(self, identifier: Identifier | str):
+    def drop_namespace(self, identifier: Identifier | str) -> None:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
 
         self._drop_namespace(identifier)
 
-    def drop_table(self, identifier: Identifier | str):
+    def drop_table(self, identifier: Identifier | str) -> None:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
 

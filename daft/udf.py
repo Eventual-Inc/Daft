@@ -3,17 +3,17 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import daft
-from daft.daft import PyDataType, ResourceRequest
+from daft.daft import PyDataType, PySeries, ResourceRequest
 from daft.datatype import DataType, DataTypeLike
 from daft.dependencies import np, pa
 from daft.expressions import Expression
-from daft.series import PySeries, Series
+from daft.series import Series
 
 InitArgsType = Optional[Tuple[Tuple[Any, ...], Dict[str, Any]]]
-UdfReturnType = Union[Series, list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
+UdfReturnType = Union[Series, List[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
 UserDefinedPyFunc = Callable[..., UdfReturnType]
 UserDefinedPyFuncLike = Union[UserDefinedPyFunc, type]
 
@@ -97,7 +97,7 @@ def run_udf(
     ), "Computed series must map 1:1 to the expressions that were evaluated"
     function_parameter_name_to_index = {name: i for i, name in enumerate(expressions)}
 
-    def get_args_for_slice(start: int, end: int):
+    def get_args_for_slice(start: int, end: int) -> tuple[list[Series | Any], dict[str, Any]]:
         args = []
         must_slice = start > 0 or end < len(evaluated_expressions[0])
         for name in arg_keys:
@@ -165,13 +165,14 @@ def run_udf(
         result_series = Series.concat(results)  # type: ignore
         return result_series.rename(name).cast(return_dtype)._series
     elif isinstance(results[0], list):
-        result_list = [x for res in results for x in res]  # type: ignore
+        result_list = [x for res in results for x in res]
         if return_dtype == DataType.python():
             return Series.from_pylist(result_list, name=name, pyobj="force")._series
         else:
             return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
-    elif np.module_available() and isinstance(results[0], np.ndarray):
-        result_np = np.concatenate(results)
+    elif np.module_available() and isinstance(results[0], np.ndarray):  # type: ignore[attr-defined]
+        np_results = cast("list[np.ndarray[Any, Any]]", results)
+        result_np = np.concatenate(np_results)
         return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
         result_pa = pa.concat_arrays(results)
@@ -222,7 +223,7 @@ class UDF:
     resource_request: ResourceRequest | None = None
     batch_size: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Analogous to the @functools.wraps(self.inner) pattern
         # This will swap out identifiers on `self` to match `self.inner`. Most notably, this swaps out
         # self.__module__ and self.__qualname__, which is used in `__reduce__` during serialization.
@@ -234,7 +235,7 @@ class UDF:
         else:
             self.wrapped_inner = UninitializedUdf(lambda: self.inner)
 
-    def __call__(self, *args, **kwargs) -> Expression:
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
 
         bound_args = self._bind_args(*args, **kwargs)
@@ -297,7 +298,7 @@ class UDF:
 
         return dataclasses.replace(self, resource_request=new_resource_request, batch_size=new_batch_size)
 
-    def _validate_init_args(self):
+    def _validate_init_args(self) -> None:
         if isinstance(self.inner, type):
             init_sig = inspect.signature(self.inner.__init__)  # type: ignore
             if (
@@ -312,7 +313,7 @@ class UDF:
             if self.init_args is not None:
                 raise ValueError("Function UDFs cannot have init args.")
 
-    def _bind_args(self, *args, **kwargs) -> BoundUDFArgs:
+    def _bind_args(self, *args: Any, **kwargs: Any) -> BoundUDFArgs:
         if isinstance(self.inner, type):
             sig = inspect.signature(self.inner.__call__)
             bound_args = sig.bind(
@@ -346,7 +347,7 @@ class UDF:
         """
         return dataclasses.replace(self, concurrency=concurrency)
 
-    def with_init_args(self, *args, **kwargs) -> UDF:
+    def with_init_args(self, *args: Any, **kwargs: Any) -> UDF:
         """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
 
         Examples:
@@ -524,8 +525,8 @@ def udf(
 
     def _udf(f: UserDefinedPyFuncLike) -> UDF:
         # Grab a name for the UDF. It **should** be unique.
-        module_name = getattr(f, "__module__", "")  # type: ignore[call-overload]
-        qual_name = getattr(f, "__qualname__")  # type: ignore[call-overload]
+        module_name = getattr(f, "__module__", "")
+        qual_name = getattr(f, "__qualname__")
 
         if module_name:
             name = f"{module_name}.{qual_name}"

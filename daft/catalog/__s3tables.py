@@ -137,7 +137,7 @@ class S3Catalog(Catalog):
     # create_*
     ###
 
-    def _create_namespace(self, identifier: Identifier):
+    def _create_namespace(self, identifier: Identifier) -> None:
         try:
             path = S3Path.from_ident(identifier)
             self._client.create_namespace(
@@ -173,7 +173,7 @@ class S3Catalog(Catalog):
     # has_*
     ###
 
-    def _has_namespace(self, identifier: Identifier):
+    def _has_namespace(self, identifier: Identifier) -> bool:
         try:
             _ = self._client.get_namespace(
                 namespace=str(identifier),
@@ -186,7 +186,7 @@ class S3Catalog(Catalog):
             else:
                 raise ex
 
-    def _has_table(self, identifier: Identifier):
+    def _has_table(self, identifier: Identifier) -> bool:
         try:
             self._get_table(identifier)
             return True
@@ -197,7 +197,7 @@ class S3Catalog(Catalog):
     # drop_*
     ###
 
-    def _drop_namespace(self, identifier: Identifier):
+    def _drop_namespace(self, identifier: Identifier) -> None:
         path = S3Path.from_ident(identifier)
         try:
             self._client.delete_namespace(
@@ -207,7 +207,7 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to drop namespace: {e}") from e
 
-    def _drop_table(self, identifier: Identifier):
+    def _drop_table(self, identifier: Identifier) -> None:
         path = S3Path.from_ident(identifier)
         try:
             self._client.delete_table(
@@ -273,7 +273,7 @@ class S3Catalog(Catalog):
             "maxTables": 1000,
         }
 
-        def to_ident(table_summary) -> Identifier:
+        def to_ident(table_summary: TableSummaryTypeDef) -> Identifier:
             return Identifier(*table_summary["namespace"], table_summary["name"])
 
         # we must split the pattern and use the last part as the table preefix.
@@ -363,7 +363,7 @@ def _to_metadata(schema: Schema) -> TableMetadataTypeDef:
     return {
         "iceberg": {
             "schema": {
-                "fields": [_to_field(f) for f in ic_schema.fields],  # type: ignore
+                "fields": [_to_field(f) for f in ic_schema.fields],
             }
         }
     }

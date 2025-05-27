@@ -43,7 +43,7 @@ class UnityCatalog(Catalog):
     # create_*
     ###
 
-    def _create_namespace(self, identifier: Identifier):
+    def _create_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Unity create_namespace not yet supported.")
 
     def _create_table(
@@ -58,10 +58,10 @@ class UnityCatalog(Catalog):
     # drop_*
     ###
 
-    def _drop_namespace(self, identifier: Identifier):
+    def _drop_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Unity drop_namespace not yet supported.")
 
-    def _drop_table(self, identifier: Identifier):
+    def _drop_table(self, identifier: Identifier) -> None:
         raise NotImplementedError("Unity drop_table not yet supported.")
 
     ###
@@ -84,7 +84,7 @@ class UnityCatalog(Catalog):
     def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
         if pattern is None or pattern == "":
             return [
-                tbl
+                Identifier.from_str(tbl)
                 for cat in self._inner.list_catalogs()
                 for schema in self._inner.list_schemas(cat)
                 for tbl in self._inner.list_tables(schema)
@@ -108,10 +108,10 @@ class UnityCatalog(Catalog):
     ###
     # has_.*
     ###
-    def _has_namespace(self, ident):
+    def _has_namespace(self, ident: Identifier) -> bool:
         raise NotImplementedError("Unity has_namespace not yet supported.")
 
-    def _has_table(self, ident):
+    def _has_table(self, ident: Identifier) -> bool:
         try:
             self._inner.load_table(str(ident))
             return True
@@ -143,7 +143,7 @@ class UnityTable(Table):
 
     @property
     def name(self) -> str:
-        return self._inner.table_info.name  # type: ignore
+        return self._inner.table_info.name
 
     @staticmethod
     def _from_obj(obj: object) -> UnityTable:

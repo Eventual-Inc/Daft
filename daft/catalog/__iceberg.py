@@ -51,7 +51,7 @@ class IcebergCatalog(Catalog):
     # create_*
     ###
 
-    def _create_namespace(self, identifier: Identifier):
+    def _create_namespace(self, identifier: Identifier) -> None:
         ident = _to_pyiceberg_ident(identifier)
         self._inner.create_namespace(ident)
 
@@ -70,11 +70,11 @@ class IcebergCatalog(Catalog):
     # drop_*
     ###
 
-    def _drop_namespace(self, identifier: Identifier):
+    def _drop_namespace(self, identifier: Identifier) -> None:
         ident = _to_pyiceberg_ident(identifier)
         self._inner.drop_namespace(ident)
 
-    def _drop_table(self, identifier: Identifier):
+    def _drop_table(self, identifier: Identifier) -> None:
         ident = _to_pyiceberg_ident(identifier)
         self._inner.drop_table(ident)
 

@@ -25,7 +25,7 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install -U jupyter papermill
+        pip install -U jupyter papermill matplotlib
     - name: Run notebooks in docs
       run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
     - name: Run notebooks in tutorials

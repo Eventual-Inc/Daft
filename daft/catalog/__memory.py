@@ -35,7 +35,7 @@ class MemoryCatalog(Catalog):
     # create_*
     ###
 
-    def _create_namespace(self, identifier: Identifier):
+    def _create_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Memory create_namespace not yet supported.")
 
     def _create_table(
@@ -50,24 +50,24 @@ class MemoryCatalog(Catalog):
     # drop_*
     ###
 
-    def _drop_namespace(self, identifier: Identifier):
+    def _drop_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Memory drop_namespace not yet supported.")
 
-    def _drop_table(self, identifier: Identifier):
+    def _drop_table(self, identifier: Identifier) -> None:
         raise NotImplementedError("Memory drop_table not yet supported.")
 
     ###
     # has_*
     ###
 
-    def _has_namespace(self, identifier: Identifier):
+    def _has_namespace(self, identifier: Identifier) -> bool:
         prefix = str(identifier)
         for ident in self._tables.keys():
             if ident.startswith(prefix):
                 return True
         return False
 
-    def _has_table(self, identifier: Identifier):
+    def _has_table(self, identifier: Identifier) -> bool:
         return str(identifier) in self._tables
 
     ###

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
@@ -413,13 +413,13 @@ def write_lance(
     path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
+    kwargs: dict[str, Any] | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
 
 
 def write_data_sink(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    sink: DataSink,
+    sink: DataSink[Any],
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.data_sink_write(input, sink)

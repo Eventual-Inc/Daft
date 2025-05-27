@@ -30,7 +30,7 @@ class RaySwordfishWorker:
     It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
     """
 
-    def __init__(self, daft_execution_config: PyDaftExecutionConfig):
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig) -> None:
         self.native_executor = NativeExecutor()
         self.daft_execution_config = daft_execution_config
 
@@ -40,8 +40,8 @@ class RaySwordfishWorker:
         psets: dict[str, list[ray.ObjectRef]],
     ) -> AsyncGenerator[MicroPartition, None]:
         """Run a plan on swordfish and yield partitions."""
-        psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
-        psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+        psets_gathered = {k: await asyncio.gather(*v) for k, v in psets.items()}
+        psets_mp = {k: [v._micropartition for v in v] for k, v in psets_gathered.items()}
         async for partition in self.native_executor.run_async(plan, psets_mp, self.daft_execution_config, None):
             if partition is None:
                 break
@@ -63,7 +63,7 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
-    done_callback: Callable[[ray.ObjectRef], None]
+    done_callback: Callable[[asyncio.Task[RayPartitionRef]], None]
     task_memory_cost: int
 
     async def _get_result(self) -> RayPartitionRef:
@@ -80,7 +80,7 @@ class RaySwordfishTaskHandle:
         task.add_done_callback(self.done_callback)
         return await task
 
-    def cancel(self):
+    def cancel(self) -> None:
         ray.cancel(self.result_handle)
 
 
@@ -96,7 +96,7 @@ class RaySwordfishWorkerHandle:
         actor_handle: ray.actor.ActorHandle,
         num_cpus: int,
         total_memory_bytes: int,
-    ):
+    ) -> None:
         self.actor_node_id = actor_node_id
         self.actor_handle = actor_handle
         self.num_cpus = num_cpus
@@ -115,7 +115,7 @@ class RaySwordfishWorkerHandle:
     def get_available_memory_bytes(self) -> int:
         return self.available_memory_bytes
 
-    def add_back_memory(self, memory_bytes: int):
+    def add_back_memory(self, memory_bytes: int) -> None:
         self.available_memory_bytes += memory_bytes
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
@@ -123,7 +123,7 @@ class RaySwordfishWorkerHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
         memory_to_return = task.estimated_memory_cost()
 
-        def done_callback(_result: ray.ObjectRef):
+        def done_callback(_result: asyncio.Task[RayPartitionRef]) -> None:
             self.add_back_memory(memory_to_return)
 
         return RaySwordfishTaskHandle(
@@ -133,7 +133,7 @@ class RaySwordfishWorkerHandle:
             task.estimated_memory_cost(),
         )
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         ray.kill(self.actor_handle)
 
 
@@ -144,12 +144,12 @@ class RaySwordfishWorkerManager:
     It is also responsible for autoscaling the number of workers.
     """
 
-    def __init__(self, daft_execution_config: PyDaftExecutionConfig):
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig) -> None:
         self.workers: Dict[str, RaySwordfishWorkerHandle] = {}
         self.daft_execution_config = daft_execution_config
         self._initialize_workers()
 
-    def _initialize_workers(self):
+    def _initialize_workers(self) -> None:
         for node in ray.nodes():
             if (
                 "Resources" in node
@@ -158,7 +158,7 @@ class RaySwordfishWorkerManager:
                 and node["Resources"]["CPU"] > 0
                 and node["Resources"]["memory"] > 0
             ):
-                actor = RaySwordfishWorker.options(
+                actor = RaySwordfishWorker.options(  # type: ignore[attr-defined]
                     num_cpus=node["Resources"]["CPU"],
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=node["NodeID"],
@@ -185,12 +185,12 @@ class RaySwordfishWorkerManager:
             for worker in self.workers.values()
         ]
 
-    def try_autoscale(self, num_workers: int):
+    def try_autoscale(self, num_workers: int) -> None:
         """Try to autoscale the number of workers. this is a hint to the autoscaler to add more workers if needed."""
         ray.autoscaler.sdk.request_resources(
             num_cpus=num_workers,
         )
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         for worker in self.workers.values():
             worker.shutdown()

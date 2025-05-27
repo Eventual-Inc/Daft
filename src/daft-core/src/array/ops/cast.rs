@@ -42,7 +42,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
-        Int32Array, Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
+        Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -378,7 +378,147 @@ impl DurationArray {
         }
     }
 
-    pub fn cast_to_days(&self) -> DaftResult<Int32Array> {
+    pub fn cast_to_seconds(&self) -> DaftResult<Int64Array> {
+        let tu = match self.data_type() {
+            DataType::Duration(tu) => tu,
+            _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
+        };
+        let seconds = match tu {
+            TimeUnit::Seconds => self.physical.clone(),
+            TimeUnit::Milliseconds => self
+                .physical
+                .div(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                "MicrosecondsPerSecond",
+                vec![1_000_000],
+            )))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                "NanosecondsPerSecond",
+                vec![1_000_000_000],
+            )))?,
+        };
+        Ok(seconds)
+    }
+
+    pub fn cast_to_milliseconds(&self) -> DaftResult<Int64Array> {
+        let tu = match self.data_type() {
+            DataType::Duration(tu) => tu,
+            _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
+        };
+        let milliseconds = match tu {
+            TimeUnit::Seconds => self
+                .physical
+                .mul(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
+            TimeUnit::Milliseconds => self.physical.clone(),
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                "MicrosecondsPerMillisecond",
+                vec![1_000],
+            )))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                "NanosecondsPerMillisecond",
+                vec![1_000_000],
+            )))?,
+        };
+        Ok(milliseconds)
+    }
+
+    pub fn cast_to_microseconds(&self) -> DaftResult<Int64Array> {
+        let tu = match self.data_type() {
+            DataType::Duration(tu) => tu,
+            _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
+        };
+        let microseconds = match tu {
+            TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+                "MicrosecondsPerSecond",
+                vec![1_000_000],
+            )))?,
+            TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                "MicrosecondsPerMillisecond",
+                vec![1_000],
+            )))?,
+            TimeUnit::Microseconds => self.physical.clone(),
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                "NanosecondsPerMicrosecond",
+                vec![1_000],
+            )))?,
+        };
+        Ok(microseconds)
+    }
+
+    pub fn cast_to_nanoseconds(&self) -> DaftResult<Int64Array> {
+        {
+            let tu = match self.data_type() {
+                DataType::Duration(tu) => tu,
+                _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
+            };
+            let nanoseconds = match tu {
+                TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+                    "NanosecondsPerSecond",
+                    vec![1_000_000_000],
+                )))?,
+                TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                    "NanosecondsPerMillisecond",
+                    vec![1_000_000],
+                )))?,
+                TimeUnit::Microseconds => self.physical.mul(&Int64Array::from((
+                    "NanosecondsPerMicrosecond",
+                    vec![1_000],
+                )))?,
+                TimeUnit::Nanoseconds => self.physical.clone(),
+            };
+            Ok(nanoseconds)
+        }
+    }
+    pub fn cast_to_minutes(&self) -> DaftResult<Int64Array> {
+        let tu = match self.data_type() {
+            DataType::Duration(tu) => tu,
+            _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
+        };
+        let minutes = match tu {
+            TimeUnit::Seconds => self
+                .physical
+                .div(&Int64Array::from(("SecondsInMinute", vec![60])))?,
+            TimeUnit::Milliseconds => self
+                .physical
+                .div(&Int64Array::from(("MillisecondsInMinute", vec![60 * 1000])))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                "MicrosecondsInMinute",
+                vec![60 * 1_000_000],
+            )))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                "NanosecondsInMinute",
+                vec![60 * 1_000_000_000],
+            )))?,
+        };
+        Ok(minutes)
+    }
+
+    pub fn cast_to_hours(&self) -> DaftResult<Int64Array> {
+        let tu = match self.data_type() {
+            DataType::Duration(tu) => tu,
+            _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
+        };
+        let hours = match tu {
+            TimeUnit::Seconds => self
+                .physical
+                .div(&Int64Array::from(("SecondsInHour", vec![60 * 60])))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
+                "MillisecondsInHour",
+                vec![60 * 60 * 1000],
+            )))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                "MicrosecondsInHour",
+                vec![60 * 60 * 1_000_000],
+            )))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                "NanosecondsInHour",
+                vec![60 * 60 * 1_000_000_000],
+            )))?,
+        };
+        Ok(hours)
+    }
+
+    pub fn cast_to_days(&self) -> DaftResult<Int64Array> {
         let tu = match self.data_type() {
             DataType::Duration(tu) => tu,
             _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
@@ -386,29 +526,21 @@ impl DurationArray {
         let days = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsInDay", vec![60 * 60 * 24])))?,
+                .div(&Int64Array::from(("SecondsPerDay", vec![60 * 60 * 24])))?,
             TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
-                "MillisecondsInDay",
+                "MillisecondsPerDay",
                 vec![1_000 * 60 * 60 * 24],
             )))?,
             TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
-                "MicrosecondsInDay",
+                "MicrosecondsPerDay",
                 vec![1_000_000 * 60 * 60 * 24],
             )))?,
             TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
-                "NanosecondsInDay",
+                "NanosecondsPerDay",
                 vec![1_000_000_000 * 60 * 60 * 24],
             )))?,
         };
-        let days_i32 = cast(
-            days.data(),
-            &arrow2::datatypes::DataType::Int32,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?;
-        Int32Array::from_arrow(Field::new(self.name(), DataType::Int32).into(), days_i32)
+        Ok(days)
     }
 }
 

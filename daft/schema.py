@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Callable, Iterator
 
-from daft.daft import CsvParseOptions, JsonParseOptions
+from daft.daft import CsvParseOptions, JsonParseOptions, PySchema
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
 from daft.daft import read_csv_schema as _read_csv_schema
@@ -41,7 +41,7 @@ class Field:
         return Field._from_pyfield(pyfield)
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._field.name()
 
     @property
@@ -160,7 +160,7 @@ class Schema:
 
         return Schema._from_pyschema(self._schema.union(other._schema))
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(self) -> tuple[Callable[[PySchema], Schema], tuple[PySchema]]:
         return Schema._from_pyschema, (self._schema,)
 
     @classmethod

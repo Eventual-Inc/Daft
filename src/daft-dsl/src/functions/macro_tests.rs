@@ -1,10 +1,11 @@
 mod tests {
     use common_error::DaftError;
+    use daft_core::series::Series;
     use rstest::rstest;
 
     use crate::{
         functions::{FunctionArg, FunctionArgs},
-        lit, ExprRef,
+        lit, literal_value, ExprRef,
     };
 
     #[derive(FunctionArgs)]
@@ -16,21 +17,57 @@ mod tests {
     #[derive(FunctionArgs)]
     struct OptionalArgs<T> {
         arg1: T,
+        #[arg(optional)]
         arg2: Option<T>,
+        #[arg(optional)]
         arg3: Option<T>,
     }
 
     #[derive(FunctionArgs)]
     struct VariadicArgs<T> {
         arg1: T,
+        #[arg(variadic)]
         arg2: Vec<T>,
     }
 
     #[derive(FunctionArgs)]
     struct OptionalAndVariadicArgs<T> {
         arg1: T,
+        #[arg(variadic)]
         arg2: Vec<T>,
+        #[arg(optional)]
         arg3: Option<T>,
+    }
+
+    #[derive(FunctionArgs)]
+    struct LiteralArgs<T> {
+        arg1: T,
+        arg2: usize,
+    }
+
+    #[derive(FunctionArgs)]
+    struct OnlyLiteralArgs {
+        arg1: usize,
+    }
+
+    #[derive(FunctionArgs)]
+    struct OptionalLiteralArgs {
+        #[arg(optional)]
+        arg1: Option<usize>,
+    }
+
+    #[derive(FunctionArgs)]
+    struct VariadicLiteralArgs {
+        #[arg(variadic)]
+        arg1: Vec<usize>,
+    }
+
+    #[derive(FunctionArgs)]
+    struct RenamedArgs<T> {
+        #[arg(name = "arg2")]
+        arg1: T,
+        #[arg(name = "arg1")]
+        arg2: T,
     }
 
     #[rstest]
@@ -236,5 +273,136 @@ mod tests {
         assert_eq!(parsed_args.arg1, expected.0);
         assert_eq!(parsed_args.arg2, expected.1);
         assert_eq!(parsed_args.arg3, expected.2);
+    }
+
+    #[rstest]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::unnamed(lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::named("arg2", lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg1", lit(1)), FunctionArg::named("arg2", lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg2", lit(2)), FunctionArg::named("arg1", lit(1))],
+    )]
+    fn test_literal_valid(#[case] args: Vec<FunctionArg<ExprRef>>) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+
+        let parsed_args = LiteralArgs::try_from(function_args).expect("should succeed");
+        assert_eq!(parsed_args.arg1, lit(1));
+        assert_eq!(parsed_args.arg2, 2);
+    }
+
+    #[rstest]
+    #[case(
+        vec![FunctionArg::unnamed(literal_value(1).to_series()), FunctionArg::unnamed(literal_value(2).to_series())],
+    )]
+    #[case(
+        vec![FunctionArg::unnamed(literal_value(1).to_series()), FunctionArg::named("arg2", literal_value(2).to_series())],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg1", literal_value(1).to_series()), FunctionArg::named("arg2", literal_value(2).to_series())],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg2", literal_value(2).to_series()), FunctionArg::named("arg1", literal_value(1).to_series())],
+    )]
+    fn test_literal_series_valid(#[case] args: Vec<FunctionArg<Series>>) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+
+        let parsed_args = LiteralArgs::try_from(function_args).expect("should succeed");
+        assert_eq!(parsed_args.arg1, literal_value(1).to_series());
+        assert_eq!(parsed_args.arg2, 2);
+    }
+
+    #[rstest]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::unnamed(lit(-2))],
+    )]
+    fn test_literal_invalid(#[case] args: Vec<FunctionArg<ExprRef>>) {
+        let parse_args = || {
+            let function_args = FunctionArgs::try_new(args)?;
+            LiteralArgs::try_from(function_args)?;
+
+            Ok::<_, DaftError>(())
+        };
+
+        parse_args().expect_err("should fail");
+    }
+
+    #[rstest]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1))],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg1", lit(1))],
+    )]
+    fn test_only_literal_valid(#[case] args: Vec<FunctionArg<ExprRef>>) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+
+        let parsed_args = OnlyLiteralArgs::try_from(function_args).expect("should succeed");
+        assert_eq!(parsed_args.arg1, 1);
+    }
+
+    #[rstest]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1))], Some(1)
+    )]
+    #[case(
+        vec![FunctionArg::named("arg1", lit(1))], Some(1)
+    )]
+    #[case(
+        vec![], None
+    )]
+    fn test_optional_literal_valid(
+        #[case] args: Vec<FunctionArg<ExprRef>>,
+        #[case] expected: Option<usize>,
+    ) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+
+        let parsed_args = OptionalLiteralArgs::try_from(function_args).expect("should succeed");
+        assert_eq!(parsed_args.arg1, expected);
+    }
+
+    #[rstest]
+    #[case(
+        vec![], vec![]
+    )]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1))], vec![1]
+    )]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::unnamed(lit(2))], vec![1, 2]
+    )]
+    fn test_variadic_literal_valid(
+        #[case] args: Vec<FunctionArg<ExprRef>>,
+        #[case] expected: Vec<usize>,
+    ) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+
+        let parsed_args = VariadicLiteralArgs::try_from(function_args).expect("should succeed");
+        assert_eq!(parsed_args.arg1, expected);
+    }
+    #[rstest]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::unnamed(lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::unnamed(lit(1)), FunctionArg::named("arg1", lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg2", lit(1)), FunctionArg::named("arg1", lit(2))],
+    )]
+    #[case(
+        vec![FunctionArg::named("arg1", lit(2)), FunctionArg::named("arg2", lit(1))],
+    )]
+    fn test_renamed(#[case] args: Vec<FunctionArg<ExprRef>>) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+        let parsed_args = RenamedArgs::try_from(function_args).expect("should succeed");
+
+        assert_eq!(parsed_args.arg1, lit(1));
+        assert_eq!(parsed_args.arg2, lit(2));
     }
 }
