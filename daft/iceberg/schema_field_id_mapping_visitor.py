@@ -18,7 +18,7 @@ def _nested_field_to_daft_pyfield(field: NestedField) -> PyField:
     return PyField.create(field.name, DataType.from_arrow_type(schema_to_pyarrow(field.field_type))._dtype)
 
 
-class SchemaFieldIdMappingVisitor(SchemaVisitor[FieldIdMapping]):
+class SchemaFieldIdMappingVisitor(SchemaVisitor[FieldIdMapping]):  # type: ignore[misc]
     """Extracts a mapping of {field_id: PyField} from an Iceberg schema."""
 
     def schema(self, schema: Schema, struct_result: FieldIdMapping) -> FieldIdMapping:

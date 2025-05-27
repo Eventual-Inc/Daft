@@ -18,15 +18,15 @@ def get_tqdm(use_ray_tqdm: bool) -> Any:
         try:
             import sys
 
-            from IPython import get_ipython  # type: ignore[attr-defined]
+            from IPython import get_ipython
 
-            ipython = get_ipython()  # type: ignore[no-untyped-call]
+            ipython = get_ipython()
 
             # write to sys.stdout if in jupyter notebook
             # source: https://github.com/tqdm/tqdm/blob/74722959a8626fd2057be03e14dcf899c25a3fd5/tqdm/autonotebook.py#L14
             if ipython is not None and "IPKernelApp" in ipython.config:
 
-                class tqdm(_tqdm[Any]):  # type: ignore[no-redef]
+                class tqdm(_tqdm):  # type: ignore
                     def __init__(self, *args: Any, **kwargs: Any) -> None:
                         kwargs = kwargs.copy()
                         if "file" not in kwargs:
@@ -34,9 +34,9 @@ def get_tqdm(use_ray_tqdm: bool) -> Any:
 
                         super().__init__(*args, **kwargs)
             else:
-                tqdm = _tqdm  # type: ignore[misc,assignment]
+                tqdm = _tqdm
         except ImportError:
-            tqdm = _tqdm  # type: ignore[misc,assignment]
+            tqdm = _tqdm
 
     return tqdm
 

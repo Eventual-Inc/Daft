@@ -4,7 +4,7 @@ import dataclasses
 import functools
 import inspect
 import sys
-from typing import Any, Callable, Union, cast
+from typing import Any, Callable, Optional, Union, cast
 
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
@@ -18,8 +18,8 @@ from daft.dependencies import np, pa
 from daft.expressions import Expression
 from daft.series import Series
 
-InitArgsType: TypeAlias = Union[tuple[tuple[Any, ...], dict[str, Any]], None]
-UdfReturnType: TypeAlias = Union[Series, list[Any], "np.ndarray", "pa.Array", "pa.ChunkedArray"]
+InitArgsType: TypeAlias = Optional[tuple[tuple[Any, ...], dict[str, Any]]]
+UdfReturnType: TypeAlias = Union[Series, list[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
 UserDefinedPyFunc: TypeAlias = Callable[..., UdfReturnType]
 UserDefinedPyFuncLike: TypeAlias = Union[UserDefinedPyFunc, type]
 
@@ -177,7 +177,7 @@ def run_udf(
         else:
             return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
     elif np.module_available() and isinstance(results[0], np.ndarray):  # type: ignore[attr-defined]
-        np_results = cast("list[np.ndarray]", results)
+        np_results = cast("list[np.ndarray[Any, Any]]", results)
         result_np = np.concatenate(np_results)
         return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):

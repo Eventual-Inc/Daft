@@ -9,6 +9,7 @@ from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
 from daft.io import DataSink
 from daft.io.scan import ScanOperator
+from daft.io.sink import WriteResultType
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
 
     from daft.dataframe import DataFrame
     from daft.expressions.visitor import ExpressionVisitor
-    from daft.io.sink import T
     from daft.runners.runner import Runner
 
 R = TypeVar("R")
@@ -1756,7 +1756,7 @@ class LogicalPlanBuilder:
         io_config: IOConfig | None = None,
         kwargs: dict[str, Any] | None = None,
     ) -> LogicalPlanBuilder: ...
-    def datasink_write(self, name: str, sink: DataSink[T]) -> LogicalPlanBuilder: ...
+    def datasink_write(self, name: str, sink: DataSink[WriteResultType]) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def describe(self) -> LogicalPlanBuilder: ...
     def summarize(self) -> LogicalPlanBuilder: ...

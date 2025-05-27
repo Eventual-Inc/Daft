@@ -15,12 +15,13 @@ from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    import pyarrow as pa
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
     from pyiceberg.typedef import Record as IcebergRecord
+
+    from daft.dependencies import pa, pads, pq
 
 
 def get_missing_columns(data_schema: pa.Schema, iceberg_schema: IcebergSchema) -> ExpressionsProjection:
@@ -119,7 +120,7 @@ def partition_field_to_expr(field: IcebergPartitionField, schema: IcebergSchema)
     return transform_expr
 
 
-def to_partition_representation(value: Any):
+def to_partition_representation(value: Any) -> Any:
     """Converts a partition value to the format expected by Iceberg metadata.
 
     Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
@@ -142,7 +143,15 @@ def to_partition_representation(value: Any):
         return value
 
 
-def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id, schema, properties) -> DataFile:
+def make_iceberg_data_file(
+    file_path: str,
+    size: int,
+    metadata: pq.FileMetaData,
+    partition_record: IcebergRecord,
+    spec_id: int,
+    schema: IcebergSchema,
+    properties: dict[str, str],
+) -> DataFile:
     import pyiceberg
     from packaging.version import parse
     from pyiceberg.io.pyarrow import (
@@ -204,7 +213,7 @@ class IcebergWriteVisitors:
             self.parent = parent
             self.partition_record = partition_record
 
-        def __call__(self, written_file):
+        def __call__(self, written_file: pads.WrittenFile) -> None:
             file_path = f"{self.parent.protocol}://{written_file.path}"
             data_file = make_iceberg_data_file(
                 file_path,

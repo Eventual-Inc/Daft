@@ -642,30 +642,37 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        // todo: let's implement this directly into daft
-
-        // Convert the rename mappings into expressions
-        let rename_exprs = if !rename_columns_map.is_empty() {
+        // Create rename mappings from either format
+        let rename_map: HashMap<String, String> = if !rename_columns_map.is_empty() {
             // Use rename_columns_map if provided (legacy format)
             rename_columns_map
-                .into_iter()
-                .map(|(old_name, new_name)| {
-                    unresolved_col(old_name.as_str()).alias(new_name.as_str())
-                })
-                .collect()
         } else {
             // Use renames if provided (new format)
             renames
                 .into_iter()
-                .map(|rename| {
-                    unresolved_col(rename.col_name.as_str()).alias(rename.new_col_name.as_str())
-                })
+                .map(|rename| (rename.col_name, rename.new_col_name))
                 .collect()
         };
 
-        // Apply the rename expressions to the plan
+        // Get all column names from the schema and create expressions for each
+        let all_exprs: Vec<_> = plan
+            .schema()
+            .names()
+            .into_iter()
+            .map(|col_name| {
+                if let Some(new_name) = rename_map.get(&col_name) {
+                    // This column should be renamed
+                    unresolved_col(col_name.as_str()).alias(new_name.as_str())
+                } else {
+                    // This column should remain unchanged
+                    unresolved_col(col_name.as_str())
+                }
+            })
+            .collect();
+
+        // Apply the expressions to select all columns (with renames applied)
         let plan = plan
-            .select(rename_exprs)
+            .select(all_exprs)
             .wrap_err("Failed to apply rename expressions to logical plan")?;
 
         Ok(plan)

@@ -1812,7 +1812,7 @@ class Materialize(Generic[PartitionT]):
         self.materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
         self.results_buffer_size = results_buffer_size
 
-    def __iter__(self) -> MaterializedPhysicalPlan:
+    def __iter__(self) -> MaterializedPhysicalPlan[PartitionT]:
         num_materialized_yielded = 0
         num_intermediate_yielded = 0
         num_final_yielded = 0

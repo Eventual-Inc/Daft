@@ -153,7 +153,7 @@ def _resolved_col(name: str) -> Expression:
     return Expression._from_pyexpr(resolved_col(name))
 
 
-def list_(*items: Expression | str):
+def list_(*items: Expression | str) -> Expression:
     """Constructs a list from the item expressions.
 
     Args:
@@ -573,7 +573,7 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(expr._expr // self._expr)
 
-    def __getitem__(self, key) -> Expression:
+    def __getitem__(self, key: builtins.str | int) -> Expression:
         """Syntactic sugar for `Expression.list.get` and `Expression.struct.get`.
 
         Examples:
@@ -597,18 +597,16 @@ class Expression:
             [list.get](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.get) and [struct.get](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStructNamespace.get)
 
         """
-        key_type = type(key)
-
-        if key_type is int:
+        if isinstance(key, int):
             return self.list.get(key)
-        elif key_type is str:
+        elif isinstance(key, str):
             return self.struct.get(key)
         else:
             raise TypeError(
-                f"Argument of type {key_type} is not supported in Expression.__getitem__. Only int and string types are supported."
+                f"Argument {key} of type {type(key)} is not supported in Expression.__getitem__. Only int and string types are supported."
             )
 
-    def _eval_expressions(self, func_name, *args, **kwargs) -> Expression:
+    def _eval_expressions(self, func_name: builtins.str, *args: Any, **kwargs: Any) -> Expression:
         expr_args = [Expression._to_expression(v)._expr for v in args]
         expr_kwargs = {k: Expression._to_expression(v)._expr for k, v in kwargs.items() if v is not None}
         f = native.get_function_from_registry(func_name)
@@ -916,7 +914,7 @@ class Expression:
 
         Args:
             base: The base of the logarithm. Defaults to e.
-        """ ""
+        """
         assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
         base = lit(base)
         f = native.get_function_from_registry("log")
@@ -1177,7 +1175,7 @@ class Expression:
         expr = self._expr.bool_or()
         return Expression._from_pyexpr(expr)
 
-    def any_value(self, ignore_nulls=False) -> Expression:
+    def any_value(self, ignore_nulls: bool = False) -> Expression:
         """Returns any value in the expression.
 
         Args:
@@ -1280,7 +1278,7 @@ class Expression:
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
-    def apply(self, func: Callable, return_dtype: DataTypeLike) -> Expression:
+    def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
 
         Args:
@@ -1323,13 +1321,13 @@ class Expression:
 
         inferred_return_dtype = DataType._infer_type(return_dtype)
 
-        def batch_func(self_series):
+        def batch_func(self_series: Series) -> list[Any]:
             return [func(x) for x in self_series]
 
-        name = getattr(func, "__module__", "")  # type: ignore[call-overload]
+        name = getattr(func, "__module__", "")
         if name:
             name = name + "."
-        name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
+        name = name + getattr(func, "__qualname__")
 
         return UDF(
             inner=batch_func,
@@ -1804,7 +1802,7 @@ class Expression:
     def __hash__(self) -> int:
         return self._expr.__hash__()
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(self) -> tuple[Callable[[_PyExpr], Expression], tuple[_PyExpr]]:
         return Expression._from_pyexpr, (self._expr,)
 
     def _input_mapping(self) -> builtins.str | None:
@@ -1829,7 +1827,7 @@ class ExpressionNamespace:
         ns._expr = expr._expr
         return ns
 
-    def _eval_expressions(self, func_name: str, *args, **kwargs) -> Expression:
+    def _eval_expressions(self, func_name: str, *args: Any, **kwargs: Any) -> Expression:
         e = Expression._from_pyexpr(self._expr)
         return e._eval_expressions(func_name, *args, **kwargs)
 
@@ -4181,7 +4179,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         lowercase: bool = False,
         nfd_unicode: bool = False,
         white_space: bool = False,
-    ):
+    ) -> Expression:
         r"""Normalizes a string for more useful deduplication.
 
         Args:
@@ -4312,7 +4310,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,
-    ):
+    ) -> Expression:
         """Counts the number of times a pattern, or multiple patterns, appear in a string.
 
         If whole_words is true, then matches are only counted if they are whole words. This
@@ -5047,7 +5045,13 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings.
 
-        Example:
+        Args:
+            other (Expression): The other embedding to compute the cosine distance against.
+
+        Returns:
+            Expression: a Float64 Expression with the cosine distance between the two embeddings.
+
+        Examples:
             >>> import daft
             >>> df = daft.from_pydict({"e1": [[1, 2, 3], [1, 2, 3]], "e2": [[1, 2, 3], [-1, -2, -3]]})
             >>> dtype = daft.DataType.fixed_size_list(daft.DataType.float32(), 3)
@@ -5065,8 +5069,6 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
-        Returns:
-            Expression: a Float64 Expression with the cosine distance between the two embeddings.
         """
         return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
 

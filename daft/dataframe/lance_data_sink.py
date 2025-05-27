@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import pathlib
 from itertools import chain
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import lance
 
 from daft.context import get_context
 from daft.datatype import DataType
-from daft.io import DataSink, WriteOutput
+from daft.io import DataSink
+from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from types import ModuleType
 
     from daft.daft import IOConfig
 
@@ -21,7 +23,7 @@ if TYPE_CHECKING:
 class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     """WriteSink for writing data to a Lance dataset."""
 
-    def _import_lance(self):
+    def _import_lance(self) -> ModuleType:
         try:
             import lance
 
@@ -35,8 +37,8 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         schema: Schema,
         mode: Literal["create", "append", "overwrite"],
         io_config: IOConfig | None = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         from daft.dependencies import pa
         from daft.io.object_store_options import io_config_to_storage_options
 
@@ -47,7 +49,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         self._table_uri = str(uri)
         self._mode = mode
         self._io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        self._args = kwargs
+        self._kwargs = kwargs
 
         self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
 
@@ -81,7 +83,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     def schema(self) -> Schema:
         return self._schema
 
-    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteOutput[list[lance.FragmentMetadata]]]:
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[lance.FragmentMetadata]]]:
         """Writes fragments from the given micropartitions."""
         lance = self._import_lance()
 
@@ -95,21 +97,21 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
                 dataset_uri=self._table_uri,
                 mode=self._mode,
                 storage_options=self._storage_options,
-                **self._args,
+                **self._kwargs,
             )
-            yield WriteOutput(
-                output=fragments,
+            yield WriteResult(
+                result=fragments,
                 bytes_written=bytes_written,
                 rows_written=rows_written,
             )
 
-    def finalize(self, write_outputs: list[WriteOutput[list[lance.FragmentMetadata]]]) -> MicroPartition:
+    def finalize(self, write_results: list[WriteResult[list[lance.FragmentMetadata]]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
         from daft.dependencies import pa
 
         lance = self._import_lance()
 
-        fragments = list(chain.from_iterable(write_output.output for write_output in write_outputs))
+        fragments = list(chain.from_iterable(write_result.result for write_result in write_results))
 
         if self._mode == "create" or self._mode == "overwrite":
             operation = lance.LanceOperation.Overwrite(self._pyarrow_schema, fragments)
