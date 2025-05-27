@@ -5,25 +5,25 @@ from typing import Generic, Iterator, TypeVar
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
-T = TypeVar("T")
+WriteResultType = TypeVar("WriteResultType")
 
 
 @dataclass
-class WriteOutput(Generic[T]):
-    """Wrapper for output of the DataSink's `.write()` method.
+class WriteResult(Generic[WriteResultType]):
+    """Wrapper for result of the DataSink's `.write()` method.
 
     Attributes:
-        output: The actual output from the write operation
+        result: The result from the write operation
         bytes_written: Size of the written data in bytes
         rows_written: Number of rows written
     """
 
-    output: T
+    result: WriteResultType
     bytes_written: int
     rows_written: int
 
 
-class DataSink(ABC, Generic[T]):
+class DataSink(ABC, Generic[WriteResultType]):
     """Interface for writing data to a sink that is not built-in.
 
     When a DataFrame is written using the `.write_sink()` method, the following sequence occurs:
@@ -60,7 +60,7 @@ class DataSink(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteOutput[T]]:
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
         """Writes a stream of micropartitions to the sink.
 
         This method should handle the ingestion of each micropartition and yield a result
@@ -70,19 +70,19 @@ class DataSink(ABC, Generic[T]):
             micropartitions (Iterator[MicroPartition]): An iterator of micropartitions to be written.
 
         Returns:
-            Iterator[WriteOutput[T]]: An iterator of write results wrapped in a WriteOutput.
+            Iterator[WriteResult[WriteResultType]]: An iterator of write results wrapped in a WriteOutput.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def finalize(self, write_outputs: list[WriteOutput[T]]) -> MicroPartition:
+    def finalize(self, write_results: list[WriteResult[WriteResultType]]) -> MicroPartition:
         """Finalizes the write process and returns a resulting micropartition.
 
         For example, this can be used to merge, summarize, or commit the results of individual writes
         into a single output micropartition.
 
         Args:
-            write_outputs (list[WriteOutput[T]]): The list of results from the calls to `.write()`.
+            write_results (list[WriteResult[WriteResultType]]): The list of results from the calls to `.write()`.
 
         Returns:
             MicroPartition: A final, single micropartition representing the result of all writes.
