@@ -258,7 +258,7 @@ mod tests {
                 ],
             )
             .into(),
-            lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced()),
+            lower(resolved_col("name")),
         ])
         .unwrap()
         .build();
@@ -273,7 +273,10 @@ mod tests {
             panic!("Expected top level project");
         };
         assert_eq!(dbg!(&top_project.projection).len(), 2);
-        assert!(matches!(top_project.projection[1].as_ref(), Expr::Cast(..)));
+        assert!(matches!(
+            top_project.projection[1].as_ref(),
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "binary_decode"
+        ));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(
@@ -339,7 +342,11 @@ mod tests {
             panic!("Expected top level project");
         };
         assert_eq!(top_project.projection.len(), 2);
-        assert!(matches!(top_project.projection[1].as_ref(), Expr::Cast(..)));
+
+        assert!(matches!(
+            top_project.projection[1].as_ref(),
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "binary_decode"
+        ));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(

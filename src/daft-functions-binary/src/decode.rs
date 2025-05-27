@@ -39,11 +39,28 @@ impl ScalarUDF for BinaryDecode {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        to_field_impl(inputs, schema)
+        let Args { input, codec } = inputs.try_into()?;
+        let input = input.to_field(schema)?;
+
+        if codec == Codec::Utf8 {
+            // special-case for decode('utf-8')
+            return Ok(Field::new(input.name, DataType::Utf8));
+        }
+        ensure!(
+            matches!(input.dtype, DataType::Binary | DataType::FixedSizeBinary(_)),
+            TypeError: "Expected argument to be a Binary or FixedSizeBinary, but received {}",
+            input.dtype
+        );
+
+        Ok(Field::new(input.name, codec.returns()))
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, codec } = inputs.try_into()?;
+        if codec == Codec::Utf8 {
+            // special-case for decode('utf-8')
+            return input.cast(&DataType::Utf8);
+        }
 
         match input.data_type() {
             DataType::Binary => {
@@ -81,7 +98,16 @@ impl ScalarUDF for BinaryTryDecode {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        to_field_impl(inputs, schema)
+        let Args { input, codec } = inputs.try_into()?;
+        let input = input.to_field(schema)?;
+
+        ensure!(
+            matches!(input.dtype, DataType::Binary | DataType::FixedSizeBinary(_)),
+            TypeError: "Expected argument to be a Binary or FixedSizeBinary, but received {}",
+            input.dtype
+        );
+
+        Ok(Field::new(input.name, codec.returns()))
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
@@ -107,22 +133,4 @@ impl ScalarUDF for BinaryTryDecode {
             _ => unreachable!("type checking handled in to_field"),
         }
     }
-}
-
-//---------
-// helpers
-//----------
-
-fn to_field_impl(inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
-    ensure!(inputs.len() == 2, TypeError: "Expected 2 arguments, found {}", inputs.len());
-    let Args { input, codec } = inputs.try_into()?;
-    let input = input.to_field(schema)?;
-
-    ensure!(
-        matches!(input.dtype, DataType::Binary | DataType::FixedSizeBinary(_)),
-        TypeError: "Expected argument to be a Binary or FixedSizeBinary, but received {}",
-        input.dtype
-    );
-
-    Ok(Field::new(input.name, codec.returns()))
 }
