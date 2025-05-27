@@ -44,7 +44,7 @@ jobs:
     - name: Install dependencies
       run: |
         source venv/bin/activate
-        uv pip install -r requirements-dev.txt
+        uv pip install -r requirements-dev.txt --verbose
     - name: Build Daft in development mode and generate docs
       run: |
         source activate
