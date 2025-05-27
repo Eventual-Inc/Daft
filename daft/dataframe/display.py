@@ -1,6 +1,7 @@
 from typing import Optional
 
 from daft.context import get_context
+from daft.logical.builder import LogicalPlanBuilder
 
 
 class AsciiOptions:
@@ -26,25 +27,29 @@ class MermaidOptions:
     bottom_up: bool
     subgraph_options: Optional[SubgraphOptions]
 
-    def __init__(self, simple: bool = False, bottom_up=False, subgraph_options: Optional[SubgraphOptions] = None):
+    def __init__(
+        self, simple: bool = False, bottom_up: bool = False, subgraph_options: Optional[SubgraphOptions] = None
+    ) -> None:
         self.simple = simple
         self.bottom_up = bottom_up
         self.subgraph_options = subgraph_options
 
-    def with_subgraph_options(self, name: str, subgraph_id: str, metadata: Optional[str] = None):
+    def with_subgraph_options(self, name: str, subgraph_id: str, metadata: Optional[str] = None) -> "MermaidOptions":
         opts = MermaidOptions(self.simple, subgraph_options=SubgraphOptions(name, subgraph_id, metadata))
 
         return opts
 
 
 class MermaidFormatter:
-    def __init__(self, builder, show_all: bool = False, simple: bool = False, is_cached: bool = False):
+    def __init__(
+        self, builder: LogicalPlanBuilder, show_all: bool = False, simple: bool = False, is_cached: bool = False
+    ):
         self.builder = builder
         self.show_all = show_all
         self.simple = simple
         self.is_cached = is_cached
 
-    def _repr_markdown_(self):
+    def _repr_markdown_(self) -> str:
         builder = self.builder
         output = ""
         display_opts = MermaidOptions(simple=self.simple)
@@ -92,5 +97,5 @@ class MermaidFormatter:
 
         return output
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self._repr_markdown_()

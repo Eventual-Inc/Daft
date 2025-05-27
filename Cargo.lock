@@ -2024,6 +2024,7 @@ dependencies = [
  "daft-functions-binary",
  "daft-functions-json",
  "daft-functions-list",
+ "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-hash",
  "daft-image",
@@ -2359,6 +2360,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-functions-temporal"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "paste",
+ "serde",
+ "typetag",
+]
+
+[[package]]
 name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2567,6 +2580,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-binary",
  "daft-functions-list",
  "daft-functions-utf8",
  "daft-schema",

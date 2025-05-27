@@ -5,61 +5,49 @@ use daft_core::{
     prelude::{CountMode, ImageFormat, ImageMode},
     series::Series,
 };
-use num_traits::cast;
-use serde::de::DeserializeOwned;
+#[cfg(feature = "python")]
+use pyo3::{PyClass, Python};
 
-use super::{deserializer, serializer, FromLiteral, Literal, LiteralValue};
+use super::{deserializer::LiteralValueDeserializer, FromLiteral, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use crate::pyobj_serde::PyObjectWrapper;
 
-impl Literal for IntervalValue {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Interval(self)
-    }
-}
-
-impl Literal for String {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Utf8(self)
-    }
-}
-
-impl FromLiteral for String {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        match lit {
-            LiteralValue::Utf8(s) => Ok(s.clone()),
-            _ => Err(DaftError::TypeError(format!(
-                "Cannot convert {:?} to String",
-                lit
-            ))),
+macro_rules! impl_literal {
+    ($TYPE:ty, $SCALAR:ident) => {
+        impl Literal for $TYPE {
+            fn literal_value(self) -> LiteralValue {
+                LiteralValue::$SCALAR(self)
+            }
         }
-    }
+    };
+    ($TYPE:ty, $SCALAR:ident, $TRANSFORM:expr) => {
+        impl Literal for $TYPE {
+            fn literal_value(self) -> LiteralValue {
+                LiteralValue::$SCALAR($TRANSFORM(self))
+            }
+        }
+    };
 }
 
-impl Literal for &'_ str {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Utf8(self.to_owned())
-    }
-}
-
-impl Literal for &'_ [u8] {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Binary(self.to_vec())
-    }
-}
-
-impl Literal for Series {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Series(self)
-    }
-}
-
+impl_literal!(bool, Boolean);
+impl_literal!(i8, Int8);
+impl_literal!(u8, UInt8);
+impl_literal!(i16, Int16);
+impl_literal!(u16, UInt16);
+impl_literal!(i32, Int32);
+impl_literal!(u32, UInt32);
+impl_literal!(i64, Int64);
+impl_literal!(u64, UInt64);
+impl_literal!(f64, Float64);
+impl_literal!(IntervalValue, Interval);
+impl_literal!(String, Utf8);
+impl_literal!(Series, Series);
+impl_literal!(&'_ str, Utf8, |s: &'_ str| s.to_owned());
+impl_literal!(&'_ [u8], Binary, |s: &'_ [u8]| s.to_vec());
 #[cfg(feature = "python")]
-impl Literal for pyo3::PyObject {
-    fn literal_value(self) -> LiteralValue {
-        LiteralValue::Python(PyObjectWrapper(std::sync::Arc::new(self)))
-    }
-}
+impl_literal!(pyo3::PyObject, Python, |s: pyo3::PyObject| PyObjectWrapper(
+    std::sync::Arc::new(s)
+));
 
 impl<T> Literal for Option<T>
 where
@@ -73,85 +61,154 @@ where
     }
 }
 
-macro_rules! make_literal {
+macro_rules! impl_strict_fromliteral {
     ($TYPE:ty, $SCALAR:ident) => {
-        impl Literal for $TYPE {
-            fn literal_value(self) -> LiteralValue {
-                LiteralValue::$SCALAR(self)
-            }
-        }
         impl FromLiteral for $TYPE {
             fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-                match lit {
-                    LiteralValue::$SCALAR(v) => Ok(*v),
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expected {} literal",
-                        stringify!($TYPE)
-                    ))),
+                if let LiteralValue::$SCALAR(v) = lit {
+                    Ok(v.clone())
+                } else {
+                    Err(DaftError::TypeError(format!(
+                        "Expected {} literal, received: {}",
+                        stringify!($TYPE),
+                        lit
+                    )))
                 }
             }
         }
     };
 }
-make_literal!(bool, Boolean);
-make_literal!(i8, Int8);
-make_literal!(u8, UInt8);
-make_literal!(i16, Int16);
-make_literal!(u16, UInt16);
-make_literal!(i32, Int32);
-make_literal!(u32, UInt32);
-make_literal!(i64, Int64);
-make_literal!(u64, UInt64);
-make_literal!(f64, Float64);
 
-impl FromLiteral for usize {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        match lit {
-            LiteralValue::Int8(i8) => cast(*i8),
-            LiteralValue::UInt8(u8) => cast(*u8),
-            LiteralValue::Int16(i16) => cast(*i16),
-            LiteralValue::UInt16(u16) => cast(*u16),
-            LiteralValue::Int32(i32) => cast(*i32),
-            LiteralValue::UInt32(u32) => cast(*u32),
-            LiteralValue::Int64(i64) => cast(*i64),
-            LiteralValue::UInt64(u64) => cast(*u64),
-            _ => None,
+macro_rules! impl_int_fromliteral {
+    ($TYPE:ty) => {
+        impl FromLiteral for $TYPE {
+            fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+                let casted = match lit {
+                    LiteralValue::Int8(v) => num_traits::cast(*v),
+                    LiteralValue::UInt8(v) => num_traits::cast(*v),
+                    LiteralValue::Int16(v) => num_traits::cast(*v),
+                    LiteralValue::UInt16(v) => num_traits::cast(*v),
+                    LiteralValue::Int32(v) => num_traits::cast(*v),
+                    LiteralValue::UInt32(v) => num_traits::cast(*v),
+                    LiteralValue::Int64(v) => num_traits::cast(*v),
+                    LiteralValue::UInt64(v) => num_traits::cast(*v),
+                    LiteralValue::Float64(v) => {
+                        if v.fract() == 0.0 {
+                            num_traits::cast(*v)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => {
+                        return Err(DaftError::ValueError(format!(
+                            "Expected integer number, received: {lit}"
+                        )))
+                    }
+                };
+
+                casted.ok_or_else(|| {
+                    DaftError::ValueError(format!(
+                        "failed to cast {} to type {}",
+                        lit,
+                        std::any::type_name::<$TYPE>()
+                    ))
+                })
+            }
         }
-        .ok_or_else(|| DaftError::ValueError("Unsupported literal type".to_string()))
+    };
+}
+
+macro_rules! impl_float_fromliteral {
+    ($TYPE:ty) => {
+        impl FromLiteral for $TYPE {
+            fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+                let casted = match lit {
+                    LiteralValue::Int8(v) => num_traits::cast(*v),
+                    LiteralValue::UInt8(v) => num_traits::cast(*v),
+                    LiteralValue::Int16(v) => num_traits::cast(*v),
+                    LiteralValue::UInt16(v) => num_traits::cast(*v),
+                    LiteralValue::Int32(v) => num_traits::cast(*v),
+                    LiteralValue::UInt32(v) => num_traits::cast(*v),
+                    LiteralValue::Int64(v) => num_traits::cast(*v),
+                    LiteralValue::UInt64(v) => num_traits::cast(*v),
+                    LiteralValue::Float64(v) => num_traits::cast(*v),
+                    _ => {
+                        return Err(DaftError::ValueError(format!(
+                            "Expected floating point number, received: {lit}"
+                        )))
+                    }
+                };
+
+                casted.ok_or_else(|| {
+                    DaftError::ValueError(format!(
+                        "failed to cast {} to type {}",
+                        lit,
+                        std::any::type_name::<$TYPE>()
+                    ))
+                })
+            }
+        }
+    };
+}
+
+#[cfg(feature = "python")]
+fn try_extract_py_lit<T>(value: &LiteralValue) -> Option<T>
+where
+    T: Clone + PyClass,
+{
+    if let LiteralValue::Python(py_value) = value {
+        Python::with_gil(|py| py_value.0.extract::<T>(py).ok())
+    } else {
+        None
     }
 }
 
-/// Marker trait to allowlist what can be converted to a literal via serde
-trait SerializableLiteral: serde::Serialize {}
+macro_rules! impl_pyobj_fromliteral {
+    ($TYPE:ty, $PY_TYPE:ty) => {
+        impl FromLiteral for $TYPE {
+            fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+                use serde::Deserialize;
 
-/// Marker trait to allowlist what can be converted from a literal via serde
-trait DeserializableLiteral: DeserializeOwned {}
+                #[cfg(feature = "python")]
+                if let Some(py_val) = try_extract_py_lit::<$PY_TYPE>(lit) {
+                    return Ok(py_val.into());
+                }
 
-impl SerializableLiteral for IOConfig {}
-impl DeserializableLiteral for IOConfig {}
-impl SerializableLiteral for ImageMode {}
-impl DeserializableLiteral for ImageMode {}
-impl SerializableLiteral for ImageFormat {}
-impl DeserializableLiteral for ImageFormat {}
-impl SerializableLiteral for CountMode {}
-impl DeserializableLiteral for CountMode {}
+                let deserializer = LiteralValueDeserializer { lit };
+                Ok(Deserialize::deserialize(deserializer)?)
+            }
+        }
+    };
+}
 
-impl<D> FromLiteral for D
+impl<T> FromLiteral for Option<T>
 where
-    D: DeserializableLiteral,
+    T: FromLiteral,
 {
     fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        let deserializer = deserializer::LiteralValueDeserializer { lit };
-        D::deserialize(deserializer).map_err(|e| e.into())
+        if *lit == LiteralValue::Null {
+            Ok(None)
+        } else {
+            T::try_from_literal(lit).map(Some)
+        }
     }
 }
 
-impl<S> Literal for S
-where
-    S: SerializableLiteral,
-{
-    fn literal_value(self) -> LiteralValue {
-        self.serialize(serializer::LiteralValueSerializer)
-            .expect("serialization failed")
-    }
-}
+impl_strict_fromliteral!(String, Utf8);
+impl_strict_fromliteral!(bool, Boolean);
+impl_int_fromliteral!(i8);
+impl_int_fromliteral!(u8);
+impl_int_fromliteral!(i16);
+impl_int_fromliteral!(u16);
+impl_int_fromliteral!(i32);
+impl_int_fromliteral!(u32);
+impl_int_fromliteral!(i64);
+impl_int_fromliteral!(u64);
+impl_int_fromliteral!(usize);
+impl_int_fromliteral!(isize);
+impl_float_fromliteral!(f32);
+impl_float_fromliteral!(f64);
+impl_pyobj_fromliteral!(IOConfig, common_io_config::python::IOConfig);
+impl_pyobj_fromliteral!(ImageMode, ImageMode);
+impl_pyobj_fromliteral!(ImageFormat, ImageFormat);
+impl_pyobj_fromliteral!(CountMode, CountMode);

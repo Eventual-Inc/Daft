@@ -3,7 +3,7 @@ import sys
 from daft.daft import cli
 
 
-def main():
+def main() -> None:
     cli(sys.argv)
 
 

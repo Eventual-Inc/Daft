@@ -16,6 +16,12 @@ use crate::kernels::BinaryArrayExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryEncode;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, FunctionArgs)]
+struct Args<T> {
+    input: T,
+    codec: Codec,
+}
+
 #[typetag::serde]
 impl ScalarUDF for BinaryEncode {
     fn name(&self) -> &'static str {
@@ -26,13 +32,9 @@ impl ScalarUDF for BinaryEncode {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(
-            inputs.len() == 2,
-            SchemaMismatch: "Expected 2 arguments, found {}",
-            inputs.len()
-        );
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
-        let _: Codec = inputs.extract((1, "codec"))?;
+        let Args { input, codec: _ } = inputs.try_into()?;
+        let input = input.to_field(schema)?;
+
         ensure!(
             matches!(
                 input.dtype,
@@ -46,8 +48,8 @@ impl ScalarUDF for BinaryEncode {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let codec: Codec = inputs.extract((1, "codec"))?;
+        let Args { input, codec } = inputs.try_into()?;
+
         match input.data_type() {
             DataType::Binary => input
                 .downcast::<BinaryArray>()?
@@ -81,13 +83,8 @@ impl ScalarUDF for BinaryTryEncode {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(
-            inputs.len() == 2,
-            SchemaMismatch: "Expected 2 arguments, found {}",
-            inputs.len()
-        );
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
-        let _: Codec = inputs.extract((1, "codec"))?;
+        let Args { input, codec: _ } = inputs.try_into()?;
+        let input = input.to_field(schema)?;
         ensure!(
             matches!(
                 input.dtype,
@@ -101,8 +98,8 @@ impl ScalarUDF for BinaryTryEncode {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let codec: Codec = inputs.extract((1, "codec"))?;
+        let Args { input, codec } = inputs.try_into()?;
+
         match input.data_type() {
             DataType::Binary => input
                 .downcast::<BinaryArray>()?

@@ -42,7 +42,13 @@ from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
-from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
+from daft.runners.partitioning import (
+    LocalPartitionSet,
+    MaterializedResult,
+    PartitionCacheEntry,
+    PartitionSet,
+    PartitionT,
+)
 from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
 
 if TYPE_CHECKING:
@@ -159,19 +165,22 @@ class DataFrame:
         return self.__builder
 
     @property
-    def _result(self) -> Optional[PartitionSet]:
+    def _result(self) -> Optional[PartitionSet[PartitionT]]:
         if self._result_cache is None:
             return None
         else:
             return self._result_cache.value
 
-    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime):
+    def _broadcast_query_plan(self):
         from daft import dashboard
         from daft.dataframe.display import MermaidFormatter
 
         if not dashboard._should_run():
             return
-
+        unoptimized_plan = self._builder._builder.repr_json(True)
+        plan_time_start = _utc_now()
+        optimized_plan = self._builder.optimize()._builder.repr_json(True)
+        plan_time_end = _utc_now()
         is_cached = self._result_cache is not None
         mermaid_plan: str = MermaidFormatter(
             builder=self.__builder,
@@ -181,6 +190,8 @@ class DataFrame:
         )._repr_markdown_()
 
         dashboard.broadcast_query_information(
+            unoptimized_plan=unoptimized_plan,
+            optimized_plan=optimized_plan,
             mermaid_plan=mermaid_plan,
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
@@ -431,10 +442,13 @@ class DataFrame:
             results_buffer_size = multiprocessing.cpu_count()
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
-        if self._result is not None:
+
+        results = self._result
+        if results is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            for _, result in self._result.items():
+
+            for _, result in results.items():
                 yield from (result.micropartition().to_arrow().to_batches())
         else:
             # Execute the dataframe in a streaming fashion.
@@ -512,16 +526,17 @@ class DataFrame:
         elif results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
 
-        if self._result is not None:
+        results = self._result
+        if results is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            for mat_result in self._result.values():
+            for mat_result in results.values():
                 yield mat_result.partition()
 
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.get_or_create_runner().run_iter(
+            results_iter: Iterator[MaterializedResult[Any]] = context.get_or_create_runner().run_iter(
                 self._builder, results_buffer_size=results_buffer_size
             )
             for result in results_iter:
@@ -529,14 +544,15 @@ class DataFrame:
 
     def _populate_preview(self) -> None:
         """Populates the preview of the DataFrame, if it is not already populated."""
-        if self._result is None:
+        results = self._result
+        if results is None:
             return
 
         preview_partition_invalid = (
             self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
         )
         if preview_partition_invalid:
-            preview_parts = self._result._get_preview_micropartitions(self._num_preview_rows)
+            preview_parts = results._get_preview_micropartitions(self._num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
@@ -3082,10 +3098,8 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
         """
-        plan_time_start = _utc_now()
+        self._broadcast_query_plan()
         self._materialize_results()
-        plan_time_end = _utc_now()
-        self._broadcast_query_plan(plan_time_start, plan_time_end)
         assert self._result is not None
         dataframe_len = len(self._result)
         if num_preview_rows is not None:

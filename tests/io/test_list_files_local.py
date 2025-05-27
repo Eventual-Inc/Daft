@@ -196,7 +196,7 @@ def test_literal_double_asterisk_file(tmp_path, include_protocol):
     file_with_literal_name = d / "*.pq"
     file_with_literal_name.touch()
 
-    path = str(d) + "/\**.pq"
+    path = str(d) + "/\\**.pq"
     if include_protocol:
         path = "file://" + path
 

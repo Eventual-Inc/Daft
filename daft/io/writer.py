@@ -1,10 +1,10 @@
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from daft.daft import IOConfig
 from daft.delta_lake.delta_lake_write import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
-from daft.dependencies import pa, pacsv, pq
+from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -76,7 +76,7 @@ class FileWriterBase(ABC):
         self.compression = compression if compression is not None else "none"
         self.position = 0
 
-    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
+    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None) -> tuple[str, pafs.FileSystem]:
         [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
         return resolved_path, fs
 
@@ -303,7 +303,7 @@ class DeltalakeWriter(ParquetFileWriter):
 
         self.large_dtypes = large_dtypes
 
-    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
+    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None) -> Tuple[str, pafs.PyFileSystem]:
         return "", make_deltalake_fs(root_dir, io_config)
 
     def write(self, table: MicroPartition) -> int:

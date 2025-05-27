@@ -23,9 +23,9 @@ pub struct BinaryDecode;
 #[derive(
     Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, common_macros::FunctionArgs,
 )]
-pub struct DecodeArgs<T> {
+struct Args<T> {
     input: T,
-    codec: T,
+    codec: Codec,
 }
 
 #[typetag::serde]
@@ -43,8 +43,7 @@ impl ScalarUDF for BinaryDecode {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let codec: Codec = inputs.extract((1, "codec"))?;
+        let Args { input, codec } = inputs.try_into()?;
 
         match input.data_type() {
             DataType::Binary => {
@@ -86,8 +85,8 @@ impl ScalarUDF for BinaryTryDecode {
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let input = inputs.required((0, "input"))?;
-        let codec: Codec = inputs.extract((1, "codec"))?;
+        let Args { input, codec } = inputs.try_into()?;
+
         match input.data_type() {
             DataType::Binary => {
                 let arg = input.downcast::<BinaryArray>()?;
@@ -116,8 +115,8 @@ impl ScalarUDF for BinaryTryDecode {
 
 fn to_field_impl(inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
     ensure!(inputs.len() == 2, TypeError: "Expected 2 arguments, found {}", inputs.len());
-    let input = inputs.required((0, "input"))?.to_field(schema)?;
-    let codec: Codec = inputs.extract((1, "codec"))?;
+    let Args { input, codec } = inputs.try_into()?;
+    let input = input.to_field(schema)?;
 
     ensure!(
         matches!(input.dtype, DataType::Binary | DataType::FixedSizeBinary(_)),

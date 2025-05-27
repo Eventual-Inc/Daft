@@ -27,21 +27,22 @@ spark.stop()
 ```
 """
 
-from daft.daft import connect_start
+from typing import Any
+from daft.daft import ConnectionHandle, connect_start
 from pyspark.sql import SparkSession as PySparkSession
 
 
 class Builder:
-    def __init__(self):
+    def __init__(self) -> None:
         self._builder = PySparkSession.builder
 
-    def local(self):
+    def local(self) -> "Builder":
         self._connection = connect_start()
         url = f"sc://0.0.0.0:{self._connection.port()}"
         self._builder = PySparkSession.builder.remote(url)
         return self
 
-    def remote(self, url):
+    def remote(self, url: str) -> "Builder":
         if url.startswith("ray://"):
             import daft
 
@@ -57,14 +58,14 @@ class Builder:
             self._builder = PySparkSession.builder.remote(url)
             return self
 
-    def getOrCreate(self):
+    def getOrCreate(self) -> "SparkSession":
         return SparkSession(self._builder.getOrCreate(), self._connection)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         attr = getattr(self._builder, name)
         if callable(attr):
 
-            def wrapped(*args, **kwargs):
+            def wrapped(*args: Any, **kwargs: Any) -> Any:
                 result = attr(*args, **kwargs)
                 # If result is the original builder, return self instead
                 return self if result == self._builder else result
@@ -78,17 +79,17 @@ class Builder:
 class SparkSession:
     builder = Builder()
 
-    def __init__(self, spark_session, connection=None):
+    def __init__(self, spark_session: PySparkSession, connection: ConnectionHandle) -> None:
         self._spark_session = spark_session
         self._connection = connection
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self._spark_session.__repr__()
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._spark_session, name)
 
-    def stop(self):
+    def stop(self) -> None:
         self._spark_session.stop()
         self._connection.shutdown()
 

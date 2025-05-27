@@ -100,7 +100,7 @@ impl FromStr for Codec {
             "deflate" => Ok(Self::Deflate),
             "gzip" | "gz" => Ok(Self::Gzip),
             "zlib" => Ok(Self::Zlib),
-            "utf-8" => Ok(Self::Utf8),
+            "utf-8" | "utf8" => Ok(Self::Utf8),
             _ => Err(DaftError::not_implemented(format!(
                 "unsupported codec: {}",
                 s

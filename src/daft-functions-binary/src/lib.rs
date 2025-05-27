@@ -6,8 +6,13 @@ mod kernels;
 mod length;
 mod slice;
 mod utils;
-
+pub use codecs::Codec;
+pub use concat::BinaryConcat;
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
+pub use decode::{BinaryDecode, BinaryTryDecode};
+pub use encode::{BinaryEncode, BinaryTryEncode};
+pub use length::BinaryLength;
+pub use slice::BinarySlice;
 
 pub struct BinaryFunctions;
 

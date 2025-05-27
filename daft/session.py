@@ -71,7 +71,7 @@ class Session:
 
     _session: PySession
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._session = PySession.empty()
 
     ###
@@ -148,7 +148,8 @@ class Session:
         """
         c = catalog if isinstance(catalog, Catalog) else Catalog._from_obj(catalog)
         a = alias if alias else c.name
-        return self._session.attach_catalog(c, a)
+        self._session.attach_catalog(c, a)
+        return c
 
     def attach_table(self, table: Table | object, alias: str | None = None) -> Table:
         """Attaches an external table instance to this session.
@@ -162,7 +163,8 @@ class Session:
         """
         t = table if isinstance(table, Table) else Table._from_obj(table)
         a = alias if alias else t.name
-        return self._session.attach_table(t, a)
+        self._session.attach_table(t, a)
+        return t
 
     def detach_catalog(self, alias: str):
         """Detaches the catalog from this session or raises if the catalog does not exist.
