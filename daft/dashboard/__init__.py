@@ -52,7 +52,6 @@ def launch(noop_if_initialized: bool = False) -> None:
 def broadcast_query_information(
     unoptimized_plan: str,
     optimized_plan: str,
-    mermaid_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
 ) -> None:
