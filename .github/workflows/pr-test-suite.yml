@@ -202,7 +202,10 @@ jobs:
       env:
         # Note: In PRs, we build in dev mode to reduce CI times
         # In main and manual triggers, we build in release, but not LTO cause it takes too long
-        BUILD_MODE: ${{ github.event_name == 'pull_request' && '' || '--release' }}
+        # Note, we can't use `${{ github.event_name == 'pull_request' && '' || '--release' }}`
+        # cause of some annoying GitHub Actions behavior:
+        # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/evaluate-expressions-in-workflows-and-actions#example
+        BUILD_MODE: ${{ github.event_name != 'pull_request' && '--release' || '' }}
 
     - name: Upload wheels
       uses: actions/upload-artifact@v4
@@ -922,6 +925,7 @@ jobs:
       uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
+        activate-environment: true
         enable-cache: true
         cache-dependency-glob: |
           **/pyproject.toml
