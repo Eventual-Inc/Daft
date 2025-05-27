@@ -59,6 +59,7 @@ pub(crate) fn native_parquet_writer_supported(
     file_format: FileFormat,
     root_dir: &str,
     file_schema: &SchemaRef,
+    remote_writes_enabled: bool,
 ) -> DaftResult<bool> {
     // TODO(desmond): Currently we only support native parquet writes.
     if !matches!(file_format, FileFormat::Parquet) {
@@ -71,8 +72,10 @@ pub(crate) fn native_parquet_writer_supported(
         Ok((st, _)) => st,
         _ => return Ok(false),
     };
-    if !matches!(source_type, SourceType::File) && !matches!(source_type, SourceType::S3) {
-        return Ok(false);
+    match source_type {
+        SourceType::File => {}
+        SourceType::S3 if remote_writes_enabled => {}
+        _ => return Ok(false),
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
     let arrow_schema = match file_schema.to_arrow() {

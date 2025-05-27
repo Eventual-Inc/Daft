@@ -35,6 +35,7 @@ impl PhysicalWriterFactory {
                 output_file_info.file_format,
                 &output_file_info.root_dir,
                 &file_schema,
+                false,
             )? {
             WriterType::Native
         } else {
