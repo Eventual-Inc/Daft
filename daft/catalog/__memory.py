@@ -74,11 +74,10 @@ class MemoryCatalog(Catalog):
     # list_*
     ###
 
-    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         namespaces = set()
-        prefix_str = None if prefix is None else str(prefix)
         for path in self._tables.keys():
-            if prefix_str is not None and not path.startswith(prefix_str):
+            if pattern is not None and not path.startswith(pattern):
                 continue  # did not match pattern
             split = path.rfind(".")
             if split == -1:
@@ -86,10 +85,10 @@ class MemoryCatalog(Catalog):
             namespaces.add(path[:split])
         return [Identifier.from_str(ns) for ns in namespaces]
 
-    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
-        if prefix is None:
-            return [Identifier(path) for path in self._tables.keys()]
-        return [Identifier(path) for path in self._tables.keys() if path.startswith(str(prefix))]
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+        if pattern is None:
+            return [Identifier.from_str(path) for path in self._tables.keys()]
+        return [Identifier.from_str(path) for path in self._tables.keys() if path.startswith(pattern)]
 
     ###
     # get_*

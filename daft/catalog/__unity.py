@@ -78,30 +78,31 @@ class UnityCatalog(Catalog):
     # list_.*
     ###
 
-    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         raise NotImplementedError("Unity list_namespaces not yet supported.")
 
-    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
-        if prefix is None:
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+        if pattern is None or pattern == "":
             return [
                 tbl
                 for cat in self._inner.list_catalogs()
                 for schema in self._inner.list_schemas(cat)
                 for tbl in self._inner.list_tables(schema)
             ]
-        if len(prefix) == 1:
-            catalog_name = prefix[0]
+        num_namespaces = pattern.count(".")
+        if num_namespaces == 0:
+            catalog_name = pattern
             return [
                 Identifier.from_str(tbl)
                 for schema in self._inner.list_schemas(catalog_name)
                 for tbl in self._inner.list_tables(schema)
             ]
-        elif len(prefix) == 2:
-            schema_name = str(prefix)
+        elif num_namespaces == 1:
+            schema_name = pattern
             return [Identifier.from_str(tbl) for tbl in self._inner.list_tables(schema_name)]
         else:
             raise ValueError(
-                f"Unrecognized catalog name or schema name, expected a '.'-separated namespace but received: {prefix}"
+                f"Unrecognized catalog name or schema name, expected a '.'-separated namespace but received: {pattern}"
             )
 
     ###

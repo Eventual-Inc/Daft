@@ -14,8 +14,6 @@ from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema,
 from daft.io._iceberg import read_iceberg
 
 if TYPE_CHECKING:
-    from pyiceberg.typedef import Identifier as InnerIdent
-
     from daft.dataframe import DataFrame
 
 
@@ -120,18 +118,17 @@ class IcebergCatalog(Catalog):
     # list_*
     ###
 
-    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
-        prefix_iceberg = () if prefix is None else _to_pyiceberg_ident(prefix)
-        return [Identifier(*tup) for tup in self._inner.list_namespaces(prefix_iceberg)]
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        prefix = () if pattern is None else _to_pyiceberg_ident(pattern)
+        return [Identifier(*tup) for tup in self._inner.list_namespaces(prefix)]
 
-    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
-        if prefix is None:
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+        if pattern is None:
             tables = []
             for ns in self.list_namespaces():
                 tables.extend(self._inner.list_tables(str(ns)))
         else:
-            prefix = _to_pyiceberg_ident(prefix)
-            tables = self._inner.list_tables(prefix)
+            tables = self._inner.list_tables(pattern)
         return [Identifier(*tup) for tup in tables]
 
 
@@ -172,5 +169,5 @@ class IcebergTable(Table):
         df.write_iceberg(self._inner, mode=mode)
 
 
-def _to_pyiceberg_ident(ident: Identifier) -> InnerIdent:
-    return tuple(ident)
+def _to_pyiceberg_ident(ident: Identifier | str) -> tuple[str, ...] | str:
+    return tuple(ident) if isinstance(ident, Identifier) else ident

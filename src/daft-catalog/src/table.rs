@@ -51,7 +51,7 @@ pub trait Table: Sync + Send + std::fmt::Debug {
     /// Write the plan to this table.
     fn write(&self, plan: LogicalPlanBuilder, mode: &str) -> CatalogResult<()>;
 
-    /// Leverage dynamic dispatch to return the inner object for a PyTableImpl (generics?)
+    /// Create/extract a Python object that subclasses the Table ABC
     #[cfg(feature = "python")]
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject>;
 }
@@ -102,15 +102,18 @@ impl Table for View {
         ))
     }
 
-    /// This is a little ugly .. it creates a PyObject which implements the daft.catalog.Table ABC
     #[cfg(feature = "python")]
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         use pyo3::{intern, types::PyAnyMethods};
 
+        use crate::python::PyTable;
+
+        let pytable = PyTable(Arc::new(self.clone()));
+
         Ok(py
-            .import(intern!(py, "daft.catalog"))?
+            .import(intern!(py, "daft.catalog.__rust"))?
             .getattr("View")?
-            .call1((self.clone(),))?
+            .call1((pytable,))?
             .unbind())
     }
 }

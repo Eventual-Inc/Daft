@@ -49,18 +49,11 @@ from daft.dataframe import DataFrame
 
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from daft.utils import ColumnInputType
     from daft.convert import InputListType
-    from daft.daft import View as _View
-
-    from daft.catalog.__memory import MemoryCatalog
-    from daft.catalog.__iceberg import IcebergCatalog
-    from daft.catalog.__unity import UnityCatalog
-    from daft.catalog.__glue import GlueCatalog
 
 
 __all__ = [
@@ -252,8 +245,8 @@ class Catalog(ABC):
         """Remove a namespace from the catalog, erroring if the namespace did not exist."""
 
     @abstractmethod
-    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
-        """List all namespaces in the catalog. When a prefix is specified, list only nested namespaces with the prefix."""
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """List all namespaces in the catalog. When a pattern is specified, list only namespaces matching the pattern."""
 
     @abstractmethod
     def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
@@ -268,15 +261,15 @@ class Catalog(ABC):
         """Remove a table from the catalog, erroring if the table did not exist."""
 
     @abstractmethod
-    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
-        """List all tables in the catalog. When a prefix is specified, list only tables with the prefix."""
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+        """List all tables in the catalog. When a pattern is specified, list only tables matching the pattern."""
 
     @abstractmethod
     def _get_table(self, ident: Identifier) -> Table:
         """Get a table from the catalog."""
 
     @staticmethod
-    def from_pydict(tables: dict[str, object], name: str = "default") -> MemoryCatalog:
+    def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
         """Returns an in-memory catalog from a dictionary of table-like objects.
 
         The table-like objects can be pydicts, dataframes, or a Table implementation.
@@ -311,7 +304,7 @@ class Catalog(ABC):
         return MemoryCatalog._from_pydict(name, tables)
 
     @staticmethod
-    def from_iceberg(catalog: object) -> IcebergCatalog:
+    def from_iceberg(catalog: object) -> Catalog:
         """Create a Daft Catalog from a PyIceberg catalog object.
 
         Args:
@@ -333,7 +326,7 @@ class Catalog(ABC):
             raise ImportError("Iceberg support not installed: pip install -U 'daft[iceberg]'")
 
     @staticmethod
-    def from_unity(catalog: object) -> UnityCatalog:
+    def from_unity(catalog: object) -> Catalog:
         """Create a Daft Catalog from a Unity Catalog client.
 
         Args:
@@ -398,7 +391,7 @@ class Catalog(ABC):
         name: str,
         client: object | None = None,
         session: object | None = None,
-    ) -> GlueCatalog:
+    ) -> Catalog:
         """Creates a Daft Catalog backed by the AWS Glue service, with optional client or session.
 
         Terms:
@@ -567,7 +560,7 @@ class Catalog(ABC):
     # list_*
     ###
 
-    def list_namespaces(self, prefix: str | Identifier | None = None) -> list[Identifier]:
+    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         """List namespaces in the catalog which match the given pattern.
 
         Args:
@@ -576,12 +569,9 @@ class Catalog(ABC):
         Returns:
             list[Identifier]: list of namespace identifiers matching the pattern.
         """
-        if isinstance(prefix, str):
-            prefix = Identifier.from_str(prefix)
+        return self._list_namespaces(pattern)
 
-        return self._list_namespaces(prefix)
-
-    def list_tables(self, prefix: str | Identifier | None = None) -> list[Identifier]:
+    def list_tables(self, pattern: str | None = None) -> list[Identifier]:
         """List tables in the catalog which match the given pattern.
 
         Args:
@@ -590,10 +580,7 @@ class Catalog(ABC):
         Returns:
             list[str]: list of table identifiers matching the pattern.
         """
-        if isinstance(prefix, str):
-            prefix = Identifier.from_str(prefix)
-
-        return self._list_tables(prefix)
+        return self._list_tables(pattern)
 
     ###
     # read_*
@@ -962,19 +949,3 @@ class Table(ABC):
             category=DeprecationWarning,
         )
         return self.read()
-
-
-class View(Table):
-    def __init__(self, view: _View):
-        self._view = view
-
-    @property
-    def name(self):
-        return self._view.name()
-
-    def read(self, **options):
-        builder = LogicalPlanBuilder(self._view.plan())
-        return DataFrame(builder)
-
-    def write(self, df, mode="append", **options):
-        raise TypeError("Cannot write to a view")

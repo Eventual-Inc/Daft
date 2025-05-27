@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_catalog::{
-    python::{PyCatalog, PyIdentifier, PyTable, PyTableSource},
+    python::{PyCatalogWrapper, PyIdentifier, PyTableSource, PyTableWrapper},
     Identifier,
 };
 use daft_dsl::functions::python::WrappedUDFClass;
@@ -26,11 +26,13 @@ impl PySession {
     }
 
     pub fn attach_catalog(&self, catalog: PyObject, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_catalog(PyCatalog::wrap(catalog), alias)?)
+        Ok(self
+            .0
+            .attach_catalog(PyCatalogWrapper::wrap(catalog), alias)?)
     }
 
     pub fn attach_table(&self, table: PyObject, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_table(PyTable::wrap(table), alias)?)
+        Ok(self.0.attach_table(PyTableWrapper::wrap(table), alias)?)
     }
 
     pub fn detach_catalog(&self, alias: &str) -> PyResult<()> {

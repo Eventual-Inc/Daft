@@ -208,11 +208,11 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.EntityNotFoundException:
             return False
 
-    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
-        if prefix is not None:
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        if pattern is not None:
             # Glue may add some kind of pattern to get_databases, then we can use their scheme.
             # Rather than making something up now which could later be broken.
-            raise ValueError("GlueCatalog does not support using prefix filters with get_databases.")
+            raise ValueError("GlueCatalog does not support using pattern filters with get_databases.")
 
         try:
             req = {}  # type: ignore
@@ -229,18 +229,17 @@ class GlueCatalog(Catalog):
         except ClientError as e:
             raise ValueError("Failed to list namespaces.") from e
 
-    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
-        if prefix is None:
-            raise ValueError("GlueCatalog requires the prefix to contain a namespace.")
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+        if pattern is None:
+            raise ValueError("GlueCatalog requires the pattern to contain a namespace.")
 
         req = {}
-        if len(prefix) == 1:
-            req["DatabaseName"] = prefix[0]
-        elif len(prefix) == 2:
-            req["DatabaseName"] = prefix[0]
-            req["Expression"] = prefix[1]
+        if "." in pattern:
+            database_name, expression = pattern.split(".", 1)
+            req["DatabaseName"] = database_name
+            req["Expression"] = expression
         else:
-            raise ValueError(f"GlueCatalog.list_tables expected prefix to contain one or two parts, received: {prefix}")
+            req["DatabaseName"] = pattern
 
         try:
             tables = []

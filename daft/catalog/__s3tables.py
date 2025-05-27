@@ -241,7 +241,7 @@ class S3Catalog(Catalog):
     # list_*
     ###
 
-    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         # base request
         req = {
             "tableBucketARN": self._table_bucket_arn,
@@ -249,13 +249,13 @@ class S3Catalog(Catalog):
         }
 
         # pattern here just represents the namespace prefix
-        if prefix:
-            req["prefix"] = str(prefix)
+        if pattern:
+            req["prefix"] = pattern
 
         try:
             namespaces = []
             while True:
-                res = self._client.list_namespaces(**req)  # type: ignore
+                res = self._client.list_namespaces(**req)
                 for namespace in res["namespaces"]:
                     namespaces.append(Identifier(*namespace["namespace"]))
                 if cont_token := res.get("continuationToken"):
@@ -266,30 +266,30 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to list namespaces: {e}")
 
-    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
         # base request
         req = {
             "tableBucketARN": self._table_bucket_arn,
             "maxTables": 1000,
         }
 
-        # need to return qualified names, so stitch the parts (str for now).
         def to_ident(table_summary) -> Identifier:
             return Identifier(*table_summary["namespace"], table_summary["name"])
 
         # we must split the pattern and use the last part as the table preefix.
-        if prefix:
-            if len(prefix) == 1:
-                req["namespace"] = prefix[0]
+        if pattern:
+            parts = pattern.split(".")
+            if len(parts) == 1:
+                req["namespace"] = parts[0]
             else:
-                req["namespace"] = ".".join(list(prefix)[:-1])
-                req["prefix"] = prefix[-1]
+                req["namespace"] = ".".join(parts[:-1])
+                req["prefix"] = parts[-1]
 
         # loop each page
         try:
             tables = []
             while True:
-                res = self._client.list_tables(**req)  # type: ignore
+                res = self._client.list_tables(**req)
                 for table in res["tables"]:
                     tables.append(to_ident(table))
                 if cont_token := res.get("continuationToken"):
