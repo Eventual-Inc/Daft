@@ -65,7 +65,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 &self.schema,
                 self.output_file_info.file_format,
                 partition_values,
-                &self.output_file_info.io_config,
+                self.output_file_info.io_config.clone(),
             ),
             WriterType::Pyarrow => create_pyarrow_file_writer(
                 &self.output_file_info.root_dir,
@@ -113,7 +113,7 @@ fn create_native_writer(
     schema: &SchemaRef,
     file_format: FileFormat,
     partition_values: Option<&RecordBatch>,
-    io_config: &Option<daft_io::IOConfig>,
+    io_config: Option<daft_io::IOConfig>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     match file_format {
