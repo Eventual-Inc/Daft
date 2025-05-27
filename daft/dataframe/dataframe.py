@@ -465,7 +465,7 @@ class DataFrame:
     @DataframePublicAPI
     def iter_partitions(
         self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
-    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
+    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.recordbatch object (if using Python runner backend)

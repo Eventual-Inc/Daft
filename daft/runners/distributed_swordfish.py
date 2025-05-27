@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
+from typing import AsyncGenerator, Callable, Dict, List, Tuple
 
 from daft.daft import (
     LocalPhysicalPlan,
@@ -37,7 +37,7 @@ class RaySwordfishWorker:
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
-        psets: dict[str, list[ray.ObjectRef[MicroPartition]]],
+        psets: dict[str, list[ray.ObjectRef]],
     ) -> AsyncGenerator[MicroPartition, None]:
         """Run a plan on swordfish and yield partitions."""
         psets_gathered = {k: await asyncio.gather(*v) for k, v in psets.items()}
@@ -61,7 +61,7 @@ class RaySwordfishTaskHandle:
     It is used to asynchronously get the result of the task, cancel the task, and perform any post-task cleanup.
     """
 
-    result_handle: ray.ObjectRef[Any]
+    result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     done_callback: Callable[[asyncio.Task[RayPartitionRef]], None]
     task_memory_cost: int

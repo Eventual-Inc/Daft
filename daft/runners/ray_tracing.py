@@ -619,7 +619,7 @@ class _RayRunnableFunctionWrapper:
     def options(self, *args: Any, **kwargs: Any) -> _RayRunnableFunctionWrapper:
         return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
-    def remote(self, *args: Any, **kwargs: Any) -> ray.ObjectRef[Any]:
+    def remote(self, *args: Any, **kwargs: Any) -> ray.ObjectRef:
         self.runner_tracer.task_dispatched(self.task.id())
         return self.f.remote(*args, **kwargs)
 
