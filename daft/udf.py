@@ -178,7 +178,9 @@ def run_udf(
         result_pa = pa.concat_arrays(results)
         return Series.from_arrow(result_pa, name=name).cast(return_dtype)._series
     else:
-        raise NotImplementedError(f"Return type not supported for UDF: {type(results[0])}")
+        raise NotImplementedError(
+            f"Return type {type(results[0])} not supported for UDF {func}, expected daft.Series, list, np.ndarray, or pa.Array containing {return_dtype}"
+        )
 
 
 # Marker that helps us differentiate whether a user provided the argument or not
