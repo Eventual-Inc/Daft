@@ -174,7 +174,6 @@ class DataFrame:
 
     def _broadcast_query_plan(self) -> None:
         from daft import dashboard
-        from daft.dataframe.display import MermaidFormatter
 
         if not dashboard._should_run():
             return
@@ -182,18 +181,10 @@ class DataFrame:
         plan_time_start = _utc_now()
         optimized_plan = self._builder.optimize()._builder.repr_json(True)
         plan_time_end = _utc_now()
-        is_cached = self._result_cache is not None
-        mermaid_plan: str = MermaidFormatter(
-            builder=self.__builder,
-            show_all=True,
-            simple=False,
-            is_cached=is_cached,
-        )._repr_markdown_()
 
         dashboard.broadcast_query_information(
             unoptimized_plan=unoptimized_plan,
             optimized_plan=optimized_plan,
-            mermaid_plan=mermaid_plan,
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
         )
