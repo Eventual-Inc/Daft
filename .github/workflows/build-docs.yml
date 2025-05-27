@@ -42,9 +42,14 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
     - name: Install dependencies
-      run: |
-        source venv/bin/activate
-        uv pip install -r requirements-dev.txt --verbose
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source venv/bin/activate
+          uv pip install -r requirements-dev.txt --verbose
     - name: Build Daft in development mode and generate docs
       run: |
         source activate
