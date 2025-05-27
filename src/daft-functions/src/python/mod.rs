@@ -22,6 +22,7 @@ mod tokenize;
 
 use std::sync::Arc;
 
+use daft_core::prelude::Field;
 use daft_dsl::{
     functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
     python::PyExpr,
@@ -75,12 +76,20 @@ impl PyScalarFunction {
 
 #[pyo3::pyfunction]
 pub fn get_function_from_registry(name: &str) -> PyResult<PyScalarFunction> {
-    let f = FUNCTION_REGISTRY.read().unwrap().get(name);
-    if let Some(f) = f {
-        Ok(PyScalarFunction { inner: f })
-    } else {
-        panic!("Function not found in registry: {}", name)
-    }
+    // We're getting the factory to ultimately get an expression, we might replace the Expr::Function to ScalarFunctionFactory.
+    let function_factory = match FUNCTION_REGISTRY.read().unwrap().get(name) {
+        Some(f) => f,
+        None => panic!("Function not found in registry: {}", name),
+    };
+
+    // Python can currently only use the dynamic functions, consider passing additional arguments in this `get_function_registry` call.
+    let function_args = FunctionArgs::<Field>::empty();
+
+    // Now we'll just pull the one and only ScalarUDF out of all the dynamic factories.
+    Ok(function_factory
+        .get_function(function_args)
+        .map(|inner| PyScalarFunction { inner })
+        .expect("Function was missing an implementation"))
 }
 
 pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {

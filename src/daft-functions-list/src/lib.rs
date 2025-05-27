@@ -42,6 +42,7 @@ pub use series::SeriesListExtension;
 pub struct ListFunctions;
 
 impl FunctionModule for ListFunctions {
+    #[allow(deprecated)]
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(ListBoolAnd);
         parent.add_fn(ListBoolOr);

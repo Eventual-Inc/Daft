@@ -10,6 +10,7 @@ mod total;
 pub struct TemporalFunctions;
 
 impl FunctionModule for TemporalFunctions {
+    #[allow(deprecated)]
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(TotalSeconds);
         parent.add_fn(TotalMilliseconds);

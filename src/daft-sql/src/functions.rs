@@ -5,7 +5,7 @@ use std::{
 
 use daft_dsl::{
     expr::window::{WindowBoundary, WindowFrame},
-    functions::{ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
     Expr, ExprRef, WindowExpr, WindowSpec,
 };
 use daft_session::Session;
@@ -40,8 +40,18 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
     functions.add_fn("coalesce", SQLCoalesce {});
-    for (name, function) in FUNCTION_REGISTRY.read().unwrap().entries() {
-        functions.add_fn(name, function.clone());
+    for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
+        // Note:
+        //  FunctionModule came from SQLModule, but SQLModule still remains.
+        //  We must add all functions from the registry to the SQLModule, but
+        //  now the FunctionModule has the ability to represent both logical
+        //  and physical via ScalarFunctionFactory. This is an easy migration
+        //  because, like the python API, we've only had dynamic functions on
+        //  the SQL side. The solution is to add all `DynamicScalarFunction`
+        //  by calling get_function with empty arguments and only adding the ok's.
+        if let Ok(function) = function_factory.get_function(FunctionArgs::empty()) {
+            functions.add_fn(name, function);
+        }
     }
     functions
 });

@@ -40,6 +40,21 @@ impl From<ScalarFunction> for ExprRef {
     }
 }
 
+/// This is a factory for scalar function implementations.
+pub trait ScalarFunctionFactory: Send + Sync {
+    /// The name of this function.
+    fn name(&self) -> &'static str;
+
+    /// Any additional aliases for this function.
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Returns a ScalarUDF for the given fields.
+    fn get_function(&self, args: FunctionArgs<Field>) -> DaftResult<Arc<dyn ScalarUDF>>;
+}
+
+/// This is a concrete implementation of a ScalarFunction.
 #[typetag::serde(tag = "type")]
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     /// The name of the function.
@@ -163,5 +178,31 @@ impl Display for ScalarFunction {
         }
         write!(f, ")")?;
         Ok(())
+    }
+}
+
+/// Function factory which is backed by a single dynamic ScalarUDF.
+pub struct DynamicScalarFunction(Arc<dyn ScalarUDF>);
+
+impl From<Arc<dyn ScalarUDF>> for DynamicScalarFunction {
+    fn from(value: Arc<dyn ScalarUDF>) -> Self {
+        Self(value)
+    }
+}
+
+impl ScalarFunctionFactory for DynamicScalarFunction {
+    /// Delegate to inner.
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    /// Delegate to inner.
+    fn aliases(&self) -> &'static [&'static str] {
+        self.0.aliases()
+    }
+
+    /// All typing for implementation variants is done during evaluation, hence dynamic.
+    fn get_function(&self, _: FunctionArgs<Field>) -> DaftResult<Arc<dyn ScalarUDF>> {
+        Ok(self.0.clone())
     }
 }
