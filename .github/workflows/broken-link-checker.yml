@@ -19,9 +19,8 @@ jobs:
       uses: nick-fields/retry@v3
       with:
         timeout_minutes: 10
-        retry_wait_seconds: 60
+        retry_wait_seconds: 120
         max_attempts: 3
-        retry_on: error
         command: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daft_dataframe --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daft_dataframe --exclude https://www.linkedin.com/showcase/daft-dataframe/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://huggingface.co/docs/dataset-viewer/en/parquet
   notify_on_failure:
     runs-on: self-hosted

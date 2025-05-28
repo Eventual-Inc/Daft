@@ -1,18 +1,15 @@
 pub mod download;
 pub mod upload;
 
-use daft_dsl::{functions::ScalarFunction, ExprRef};
-use download::UrlDownloadArgs;
-use upload::UrlUploadArgs;
+use daft_dsl::functions::FunctionModule;
+use download::UrlDownload;
+use upload::UrlUpload;
 
-/// Creates a `url_download` ExprRef from the positional and optional named arguments.
-#[must_use]
-pub fn download(input: ExprRef, args: Option<UrlDownloadArgs>) -> ExprRef {
-    ScalarFunction::new(args.unwrap_or_default(), vec![input]).into()
-}
+pub struct UriFunctions;
 
-/// Creates a `url_upload` ExprRef from the positional and optional named arguments.
-#[must_use]
-pub fn upload(input: ExprRef, location: ExprRef, args: Option<UrlUploadArgs>) -> ExprRef {
-    ScalarFunction::new(args.unwrap_or_default(), vec![input, location]).into()
+impl FunctionModule for UriFunctions {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(UrlDownload);
+        parent.add_fn(UrlUpload);
+    }
 }

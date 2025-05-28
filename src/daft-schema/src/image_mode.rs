@@ -2,6 +2,7 @@
 use std::str::FromStr;
 
 use common_error::{DaftError, DaftResult};
+use common_py_serde::impl_bincode_py_state_serialization;
 use derive_more::Display;
 use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
@@ -153,3 +154,5 @@ impl FromStr for ImageMode {
         }
     }
 }
+
+impl_bincode_py_state_serialization!(ImageMode);

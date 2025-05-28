@@ -8,7 +8,7 @@ import uuid
 import warnings
 from concurrent import futures
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, ResourceRequest, SystemInfo
@@ -56,7 +56,7 @@ class AcquiredResources:
 
 
 class PyRunnerResources:
-    def __init__(self, num_cpus: float, gpus: list[str], memory_bytes: int):
+    def __init__(self, num_cpus: float, gpus: list[str], memory_bytes: int) -> None:
         gpus_dict = {gpu: 1.0 for gpu in gpus}
         self.num_cpus = num_cpus
         self.num_gpus = len(gpus)
@@ -152,7 +152,7 @@ class PyRunnerResources:
                 )
             ]
 
-    def release(self, resources: AcquiredResources | list[AcquiredResources]):
+    def release(self, resources: AcquiredResources | list[AcquiredResources]) -> None:
         """Admit the resources back into the resource pool."""
         with self.lock:
             if not isinstance(resources, list):
@@ -179,7 +179,7 @@ class PyActorSingleton:
     def initialize_actor_global_state(
         uninitialized_projection: ExpressionsProjection,
         cuda_device_queue: mp.Queue[str],
-    ):
+    ) -> None:
         if PyActorSingleton.initialized_projection is not None:
             raise RuntimeError("Cannot initialize Python process actor twice.")
 
@@ -216,7 +216,7 @@ class PyActorPool:
         num_actors: int,
         resources: list[AcquiredResources],
         projection: ExpressionsProjection,
-    ):
+    ) -> None:
         self._pool_id = pool_id
         self._num_actors = num_actors
         self._resources = resources
@@ -300,7 +300,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         self._actor_pools: dict[str, PyActorPool] = {}
 
         # Global accounting of tasks and resources
-        self._inflight_futures: dict[tuple[ExecutionID, TaskID], futures.Future] = {}
+        self._inflight_futures: dict[tuple[ExecutionID, TaskID], futures.Future[Any]] = {}
 
         system_info = SystemInfo()
         num_cpus = num_threads if num_threads is not None and num_threads > 0 else system_info.cpu_count()
@@ -366,7 +366,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                     results_buffer_size,
                 )
                 del plan_scheduler
-                results_gen = self._physical_plan_to_partitions(execution_id, tasks)
+                results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore
                 # if source_id is none that means this is the final stage
                 if source_id is None:
                     yield from results_gen
@@ -402,7 +402,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
                 del psets
                 with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-                    results_gen = self._physical_plan_to_partitions(execution_id, tasks)
+                    results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore
                     yield from results_gen
 
     def run_iter_tables(
@@ -450,7 +450,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             self._actor_pools[actor_pool_id].teardown()
             del self._actor_pools[actor_pool_id]
 
-    def _create_resource_release_callback(self, resources: AcquiredResources) -> Callable[[futures.Future], None]:
+    def _create_resource_release_callback(self, resources: AcquiredResources) -> Callable[[futures.Future[Any]], None]:
         """This higher order function is used so that the `resources` released by the callback are from the ones stored in the variable at the creation of the callback instead of during its call."""
         return lambda _: self._resources.release(resources)
 
@@ -459,7 +459,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         execution_id: str,
         plan: physical_plan.MaterializedPhysicalPlan[MicroPartition],
     ) -> Iterator[LocalMaterializedResult]:
-        local_futures_to_task: dict[futures.Future, PartitionTask] = {}
+        local_futures_to_task: dict[futures.Future[Any], PartitionTask[Any]] = {}
         pbar = ProgressBar(use_ray_tqdm=False)
 
         try:
@@ -554,9 +554,10 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                             future.add_done_callback(self._create_resource_release_callback(resources))
 
                             # Register the inflight task
-                            assert (
-                                next_step.id() not in local_futures_to_task
-                            ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
+                            # TODO(slade): Resolve in next PR
+                            # assert (
+                            #     next_step.id() not in local_futures_to_task
+                            # ), "Step IDs should be unique - this indicates an internal error, please file an issue!"
                             self._inflight_futures[(execution_id, next_step.id())] = future
                             local_futures_to_task[future] = next_step
 

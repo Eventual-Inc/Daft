@@ -23,7 +23,7 @@ readme = "README.rst"
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql, unity]"]
+all = ["daft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, spark, sql, unity]"]
 aws = ["boto3"]
 azure = []
 deltalake = ["deltalake", "packaging"]
@@ -40,6 +40,7 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
+spark = ["googleapis-common-protos == 1.56.4", "grpcio >= 1.48, < 1.57", "grpcio-status >= 1.48, < 1.57", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 unity = ["httpx <= 0.27.2", "unitycatalog"]
 viz = []
@@ -81,7 +82,8 @@ module = [
   "cloudpickle.*",
   "docker.*",
   "uvicorn.*",
-  "numba.*"
+  "numba.*",
+  "viztracer.*"
 ]
 
 [[tool.mypy.overrides]]

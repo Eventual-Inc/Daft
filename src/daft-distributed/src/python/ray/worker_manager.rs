@@ -1,120 +1,95 @@
-use std::sync::Arc;
+use std::collections::HashMap;
 
-use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
 use common_error::DaftResult;
 use pyo3::prelude::*;
 
-use super::task::*;
+use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
-    task::{SwordfishTask, SwordfishTaskResultHandle},
-    worker::{WorkerManager, WorkerManagerFactory},
+    task::{SwordfishTask, TaskId},
+    worker::{Worker, WorkerId, WorkerManager},
 };
 
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
 #[allow(dead_code)]
 pub(crate) struct RayWorkerManager {
-    ray_worker_manager: PyObject,
+    ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
     task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
-// TODO(FLOTILLA_MS1): Make Ray worker manager live for the duration of the program
-// so that we don't have to recreate it on every stage.
 impl RayWorkerManager {
-    pub fn try_new(
-        daft_execution_config: Arc<DaftExecutionConfig>,
-        task_locals: &pyo3_async_runtimes::TaskLocals,
-    ) -> DaftResult<Self> {
-        let py_daft_execution_config = PyDaftExecutionConfig {
-            config: daft_execution_config,
-        };
-        let (ray_worker_manager, task_locals) = Python::with_gil(|py| {
+    pub fn try_new() -> DaftResult<Self> {
+        let (ray_workers, task_locals) = Python::with_gil(|py| {
             let distributed_swordfish_module = py.import("daft.runners.distributed_swordfish")?;
-            let ray_worker_manager_class =
-                distributed_swordfish_module.getattr("RaySwordfishWorkerManager")?;
-            let instance = ray_worker_manager_class.call1((py_daft_execution_config,))?;
-            let task_locals = task_locals.clone_ref(py);
-            DaftResult::Ok((instance.unbind(), task_locals))
+            let ray_workers = distributed_swordfish_module
+                .call_method0("start_ray_workers")?
+                .extract::<Vec<RaySwordfishWorker>>()?;
+            let ray_worker_hashmap = ray_workers
+                .into_iter()
+                .map(|w| (w.id().clone(), w))
+                .collect();
+            let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)
+                .expect("Failed to get current task locals");
+            DaftResult::Ok((ray_worker_hashmap, task_locals))
         })?;
         Ok(Self {
-            ray_worker_manager,
+            ray_workers,
             task_locals,
         })
     }
 }
 
 impl WorkerManager for RayWorkerManager {
-    fn submit_task_to_worker(
+    type Worker = RaySwordfishWorker;
+
+    fn submit_tasks_to_workers(
         &self,
-        task: SwordfishTask,
-        worker_id: String,
-    ) -> Box<dyn SwordfishTaskResultHandle> {
+        total_tasks: usize,
+        tasks_per_worker: HashMap<WorkerId, Vec<SwordfishTask>>,
+    ) -> DaftResult<Vec<RayTaskResultHandle>> {
         Python::with_gil(|py| {
-            let py_task = RaySwordfishTask::new(task);
-            let py_task_handle = self
-                .ray_worker_manager
-                .call_method1(
-                    py,
-                    pyo3::intern!(py, "submit_task_to_worker"),
-                    (py_task, worker_id),
-                )
-                .expect("Failed to submit task to RayWorkerManager");
-            let task_locals = self.task_locals.clone_ref(py);
-            Box::new(RayTaskResultHandle::new(py_task_handle, task_locals))
+            let mut task_result_handles = Vec::with_capacity(total_tasks);
+            for (worker_id, tasks) in tasks_per_worker {
+                let handles = self
+                    .ray_workers
+                    .get(&worker_id)
+                    .expect("Worker should be present in RayWorkerManager")
+                    .submit_tasks(tasks, py, &self.task_locals)?;
+                task_result_handles.extend(handles);
+            }
+            DaftResult::Ok(task_result_handles)
         })
     }
 
-    fn get_worker_resources(&self) -> Vec<(String, usize, usize)> {
-        Python::with_gil(|py| {
-            let py_worker_resources = self
-                .ray_worker_manager
-                .call_method0(py, pyo3::intern!(py, "get_worker_resources"))
-                .expect("Failed to get worker resources from RayWorkerManager");
-            py_worker_resources
-                .extract::<Vec<(String, usize, usize)>>(py)
-                .expect("Failed to extract worker resources from RayWorkerManager")
-        })
+    fn workers(&self) -> &HashMap<WorkerId, Self::Worker> {
+        &self.ray_workers
     }
 
-    fn try_autoscale(&self, num_workers: usize) -> DaftResult<()> {
-        Python::with_gil(|py| {
-            self.ray_worker_manager.call_method1(
-                py,
-                pyo3::intern!(py, "try_autoscale"),
-                (num_workers,),
-            )
-        })?;
-        Ok(())
+    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId) {
+        self.ray_workers
+            .get(&worker_id)
+            .expect("Worker should be present in RayWorkerManager")
+            .mark_task_finished(task_id);
+    }
+
+    fn total_available_cpus(&self) -> usize {
+        self.ray_workers
+            .values()
+            .map(|w| w.num_cpus() - w.active_task_ids().len())
+            .sum()
     }
 
     fn shutdown(&self) -> DaftResult<()> {
         Python::with_gil(|py| {
-            self.ray_worker_manager
-                .call_method0(py, pyo3::intern!(py, "shutdown"))
-        })?;
+            for worker in self.ray_workers.values() {
+                worker.shutdown(py);
+            }
+        });
         Ok(())
     }
 }
 
-pub(crate) struct RayWorkerManagerFactory {
-    daft_execution_config: Arc<DaftExecutionConfig>,
-    task_locals: pyo3_async_runtimes::TaskLocals,
-}
-
-impl RayWorkerManagerFactory {
-    pub fn new(
-        daft_execution_config: Arc<DaftExecutionConfig>,
-        task_locals: pyo3_async_runtimes::TaskLocals,
-    ) -> Self {
-        Self {
-            daft_execution_config,
-            task_locals,
-        }
-    }
-}
-
-impl WorkerManagerFactory for RayWorkerManagerFactory {
-    fn create_worker_manager(&self) -> DaftResult<Box<dyn WorkerManager>> {
-        RayWorkerManager::try_new(self.daft_execution_config.clone(), &self.task_locals)
-            .map(|ray_worker_manager| Box::new(ray_worker_manager) as Box<dyn WorkerManager>)
+impl Drop for RayWorkerManager {
+    fn drop(&mut self) {
+        self.shutdown().expect("Cannot shutdown RayWorkerManager");
     }
 }

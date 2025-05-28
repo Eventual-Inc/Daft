@@ -1,3 +1,4 @@
+import urllib.parse
 from typing import Dict, List, Optional, Union
 
 from daft import Series
@@ -12,8 +13,9 @@ def partition_strings_to_path(
     parts: Dict[str, str],
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> str:
-    keys = parts.keys()
-    values = [partition_null_fallback if value is None else value for value in parts.values()]
+    # Hive-style partition keys and values should be URL encoded.
+    keys = [urllib.parse.quote(key) for key in parts.keys()]
+    values = [partition_null_fallback if value is None else urllib.parse.quote(value) for value in parts.values()]
     postfix = "/".join(f"{k}={v}" for k, v in zip(keys, values))
     return f"{root_path}/{postfix}"
 
@@ -37,12 +39,12 @@ def partition_values_to_str_mapping(
 
 class PartitionedTable:
     def __init__(self, table: MicroPartition, partition_keys: Optional[ExpressionsProjection]):
-        self.table = table
-        self.partition_keys = partition_keys
-        self._partitions = None
-        self._partition_values = None
+        self.table: MicroPartition = table
+        self.partition_keys: Optional[ExpressionsProjection] = partition_keys
+        self._partitions: Optional[list[MicroPartition]] = None
+        self._partition_values: Optional[MicroPartition] = None
 
-    def _create_partitions(self):
+    def _create_partitions(self) -> None:
         if self.partition_keys is None or len(self.partition_keys) == 0:
             self._partitions = [self.table]
             self._partition_values = None

@@ -66,7 +66,7 @@ def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions,
     if read_options.column_names is not None:
         pruned_schema = Schema._from_fields([schema[name] for name in read_options.column_names])
 
-    table = table.cast_to_schema(pruned_schema)
+    table = MicroPartition._from_pymicropartition(table._micropartition.cast_to_schema(pruned_schema._schema))
     return table
 
 
@@ -246,7 +246,7 @@ class TabularWriteVisitors:
             self.parent = parent
             self.idx = idx
 
-        def __call__(self, written_file):
+        def __call__(self, written_file: pads.WrittenFile) -> None:
             self.parent.paths.append(written_file.path)
             self.parent.partition_indices.append(self.idx)
 
@@ -355,7 +355,7 @@ def write_iceberg(
     partition_spec_id: int,
     partition_cols: ExpressionsProjection,
     io_config: IOConfig | None = None,
-):
+) -> MicroPartition:
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
     from daft.iceberg.iceberg_write import (
@@ -426,7 +426,7 @@ def write_deltalake(
     version: int,
     partition_cols: list[str] | None = None,
     io_config: IOConfig | None = None,
-):
+) -> MicroPartition:
     from daft.delta_lake.delta_lake_write import (
         DeltaLakeWriteVisitors,
         make_deltalake_fs,
@@ -486,8 +486,8 @@ def write_lance(
     base_path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
-):
+    kwargs: dict[str, Any] | None,
+) -> MicroPartition:
     import lance
 
     from daft.io.object_store_options import io_config_to_storage_options
@@ -514,7 +514,7 @@ def _retry_with_backoff(
 ) -> Any:
     if retry_error is None:
 
-        def retry_error(_) -> bool:
+        def retry_error(_: Exception) -> bool:
             return True
 
     for attempt in range(num_tries):
@@ -549,10 +549,10 @@ def _write_tabular_arrow_table(
     rows_per_file: int,
     rows_per_row_group: int,
     create_dir: bool,
-    file_visitor: Callable | None,
+    file_visitor: Callable[[pads.WrittenFile], None] | None,
     version: int | None = None,
-):
-    kwargs = dict()
+) -> None:
+    kwargs: dict[str, Any] = {}
 
     kwargs["max_rows_per_file"] = rows_per_file
     kwargs["min_rows_per_group"] = rows_per_row_group
@@ -563,7 +563,7 @@ def _write_tabular_arrow_table(
 
     basename_template = _generate_basename_template(format.default_extname, version)
 
-    def write_dataset():
+    def write_dataset() -> None:
         pads.write_dataset(
             arrow_table,
             schema=schema,
@@ -607,7 +607,7 @@ def write_empty_tabular(
     basename_template = _generate_basename_template(file_format.ext())
     file_path = f"{resolved_path}/{basename_template.format(i=0)}"
 
-    def write_table():
+    def write_table() -> None:
         if file_format == FileFormat.Parquet:
             pq.write_table(
                 table,

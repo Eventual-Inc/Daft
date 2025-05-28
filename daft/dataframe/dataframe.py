@@ -42,7 +42,13 @@ from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
-from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
+from daft.runners.partitioning import (
+    LocalPartitionSet,
+    MaterializedResult,
+    PartitionCacheEntry,
+    PartitionSet,
+    PartitionT,
+)
 from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions
 
 if TYPE_CHECKING:
@@ -55,6 +61,7 @@ if TYPE_CHECKING:
     import torch
 
     from daft.io import DataCatalogTable, DataSink
+    from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
 
 if sys.version_info < (3, 10):
@@ -159,29 +166,25 @@ class DataFrame:
         return self.__builder
 
     @property
-    def _result(self) -> Optional[PartitionSet]:
+    def _result(self) -> Optional[PartitionSet[PartitionT]]:
         if self._result_cache is None:
             return None
         else:
             return self._result_cache.value
 
-    def _broadcast_query_plan(self, plan_time_start: datetime, plan_time_end: datetime):
+    def _broadcast_query_plan(self) -> None:
         from daft import dashboard
-        from daft.dataframe.display import MermaidFormatter
 
         if not dashboard._should_run():
             return
-
-        is_cached = self._result_cache is not None
-        mermaid_plan: str = MermaidFormatter(
-            builder=self.__builder,
-            show_all=True,
-            simple=False,
-            is_cached=is_cached,
-        )._repr_markdown_()
+        unoptimized_plan = self._builder._builder.repr_json(True)
+        plan_time_start = _utc_now()
+        optimized_plan = self._builder.optimize()._builder.repr_json(True)
+        plan_time_end = _utc_now()
 
         dashboard.broadcast_query_information(
-            mermaid_plan=mermaid_plan,
+            unoptimized_plan=unoptimized_plan,
+            optimized_plan=optimized_plan,
             plan_time_start=plan_time_start,
             plan_time_end=plan_time_end,
         )
@@ -431,10 +434,13 @@ class DataFrame:
             results_buffer_size = multiprocessing.cpu_count()
         if results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
-        if self._result is not None:
+
+        results = self._result
+        if results is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            for _, result in self._result.items():
+
+            for _, result in results.items():
                 yield from (result.micropartition().to_arrow().to_batches())
         else:
             # Execute the dataframe in a streaming fashion.
@@ -450,7 +456,7 @@ class DataFrame:
     @DataframePublicAPI
     def iter_partitions(
         self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
-    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef[MicroPartition]"]]:
+    ) -> Iterator[Union[MicroPartition, "ray.ObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.recordbatch object (if using Python runner backend)
@@ -512,16 +518,17 @@ class DataFrame:
         elif results_buffer_size is not None and not results_buffer_size > 0:
             raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
 
-        if self._result is not None:
+        results = self._result
+        if results is not None:
             # If the dataframe has already finished executing,
             # use the precomputed results.
-            for mat_result in self._result.values():
+            for mat_result in results.values():
                 yield mat_result.partition()
 
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.get_or_create_runner().run_iter(
+            results_iter: Iterator[MaterializedResult[Any]] = context.get_or_create_runner().run_iter(
                 self._builder, results_buffer_size=results_buffer_size
             )
             for result in results_iter:
@@ -529,14 +536,15 @@ class DataFrame:
 
     def _populate_preview(self) -> None:
         """Populates the preview of the DataFrame, if it is not already populated."""
-        if self._result is None:
+        results = self._result
+        if results is None:
             return
 
         preview_partition_invalid = (
             self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
         )
         if preview_partition_invalid:
-            preview_parts = self._result._get_preview_micropartitions(self._num_preview_rows)
+            preview_parts = results._get_preview_micropartitions(self._num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
@@ -574,7 +582,7 @@ class DataFrame:
         return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
 
     @classmethod
-    def _from_pydict(cls, data: Dict[str, InputListType]) -> "DataFrame":
+    def _from_pydict(cls, data: Mapping[str, InputListType]) -> "DataFrame":
         """Creates a DataFrame from a Python dictionary."""
         column_lengths = {key: len(data[key]) for key in data}
         if len(set(column_lengths.values())) > 1:
@@ -648,7 +656,7 @@ class DataFrame:
         Returns:
             DataFrame: Daft DataFrame with "column_name" and "type" fields.
         """
-        pydict: Dict = {"column_name": [], "type": []}
+        pydict: dict[str, list[str]] = {"column_name": [], "type": []}
         for field in schema:
             pydict["column_name"].append(field.name)
             pydict["type"].append(str(field.dtype))
@@ -863,7 +871,9 @@ class DataFrame:
             deleted_files = []
 
         schema = table.schema()
-        partitioning: Dict[str, list] = {schema.find_field(field.source_id).name: [] for field in table.spec().fields}
+        partitioning: Dict[str, list[Any]] = {
+            schema.find_field(field.source_id).name: [] for field in table.spec().fields
+        }
 
         for data_file in data_files:
             operations.append("ADD")
@@ -1001,7 +1011,7 @@ class DataFrame:
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
-        def _create_metadata_param(metadata: Optional[Dict[str, str]]):
+        def _create_metadata_param(metadata: Optional[Dict[str, str]]) -> Any:
             """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
 
             Args:
@@ -1027,7 +1037,7 @@ class DataFrame:
 
         # Retrieve table_uri and storage_options from various backends
         table_uri: str
-        storage_options: dict
+        storage_options: dict[str, str]
 
         if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
@@ -1179,7 +1189,7 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write_sink(self, sink: "DataSink[T]") -> "DataFrame":
+    def write_sink(self, sink: "DataSink[WriteResultType]") -> "DataFrame":
         """Writes the DataFrame to the given DataSink.
 
         Args:
@@ -1213,7 +1223,7 @@ class DataFrame:
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
@@ -2146,7 +2156,7 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def drop_nan(self, *cols: ColumnInputType):
+    def drop_nan(self, *cols: ColumnInputType) -> "DataFrame":
         """Drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
 
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
@@ -2218,7 +2228,7 @@ class DataFrame:
         )
 
     @DataframePublicAPI
-    def drop_null(self, *cols: ColumnInputType):
+    def drop_null(self, *cols: ColumnInputType) -> "DataFrame":
         """Drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
 
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
@@ -3082,10 +3092,8 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
         """
-        plan_time_start = _utc_now()
+        self._broadcast_query_plan()
         self._materialize_results()
-        plan_time_end = _utc_now()
-        self._broadcast_query_plan(plan_time_start, plan_time_end)
         assert self._result is not None
         dataframe_len = len(self._result)
         if num_preview_rows is not None:
@@ -3212,7 +3220,7 @@ class DataFrame:
             print(preview_formatter)
         return None
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Returns the count of rows when dataframe is materialized.
 
         If dataframe is not materialized yet, raises a runtime error.
@@ -3453,7 +3461,7 @@ class DataFrame:
         self,
         meta: Union[
             "pandas.DataFrame",
-            "pandas.Series",
+            "pandas.Series[Any]",
             Dict[str, Any],
             Iterable[Any],
             Tuple[Any],
@@ -3547,7 +3555,7 @@ class GroupedDataFrame:
     df: DataFrame
     group_by: ExpressionsProjection
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         resolved_groupby_schema = self.group_by.resolve_schema(self.df._builder.schema())
         for field, e in zip(resolved_groupby_schema, self.group_by):
             if field.dtype == DataType.null():

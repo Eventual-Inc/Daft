@@ -15,7 +15,7 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
-uuid = {version = "1.10.0", features = ["v4"]}
+uuid.workspace = true
 
 [features]
 python = [

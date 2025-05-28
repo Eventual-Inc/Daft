@@ -1,122 +1,93 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::{ensure, DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_dsl::{
+    functions::{FunctionArgs, ScalarUDF},
+    ExprRef,
+};
 use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
-use snafu::prelude::*;
-
-use crate::InvalidArgumentSnafu;
 
 /// Container for the keyword arguments of `url_download`
 /// ex:
 /// ```text
-/// url_decode(input)
-/// url_decode(input, max_connections=32)
-/// url_decode(input, on_error='raise')
-/// url_decode(input, on_error='null')
-/// url_decode(input, max_connections=32, on_error='raise')
+/// url_download(input)
+/// url_download(input, max_connections=32)
+/// url_download(input, on_error='raise')
+/// url_download(input, on_error='null')
+/// url_download(input, max_connections=32, on_error='raise')
 /// ```
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-pub struct UrlDownloadArgs {
-    pub max_connections: usize,
-    pub raise_error_on_failure: bool,
-    pub multi_thread: bool,
-    pub io_config: Arc<IOConfig>,
-}
+pub struct UrlDownload;
 
-impl UrlDownloadArgs {
-    pub fn new(
-        max_connections: usize,
-        raise_error_on_failure: bool,
-        multi_thread: bool,
-        io_config: Option<IOConfig>,
-    ) -> Self {
-        Self {
-            max_connections,
-            raise_error_on_failure,
-            multi_thread,
-            io_config: io_config.unwrap_or_default().into(),
-        }
-    }
-}
-
-impl Default for UrlDownloadArgs {
-    fn default() -> Self {
-        Self {
-            max_connections: 32,
-            raise_error_on_failure: true,
-            multi_thread: true,
-            io_config: IOConfig::default().into(),
-        }
-    }
+#[derive(FunctionArgs)]
+pub struct UrlDownloadArgs<T> {
+    pub input: T,
+    #[arg(optional)]
+    pub multi_thread: Option<bool>,
+    #[arg(optional)]
+    pub io_config: Option<IOConfig>,
+    #[arg(optional)]
+    pub max_connections: Option<usize>,
+    #[arg(optional)]
+    pub on_error: Option<String>,
 }
 
 #[typetag::serde]
-impl ScalarUDF for UrlDownloadArgs {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-
+impl ScalarUDF for UrlDownload {
     fn name(&self) -> &'static str {
-        "download"
+        "url_download"
     }
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let UrlDownloadArgs {
+            input,
+            multi_thread,
+            io_config,
+            max_connections,
+            on_error,
+        } = inputs.try_into()?;
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let Self {
+        let max_connections = max_connections.unwrap_or(32);
+        let on_error = on_error.unwrap_or_else(|| "raise".to_string());
+        let multi_thread = multi_thread.unwrap_or(true);
+        let io_config = io_config.unwrap_or_default();
+
+        let raise_error_on_failure = match on_error.as_str() {
+            "raise" => true,
+            "null" => false,
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                    "Invalid value for 'on_error': {}",
+                    on_error
+                )))
+            }
+        };
+
+        let array = input.utf8()?;
+        let io_stats = IOStatsContext::new("download");
+        let result = url_download(
+            array,
             max_connections,
             raise_error_on_failure,
             multi_thread,
-            io_config,
-        } = self;
-
-        match inputs {
-            [input] => match input.data_type() {
-                DataType::Utf8 => {
-                    let array = input.utf8()?;
-                    let io_stats = IOStatsContext::new("download");
-                    let result = url_download(
-                        array,
-                        *max_connections,
-                        *raise_error_on_failure,
-                        *multi_thread,
-                        io_config.clone(),
-                        Some(io_stats),
-                    )?;
-                    Ok(result.into_series())
-                }
-                _ => Err(DaftError::TypeError(format!(
-                    "Download can only download uris from Utf8Array, got {input}"
-                ))),
-            },
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+            Arc::new(io_config),
+            Some(io_stats),
+        )?;
+        Ok(result.into_series())
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let field = input.to_field(schema)?;
-
-                match &field.dtype {
-                    DataType::Utf8 => Ok(Field::new(field.name, DataType::Binary)),
-                    _ => Err(DaftError::TypeError(format!(
-                        "Download can only download uris from Utf8Array, got {field}"
-                    ))),
-                }
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
-                inputs.len()
-            ))),
-        }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let UrlDownloadArgs { input, .. } = inputs.try_into()?;
+        let field = input.to_field(schema)?;
+        ensure!(field.dtype.is_string(), TypeError: "Input must be a string");
+        Ok(Field::new(field.name, DataType::Binary))
     }
 }
 
@@ -131,9 +102,7 @@ fn url_download(
     let name = array.name();
     ensure!(
         max_connections > 0,
-        InvalidArgumentSnafu {
-            msg: "max_connections for url_download must be non-zero".to_owned()
-        }
+        ValueError: "max_connections for url_download must be non-zero"
     );
 
     let runtime_handle = get_io_runtime(true);

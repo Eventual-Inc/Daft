@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from daft.dependencies import pa, pafs, pq
 from daft.filesystem import join_path
@@ -22,11 +23,11 @@ class Instant:
     timestamp: str
 
     @property
-    def file_name(self):
+    def file_name(self) -> str:
         state = "" if self.state == State.COMPLETED else f".{self.state.name.lower()}"
         return f"{self.timestamp}.{self.action}{state}"
 
-    def __lt__(self, other: Instant):
+    def __lt__(self, other: Instant) -> bool:
         return [self.timestamp, self.state] < [other.timestamp, other.state]
 
 
@@ -36,7 +37,7 @@ class Timeline:
     fs: pafs.FileSystem
     completed_commit_instants: list[Instant]
 
-    def __init__(self, base_path: str, fs: pafs.FileSystem):
+    def __init__(self, base_path: str, fs: pafs.FileSystem) -> None:
         self.base_path = base_path
         self.fs = fs
         self._load_completed_commit_instants()
@@ -45,7 +46,7 @@ class Timeline:
     def has_completed_commit(self) -> bool:
         return len(self.completed_commit_instants) > 0
 
-    def _load_completed_commit_instants(self):
+    def _load_completed_commit_instants(self) -> None:
         timeline_path = join_path(self.fs, self.base_path, ".hoodie")
         write_action_exts = {".commit"}
         commit_instants = []
@@ -57,7 +58,7 @@ class Timeline:
                 commit_instants.append(instant)
         self.completed_commit_instants = sorted(commit_instants)
 
-    def get_latest_commit_metadata(self) -> dict:
+    def get_latest_commit_metadata(self) -> dict[Any, Any]:
         if not self.has_completed_commit:
             return {}
         latest_instant_file_path = join_path(

@@ -12,6 +12,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
@@ -32,6 +33,7 @@ use {
 };
 
 use crate::{
+    display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
         self,
@@ -774,6 +776,7 @@ impl LogicalPlanBuilder {
                     |builder| builder.reorder_joins(),
                 )
                 .simplify_expressions()
+                .split_granular_projections()
                 .build();
 
             let optimized_plan = optimizer.optimize(
@@ -828,6 +831,7 @@ impl LogicalPlanBuilder {
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()
+            .split_granular_projections()
             .build();
 
         let optimized_plan = optimizer.optimize(
@@ -871,6 +875,14 @@ impl LogicalPlanBuilder {
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         use common_display::mermaid::MermaidDisplay;
         self.plan.repr_mermaid(opts)
+    }
+
+    pub fn repr_json(&self, include_schema: bool) -> DaftResult<String> {
+        let mut output = String::new();
+        let mut json_vis = JsonVisitor::new(&mut output);
+        json_vis.with_schema(include_schema);
+        self.plan.visit(&mut json_vis)?;
+        Ok(output)
     }
 }
 
@@ -1308,6 +1320,9 @@ impl PyLogicalPlanBuilder {
 
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         self.builder.repr_mermaid(opts)
+    }
+    pub fn repr_json(&self, include_schema: bool) -> PyResult<String> {
+        Ok(self.builder.repr_json(include_schema)?)
     }
 }
 

@@ -3,9 +3,14 @@ use std::{cmp::max, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
-    functions::python::{get_resource_request, try_get_batch_size_from_udf},
-    ExprRef,
+    common_treenode::{self, TreeNode},
+    functions::{
+        python::{get_resource_request, PythonUDF},
+        FunctionExpr, ScalarFunction,
+    },
+    Expr, ExprRef,
 };
+use daft_functions::uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -20,6 +25,50 @@ fn num_parallel_exprs(projection: &[ExprRef]) -> usize {
         projection.iter().filter(|expr| expr.has_compute()).count(),
         1,
     )
+}
+
+fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize> {
+    match (prev, next) {
+        (Some(p), Some(n)) => Some(std::cmp::min(p, n)),
+        (Some(p), None) => Some(p),
+        (None, Some(n)) => Some(n),
+        (None, None) => None,
+    }
+}
+
+const CONNECTION_BATCH_FACTOR: usize = 4;
+const DEFAULT_URL_MAX_CONNECTIONS: usize = 32;
+
+/// Gets the batch size from the first UDF encountered in a given slice of expressions
+/// Errors if no UDF is found
+pub fn try_get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
+    let mut projection_batch_size = None;
+    for expr in exprs {
+        expr.apply(|e| {
+            let found_batch_size = match e.as_ref() {
+                Expr::Function {
+                    func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+                    ..
+                } => *batch_size,
+                Expr::ScalarFunction(ScalarFunction { udf, inputs, .. })
+                    if udf.name() == "url_download" =>
+                {
+                    let UrlDownloadArgs {
+                        max_connections, ..
+                    } = inputs.clone().try_into()?;
+                    let max_connections = max_connections.unwrap_or(DEFAULT_URL_MAX_CONNECTIONS);
+                    Some(max_connections * CONNECTION_BATCH_FACTOR)
+                }
+                _ => None,
+            };
+
+            projection_batch_size = smallest_batch_size(projection_batch_size, found_batch_size);
+            Ok(common_treenode::TreeNodeRecursion::Continue)
+        })
+        .unwrap();
+    }
+
+    projection_batch_size
 }
 
 pub struct ProjectOperator {
@@ -37,7 +86,7 @@ impl ProjectOperator {
             .map(|m| m as u64)
             .unwrap_or(0);
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
-        let batch_size = try_get_batch_size_from_udf(&projection).unwrap_or(None);
+        let batch_size = try_get_batch_size(&projection);
         Ok(Self {
             projection: Arc::new(projection),
             memory_request,
@@ -145,8 +194,115 @@ impl IntermediateOperator for ProjectOperator {
         Ok(self.max_concurrency)
     }
 
-    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
-        self.batch_size
-            .or_else(|| Some(runtime_handle.default_morsel_size()))
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+        if let Some(batch_size) = self.batch_size {
+            (batch_size, batch_size)
+        } else {
+            (0, runtime_handle.default_morsel_size())
+        }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_dsl::{
+        functions::{FunctionArg, FunctionArgs},
+        Column, LiteralValue, ResolvedColumn,
+    };
+    use daft_functions::uri::download::UrlDownload;
+
+    use super::*;
+
+    #[test]
+    fn test_get_batch_size() {
+        let projection = vec![
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("a".into()))).arced(),
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("b".into()))).arced(),
+        ];
+        let batch_size = try_get_batch_size(projection.as_slice());
+        assert_eq!(batch_size, None);
+    }
+
+    #[test]
+    fn test_get_batch_size_with_url() {
+        let projection = vec![
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("a".into()))).arced(),
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("b".into()))).arced(),
+            Expr::ScalarFunction(ScalarFunction {
+                udf: Arc::new(UrlDownload),
+                inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(
+                    Expr::Column(Column::Resolved(ResolvedColumn::Basic("a".into()))).arced(),
+                )])
+                .unwrap(),
+            })
+            .arced(),
+        ];
+
+        let batch_size = try_get_batch_size(projection.as_slice());
+        assert_eq!(
+            batch_size,
+            Some(CONNECTION_BATCH_FACTOR * DEFAULT_URL_MAX_CONNECTIONS)
+        );
+    }
+
+    #[test]
+    fn test_get_batch_size_with_url_and_batch_size() {
+        let projection = vec![
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("a".into()))).arced(),
+            Expr::ScalarFunction(ScalarFunction {
+                udf: Arc::new(UrlDownload),
+                inputs: FunctionArgs::try_new(vec![
+                    FunctionArg::unnamed(
+                        Expr::Column(Column::Resolved(ResolvedColumn::Basic("a".into()))).arced(),
+                    ),
+                    FunctionArg::named(
+                        "max_connections",
+                        Expr::Literal(LiteralValue::Int64(10)).arced(),
+                    ),
+                ])
+                .unwrap(),
+            })
+            .arced(),
+        ];
+
+        let batch_size = try_get_batch_size(projection.as_slice());
+        assert_eq!(batch_size, Some(CONNECTION_BATCH_FACTOR * 10));
+    }
+
+    #[test]
+    fn test_get_batch_size_with_multiple_urls() {
+        let projection = vec![
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("a".into()))).arced(),
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("b".into()))).arced(),
+            Expr::ScalarFunction(ScalarFunction {
+                udf: Arc::new(UrlDownload),
+                inputs: FunctionArgs::try_new(vec![
+                    FunctionArg::unnamed(
+                        Expr::Column(Column::Resolved(ResolvedColumn::Basic("a".into()))).arced(),
+                    ),
+                    FunctionArg::named(
+                        "max_connections",
+                        Expr::Literal(LiteralValue::Int64(4)).arced(),
+                    ),
+                ])
+                .unwrap(),
+            })
+            .arced(),
+            Expr::ScalarFunction(ScalarFunction {
+                udf: Arc::new(UrlDownload),
+                inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(
+                    Expr::Column(Column::Resolved(ResolvedColumn::Basic("b".into()))).arced(),
+                )])
+                .unwrap(),
+            })
+            .arced(),
+        ];
+
+        let batch_size = try_get_batch_size(projection.as_slice());
+        assert_eq!(batch_size, Some(CONNECTION_BATCH_FACTOR * 4));
+    }
+
+    // TODO: Add test for UDFs, can't create a fake one for testing
 }

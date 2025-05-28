@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, Pushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
+from daft.daft import IOConfig, PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
@@ -84,7 +84,7 @@ class LanceDBScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._ds.schema)
 
-    def partitioning_keys(self) -> List[PartitionField]:
+    def partitioning_keys(self) -> List[PyPartitionField]:
         return []
 
     def can_absorb_filter(self) -> bool:
@@ -102,7 +102,7 @@ class LanceDBScanOperator(ScanOperator):
             f"Schema = {self.schema()}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         required_columns: Optional[List[str]]
         if pushdowns.columns is None:
             required_columns = None

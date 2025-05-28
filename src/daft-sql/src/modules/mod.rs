@@ -4,27 +4,23 @@ pub mod aggs;
 pub mod coalesce;
 pub mod config;
 pub mod hashing;
-pub mod list;
 pub mod map;
 pub mod partitioning;
 pub mod python;
 pub mod sketch;
 pub mod structs;
 pub mod temporal;
-pub mod uri;
 pub mod utf8;
 pub mod window;
 
 pub use aggs::SQLModuleAggs;
 pub use config::SQLModuleConfig;
-pub use list::SQLModuleList;
 pub use map::SQLModuleMap;
 pub use partitioning::SQLModulePartitioning;
 pub use python::SQLModulePython;
 pub use sketch::SQLModuleSketch;
 pub use structs::SQLModuleStructs;
 pub use temporal::SQLModuleTemporal;
-pub use uri::SQLModuleUri;
 pub use utf8::SQLModuleUtf8;
 pub use window::SQLModuleWindow;
 
