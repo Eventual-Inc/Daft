@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
@@ -1453,8 +1454,8 @@ impl SQLPlanner<'_> {
                         }
                     })
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
-
                 let s = literals_to_series(&values)?;
+
                 let s = FixedSizeListArray::new(
                     Field::new("tuple", s.data_type().clone())
                         .to_fixed_size_list_field(exprs.len())?,
@@ -1489,12 +1490,34 @@ impl SQLPlanner<'_> {
                 if array.elem.is_empty() {
                     invalid_operation_err!("List constructor requires at least one item")
                 }
-                let items = array
+                let values = array
                     .elem
                     .iter()
-                    .map(|e| self.plan_expr(e))
+                    .map(|expr| {
+                        let expr = self.plan_expr(expr)?;
+                        // this should always unwrap
+                        // there is no way to have multiple references to the same expr at this point
+                        let expr = Arc::unwrap_or_clone(expr);
+                        match expr {
+                            Expr::Literal(lit) => Ok(lit),
+                            _ => unsupported_sql_err!("Tuple with non-literal"),
+                        }
+                    })
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
-                Ok(Expr::List(items).into())
+
+                let s = literals_to_series(&values)?;
+                let offsets = OffsetsBuffer::try_from(vec![0, s.len() as i64])
+                    .expect("Failed to create offsets buffer");
+
+                let s = ListArray::new(
+                    Field::new("tuple", DataType::List(Box::new(s.data_type().clone()))),
+                    s,
+                    offsets,
+                    None,
+                )
+                .into_series();
+
+                Ok(lit(s))
             }
             SQLExpr::Interval(interval) => {
                 use regex::Regex;

@@ -50,6 +50,7 @@ pub mod pylib {
     use std::sync::LazyLock;
 
     use common_tracing::{init_opentelemetry_providers, init_tracing};
+    use daft_functions_ipc::IPCUDF;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);
@@ -151,6 +152,7 @@ pub mod pylib {
         let mut functions_registry = daft_dsl::functions::FUNCTION_REGISTRY
             .write()
             .expect("Failed to acquire write lock on function registry");
+        functions_registry.add_fn(IPCUDF);
         functions_registry.register::<daft_functions::numeric::NumericFunctions>();
         functions_registry.register::<daft_functions::float::FloatFunctions>();
         functions_registry.register::<daft_functions::uri::UriFunctions>();

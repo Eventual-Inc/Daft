@@ -2021,6 +2021,7 @@ dependencies = [
  "daft-distributed",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-ipc",
  "daft-functions-json",
  "daft-functions-list",
  "daft-functions-temporal",
@@ -2313,6 +2314,25 @@ dependencies = [
  "typetag",
  "uuid 1.16.0",
  "xxhash-rust",
+]
+
+[[package]]
+name = "daft-functions-ipc"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-recordbatch",
+ "itertools 0.11.0",
+ "jaq-core",
+ "jaq-interpret",
+ "jaq-parse",
+ "jaq-std",
+ "serde",
+ "serde_json",
+ "typetag",
 ]
 
 [[package]]
