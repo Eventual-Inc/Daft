@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use daft_core::prelude::Schema;
 use daft_dsl::{
     expr::window::{WindowBoundary, WindowFrame},
     functions::{FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
@@ -49,7 +50,9 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
         //  because, like the python API, we've only had dynamic functions on
         //  the SQL side. The solution is to add all `DynamicScalarFunction`
         //  by calling get_function with empty arguments and only adding the ok's.
-        if let Ok(function) = function_factory.get_function(FunctionArgs::empty()) {
+        let args = FunctionArgs::empty();
+        let schema = Schema::empty();
+        if let Ok(function) = function_factory.get_function(args, &schema) {
             functions.add_fn(name, function);
         }
     }

@@ -41,6 +41,15 @@ impl From<ScalarFunction> for ExprRef {
 }
 
 /// This is a factory for scalar function implementations.
+///
+/// TODO:
+///   Rename to ScalarFunction (or similar) once ScalarFunction is migrated
+///   to ScalarUDF, and update ScalarUDF to ScalarFunctionImpl (or similar).
+///   Then update Expr::Function(ScalarUDF) to Expr::Function(ScalarFunctionFactory)
+///   which will enable *name* resolution within the DSL, but then we now have
+///   the ability for *type* resolution during planning via get_function. We can
+///   build rule-based type resolution at a later time.
+///
 pub trait ScalarFunctionFactory: Send + Sync {
     /// The name of this function.
     fn name(&self) -> &'static str;
@@ -51,7 +60,18 @@ pub trait ScalarFunctionFactory: Send + Sync {
     }
 
     /// Returns a ScalarUDF for the given fields.
-    fn get_function(&self, args: FunctionArgs<Field>) -> DaftResult<Arc<dyn ScalarUDF>>;
+    ///
+    /// Note:
+    ///   When the time comes, we should replace FunctionArgs<ExprRef> with bound ExprRef.
+    ///   This way we have the pair (Expr, Field) so we don't have to keep re-computing
+    ///   expression types each time we resolve a function. At present, I wanted to keep
+    ///   this signature the exact same as function_args_to_field.
+    ///
+    fn get_function(
+        &self,
+        args: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Arc<dyn ScalarUDF>>;
 }
 
 /// This is a concrete implementation of a ScalarFunction.
@@ -202,7 +222,7 @@ impl ScalarFunctionFactory for DynamicScalarFunction {
     }
 
     /// All typing for implementation variants is done during evaluation, hence dynamic.
-    fn get_function(&self, _: FunctionArgs<Field>) -> DaftResult<Arc<dyn ScalarUDF>> {
+    fn get_function(&self, _: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Arc<dyn ScalarUDF>> {
         Ok(self.0.clone())
     }
 }
