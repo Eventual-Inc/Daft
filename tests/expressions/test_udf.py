@@ -217,10 +217,11 @@ def test_udf_error():
 
     expr = throw_value_err(col("a"))
 
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         table.eval_expression_list([expr])
-    assert isinstance(exc_info.value.__cause__, ValueError)
-    assert str(exc_info.value.__cause__) == "AN ERROR OCCURRED!"
+
+    assert str(exc_info.value).startswith("AN ERROR OCCURRED!\nUser-defined function ")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -472,24 +473,30 @@ def test_udf_empty(batch_size, use_actor_pool):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() not in {"native", "ray"}, reason="requires Native or Ray Runner to be in use"
+    get_tests_daft_runner_name() not in {"native", "ray"},
+    reason="requires Native or Ray Runner to be in use",
 )
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 def test_udf_with_error(use_actor_pool):
-    df = daft.from_pydict({"a": []})
+    import re
+
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.int64())
-    def fail_hard(data):
+    def fail_hard(a, b):
         raise ValueError("AN ERROR OCCURRED!")
 
     if use_actor_pool:
         fail_hard = fail_hard.with_concurrency(2)
 
-    with pytest.raises(RuntimeError) as exc_info:
-        df.select(fail_hard(col("a"))).collect()
+    with pytest.raises(Exception) as exc_info:
+        df.select(fail_hard(col("a"), col("b"))).collect()
 
-    # where we see the error is going to differ whether we run on actor pool / ray runner or native, but regardless
-    # we should see the original error message
-    assert str(exc_info.value.__cause__) == "AN ERROR OCCURRED!" or "ValueError: AN ERROR OCCURRED!" in str(
-        exc_info.value
+    pattern = (
+        r"AN ERROR OCCURRED!\n"
+        r"User-defined function `<function test_udf_with_error\.<locals>\.fail_hard at 0x[0-9a-f]+>` "
+        r"failed when executing on inputs:\s*"
+        r"- a \(Int64, length=3\)\s*"
+        r"- b \(Utf8, length=3\)$"
     )
+    assert re.search(pattern, str(exc_info.value)), f"String doesn't end with expected pattern: {exc_info.value!s}"
