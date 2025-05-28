@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{any::TypeId, collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
+use daft_functions::uri::download::UrlDownload;
 use itertools::Itertools;
 
 use super::OptimizerRule;
@@ -42,7 +43,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "url_download"
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
         )
     }
 
@@ -86,7 +87,7 @@ impl SplitGranularProjection {
                                 changed = true;
                                 // Child may not have an alias, so we need to generate a new one
                                 // TODO: Remove with ordinals
-                                let child_name = child.semantic_id(projected_schema).id;
+                                let child_name = format!("id-{}", uuid::Uuid::new_v4());
                                 let child = child.alias(child_name.clone());
                                 split_exprs.push(child);
 
@@ -114,8 +115,7 @@ impl SplitGranularProjection {
                             // Split and save child expression
                             // Child may not have an alias, so we need to generate a new one
                             // TODO: Remove with ordinals
-                            let child_name = child.semantic_id(projected_schema).id;
-
+                            let child_name = format!("id-{}", uuid::Uuid::new_v4());
                             let child = child.alias(child_name.clone());
                             split_exprs.push(child);
                             new_children[idx] = resolved_col(child_name);
@@ -157,24 +157,50 @@ impl SplitGranularProjection {
         // Passthrough means just passing the original column through unchanged
 
         let mut last_child = input.clone();
-        for i in 0..max_projections {
-            let exprs = all_split_exprs
-                .iter()
-                .map(|split| {
-                    split.get(i).cloned().unwrap_or_else(|| {
-                        let passthrough_name = split.last().unwrap().name();
+        let input_cols = input
+            .schema()
+            .field_names()
+            .map(Arc::from)
+            .collect::<Vec<Arc<str>>>();
 
-                        Arc::new(Expr::Column(daft_dsl::Column::Resolved(
-                            daft_dsl::ResolvedColumn::Basic(passthrough_name.into()),
-                        )))
-                    })
-                })
-                .collect_vec();
+        for i in 0..max_projections {
+            let mut out_names = HashSet::new();
+            let mut out_exprs = vec![];
+
+            for split in &all_split_exprs {
+                let expr = split.get(i).cloned().unwrap_or_else(|| {
+                    let passthrough_name = split.last().unwrap().name();
+                    resolved_col(passthrough_name)
+                });
+                out_names.insert(expr.name().to_string());
+                out_exprs.push(expr);
+            }
+
+            for name in &input_cols {
+                if !out_names.contains(name.as_ref()) {
+                    out_names.insert(name.to_string());
+                    out_exprs.push(resolved_col(name.clone()));
+                }
+            }
 
             last_child = Arc::new(LogicalPlan::Project(
-                Project::try_new(last_child, exprs).unwrap(),
+                Project::try_new(last_child, out_exprs).unwrap(),
             ));
         }
+
+        // Only expose the columns that are in the original projection, not the inputs
+        let last_fields = last_child
+            .schema()
+            .field_names()
+            .take(projection.len())
+            // Ensure that the output column names match the original projection
+            .zip(projected_schema.field_names())
+            .map(|c| resolved_col(Arc::from(c.0)).alias(Arc::from(c.1)))
+            .collect_vec();
+
+        last_child = Arc::new(LogicalPlan::Project(
+            Project::try_new(last_child, last_fields).unwrap(),
+        ));
 
         Ok(Transformed::yes(last_child))
     }
@@ -186,10 +212,10 @@ mod tests {
     use common_scan_info::Pushdowns;
     use daft_dsl::{Column, ResolvedColumn};
     use daft_functions::{
-        binary::{codecs::Codec, decode::decode},
+        binary::{binary_concat, codecs::Codec, decode::decode, BinaryConcat},
         uri::download::UrlDownload,
     };
-    use daft_functions_utf8::{capitalize, lower};
+    use daft_functions_utf8::{capitalize, lower, Capitalize};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::*;
@@ -251,27 +277,47 @@ mod tests {
             ]),
             Pushdowns::default(),
         )
-        .with_columns(vec![
+        .select(vec![
             decode(
                 ScalarFunction::new(UrlDownload, vec![resolved_col("url")]).into(),
                 Codec::Utf8,
-            ),
-            lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced()),
+            )
+            .alias("url_data"),
+            lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
+                .alias("name_lower"),
         ])
         .unwrap()
         .build();
 
         let optimizer = SplitGranularProjection::new();
-
         let new_plan = optimizer.try_optimize(plan)?;
-
         assert!(new_plan.transformed);
+
         assert!(matches!(new_plan.data.as_ref(), LogicalPlan::Project(_)));
-        let LogicalPlan::Project(top_project) = new_plan.data.as_ref() else {
+        let LogicalPlan::Project(column_prune_project) = new_plan.data.as_ref() else {
+            panic!("Expected top project for column pruning");
+        };
+        assert_eq!(column_prune_project.projection.len(), 2);
+        assert_eq!(column_prune_project.projection[0].name(), "url_data");
+        assert_eq!(column_prune_project.projection[1].name(), "name_lower");
+        assert!(matches!(
+            column_prune_project.input.as_ref(),
+            LogicalPlan::Project(_)
+        ));
+
+        let LogicalPlan::Project(top_project) = column_prune_project.input.as_ref() else {
             panic!("Expected top level project");
         };
-        assert_eq!(top_project.projection.len(), 2);
-        assert!(matches!(top_project.projection[1].as_ref(), Expr::Cast(..)));
+        assert_eq!(top_project.projection.len(), 4);
+        eprintln!("top_project: {:#?}", top_project);
+        assert!(matches!(
+            top_project.projection[0].as_ref(),
+            Expr::Alias(..)
+        ));
+        let Expr::Alias(func, ..) = top_project.projection[0].as_ref() else {
+            panic!("Expected alias");
+        };
+        assert!(matches!(func.as_ref(), Expr::Cast(..)));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(
@@ -281,17 +327,17 @@ mod tests {
         let LogicalPlan::Project(bottom_project) = top_project.input.as_ref() else {
             panic!("Expected middle level project");
         };
-        assert_eq!(bottom_project.projection.len(), 2);
+        assert_eq!(bottom_project.projection.len(), 4);
         assert!(matches!(
-            bottom_project.projection[1].as_ref(),
+            bottom_project.projection[0].as_ref(),
             Expr::Alias(..)
         ));
-        let Expr::Alias(func, ..) = bottom_project.projection[1].as_ref() else {
+        let Expr::Alias(func, ..) = bottom_project.projection[0].as_ref() else {
             panic!("Expected alias");
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "url_download"
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node
@@ -310,30 +356,53 @@ mod tests {
             dummy_scan_operator(vec![
                 Field::new("name", DataType::Utf8),
                 Field::new("url", DataType::Utf8),
+                Field::new("extra", DataType::Binary),
             ]),
             Pushdowns::default(),
         )
-        .with_columns(vec![
-            decode(
+        .select(vec![
+            binary_concat(
                 ScalarFunction::new(UrlDownload, vec![capitalize(resolved_col("url"))]).into(),
-                Codec::Utf8,
-            ),
-            lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced()),
+                resolved_col("extra"),
+            )
+            .alias("url_data"),
+            lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
+                .alias("name_lower"),
         ])
         .unwrap()
         .build();
 
         let optimizer = SplitGranularProjection::new();
-
         let new_plan = optimizer.try_optimize(plan)?;
-
         assert!(new_plan.transformed);
+
         assert!(matches!(new_plan.data.as_ref(), LogicalPlan::Project(_)));
-        let LogicalPlan::Project(top_project) = new_plan.data.as_ref() else {
+        let LogicalPlan::Project(column_prune_project) = new_plan.data.as_ref() else {
+            panic!("Expected top project for column pruning");
+        };
+        assert_eq!(column_prune_project.projection.len(), 2);
+        assert_eq!(column_prune_project.projection[0].name(), "url_data");
+        assert_eq!(column_prune_project.projection[1].name(), "name_lower");
+        assert!(matches!(
+            column_prune_project.input.as_ref(),
+            LogicalPlan::Project(_)
+        ));
+
+        let LogicalPlan::Project(top_project) = column_prune_project.input.as_ref() else {
             panic!("Expected top level project");
         };
-        assert_eq!(top_project.projection.len(), 2);
-        assert!(matches!(top_project.projection[1].as_ref(), Expr::Cast(..)));
+        assert_eq!(top_project.projection.len(), 5);
+        assert!(matches!(
+            top_project.projection[0].as_ref(),
+            Expr::Alias(..)
+        ));
+        let Expr::Alias(func, ..) = top_project.projection[0].as_ref() else {
+            panic!("Expected alias");
+        };
+        assert!(matches!(
+            func.as_ref(),
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<BinaryConcat>()
+        ));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(
@@ -343,17 +412,17 @@ mod tests {
         let LogicalPlan::Project(middle_project) = top_project.input.as_ref() else {
             panic!("Expected middle level project");
         };
-        assert_eq!(middle_project.projection.len(), 2);
+        assert_eq!(middle_project.projection.len(), 5);
         assert!(matches!(
-            middle_project.projection[1].as_ref(),
+            middle_project.projection[0].as_ref(),
             Expr::Alias(..)
         ));
-        let Expr::Alias(func, ..) = middle_project.projection[1].as_ref() else {
+        let Expr::Alias(func, ..) = middle_project.projection[0].as_ref() else {
             panic!("Expected alias");
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "url_download"
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the middle level project has a single child, which is a project
@@ -364,17 +433,17 @@ mod tests {
         let LogicalPlan::Project(bottom_project) = middle_project.input.as_ref() else {
             panic!("Expected bottom level project");
         };
-        assert_eq!(bottom_project.projection.len(), 2);
+        assert_eq!(bottom_project.projection.len(), 5);
         assert!(matches!(
-            bottom_project.projection[1].as_ref(),
+            bottom_project.projection[0].as_ref(),
             Expr::Alias(..)
         ));
-        let Expr::Alias(func, ..) = bottom_project.projection[1].as_ref() else {
+        let Expr::Alias(func, ..) = bottom_project.projection[0].as_ref() else {
             panic!("Expected alias");
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "capitalize"
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<Capitalize>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node
