@@ -165,7 +165,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn limit(
+    pub fn limit(
         input: LocalPhysicalPlanRef,
         num_rows: i64,
         stats_state: StatsState,
