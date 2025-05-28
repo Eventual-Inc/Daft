@@ -2,7 +2,10 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
 use super::super::FunctionEvaluator;
-use crate::{functions::FunctionExpr, ExprRef};
+use crate::{
+    functions::{FunctionExpr, FunctionResult},
+    ExprRef,
+};
 
 pub(super) struct GetEvaluator {}
 
@@ -34,7 +37,7 @@ impl FunctionEvaluator for GetEvaluator {
         Ok(field)
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<FunctionResult> {
         let [input, key] = inputs else {
             return Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
@@ -42,6 +45,6 @@ impl FunctionEvaluator for GetEvaluator {
             )));
         };
 
-        input.map_get(key)
+        Ok(input.map_get(key)?.into())
     }
 }

@@ -495,7 +495,7 @@ impl OuterHashJoinProbeSink {
                 .iter()
                 .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
                 .collect::<Vec<_>>();
-            RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len())
+            RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len(), None)
         };
         // If we built the probe table on the right, flip the order of union.
         let (left, right) = if build_on_left {
@@ -526,7 +526,7 @@ impl OuterHashJoinProbeSink {
                 .iter()
                 .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
                 .collect::<Vec<_>>();
-            RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len())
+            RecordBatch::new_unchecked(right_non_join_schema.clone(), columns, left.len(), None)
         };
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Some(Arc::new(MicroPartition::new_loaded(
@@ -554,6 +554,7 @@ impl OuterHashJoinProbeSink {
                 left_non_join_schema.clone(),
                 columns,
                 build_side_table.len(),
+                None,
             )
         };
         let right = get_columns_by_name(&build_side_table, right_non_join_columns)?;

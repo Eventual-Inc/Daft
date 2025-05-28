@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
 use super::{super::FunctionEvaluator, SketchExpr};
-use crate::{functions::FunctionExpr, ExprRef};
+use crate::{functions::{FunctionExpr, FunctionResult}, ExprRef};
 
 pub(super) struct PercentileEvaluator {}
 
@@ -57,13 +57,13 @@ impl FunctionEvaluator for PercentileEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<FunctionResult> {
         match inputs {
             [input] => match expr {
                 FunctionExpr::Sketch(SketchExpr::Percentile {
                     percentiles,
                     force_list_output,
-                }) => input.sketch_percentile(percentiles.0.as_slice(), *force_list_output),
+                }) => Ok(input.sketch_percentile(percentiles.0.as_slice(), *force_list_output)?.into()),
                 _ => unreachable!(
                     "PercentileEvaluator must evaluate a SketchExpr::Percentile expression"
                 ),

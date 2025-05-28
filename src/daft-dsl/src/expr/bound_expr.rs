@@ -9,7 +9,7 @@ use super::{
     bound_col, AggExpr, Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowExpr,
 };
 
-#[derive(Clone, Display)]
+#[derive(Clone, Display, Debug)]
 /// A simple newtype around ExprRef that ensures that all of the columns in the held expression are bound.
 ///
 /// We have several column variants: unresolved, resolved, and bound.

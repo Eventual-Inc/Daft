@@ -573,6 +573,7 @@ mod tests {
                 bound_args: RuntimePyObject::new_testing_none(),
                 num_expressions: inputs.len(),
                 return_dtype: DataType::Utf8,
+                scalar_udf: false,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
