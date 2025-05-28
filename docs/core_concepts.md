@@ -4,17 +4,17 @@ Learn about the core concepts that Daft is built on!
 
 ## DataFrame
 
-The [`DataFrame`][daft.DataFrame] is the core concept in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
+The [`DataFrame`][daft.DataFrame] is one of the core concepts in Daft. Think of it as a table with rows and columns, similar to a spreadsheet or a database table. It's designed to handle large amounts of data efficiently.
 
-If you are coming from other DataFrame libraries such as Pandas or Polars, here are some key differences about Daft DataFrames:
+If you are coming from other data tools such as Pandas or Polars, here are some key differences about Daft's core engine:
 
 1. **Distributed:** When running in a distributed cluster, Daft splits your data into smaller "chunks" called *Partitions*. This allows Daft to process your data in parallel across multiple machines, leveraging more resources to work with large datasets.
 
 2. **Lazy:** When you write operations on a DataFrame, Daft doesn't execute them immediately. Instead, it creates a plan (called a query plan) of what needs to be done. This plan is optimized and only executed when you specifically request the results ([`.show`][daft.DataFrame.show], [`.collect`][daft.DataFrame.collect]), which can lead to more efficient computations.
 
-3. **Multimodal:** Unlike traditional tables that usually contain simple data types like numbers and text, Daft DataFrames can handle complex data types in its columns. This includes things like images, audio files, or even custom Python objects.
+3. **Multimodal:** Unlike traditional tables that usually contain simple data types like numbers and text, Daft can handle complex data types in its columns. This includes things like images, audio files, or even custom Python objects.
 
-For a full comparison between Daft and other DataFrame Libraries, see [DataFrame Comparison](resources/dataframe_comparison.md).
+For a full comparison between Daft and other data tools, see [Tool Comparison](resources/dataframe_comparison.md).
 
 Common data operations that you would perform on DataFrames are:
 
@@ -28,7 +28,7 @@ Common data operations that you would perform on DataFrames are:
 
 !!! tip "See Also"
 
-    [Reading Data](core_concepts.md#reading-data) and [Writing Data](core_concepts.md#writing-data) - a more in-depth guide on various options for reading and writing data to and from Daft DataFrames from in-memory data (Python, Arrow), files (Parquet, CSV, JSON), SQL Databases and Data Catalogs
+    [Reading Data](core_concepts.md#reading-data) and [Writing Data](core_concepts.md#writing-data) - a more in-depth guide on various options for reading and writing data to and from Daft from in-memory data (Python, Arrow), files (Parquet, CSV, JSON), SQL Databases and Data Catalogs
 
 Let's create our first Dataframe from a Python dictionary of columns.
 
@@ -99,13 +99,13 @@ But wait - why is it printing the message `(No data to display: Dataframe not ma
 
 ### Executing DataFrame and Viewing Data
 
-The reason that our DataFrame currently does not display its rows is that Daft DataFrames are **lazy**. This just means that Daft DataFrames will defer all its work until you tell it to execute.
+The reason that our DataFrame currently does not display its rows is that Daft is **lazy**. This just means that Daft will defer all its work until you tell it to execute.
 
 In this case, Daft is just deferring the work required to read the data and select columns, however in practice this laziness can be very useful for helping Daft optimize your queries before execution!
 
 !!! info "Info"
 
-    When you call methods on a Daft Dataframe, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling [`df.explain()`][daft.DataFrame.explain]!
+    When you call methods on a DataFrame in Daft, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling [`df.explain()`][daft.DataFrame.explain]!
 
     Passing the `show_all=True` argument will show you the plan after Daft applies its query optimizations and the physical (lower-level) plan.
 
@@ -1413,7 +1413,7 @@ Daft can read data from a variety of sources, and write data to many destination
 
 ## Query Plan
 
-As mentioned earlier, Daft DataFrames are lazy. Under the hood, each DataFrame in Daft is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
+As mentioned earlier, Daft is lazy. Under the hood, each DataFrame in Daft is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
 
 You can examine a logical plan using [`df.explain()`][daft.DataFrame.explain], here's an example:
 
@@ -1631,11 +1631,7 @@ Writing data will execute your DataFrame and write the results out to the specif
 
 ## DataTypes
 
-All columns in a Daft DataFrame have a DataType (also often abbreviated as `dtype`).
-
-All elements of a column are of the same dtype, or they can be the special Null value (indicating a missing value).
-
-Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like tensors and images.
+All DataFrame columns in Daft have a DataType (also often abbreviated as `dtype`). All elements of a column are of the same dtype, or they can be the special Null value (indicating a missing value). Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like tensors and images.
 
 !!! tip "Tip"
 

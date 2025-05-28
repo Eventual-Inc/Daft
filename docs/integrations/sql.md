@@ -1,6 +1,6 @@
 # SQL
 
-You can read the results of SQL queries from databases, data warehouses, and query engines, into a Daft DataFrame via the [`daft.read_sql()`][daft.read_sql] function.
+You can read the results of SQL queries from databases, data warehouses, and query engines, into Daft via the [`daft.read_sql()`][daft.read_sql] function.
 
 Daft currently supports:
 
@@ -47,12 +47,12 @@ The example below creates a local SQLite table for Daft to read.
     connection.close()
     ```
 
-After writing this local example table, we can easily read it into a Daft DataFrame.
+After writing this local example table, we can easily read it into Daft as a DataFrame.
 
 === "🐍 Python"
 
     ```python
-    # Read SQL query into Daft DataFrame
+    # Read SQL query into Daft
     import daft
 
     df = daft.read_sql(
@@ -61,14 +61,14 @@ After writing this local example table, we can easily read it into a Daft DataFr
     )
     ```
 
-Daft uses [ConnectorX](https://sfu-db.github.io/connector-x/databases.html) under the hood to read SQL data. ConnectorX is a fast, Rust based SQL connector that reads directly into Arrow Tables, enabling zero-copy transfer into Daft dataframes. If the database is not supported by ConnectorX (list of supported databases [here](https://sfu-db.github.io/connector-x/intro.html#supported-sources-destinations)), Daft will fall back to using [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html).
+Daft uses [ConnectorX](https://sfu-db.github.io/connector-x/databases.html) under the hood to read SQL data. ConnectorX is a fast, Rust based SQL connector that reads directly into Arrow Tables, enabling zero-copy transfer into Daft. If the database is not supported by ConnectorX (list of supported databases [here](https://sfu-db.github.io/connector-x/intro.html#supported-sources-destinations)), Daft will fall back to using [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html).
 
 You can also directly provide a SQL alchemy connection via a **connection factory**. This way, you have the flexibility to provide additional parameters to the engine.
 
 === "🐍 Python"
 
     ```python
-    # Read SQL query into Daft DataFrame using a connection factory
+    # Read SQL query into Daft using a connection factory
     import daft
     from sqlalchemy import create_engine
 
@@ -87,7 +87,7 @@ Supply the [`daft.read_sql()`][daft.read_sql] function with a **partition column
 === "🐍 Python"
 
     ```python
-    # Read SQL query into Daft DataFrame with parallel reads
+    # Read SQL query into Daft with parallel reads
     import daft
 
     df = daft.read_sql(
