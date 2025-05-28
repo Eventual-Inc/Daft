@@ -44,7 +44,7 @@ def test_explode_multiple_cols(make_df, data):
     [
         # List of maps with timestamp values - 4 rows -> 5 rows
         (
-            pa.list_(pa.map_(pa.string(), pa.timestamp("ns"))),
+            pa.list_(pa.map_(pa.string(), pa.timestamp("us"))),
             [
                 [
                     [
