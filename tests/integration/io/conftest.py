@@ -5,7 +5,14 @@ import io
 import os
 import pathlib
 import shutil
-from typing import Generator, TypeVar
+import sys
+from collections.abc import Generator
+from typing import TypeVar
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 import numpy as np
 import pytest
@@ -16,7 +23,7 @@ import daft
 
 T = TypeVar("T")
 
-YieldFixture = Generator[T, None, None]
+YieldFixture: TypeAlias = Generator[T, None, None]
 
 
 ###

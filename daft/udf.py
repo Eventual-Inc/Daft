@@ -3,7 +3,13 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union, cast
+import sys
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
@@ -12,10 +18,14 @@ from daft.dependencies import np, pa
 from daft.expressions import Expression
 from daft.series import Series
 
-InitArgsType = Optional[Tuple[Tuple[Any, ...], Dict[str, Any]]]
-UdfReturnType = Union[Series, List[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
-UserDefinedPyFunc = Callable[..., UdfReturnType]
-UserDefinedPyFuncLike = Union[UserDefinedPyFunc, type]
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+
+InitArgsType: TypeAlias = Optional[tuple[tuple[Any, ...], dict[str, Any]]]
+UdfReturnType: TypeAlias = Union[Series, list[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
+UserDefinedPyFunc: TypeAlias = Callable[..., UdfReturnType]
+UserDefinedPyFuncLike: TypeAlias = Union[UserDefinedPyFunc, type]
 
 
 @dataclasses.dataclass(frozen=True)

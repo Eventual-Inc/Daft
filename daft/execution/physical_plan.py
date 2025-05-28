@@ -20,13 +20,11 @@ import logging
 import math
 from abc import abstractmethod
 from collections import deque
+from collections.abc import Generator, Iterable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
-    Generator,
     Generic,
-    Iterable,
-    Iterator,
     TypeVar,
     Union,
 )

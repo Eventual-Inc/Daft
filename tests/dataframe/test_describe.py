@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import daft
 import daft.recordbatch
 from daft import DataFrame, Schema

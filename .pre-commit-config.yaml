@@ -57,13 +57,13 @@ repos:
     exclude: static-dashboard-assets
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-      # Ruff version.
+  # Ruff version.
   rev: v0.8.2
   hooks:
-      # Run the linter.
+    # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
-          # Run the formatter.
+    # Run the formatter.
   - id: ruff-format
 
 - repo: local
