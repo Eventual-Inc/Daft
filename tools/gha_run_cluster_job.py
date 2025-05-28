@@ -2,6 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["PyGithub"]
 # ///
+
 import argparse
 import os
 import pathlib

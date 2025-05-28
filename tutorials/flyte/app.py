@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from flytekit import current_context, task, workflow
 from flytekitplugins.ray import (  # noqa # pylint: disable=unused-import
     RayJobConfig,

@@ -54,7 +54,6 @@ required-imports = ["from __future__ import annotations"]
 "__init__.py" = ["E402", "F401", "I"]
 # Only add `from __future__ import annotations` to daft and tests folders
 # TODO(slade): Find an include pattern rather than exclude
-"benchmarking/**/*" = ["I002"]
 "docs/**/*" = ["I002"]
 # Allow wild imports in conftest
 "tests/conftest.py" = ["F405", "E402", "F403"]
