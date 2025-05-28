@@ -2327,6 +2327,7 @@ dependencies = [
  "jaq-interpret",
  "jaq-parse",
  "jaq-std",
+ "pyo3",
  "serde",
  "serde_json",
  "typetag",
