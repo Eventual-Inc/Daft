@@ -39,42 +39,31 @@ impl<T: Task> DefaultScheduler<T> {
 
     // Soft worker affinity scheduling: Schedule task to the worker if it has capacity
     // Otherwise, fallback to spread scheduling
-    fn try_schedule_soft_worker_affinity_task(
+    fn try_schedule_worker_affinity_task(
         &self,
         task: &T,
         worker_id: &WorkerId,
+        soft: bool,
     ) -> Option<WorkerId> {
         if let Some(worker) = self.worker_snapshots.get(worker_id) {
             if worker.available_num_cpus() >= task.resource_request().num_cpus() {
                 return Some(worker.worker_id.clone());
             }
         }
-        // Fallback to spread scheduling
-        self.try_schedule_spread_task(task)
-    }
-
-    // Hard worker affinity scheduling: Schedule task to the worker if it has capacity
-    // Otherwise, return None
-    fn try_schedule_hard_worker_affinity_task(
-        &self,
-        task: &T,
-        worker_id: &WorkerId,
-    ) -> Option<WorkerId> {
-        if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.available_num_cpus() >= task.resource_request().num_cpus() {
-                return Some(worker.worker_id.clone());
-            }
+        // Fallback to spread scheduling if soft is true
+        if soft {
+            self.try_schedule_spread_task(task)
+        } else {
+            None
         }
-        None
     }
 
     fn try_schedule_task(&self, task: &SchedulableTask<T>) -> Option<WorkerId> {
         match task.strategy() {
             SchedulingStrategy::Spread => self.try_schedule_spread_task(&task.task),
-            SchedulingStrategy::WorkerAffinity { worker_id, soft } => match soft {
-                true => self.try_schedule_soft_worker_affinity_task(&task.task, worker_id),
-                false => self.try_schedule_hard_worker_affinity_task(&task.task, worker_id),
-            },
+            SchedulingStrategy::WorkerAffinity { worker_id, soft } => {
+                self.try_schedule_worker_affinity_task(&task.task, worker_id, *soft)
+            }
         }
     }
 }
@@ -84,6 +73,10 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         self.pending_tasks.extend(tasks);
     }
 
+    // TODO: Currently, workers are never given more tasks than they can handle (based on resources)
+    // However, this can cause the scheduler to have too many pending tasks, creating a bottleneck in scheduling.
+    // Potentially, we should allow workers to maintain a backlog queue of tasks, and automatically run them when they have capacity.
+    // Key thing is that this should be profiled and tested.
     fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>> {
         let mut scheduled = Vec::new();
         let mut unscheduled = Vec::new();
