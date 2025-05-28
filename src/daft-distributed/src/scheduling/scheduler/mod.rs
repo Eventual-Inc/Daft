@@ -1,7 +1,4 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
     task::{SchedulingStrategy, Task, TaskDetails, TaskId},

@@ -23,10 +23,12 @@ impl TaskResourceRequest {
         self.resource_request.num_cpus().unwrap_or(1.0) as usize
     }
 
+    #[allow(dead_code)]
     pub fn num_gpus(&self) -> usize {
         self.resource_request.num_gpus().unwrap_or(0.0) as usize
     }
 
+    #[allow(dead_code)]
     pub fn memory_bytes(&self) -> usize {
         self.resource_request.memory_bytes().unwrap_or(0)
     }

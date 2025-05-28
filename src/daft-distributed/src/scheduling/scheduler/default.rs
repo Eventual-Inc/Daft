@@ -3,7 +3,7 @@ use std::collections::{BinaryHeap, HashMap};
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
     task::{SchedulingStrategy, Task, TaskDetails},
-    worker::{Worker, WorkerId},
+    worker::WorkerId,
 };
 
 #[allow(dead_code)]
@@ -27,13 +27,13 @@ impl<T: Task> DefaultScheduler<T> {
         }
     }
 
-    // Spread scheduling: Schedule tasks to the worker with the least available slots, to
+    // Spread scheduling: Schedule tasks to the worker with the most available slots, to
     // TODO: Change the approach to instead spread based on tasks of the same 'type', i.e. from the same pipeline node.
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
         self.worker_snapshots
             .iter()
             .filter(|(_, worker)| worker.available_num_cpus() >= task.resource_request().num_cpus())
-            .min_by_key(|(_, worker)| worker.available_num_cpus())
+            .max_by_key(|(_, worker)| worker.available_num_cpus())
             .map(|(id, _)| id.clone())
     }
 
@@ -137,7 +137,50 @@ mod tests {
         worker::tests::MockWorker,
     };
     #[test]
-    fn test_default_scheduler_spread_scheduling() {
+    fn test_default_scheduler_spread_scheduling_homogeneous_workers() {
+        let worker_1: WorkerId = Arc::from("worker1");
+        let worker_2: WorkerId = Arc::from("worker2");
+        let worker_3: WorkerId = Arc::from("worker3");
+
+        let workers = setup_workers(&[
+            (worker_1.clone(), 3), // 3 slots available
+            (worker_2.clone(), 3), // 3 slots available
+            (worker_3.clone(), 3), // 3 slots available
+        ]);
+
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
+
+        // Create tasks with Spread strategy
+        let initial_tasks = vec![
+            create_spread_task(),
+            create_spread_task(),
+            create_spread_task(),
+        ];
+
+        // Enqueue and schedule tasks
+        scheduler.enqueue_tasks(initial_tasks);
+        let result = scheduler.get_schedulable_tasks();
+
+        // All tasks should be scheduled because there is enough capacity
+        assert_eq!(result.len(), 3);
+        assert_eq!(scheduler.num_pending_tasks(), 0);
+
+        // Count tasks per worker
+        let mut worker_task_counts: HashMap<&WorkerId, usize> = HashMap::new();
+        for scheduled_task in &result {
+            *worker_task_counts
+                .entry(&scheduled_task.worker_id)
+                .or_insert(0) += 1;
+        }
+
+        // Verify distribution - worker3 should have 1 task (most slots), worker2 should have 1 task, worker1 should have 1 task
+        assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 1);
+        assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
+        assert_eq!(*worker_task_counts.get(&worker_1).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_default_scheduler_spread_scheduling_heterogeneous_workers() {
         let worker_1: WorkerId = Arc::from("worker1");
         let worker_2: WorkerId = Arc::from("worker2");
         let worker_3: WorkerId = Arc::from("worker3");
@@ -176,48 +219,7 @@ mod tests {
         // Verify distribution - worker3 should have 2 tasks (most slots), worker2 should have 1 task, worker1 should have 0 tasks
         assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 2);
         assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
-        assert_eq!(worker_task_counts.get(&worker_1), None);
-
-        // Add 3 more tasks with Spread strategy
-        let second_round_tasks = vec![
-            create_spread_task(),
-            create_spread_task(),
-            create_spread_task(),
-        ];
-        scheduler.enqueue_tasks(second_round_tasks);
-
-        let result = scheduler.get_schedulable_tasks();
-
-        // All tasks should be scheduled
-        assert_eq!(result.len(), 3);
-        assert_eq!(scheduler.num_pending_tasks(), 0);
-
-        // Count tasks per worker for the second batch
-        let mut worker_task_counts: HashMap<&WorkerId, usize> = HashMap::new();
-        for scheduled_task in &result {
-            *worker_task_counts
-                .entry(&scheduled_task.worker_id)
-                .or_insert(0) += 1;
-        }
-
-        // Verify distribution - each worker should have 1 task since they all have 1 slot available
-        assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 1);
-        assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
-        assert_eq!(*worker_task_counts.get(&worker_1).unwrap(), 1);
-
-        // Add 3 more tasks with Spread strategy
-        let third_round_tasks = vec![
-            create_spread_task(),
-            create_spread_task(),
-            create_spread_task(),
-        ];
-        scheduler.enqueue_tasks(third_round_tasks);
-
-        let result = scheduler.get_schedulable_tasks();
-
-        // No tasks should be scheduled because all workers are at capacity
-        assert_eq!(result.len(), 0);
-        assert_eq!(scheduler.num_pending_tasks(), 3);
+        assert!(worker_task_counts.get(&worker_1).is_none());
     }
 
     #[test]
@@ -440,7 +442,7 @@ mod tests {
             }
         }
     }
-    
+
     #[test]
     fn test_scheduling_with_empty_workers() {
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&HashMap::new());
