@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{join::normalize_join_keys, AggExpr, ExprRef, WindowExpr};
-use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
@@ -35,9 +35,10 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ))
                     }
                 }
-                SourceInfo::PlaceHolder(_) => {
-                    panic!("We should not encounter a PlaceHolder during translation")
-                }
+                SourceInfo::PlaceHolder(ph) => Ok(LocalPhysicalPlan::placeholder_scan(
+                    ph.source_schema.clone(),
+                    StatsState::NotMaterialized,
+                )),
             }
         }
         LogicalPlan::Filter(filter) => {

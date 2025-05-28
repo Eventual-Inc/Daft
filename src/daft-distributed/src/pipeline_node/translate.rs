@@ -271,7 +271,11 @@ mod tests {
             Field::new("group", DataType::Int64),
             Field::new("value", DataType::Int64),
         ];
-        let plan = dummy_scan_node(dummy_scan_operator(fields)).build();
+        let plan = dummy_scan_node(dummy_scan_operator(fields))
+            .optimize()
+            .unwrap() // To fill scan node with tasks
+            .build();
+        eprintln!("{}", plan.repr_ascii(false));
 
         let pipeline_node =
             logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
@@ -281,26 +285,56 @@ mod tests {
     }
 
     #[test]
-    fn test_logical_limit_to_pipeline() {
+    fn test_logical_limit_to_pipeline() -> DaftResult<()> {
         let fields = vec![
             Field::new("category", DataType::Utf8),
             Field::new("group", DataType::Int64),
             Field::new("value", DataType::Int64),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(fields))
-            .limit(20, false)
-            .unwrap()
+            .limit(20, false)?
+            .optimize()? // To fill scan node with tasks
             .build();
 
         let pipeline_node =
             logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
 
-        assert_eq!(pipeline_node.name(), "LimitNode");
+        assert_eq!(pipeline_node.name(), "Limit");
 
         let children = pipeline_node.children();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].name(), "ScanSource");
         assert_eq!(children[0].children().len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_logical_project_to_pipeline() -> DaftResult<()> {
+        let fields = vec![
+            Field::new("category", DataType::Utf8),
+            Field::new("group", DataType::Int64),
+            Field::new("value", DataType::Int64),
+        ];
+        let plan = dummy_scan_node(dummy_scan_operator(fields))
+            .with_columns(vec![resolved_col("group")
+                .add(resolved_col("value"))
+                .alias("group_value")])?
+            .optimize()? // To fill scan node with tasks
+            .build();
+        eprintln!("{}", plan.repr_ascii(false));
+
+        let pipeline_node =
+            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+
+        assert_eq!(pipeline_node.name(), "Intermediate");
+
+        let children = pipeline_node.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name(), "ScanSource");
+        assert_eq!(children[0].children().len(), 0);
+
+        Ok(())
     }
 
     #[test]
@@ -311,6 +345,7 @@ mod tests {
             Field::new("value", DataType::Int64),
         ];
         let plan = dummy_scan_node(dummy_scan_operator(fields))
+            .optimize()? // To fill scan node with tasks
             .with_columns(vec![resolved_col("group")
                 .add(resolved_col("value"))
                 .alias("group_value")])?
@@ -318,6 +353,7 @@ mod tests {
             .limit(20, false)?
             .select(vec![resolved_col("group_value")])?
             .build();
+        eprintln!("Plan testing {}", plan.repr_ascii(false));
 
         let pipeline_node =
             logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
@@ -326,14 +362,14 @@ mod tests {
 
         let children = pipeline_node.children();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "LimitNode");
+        assert_eq!(children[0].name(), "Limit");
 
         let children = children[0].children();
-        assert_eq!(children.len(), 0);
+        assert_eq!(children.len(), 1);
         assert_eq!(children[0].name(), "Intermediate");
 
         let children = children[0].children();
-        assert_eq!(children.len(), 0);
+        assert_eq!(children.len(), 1);
         assert_eq!(children[0].name(), "ScanSource");
         assert_eq!(children[0].children().len(), 0);
 
