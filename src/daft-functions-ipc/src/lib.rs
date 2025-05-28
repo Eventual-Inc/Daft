@@ -54,7 +54,6 @@ impl ScalarUDF for IPCUDF {
         let schema = rb.schema.to_arrow()?;
         let chunk = rb.to_chunk();
 
-        // // Spawn the parameterized process
         let mut child = Command::new(args.command.clone())
             .args(args.command_args.clone())
             .stdin(Stdio::piped())
@@ -62,7 +61,6 @@ impl ScalarUDF for IPCUDF {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        // Write Arrow data to process stdin
         {
             let stdin = child.stdin.take().unwrap();
             let options = WriteOptions { compression: None };
@@ -71,7 +69,6 @@ impl ScalarUDF for IPCUDF {
             writer.write(&chunk, None)?;
             writer.finish()?;
         }
-        // Wait for process to complete and read all output
         let output = child.wait_with_output()?;
 
         if !output.status.success() {
@@ -80,7 +77,6 @@ impl ScalarUDF for IPCUDF {
             panic!("Process failed");
         }
 
-        // Show process debug output
         if !output.stderr.is_empty() {
             eprintln!(
                 "Process stderr: {}",
@@ -88,8 +84,6 @@ impl ScalarUDF for IPCUDF {
             );
         }
 
-
-        // Parse Arrow data from the complete output
         let mut cursor = Cursor::new(output.stdout);
         let stream_metadata = read_stream_metadata(&mut cursor)?;
         let output_schema = &stream_metadata.schema;
