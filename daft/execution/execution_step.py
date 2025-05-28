@@ -587,7 +587,7 @@ class DataSinkWrite(SingleOutputInstruction, Generic[WriteResultType]):
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         result_field_name = "write_results"
-        results = list(self.sink.write(iter(inputs)))
+        results = list(self.sink.write_sync_wrapper(iter(inputs)))
         results_series = Series.from_pylist(results, result_field_name, pyobj="force")
         series_dict = {result_field_name: results_series._series}
         rb = RecordBatch._from_pyrecordbatch(PyRecordBatch.from_pylist_series(series_dict))

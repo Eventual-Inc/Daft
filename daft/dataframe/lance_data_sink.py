@@ -1,7 +1,7 @@
 import pathlib
 from itertools import chain
 from types import ModuleType
-from typing import Any, Iterator, List, Literal, Optional, Union
+from typing import Any, AsyncIterator, Iterator, List, Literal, Optional, Union
 
 import lance
 
@@ -77,27 +77,32 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     def schema(self) -> Schema:
         return self._schema
 
-    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[lance.FragmentMetadata]]]:
+    async def write(
+        self, micropartitions: Iterator[MicroPartition]
+    ) -> AsyncIterator[WriteResult[list[lance.FragmentMetadata]]]:
         """Writes fragments from the given micropartitions."""
-        lance = self._import_lance()
 
-        for micropartition in micropartitions:
-            arrow_table = micropartition.to_arrow()
-            bytes_written = arrow_table.nbytes
-            rows_written = arrow_table.num_rows
+        async def async_gen() -> AsyncIterator[WriteResult[list[lance.FragmentMetadata]]]:
+            lance = self._import_lance()
+            for micropartition in micropartitions:
+                arrow_table = micropartition.to_arrow()
+                bytes_written = arrow_table.nbytes
+                rows_written = arrow_table.num_rows
 
-            fragments = lance.fragment.write_fragments(
-                arrow_table,
-                dataset_uri=self._table_uri,
-                mode=self._mode,
-                storage_options=self._storage_options,
-                **self._kwargs,
-            )
-            yield WriteResult(
-                result=fragments,
-                bytes_written=bytes_written,
-                rows_written=rows_written,
-            )
+                fragments = lance.fragment.write_fragments(
+                    arrow_table,
+                    dataset_uri=self._table_uri,
+                    mode=self._mode,
+                    storage_options=self._storage_options,
+                    **self._kwargs,
+                )
+                yield WriteResult(
+                    result=fragments,
+                    bytes_written=bytes_written,
+                    rows_written=rows_written,
+                )
+
+        return async_gen()
 
     def finalize(self, write_results: List[WriteResult[list[lance.FragmentMetadata]]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""

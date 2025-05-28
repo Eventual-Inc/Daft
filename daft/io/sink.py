@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, Iterator, TypeVar
+from typing import AsyncIterator, Generic, Iterator, TypeVar
 
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
+from daft.utils import SyncFromAsyncIterator
 
 WriteResultType = TypeVar("WriteResultType")
 
@@ -59,8 +60,11 @@ class DataSink(ABC, Generic[WriteResultType]):
         """
         pass
 
+    def write_sync_wrapper(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
+        return SyncFromAsyncIterator(lambda: self.write(micropartitions))
+
     @abstractmethod
-    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
+    async def write(self, micropartitions: Iterator[MicroPartition]) -> AsyncIterator[WriteResult[WriteResultType]]:
         """Writes a stream of micropartitions to the sink.
 
         This method should handle the ingestion of each micropartition and yield a result

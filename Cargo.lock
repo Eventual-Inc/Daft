@@ -2934,6 +2934,7 @@ dependencies = [
  "daft-recordbatch",
  "parquet",
  "pyo3",
+ "pyo3-async-runtimes",
  "tokio",
  "urlencoding",
  "uuid 1.16.0",

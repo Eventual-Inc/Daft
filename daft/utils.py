@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterable, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Coroutine, Iterable, Union
 
 from daft.dependencies import pa
 
@@ -133,7 +133,10 @@ class SyncFromAsyncIterator:
     Note that the async iterator is created lazily upon first iteration.
     """
 
-    def __init__(self, async_iter_producer: Callable[[], AsyncIterator[Any]]):
+    def __init__(
+        self,
+        async_iter_producer: Callable[[], AsyncIterator[Any]] | Callable[[], Coroutine[Any, Any, AsyncIterator[Any]]],
+    ):
         self.async_iter_producer = async_iter_producer
         self.async_iter: Any | None = None
         self.loop = asyncio.new_event_loop()
@@ -157,7 +160,12 @@ class SyncFromAsyncIterator:
 
     async def _get_next(self) -> Any:
         if self.async_iter is None:
-            self.async_iter = self.async_iter_producer()
+            result = self.async_iter_producer()
+            # Handle both AsyncIterator and Coroutine[Any, Any, AsyncIterator]
+            if asyncio.iscoroutine(result):
+                self.async_iter = await result
+            else:  # It's already an AsyncIterator
+                self.async_iter = result
         res = await self.async_iter.__anext__()
         if res is None:
             raise StopAsyncIteration

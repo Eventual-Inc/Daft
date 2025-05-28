@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping
 
+from daft.context import get_context
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
@@ -13,6 +14,7 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
+    write_micropartition_to_parquet,
 )
 from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -23,9 +25,14 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.recordbatch.recordbatch import RecordBatch
 from daft.series import Series
+from daft.utils import column_inputs_to_expressions
 
 if TYPE_CHECKING:
+    import pathlib
+
     import pandas as pd
+
+    from daft.utils import ColumnInputType
 
 logger = logging.getLogger(__name__)
 
@@ -560,4 +567,29 @@ class MicroPartition:
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
             )
+        )
+
+    async def write_parquet(
+        self,
+        root_dir: str | pathlib.Path,
+        compression: str = "snappy",
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        partition_cols: list[ColumnInputType] | None = None,
+        io_config: IOConfig | None = None,
+    ) -> MicroPartition:
+        part_cols: list[Expression] | None = None
+        if partition_cols is not None:
+            part_cols = column_inputs_to_expressions(tuple(partition_cols))
+            part_cols_pyexprs = [expr._expr for expr in part_cols]
+        else:
+            part_cols_pyexprs = None
+
+        context = get_context()
+        execution_cfg = context.daft_execution_config
+
+        py_record_batches = await write_micropartition_to_parquet(
+            self._micropartition, root_dir, write_mode, part_cols_pyexprs, compression, io_config, execution_cfg
+        )
+        return MicroPartition._from_record_batches(
+            [RecordBatch._from_pyrecordbatch(py_record_batch) for py_record_batch in py_record_batches]
         )
