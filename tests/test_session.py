@@ -215,28 +215,36 @@ def test_exception_surfacing():
         def name(self):
             return "throwing"
 
-        def create_namespace(self, identifier):
+        def _create_namespace(self, identifier):
             raise NotImplementedError
 
-        def create_table(self, identifier, source):
+        def _create_table(self, identifier, source):
             raise NotImplementedError
 
-        def drop_namespace(self, identifier):
+        def _drop_namespace(self, identifier):
             raise NotImplementedError
 
-        def drop_table(self, identifier):
+        def _drop_table(self, identifier):
             raise NotImplementedError
 
-        def get_table(self, identifier):
+        def _get_table(self, identifier):
             if str(identifier) == "boom":
                 raise RuntimeError("something went wrong")
             raise NotFoundError(f"Table {identifier} not found")
 
-        def list_namespaces(self, pattern=None):
+        def _list_namespaces(self, pattern=None):
             raise NotImplementedError
 
-        def list_tables(self, pattern=None):
+        def _list_tables(self, pattern=None):
             raise NotImplementedError
+
+        def _has_namespace(self, ident):
+            raise NotImplementedError
+
+        def _has_table(self, ident):
+            if str(ident) == "boom":
+                raise RuntimeError("something went wrong")
+            raise NotFoundError(f"Table {ident} not found")
 
     sess = Session()
     sess.attach(ThrowingCatalog())
