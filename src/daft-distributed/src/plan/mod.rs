@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 use daft_logical_plan::LogicalPlanBuilder;
 
 use crate::{
+    pipeline_node::MaterializedOutput,
     stage::StagePlan,
     utils::{
         channel::{Receiver, ReceiverStream},
@@ -42,15 +42,15 @@ impl DistributedPhysicalPlan {
     }
 }
 
-pub(crate) type PlanResultStream = JoinableForwardingStream<ReceiverStream<PartitionRef>>;
+pub(crate) type PlanResultStream = JoinableForwardingStream<ReceiverStream<MaterializedOutput>>;
 
 pub(crate) struct PlanResult {
     joinset: JoinSet<DaftResult<()>>,
-    rx: Receiver<PartitionRef>,
+    rx: Receiver<MaterializedOutput>,
 }
 
 impl PlanResult {
-    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
+    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<MaterializedOutput>) -> Self {
         Self { joinset, rx }
     }
 
