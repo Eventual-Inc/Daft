@@ -8,8 +8,8 @@
 
 
 :root{
-    --docsearch-primary-color:#ad9fff !important;
-    --docsearch-logo-color:#ad9fff !important;
+    --docsearch-primary-color: var(--daft-magenta) !important;
+    --docsearch-logo-color: var(--daft-magenta) !important;
 }
 
 .DocSearch-Button{
