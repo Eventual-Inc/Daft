@@ -12,7 +12,7 @@ pub mod sink_info;
 pub mod source_info;
 pub mod stats;
 #[cfg(test)]
-mod test;
+pub mod test;
 mod treenode;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};

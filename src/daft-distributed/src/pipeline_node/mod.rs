@@ -24,6 +24,8 @@ pub(crate) mod materialize;
 mod scan_source;
 mod translate;
 
+pub(crate) use translate::logical_plan_to_pipeline_node;
+
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
 /// Right now, the only metadata is the worker id that has it so we can try
@@ -70,7 +72,11 @@ pub(crate) trait DistributedPipelineNode: Send + Sync {
     #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
     #[allow(dead_code)]
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
+    fn start(
+        &mut self,
+        stage_context: &mut StageContext,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    ) -> RunningPipelineNode;
 }
 
 #[allow(dead_code)]
@@ -101,13 +107,4 @@ impl RunningPipelineNode {
     pub fn into_stream(self) -> impl Stream<Item = PipelineOutput> + Send + Unpin + 'static {
         ReceiverStream::new(self.result_receiver)
     }
-}
-
-#[allow(dead_code)]
-pub(crate) fn logical_plan_to_pipeline_node(
-    _plan: LogicalPlanRef,
-    _config: Arc<DaftExecutionConfig>,
-    _psets: HashMap<String, Vec<PartitionRef>>,
-) -> DaftResult<Box<dyn DistributedPipelineNode>> {
-    todo!("FLOTILLA_MS1: Implement translation of logical plan to pipeline nodes")
 }

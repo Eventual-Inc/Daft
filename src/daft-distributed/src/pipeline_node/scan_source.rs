@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -90,7 +91,11 @@ impl DistributedPipelineNode for ScanSourceNode {
         vec![]
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(
+        &mut self,
+        stage_context: &mut StageContext,
+        _psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    ) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
             self.plan.clone(),

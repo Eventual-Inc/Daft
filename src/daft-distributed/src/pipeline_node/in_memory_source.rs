@@ -21,7 +21,6 @@ pub(crate) struct InMemorySourceNode {
     config: Arc<DaftExecutionConfig>,
     info: InMemoryInfo,
     plan: LocalPhysicalPlanRef,
-    input_psets: HashMap<String, Vec<PartitionRef>>,
 }
 
 impl InMemorySourceNode {
@@ -31,14 +30,12 @@ impl InMemorySourceNode {
         config: Arc<DaftExecutionConfig>,
         info: InMemoryInfo,
         plan: LocalPhysicalPlanRef,
-        input_psets: HashMap<String, Vec<PartitionRef>>,
     ) -> Self {
         Self {
             node_id,
             config,
             info,
             plan,
-            input_psets,
         }
     }
 
@@ -46,7 +43,7 @@ impl InMemorySourceNode {
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
         in_memory_info: InMemoryInfo,
-        psets: HashMap<String, Vec<PartitionRef>>,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
         let partition_refs = psets.get(&in_memory_info.cache_key).unwrap().clone();
@@ -74,13 +71,17 @@ impl DistributedPipelineNode for InMemorySourceNode {
         vec![]
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(
+        &mut self,
+        stage_context: &mut StageContext,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    ) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
             self.plan.clone(),
             self.config.clone(),
             self.info.clone(),
-            std::mem::take(&mut self.input_psets),
+            psets,
             result_tx,
         );
         stage_context.joinset.spawn(execution_loop);

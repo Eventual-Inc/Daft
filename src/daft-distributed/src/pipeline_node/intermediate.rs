@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
@@ -86,8 +87,16 @@ impl DistributedPipelineNode for IntermediateNode {
         self.children.iter().map(|child| child.as_ref()).collect()
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let input_node = self.children.first_mut().unwrap().start(stage_context);
+    fn start(
+        &mut self,
+        stage_context: &mut StageContext,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    ) -> RunningPipelineNode {
+        let input_node = self
+            .children
+            .first_mut()
+            .unwrap()
+            .start(stage_context, psets);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
