@@ -3,11 +3,11 @@ use snafu::Snafu;
 use crate::Identifier;
 
 /// Catalog Result
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type CatalogResult<T, E = CatalogError> = std::result::Result<T, E>;
 
 /// Catalog Error
 #[derive(Debug, Snafu)]
-pub enum Error {
+pub enum CatalogError {
     // TODO remove me
     #[snafu(display(
         "Failed to find specified table identifier {} in the requested catalog {}",
@@ -39,17 +39,17 @@ pub enum Error {
     PythonError { source: pyo3::PyErr },
 }
 
-impl Error {
+impl CatalogError {
     #[inline]
-    pub fn unsupported<S: Into<String>>(message: S) -> Error {
-        Error::Unsupported {
+    pub fn unsupported<S: Into<String>>(message: S) -> CatalogError {
+        CatalogError::Unsupported {
             message: message.into(),
         }
     }
 
     #[inline]
-    pub fn obj_already_exists<S: Into<String>>(type_: S, ident: &Identifier) -> Error {
-        Error::ObjectAlreadyExists {
+    pub fn obj_already_exists<S: Into<String>>(type_: S, ident: &Identifier) -> CatalogError {
+        CatalogError::ObjectAlreadyExists {
             type_: type_.into(),
             ident: ident.to_string(),
         }
@@ -57,8 +57,8 @@ impl Error {
 
     // Consider typed arguments vs strings for consistent formatting.
     #[inline]
-    pub fn obj_not_found<S: Into<String>>(typ_: S, ident: &Identifier) -> Error {
-        Error::ObjectNotFound {
+    pub fn obj_not_found<S: Into<String>>(typ_: S, ident: &Identifier) -> CatalogError {
+        CatalogError::ObjectNotFound {
             type_: typ_.into(),
             ident: ident.to_string(),
         }
@@ -69,7 +69,7 @@ impl Error {
         O: IntoIterator<Item = I>,
         I: Into<String>,
     {
-        Error::AmbiguousIdentifier {
+        CatalogError::AmbiguousIdentifier {
             input: input.into(),
             options: options
                 .into_iter()
@@ -80,15 +80,15 @@ impl Error {
     }
 
     #[inline]
-    pub fn invalid_identifier<S: Into<String>>(input: S) -> Error {
-        Error::InvalidIdentifier {
+    pub fn invalid_identifier<S: Into<String>>(input: S) -> CatalogError {
+        CatalogError::InvalidIdentifier {
             input: input.into(),
         }
     }
 }
 
-impl From<Error> for common_error::DaftError {
-    fn from(err: Error) -> Self {
+impl From<CatalogError> for common_error::DaftError {
+    fn from(err: CatalogError) -> Self {
         common_error::DaftError::CatalogError(err.to_string())
     }
 }
@@ -97,16 +97,16 @@ impl From<Error> for common_error::DaftError {
 use pyo3::PyErr;
 
 #[cfg(feature = "python")]
-impl From<Error> for PyErr {
-    fn from(value: Error) -> Self {
+impl From<CatalogError> for PyErr {
+    fn from(value: CatalogError) -> Self {
         let daft_error: common_error::DaftError = value.into();
         daft_error.into()
     }
 }
 
 #[cfg(feature = "python")]
-impl From<PyErr> for Error {
+impl From<PyErr> for CatalogError {
     fn from(value: PyErr) -> Self {
-        Error::PythonError { source: value }
+        CatalogError::PythonError { source: value }
     }
 }
