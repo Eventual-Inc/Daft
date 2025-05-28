@@ -2317,7 +2317,7 @@ dependencies = [
 
 [[package]]
 name = "daft-functions-json"
-version = "0.3.0-dev0"
+version = "0.0.0"
 dependencies = [
  "arrow2",
  "common-error",
@@ -2329,6 +2329,7 @@ dependencies = [
  "jaq-parse",
  "jaq-std",
  "pyo3",
+ "serde",
  "serde_json",
  "typetag",
 ]

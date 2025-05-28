@@ -8,6 +8,7 @@ jaq-interpret = {workspace = true}
 jaq-parse = {workspace = true}
 jaq-std = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
 serde_json = {workspace = true}
 typetag = {workspace = true}
 itertools.workspace = true
@@ -26,4 +27,7 @@ workspace = true
 [package]
 name = "daft-functions-json"
 edition.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]
 version.workspace = true
