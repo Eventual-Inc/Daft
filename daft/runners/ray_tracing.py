@@ -12,8 +12,9 @@ import json
 import logging
 import pathlib
 import time
+from collections.abc import Iterator
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Iterator, TextIO
+from typing import TYPE_CHECKING, Any, Callable, TextIO
 
 try:
     import ray
@@ -24,9 +25,12 @@ from daft.execution.execution_step import PartitionTask
 from daft.runners import ray_metrics
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft import ResourceRequest
     from daft.daft import PyDaftExecutionConfig
     from daft.execution.physical_plan import MaterializedPhysicalPlan
+    from daft.runners.partitioning import MaterializedResult
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +192,7 @@ class RunnerTracer:
     def _get_trace_timestamp(self, task_event_start: float) -> int:
         return int((task_event_start - self._start) * 1000 * 1000)
 
-    def _flush_task_metrics(self):
+    def _flush_task_metrics(self) -> None:
         if self._metrics_actor is not None:
             task_events, new_idx = self._metrics_actor.get_task_events(self._task_event_idx)
             self._task_event_idx = new_idx
@@ -307,7 +311,7 @@ class RunnerTracer:
         self,
         process_meta: list[tuple[int, str]],
         thread_meta: list[tuple[int, int, str]],
-    ):
+    ) -> None:
         """Writes metadata for the file.
 
         Args:
@@ -340,7 +344,7 @@ class RunnerTracer:
                 }
             )
 
-    def _write_stages(self):
+    def _write_stages(self) -> None:
         for stage_id in self._stage_start_end:
             start_ts, end_ts = self._stage_start_end[stage_id]
             self._write_event(
@@ -380,7 +384,7 @@ class RunnerTracer:
     ###
 
     @contextlib.contextmanager
-    def dispatch_wave(self, wave_num: int):
+    def dispatch_wave(self, wave_num: int) -> Iterator[Callable[..., None]]:
         self._write_event(
             {
                 "name": f"wave-{wave_num}",
@@ -393,7 +397,7 @@ class RunnerTracer:
 
         metrics = {}
 
-        def metrics_updater(**kwargs):
+        def metrics_updater(**kwargs: Any) -> None:
             metrics.update(kwargs)
 
         yield metrics_updater
@@ -411,7 +415,7 @@ class RunnerTracer:
         # On the end of every wave, perform a flush of the latest metrics from the MetricsActor
         self._flush_task_metrics()
 
-    def count_inflight_tasks(self, count: int):
+    def count_inflight_tasks(self, count: int) -> None:
         self._write_event(
             {
                 "name": "dispatch_metrics",
@@ -423,7 +427,7 @@ class RunnerTracer:
         )
 
     @contextlib.contextmanager
-    def dispatch_batching(self):
+    def dispatch_batching(self) -> Iterator[None]:
         self._write_event(
             {
                 "name": "dispatch_batching",
@@ -443,7 +447,7 @@ class RunnerTracer:
         )
 
     @contextlib.contextmanager
-    def dispatching(self):
+    def dispatching(self) -> Iterator[None]:
         self._write_event(
             {
                 "name": "dispatching",
@@ -463,7 +467,7 @@ class RunnerTracer:
         )
 
     @contextlib.contextmanager
-    def awaiting(self, waiting_for_num_results: int, wait_timeout_s: float | None):
+    def awaiting(self, waiting_for_num_results: int, wait_timeout_s: float | None) -> Iterator[None]:
         name = f"awaiting {waiting_for_num_results} (timeout={wait_timeout_s})"
         self._write_event(
             {
@@ -488,7 +492,7 @@ class RunnerTracer:
         )
 
     @contextlib.contextmanager
-    def get_next_physical_plan(self):
+    def get_next_physical_plan(self) -> Iterator[Callable[..., None]]:
         self._write_event(
             {
                 "name": "next(tasks)",
@@ -500,7 +504,7 @@ class RunnerTracer:
 
         args = {}
 
-        def update_args(**kwargs):
+        def update_args(**kwargs: Any) -> None:
             args.update(kwargs)
 
         yield update_args
@@ -515,7 +519,7 @@ class RunnerTracer:
             }
         )
 
-    def task_created(self, task_id: str, stage_id: int, resource_request: ResourceRequest, instructions: str):
+    def task_created(self, task_id: str, stage_id: int, resource_request: ResourceRequest, instructions: str) -> None:
         created_ts = self._write_event(
             {
                 "id": task_id,
@@ -540,7 +544,7 @@ class RunnerTracer:
         if stage_id not in self._stage_start_end:
             self._stage_start_end[stage_id] = (created_ts, created_ts)
 
-    def task_dispatched(self, task_id: str):
+    def task_dispatched(self, task_id: str) -> None:
         self._write_event(
             {
                 "id": task_id,
@@ -552,7 +556,7 @@ class RunnerTracer:
             }
         )
 
-    def task_received_as_ready(self, task_id: str, stage_id: int):
+    def task_received_as_ready(self, task_id: str, stage_id: int) -> None:
         self._write_event(
             {
                 "id": task_id,
@@ -585,14 +589,14 @@ class _RayFunctionWrapper:
 
     f: ray.remote_function.RemoteFunction
 
-    def with_tracing(self, runner_tracer: RunnerTracer, task: PartitionTask) -> _RayRunnableFunctionWrapper:
+    def with_tracing(self, runner_tracer: RunnerTracer, task: PartitionTask[Any]) -> _RayRunnableFunctionWrapper:
         return _RayRunnableFunctionWrapper(f=self.f, runner_tracer=runner_tracer, task=task)
 
-    def options(self, *args, **kwargs) -> _RayFunctionWrapper:
+    def options(self, *args: Any, **kwargs: Any) -> _RayFunctionWrapper:
         return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
 
-def ray_remote_traced(f: ray.remote_function.RemoteFunction):
+def ray_remote_traced(f: ray.remote_function.RemoteFunction) -> _RayFunctionWrapper:
     """Decorates a Ray Remote function to ensure that we can trace it.
 
     Usage:
@@ -613,12 +617,12 @@ class _RayRunnableFunctionWrapper:
 
     f: ray.remote_function.RemoteFunction
     runner_tracer: RunnerTracer
-    task: PartitionTask
+    task: PartitionTask[Any]
 
-    def options(self, *args, **kwargs) -> _RayRunnableFunctionWrapper:
+    def options(self, *args: Any, **kwargs: Any) -> _RayRunnableFunctionWrapper:
         return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
-    def remote(self, *args, **kwargs):
+    def remote(self, *args: Any, **kwargs: Any) -> ray.ObjectRef:
         self.runner_tracer.task_dispatched(self.task.id())
         return self.f.remote(*args, **kwargs)
 
@@ -627,10 +631,10 @@ class _RayRunnableFunctionWrapper:
 class MaterializedPhysicalPlanWrapper:
     """Wrapper around MaterializedPhysicalPlan that hooks into tracing capabilities."""
 
-    plan: MaterializedPhysicalPlan
+    plan: MaterializedPhysicalPlan[Any]
     runner_tracer: RunnerTracer
 
-    def __next__(self):
+    def __next__(self) -> PartitionTask[Any] | MaterializedResult[Any] | None:
         with self.runner_tracer.get_next_physical_plan() as update_args:
             item = next(self.plan)
 
@@ -653,7 +657,9 @@ class MaterializedPhysicalPlanWrapper:
 
 
 @contextlib.contextmanager
-def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, execution_config: PyDaftExecutionConfig):
+def collect_ray_task_metrics(
+    execution_id: str, task_id: str, stage_id: int, execution_config: PyDaftExecutionConfig
+) -> Iterator[None]:
     """Context manager that will ping the metrics actor to record various execution metrics about a given task."""
     if execution_config.enable_ray_tracing:
         import time

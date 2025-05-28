@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
@@ -515,7 +515,7 @@ class DataType:
             return cls.python()
 
     @classmethod
-    def from_numpy_dtype(cls, np_type: np.dtype) -> DataType:
+    def from_numpy_dtype(cls, np_type: np.dtype[Any]) -> DataType:
         """Maps a Numpy datatype to a Daft DataType."""
         arrow_type = pa.from_numpy_dtype(np_type)
         return cls.from_arrow_type(arrow_type)
@@ -1116,7 +1116,7 @@ class DataType:
     def __eq__(self, other: object) -> builtins.bool:
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(self) -> tuple[Callable[[PyDataType], DataType], tuple[PyDataType]]:
         return DataType._from_pydatatype, (self._dtype,)
 
     def __hash__(self) -> int:
@@ -1142,21 +1142,23 @@ def _ensure_registered_super_ext_type() -> None:
         with _EXT_TYPE_REGISTRATION_LOCK:
             if not _EXT_TYPE_REGISTERED:
 
-                class DaftExtension(pa.ExtensionType):
-                    def __init__(self, dtype, metadata=b""):
+                class DaftExtension(pa.ExtensionType):  # type: ignore[misc]
+                    def __init__(self, dtype: pa.DataType, metadata: bytes = b"") -> None:
                         # attributes need to be set first before calling
                         # super init (as that calls serialize)
                         self._metadata = metadata
                         super().__init__(dtype, "daft.super_extension")
 
-                    def __reduce__(self):
+                    def __reduce__(
+                        self,
+                    ) -> tuple[Callable[[pa.DataType, bytes], DaftExtension], tuple[pa.DataType, bytes]]:
                         return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
 
-                    def __arrow_ext_serialize__(self):
+                    def __arrow_ext_serialize__(self) -> bytes:
                         return self._metadata
 
                     @classmethod
-                    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+                    def __arrow_ext_deserialize__(cls, storage_type: pa.DataType, serialized: bytes) -> DaftExtension:
                         return cls(storage_type, serialized)
 
                 _STATIC_DAFT_EXTENSION = DaftExtension

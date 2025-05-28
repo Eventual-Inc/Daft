@@ -52,10 +52,11 @@ def launch(noop_if_initialized: bool = False) -> None:
 def broadcast_query_information(
     unoptimized_plan: str,
     optimized_plan: str,
-    mermaid_plan: str,
     plan_time_start: datetime,
     plan_time_end: datetime,
 ) -> None:
+    import ssl
+
     headers = {
         "Content-Type": "application/json",
     }
@@ -68,26 +69,31 @@ def broadcast_query_information(
     if (auth_token := os.environ.get("DAFT_DASHBOARD_AUTH_TOKEN")) is not None:
         headers["Authorization"] = f"Bearer {auth_token}"
 
-    queries_url = f"{url}/api/queries"
-
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
             "unoptimized_plan": unoptimized_plan,
             "optimized_plan": optimized_plan,
-            "mermaid_plan": mermaid_plan,
-            "plan_time_start": str(plan_time_start),
-            "plan_time_end": str(plan_time_end),
+            "plan_time_start": plan_time_start.isoformat(),
+            "plan_time_end": plan_time_end.isoformat(),
+            "run_id": os.environ.get("DAFT_DASHBOARD_RUN_ID", None),
             "logs": "",  # todo: implement logs
         }
     ).encode("utf-8")
 
-    req = request.Request(queries_url, headers=headers, data=data)
+    ctx = ssl.create_default_context()
+
+    # if it's a localhost uri we can skip ssl verification
+    if "localhost" in url:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    req = request.Request(url, headers=headers, data=data)
 
     try:
-        request.urlopen(req, timeout=1)
+        request.urlopen(req, timeout=1, context=ctx)
     except URLError as e:
-        warnings.warn(f"Failed to broadcast metrics over {queries_url}: {e}")
+        warnings.warn(f"Failed to broadcast metrics over {url}: {e}")
 
 
 __all__ = [

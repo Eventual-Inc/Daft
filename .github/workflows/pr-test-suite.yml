@@ -73,8 +73,12 @@ jobs:
           **/pyproject.toml
 
     - name: Install dependencies
-      run: |
-        uv pip install -r requirements-dev.txt
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: uv pip install -r requirements-dev.txt
 
     - name: Override pyarrow
       run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
@@ -257,9 +261,14 @@ jobs:
         pip install uv
 
     - name: Install Daft and dev dependencies
-      run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
     - uses: actions/cache@v4
       env:
         cache-name: cache-tpch-data
@@ -333,9 +342,14 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
     - name: Install Daft and dev dependencies
-      run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
@@ -420,9 +434,14 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
     - name: Install Daft and dev dependencies
-      run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
@@ -512,9 +531,14 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
     - name: Install Daft and dev dependencies
-      run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
     - uses: docker/setup-buildx-action@v3
     - uses: docker/build-push-action@v5
       with:
@@ -593,9 +617,14 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
     - name: Install Daft and dev dependencies
-      run: |
-        uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
     - name: Install ODBC Driver 18 for SQL Server
       run: |
         curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
@@ -679,8 +708,12 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
         pip install uv
     - name: Install dependencies
-      run: |
-        uv pip install -r requirements-dev.txt
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: uv pip install -r requirements-dev.txt
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |

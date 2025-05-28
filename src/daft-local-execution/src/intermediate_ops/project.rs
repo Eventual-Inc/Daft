@@ -10,6 +10,7 @@ use daft_dsl::{
     },
     Expr, ExprRef,
 };
+use daft_functions::uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -52,10 +53,10 @@ pub fn try_get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
                 Expr::ScalarFunction(ScalarFunction { udf, inputs, .. })
                     if udf.name() == "url_download" =>
                 {
-                    let max_connections = inputs
-                        .extract_optional::<usize, _>("max_connections")?
-                        .unwrap_or(DEFAULT_URL_MAX_CONNECTIONS);
-
+                    let UrlDownloadArgs {
+                        max_connections, ..
+                    } = inputs.clone().try_into()?;
+                    let max_connections = max_connections.unwrap_or(DEFAULT_URL_MAX_CONNECTIONS);
                     Some(max_connections * CONNECTION_BATCH_FACTOR)
                 }
                 _ => None,

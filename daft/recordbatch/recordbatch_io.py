@@ -4,7 +4,7 @@ import math
 import pathlib
 import random
 import time
-from typing import TYPE_CHECKING, Any, Iterator, Union
+from typing import TYPE_CHECKING, Any, Union
 from uuid import uuid4
 
 from daft.context import get_context
@@ -41,7 +41,7 @@ from .partitioning import PartitionedTable, partition_strings_to_path
 FileInput = Union[pathlib.Path, str]
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
@@ -552,7 +552,7 @@ def _write_tabular_arrow_table(
     file_visitor: Callable[[pads.WrittenFile], None] | None,
     version: int | None = None,
 ) -> None:
-    kwargs = dict()
+    kwargs: dict[str, Any] = {}
 
     kwargs["max_rows_per_file"] = rows_per_file
     kwargs["min_rows_per_group"] = rows_per_row_group

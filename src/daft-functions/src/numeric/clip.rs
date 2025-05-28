@@ -17,7 +17,9 @@ pub struct Clip;
 #[derive(FunctionArgs)]
 struct ClipArgs<T> {
     input: T,
+    #[arg(optional)]
     min: Option<T>,
+    #[arg(optional)]
     max: Option<T>,
 }
 
