@@ -1233,6 +1233,7 @@ class ConnectionHandle:
 # ---
 # expr.json namespace
 # ---
+def from_json(text: PyExpr, dtype: PyDataType) -> PyExpr: ...
 def json_query(expr: PyExpr, query: str) -> PyExpr: ...
 
 # ---

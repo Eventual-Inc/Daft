@@ -1,6 +1,6 @@
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 
-#[cfg(feature="python")]
+#[cfg(feature = "python")]
 mod python;
 
 #[cfg(feature = "python")]
@@ -14,7 +14,6 @@ pub struct JsonFunctions;
 
 /// JsonFunctions module registration.
 impl FunctionModule for JsonFunctions {
-    #[allow(deprecated)]
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(crate::json_query::JsonQuery);
     }
