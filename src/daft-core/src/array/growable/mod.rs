@@ -12,6 +12,7 @@ mod bitmap_growable;
 mod fixed_size_list_growable;
 mod list_growable;
 mod logical_growable;
+mod map_growable;
 mod struct_growable;
 
 #[cfg(feature = "python")]
@@ -223,4 +224,4 @@ impl_growable_array!(
 );
 impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
-impl_growable_array!(MapArray, logical_growable::LogicalMapGrowable<'a>);
+impl_growable_array!(MapArray, map_growable::MapGrowable<'a>);
