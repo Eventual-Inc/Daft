@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 from daft.arrow_utils import ensure_table
 from daft.daft import (
@@ -30,6 +30,8 @@ from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from daft.io import IOConfig
 
 logger = logging.getLogger(__name__)
