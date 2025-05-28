@@ -275,6 +275,9 @@ class GlueTable(Table, ABC):
     def name(self) -> str:
         return self._table["Name"]
 
+    def schema(self) -> Schema:
+        return self.read().schema()
+
     def __repr__(self) -> str:
         import json
 

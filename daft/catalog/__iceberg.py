@@ -150,6 +150,9 @@ class IcebergTable(Table):
     def name(self) -> str:
         return self._inner.name()[-1]
 
+    def schema(self) -> Schema:
+        return self.read().schema()
+
     @staticmethod
     def _from_obj(obj: object) -> IcebergTable:
         """Returns an IcebergTable if the given object can be adapted so."""

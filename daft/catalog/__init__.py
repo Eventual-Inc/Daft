@@ -237,36 +237,36 @@ class Catalog(ABC):
         """Create a namespace in the catalog, erroring if the namespace already exists."""
 
     @abstractmethod
-    def _has_namespace(self, ident: Identifier) -> bool:
-        """Check if a namespace exists in the catalog."""
+    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+        """Create a table in the catalog, erroring if the table already exists."""
 
     @abstractmethod
     def _drop_namespace(self, ident: Identifier) -> None:
         """Remove a namespace from the catalog, erroring if the namespace did not exist."""
 
     @abstractmethod
-    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        """List all namespaces in the catalog. When a pattern is specified, list only namespaces matching the pattern."""
+    def _drop_table(self, ident: Identifier) -> None:
+        """Remove a table from the catalog, erroring if the table did not exist."""
 
     @abstractmethod
-    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
-        """Create a table in the catalog, erroring if the table already exists."""
+    def _get_table(self, ident: Identifier) -> Table:
+        """Get a table from the catalog."""
+
+    @abstractmethod
+    def _has_namespace(self, ident: Identifier) -> bool:
+        """Check if a namespace exists in the catalog."""
 
     @abstractmethod
     def _has_table(self, ident: Identifier) -> bool:
         """Check if a table exists in the catalog."""
 
     @abstractmethod
-    def _drop_table(self, ident: Identifier) -> None:
-        """Remove a table from the catalog, erroring if the table did not exist."""
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """List all namespaces in the catalog. When a pattern is specified, list only namespaces matching the pattern."""
 
     @abstractmethod
     def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
         """List all tables in the catalog. When a pattern is specified, list only tables matching the pattern."""
-
-    @abstractmethod
-    def _get_table(self, ident: Identifier) -> Table:
-        """Get a table from the catalog."""
 
     @staticmethod
     def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
@@ -746,8 +746,9 @@ class Table(ABC):
     def name(self) -> str:
         """Returns the table's name."""
 
+    @abstractmethod
     def schema(self) -> Schema:
-        return self.read().schema()
+        """Returns the table's schema."""
 
     @staticmethod
     def from_pydict(name: str, data: dict[str, InputListType]) -> Table:

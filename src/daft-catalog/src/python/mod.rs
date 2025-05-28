@@ -22,12 +22,32 @@ impl PyCatalog {
         Ok(self.0.create_namespace(&ident.0)?)
     }
 
-    fn has_namespace(&self, ident: PyIdentifier) -> PyResult<bool> {
-        Ok(self.0.has_namespace(&ident.0)?)
+    fn create_table(
+        &self,
+        ident: PyIdentifier,
+        schema: PySchema,
+        py: Python,
+    ) -> PyResult<PyObject> {
+        self.0.create_table(&ident.0, &schema.schema)?.to_py(py)
     }
 
     fn drop_namespace(&self, ident: PyIdentifier) -> PyResult<()> {
         Ok(self.0.drop_namespace(&ident.0)?)
+    }
+    fn drop_table(&self, ident: PyIdentifier) -> PyResult<()> {
+        Ok(self.0.drop_table(&ident.0)?)
+    }
+
+    fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<PyObject> {
+        self.0.get_table(&ident.0)?.to_py(py)
+    }
+
+    fn has_namespace(&self, ident: PyIdentifier) -> PyResult<bool> {
+        Ok(self.0.has_namespace(&ident.0)?)
+    }
+
+    fn has_table(&self, ident: PyIdentifier) -> PyResult<bool> {
+        Ok(self.0.has_table(&ident.0)?)
     }
 
     #[pyo3(signature = (pattern=None))]
@@ -40,23 +60,6 @@ impl PyCatalog {
             .collect())
     }
 
-    fn create_table(
-        &self,
-        ident: PyIdentifier,
-        schema: PySchema,
-        py: Python,
-    ) -> PyResult<PyObject> {
-        self.0.create_table(&ident.0, &schema.schema)?.to_py(py)
-    }
-
-    fn has_table(&self, ident: PyIdentifier) -> PyResult<bool> {
-        Ok(self.0.has_table(&ident.0)?)
-    }
-
-    fn drop_table(&self, ident: PyIdentifier) -> PyResult<()> {
-        Ok(self.0.drop_table(&ident.0)?)
-    }
-
     #[pyo3(signature = (pattern=None))]
     fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<PyIdentifier>> {
         Ok(self
@@ -65,10 +68,6 @@ impl PyCatalog {
             .into_iter()
             .map(PyIdentifier)
             .collect())
-    }
-
-    fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<PyObject> {
-        self.0.get_table(&ident.0)?.to_py(py)
     }
 }
 
@@ -79,6 +78,10 @@ pub struct PyTable(pub TableRef);
 impl PyTable {
     fn name(&self) -> String {
         self.0.name()
+    }
+
+    fn schema(&self) -> PyResult<PySchema> {
+        Ok(self.0.schema()?.into())
     }
 
     fn to_logical_plan(&self) -> PyResult<PyLogicalPlanBuilder> {

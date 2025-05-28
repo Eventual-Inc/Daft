@@ -335,6 +335,9 @@ class S3Table(Table):
     def name(self) -> str:
         return self._path.name
 
+    def schema(self) -> Schema:
+        return self.read().schema()
+
     @property
     def namespace(self) -> S3Path:
         return self._path.parent

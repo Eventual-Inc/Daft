@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING, Any, Literal
 from daft.catalog import Catalog, Identifier, Properties, Table
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
+from daft.schema import Schema
 
 if TYPE_CHECKING:
     from daft.daft import PyCatalog as _PyCatalog
     from daft.daft import PyTable as _PyTable
-    from daft.schema import Schema
 
 
 class _RustCatalog(Catalog):
@@ -28,29 +28,29 @@ class _RustCatalog(Catalog):
     def _create_namespace(self, ident: Identifier) -> None:
         self.inner.create_namespace(ident._ident)
 
-    def _has_namespace(self, ident: Identifier) -> bool:
-        return self.inner.has_namespace(ident._ident)
+    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+        return self.inner.create_table(ident._ident, schema._schema)
 
     def _drop_namespace(self, ident: Identifier) -> None:
         self.inner.drop_namespace(ident._ident)
 
-    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        return [Identifier._from_pyidentifier(ident) for ident in self.inner.list_namespaces(pattern)]
+    def _drop_table(self, ident: Identifier) -> None:
+        self.inner.drop_table(ident._ident)
 
-    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
-        return self.inner.create_table(ident._ident, schema._schema)
+    def _get_table(self, ident: Identifier) -> Table:
+        return self.inner.get_table(ident._ident)
+
+    def _has_namespace(self, ident: Identifier) -> bool:
+        return self.inner.has_namespace(ident._ident)
 
     def _has_table(self, ident: Identifier) -> bool:
         return self.inner.has_table(ident._ident)
 
-    def _drop_table(self, ident: Identifier) -> None:
-        self.inner.drop_table(ident._ident)
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        return [Identifier._from_pyidentifier(ident) for ident in self.inner.list_namespaces(pattern)]
 
     def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
         return [Identifier._from_pyidentifier(ident) for ident in self.inner.list_tables(pattern)]
-
-    def _get_table(self, ident: Identifier) -> Table:
-        return self.inner.get_table(ident._ident)
 
 
 class _RustTable(Table):
@@ -65,6 +65,9 @@ class _RustTable(Table):
     @property
     def name(self) -> str:
         return self.inner.name()
+
+    def schema(self) -> Schema:
+        return Schema._from_pyschema(self.inner.schema())
 
     def read(self, **options: Any) -> DataFrame:
         return DataFrame(LogicalPlanBuilder(self.inner.to_logical_plan()))

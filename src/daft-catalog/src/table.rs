@@ -41,9 +41,7 @@ pub trait Table: Sync + Send + std::fmt::Debug {
     fn name(&self) -> String;
 
     /// Returns the table schema
-    fn schema(&self) -> CatalogResult<SchemaRef> {
-        Ok(self.to_logical_plan()?.schema())
-    }
+    fn schema(&self) -> CatalogResult<SchemaRef>;
 
     /// Returns a logical plan for this table.
     fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder>;

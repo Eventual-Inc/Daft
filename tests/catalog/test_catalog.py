@@ -169,6 +169,9 @@ class MockTable(Table):
     def name(self) -> str:
         return self._name
 
+    def schema(self) -> Schema:
+        raise NotImplementedError
+
     def read(self, **options) -> DataFrame:
         raise NotImplementedError
 

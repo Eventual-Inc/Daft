@@ -145,6 +145,9 @@ class UnityTable(Table):
     def name(self) -> str:
         return self._inner.table_info.name
 
+    def schema(self) -> Schema:
+        return self.read().schema()
+
     @staticmethod
     def _from_obj(obj: object) -> UnityTable:
         """Returns a UnityTable if the given object can be adapted so."""

@@ -115,6 +115,9 @@ class MemoryTable(Table):
     def name(self) -> str:
         return self._name
 
+    def schema(self) -> Schema:
+        return self._inner.schema()
+
     @staticmethod
     def _from_pyobject(name: str, source: object) -> Table:
         """Returns a Daft Table from a supported object type or raises an error."""
