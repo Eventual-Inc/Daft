@@ -203,9 +203,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("name", DataType::Utf8)]),
             Pushdowns::default(),
         )
-        .with_columns(vec![capitalize(
-            Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced(),
-        )])
+        .with_columns(vec![capitalize(resolved_col("name"))])
         .unwrap()
         .build();
 

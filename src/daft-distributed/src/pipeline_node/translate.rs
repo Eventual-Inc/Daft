@@ -15,11 +15,11 @@ use crate::pipeline_node::{
     scan_source::ScanSourceNode, DistributedPipelineNode,
 };
 
-#[allow(dead_code)]
 pub(crate) fn logical_plan_to_pipeline_node(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
 ) -> DaftResult<Box<dyn DistributedPipelineNode>> {
+    #[allow(dead_code)]
     struct PipelineNodeBoundarySplitter {
         root: LogicalPlanRef,
         current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
@@ -91,20 +91,18 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     let limit_node = Box::new(LimitNode::new(
                         self.get_next_node_id(),
                         limit.limit as usize,
-                        node.schema().clone(),
+                        node.schema(),
                         self.config.clone(),
                         input_node,
                     ));
 
                     self.current_nodes = vec![limit_node];
                     // Here we will have to return a placeholder, essentially cutting off the plan
-                    let placeholder = PlaceHolderInfo::new(
-                        node.schema().clone(),
-                        ClusteringSpec::default().into(),
-                    );
+                    let placeholder =
+                        PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
                     Ok(Transformed::yes(
                         LogicalPlan::Source(Source::new(
-                            node.schema().clone(),
+                            node.schema(),
                             SourceInfo::PlaceHolder(placeholder).into(),
                         ))
                         .into(),
@@ -198,9 +196,12 @@ fn extract_inputs_from_logical_plan(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use common_scan_info::{test::DummyScanOperator, ScanOperatorRef};
+    use daft_dsl::{lit, resolved_col};
     use daft_logical_plan::{
-        logical_plan::LogicalPlan, ops::Source, source_info::SourceInfo, test::dummy_scan_operator,
-        LogicalPlanBuilder,
+        logical_plan::LogicalPlan, ops::Source, source_info::SourceInfo, LogicalPlanBuilder,
     };
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
@@ -224,8 +225,31 @@ mod tests {
         Ok(LogicalPlanBuilder::from(Arc::new(logical_plan)))
     }
 
+    /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
+    pub fn dummy_scan_operator(fields: Vec<Field>) -> ScanOperatorRef {
+        let schema = Arc::new(Schema::new(fields));
+        ScanOperatorRef(Arc::new(DummyScanOperator {
+            schema,
+            num_scan_tasks: 1,
+            num_rows_per_task: None,
+        }))
+    }
+
+    /// Create a dummy scan node containing the provided fields in its schema.
+    pub fn dummy_scan_node(scan_op: ScanOperatorRef) -> LogicalPlanBuilder {
+        dummy_scan_node_with_pushdowns(scan_op, Default::default())
+    }
+
+    /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
+    pub fn dummy_scan_node_with_pushdowns(
+        scan_op: ScanOperatorRef,
+        pushdowns: Pushdowns,
+    ) -> LogicalPlanBuilder {
+        LogicalPlanBuilder::table_scan(scan_op, Some(pushdowns)).unwrap()
+    }
+
     #[test]
-    fn test_logical_in_memory_source_to_pipeline_nodes() {
+    fn test_logical_in_memory_source_to_pipeline() {
         let fields = vec![
             Field::new("category", DataType::Utf8),
             Field::new("group", DataType::Int64),
@@ -241,12 +265,78 @@ mod tests {
     }
 
     #[test]
-    fn test_logical_scan_source_to_pipeline_nodes() {
+    fn test_logical_scan_source_to_pipeline() {
         let fields = vec![
             Field::new("category", DataType::Utf8),
             Field::new("group", DataType::Int64),
             Field::new("value", DataType::Int64),
         ];
-        let plan = dummy_scan_operator(fields).unwrap().build();
+        let plan = dummy_scan_node(dummy_scan_operator(fields)).build();
+
+        let pipeline_node =
+            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+
+        assert_eq!(pipeline_node.name(), "ScanSource");
+        assert_eq!(pipeline_node.children().len(), 0);
+    }
+
+    #[test]
+    fn test_logical_limit_to_pipeline() {
+        let fields = vec![
+            Field::new("category", DataType::Utf8),
+            Field::new("group", DataType::Int64),
+            Field::new("value", DataType::Int64),
+        ];
+        let plan = dummy_scan_node(dummy_scan_operator(fields))
+            .limit(20, false)
+            .unwrap()
+            .build();
+
+        let pipeline_node =
+            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+
+        assert_eq!(pipeline_node.name(), "LimitNode");
+
+        let children = pipeline_node.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name(), "ScanSource");
+        assert_eq!(children[0].children().len(), 0);
+    }
+
+    #[test]
+    fn test_map_logical_plan_to_pipeline() -> DaftResult<()> {
+        let fields = vec![
+            Field::new("category", DataType::Utf8),
+            Field::new("group", DataType::Int64),
+            Field::new("value", DataType::Int64),
+        ];
+        let plan = dummy_scan_node(dummy_scan_operator(fields))
+            .with_columns(vec![resolved_col("group")
+                .add(resolved_col("value"))
+                .alias("group_value")])?
+            .filter(resolved_col("group_value").eq(lit(0)))?
+            .limit(20, false)?
+            .select(vec![resolved_col("group_value")])?
+            .build();
+
+        let pipeline_node =
+            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+
+        assert_eq!(pipeline_node.name(), "Intermediate");
+
+        let children = pipeline_node.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name(), "LimitNode");
+
+        let children = children[0].children();
+        assert_eq!(children.len(), 0);
+        assert_eq!(children[0].name(), "Intermediate");
+
+        let children = children[0].children();
+        assert_eq!(children.len(), 0);
+        assert_eq!(children[0].name(), "ScanSource");
+        assert_eq!(children[0].children().len(), 0);
+
+        Ok(())
     }
 }
