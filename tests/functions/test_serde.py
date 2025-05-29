@@ -55,7 +55,7 @@ def test_serde_json_with_scalars(text, dtype, expected):
     [
         "STRUCT(name STRING, age INT64)",
         dt.struct({"name": dt.string(), "age": dt.int64()}),
-    ]
+    ],
 )
 def test_serde_json_with_structs(data_type_like: DataTypeLike):
     items = [
@@ -75,7 +75,7 @@ def test_serde_json_with_structs(data_type_like: DataTypeLike):
     [
         "INT64[]",
         dt.list(dt.int64()),
-    ]
+    ],
 )
 def test_serde_json_with_list():
     items = [

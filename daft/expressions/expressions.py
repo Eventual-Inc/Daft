@@ -1637,10 +1637,9 @@ class Expression:
         expr = native.try_decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-
     def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type.
-        
+
         Args:
             format (Literal["json"]): The serialization format.
             dtype: The target data type to deserialize into.
@@ -1654,7 +1653,6 @@ class Expression:
             assert isinstance(dtype, (DataType, type))
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("deserialize", format, dtype._dtype)
-
 
     def try_deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type, inserting nulls on failures.
@@ -1672,7 +1670,6 @@ class Expression:
             assert isinstance(dtype, (DataType, type))
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("try_deserialize", format, dtype._dtype)
-
 
     def name(self) -> builtins.str:
         return self._expr.name()
