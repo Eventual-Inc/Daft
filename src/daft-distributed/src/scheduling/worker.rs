@@ -1,13 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use common_error::DaftResult;
 
-use super::task::{Task, TaskDetails, TaskId, TaskResultHandle};
+use super::{
+    scheduler::SchedulableTask,
+    task::{Task, TaskDetails, TaskId, TaskResultHandle, TaskResultHandleAwaiter},
+};
 
 pub(crate) type WorkerId = Arc<str>;
 
 #[allow(dead_code)]
-pub(crate) trait Worker: Send + Sync + 'static {
+pub(crate) trait Worker: Send + Sync + Debug + 'static {
     type Task: Task;
     type TaskResultHandle: TaskResultHandle;
 
@@ -24,10 +27,14 @@ pub(crate) trait WorkerManager: Send + Sync {
 
     fn submit_tasks_to_workers(
         &self,
-        total_tasks: usize,
-        tasks_per_worker: HashMap<WorkerId, Vec<<<Self as WorkerManager>::Worker as Worker>::Task>>,
-    ) -> DaftResult<Vec<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>;
-    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId);
+        tasks_per_worker: HashMap<
+            WorkerId,
+            Vec<SchedulableTask<<<Self as WorkerManager>::Worker as Worker>::Task>>,
+        >,
+    ) -> DaftResult<
+        Vec<TaskResultHandleAwaiter<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>,
+    >;
+    fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId);
     fn workers(&self) -> &HashMap<WorkerId, Self::Worker>;
     fn total_available_cpus(&self) -> usize;
     #[allow(dead_code)]
@@ -50,16 +57,8 @@ pub(super) mod tests {
     }
 
     impl MockWorkerManager {
-        pub fn new() -> Self {
-            Self {
-                workers: HashMap::new(),
-            }
-        }
-
-        pub fn add_worker(&mut self, worker_id: WorkerId, num_cpus: usize) -> DaftResult<()> {
-            self.workers
-                .insert(worker_id.clone(), MockWorker::new(worker_id, num_cpus));
-            Ok(())
+        pub fn new(workers: HashMap<WorkerId, MockWorker>) -> Self {
+            Self { workers }
         }
     }
 
@@ -68,26 +67,33 @@ pub(super) mod tests {
 
         fn submit_tasks_to_workers(
             &self,
-            total_tasks: usize,
             tasks_per_worker: HashMap<
                 WorkerId,
-                Vec<<<Self as WorkerManager>::Worker as Worker>::Task>,
+                Vec<SchedulableTask<<<Self as WorkerManager>::Worker as Worker>::Task>>,
             >,
-        ) -> DaftResult<Vec<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>
-        {
+        ) -> DaftResult<
+            Vec<
+                TaskResultHandleAwaiter<
+                    <<Self as WorkerManager>::Worker as Worker>::TaskResultHandle,
+                >,
+            >,
+        > {
             let mut result = Vec::new();
 
             for (worker_id, tasks) in tasks_per_worker {
                 for task in tasks {
+                    let (task, result_tx, cancel_token) = task.into_inner();
                     // Update the worker's active task count
                     if let Some(worker) = self.workers.get(&worker_id) {
                         worker.add_active_task(&task);
                     }
 
-                    result.push(MockTaskResultHandle::new(
-                        self.clone(),
+                    result.push(TaskResultHandleAwaiter::new(
+                        task.task_id().clone(),
                         worker_id.clone(),
-                        task,
+                        MockTaskResultHandle::new(task),
+                        result_tx,
+                        cancel_token,
                     ));
                 }
             }
@@ -95,9 +101,9 @@ pub(super) mod tests {
             Ok(result)
         }
 
-        fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId) {
-            if let Some(worker) = self.workers.get(&worker_id) {
-                worker.mark_task_finished(&task_id);
+        fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId) {
+            if let Some(worker) = self.workers.get(worker_id) {
+                worker.mark_task_finished(task_id);
             }
         }
 
@@ -123,7 +129,7 @@ pub(super) mod tests {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct MockWorker {
         worker_id: WorkerId,
         total_num_cpus: usize,
