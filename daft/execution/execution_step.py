@@ -587,6 +587,10 @@ class DataSinkWrite(SingleOutputInstruction, Generic[WriteResultType]):
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         result_field_name = "write_results"
+        # If we're going to use an async data sink, we need to materialize the micropartitions here. Otherwise,
+        # materializing later could result in a call to a tokio block_on within a pyo3 async runtime, e.g. if
+        # we call `write_micropartition_to_parquet()`, which will cause the process to panic.
+        inputs = [MicroPartition._from_record_batches([input.to_record_batch()]) for input in inputs]
         results = list(self.sink.write_sync_wrapper(iter(inputs)))
         results_series = Series.from_pylist(results, result_field_name, pyobj="force")
         series_dict = {result_field_name: results_series._series}
