@@ -1637,15 +1637,14 @@ class Expression:
         expr = native.try_decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def from_json(self, dtype: DataTypeLike) -> Expression:
-        """Parses a string or string expression into the given data type, returning null if there are any parsing errors."""
+    def json_loads(self, dtype: DataTypeLike) -> Expression:
+        """Loads a JSON string into the given data type, returning null if there are any parsing errors."""
         if isinstance(dtype, str):
             dtype = DataType._from_pydatatype(sql_datatype(dtype))
         else:
             assert isinstance(dtype, (DataType, type))
             dtype = DataType._infer_type(dtype)
-        expr = native.from_json(self._expr, dtype._dtype)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("json_loads", dtype._dtype)
 
     def name(self) -> builtins.str:
         return self._expr.name()

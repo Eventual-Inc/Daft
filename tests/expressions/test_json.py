@@ -14,7 +14,7 @@ def assert_eq(df1: DataFrame, df2: DataFrame):
 def from_json(items: list[str], dtype: dt) -> list[Any]:
     c = "some_json_text"
     df = daft.from_pydict({c: items})
-    df = df.select(col(c).from_json(dtype))
+    df = df.select(col(c).json_loads(dtype))
     return df.to_pydict()[c]
 
 
@@ -49,7 +49,7 @@ def from_json(items: list[str], dtype: dt) -> list[Any]:
 )
 def test_from_json_with_scalars(text, dtype, expected):
     df = daft.from_pydict({"col": [text]})
-    df = df.select(col("col").from_json(dtype))
+    df = df.select(col("col").json_loads(dtype))
     assert df.to_pydict()["col"][0] == expected
 
 

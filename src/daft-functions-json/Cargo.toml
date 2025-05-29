@@ -7,7 +7,6 @@ jaq-core = {workspace = true}
 jaq-interpret = {workspace = true}
 jaq-parse = {workspace = true}
 jaq-std = {workspace = true}
-pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 typetag = {workspace = true}
@@ -17,8 +16,7 @@ itertools.workspace = true
 python = [
   "common-error/python",
   "daft-core/python",
-  "daft-dsl/python",
-  "dep:pyo3"
+  "daft-dsl/python"
 ]
 
 [lints]

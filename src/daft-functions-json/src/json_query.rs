@@ -16,7 +16,7 @@ pub struct JsonQuery;
 #[derive(FunctionArgs)]
 struct JsonQueryArgs<T> {
     input: T,
-    query: T,
+    query: String,
 }
 
 #[typetag::serde]
@@ -34,21 +34,18 @@ impl ScalarUDF for JsonQuery {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let JsonQueryArgs { input, query } = inputs.try_into()?;
+        let JsonQueryArgs {
+            input,
+            query: _query,
+        } = inputs.try_into()?;
         let input = input.to_field(schema)?;
-        let query = query.to_field(schema)?;
         ensure!(input.dtype == DataType::Utf8, TypeError: "Input must be a string type");
-        ensure!(query.dtype == DataType::Utf8, TypeError: "Query must be a string type");
         Ok(Field::new(input.name, DataType::Utf8))
     }
 
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let JsonQueryArgs { input, query } = inputs.try_into()?;
-        // extract the query .. expects a string literal!
-        ensure!(query.len() == 1, ComputeError: "expected scalar value for query");
-        let query = query.utf8()?.get(0).unwrap();
-        // execute jq on the series
-        jq::query_series(&input, query)
+        jq::query_series(&input, &query)
     }
 }
 
@@ -113,7 +110,8 @@ mod jq {
         Ok(compiled_filter)
     }
 
-    fn json_query_impl(arr: &Utf8Array, query: &str) -> DaftResult<Utf8Array> {
+    // This is only marked pub(crate) for mod test.
+    pub(crate) fn json_query_impl(arr: &Utf8Array, query: &str) -> DaftResult<Utf8Array> {
         let compiled_filter = compile_filter(query)?;
         let inputs = RcIter::new(core::iter::empty());
 
@@ -148,32 +146,32 @@ mod jq {
             .rename(&name)
             .with_validity(self_arrow.validity().cloned())
     }
+}
 
-    #[cfg(test)]
-    mod tests {
-        use daft_core::prelude::Utf8Array;
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::{AsArrow, Utf8Array};
 
-        use super::*;
+    use super::*;
 
-        #[test]
-        fn test_json_query() -> DaftResult<()> {
-            let data = Utf8Array::from_values(
-                "data",
-                vec![
-                    r#"{"foo": {"bar": 1}}"#.to_string(),
-                    r#"{"foo": {"bar": 2}}"#.to_string(),
-                    r#"{"foo": {"bar": 3}}"#.to_string(),
-                ]
-                .into_iter(),
-            );
+    #[test]
+    fn test_json_query() -> DaftResult<()> {
+        let data = Utf8Array::from_values(
+            "data",
+            vec![
+                r#"{"foo": {"bar": 1}}"#.to_string(),
+                r#"{"foo": {"bar": 2}}"#.to_string(),
+                r#"{"foo": {"bar": 3}}"#.to_string(),
+            ]
+            .into_iter(),
+        );
 
-            let query = r".foo.bar";
-            let result = json_query_impl(&data, query)?;
-            assert_eq!(result.len(), 3);
-            assert_eq!(result.as_arrow().value(0), "1");
-            assert_eq!(result.as_arrow().value(1), "2");
-            assert_eq!(result.as_arrow().value(2), "3");
-            Ok(())
-        }
+        let query = r".foo.bar";
+        let result = jq::json_query_impl(&data, query)?;
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.as_arrow().value(0), "1");
+        assert_eq!(result.as_arrow().value(1), "2");
+        assert_eq!(result.as_arrow().value(2), "3");
+        Ok(())
     }
 }
