@@ -155,13 +155,13 @@ def test_list_tables(glue_catalog, glue_client):
     # list tables with catalog
     tables = glue_catalog.list_tables("test_database")
     assert len(tables) == 2
-    assert "test_database.table1" in tables
-    assert "test_database.table2" in tables
+    assert Identifier("test_database", "table1") in tables
+    assert Identifier("test_database", "table2") in tables
 
     # test listing tables with pattern
     tables = glue_catalog.list_tables("test_database.table1")
     assert len(tables) == 1
-    assert "test_database.table1" in tables
+    assert Identifier("test_database", "table1") in tables
 
     # test listing tables with no pattern
     with pytest.raises(ValueError, match="requires the pattern to contain a namespace"):

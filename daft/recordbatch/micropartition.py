@@ -25,6 +25,8 @@ from daft.recordbatch.recordbatch import RecordBatch
 from daft.series import Series
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -115,7 +117,7 @@ class MicroPartition:
         return MicroPartition._from_record_batches([table])
 
     @staticmethod
-    def from_pydict(data: dict[str, Any]) -> MicroPartition:
+    def from_pydict(data: Mapping[str, Any]) -> MicroPartition:
         table = RecordBatch.from_pydict(data)
         return MicroPartition._from_record_batches([table])
 

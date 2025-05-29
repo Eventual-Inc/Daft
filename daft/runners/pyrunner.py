@@ -6,9 +6,10 @@ import multiprocessing as mp
 import threading
 import uuid
 import warnings
+from collections.abc import Iterator
 from concurrent import futures
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, ResourceRequest, SystemInfo
@@ -34,6 +35,8 @@ from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.execution import physical_plan
     from daft.execution.execution_step import Instruction, PartitionTask
     from daft.logical.builder import LogicalPlanBuilder
@@ -360,7 +363,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             while not adaptive_planner.is_done():
                 source_id, plan_scheduler = adaptive_planner.next()
                 # don't store partition sets in variable to avoid reference
-                tasks = plan_scheduler.to_partition_tasks(  # type: ignore
+                tasks = plan_scheduler.to_partition_tasks(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
                     self,
                     results_buffer_size,
@@ -399,7 +402,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 # Get executable tasks from planner.
-                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)  # type: ignore
+                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
                 del psets
                 with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
                     results_gen = self._physical_plan_to_partitions(execution_id, tasks)  # type: ignore

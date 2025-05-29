@@ -54,7 +54,7 @@ class PartitionTransform:
 
     _partition_transform: PyPartitionTransform
 
-    def __init__(self):
+    def __init__(self) -> None:
         raise ValueError(
             "We do not support creating a PartitionTransform directly, please use one of the factory methods."
         )
@@ -68,7 +68,7 @@ class PartitionTransform:
         return False
 
     @classmethod
-    def _from_py_partition_transform(cls, py_partition_transform) -> PartitionTransform:
+    def _from_py_partition_transform(cls, py_partition_transform: PyPartitionTransform) -> PartitionTransform:
         pt = cls.__new__(cls)
         pt._partition_transform = py_partition_transform
         return pt

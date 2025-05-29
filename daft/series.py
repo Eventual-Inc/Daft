@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
@@ -12,6 +12,7 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
+    from collections.abc import Iterator
 
 
 class SeriesIterable:
@@ -127,14 +128,15 @@ class Series:
             pys = PySeries.from_pylist(name, data, pyobj=pyobj)
             return Series._from_pyseries(pys)
 
-        # Workaround: wrap list of np.datetime64 in an np.array
-        #   - https://github.com/apache/arrow/issues/40580
-        #   - https://github.com/Eventual-Inc/Daft/issues/3826
-        if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
-            data = np.array(data)  # type: ignore[assignment]
-
         try:
-            arrow_array = pa.array(data)
+            # Workaround: wrap list of np.datetime64 in an np.array
+            #   - https://github.com/apache/arrow/issues/40580
+            #   - https://github.com/Eventual-Inc/Daft/issues/3826
+            if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
+                np_arr = np.array(data)
+                arrow_array = pa.array(np_arr)
+            else:
+                arrow_array = pa.array(data)
             return Series.from_arrow(arrow_array, name=name)
         except pa.lib.ArrowInvalid:
             if pyobj == "disallow":
@@ -143,7 +145,7 @@ class Series:
             return Series._from_pyseries(pys)
 
     @classmethod
-    def from_numpy(cls, data: np.ndarray, name: str = "numpy_series") -> Series:
+    def from_numpy(cls, data: np.ndarray[Any, Any], name: str = "numpy_series") -> Series:
         """Construct a Series from a NumPy ndarray.
 
         If the provided NumPy ndarray is 1-dimensional, Daft will attempt to store the ndarray
@@ -169,7 +171,7 @@ class Series:
         return cls.from_pylist(list_ndarray, name=name, pyobj="allow")
 
     @classmethod
-    def from_pandas(cls, data: pd.Series, name: str = "pd_series") -> Series:
+    def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series") -> Series:
         """Construct a Series from a pandas Series.
 
         This will first try to convert the series into a pyarrow array, then will fall

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
+from typing import TYPE_CHECKING, Callable
 
 from daft.daft import (
     LocalPhysicalPlan,
@@ -13,6 +15,9 @@ from daft.daft import (
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.constants import MAX_SWORDFISH_ACTOR_RESTARTS, MAX_SWORDFISH_ACTOR_TASK_RETRIES
 from daft.runners.partitioning import PartitionMetadata
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 try:
     import ray
@@ -37,7 +42,7 @@ class RaySwordfishWorker:
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
-        psets: dict[str, list[ray.ObjectRef[MicroPartition]]],
+        psets: dict[str, list[ray.ObjectRef]],
     ) -> AsyncGenerator[MicroPartition, None]:
         """Run a plan on swordfish and yield partitions."""
         psets_gathered = {k: await asyncio.gather(*v) for k, v in psets.items()}
@@ -48,7 +53,7 @@ class RaySwordfishWorker:
             mp = MicroPartition._from_pymicropartition(partition)
             yield mp
 
-    def concat_and_get_metadata(self, *partitions: MicroPartition) -> Tuple[PartitionMetadata, MicroPartition]:
+    def concat_and_get_metadata(self, *partitions: MicroPartition) -> tuple[PartitionMetadata, MicroPartition]:
         """Concatenate a list of partitions and return the metadata and the concatenated partition."""
         concated = MicroPartition.concat(list(partitions))
         return PartitionMetadata.from_table(concated), concated
@@ -61,14 +66,14 @@ class RaySwordfishTaskHandle:
     It is used to asynchronously get the result of the task, cancel the task, and perform any post-task cleanup.
     """
 
-    result_handle: ray.ObjectRef[Any]
+    result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     done_callback: Callable[[asyncio.Task[RayPartitionRef]], None]
     task_memory_cost: int
 
     async def _get_result(self) -> RayPartitionRef:
         results = []
-        async for result in self.result_handle:  # type: ignore[attr-defined]
+        async for result in self.result_handle:
             results.append(result)
 
         metadata, result = self.actor_handle.concat_and_get_metadata.options(num_returns=2).remote(*results)
@@ -145,7 +150,7 @@ class RaySwordfishWorkerManager:
     """
 
     def __init__(self, daft_execution_config: PyDaftExecutionConfig) -> None:
-        self.workers: Dict[str, RaySwordfishWorkerHandle] = {}
+        self.workers: dict[str, RaySwordfishWorkerHandle] = {}
         self.daft_execution_config = daft_execution_config
         self._initialize_workers()
 
@@ -175,7 +180,7 @@ class RaySwordfishWorkerManager:
     def submit_task_to_worker(self, task: RaySwordfishTask, worker_id: str) -> RaySwordfishTaskHandle:
         return self.workers[worker_id].submit_task(task)
 
-    def get_worker_resources(self) -> List[tuple[str, int, int]]:
+    def get_worker_resources(self) -> list[tuple[str, int, int]]:
         return [
             (
                 worker.get_actor_node_id(),
