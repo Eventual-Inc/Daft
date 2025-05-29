@@ -14,7 +14,7 @@ use stage_builder::StagePlanBuilder;
 use crate::{
     pipeline_node::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        PipelineOutput, RunningPipelineNode,
+        MaterializedOutput, PipelineOutput, RunningPipelineNode,
     },
     scheduling::{
         scheduler::SchedulerHandle,
@@ -111,7 +111,7 @@ impl RunningStage {
     pub fn materialize<T: Task>(
         self,
         scheduler_handle: SchedulerHandle<T>,
-    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+    ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
         let stream = self.into_stream();
         materialize_all_pipeline_outputs(stream, scheduler_handle)
     }
