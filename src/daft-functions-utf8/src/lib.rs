@@ -63,7 +63,6 @@ pub use upper::*;
 pub struct Utf8Functions;
 
 impl daft_dsl::functions::FunctionModule for Utf8Functions {
-    #[allow(deprecated)]
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(Capitalize);
         parent.add_fn(Contains);

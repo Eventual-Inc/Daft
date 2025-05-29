@@ -115,7 +115,6 @@ pub fn json_query(input: ExprRef, query: ExprRef) -> ExprRef {
 pub struct JsonFunctions;
 
 impl FunctionModule for JsonFunctions {
-    #[allow(deprecated)]
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(crate::expr::JsonQuery);
     }

@@ -21,7 +21,8 @@ use common_error::DaftResult;
 use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
 use python::PythonUDF;
-pub use scalar::*;
+use scalar::DynamicScalarFunction;
+pub use scalar::{ScalarFunction, ScalarFunctionFactory, ScalarUDF};
 use serde::{Deserialize, Serialize};
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
@@ -149,8 +150,8 @@ impl FunctionRegistry {
         Mod::register(self);
     }
 
-    /// Registers a scalar function factory.
-    pub fn add_function(&mut self, function: impl ScalarFunctionFactory + 'static) {
+    /// Registers a scalar function factory without monomorphization.
+    pub fn add_fn_factory(&mut self, function: impl ScalarFunctionFactory + 'static) {
         let function = Arc::new(function);
         for alias in function.aliases() {
             self.map.insert((*alias).to_string(), function.clone());
@@ -158,13 +159,12 @@ impl FunctionRegistry {
         self.map.insert(function.name().to_string(), function);
     }
 
-    // TODO: remove me once all are migrated to `add_function`!
-    #[deprecated = "Please use `add_function` for future registrations."]
+    // TODO: remove this monomorphizing version after migrating to `add_function`.
     pub fn add_fn<UDF: ScalarUDF + 'static>(&mut self, func: UDF) {
         // casting to dyn ScalarUDF so as to not modify the signature
         let udf = Arc::new(func) as Arc<dyn ScalarUDF>;
         let function = DynamicScalarFunction::from(udf);
-        self.add_function(function);
+        self.add_fn_factory(function);
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn ScalarFunctionFactory>> {

@@ -9,7 +9,6 @@ pub mod to_mode;
 pub struct ImageFunctions;
 
 impl FunctionModule for ImageFunctions {
-    #[allow(deprecated)]
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(crop::ImageCrop);
         parent.add_fn(decode::ImageDecode);
