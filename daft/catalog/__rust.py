@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any
 
 from daft.catalog import Catalog, Identifier, Properties, Table
+from daft.daft import PyCatalog as _PyCatalog
+from daft.daft import PyTable as _PyTable
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.schema import Schema
-
-if TYPE_CHECKING:
-    from daft.daft import PyCatalog as _PyCatalog
-    from daft.daft import PyTable as _PyTable
 
 
 class _RustCatalog(Catalog):
@@ -72,9 +70,24 @@ class _RustTable(Table):
     def read(self, **options: Any) -> DataFrame:
         return DataFrame(LogicalPlanBuilder(self.inner.to_logical_plan()))
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
-        self.inner.write(df._builder._builder, mode)
+    def append(self, df: DataFrame, **options: Any) -> None:
+        self.inner.append(df._builder._builder, **options)
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        self.inner.overwrite(df._builder._builder, **options)
 
 
 class View(_RustTable):
     pass
+
+
+class MemoryCatalog(_RustCatalog):
+    @staticmethod
+    def _new(name: str) -> Catalog:
+        return _PyCatalog.new_memory_catalog(name)
+
+
+class MemoryTable(_RustTable):
+    @staticmethod
+    def _new(name: str, schema: Schema) -> Table:
+        return _PyTable.new_memory_table(name, schema._schema)

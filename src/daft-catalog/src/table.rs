@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use daft_core::prelude::SchemaRef;
+use daft_dsl::LiteralValue;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 
 use crate::error::{CatalogError, CatalogResult};
@@ -46,8 +47,18 @@ pub trait Table: Sync + Send + std::fmt::Debug {
     /// Returns a logical plan for this table.
     fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder>;
 
-    /// Write the plan to this table.
-    fn write(&self, plan: LogicalPlanBuilder, mode: &str) -> CatalogResult<()>;
+    /// Append data to the table. Equivalent to `INSERT INTO` in SQL
+    fn append(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: HashMap<String, LiteralValue>,
+    ) -> CatalogResult<()>;
+    /// Overwrite table with data. Equivalent to `INSERT OVERWRITE` in SQL
+    fn overwrite(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: HashMap<String, LiteralValue>,
+    ) -> CatalogResult<()>;
 
     /// Create/extract a Python object that subclasses the Table ABC
     #[cfg(feature = "python")]
@@ -94,7 +105,21 @@ impl Table for View {
         Ok(self.plan())
     }
 
-    fn write(&self, _plan: LogicalPlanBuilder, _mode: &str) -> CatalogResult<()> {
+    fn append(
+        &self,
+        _plan: LogicalPlanBuilder,
+        _options: HashMap<String, LiteralValue>,
+    ) -> CatalogResult<()> {
+        Err(CatalogError::unsupported(
+            "cannot modify the data in a view",
+        ))
+    }
+
+    fn overwrite(
+        &self,
+        _plan: LogicalPlanBuilder,
+        _options: HashMap<String, LiteralValue>,
+    ) -> CatalogResult<()> {
         Err(CatalogError::unsupported(
             "cannot modify the data in a view",
         ))

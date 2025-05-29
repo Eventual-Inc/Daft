@@ -2,13 +2,20 @@
 
 mod wrappers;
 
+use std::{collections::HashMap, sync::Arc};
+
 use daft_core::python::PySchema;
+use daft_dsl::LiteralValue;
 use daft_logical_plan::PyLogicalPlanBuilder;
-use pyo3::{exceptions::PyIndexError, intern, prelude::*};
+use pyo3::{exceptions::PyIndexError, intern, prelude::*, types::PyDict};
 pub use wrappers::{PyCatalogWrapper, PyTableWrapper};
 
-use crate::{CatalogRef, Identifier, TableRef, TableSource};
+use crate::{
+    impls::memory::{MemoryCatalog, MemoryTable},
+    Catalog, CatalogRef, Identifier, Table, TableRef, TableSource,
+};
 
+#[derive(Clone)]
 #[pyclass]
 pub struct PyCatalog(pub CatalogRef);
 
@@ -28,7 +35,7 @@ impl PyCatalog {
         schema: PySchema,
         py: Python,
     ) -> PyResult<PyObject> {
-        self.0.create_table(&ident.0, &schema.schema)?.to_py(py)
+        self.0.create_table(&ident.0, schema.schema)?.to_py(py)
     }
 
     fn drop_namespace(&self, ident: PyIdentifier) -> PyResult<()> {
@@ -69,10 +76,36 @@ impl PyCatalog {
             .map(PyIdentifier)
             .collect())
     }
+
+    #[staticmethod]
+    fn new_memory_catalog(name: String, py: Python) -> PyResult<PyObject> {
+        MemoryCatalog::new(name).to_py(py)
+    }
 }
 
+#[derive(Clone)]
 #[pyclass]
 pub struct PyTable(pub TableRef);
+
+impl PyTable {
+    fn pydict_to_options(
+        options: Option<&Bound<PyDict>>,
+    ) -> PyResult<HashMap<String, LiteralValue>> {
+        if let Some(options) = options {
+            options
+                .iter()
+                .map(|(key, val)| {
+                    let key = key.extract()?;
+                    let val = daft_dsl::python::literal_value(val)?;
+
+                    Ok((key, val))
+                })
+                .collect()
+        } else {
+            Ok(HashMap::new())
+        }
+    }
+}
 
 #[pymethods]
 impl PyTable {
@@ -88,8 +121,43 @@ impl PyTable {
         Ok(self.0.to_logical_plan()?.into())
     }
 
-    fn write(&self, plan: PyLogicalPlanBuilder, mode: &str) -> PyResult<()> {
-        Ok(self.0.write(plan.builder, mode)?)
+    #[pyo3(signature = (plan, **options))]
+    fn append(&self, plan: PyLogicalPlanBuilder, options: Option<&Bound<PyDict>>) -> PyResult<()> {
+        let options = Self::pydict_to_options(options)?;
+
+        Ok(self.0.append(plan.builder, options)?)
+    }
+
+    #[pyo3(signature = (plan, **options))]
+    fn overwrite(
+        &self,
+        plan: PyLogicalPlanBuilder,
+        options: Option<&Bound<PyDict>>,
+    ) -> PyResult<()> {
+        let options = Self::pydict_to_options(options)?;
+
+        Ok(self.0.overwrite(plan.builder, options)?)
+    }
+
+    #[staticmethod]
+    fn new_memory_table(name: String, schema: PySchema, py: Python) -> PyResult<PyObject> {
+        MemoryTable::new(name, schema.schema)?.to_py(py)
+    }
+}
+
+pub fn pyobj_to_catalog(obj: Bound<PyAny>) -> PyResult<CatalogRef> {
+    if obj.is_instance_of::<PyCatalog>() {
+        Ok(obj.extract::<PyCatalog>()?.0)
+    } else {
+        Ok(Arc::new(PyCatalogWrapper(obj.unbind())))
+    }
+}
+
+pub fn pyobj_to_table(obj: Bound<PyAny>) -> PyResult<TableRef> {
+    if obj.is_instance_of::<PyTable>() {
+        Ok(obj.extract::<PyTable>()?.0)
+    } else {
+        Ok(Arc::new(PyTableWrapper(obj.unbind())))
     }
 }
 

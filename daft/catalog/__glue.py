@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import boto3
 import botocore
@@ -344,10 +344,17 @@ class GlueCsvTable(GlueTable):
             hive_partitioning=self._hive_partitioning,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
         df.write_csv(
             root_dir=self._path,
-            write_mode=mode,
+            write_mode="append",
+            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+        )
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        df.write_csv(
+            root_dir=self._path,
+            write_mode="overwrite",
             partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
         )
 
@@ -402,11 +409,20 @@ class GlueParquetTable(GlueTable):
             schema_hints=None,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
         df.write_parquet(
             root_dir=self._path,
             compression="snappy",
-            write_mode=mode,
+            write_mode="append",
+            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+            io_config=self._io_config,
+        )
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        df.write_parquet(
+            root_dir=self._path,
+            compression="snappy",
+            write_mode="overwrite",
             partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
             io_config=self._io_config,
         )
@@ -461,8 +477,11 @@ class GlueIcebergTable(GlueTable):
             table=self._pyiceberg_table, snapshot_id=options.get("snapshot_id"), io_config=self._io_config
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
-        df.write_iceberg(self._pyiceberg_table, mode=mode)
+    def append(self, df: DataFrame, **options: Any) -> None:
+        df.write_iceberg(self._pyiceberg_table, mode="append")
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        df.write_iceberg(self._pyiceberg_table, mode="overwrite")
 
 
 class GlueDeltaTable(GlueTable):
@@ -521,7 +540,10 @@ class GlueDeltaTable(GlueTable):
             io_config=self._io_config,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
+        raise NotImplementedError
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
         raise NotImplementedError
 
 

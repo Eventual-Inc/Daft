@@ -2072,8 +2072,12 @@ name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-partitioning",
+ "daft-context",
  "daft-core",
+ "daft-dsl",
  "daft-logical-plan",
+ "daft-micropartition",
  "pyo3",
  "snafu",
  "sqlparser",
@@ -2136,8 +2140,12 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
+ "daft-core",
+ "daft-logical-plan",
+ "daft-micropartition",
  "daft-py-runners",
  "log",
  "pyo3",

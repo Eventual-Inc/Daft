@@ -143,12 +143,12 @@ impl Runner {
             Self::Py(PyRunner { pyobj }) => pyobj.as_ref(),
         }
     }
-    pub fn run_iter_tables(
+    pub fn run_iter_tables<'py>(
         &self,
-        py: Python<'_>,
+        py: Python<'py>,
         lp: LogicalPlanBuilder,
         results_buffer_size: Option<usize>,
-    ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
+    ) -> DaftResult<impl Iterator<Item = DaftResult<MicroPartitionRef>> + 'py> {
         let pyobj = self.get_runner_ref();
         let py_lp = PyLogicalPlanBuilder::new(lp);
         let builder = py.import(intern!(py, "daft.logical.builder"))?;
@@ -164,7 +164,7 @@ impl Runner {
         let result = result.bind(py);
         let iter = PyIterator::from_object(result)?;
 
-        let iter = iter.map(|item| {
+        let iter = iter.map(move |item| {
             let item = item?;
             let partition = item.getattr(intern!(py, "_micropartition"))?;
             let partition = partition.extract::<PyMicroPartition>()?;
@@ -172,7 +172,7 @@ impl Runner {
             Ok::<_, DaftError>(partition)
         });
 
-        Ok(iter.collect())
+        Ok(iter)
     }
 
     pub fn to_pyobj(self: Arc<Self>, py: Python) -> PyObject {
