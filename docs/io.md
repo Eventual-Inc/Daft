@@ -92,6 +92,7 @@ See also [Iceberg](integrations/iceberg.md) for detailed integration.
 
 | Function                                                    | Description                                                        |
 |-------------------------------------------------------------|--------------------------------------------------------------------|
+| [`AsyncDataSink`][daft.io.sink.AsyncDataSink]               | Interface for writing data from DataFrames with an async interface |
 | [`DataSink`][daft.io.sink.DataSink]                         | Interface for writing data from DataFrames                         |
 | [`DataSource`][daft.io.source.DataSource]                   | Interface for reading data into DataFrames                         |
 | [`DataSourceTask`][daft.io.source.DataSourceTask]           | Represents a partition of data that can be processed independently |

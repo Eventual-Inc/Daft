@@ -24,21 +24,8 @@ class WriteResult(Generic[WriteResultType]):
     rows_written: int
 
 
-class DataSink(ABC, Generic[WriteResultType]):
-    """Interface for writing data to a sink that is not built-in.
-
-    When a DataFrame is written using the `.write_sink()` method, the following sequence occurs:
-
-    1. The sink's `.start()` method is called once at the beginning of the write process.
-    2. The DataFrame is executed, and its output is split into micropartitions.
-    3. The sink's `.write()` method is invoked on each micropartition, potentially in parallel
-       and distributed across multiple tasks or workers.
-    4. After all writes complete, the resulting `WriteOutput` objects are gathered on a single node.
-    5. The `.finalize()` method is then called with all write outputs to produce a final `MicroPartition`.
-
-    Warning:
-        This API is early in its development and is subject to change.
-    """
+class BaseSink(ABC, Generic[WriteResultType]):
+    """Base class for all data sinks with common functionality."""
 
     def name(self) -> str:
         """Optional custom sink name."""
@@ -60,24 +47,6 @@ class DataSink(ABC, Generic[WriteResultType]):
         """
         pass
 
-    def write_sync_wrapper(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
-        return SyncFromAsyncIterator(lambda: self.write(micropartitions))
-
-    @abstractmethod
-    async def write(self, micropartitions: Iterator[MicroPartition]) -> AsyncIterator[WriteResult[WriteResultType]]:
-        """Writes a stream of micropartitions to the sink.
-
-        This method should handle the ingestion of each micropartition and yield a result
-        (e.g. metadata) for each successful write.
-
-        Args:
-            micropartitions (Iterator[MicroPartition]): An iterator of micropartitions to be written.
-
-        Returns:
-            Iterator[WriteResult[WriteResultType]]: An iterator of write results wrapped in a WriteOutput.
-        """
-        raise NotImplementedError
-
     @abstractmethod
     def finalize(self, write_results: list[WriteResult[WriteResultType]]) -> MicroPartition:
         """Finalizes the write process and returns a resulting micropartition.
@@ -92,3 +61,83 @@ class DataSink(ABC, Generic[WriteResultType]):
             MicroPartition: A final, single micropartition representing the result of all writes.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def write_sync_wrapper(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
+        """Internal method to provide a sync interface."""
+        raise NotImplementedError
+
+
+class DataSink(BaseSink[WriteResultType]):
+    """Synchronous DataSink interface for writing data to a sink.
+
+    When a DataFrame is written using the `.write_sink()` method, the following sequence occurs:
+
+    1. The sink's `.start()` method is called once at the beginning of the write process.
+    2. The DataFrame is executed, and its output is split into micropartitions.
+    3. The sink's `.write()` method is invoked on each micropartition, potentially in parallel
+       and distributed across multiple tasks or workers.
+    4. After all writes complete, the resulting `WriteOutput` objects are gathered on a single node.
+    5. The `.finalize()` method is then called with all write outputs to produce a final `MicroPartition`.
+
+    Warning:
+        This API is early in its development and is subject to change.
+    """
+
+    @abstractmethod
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
+        """Writes a stream of micropartitions to the sink.
+
+        This method should handle the ingestion of each micropartition and yield a result
+        (e.g. metadata) for each successful write.
+
+        Args:
+            micropartitions (Iterator[MicroPartition]): An iterator of micropartitions to be written.
+
+        Returns:
+            Iterator[WriteResult[WriteResultType]]: An iterator of write results.
+        """
+        raise NotImplementedError
+
+    def write_sync_wrapper(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
+        """Internal method to provide a sync interface."""
+        return self.write(micropartitions)
+
+
+class AsyncDataSink(BaseSink[WriteResultType]):
+    """Asynchronous DataSink interface for writing data to a sink.
+
+    When a DataFrame is written using the `.write_sink()` method, the following sequence occurs:
+
+    1. The sink's `.start()` method is called once at the beginning of the write process.
+    2. The DataFrame is executed, and its output is split into micropartitions.
+    3. The sink's `.write()` method is invoked on each micropartition, potentially in parallel
+       and distributed across multiple tasks or workers.
+    4. After all writes complete, the resulting `WriteOutput` objects are gathered on a single node.
+    5. The `.finalize()` method is then called with all write outputs to produce a final `MicroPartition`.
+
+    Warning:
+        This API is early in its development and is subject to change.
+    """
+
+    def name(self) -> str:
+        """Optional custom sink name."""
+        return "User-defined Async Data Sink"
+
+    @abstractmethod
+    async def write(self, micropartitions: Iterator[MicroPartition]) -> AsyncIterator[WriteResult[WriteResultType]]:
+        """Writes a stream of micropartitions to the sink.
+
+        This method should handle the ingestion of each micropartition and yield a result
+        (e.g. metadata) for each successful write.
+
+        Args:
+            micropartitions (Iterator[MicroPartition]): An iterator of micropartitions to be written.
+
+        Returns:
+            AsyncIterator[WriteResult[WriteResultType]]: An async iterator of write results.
+        """
+        raise NotImplementedError
+
+    def write_sync_wrapper(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
+        return SyncFromAsyncIterator(lambda: self.write(micropartitions))
