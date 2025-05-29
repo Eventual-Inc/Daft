@@ -1,5 +1,11 @@
 use std::{
-    collections::HashMap, num::NonZeroUsize, ops::Range, string::FromUtf8Error, sync::Arc,
+    borrow::Cow,
+    collections::HashMap,
+    io::Write,
+    num::{NonZeroI32, NonZeroUsize},
+    ops::Range,
+    string::FromUtf8Error,
+    sync::Arc,
     time::Duration,
 };
 
@@ -18,8 +24,9 @@ use aws_sdk_s3::{
     error::ProvideErrorMetadata,
     operation::{
         complete_multipart_upload::CompleteMultipartUploadError,
-        create_multipart_upload::CreateMultipartUploadError, put_object::PutObjectError,
-        upload_part::UploadPartError,
+        create_multipart_upload::CreateMultipartUploadError,
+        put_object::PutObjectError,
+        upload_part::{UploadPartError, UploadPartOutput},
     },
     primitives::ByteStreamError,
 };
@@ -27,7 +34,7 @@ use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
-use futures::{stream::BoxStream, FutureExt, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use reqwest::StatusCode;
 use s3::{
     client::customize::Response,
@@ -38,8 +45,12 @@ use s3::{
         list_objects_v2::ListObjectsV2Error,
     },
 };
-use snafu::{ensure, IntoError, ResultExt, Snafu};
-use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
+use snafu::{ensure, IntoError, OptionExt, ResultExt, Snafu};
+use tokio::{
+    spawn,
+    sync::{mpsc::Sender, OwnedSemaphorePermit, SemaphorePermit},
+    task::JoinHandle,
+};
 use url::{ParseError, Position};
 
 use super::object_io::{GetResult, ObjectSource};
@@ -48,11 +59,14 @@ use crate::{
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
+    Error::InvalidArgument,
     FileFormat, InvalidArgumentSnafu, SourceType,
 };
 
 const S3_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+
+#[derive(Debug)]
 pub struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
@@ -80,44 +94,63 @@ enum Error {
     },
 
     #[snafu(display(
-        "Unable to do create multipart upload to {}: {}",
-        path,
+        "Unable to do create multipart upload to {}/{}: {}",
+        bucket,
+        key,
         s3::error::DisplayErrorContext(source)
     ))]
-    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
     UnableToCreateMultipartUpload {
-        path: String,
+        bucket: String,
+        key: String,
         source: SdkError<CreateMultipartUploadError, Response>,
     },
 
     #[snafu(display(
-        "Unable to upload parts to {}: {}",
-        path,
+        "Unable to upload part {} for {}/{} with upload_id {}: {}",
+        part,
+        bucket,
+        key,
+        upload_id,
         s3::error::DisplayErrorContext(source)
     ))]
-    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
-    UnableToUploadParts {
-        path: String,
+    UnableToUploadPart {
+        bucket: String,
+        key: String,
+        upload_id: String,
+        part: NonZeroI32,
         source: SdkError<UploadPartError, Response>,
     },
 
     #[snafu(display(
-        "Unable to complete multipart upload to {}: {}",
-        path,
+        "Unable to complete multipart upload to {}/{}: {}",
+        bucket,
+        key,
         s3::error::DisplayErrorContext(source)
     ))]
-    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
     UnableToCompleteMultipartUpload {
-        path: String,
+        bucket: String,
+        key: String,
         source: SdkError<CompleteMultipartUploadError, Response>,
     },
 
     #[snafu(display(
-        "Expected multi-part upload ID in CreateMultipartUpload response for {}",
-        path,
+        "Expected multi-part upload ID in CreateMultipartUpload response for {bucket}/{key}",
     ))]
-    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
-    MissingUploadIdForMultipartUpload { path: String },
+    MissingUploadIdForMultipartUpload { bucket: String, key: String },
+
+    #[snafu(display(
+        "Expected ETag in UploadPart response for bucket: {}, key: {}, upload_id: {}, part: {}.",
+        bucket,
+        key,
+        upload_id,
+        part
+    ))]
+    MissingEtagForMultipartUpload {
+        bucket: String,
+        key: String,
+        upload_id: String,
+        part: NonZeroI32,
+    },
 
     #[snafu(display("Unable to head {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToHeadFile {
@@ -1048,59 +1081,15 @@ impl S3LikeSource {
         }
     }
 
-    /// Uploads a file to S3 using multipart upload.
-    ///
-    /// This function splits the data into parts of the specified size and uploads all the parts
-    /// in parallel.
-    ///
-    /// ## S3
-    /// S3 multipart upload limits are as follows:
-    ///
-    /// * Minimum part size: 5 MiB
-    /// * Maximum part size: 5 GiB
-    /// * Maximum number of parts: 10,000
-    ///
-    /// Source: [Amazon S3 multipart upload limits](https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html)
-    ///
-    /// ## R2
-    /// R2 multipart upload limits are as follows:
-    ///
-    /// * Same as S3 - but each part (except the last one) needs to be the same size. So no support
-    ///   for varying part sizes within a single multi-part upload.
-    ///
-    /// Source: [Multipart Upload Limitations](https://developers.cloudflare.com/r2/objects/multipart-objects/#limitations)
-    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
-    pub async fn put_multipart(
+    /// Initiates a multipart upload and returns the upload ID.
+    pub async fn create_multipart_upload(
         &self,
-        uri: &str,
-        data: bytes::Bytes,
-        part_size: NonZeroUsize,
-        io_stats: Option<IOStatsRef>,
-    ) -> super::Result<()> {
-        const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibytes
-        const MAXIMUM_PART_SIZE: usize = 5 * 1024 * 1024 * 1024; // 5 Gibibytes
-        const MAX_PART_COUNT: usize = 10000; // Max parts in a multipart upload
-
+        bucket: &str,
+        key: &str,
+    ) -> super::Result<Cow<'static, str>> {
         if self.anonymous {
             return Err(Error::UploadsCannotBeAnonymous {}.into());
         }
-
-        assert!(
-            part_size.get() >= MINIMUM_PART_SIZE,
-            "Part size must be greater than or equal to 5MiB"
-        );
-        assert!(
-            part_size.get() <= MAXIMUM_PART_SIZE,
-            "Part size must be less than or equal to 5GiB"
-        );
-
-        let data_len = data.len();
-        let part_count = data_len.div_ceil(part_size.get());
-
-        assert!(
-            part_count <= MAX_PART_COUNT,
-            "Part count must be less than or equal to 10000"
-        );
 
         let region = &self.default_region;
 
@@ -1111,88 +1100,64 @@ impl S3LikeSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
 
-        log::debug!("S3 put multipart request: {uri}, num_parts: {part_count}, part_size: {part_size}, in region: {region}");
-
-        let (_scheme, bucket, key) = parse_url(uri)?;
-
-        if key.is_empty() {
-            return Err(Error::NotAFile { path: uri.into() }.into());
-        }
-
-        log::debug!("S3 put multipart parsed uri: {uri} into Bucket: {bucket}, Key: {key}, part_size: {part_size}, part_count: {part_count} and region {region}");
-
-        let client = self.get_s3_client(region).await?;
-
         let request_payer = if self.s3_config.requester_pays {
             Some(s3::types::RequestPayer::Requester)
         } else {
             None
         };
 
+        let client = self.get_s3_client(region).await?;
+
         let create_multipart_upload_response = client
             .create_multipart_upload()
-            .bucket(&bucket)
-            .key(&key)
+            .bucket(bucket)
+            .key(key)
             .set_request_payer(request_payer.clone())
             .send()
             .await
-            .context(UnableToCreateMultipartUploadSnafu { path: uri })?;
+            .context(UnableToCreateMultipartUploadSnafu { bucket, key })?;
 
         let upload_id = create_multipart_upload_response
             .upload_id()
             .ok_or_else(|| Error::MissingUploadIdForMultipartUpload {
-                path: uri.to_owned(),
+                bucket: bucket.to_owned(),
+                key: key.to_owned(),
             })?;
 
-        log::debug!("S3 put multipart upload-id: {upload_id}");
+        log::debug!("S3 create multipart upload-id: {upload_id}");
 
-        let parts = BytesChunker::new(data, part_size);
+        Ok(upload_id.to_owned().into())
+    }
 
-        let upload_part_futures = parts
-            .enumerate()
-            .map(|(part_index, part)| {
-                let part_number = (part_index + 1) as i32;
-                let part_len = part.len();
-                let client = client.clone();
-                let io_stats = io_stats.clone();
-                client
-                    .upload_part()
-                    .bucket(&bucket)
-                    .key(&key)
-                    .part_number(part_number)
-                    .upload_id(upload_id)
-                    .body(part.into())
-                    .set_request_payer(request_payer.clone())
-                    .send()
-                    .inspect(move |response| match response {
-                        Ok(_) => {
-                            if let Some(io_stats) = io_stats.as_ref() {
-                                io_stats.mark_bytes_uploaded(part_len);
-                            }
-                            log::debug!("Successfully uploaded part {part_number}");
-                        }
-                        Err(err) => {
-                            log::debug!("Failed to upload part {part_number}: {err}");
-                        }
-                    })
-            })
-            .collect::<Vec<_>>();
+    /// Completes a multipart upload by providing the upload ID and a list of completed parts.
+    pub async fn complete_multipart_upload(
+        &self,
+        key: Cow<'static, str>,
+        bucket: Cow<'static, str>,
+        upload_id: Cow<'static, str>,
+        completed_parts: Vec<CompletedPart>,
+    ) -> super::Result<()> {
+        if self.anonymous {
+            return Err(Error::UploadsCannotBeAnonymous {}.into());
+        }
 
-        let upload_part_results = futures::future::join_all(upload_part_futures)
+        let region = &self.default_region;
+
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
             .await
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-            .context(UnableToUploadPartsSnafu { path: uri })?;
+            .context(UnableToGrabSemaphoreSnafu)?;
 
-        let completed_parts = upload_part_results
+        let client = self.get_s3_client(region).await?;
+
+        let completed_parts = completed_parts
             .into_iter()
-            .enumerate()
-            .map(|(part_index, response)| {
-                let part_number = (part_index + 1) as i32;
-                let etag = response.e_tag().unwrap_or_default();
+            .map(|part| {
                 s3::types::CompletedPart::builder()
-                    .part_number(part_number)
-                    .e_tag(etag)
+                    .part_number(part.part_number.get())
+                    .e_tag(part.etag.clone())
                     .build()
             })
             .collect::<Vec<_>>();
@@ -1200,59 +1165,69 @@ impl S3LikeSource {
         let completed_multipart_upload = s3::types::CompletedMultipartUpload::builder()
             .set_parts(Some(completed_parts))
             .build();
-
         client
             .complete_multipart_upload()
-            .key(&key)
-            .bucket(&bucket)
-            .upload_id(upload_id)
             .multipart_upload(completed_multipart_upload)
-            .set_request_payer(request_payer)
+            .bucket(bucket.clone())
+            .key(key.clone())
+            .upload_id(upload_id.clone())
             .send()
             .await
-            .context(UnableToCompleteMultipartUploadSnafu { path: uri })?;
+            .context(UnableToCompleteMultipartUploadSnafu { bucket, key })?;
 
-        log::debug!("S3 put multipart completed. upload_id :{upload_id}");
+        log::debug!("S3 complete multipart upload completed. upload_id :{upload_id}");
 
         Ok(())
     }
-}
 
-#[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
-struct BytesChunker {
-    data: bytes::Bytes,
-    chunk_size: NonZeroUsize,
-    offset: usize,
-}
-
-/// Iterator that splits a `Bytes` object into chunks of a specified size.
-///
-/// Although `Bytes` supports a `chunk` method, it returns `&[u8]` slices, which are cannot be
-/// passed to the S3 client. This implementation uses the `slice` method to create a new `Bytes`
-/// (slices do not make copies, but increment reference count for underlying buffer) for each chunk.
-impl BytesChunker {
-    #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
-    fn new(data: bytes::Bytes, chunk_size: NonZeroUsize) -> Self {
-        Self {
-            data,
-            chunk_size,
-            offset: 0,
-        }
-    }
-}
-
-impl Iterator for BytesChunker {
-    type Item = bytes::Bytes;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.offset >= self.data.len() {
-            return None;
+    /// Upload a single part to an existing multipart upload.
+    pub async fn upload_part(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        part_number: NonZeroI32,
+        data: bytes::Bytes,
+    ) -> super::Result<UploadPartOutput> {
+        if self.anonymous {
+            return Err(Error::UploadsCannotBeAnonymous {}.into());
         }
 
-        let end = (self.offset + self.chunk_size.get()).min(self.data.len());
-        let part = self.data.slice(self.offset..end);
-        self.offset = end;
-        Some(part)
+        let region = &self.default_region;
+
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let request_payer = if self.s3_config.requester_pays {
+            Some(s3::types::RequestPayer::Requester)
+        } else {
+            None
+        };
+
+        let client = self.get_s3_client(region).await?;
+
+        let output = client
+            .upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .part_number(part_number.get())
+            .body(data.into())
+            .set_request_payer(request_payer)
+            .send()
+            .await
+            .context(UnableToUploadPartSnafu {
+                bucket,
+                key,
+                upload_id,
+                part: part_number,
+            })?;
+
+        Ok(output)
     }
 }
 
@@ -1460,14 +1435,324 @@ impl ObjectSource for S3LikeSource {
     }
 }
 
+/// S3MultipartWriter is responsible for managing multipart uploads to S3.
+///
+/// It handles the creation of the multipart upload, writing individual parts to S3 and also
+/// completing the multipart upload once all parts have been uploaded.
+///
+/// It uses a semaphore to limit upload concurrency (and therefore memory utilization associated
+/// with the part data).
+#[derive(Debug)]
+pub struct S3MultipartWriter {
+    /// The URI of the S3 object to write to.
+    uri: Cow<'static, str>,
+
+    /// The bucket and key of the S3 object to write to.
+    bucket: Cow<'static, str>,
+
+    /// The key of the S3 object to write to.
+    key: Cow<'static, str>,
+
+    /// The upload ID of the S3 multipart upload. This is used to identify the multipart upload
+    /// to S3.
+    upload_id: Cow<'static, str>,
+
+    /// Handles for the parts being uploaded.
+    in_progress_uploads: Vec<JoinHandle<super::Result<CompletedPart>>>,
+
+    /// Stores the next part number for multipart upload. See [`generate_part_number`] for a
+    /// convenience method to generate the next part number.
+    next_part_number: NonZeroI32,
+
+    /// The S3 client used to perform the multipart upload operations.
+    s3_client: Arc<S3LikeSource>,
+
+    /// Semaphore to limit the number of concurrent in-flight uploads.
+    in_flight_upload_permits: Arc<tokio::sync::Semaphore>,
+}
+
+/// Represents a completed part of a multipart upload to S3.
+#[derive(Debug, Clone)]
+pub struct CompletedPart {
+    part_number: NonZeroI32,
+    etag: Cow<'static, str>,
+}
+
+impl S3MultipartWriter {
+    const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibytes
+    const MAXIMUM_PART_SIZE: usize = 5 * 1024 * 1024 * 1024; // 5 Gibibytes
+    const MAX_PART_COUNT: i32 = 10000; // Max parts in a multipart upload
+
+    /// Ensure that the part size is within the valid range for S3 multipart uploads.
+    /// This function checks that the part size is at least 5 MiB and at most 5 GiB.
+    ///
+    /// If the part size is invalid, it panics since there's no expected way to recover from
+    /// such a misconfiguration.
+    fn validate_part_size(part_size: NonZeroUsize) -> super::Result<()> {
+        if part_size.get() > Self::MAXIMUM_PART_SIZE {
+            return Err(InvalidArgument {
+                msg: format!(
+                    "Part size must be less than or equal to {} bytes",
+                    Self::MAXIMUM_PART_SIZE
+                ),
+            });
+        }
+        if part_size.get() < Self::MINIMUM_PART_SIZE {
+            return Err(InvalidArgument {
+                msg: format!(
+                    "Part size must be greater than or equal to {} bytes",
+                    Self::MINIMUM_PART_SIZE
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    /// Creates a new S3MultipartWriter for the specified URI, part size, and maximum concurrent uploads.
+    ///
+    /// This kicks off the multipart upload process by creating a new multipart upload on S3.
+    /// The returned S3MultipartWriter can then be used to write parts to the upload. After all parts
+    /// are written, `shutdown()` must be called to finalize the upload.
+    pub async fn create(
+        uri: impl Into<String>,
+        part_size: NonZeroUsize,
+        max_concurrent_uploads: NonZeroUsize,
+        s3_client: Arc<S3LikeSource>,
+    ) -> super::Result<Self> {
+        let uri = uri.into();
+        let (_scheme, bucket, key) = parse_url(&uri)?;
+
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.clone() }.into());
+        }
+
+        Self::validate_part_size(part_size)?;
+
+        log::debug!("S3 multipart upload requested: {uri}, part_size: {part_size}");
+
+        let upload_id = s3_client.create_multipart_upload(&bucket, &key).await?;
+
+        log::debug!(
+            "S3 multipart upload has been assigned an upload_id: {uri}, upload_id: {upload_id}"
+        );
+
+        Ok(S3MultipartWriter {
+            uri: uri.into(),
+            bucket: bucket.into(),
+            key: key.into(),
+            upload_id: upload_id.into(),
+            s3_client,
+            next_part_number: unsafe { NonZeroI32::new_unchecked(1) },
+            in_progress_uploads: vec![],
+            in_flight_upload_permits: Arc::new(tokio::sync::Semaphore::new(
+                max_concurrent_uploads.get(),
+            )),
+        })
+    }
+}
+
+impl S3MultipartWriter {
+    /// Generates the next part number for the multipart upload.
+    ///
+    /// Panics if the next part number exceeds the maximum part count of 10,000.
+    fn generate_part_number(&mut self) -> NonZeroI32 {
+        let part_number = self.next_part_number;
+        self.next_part_number = NonZeroI32::new(part_number.get() + 1).unwrap();
+        assert!(
+            self.next_part_number.get() <= Self::MAX_PART_COUNT,
+            "Maximum part count exceeded"
+        );
+        part_number
+    }
+
+    /// Writes a chunk of data to the S3 multipart upload.
+    ///
+    /// The part size is expected to be the same as the one specified during the creation of the
+    /// S3MultipartWriter. If the part size is different, it will panic.
+    ///
+    /// A new part number is generated for the part and a new task is spawned to upload the part
+    /// in the background.
+    pub async fn write_part(&mut self, chunk: bytes::Bytes) -> super::Result<()> {
+        // Create an async task to upload the part.
+        let data_len = chunk.len();
+
+        let next_part_number = self.generate_part_number();
+        let upload_id = self.upload_id.clone();
+        let bucket = self.bucket.clone();
+        let key = self.key.clone();
+        let s3_client = self.s3_client.clone();
+
+        log::debug!(
+            "S3 multipart upload part requested: {next_part_number}, size: {data_len} bytes"
+        );
+        let upload_permit = self.in_flight_upload_permits.clone().acquire_owned().await;
+        log::debug!(
+            "S3 multipart upload part permit acquired: {next_part_number}, size: {data_len} bytes"
+        );
+
+        let upload_future = async move {
+            let output = s3_client
+                .upload_part(&bucket, &key, &upload_id, next_part_number, chunk)
+                .await?;
+
+            drop(upload_permit);
+
+            log::debug!(
+                "S3 upload part has been completed: {next_part_number}, size: {data_len} bytes"
+            );
+
+            let etag = output.e_tag().map(|etag| etag.to_string().into()).context(
+                MissingEtagForMultipartUploadSnafu {
+                    bucket: bucket.to_string(),
+                    key: key.to_string(),
+                    upload_id: upload_id.to_string(),
+                    part: next_part_number,
+                },
+            )?;
+
+            Ok(CompletedPart {
+                part_number: next_part_number,
+                etag,
+            })
+        };
+
+        // Spawn the upload task and add it to the in-progress uploads.
+        self.in_progress_uploads.push(spawn(upload_future));
+        Ok(())
+    }
+
+    pub async fn shutdown(&mut self) -> super::Result<()> {
+        // Wait for all in-progress uploads to complete.
+        let mut completed_parts = vec![];
+        for upload in self.in_progress_uploads.drain(..) {
+            match upload.await {
+                Ok(Ok(part)) => completed_parts.push(part),
+                Ok(Err(err)) => return Err(err),
+                Err(err) => return Err(super::Error::JoinError { source: err }),
+            }
+        }
+
+        log::debug!(
+            "Finalizing multipart upload with {} parts.",
+            completed_parts.len()
+        );
+
+        // Complete the multipart upload with the completed parts.
+        self.s3_client
+            .complete_multipart_upload(
+                self.key.clone(),
+                self.bucket.clone(),
+                self.upload_id.clone(),
+                completed_parts
+                    .into_iter()
+                    .map(|part| part.into())
+                    .collect(),
+            )
+            .await?;
+
+        log::debug!("S3 multipart upload completed: {}", self.uri);
+        Ok(())
+    }
+}
+
+pub struct S3PartBuffer {
+    buffer: Vec<u8>,
+    part_size: NonZeroUsize,
+    tx: Option<Sender<bytes::Bytes>>,
+}
+
+impl S3PartBuffer {
+    pub fn new(part_size: NonZeroUsize, tx: Sender<bytes::Bytes>) -> Self {
+        S3PartBuffer {
+            buffer: Vec::with_capacity(part_size.get()),
+            part_size,
+            tx: Some(tx),
+        }
+    }
+
+    pub fn shutdown(&mut self) -> std::io::Result<()> {
+        log::debug!("Shutting down S3 parts buffer.");
+
+        if !self.buffer.is_empty() {
+            log::debug!(
+                "S3 parts buffer has {} bytes remaining to send.",
+                self.buffer.len()
+            );
+
+            // If there is any remaining data in the buffer, send it as a final part
+            let old_buffer =
+                std::mem::replace(&mut self.buffer, Vec::with_capacity(self.part_size.get()));
+            let new_part = bytes::Bytes::from(old_buffer);
+
+            if let Some(tx) = &self.tx {
+                // Attempt to send the final part
+                tx.blocking_send(new_part)
+                    .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to send final part for multi-part upload. Has the receiver been dropped?"))?;
+            } else {
+                panic!("It seems that the S3PartBuffer has been shutdown already, but we still have data to send. This is a bug in the code.");
+            }
+        }
+        self.tx.take();
+        Ok(())
+    }
+}
+
+impl Write for S3PartBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut remaining = buf;
+        let mut total_written_bytes = 0;
+
+        while !remaining.is_empty() {
+            // Write the buffer until its full, or we run out of data
+            let available_space = self.part_size.get() - self.buffer.len();
+            let writable_bytes = remaining.len().min(available_space);
+
+            self.buffer.extend_from_slice(&remaining[..writable_bytes]);
+            total_written_bytes += writable_bytes;
+            remaining = &remaining[writable_bytes..];
+
+            if self.buffer.len() == self.part_size.get() {
+                log::debug!("Enough data to write a part to S3.");
+                // Buffer is full, send it to the channel
+                let old_buffer =
+                    std::mem::replace(&mut self.buffer, Vec::with_capacity(self.part_size.get()));
+                let new_part = bytes::Bytes::from(old_buffer);
+
+                if let Some(tx) = &self.tx {
+                    tx.blocking_send(new_part)
+                        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to send part for multi-part upload. Has the receiver been dropped?"))?;
+                } else {
+                    panic!("It seems that the S3PartBuffer has been shutdown already, but we still have data to send. This is a bug in the code.");
+                }
+            }
+        }
+
+        Ok(total_written_bytes)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        // No-Op: Flushing a partial part will make the parts of unequal size. R2, for example,
+        // requires all parts (except the last) to be the same size. The last part is always flushed
+        // at shutdown().
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
+    use std::{
+        io::Write,
+        num::NonZeroUsize,
+        sync::{Arc, Mutex},
+        time::Instant,
+    };
 
-    use bytes::Bytes;
-    use common_io_config::S3Config;
+    use common_io_config::{ObfuscatedString, S3Config};
+    use tokio::task::spawn_blocking;
 
-    use crate::{object_io::ObjectSource, s3_like::BytesChunker, Result, S3LikeSource};
+    use crate::{
+        object_io::ObjectSource, s3_like::S3MultipartWriter, Result, S3LikeSource, S3PartBuffer,
+    };
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {
@@ -1534,43 +1819,4 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_bytes_chunker_happy_even_split() {
-        let data = bytes::Bytes::from_static(b"1234567890");
-        let chunks: Vec<Bytes> =
-            BytesChunker::new(data.clone(), NonZeroUsize::new(5).unwrap()).collect();
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], Bytes::from_static(b"12345"));
-        assert_eq!(chunks[1], Bytes::from_static(b"67890"));
-    }
-
-    #[test]
-    fn test_bytes_chunker_happy_uneven_split() {
-        let data = bytes::Bytes::from_static(b"1234567890");
-        let chunks: Vec<Bytes> =
-            BytesChunker::new(data.clone(), NonZeroUsize::new(3).unwrap()).collect();
-
-        assert_eq!(chunks.len(), 4);
-        assert_eq!(chunks[0], Bytes::from_static(b"123"));
-        assert_eq!(chunks[1], Bytes::from_static(b"456"));
-        assert_eq!(chunks[2], Bytes::from_static(b"789"));
-        assert_eq!(chunks[3], Bytes::from_static(b"0"));
-    }
-
-    #[test]
-    fn test_bytes_chunker_empty() {
-        let data = bytes::Bytes::from_static(b"");
-        let chunks: Vec<Bytes> =
-            BytesChunker::new(data.clone(), NonZeroUsize::new(3).unwrap()).collect();
-        assert_eq!(chunks.len(), 0);
-    }
-
-    #[test]
-    fn test_bytes_large_chunk() {
-        let data = bytes::Bytes::from_static(b"1234567890");
-        let chunks: Vec<Bytes> =
-            BytesChunker::new(data.clone(), NonZeroUsize::new(20).unwrap()).collect();
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], Bytes::from_static(b"1234567890"));
-    }
 }

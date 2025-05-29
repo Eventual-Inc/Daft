@@ -33,7 +33,7 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, GetResult};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::{s3_config_from_env, S3LikeSource};
+pub use s3_like::{s3_config_from_env, S3LikeSource, S3MultipartWriter, S3PartBuffer};
 use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;

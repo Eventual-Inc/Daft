@@ -3,15 +3,15 @@ use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    thread::JoinHandle,
 };
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::prelude::*;
-use daft_io::{parse_url, IOConfig, S3LikeSource, SourceType};
+use daft_io::{parse_url, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, SourceType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
@@ -26,6 +26,7 @@ use parquet::{
     },
     schema::types::SchemaDescriptor,
 };
+use tokio::task::spawn_blocking;
 
 use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
@@ -33,23 +34,21 @@ type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 
 enum OutputTarget {
     File(BufWriter<std::fs::File>),
-    // TODO: Currently this is a simple buffer, but a buffer pool that initiates uploads as we
-    // go along would be more appropriate.
-    InMemory(Arc<Mutex<Vec<u8>>>),
+    S3(Arc<Mutex<S3PartBuffer>>),
 }
 
 impl Write for OutputTarget {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
             Self::File(f) => f.write(buf),
-            Self::InMemory(w) => w.lock().unwrap().write(buf),
+            Self::S3(part_buffer) => part_buffer.lock().unwrap().write(buf),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
             Self::File(f) => f.flush(),
-            Self::InMemory(w) => w.lock().unwrap().flush(),
+            Self::S3(part_buffer) => part_buffer.lock().unwrap().flush(),
         }
     }
 }
@@ -166,11 +165,17 @@ struct ParquetWriter {
     arrow_schema: Arc<arrow_schema::Schema>,
     parquet_schema: SchemaDescriptor,
     partition_values: Option<RecordBatch>,
-    file_writer: Option<SerializedFileWriter<OutputTarget>>,
-    buffered_data: Option<Arc<Mutex<Vec<u8>>>>,
+    file_writer: Arc<Mutex<Option<SerializedFileWriter<OutputTarget>>>>,
     io_config: Option<IOConfig>,
     s3_client: Option<Arc<S3LikeSource>>,
+    s3part_buffer: Option<Arc<Mutex<S3PartBuffer>>>,
+    s3multipart_writer: Option<Arc<Mutex<S3MultipartWriter>>>,
+    upload_thread: Option<JoinHandle<()>>,
 }
+
+const S3_MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+
+const S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT: usize = 100; // 100 uploads per S3 object
 
 impl ParquetWriter {
     /// TODO(desmond): This can be tuned.
@@ -192,24 +197,79 @@ impl ParquetWriter {
             arrow_schema,
             parquet_schema,
             partition_values,
-            file_writer: None,
-            buffered_data: None,
+            file_writer: Arc::new(Mutex::new(None)),
             io_config,
             s3_client: None,
+            s3part_buffer: None,
+            s3multipart_writer: None,
+            upload_thread: None,
         }
     }
 
-    fn create_writer(&mut self) -> DaftResult<()> {
-        let output_target = if !self.filename.to_string_lossy().starts_with("s3") {
+    async fn create_writer(&mut self) -> DaftResult<()> {
+        let output_target = if self.filename.to_string_lossy().starts_with("s3") {
+            let url = self.filename.to_string_lossy().to_string();
+            let part_size = NonZeroUsize::new(S3_MULTIPART_PART_SIZE).expect("S3 multipart part size must be non-zero");
+            let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
+            // Create the S3 part buffer that interfaces with parquet-rs.
+            let s3part_buffer = Arc::new(Mutex::new(S3PartBuffer::new(
+                part_size, // 5MB part size
+                tx,
+            )));
+            self.s3part_buffer = Some(s3part_buffer.clone());
+
+            if self.s3_client.is_none() {
+                let s3_conf = &self.io_config.as_ref().unwrap().s3;
+                self.s3_client = Some(S3LikeSource::get_client(s3_conf).await?);
+            }
+
+            let s3_multipart_writer = Arc::new(Mutex::new(
+                S3MultipartWriter::create(
+                    url.clone(),
+                    part_size,
+                    NonZeroUsize::new(S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT).expect("S3 multipart concurrent uploads per object must be non-zero."),
+                    self.s3_client.clone().expect("S3 client must be initialized for multipart upload."),
+                )
+                .await
+                .expect("Failed to create S3 multipart writer"),
+            ));
+
+            self.s3multipart_writer = Some(s3_multipart_writer);
+
+            let s3_multipart_writer_handle = self.s3multipart_writer.clone().expect("S3 multipart writer must be initialized");
+
+            // Spawn a background thread to handle the multipart upload.
+            let background_thread_handle = std::thread::spawn(move || {
+                let background_rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to create background uploader tokio runtime");
+
+                background_rt.block_on(async move {
+                    while let Some(part) = rx.recv().await {
+                        // Write the part to S3.
+                        s3_multipart_writer_handle.lock().unwrap()
+                            .write_part(part)
+                            .await
+                            .expect("Failed to write part to S3");
+                    }
+
+                    s3_multipart_writer_handle.lock().unwrap()
+                        .shutdown()
+                        .await
+                        .expect("Failed to shut down s3 multipart writer");
+                });
+            });
+            self.upload_thread = Some(background_thread_handle);
+
+            OutputTarget::S3(s3part_buffer)
+        } else {
             let file = std::fs::File::create(&self.filename)?;
             OutputTarget::File(BufWriter::with_capacity(
                 Self::DEFAULT_WRITE_BUFFER_SIZE,
                 file,
             ))
-        } else {
-            let buffer = Arc::new(Mutex::new(vec![]));
-            self.buffered_data = Some(buffer.clone());
-            OutputTarget::InMemory(buffer)
         };
         let writer = SerializedFileWriter::new(
             output_target,
@@ -217,7 +277,7 @@ impl ParquetWriter {
             self.writer_properties.clone(),
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        self.file_writer = Some(writer);
+        self.file_writer = Arc::new(Mutex::new(Some(writer)));
         Ok(())
     }
 
@@ -300,8 +360,8 @@ impl AsyncFileWriter for ParquetWriter {
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
-        if self.file_writer.is_none() {
-            self.create_writer()?;
+        if self.file_writer.lock().unwrap().is_none() {
+            self.create_writer().await?;
         }
         let starting_bytes_written = self.bytes_written();
         let record_batches = data.get_tables()?;
@@ -310,59 +370,80 @@ impl AsyncFileWriter for ParquetWriter {
         let column_writer_handles = self.spawn_column_writer_workers(&record_batches)?;
 
         // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
-        let mut row_group_writer = self
-            .file_writer
-            .as_mut()
-            .expect("File writer should be created by now")
-            .next_row_group()
-            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
+
+        let file_writer_handle = self.file_writer.clone();
+        let row_writer_thread_handle = spawn_blocking(move || -> DaftResult<()> {
+            let mut guard = file_writer_handle.lock().unwrap();
+            let mut row_group_writer = guard
+                .as_mut()
+                .expect("File writer should be created by now")
+                .next_row_group()
+                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+            while let Some(chunk) = rx.blocking_recv() {
+                chunk
+                    .append_to_row_group(&mut row_group_writer)
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+            }
+
+            row_group_writer
+                .close()
+                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+            Ok(())
+        });
 
         for handle in column_writer_handles {
             let chunk = handle.await??;
-            chunk
-                .append_to_row_group(&mut row_group_writer)
+            tx.send(chunk)
+                .await
                 .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         }
 
-        // Close the current row group.
-        row_group_writer
-            .close()
-            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        drop(tx);
+
+        row_writer_thread_handle
+            .await
+            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
         Ok(self.bytes_written() - starting_bytes_written)
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
-        let _metadata = self
-            .file_writer
-            .as_mut()
-            .expect("File writer should be created by now")
-            .finish()
-            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-        // TODO: Ideally we kick off multipart uploads once we have columns or row groups
-        // ready to upload. For now we just do it after the parquet file is ready.
+        let file_writer_handle = self.file_writer.clone();
+        spawn_blocking(move || -> DaftResult<()> {
+            let mut guard = file_writer_handle.lock().unwrap();
+            let _metadata = guard
+                .as_mut()
+                .expect("File writer should be created by now")
+                .finish()
+                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-        // For in-memory targets, upload the results to S3.
-        if let Some(buffered_data) = &self.buffered_data {
-            if self.s3_client.is_none() {
-                let s3_conf = &self.io_config.as_ref().unwrap().s3;
-                self.s3_client = Some(S3LikeSource::get_client(s3_conf).await?);
-            }
-            let buffer = std::mem::take(&mut *buffered_data.lock().unwrap());
-            let bytes = Bytes::from(buffer);
-            self.s3_client
-                .as_ref()
+            Ok(())
+        })
+        .await
+        .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+
+        let part_buffer = self.s3part_buffer.take().expect("S3 part buffer must be initialized for multipart upload.");
+        let upload_thread = self.upload_thread.take().expect("Upload thread must be initialized for multipart upload.");
+
+        spawn_blocking(move || {
+            // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
+            part_buffer
+                .lock()
                 .unwrap()
-                .put_multipart(
-                    &self.filename.to_string_lossy(),
-                    bytes,
-                    unsafe { NonZeroUsize::new_unchecked(5 * 1024 * 1024) },
-                    None,
-                )
-                .await?;
-        }
+                .shutdown()
+                .expect("Failed to shutdown S3 part buffer");
+            upload_thread
+                .join()
+                .expect("Failed to join uploader thread");
+        })
+        .await
+        .expect("Failed to finish multipart upload.");
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
@@ -384,18 +465,22 @@ impl AsyncFileWriter for ParquetWriter {
     }
 
     fn bytes_written(&self) -> usize {
-        self.file_writer
-            .as_ref()
-            .expect("File writer should be created by now")
-            .bytes_written()
+        let mut guard = self.file_writer.lock().unwrap();
+
+        if guard.is_none() {
+            panic!("File writer must be created before bytes_written can be called");
+        }
+
+        guard.as_mut().unwrap().bytes_written()
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        let bytes_written = self
-            .file_writer
-            .as_ref()
-            .expect("File writer should be created by now")
-            .bytes_written();
-        vec![bytes_written]
+        let mut guard = self.file_writer.lock().unwrap();
+
+        if guard.is_none() {
+            panic!("File writer must be created before bytes_per_file can be called");
+        }
+
+        vec![guard.as_mut().unwrap().bytes_written()]
     }
 }

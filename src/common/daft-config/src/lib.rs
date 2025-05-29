@@ -99,7 +99,7 @@ impl Default for DaftExecutionConfig {
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
             native_parquet_writer: true,
-            native_remote_writer: false,
+            native_remote_writer: true,
             flotilla: false,
         }
     }
