@@ -1,3 +1,4 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
 from typing import Optional
@@ -12,7 +13,7 @@ from daft.logical.builder import LogicalPlanBuilder
 @PublicAPI
 def read_hudi(
     table_uri: str,
-    io_config: Optional["IOConfig"] = None,
+    io_config: Optional[IOConfig] = None,
 ) -> DataFrame:
     """Create a DataFrame from a Hudi table.
 

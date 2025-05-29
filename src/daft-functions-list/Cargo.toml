@@ -1,0 +1,19 @@
+[dependencies]
+arrow2 = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+indexmap = {workspace = true, features = ["serde"]}
+serde = {workspace = true}
+typetag = {workspace = true}
+
+[features]
+python = ["common-error/python", "daft-core/python", "daft-dsl/python"]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-list"
+edition.workspace = true
+version.workspace = true

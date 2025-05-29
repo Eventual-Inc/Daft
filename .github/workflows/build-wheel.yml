@@ -85,6 +85,8 @@ jobs:
       with:
         target: x86_64
         args: --profile release-lto --out dist
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Linux x86
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'x86_64') }}
@@ -94,6 +96,8 @@ jobs:
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Linux aarch64
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'aarch64') }}
@@ -104,6 +108,8 @@ jobs:
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Mac aarch64
       if: ${{ (inputs.os == 'macos') && (inputs.arch == 'aarch64')  }}
@@ -114,6 +120,7 @@ jobs:
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
         CFLAGS: -mtune=apple-m1
+        GITHUB_ACTIONS: true
 
     - name: Upload wheels
       uses: actions/upload-artifact@v4

@@ -2,7 +2,7 @@ use std::{any::Any, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use tracing::{instrument, Span};
@@ -37,7 +37,7 @@ impl WindowBaseState {
     pub fn push(
         &mut self,
         input: Arc<MicroPartition>,
-        partition_by: &[ExprRef],
+        partition_by: &[BoundExpr],
         sink_name: &str,
     ) -> DaftResult<()> {
         if let Self::Accumulating {
@@ -81,7 +81,7 @@ impl BlockingSinkState for WindowBaseState {
 #[allow(dead_code)]
 pub trait WindowSinkParams: Send + Sync {
     fn original_schema(&self) -> &SchemaRef;
-    fn partition_by(&self) -> &[ExprRef];
+    fn partition_by(&self) -> &[BoundExpr];
     fn name(&self) -> &'static str;
 }
 

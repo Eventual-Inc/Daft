@@ -110,10 +110,6 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
-    fn estimated_memory_cost(&self) -> usize {
-        self.task.estimated_memory_cost()
-    }
-
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })

@@ -7,7 +7,7 @@ use daft_core::{
     series::{IntoSeries, Series},
     utils::supertype::try_get_supertype,
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{get_columns_by_name, GrowableRecordBatch, ProbeState, RecordBatch};
@@ -123,7 +123,7 @@ impl StreamingSinkState for OuterHashJoinState {
 }
 
 struct OuterHashJoinParams {
-    probe_on: Vec<ExprRef>,
+    probe_on: Vec<BoundExpr>,
     common_join_cols: Vec<String>,
     left_non_join_columns: Vec<String>,
     right_non_join_columns: Vec<String>,
@@ -144,7 +144,7 @@ pub(crate) struct OuterHashJoinProbeSink {
 #[allow(clippy::too_many_arguments)]
 impl OuterHashJoinProbeSink {
     pub(crate) fn new(
-        probe_on: Vec<ExprRef>,
+        probe_on: Vec<BoundExpr>,
         left_schema: &SchemaRef,
         right_schema: &SchemaRef,
         join_type: JoinType,
@@ -590,12 +590,6 @@ impl StreamingSink for OuterHashJoinProbeSink {
                         .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
                     let probe_state = outer_join_state.get_or_build_probe_state().await;
 
-                    let probe_on = params
-                        .probe_on
-                        .iter()
-                        .map(|expr| BoundExpr::try_new(expr.clone(), &input.schema()))
-                        .collect::<DaftResult<Vec<_>>>()?;
-
                     let out = match params.join_type {
                         JoinType::Left | JoinType::Right if needs_bitmap => {
                             Self::probe_left_right_with_bitmap(
@@ -607,7 +601,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                                     .expect("bitmap should be set"),
                                 &probe_state,
                                 params.join_type,
-                                &probe_on,
+                                &params.probe_on,
                                 &params.common_join_cols,
                                 &params.left_non_join_columns,
                                 &params.right_non_join_columns,
@@ -617,7 +611,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                             &input,
                             &probe_state,
                             params.join_type,
-                            &probe_on,
+                            &params.probe_on,
                             &params.common_join_cols,
                             &params.left_non_join_columns,
                             &params.right_non_join_columns,
@@ -632,7 +626,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                                 &input,
                                 &probe_state,
                                 bitmap_builder,
-                                &probe_on,
+                                &params.probe_on,
                                 &params.common_join_cols,
                                 &params.outer_common_col_schema,
                                 &params.left_non_join_columns,
@@ -738,13 +732,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
+            Arc::new(RoundRobinDispatcher::with_fixed_threshold(
                 runtime_handle.default_morsel_size(),
-            )))
+            ))
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
+            Arc::new(UnorderedDispatcher::with_fixed_threshold(
                 runtime_handle.default_morsel_size(),
-            )))
+            ))
         }
     }
 }

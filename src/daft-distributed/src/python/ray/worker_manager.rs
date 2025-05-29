@@ -75,7 +75,7 @@ impl WorkerManager for RayWorkerManager {
     fn total_available_cpus(&self) -> usize {
         self.ray_workers
             .values()
-            .map(|w| w.num_cpus() - w.active_task_ids().len())
+            .map(|w| w.available_num_cpus())
             .sum()
     }
 

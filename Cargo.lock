@@ -1604,6 +1604,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-macros"
+version = "0.3.0-dev0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "common-partitioning"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2011,6 +2022,9 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-functions-list",
+ "daft-functions-temporal",
+ "daft-functions-utf8",
  "daft-hash",
  "daft-image",
  "daft-io",
@@ -2096,6 +2110,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-utf8",
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
@@ -2132,7 +2147,6 @@ dependencies = [
 name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
- "aho-corasick",
  "arrow2",
  "bincode",
  "chrono",
@@ -2161,10 +2175,8 @@ dependencies = [
  "numpy",
  "pyo3",
  "rand 0.8.5",
- "regex",
  "serde",
  "sketches-ddsketch",
- "unicode-normalization",
  "xxhash-rust",
 ]
 
@@ -2235,6 +2247,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-partitioning",
+ "common-resource-request",
  "common-runtime",
  "common-treenode",
  "daft-dsl",
@@ -2261,6 +2274,7 @@ dependencies = [
  "common-error",
  "common-hashable-float-wrapper",
  "common-io-config",
+ "common-macros",
  "common-py-serde",
  "common-resource-request",
  "common-treenode",
@@ -2271,6 +2285,7 @@ dependencies = [
  "itertools 0.11.0",
  "num-traits",
  "pyo3",
+ "rstest",
  "serde",
  "typetag",
 ]
@@ -2318,6 +2333,50 @@ dependencies = [
  "serde",
  "serde_json",
  "typetag",
+]
+
+[[package]]
+name = "daft-functions-list"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "indexmap 2.8.0",
+ "serde",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-temporal"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "paste",
+ "serde",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-utf8"
+version = "0.3.0-dev0"
+dependencies = [
+ "aho-corasick",
+ "arrow2",
+ "chrono",
+ "chrono-tz",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "itertools 0.11.0",
+ "num-traits",
+ "regex",
+ "serde",
+ "typetag",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -2445,6 +2504,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-list",
  "daft-io",
  "daft-json",
  "daft-local-plan",
@@ -2485,6 +2545,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-logical-plan",
+ "daft-physical-plan",
  "log",
  "pyo3",
  "serde",
@@ -2509,6 +2570,8 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-list",
+ "daft-functions-utf8",
  "daft-schema",
  "derivative",
  "indexmap 2.8.0",
@@ -2618,9 +2681,11 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-list",
  "daft-io",
  "daft-logical-plan",
  "daft-schema",
+ "indexmap 2.8.0",
  "itertools 0.11.0",
  "log",
  "num-format",
@@ -2652,6 +2717,7 @@ dependencies = [
  "common-runtime",
  "daft-core",
  "daft-dsl",
+ "daft-functions-list",
  "daft-image",
  "futures",
  "html-escape",
@@ -2805,6 +2871,8 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-list",
+ "daft-functions-utf8",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-scan",
@@ -5574,6 +5642,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-crate"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f4c021e1093a56626774e81216a4ce732a735e5bad4868a03f3ed65ca0c3919"
+dependencies = [
+ "once_cell",
+ "toml_edit",
+]
+
+[[package]]
+name = "proc-macro-error"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
+dependencies = [
+ "proc-macro-error-attr",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "version_check",
+]
+
+[[package]]
+name = "proc-macro-error-attr"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "version_check",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.94"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7352,6 +7454,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml_datetime"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3da5db5a963e24bc68be8b17b6fa82814bb22ee8660f192bb182771d498f09a3"
+
+[[package]]
+name = "toml_edit"
+version = "0.19.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
+dependencies = [
+ "indexmap 2.8.0",
+ "toml_datetime",
+ "winnow",
+]
+
+[[package]]
 name = "tonic"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8338,6 +8457,15 @@ name = "windows_x86_64_msvc"
 version = "0.53.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
+
+[[package]]
+name = "winnow"
+version = "0.5.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winreg"

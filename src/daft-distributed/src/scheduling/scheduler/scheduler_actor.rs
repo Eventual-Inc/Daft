@@ -64,7 +64,7 @@ where
             .worker_manager
             .workers()
             .values()
-            .map(WorkerSnapshot::from_worker)
+            .map(WorkerSnapshot::from)
             .collect::<Vec<_>>();
         scheduler
             .scheduler
@@ -238,11 +238,9 @@ mod tests {
 
     use super::*;
     use crate::scheduling::{
+        scheduler::test_utils::setup_workers,
         task::tests::{create_mock_partition_ref, MockTask, MockTaskBuilder, MockTaskFailure},
-        worker::{
-            tests::{setup_workers, MockWorkerManager},
-            WorkerId,
-        },
+        worker::{tests::MockWorkerManager, WorkerId},
     };
 
     struct SchedulerActorTestContext {

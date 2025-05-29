@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from collections.abc import Generator
+from contextlib import _GeneratorContextManager, contextmanager
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from viztracer import VizTracer
 
 ACTIVE = False
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextmanager
-def profiler(filename: str) -> VizTracer:
+def profiler(filename: str) -> Generator[VizTracer | None, Any, None]:
     if int(os.environ.get("DAFT_PROFILING", 0)) == 1:
         from viztracer import VizTracer, get_tracer
 
@@ -43,7 +46,7 @@ import time
 
 
 @contextmanager
-def timingcontext(name: str):
+def timingcontext(name: str) -> Generator[None, Any, None]:
     from viztracer import get_tracer
 
     tracer = get_tracer()
@@ -62,5 +65,5 @@ def timingcontext(name: str):
         logger.debug("log_event:%s:%sms", name, f"{(end-start)*1000:.3f}")
 
 
-def log_event(name: str):
+def log_event(name: str) -> _GeneratorContextManager[None]:
     return timingcontext(name)

@@ -82,7 +82,8 @@ module = [
   "cloudpickle.*",
   "docker.*",
   "uvicorn.*",
-  "numba.*"
+  "numba.*",
+  "viztracer.*"
 ]
 
 [[tool.mypy.overrides]]

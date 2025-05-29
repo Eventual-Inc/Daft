@@ -1477,7 +1477,7 @@ Daft supports file paths to a single file, a directory of files, and wildcards. 
     df = daft.read_csv("s3://mybucket/path/to/*.csv")
     ```
 
-To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [`creating DataFrames from files`](api/dataframe_creation.md#files).
+To learn more about each of these constructors, as well as the options that they support, consult the API documentation on [creating DataFrames from files](api/io.md#input).
 
 ### From Data Catalogs
 
@@ -1514,7 +1514,7 @@ For testing, or small datasets that fit in memory, you may also create DataFrame
     df = daft.from_pylist([{"A": 1, "B": "foo"}, {"A": 2, "B": "bar"}, {"A": 3, "B": "baz"}])
     ```
 
-To learn more, consult the API documentation on [`creating DataFrames from in-memory data structures`](api/dataframe_creation.md#in-memory-data).
+To learn more, consult the API documentation on [creating DataFrames from in-memory data structures](api/io.md#input).
 
 
 ### From Databases
@@ -2503,7 +2503,6 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
 
 <div class="grid cards" markdown>
 
-- [:simple-ray: **Ray**](integrations/ray.md)
 - [**Unity Catalog**](integrations/unity_catalog.md)
 - [**Apache Iceberg**](integrations/iceberg.md)
 - [**Delta Lake**](integrations/delta_lake.md)
@@ -2531,6 +2530,7 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
 - [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/embeddings/daft_tutorial_embeddings_stackexchange.ipynb)
 - [:material-image-search: **Querying Images with UDFs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/image_querying/top_n_red_color.ipynb)
 - [:material-image-sync: **Image Generation on GPUs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
+- [:material-window-closed-variant: **Window Functions in Daft**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions/window_functions.ipynb)
 
 </div>
 

@@ -172,7 +172,7 @@ where
             write!(
                 self.f,
                 "{}",
-                serde_json::to_string_pretty(&plan).map_err(DaftError::SerdeJsonError)?
+                serde_json::to_string(&plan).map_err(DaftError::SerdeJsonError)?
             )?;
         }
         Ok(common_treenode::TreeNodeRecursion::Continue)
@@ -185,7 +185,7 @@ mod tests {
     use common_treenode::TreeNode;
     use daft_core::join::JoinType;
     use daft_dsl::{lit, resolved_col};
-    use daft_functions::utf8::{endswith, startswith};
+    use daft_functions_utf8::{endswith, startswith};
 
     use crate::{
         display::test::{plan_1, plan_2},
@@ -263,7 +263,7 @@ mod tests {
                                             }
                                           ],
                                           "predicate": [
-                                            "startswith(col(last_name), lit(\"S\")) & endswith(col(last_name), lit(\"n\"))"
+                                            "starts_with(col(last_name), lit(\"S\")) & ends_with(col(last_name), lit(\"n\"))"
                                           ],
                                           "type": "Filter"
                                         }

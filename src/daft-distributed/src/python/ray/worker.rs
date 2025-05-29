@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, RaySwordfishTask};
 use crate::scheduling::{
     scheduler::SchedulableTask,
-    task::{SwordfishTask, Task, TaskId, TaskResultHandleAwaiter},
+    task::{SwordfishTask, Task, TaskDetails, TaskId, TaskResultHandleAwaiter},
     worker::{Worker, WorkerId},
 };
 
@@ -21,7 +21,7 @@ pub(crate) struct RaySwordfishWorker {
     num_cpus: usize,
     #[allow(dead_code)]
     total_memory_bytes: usize,
-    active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
+    active_task_details: Arc<Mutex<HashMap<TaskId, TaskDetails>>>,
 }
 
 #[pymethods]
@@ -38,7 +38,7 @@ impl RaySwordfishWorker {
             actor_handle: Arc::new(actor_handle),
             num_cpus,
             total_memory_bytes,
-            active_task_ids: Arc::new(Mutex::new(HashSet::new())),
+            active_task_details: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -46,7 +46,7 @@ impl RaySwordfishWorker {
 #[allow(dead_code)]
 impl RaySwordfishWorker {
     pub fn mark_task_finished(&self, task_id: &TaskId) {
-        self.active_task_ids
+        self.active_task_details
             .lock()
             .expect("Active task ids should be present")
             .remove(task_id);
@@ -62,6 +62,7 @@ impl RaySwordfishWorker {
         for task in tasks {
             let (task, result_tx, cancel_token) = task.into_inner();
             let task_id = task.task_id().clone();
+            let task_details = TaskDetails::from(&task);
 
             let ray_swordfish_task = RaySwordfishTask::new(task);
             let py_task_handle = self.actor_handle.call_method1(
@@ -70,10 +71,10 @@ impl RaySwordfishWorker {
                 (ray_swordfish_task,),
             )?;
 
-            self.active_task_ids
+            self.active_task_details
                 .lock()
-                .expect("Active task ids should be present")
-                .insert(task_id.clone());
+                .expect("Active task details should be present")
+                .insert(task_id.clone(), task_details);
 
             let task_locals = task_locals.clone_ref(py);
             let ray_task_result_handle =
@@ -106,14 +107,27 @@ impl Worker for RaySwordfishWorker {
         &self.worker_id
     }
 
-    fn num_cpus(&self) -> usize {
+    fn total_num_cpus(&self) -> usize {
         self.num_cpus
     }
 
-    fn active_task_ids(&self) -> HashSet<TaskId> {
-        self.active_task_ids
+    fn active_num_cpus(&self) -> usize {
+        self.active_task_details
             .lock()
-            .expect("Active task ids should be present")
+            .expect("Active task details should be present")
+            .values()
+            .map(|details| details.num_cpus())
+            .sum()
+    }
+
+    fn available_num_cpus(&self) -> usize {
+        self.total_num_cpus() - self.active_num_cpus()
+    }
+
+    fn active_task_details(&self) -> HashMap<TaskId, TaskDetails> {
+        self.active_task_details
+            .lock()
+            .expect("Active task details should be present")
             .clone()
     }
 }

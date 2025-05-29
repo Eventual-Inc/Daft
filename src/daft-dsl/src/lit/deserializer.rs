@@ -1,13 +1,41 @@
+use std::fmt::{Display, Formatter};
+
+use common_error::DaftError;
 use daft_core::{prelude::Field, series::Series};
 use indexmap::IndexMap;
 use serde::{
-    de::{self},
-    forward_to_deserialize_any,
-    ser::Error,
-    Deserializer,
+    de::{self, Error},
+    forward_to_deserialize_any, Deserializer,
 };
 
-use super::{serializer::LitError, LiteralValue};
+use super::LiteralValue;
+
+#[derive(Debug)]
+pub struct LitError {
+    message: String,
+}
+
+impl From<LitError> for DaftError {
+    fn from(err: LitError) -> Self {
+        Self::ValueError(err.message)
+    }
+}
+
+impl de::Error for LitError {
+    fn custom<T: Display>(msg: T) -> Self {
+        Self {
+            message: msg.to_string(),
+        }
+    }
+}
+
+impl Display for LitError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for LitError {}
 
 struct SeriesDeserializer<'de> {
     values: &'de Series,

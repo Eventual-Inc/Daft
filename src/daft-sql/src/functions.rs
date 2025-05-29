@@ -18,8 +18,8 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
         coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleList, SQLModuleMap, SQLModulePartitioning, SQLModulePython,
-        SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8, SQLModuleWindow,
+        SQLModuleConfig, SQLModuleMap, SQLModulePartitioning, SQLModulePython, SQLModuleSketch,
+        SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -30,7 +30,6 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleHashing>();
-    functions.register::<SQLModuleList>();
     functions.register::<SQLModuleMap>();
     functions.register::<SQLModulePartitioning>();
     functions.register::<SQLModulePython>();

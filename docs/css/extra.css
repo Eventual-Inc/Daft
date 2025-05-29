@@ -18,6 +18,11 @@
   --md-accent-fg-color: #ad9fff;
 }
 
+/* hide readthedocs flyout for future versions (>0.4.15) */
+readthedocs-flyout {
+  display: none !important;
+}
+
 [data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
   --md-typeset-a-color: #7862FF;
 }
@@ -170,8 +175,11 @@ code.doc-symbol-method::after {
   max-width: 50rem;
 }
 
-/* Ask AI Widget */
-p.mantine-focus-auto.m_b6d8b162.mantine-Text-root, [class*="mantine-Text-root"] {
-  /* Change the font family to your preferred font */
-  font-family: 'Oxygen', sans-serif !important;
+/* readthedocs version selector */
+.md-version__list {
+  display: none;
+}
+
+.md-version__list--active {
+  display: block;
 }

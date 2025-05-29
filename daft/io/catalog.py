@@ -1,3 +1,4 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ class DataCatalogTable:
     table_name: str
     catalog_id: Optional[str] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         import warnings
 
         warnings.warn(

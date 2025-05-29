@@ -96,6 +96,19 @@ impl Schema {
             .collect()
     }
 
+    pub fn append(&mut self, field: Field) {
+        let index = self.fields.len();
+        let name = field.name.clone();
+
+        self.fields.push(field);
+
+        if let Some(indices) = self.name_to_indices.get_mut(&name) {
+            indices.push(index);
+        } else {
+            self.name_to_indices.insert(name, vec![index]);
+        }
+    }
+
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> Self {
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();

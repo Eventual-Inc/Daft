@@ -1,7 +1,7 @@
-use std::{cmp::Ordering, collections::HashSet};
+use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskId},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskId},
     worker::{Worker, WorkerId},
 };
 use crate::utils::channel::OneshotSender;
@@ -24,6 +24,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
     result_tx: OneshotSender<DaftResult<PartitionRef>>,
@@ -90,6 +91,7 @@ impl<T: Task> Ord for SchedulableTask<T> {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(super) struct ScheduledTask<T: Task> {
     task: SchedulableTask<T>,
     worker_id: WorkerId,
@@ -110,25 +112,46 @@ impl<T: Task> ScheduledTask<T> {
 #[derive(Debug, Clone)]
 pub(super) struct WorkerSnapshot {
     worker_id: WorkerId,
-    num_cpus: usize,
-    active_task_ids: HashSet<TaskId>,
+    total_num_cpus: usize,
+    active_task_details: HashMap<TaskId, TaskDetails>,
 }
 
 #[allow(dead_code)]
 impl WorkerSnapshot {
-    pub fn new(worker_id: WorkerId, num_cpus: usize, active_task_ids: HashSet<TaskId>) -> Self {
+    pub fn new(
+        worker_id: WorkerId,
+        total_num_cpus: usize,
+        active_task_details: HashMap<TaskId, TaskDetails>,
+    ) -> Self {
         Self {
             worker_id,
-            num_cpus,
-            active_task_ids,
+            total_num_cpus,
+            active_task_details,
         }
     }
 
-    pub fn from_worker(worker: &impl Worker) -> Self {
+    pub fn active_num_cpus(&self) -> usize {
+        self.active_task_details
+            .values()
+            .map(|details| details.num_cpus())
+            .sum()
+    }
+
+    pub fn available_num_cpus(&self) -> usize {
+        self.total_num_cpus - self.active_num_cpus()
+    }
+
+    pub fn total_num_cpus(&self) -> usize {
+        self.total_num_cpus
+    }
+}
+
+impl<W: Worker> From<&W> for WorkerSnapshot {
+    fn from(worker: &W) -> Self {
         Self::new(
             worker.id().clone(),
-            worker.num_cpus(),
-            worker.active_task_ids(),
+            worker.total_num_cpus(),
+            worker.active_task_details(),
         )
     }
 }
@@ -144,6 +167,17 @@ pub(super) mod test_utils {
         worker::tests::MockWorker,
     };
 
+    // Helper function to create workers with given configurations
+    pub fn setup_workers(configs: &[(WorkerId, usize)]) -> HashMap<WorkerId, MockWorker> {
+        configs
+            .iter()
+            .map(|(id, num_slots)| {
+                let worker = MockWorker::new(id.clone(), *num_slots);
+                (id.clone(), worker)
+            })
+            .collect::<HashMap<_, _>>()
+    }
+
     // Helper function to setup scheduler with workers
     pub fn setup_scheduler<S: Scheduler<MockTask> + Default>(
         workers: &HashMap<WorkerId, MockWorker>,
@@ -152,7 +186,7 @@ pub(super) mod test_utils {
         scheduler.update_worker_state(
             workers
                 .values()
-                .map(|w| WorkerSnapshot::from_worker(w))
+                .map(|w| WorkerSnapshot::from(w))
                 .collect::<Vec<_>>()
                 .as_slice(),
         );

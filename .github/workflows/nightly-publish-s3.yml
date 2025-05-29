@@ -122,7 +122,7 @@ jobs:
       fail-fast: false
       matrix:
         runner-name: [ubuntu-latest, ubuntu-24.04-arm]
-        daft-runner: [py, ray]
+        daft-runner: [py, ray, native]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -143,9 +143,14 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
     - name: Install Daft and dev dependencies
-      run: |
-        uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
-        rm -rf daft
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          rm -rf daft
     - uses: actions/cache@v4
       env:
         cache-name: cache-tpch-data
@@ -188,7 +193,7 @@ jobs:
       fail-fast: false
       matrix:
         runner-name: [ubuntu-latest, ubuntu-24.04-arm]
-        daft-runner: [py, ray]
+        daft-runner: [py, ray, native]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -216,9 +221,14 @@ jobs:
         uv venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      run: |
-        uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
-        rm -rf daft
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx

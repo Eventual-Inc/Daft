@@ -20,12 +20,11 @@ import logging
 import math
 from abc import abstractmethod
 from collections import deque
+from collections.abc import Generator, Iterable, Iterator
 from typing import (
     TYPE_CHECKING,
-    Generator,
+    Any,
     Generic,
-    Iterable,
-    Iterator,
     TypeVar,
     Union,
 )
@@ -71,14 +70,14 @@ InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], Partiti
 MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], MaterializedResult[PartitionT]]]
 
 
-def _stage_id_counter():
+def _stage_id_counter() -> Iterator[int]:
     counter = 0
     while True:
         counter += 1
         yield counter
 
 
-stage_id_counter = _stage_id_counter()
+stage_id_counter: Iterator[int] = _stage_id_counter()
 
 
 def partition_read(
@@ -182,7 +181,7 @@ def deltalake_write(
     base_path: str,
     large_dtypes: bool,
     version: int,
-    partition_cols: list[str] | None,
+    partition_cols: ExpressionsProjection | None,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -207,7 +206,7 @@ def lance_write(
     base_path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
+    kwargs: dict[str, Any] | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into lance data files described by `write_info`."""
     yield from (
@@ -227,7 +226,7 @@ def lance_write(
 
 def data_sink_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    sink: DataSink,
+    sink: DataSink[Any],
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into a custom write sink described by `sink`."""
     yield from (
@@ -239,7 +238,7 @@ def data_sink_write(
 def pipeline_instruction(
     child_plan: InProgressPhysicalPlan[PartitionT],
     pipeable_instruction: Instruction,
-    resource_request: execution_step.ResourceRequest,
+    resource_request: ResourceRequest,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Apply an instruction to the results of `child_plan`."""
     yield from (
@@ -278,7 +277,7 @@ def actor_pool_project(
     child_plan: InProgressPhysicalPlan[PartitionT],
     projection: ExpressionsProjection,
     actor_pool_manager: ActorPoolManager,
-    resource_request: execution_step.ResourceRequest,
+    resource_request: ResourceRequest,
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     stage_id = next(stage_id_counter)
@@ -640,7 +639,7 @@ def cross_join(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
     outer_loop_side: JoinSide,
-):
+) -> InProgressPhysicalPlan[PartitionT]:
     stage_id = next(stage_id_counter)
 
     outer_plan, inner_plan = (left_plan, right_plan) if outer_loop_side == JoinSide.Left else (right_plan, left_plan)
@@ -1759,7 +1758,9 @@ def top_n(
     yield from global_limit(child_plan=child_plan, limit_rows=limit, eager=False, num_partitions=num_partitions)
 
 
-def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int):
+def fanout_random(
+    child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int
+) -> InProgressPhysicalPlan[PartitionT]:
     """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions."""
     seed = 0
     for step in child_plan:
@@ -1795,7 +1796,7 @@ def _best_effort_next_step(
             return (None, False)
 
 
-class Materialize:
+class Materialize(Generic[PartitionT]):
     """Materialize the child plan.
 
     Repeatedly yields either a PartitionTask (to produce an intermediate partition)
@@ -1807,11 +1808,11 @@ class Materialize:
         child_plan: InProgressPhysicalPlan[PartitionT],
         results_buffer_size: int | None,
     ):
-        self.child_plan = child_plan
+        self.child_plan: InProgressPhysicalPlan[PartitionT] = child_plan
         self.materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
         self.results_buffer_size = results_buffer_size
 
-    def __iter__(self) -> MaterializedPhysicalPlan:
+    def __iter__(self) -> MaterializedPhysicalPlan[PartitionT]:
         num_materialized_yielded = 0
         num_intermediate_yielded = 0
         num_final_yielded = 0

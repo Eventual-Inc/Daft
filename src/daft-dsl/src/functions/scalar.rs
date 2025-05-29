@@ -41,7 +41,8 @@ impl From<ScalarFunction> for ExprRef {
 }
 
 #[typetag::serde(tag = "type")]
-pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
+pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
+    /// The name of the function.
     fn name(&self) -> &'static str;
     fn aliases(&self) -> &'static [&'static str] {
         &[]
@@ -58,9 +59,44 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
 
         self.evaluate(inputs)
     }
-
+    /// This is where the actual logic of the function is implemented.
+    /// A simple example would be a string function such as `to_uppercase` that simply takes in a utf8 array and uppercases all values
+    /// ```rs, no_run
+    /// impl ScalarUDF for MyToUppercase {
+    ///     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
+    ///         let s = inputs.required(0)?;
+    ///
+    ///         let arr = s
+    ///             .utf8()
+    ///             .expect("type should have been validated already during `function_args_to_field`")
+    ///             .into_iter()
+    ///             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
+    ///             .collect::<Utf8Array>();
+    ///
+    ///         Ok(arr.into_series())
+    ///     }
+    /// }
+    /// ```
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
 
+    /// `function_args_to_field` is used during planning to ensure that args and datatypes are compatible.
+    /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
+    /// ```rs, no_run
+    /// impl ScalarUDF for MyToUppercase {
+    ///     fn function_args_to_field(
+    ///         &self,
+    ///         inputs: FunctionArgs<ExprRef>,
+    ///         schema: &Schema,
+    ///     ) -> DaftResult<Field> {
+    ///         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
+    ///         /// grab the first positional value from `inputs`
+    ///         let input = inputs.required(0)?.to_field(schema)?;
+    ///         // make sure the input is a string datatype
+    ///         ensure!(input.dtype.is_string(), "expected string");
+    ///         Ok(input)
+    ///     }
+    /// }
+    /// ```
     #[allow(deprecated)]
     fn function_args_to_field(
         &self,

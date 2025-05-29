@@ -520,6 +520,14 @@ impl DataType {
             _ => false,
         }
     }
+    #[inline]
+    pub fn is_null_or<F: Fn(&Self) -> bool>(&self, f: F) -> bool {
+        match self {
+            Self::Null => true,
+            Self::Extension(_, inner, _) => inner.is_null_or(f),
+            _ => f(self),
+        }
+    }
 
     #[inline]
     pub fn is_int8(&self) -> bool {

@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 from typing import TYPE_CHECKING
+from urllib.error import HTTPError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from deltalake.table import DeltaTable
 
@@ -12,14 +14,14 @@ import daft.exceptions
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
+    PyPartitionField,
     PyPushdowns,
     S3Config,
     ScanTask,
     StorageConfig,
 )
-from daft.io.aws_config import boto3_client_from_s3_config
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import PyPartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
@@ -27,6 +29,31 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+def get_s3_bucket_region(bucket_name: str) -> str | None:
+    # When making a https request to https://{bucket_name}.s3.amazonaws.com/, aws returns either a 200 response, 403 response, or 404 response.
+    # In the header of the 200 and 403 responses, there is an `x-amz-bucket-region` field from which we can extract the bucket's region.
+    url = f"https://{bucket_name}.s3.amazonaws.com"
+
+    try:
+        req = Request(url, method="HEAD")
+        with urlopen(req) as response:
+            return response.headers.get("x-amz-bucket-region")
+    except HTTPError as e:
+        bucket_region = e.headers.get("x-amz-bucket-region")
+        if bucket_region is None:
+            logger.warning(
+                "Failed to get the S3 bucket region using the given S3 uri. HTTPError error: %s",
+                e,
+            )
+        return bucket_region
+    except Exception as e:
+        logger.warning(
+            "Failed to get the S3 bucket region using the given S3 uri. Error: %s",
+            e,
+        )
+        return None
 
 
 class DeltaLakeScanOperator(ScanOperator):
@@ -44,21 +71,13 @@ class DeltaLakeScanOperator(ScanOperator):
         deltalake_sdk_io_config = storage_config.io_config
         scheme = urlparse(table_uri).scheme
         if scheme == "s3" or scheme == "s3a":
-            # Try to get region from boto3
+            # Try to get the bucket's region.
             if deltalake_sdk_io_config.s3.region_name is None:
-                from botocore.exceptions import BotoCoreError
-
-                try:
-                    client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
-                    response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
-                except BotoCoreError as e:
-                    logger.warning(
-                        "Failed to get the S3 bucket region using existing storage config, will attempt to get it from the environment instead. Error from boto3: %s",
-                        e,
-                    )
-                else:
+                bucket_name = urlparse(table_uri).netloc
+                region = get_s3_bucket_region(bucket_name)
+                if region is not None:
                     deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                        s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
+                        s3=deltalake_sdk_io_config.s3.replace(region_name=region)
                     )
 
             # Try to get config from the environment

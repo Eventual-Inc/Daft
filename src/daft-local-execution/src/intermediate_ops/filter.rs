@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
 
@@ -11,11 +11,11 @@ use super::intermediate_op::{
 use crate::ExecutionTaskSpawner;
 
 pub struct FilterOperator {
-    predicate: ExprRef,
+    predicate: BoundExpr,
 }
 
 impl FilterOperator {
-    pub fn new(predicate: ExprRef) -> Self {
+    pub fn new(predicate: BoundExpr) -> Self {
         Self { predicate }
     }
 }

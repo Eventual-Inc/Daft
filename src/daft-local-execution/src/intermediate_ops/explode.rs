@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use daft_dsl::ExprRef;
-use daft_functions::list::explode;
+use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -13,13 +13,18 @@ use super::intermediate_op::{
 use crate::ExecutionTaskSpawner;
 
 pub struct ExplodeOperator {
-    to_explode: Arc<Vec<ExprRef>>,
+    to_explode: Arc<Vec<BoundExpr>>,
 }
 
 impl ExplodeOperator {
-    pub fn new(to_explode: Vec<ExprRef>) -> Self {
+    pub fn new(to_explode: Vec<BoundExpr>) -> Self {
         Self {
-            to_explode: Arc::new(to_explode.into_iter().map(explode).collect()),
+            to_explode: Arc::new(
+                to_explode
+                    .into_iter()
+                    .map(|expr| BoundExpr::new_unchecked(explode(expr.inner().clone())))
+                    .collect(),
+            ),
         }
     }
 }

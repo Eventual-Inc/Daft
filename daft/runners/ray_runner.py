@@ -7,9 +7,10 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Generator, Iterable, Iterator
 from datetime import datetime
 from queue import Full, Queue
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Union, cast
 
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
@@ -28,6 +29,15 @@ from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
 from daft.utils import SyncFromAsyncIterator
+
+if TYPE_CHECKING:
+    from collections.abc import Generator, Iterable, Iterator
+
+    import dask
+    import dask.dataframe
+
+    import daft
+
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +92,7 @@ if TYPE_CHECKING:
 
     from daft.logical.builder import LogicalPlanBuilder
     from daft.plan_scheduler import PhysicalPlanScheduler
+    from daft.runners.partitioning import PartialPartitionMetadata
     from daft.runners.ray_tracing import RunnerTracer
 
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
@@ -125,7 +136,7 @@ else:
         _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 
-@ray.remote
+@ray.remote  # type: ignore[misc]
 def _glob_path_into_file_infos(
     paths: list[str],
     file_format_config: FileFormatConfig | None,
@@ -142,19 +153,19 @@ def _glob_path_into_file_infos(
     return file_infos
 
 
-@ray.remote
-def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock:
+@ray.remote  # type: ignore[misc]
+def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock | list[dict[str, Any]]:
     try:
         daft_schema = partition.schema()
         arrow_tbl = partition.to_arrow()
 
         # Convert arrays to Ray Data's native ArrowTensorType arrays
-        new_arrs = {}
+        new_arrs: dict[int, tuple[str, pa.Array[Any]]] = {}
         for idx, field in enumerate(arrow_tbl.schema):
             if daft_schema[field.name].dtype.is_fixed_shape_tensor():
                 assert isinstance(field.type, pa.FixedShapeTensorType)
-                new_dtype = ArrowTensorType(field.type.shape, field.type.value_type)
-                arrow_arr = arrow_tbl[field.name].combine_chunks()
+                new_dtype = ArrowTensorType(tuple(field.type.shape), field.type.value_type)
+                arrow_arr = cast("pa.FixedShapeTensorArray", arrow_tbl[field.name].combine_chunks())
                 storage_arr = arrow_arr.storage
                 list_size = storage_arr.type.list_size
                 new_storage_arr = pa.ListArray.from_arrays(
@@ -183,7 +194,7 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
 
 
 def _series_from_arrow_with_ray_data_extensions(
-    array: pa.Array | pa.ChunkedArray, name: str = "arrow_series"
+    array: pa.Array[Any] | pa.ChunkedArray[Any], name: str = "arrow_series"
 ) -> Series:
     if isinstance(array, pa.Array):
         # TODO(desmond): This might be dead code since `ArrayTensorType`s are `numpy.ndarray` under
@@ -191,10 +202,11 @@ def _series_from_arrow_with_ray_data_extensions(
         # can be removed.
         array = ensure_array(array)
         if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
-            storage_series = _series_from_arrow_with_ray_data_extensions(array.storage, name=name)
+            tensor_array = cast("ArrowTensorArray", array)
+            storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
             series = storage_series.cast(
                 DataType.fixed_size_list(
-                    _from_arrow_type_with_ray_data_extensions(array.type.scalar_type),
+                    _from_arrow_type_with_ray_data_extensions(tensor_array.type.scalar_type),
                     int(np.prod(array.type.shape)),
                 )
             )
@@ -229,22 +241,20 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
     return MicroPartition.from_arrow(arrow_table)
 
 
-@ray.remote
-def _make_daft_partition_from_ray_dataset_blocks(
-    ray_dataset_block: pa.MicroPartition, daft_schema: Schema
-) -> MicroPartition:
+@ray.remote  # type: ignore[misc]
+def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: pa.Table, daft_schema: Schema) -> MicroPartition:
     return _micropartition_from_arrow_with_ray_data_extensions(ray_dataset_block)
 
 
-@ray.remote(num_returns=2)
+@ray.remote(num_returns=2)  # type: ignore[misc]
 def _make_daft_partition_from_dask_dataframe_partitions(
     dask_df_partition: pd.DataFrame,
-) -> tuple[MicroPartition, pa.Schema]:
+) -> tuple[MicroPartition, daft.Schema]:
     vpart = MicroPartition.from_pandas(dask_df_partition)
     return vpart, vpart.schema()
 
 
-def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.ObjectRef[pd.DataFrame]:
+def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef) -> ray.ObjectRef:
     """Ensures that the provided pandas DataFrame partition is in the Ray object store."""
     import pandas as pd
 
@@ -303,15 +313,15 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
     def to_dask_dataframe(
         self,
-        meta: (pd.DataFrame | pd.Series | dict[str, Any] | Iterable[Any] | tuple[Any] | None) = None,
-    ) -> dask.DataFrame:
+        meta: (pd.DataFrame | pd.Series[Any] | dict[str, Any] | Iterable[Any] | tuple[Any] | None) = None,
+    ) -> dask.dataframe.DataFrame:
         import dask
         import dask.dataframe as dd
         from ray.util.dask import ray_dask_get
 
         dask.config.set(scheduler=ray_dask_get)
 
-        @dask.delayed
+        @dask.delayed  # type: ignore[misc]
         def _make_dask_dataframe_partition_from_micropartition(partition: MicroPartition) -> pd.DataFrame:
             return partition.to_pandas()
 
@@ -319,9 +329,9 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
             _make_dask_dataframe_partition_from_micropartition(self._results[k].partition())
             for k in self._results.keys()
         ]
-        return dd.from_delayed(ddf_parts, meta=meta)
+        return cast("dd.DataFrame", dd.from_delayed(ddf_parts, meta=meta))
 
-    def get_partition(self, idx: PartID) -> ray.ObjectRef:
+    def get_partition(self, idx: PartID) -> RayMaterializedResult:
         return self._results[idx].partition()
 
     def set_partition(self, idx: PartID, result: MaterializedResult[ray.ObjectRef]) -> None:
@@ -353,16 +363,17 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ray.wait(list(deduped_object_refs), fetch_local=False, num_returns=len(deduped_object_refs))
 
 
-def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.lib.DataType) -> DataType:
+def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataType:
     if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
-        scalar_dtype = _from_arrow_type_with_ray_data_extensions(arrow_type.scalar_type)
-        shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
+        tensor_types = cast("Union[ArrowTensorType, ArrowVariableShapedTensorType]", arrow_type)
+        scalar_dtype = _from_arrow_type_with_ray_data_extensions(tensor_types.scalar_type)
+        shape = tensor_types.shape if isinstance(tensor_types, ArrowTensorType) else None
         return DataType.tensor(scalar_dtype, shape)
     return DataType.from_arrow_type(arrow_type)
 
 
 class RayRunnerIO(runner_io.RunnerIO):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
     def glob_paths_details(
@@ -421,15 +432,15 @@ class RayRunnerIO(runner_io.RunnerIO):
 
     def partition_set_from_dask_dataframe(
         self,
-        ddf: dask.DataFrame,
+        ddf: dask.dataframe.DataFrame,
     ) -> tuple[RayPartitionSet, Schema]:
-        import dask
+        from dask.base import persist
         from ray.util.dask import ray_dask_get
 
         partitions = ddf.to_delayed()
         if not partitions:
             raise ValueError("Can't convert an empty Dask DataFrame (with no partitions) to a Daft DataFrame.")
-        persisted_partitions = dask.persist(*partitions, scheduler=ray_dask_get)
+        persisted_partitions = persist(*partitions, scheduler=ray_dask_get)
         parts = [_to_pandas_ref(next(iter(part.dask.values()))) for part in persisted_partitions]
         daft_micropartitions, schemas = zip(
             *(_make_daft_partition_from_dask_dataframe_partitions.remote(p) for p in parts)
@@ -494,7 +505,7 @@ class PartitionTaskContext:
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote
+@ray.remote  # type: ignore[misc]
 def single_partition_pipeline(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
@@ -502,16 +513,19 @@ def single_partition_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with execution_config_ctx(
-        config=daft_execution_config,
-    ), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(
+            config=daft_execution_config,
+        ),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote
+@ray.remote  # type: ignore[misc]
 def fanout_pipeline(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
@@ -519,47 +533,56 @@ def fanout_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(config=daft_execution_config),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote
+@ray.remote  # type: ignore[misc]
 def reduce_pipeline(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
-    inputs: list,
+    inputs: list[ray.ObjectRef],
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(config=daft_execution_config),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote
+@ray.remote  # type: ignore[misc]
 def reduce_and_fanout(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
-    inputs: list,
+    inputs: list[ray.ObjectRef],
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+    with (
+        execution_config_ctx(config=daft_execution_config),
+        ray_tracing.collect_ray_task_metrics(
+            task_context.job_id, task_context.task_id, task_context.stage_id, daft_execution_config
+        ),
     ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
-@ray.remote
+@ray.remote  # type: ignore[misc]
 def get_metas(*partitions: MicroPartition) -> list[PartitionMetadata]:
     return [PartitionMetadata.from_table(partition) for partition in partitions]
 
@@ -602,7 +625,7 @@ class Scheduler(ActorPoolManager):
         self.reserved_cores = 0
 
         self.threads_by_df: dict[str, threading.Thread] = dict()
-        self.results_by_df: dict[str, Queue] = {}
+        self.results_by_df: dict[str, Queue[RayMaterializedResult | StopIteration | Exception]] = {}
         self.active_by_df: dict[str, bool] = dict()
         self.results_buffer_size_by_df: dict[str, int | None] = dict()
 
@@ -623,12 +646,12 @@ class Scheduler(ActorPoolManager):
         # Common case: get the next result from the thread.
         result = self.results_by_df[result_uuid].get()
 
-        return result
+        return result  # type: ignore[return-value]
 
     def start_plan(
         self,
         plan_scheduler: PhysicalPlanScheduler,
-        psets: dict[str, ray.ObjectRef],
+        psets: dict[str, MaterializedResult[ray.ObjectRef]],
         result_uuid: str,
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
@@ -689,7 +712,7 @@ class Scheduler(ActorPoolManager):
         tasks: ray_tracing.MaterializedPhysicalPlanWrapper,
         dispatches_allowed: int,
         runner_tracer: RunnerTracer,
-    ) -> tuple[list[PartitionTask], bool]:
+    ) -> tuple[list[PartitionTask[ray.ObjectRef]], bool]:
         """Constructs a batch of PartitionTasks that should be dispatched.
 
         Args:
@@ -704,7 +727,7 @@ class Scheduler(ActorPoolManager):
                 - A pagination boolean indicating whether or not there are more tasks to be had by calling _construct_dispatch_batch again
         """
         with runner_tracer.dispatch_batching():
-            tasks_to_dispatch: list[PartitionTask] = []
+            tasks_to_dispatch: list[PartitionTask[ray.ObjectRef]] = []
 
             # Loop until:
             # - Reached the limit of the number of tasks we are allowed to dispatch
@@ -720,7 +743,7 @@ class Scheduler(ActorPoolManager):
                 # CASE: A final result
                 # Place it in the result queue (potentially block on space to be available)
                 elif isinstance(next_step, MaterializedResult):
-                    self._place_in_queue(execution_id, next_step)
+                    self._place_in_queue(execution_id, cast("RayMaterializedResult", next_step))
 
                 # CASE: No-op task
                 # Just run it locally immediately.
@@ -760,10 +783,10 @@ class Scheduler(ActorPoolManager):
     def _dispatch_tasks(
         self,
         execution_id: str,
-        tasks_to_dispatch: list[PartitionTask],
+        tasks_to_dispatch: list[PartitionTask[ray.ObjectRef]],
         daft_execution_config_objref: ray.ObjectRef,
         runner_tracer: RunnerTracer,
-    ) -> Iterator[tuple[PartitionTask, list[ray.ObjectRef]]]:
+    ) -> Iterator[tuple[PartitionTask[ray.ObjectRef], list[ray.ObjectRef]]]:
         """Iteratively Dispatches a batch of tasks to the Ray backend."""
         with runner_tracer.dispatching():
             for task in tasks_to_dispatch:
@@ -781,7 +804,7 @@ class Scheduler(ActorPoolManager):
     def _await_tasks(
         self,
         inflight_ref_to_task_id: dict[ray.ObjectRef, str],
-        inflight_tasks: dict[str, PartitionTask],
+        inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]],
         runner_tracer: RunnerTracer,
     ) -> list[ray.ObjectRef]:
         """Awaits for tasks to be completed. Returns tasks that are ready.
@@ -819,11 +842,11 @@ class Scheduler(ActorPoolManager):
 
         return readies
 
-    def _is_active(self, execution_id: str):
+    def _is_active(self, execution_id: str) -> bool:
         """Checks if the execution for the provided `execution_id` is still active."""
         return self.active_by_df.get(execution_id, False)
 
-    def _place_in_queue(self, execution_id: str, item: ray.ObjectRef):
+    def _place_in_queue(self, execution_id: str, item: RayMaterializedResult | StopIteration | Exception) -> None:
         """Places a result into the queue for the provided `execution_id.
 
         NOTE: This will block and poll busily until space is available on the queue
@@ -999,7 +1022,7 @@ SCHEDULER_ACTOR_NAMESPACE = "daft"
 
 @ray.remote(num_cpus=1)
 class SchedulerActor(Scheduler):
-    def __init__(self, *n, **kw) -> None:
+    def __init__(self, *n: Any, **kw: Any) -> None:
         super().__init__(*n, **kw)
         self.reserved_cores = 1
 
@@ -1016,6 +1039,9 @@ def _build_partitions(
     if task.resource_request is not None:
         ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
 
+    metadatas_ref: ray.ObjectRef
+    partitions: list[list[PartitionMetadata] | MicroPartition]
+
     if isinstance(task.instructions[0], ReduceInstruction):
         build_remote = (
             reduce_and_fanout
@@ -1028,8 +1054,8 @@ def _build_partitions(
             )
         else:
             ray_options["scheduling_strategy"] = "SPREAD"
-        build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
-        [metadatas_ref, *partitions] = build_remote.remote(
+        build_remote_runner = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
+        [metadatas_ref, *partitions] = build_remote_runner.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
             daft_execution_config_objref,
             task.instructions,
@@ -1045,8 +1071,8 @@ def _build_partitions(
         )
         if task.instructions and isinstance(task.instructions[0], ScanWithTask):
             ray_options["scheduling_strategy"] = "SPREAD"
-        build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
-        [metadatas_ref, *partitions] = build_remote.remote(
+        build_remote_runner = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
+        [metadatas_ref, *partitions] = build_remote_runner.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
             daft_execution_config_objref,
             task.instructions,
@@ -1095,7 +1121,9 @@ def _build_partitions_on_actor_pool(
 
 @ray.remote
 class DaftRayActor:
-    def __init__(self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection):
+    def __init__(
+        self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection
+    ) -> None:
         from daft.daft import get_udf_names
 
         self.daft_execution_config = daft_execution_config
@@ -1106,7 +1134,7 @@ class DaftRayActor:
         )
         self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
-    @ray.method(num_returns=2)
+    @ray.method(num_returns=2)  # type: ignore[misc]
     def run(
         self,
         partial_metadatas: list[PartitionMetadata],
@@ -1136,7 +1164,7 @@ class RayRoundRobinActorPool:
         resource_request: ResourceRequest,
         projection: ExpressionsProjection,
         execution_config: PyDaftExecutionConfig,
-    ):
+    ) -> None:
         self._actors: list[DaftRayActor] | None = None
         self._task_idx = 0
 
@@ -1156,7 +1184,7 @@ class RayRoundRobinActorPool:
             for rank in range(self._num_actors)
         ]
 
-    def teardown(self):
+    def teardown(self) -> None:
         assert self._actors is not None, "Must have active Ray actors on teardown"
 
         # Delete the actors in the old pool so Ray can tear them down
@@ -1164,7 +1192,9 @@ class RayRoundRobinActorPool:
         self._actors = None
         del old_actors
 
-    def submit(self, partial_metadatas: list[ray.ObjectRef], inputs: list[ray.ObjectRef]) -> list[ray.ObjectRef]:
+    def submit(
+        self, partial_metadatas: list[PartialPartitionMetadata], inputs: list[ray.ObjectRef]
+    ) -> list[ray.ObjectRef]:
         assert self._actors is not None, "Must have active Ray actors during submission"
 
         # Determine which actor to schedule on in a round-robin fashion
@@ -1204,7 +1234,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             ray.init(address=address)
 
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
-        self.ray_client_mode = force_client_mode or ray.util.client.ray.get_context().is_connected()
+        self.ray_client_mode: bool = force_client_mode or ray.util.client.ray.get_context().is_connected()
 
         if self.ray_client_mode:
             # Run scheduler remotely if the cluster is connected remotely.
@@ -1212,7 +1242,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 name=SCHEDULER_ACTOR_NAME,
                 namespace=SCHEDULER_ACTOR_NAMESPACE,
                 get_if_exists=True,
-            ).remote(  # type: ignore
+            ).remote(
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=True,
             )
@@ -1253,7 +1283,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             self.scheduler.start_plan(
                 daft_execution_config=daft_execution_config,
                 plan_scheduler=plan_scheduler,
-                psets=psets,
+                psets=psets,  # type: ignore[arg-type]
                 result_uuid=result_uuid,
                 results_buffer_size=results_buffer_size,
             )
@@ -1373,7 +1403,9 @@ class RayRunner(Runner[ray.ObjectRef]):
         else:
             yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
 
-    def _execute_plan(self, builder, daft_execution_config, results_buffer_size):
+    def _execute_plan(
+        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, results_buffer_size: int | None
+    ) -> Iterator[RayMaterializedResult]:
         # Finalize the logical plan and get a physical plan scheduler for translating the
         # physical plan to executable tasks.
         plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
@@ -1400,7 +1432,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         results_iter = self.run_iter(builder)
         return self._collect_into_cache(results_iter)
 
-    def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
+    def put_partition_set_into_cache(self, pset: PartitionSet[ray.ObjectRef]) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):
             new_pset = RayPartitionSet()
             metadata_accessor = PartitionMetadataAccessor.from_metadata_list([v.metadata() for v in pset.values()])
@@ -1418,7 +1450,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     def __init__(
         self,
-        partition: ray.ObjectRef,
+        partition: ray.ObjectRef[Any],
         metadatas: PartitionMetadataAccessor | None = None,
         metadata_idx: int | None = None,
     ):
@@ -1437,6 +1469,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
         return ray.get(self._partition)
 
     def metadata(self) -> PartitionMetadata:
+        assert self._metadata_idx is not None
         return self._metadatas.get_index(self._metadata_idx)
 
     def cancel(self) -> None:
@@ -1450,7 +1483,7 @@ class PartitionMetadataAccessor:
     """Wrapper class around Remote[List[PartitionMetadata]] to memoize lookups."""
 
     def __init__(self, ref: ray.ObjectRef) -> None:
-        self._ref: ray.ObjectRef = ref
+        self._ref = ref
         self._metadatas: None | list[PartitionMetadata] = None
 
     def _get_metadatas(self) -> list[PartitionMetadata]:
@@ -1458,7 +1491,7 @@ class PartitionMetadataAccessor:
             self._metadatas = ray.get(self._ref)
         return self._metadatas
 
-    def get_index(self, key) -> PartitionMetadata:
+    def get_index(self, key: int) -> PartitionMetadata:
         return self._get_metadatas()[key]
 
     @classmethod

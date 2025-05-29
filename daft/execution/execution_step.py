@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Generic, Protocol
+from typing import TYPE_CHECKING, Any, Generic, Protocol
 
 from daft.context import get_context
 from daft.daft import JoinSide, PyRecordBatch, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import overwrite_files
+from daft.io.sink import WriteResultType
 from daft.recordbatch import MicroPartition, RecordBatch, recordbatch_io
 from daft.runners.partitioning import (
     Boundaries,
@@ -72,7 +73,7 @@ class PartitionTask(Generic[PartitionT]):
         """Whether the PartitionT result of this task is available."""
         return self.is_done
 
-    def set_done(self):
+    def set_done(self) -> None:
         """Sets the PartitionTask as done."""
         assert not self.is_done, "Cannot set PartitionTask as done more than once"
         self.is_done = True
@@ -125,7 +126,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         actor_pool_id: str | None = None,
         node_id: str | None = None,
     ) -> None:
-        self.inputs = inputs
+        self.inputs: list[PartitionT] = inputs
         if partial_metadatas is not None:
             self.partial_metadatas = partial_metadatas
         else:
@@ -511,7 +512,7 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     version: int
-    partition_cols: list[str] | None
+    partition_cols: ExpressionsProjection | None
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -549,7 +550,7 @@ class WriteLance(SingleOutputInstruction):
     base_path: str
     mode: str
     io_config: IOConfig | None
-    kwargs: dict | None
+    kwargs: dict[str, Any] | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._write_lance(inputs)
@@ -581,8 +582,8 @@ class WriteLance(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
-class DataSinkWrite(SingleOutputInstruction):
-    sink: DataSink
+class DataSinkWrite(SingleOutputInstruction, Generic[WriteResultType]):
+    sink: DataSink[WriteResultType]
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         result_field_name = "write_results"

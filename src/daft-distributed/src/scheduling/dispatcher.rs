@@ -91,7 +91,7 @@ impl<W: Worker> DispatcherActor<W> {
         let workers = worker_manager.workers();
         let worker_snapshots = workers
             .values()
-            .map(|w| WorkerSnapshot::from_worker(w))
+            .map(WorkerSnapshot::from)
             .collect::<Vec<_>>();
         if worker_update_sender.send(worker_snapshots).await.is_err() {
             tracing::debug!("Unable to send worker update, dispatcher handle dropped");
@@ -175,9 +175,9 @@ mod tests {
     use super::*;
     use crate::{
         scheduling::{
-            scheduler::{SchedulerHandle, SubmittedTask},
+            scheduler::{test_utils::setup_workers, SchedulerHandle, SubmittedTask},
             task::tests::{create_mock_partition_ref, MockTask, MockTaskBuilder, MockTaskFailure},
-            worker::tests::{setup_workers, MockWorkerManager},
+            worker::tests::MockWorkerManager,
         },
         utils::channel::create_oneshot_channel,
     };

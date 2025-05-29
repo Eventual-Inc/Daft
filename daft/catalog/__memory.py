@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.dataframe.dataframe import DataFrame
 
@@ -33,13 +35,13 @@ class MemoryCatalog(Catalog):
     # create_*
     ###
 
-    def create_namespace(self, identifier: Identifier | str):
+    def _create_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Memory create_namespace not yet supported.")
 
-    def create_table(
+    def _create_table(
         self,
-        identifier: Identifier | str,
-        source: Schema | DataFrame,
+        identifier: Identifier,
+        schema: Schema,
         properties: Properties | None = None,
     ) -> Table:
         raise NotImplementedError("Memory create_table not yet supported.")
@@ -48,31 +50,31 @@ class MemoryCatalog(Catalog):
     # drop_*
     ###
 
-    def drop_namespace(self, identifier: Identifier | str):
+    def _drop_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Memory drop_namespace not yet supported.")
 
-    def drop_table(self, identifier: Identifier | str):
+    def _drop_table(self, identifier: Identifier) -> None:
         raise NotImplementedError("Memory drop_table not yet supported.")
 
     ###
     # has_*
     ###
 
-    def has_namespace(self, identifier: Identifier | str):
+    def _has_namespace(self, identifier: Identifier) -> bool:
         prefix = str(identifier)
         for ident in self._tables.keys():
             if ident.startswith(prefix):
                 return True
         return False
 
-    def has_table(self, identifier: Identifier | str):
+    def _has_table(self, identifier: Identifier) -> bool:
         return str(identifier) in self._tables
 
     ###
     # list_*
     ###
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         namespaces = set()
         for path in self._tables.keys():
             if pattern is not None and not path.startswith(pattern):
@@ -83,16 +85,16 @@ class MemoryCatalog(Catalog):
             namespaces.add(path[:split])
         return [Identifier.from_str(ns) for ns in namespaces]
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
         if pattern is None:
-            return list(self._tables.keys())
-        return [path for path in self._tables.keys() if path.startswith(pattern)]
+            return [Identifier.from_str(path) for path in self._tables.keys()]
+        return [Identifier.from_str(path) for path in self._tables.keys() if path.startswith(pattern)]
 
     ###
     # get_*
     ###
 
-    def get_table(self, identifier: str | Identifier) -> Table:
+    def _get_table(self, identifier: Identifier) -> Table:
         path = str(identifier)
         if path not in self._tables:
             raise NotFoundError(f"Table {path} does not exist.")
@@ -113,6 +115,9 @@ class MemoryTable(Table):
     def name(self) -> str:
         return self._name
 
+    def schema(self) -> Schema:
+        return self._inner.schema()
+
     @staticmethod
     def _from_pyobject(name: str, source: object) -> Table:
         """Returns a Daft Table from a supported object type or raises an error."""
@@ -130,12 +135,12 @@ class MemoryTable(Table):
     # read methods
     ###
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         return self._inner
 
     ###
     # write methods
     ###
 
-    def write(self, df: DataFrame, mode: str = "append", **options):
+    def write(self, df: DataFrame, mode: str = "append", **options: Any) -> None:
         raise NotImplementedError("Writes to in-memory tables are not yet supported.")

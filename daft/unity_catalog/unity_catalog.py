@@ -58,7 +58,9 @@ class UnityCatalog:
         return results
 
     def list_catalogs(self) -> list[str]:
-        def _paginated_list_catalogs(client: unitycatalog.Unitycatalog, page_token: str | None):
+        def _paginated_list_catalogs(
+            client: unitycatalog.Unitycatalog, page_token: str | None
+        ) -> tuple[list[str] | None, str | None]:
             response = client.catalogs.list(page_token=page_token)
             next_page_token = response.next_page_token
             if response.catalogs is None:
@@ -68,7 +70,9 @@ class UnityCatalog:
         return self._paginate_to_completion(_paginated_list_catalogs)
 
     def list_schemas(self, catalog_name: str) -> list[str]:
-        def _paginated_list_schemas(client: unitycatalog.Unitycatalog, page_token: str | None):
+        def _paginated_list_schemas(
+            client: unitycatalog.Unitycatalog, page_token: str | None
+        ) -> tuple[list[str] | None, str | None]:
             response = client.schemas.list(catalog_name=catalog_name, page_token=page_token)
             next_page_token = response.next_page_token
             if response.schemas is None:
@@ -77,7 +81,7 @@ class UnityCatalog:
 
         return self._paginate_to_completion(_paginated_list_schemas)
 
-    def list_tables(self, schema_name: str):
+    def list_tables(self, schema_name: str) -> list[str]:
         if schema_name.count(".") != 1:
             raise ValueError(
                 f"Expected fully-qualified schema name with format `catalog_name`.`schema_name`, but received: {schema_name}"
@@ -85,7 +89,9 @@ class UnityCatalog:
 
         catalog_name, schema_name = schema_name.split(".")
 
-        def _paginated_list_tables(client: unitycatalog.Unitycatalog, page_token: str | None):
+        def _paginated_list_tables(
+            client: unitycatalog.Unitycatalog, page_token: str | None
+        ) -> tuple[list[str] | None, str | None]:
             response = client.tables.list(catalog_name=catalog_name, schema_name=schema_name, page_token=page_token)
             next_page_token = response.next_page_token
             if response.tables is None:
@@ -98,8 +104,8 @@ class UnityCatalog:
         self,
         table_name: str,
         new_table_storage_path: str | None = None,
-        operation: Literal["READ" | "READ_WRITE"] = "READ_WRITE",
-        table_type: Literal["EXTERNAL" | "MANAGED"] = "EXTERNAL",
+        operation: Literal["READ", "READ_WRITE"] = "READ_WRITE",
+        table_type: Literal["EXTERNAL", "MANAGED"] = "EXTERNAL",
     ) -> UnityCatalogTable:
         """Loads an existing Unity Catalog table. If the table is not found, and information is provided in the method to create a new table, a new table will be attempted to be registered.
 

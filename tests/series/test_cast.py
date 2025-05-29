@@ -1302,3 +1302,16 @@ def test_series_cast_fixed_shape_sparse_without_indices_offset_to_regular(sparse
 
     regular_fixed_shape_series = regular_fixed_shape_series.to_pylist()
     np.testing.assert_equal(regular_fixed_shape_series, sparse_tensor_data)
+
+
+# see: https://github.com/Eventual-Inc/Daft/issues/4426
+def test_cast_list_list_to_list_tensor():
+    boxes = [
+        [[100, 100, 200, 200], [300, 300, 400, 400], [500, 500, 600, 600], [700, 700, 800, 800], [900, 900, 1000, 1000]]
+        for _ in range(5)
+    ]
+
+    s = Series.from_pylist(boxes)
+    cast_to = DataType.list(DataType.tensor(DataType.int64(), shape=(4,)))
+    s = s.cast(cast_to)
+    assert s.datatype() == cast_to
