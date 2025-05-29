@@ -226,7 +226,12 @@ fn deltalake_write(
             &delta_lake_info.path,
             delta_lake_info.large_dtypes,
             delta_lake_info.version,
-            delta_lake_info.partition_cols.clone(),
+            delta_lake_info.partition_cols.as_ref().map(|cols| {
+                cols.iter()
+                    .cloned()
+                    .map(|col| col.into())
+                    .collect::<Vec<PyExpr>>()
+            }),
             delta_lake_info
                 .io_config
                 .as_ref()
