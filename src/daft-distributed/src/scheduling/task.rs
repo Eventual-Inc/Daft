@@ -210,7 +210,7 @@ pub(super) mod tests {
     use common_partitioning::Partition;
 
     use super::*;
-    use crate::{scheduling::worker::tests::MockWorkerManager, utils::channel::OneshotSender};
+    use crate::utils::channel::OneshotSender;
 
     #[derive(Debug)]
     pub struct MockPartition {
@@ -370,19 +370,15 @@ pub(super) mod tests {
     /// A mock implementation of the SwordfishTaskResultHandle trait for testing
     pub struct MockTaskResultHandle {
         result: PartitionRef,
-        worker_manager: MockWorkerManager,
-        worker_id: WorkerId,
         sleep_duration: Option<Duration>,
         cancel_notifier: Option<OneshotSender<()>>,
         failure: Option<MockTaskFailure>,
     }
 
     impl MockTaskResultHandle {
-        pub fn new(worker_manager: MockWorkerManager, worker_id: WorkerId, task: MockTask) -> Self {
+        pub fn new(task: MockTask) -> Self {
             Self {
                 result: task.task_result,
-                worker_manager,
-                worker_id,
                 sleep_duration: task.sleep_duration,
                 cancel_notifier: task.cancel_notifier,
                 failure: task.failure,

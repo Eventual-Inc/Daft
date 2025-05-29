@@ -91,7 +91,7 @@ pub(super) mod tests {
                     result.push(TaskResultHandleAwaiter::new(
                         task.task_id().clone(),
                         worker_id.clone(),
-                        MockTaskResultHandle::new(self.clone(), worker_id.clone(), task),
+                        MockTaskResultHandle::new(task),
                         result_tx,
                         cancel_token,
                     ));
