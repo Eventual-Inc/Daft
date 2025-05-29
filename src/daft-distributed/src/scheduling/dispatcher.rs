@@ -187,7 +187,8 @@ mod tests {
     use crate::{
         scheduling::{
             scheduler::{test_utils::setup_workers, SchedulerHandle, SubmittedTask},
-            task::tests::{create_mock_partition_ref, MockTask, MockTaskBuilder, MockTaskFailure},
+            task::tests::MockTaskFailure,
+            tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
             worker::tests::MockWorkerManager,
         },
         utils::channel::create_oneshot_channel,
@@ -240,7 +241,8 @@ mod tests {
             .unwrap();
 
         let result = submitted_task.await.unwrap()?;
-        assert!(Arc::ptr_eq(&result, &partition_ref));
+        let partition = result[0].partition();
+        assert!(Arc::ptr_eq(&partition, &partition_ref));
 
         test_context.cleanup().await?;
         Ok(())
@@ -273,8 +275,9 @@ mod tests {
             let mut count = 0;
             for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
                 let result = submitted_task.await.expect("Task should be completed")?;
-                assert_eq!(result.num_rows().unwrap(), 100 + i);
-                assert_eq!(result.size_bytes().unwrap(), Some(1024 * (i + 1)));
+                let partition = result[0].partition();
+                assert_eq!(partition.num_rows().unwrap(), 100 + i);
+                assert_eq!(partition.size_bytes().unwrap(), Some(1024 * (i + 1)));
                 count += 1;
             }
             assert_eq!(count, num_tasks);

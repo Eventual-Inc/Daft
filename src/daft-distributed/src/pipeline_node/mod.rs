@@ -26,7 +26,7 @@ pub(crate) use translate::logical_plan_to_pipeline_node;
 /// Contains both the partition data as well as metadata about the partition.
 /// Right now, the only metadata is the worker id that has it so we can try
 /// to schedule follow-up pipeline nodes on the same worker.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct MaterializedOutput {
     partition: PartitionRef,
     worker_id: WorkerId,
@@ -56,6 +56,7 @@ impl MaterializedOutput {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) enum PipelineOutput {
     Materialized(MaterializedOutput),
     Task(SwordfishTask),

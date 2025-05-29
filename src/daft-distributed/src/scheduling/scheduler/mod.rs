@@ -4,14 +4,13 @@ use super::{
     task::{SchedulingStrategy, Task, TaskDetails, TaskId},
     worker::{Worker, WorkerId},
 };
-use crate::utils::channel::OneshotSender;
+use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
 
 mod default;
 mod linear;
 mod scheduler_actor;
 
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 pub(crate) use scheduler_actor::{spawn_default_scheduler_actor, SchedulerHandle, SubmittedTask};
 use tokio_util::sync::CancellationToken;
 
@@ -27,7 +26,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
 #[derive(Debug)]
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<PartitionRef>>,
+    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
@@ -35,7 +34,7 @@ pub(crate) struct SchedulableTask<T: Task> {
 impl<T: Task> SchedulableTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<PartitionRef>>,
+        result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -63,7 +62,7 @@ impl<T: Task> SchedulableTask<T> {
         self,
     ) -> (
         T,
-        OneshotSender<DaftResult<PartitionRef>>,
+        OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
@@ -163,7 +162,7 @@ pub(super) mod test_utils {
 
     use super::*;
     use crate::scheduling::{
-        task::tests::{MockTask, MockTaskBuilder},
+        tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
     };
 

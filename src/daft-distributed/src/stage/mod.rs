@@ -16,10 +16,7 @@ use crate::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
         MaterializedOutput, PipelineOutput, RunningPipelineNode,
     },
-    scheduling::{
-        scheduler::SchedulerHandle,
-        task::{SwordfishTask, Task},
-    },
+    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
@@ -108,10 +105,9 @@ impl RunningStage {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn materialize<T: Task>(
+    pub fn materialize(
         self,
-        scheduler_handle: SchedulerHandle<T>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
         let stream = self.into_stream();
         materialize_all_pipeline_outputs(stream, scheduler_handle)
