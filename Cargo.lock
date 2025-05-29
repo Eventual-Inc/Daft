@@ -2304,7 +2304,6 @@ dependencies = [
  "flate2",
  "futures",
  "num-traits",
- "paste",
  "pyo3",
  "serde",
  "simdutf8",
