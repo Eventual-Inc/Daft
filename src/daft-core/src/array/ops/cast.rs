@@ -2372,6 +2372,11 @@ impl ListArray {
                 );
                 Ok(embedding_array.into_series())
             }
+            DataType::FixedShapeTensor(_, _) => {
+                let result = self.cast(&dtype.to_physical())?;
+                let result = result.fixed_size_list()?;
+                result.cast(dtype)
+            }
             _ => unimplemented!("List casting not implemented for dtype: {}", dtype),
         }
     }

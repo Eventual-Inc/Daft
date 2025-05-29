@@ -1,6 +1,8 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Union
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Union
 
 from daft.api_annotations import PublicAPI
 
@@ -18,7 +20,7 @@ InputListType = Union[list[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.Chunked
 
 
 @PublicAPI
-def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
+def from_pylist(data: list[dict[str, Any]]) -> "DataFrame":
     """Creates a DataFrame from a list of dictionaries.
 
     Args:
@@ -49,7 +51,7 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
 
 
 @PublicAPI
-def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
+def from_pydict(data: dict[str, InputListType]) -> "DataFrame":
     """Creates a DataFrame from a Python dictionary.
 
     Args:
@@ -81,7 +83,7 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
 
 
 @PublicAPI
-def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) -> "DataFrame":
+def from_arrow(data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"]]) -> "DataFrame":
     """Creates a DataFrame from a pyarrow Table.
 
     Args:
@@ -116,7 +118,7 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
 
 
 @PublicAPI
-def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame":
+def from_pandas(data: Union["pd.DataFrame", list["pd.DataFrame"]]) -> "DataFrame":
     """Creates a Daft DataFrame from a pandas DataFrame.
 
     Args:

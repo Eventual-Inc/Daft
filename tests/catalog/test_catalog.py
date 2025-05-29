@@ -125,32 +125,36 @@ class MockCatalog(Catalog):
     def name(self) -> str:
         return "test"
 
-    def create_namespace(self, identifier: Identifier | str):
+    def _create_namespace(self, identifier: Identifier):
         self.create_namespace_calls.append(identifier)
         self.namespaces.add(str(identifier))
 
-    def create_table(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
-    ) -> Table:
+    def _create_table(self, identifier: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
         k = str(identifier)
         t = MockTable(k, properties)
         self._tables[k] = t
         return t
 
-    def drop_namespace(self, identifier: Identifier | str):
+    def _drop_namespace(self, identifier: Identifier):
         raise NotImplementedError
 
-    def drop_table(self, identifier: Identifier | str):
+    def _drop_table(self, identifier: Identifier):
         del self._tables[str(identifier)]
 
-    def get_table(self, identifier: Identifier | str) -> Table:
+    def _get_table(self, identifier: Identifier) -> Table:
         return self._tables[str(identifier)]
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
+    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
+
+    def _has_namespace(self, ident):
+        raise NotImplementedError
+
+    def _has_table(self, ident):
+        return str(ident) in self._tables
 
 
 class MockTable(Table):
@@ -164,6 +168,9 @@ class MockTable(Table):
     @property
     def name(self) -> str:
         return self._name
+
+    def schema(self) -> Schema:
+        raise NotImplementedError
 
     def read(self, **options) -> DataFrame:
         raise NotImplementedError

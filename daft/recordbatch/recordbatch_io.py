@@ -4,7 +4,7 @@ import math
 import pathlib
 import random
 import time
-from typing import TYPE_CHECKING, Any, Iterator, Union
+from typing import TYPE_CHECKING, Any, Union
 from uuid import uuid4
 
 from daft.context import get_context
@@ -20,7 +20,7 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.dependencies import pa, pacsv, pads, pq
-from daft.expressions import ExpressionsProjection, col
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -41,7 +41,7 @@ from .partitioning import PartitionedTable, partition_strings_to_path
 FileInput = Union[pathlib.Path, str]
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
@@ -424,7 +424,7 @@ def write_deltalake(
     large_dtypes: bool,
     base_path: str,
     version: int,
-    partition_cols: list[str] | None = None,
+    partition_cols: ExpressionsProjection | None = None,
     io_config: IOConfig | None = None,
 ) -> MicroPartition:
     from daft.delta_lake.delta_lake_write import (
@@ -449,8 +449,7 @@ def write_deltalake(
     format = pads.ParquetFileFormat()
     opts = format.make_write_options(use_compliant_nested_type=False)
 
-    partition_keys = ExpressionsProjection([col(c) for c in partition_cols]) if partition_cols is not None else None
-    partitioned = PartitionedTable(table, partition_keys)
+    partitioned = PartitionedTable(table, partition_cols)
     visitors = DeltaLakeWriteVisitors(fs)
 
     for part_table, part_path, part_values in partitioned_table_to_deltalake_iter(partitioned, large_dtypes):
