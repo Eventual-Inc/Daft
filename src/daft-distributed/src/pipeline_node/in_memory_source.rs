@@ -21,7 +21,7 @@ pub(crate) struct InMemorySourceNode {
     config: Arc<DaftExecutionConfig>,
     info: InMemoryInfo,
     plan: LocalPhysicalPlanRef,
-    input_psets: HashMap<String, Vec<PartitionRef>>,
+    input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 }
 
 impl InMemorySourceNode {
@@ -31,7 +31,7 @@ impl InMemorySourceNode {
         config: Arc<DaftExecutionConfig>,
         info: InMemoryInfo,
         plan: LocalPhysicalPlanRef,
-        input_psets: HashMap<String, Vec<PartitionRef>>,
+        input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> Self {
         Self {
             node_id,
@@ -46,7 +46,7 @@ impl InMemorySourceNode {
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
         in_memory_info: InMemoryInfo,
-        psets: HashMap<String, Vec<PartitionRef>>,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
         let partition_refs = psets.get(&in_memory_info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
@@ -80,7 +80,7 @@ impl DistributedPipelineNode for InMemorySourceNode {
             self.plan.clone(),
             self.config.clone(),
             self.info.clone(),
-            std::mem::take(&mut self.input_psets),
+            self.input_psets.clone(),
             result_tx,
         );
         stage_context.joinset.spawn(execution_loop);

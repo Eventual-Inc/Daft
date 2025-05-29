@@ -1,9 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
-
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_logical_plan::LogicalPlanRef;
 use futures::{Stream, StreamExt};
 use materialize::materialize_all_pipeline_outputs;
 
@@ -23,6 +19,8 @@ mod limit;
 pub(crate) mod materialize;
 mod scan_source;
 mod translate;
+
+pub(crate) use translate::logical_plan_to_pipeline_node;
 
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
@@ -101,13 +99,4 @@ impl RunningPipelineNode {
     pub fn into_stream(self) -> impl Stream<Item = PipelineOutput> + Send + Unpin + 'static {
         ReceiverStream::new(self.result_receiver)
     }
-}
-
-#[allow(dead_code)]
-pub(crate) fn logical_plan_to_pipeline_node(
-    _plan: LogicalPlanRef,
-    _config: Arc<DaftExecutionConfig>,
-    _psets: HashMap<String, Vec<PartitionRef>>,
-) -> DaftResult<Box<dyn DistributedPipelineNode>> {
-    todo!("FLOTILLA_MS1: Implement translation of logical plan to pipeline nodes")
 }

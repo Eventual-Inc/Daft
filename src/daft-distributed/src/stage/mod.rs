@@ -85,7 +85,8 @@ impl Stage {
         let mut stage_context = StageContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
+                let mut pipeline_node =
+                    logical_plan_to_pipeline_node(plan.clone(), config, Arc::new(psets))?;
                 let running_node = pipeline_node.start(&mut stage_context);
                 Ok(RunningStage::new(running_node, stage_context.joinset))
             }
