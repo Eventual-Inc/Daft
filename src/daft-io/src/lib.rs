@@ -23,6 +23,7 @@ use google_cloud::GCSSource;
 use huggingface::HFSource;
 #[cfg(feature = "python")]
 pub mod python;
+mod s3_multipart_writer;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 

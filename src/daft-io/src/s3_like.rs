@@ -1,8 +1,19 @@
+use Poll::Ready;
 use std::{
     collections::HashMap, num::NonZeroUsize, ops::Range, string::FromUtf8Error, sync::Arc,
     time::Duration,
 };
-
+use std::borrow::Cow;
+use std::cmp::min;
+use std::collections::VecDeque;
+use std::future::Future;
+use std::num::NonZeroI32;
+use std::pin::Pin;
+use std::process::exit;
+use std::task::{Context, Poll};
+use std::task::Poll::Pending;
+use std::time::Instant;
+use std::vec::IntoIter;
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use aws_config::{
@@ -23,11 +34,14 @@ use aws_sdk_s3::{
     },
     primitives::ByteStreamError,
 };
+use aws_sdk_s3::operation::upload_part::UploadPartOutput;
 use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
-use futures::{stream::BoxStream, FutureExt, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, AsyncReadExt, FutureExt, StreamExt, TryStreamExt};
+use futures::stream::{FuturesOrdered, FuturesUnordered};
+use itertools::Itertools;
 use reqwest::StatusCode;
 use s3::{
     client::customize::Response,
@@ -39,9 +53,11 @@ use s3::{
     },
 };
 use snafu::{ensure, IntoError, ResultExt, Snafu};
+use tokio::io::AsyncWrite;
 use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
+use tokio::time::sleep;
 use url::{ParseError, Position};
-
+use S3MultipartWriterState::{FlushingBeforeShutdown, AcceptingWrites, ShutDown};
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
@@ -50,6 +66,7 @@ use crate::{
     stream_utils::io_stats_on_bytestream,
     FileFormat, InvalidArgumentSnafu, SourceType,
 };
+use crate::s3_like::S3MultipartWriterState::CompletingBeforeShutdown;
 
 const S3_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
@@ -89,6 +106,16 @@ enum Error {
         path: String,
         source: SdkError<CreateMultipartUploadError, Response>,
     },
+
+    #[snafu(display(
+        "Unable to upload part {} for {}/{} with upload_id {}: {}",
+        part,
+        bucket,
+        key,
+        upload_id,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    UnableToUploadPart { bucket: String, key: String, upload_id: String, part: NonZeroI32, source: SdkError<UploadPartError, Response> },
 
     #[snafu(display(
         "Unable to upload parts to {}: {}",
@@ -630,10 +657,13 @@ impl S3LikeSource {
 
     async fn get_s3_client(&self, region: &Region) -> super::Result<Arc<s3::Client>> {
         {
+            log::debug!("Using cached client...");
             if let Some(client) = self.region_to_client_map.read().await.get(region) {
                 return Ok(client.clone());
             }
         }
+
+        log::debug!("Building new client...");
 
         let mut w_handle = self.region_to_client_map.write().await;
 
@@ -1216,6 +1246,145 @@ impl S3LikeSource {
 
         Ok(())
     }
+
+    pub async fn create_multipart_upload(&self, bucket: &str, key: &str) -> super::Result<Cow<'static, str>> {
+
+        if self.anonymous {
+            return Err(Error::UploadsCannotBeAnonymous {}.into());
+        }
+
+        let region = &self.default_region;
+
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let request_payer = if self.s3_config.requester_pays {
+            Some(s3::types::RequestPayer::Requester)
+        } else {
+            None
+        };
+
+
+        let client = self.get_s3_client(region).await?;
+
+        let create_multipart_upload_response = client
+            .create_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .set_request_payer(request_payer.clone())
+            .send()
+            .await
+            .context(UnableToCreateMultipartUploadSnafu { path: "TODO" })?;
+
+        let upload_id = create_multipart_upload_response
+            .upload_id()
+            .ok_or_else(|| Error::MissingUploadIdForMultipartUpload { path: "TODO".to_owned() })?;
+
+        log::debug!("S3 create multipart upload-id: {upload_id}");
+
+        Ok(upload_id.to_owned().into())
+    }
+
+    pub async fn complete_multipart_upload(&self, key: Cow<'static, str>, bucket: Cow<'static, str>, upload_id: Cow<'static, str>, completed_parts: Vec<CompletedPart>) -> super::Result<()>
+    {
+        if self.anonymous {
+            return Err(Error::UploadsCannotBeAnonymous {}.into());
+        }
+
+        let region = &self.default_region;
+
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = self.get_s3_client(region).await?;
+
+        let completed_parts = completed_parts
+            .into_iter()
+            .map(|part| {
+                s3::types::CompletedPart::builder()
+                    .part_number(part.part_number.get())
+                    .e_tag(part.etag.clone())
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let completed_multipart_upload = s3::types::CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+
+        client
+            .complete_multipart_upload()
+            .multipart_upload(completed_multipart_upload)
+            .key(key)
+            .bucket(bucket)
+            .upload_id(upload_id.clone()) // TODO: Add the parts here
+            .send()
+            .await
+            .context(UnableToCompleteMultipartUploadSnafu { path: "TODO" })?;
+
+        log::debug!("S3 complete multipart upload completed. upload_id :{upload_id}");
+
+        Ok(())
+    }
+
+    pub async fn upload_part(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        part_number: NonZeroI32,
+        data: bytes::Bytes,
+    ) -> super::Result<UploadPartOutput> {
+
+        if self.anonymous {
+            return Err(Error::UploadsCannotBeAnonymous {}.into());
+        }
+
+        let region = &self.default_region;
+
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let request_payer = if self.s3_config.requester_pays {
+            Some(s3::types::RequestPayer::Requester)
+        } else {
+            None
+        };
+
+        let client = self.get_s3_client(region).await?;
+
+        let start = Instant::now();
+
+        let fut  = client
+            .upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .part_number(part_number.get())
+            .body(data.into())
+            .set_request_payer(request_payer)
+            .send();
+
+        log::debug!("Future creation took {}", start.elapsed().as_millis());
+
+        let output = fut.await.context(UnableToUploadPartSnafu { bucket: bucket.clone(), key: key.clone(), upload_id: upload_id.clone(), part: part_number })?;
+
+        log::debug!("Future completion took {}", start.elapsed().as_millis());
+
+        Ok(output)
+    }
 }
 
 #[allow(dead_code)] // TODO: rohit - remove this once we have integrated it.
@@ -1460,14 +1629,477 @@ impl ObjectSource for S3LikeSource {
     }
 }
 
+
+type UploadPartFuture = Box<dyn Future<Output =PendingPart> + Send>;
+
+struct S3MultipartWriter {
+
+    /// The URI of the S3 object to write to.
+    uri: Cow<'static, str>,
+
+    /// The bucket and key of the S3 object to write to.
+    bucket: Cow<'static, str>,
+
+    /// The key of the S3 object to write to.
+    key: Cow<'static, str>,
+
+    /// The upload ID of the S3 multipart upload. This is used to identify the multipart upload
+    /// to S3.
+    upload_id: Cow<'static, str>,
+
+    /// The size of each part in the multipart upload. This is used to chunk written part. The last
+    /// part may be smaller than this size.
+    part_size: NonZeroUsize,
+
+    /// The current state of the S3 multipart writer.
+    state: S3MultipartWriterState,
+
+    /// Buffered data is held in one of two places:
+    ///
+    /// * *buffer* - This is data that has not been "chunked" into parts yet. When data is written
+    /// to the writer, it is first added to this buffer.
+    /// * *pending_parts* - This is data that has been chunked into parts and is currently being
+    /// asynchronously uploaded to S3. This is a collection of futures that represent the upload to
+    /// S3.
+    ///
+    /// *buffered_bytes* is the total number of bytes that are currently buffered, which includes
+    /// the bytes in the *buffer* and the bytes in the *pending_parts*. This is used to apply
+    /// back-pressure to the writer when it exceeds the maximum number of bytes that can be
+    /// buffered.
+    buffer: VecDeque<u8>,
+    pending_parts: FuturesUnordered<Pin<Box<dyn Future<Output = CompletedPart> + Send>>>,
+    completed_parts: Vec<CompletedPart>,
+    // The number of bytes currently pending to be flushed. Includes the bytes in the buffer and the bytes in the pending parts.
+    buffered_bytes: usize,
+
+
+    /// A future that represents the completion of the multipart upload. This future is created
+    /// after all the parts have been uploaded, to finalize the multipart upload. This is the
+    /// last step in the multipart upload process.
+    completion_future: Option<Pin<Box<dyn Future<Output = super::Result<()>> + Send>>>,
+
+    /// The maximum number of bytes that can be buffered before the writer will apply back-pressure.
+    /// It is expected to be constant for the lifetime of the writer.
+    max_buffered_bytes: NonZeroUsize,
+
+    /// Stores the next part number for multipart upload. See [`generate_part_number`] for a
+    /// convenience method to generate the next part number.
+    next_part_number: NonZeroI32,
+
+    /// The S3 client used to perform the multipart upload operations.
+    s3_client: Arc<S3LikeSource>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingPart {
+    upload_id: Cow<'static, str>,
+    bucket: Cow<'static, str>,
+    key: Cow<'static, str>,
+    part_number: NonZeroI32,
+    data: bytes::Bytes,
+}
+
+#[derive(Debug, Clone)]
+struct CompletedPart {
+    upload_id: Cow<'static, str>,
+    bucket: Cow<'static, str>,
+    key: Cow<'static, str>,
+    part_number: NonZeroI32,
+    data_len: NonZeroUsize,
+    etag: Cow<'static, str>,
+}
+
+/// Represents the state of the S3 multipart writer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum S3MultipartWriterState {
+    /// The writer will accept new writes. It will buffer the writes and when enough data is
+    /// available, the writes will be chunked into parts and flushed to S3. The writer will
+    /// also accept explicit flush requests.
+    AcceptingWrites,
+
+    /// The writer is preparing to shut down by flushing all buffered data to S3. It will not accept
+    /// any new writes, but will accept flush requests.
+    FlushingBeforeShutdown,
+    /// The writer is preparing to shut down by completing the multipart upload. It will not accept
+    /// any new writes or flush requests.
+    CompletingBeforeShutdown,
+
+    /// The writer has shut down.
+    ShutDown,
+}
+
+impl S3MultipartWriter {
+
+    const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibytes
+    const MAXIMUM_PART_SIZE: usize = 5 * 1024 * 1024 * 1024; // 5 Gibibytes
+    const MAX_PART_COUNT: i32 = 10000; // Max parts in a multipart upload
+
+    /// Ensure that the part size is within the valid range for S3 multipart uploads.
+    /// This function checks that the part size is at least 5 MiB and at most 5 GiB.
+    ///
+    /// If the part size is invalid, it panics since there's no expected way to recover from
+    /// such a misconfiguration.
+    fn assert_part_size(part_size: NonZeroUsize) {
+        assert!(part_size.get() >= Self::MINIMUM_PART_SIZE,
+                "Part size must be greater than or equal to 5MiB");
+        assert!(part_size.get() <= Self::MAXIMUM_PART_SIZE,
+            "Part size must be less than or equal to 5GiB");
+    }
+
+    pub async fn create(
+        uri: impl Into<String>,
+        part_size: NonZeroUsize,
+        s3_client: Arc<S3LikeSource>,
+        max_buffered_bytes: NonZeroUsize,
+    ) -> super::Result<Self> {
+
+        let uri = uri.into();
+        let (_scheme, bucket, key) = parse_url(&uri)?;
+
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.clone() }.into());
+        }
+
+        Self::assert_part_size(part_size);
+
+        log::debug!("S3 multipart upload requested: {uri}, part_size: {part_size}");
+
+        let upload_id = s3_client
+            .create_multipart_upload(&bucket, &key)
+            .await?;
+
+        log::debug!("S3 multipart upload has been assigned an upload_id: {uri}, upload_id: {upload_id}");
+
+        Ok(S3MultipartWriter {
+            uri: uri.into(),
+            bucket: bucket.into(),
+            key: key.into(),
+            upload_id: upload_id.into(),
+            part_size,
+            s3_client,
+
+            state: AcceptingWrites,
+            buffer: VecDeque::new(),
+            pending_parts: FuturesUnordered::new(),
+            completed_parts: Vec::new(),
+            completion_future: None,
+            buffered_bytes: 0,
+            max_buffered_bytes,
+            next_part_number: NonZeroI32::new(1).unwrap(),
+        })
+    }
+}
+
+impl S3MultipartWriter {
+
+    /// Generates the next part number for the multipart upload.
+    ///
+    /// Panics if the next part number exceeds the maximum part count of 10,000.
+    fn generate_part_number(&mut self) -> NonZeroI32 {
+        let part_number = self.next_part_number;
+        self.next_part_number = NonZeroI32::new(part_number.get() + 1).unwrap();
+        assert!(self.next_part_number.get() <= Self::MAX_PART_COUNT, "Maximum part count exceeded");
+        log::debug!("S3MultipartWriter: Generated part number: {}", part_number);
+        part_number
+    }
+
+    /// Extracts `part_size` sized chunks from the start of the buffer and kick off their upload
+    /// to S3.
+    fn extract_and_upload_full_parts(&mut self) {
+        while self.buffer.len() >= self.part_size.get() {
+            // We have enough data in the buffer to create a new part.
+            let part_data = self.buffer.drain(..self.part_size.get()).collect::<Vec<u8>>();
+            let chunk = PendingPart {
+                upload_id: self.upload_id.clone(),
+                bucket: self.bucket.clone(),
+                key: self.key.clone(),
+                part_number: self.generate_part_number(),
+                data: bytes::Bytes::from(part_data),
+            };
+            log::debug!("Queuing part for upload. part_number: {}", self.next_part_number.get() - 1);
+            self.pending_parts.push( Box::pin(Self::upload_part(self.upload_id.clone(), self.s3_client.clone(), chunk)) );
+            log::debug!("Queued part for upload. part_number: {}", self.next_part_number.get() - 1);
+        }
+    }
+
+    /// Extracts all parts from the buffer, even if the last part is smaller than `part_size` and
+    /// kick off their upload to S3.
+    fn extract_and_upload_all_parts(&mut self) {
+        self.extract_and_upload_full_parts();
+        assert!(self.buffer.len() < self.part_size.get(), "Buffer should either be empty or contain less than part_size bytes");
+
+        if !self.buffer.is_empty() {
+            let part_data = self.buffer.drain(..self.buffer.len()).collect::<Vec<u8>>();
+            let chunk = PendingPart {
+                upload_id: self.upload_id.clone(),
+                bucket: self.bucket.clone(),
+                key: self.key.clone(),
+                part_number: self.generate_part_number(),
+                data: bytes::Bytes::from(part_data),
+            };
+            self.pending_parts.push( Box::pin(Self::upload_part(self.upload_id.clone(), self.s3_client.clone(), chunk)) );
+        }
+    }
+
+    async fn upload_part(upload_id: Cow<'static, str>, s3_client: Arc<S3LikeSource>, chunk: PendingPart) -> CompletedPart {
+
+        log::debug!("S3 multipart write: Uploading part. part_number: {}, bucket: {}, key: {}, upload_id: {}, , part_size: {}",
+            chunk.part_number, chunk.bucket, chunk.key, upload_id, chunk.data.len());
+
+        // tokio::task::yield_now().await;
+
+        let upload_result = s3_client.upload_part(
+            &chunk.bucket,
+            &chunk.key,
+            &upload_id,
+            chunk.part_number,
+            chunk.data.clone(),
+        ).await.expect("Failed to upload part"); // TODO: Error handling
+
+        sleep(Duration::from_millis(4000)).await;
+
+        log::debug!("S3 multipart upload succeeded. part_number: {}, bucket: {}, key: {}, upload_id: {}, part_size: {}",
+            chunk.part_number, chunk.bucket, chunk.key, upload_id, chunk.data.len());
+
+        // let etag = upload_result.e_tag().expect("Upload part response did not contain ETag").to_owned();
+
+        CompletedPart {
+            upload_id: chunk.upload_id,
+            bucket: chunk.bucket,
+            key: chunk.key,
+            part_number: chunk.part_number,
+            etag: "DUMMY".into(),
+            data_len: NonZeroUsize::new(chunk.data.len()).expect("Data length cannot be zero"),
+        }
+    }
+}
+impl AsyncWrite for S3MultipartWriter {
+
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, std::io::Error>> {
+        // Data can only be written when the writer is in the AcceptingWrites state. In all other
+        // states, we return an error.
+        match self.state {
+            AcceptingWrites => {
+                let this = self.get_mut();
+
+                let data_len = buf.len();
+
+                // Calculate how many bytes we can write to the buffer without exceeding the maximum
+                let writable_bytes = min(this.max_buffered_bytes.get() - this.buffered_bytes, data_len);
+
+                if writable_bytes > 0 {
+                    // Extend the buffer with the writable bytes.
+                    this.buffered_bytes += writable_bytes;
+                    this.buffer.reserve(writable_bytes); // Reserve space in the buffer to avoid reallocations.
+                    this.buffer.extend(&buf[..writable_bytes]);
+
+                    // If we have enough data in the buffer to create a new part, prepare the parts.
+                    this.extract_and_upload_full_parts();
+                }
+
+                // Drive the flushing process forward by polling the pending parts.
+                //log::debug!("Polling pending parts for completion. Current buffered bytes: {}", this.buffered_bytes);
+                while let Ready(maybe_chunk) = this.pending_parts.poll_next_unpin(cx) {
+                    //log::debug!("Found parts.");
+                    match maybe_chunk {
+                        Some(part) => {
+                            // Handle completed part
+                            this.buffered_bytes -= part.data_len.get();
+                            this.completed_parts.push(part);
+
+                        },
+                        None => {
+                            // No more parts to process
+                            break;
+                        }
+                    }
+                }
+                //log::debug!("Polling over.");
+                // exit(0);
+
+                // If there are pending parts, we need to drive flushing forward, even if explicit
+                // calls to flush() are not made. We cannot do this by returning Pending, because
+                // at this point, we have succesfully written `bytes_written` bytes to the buffer.
+                // At this point, bytes_written is guaranteed to be > 0.
+                if !this.pending_parts.is_empty() {
+                    //log::debug!("Pending parts exist, waking the waker to drive flushing forward.");
+                    cx.waker().wake_by_ref();
+                }
+
+                if writable_bytes == 0  {
+                    Pending
+                } else {
+                    // Return the number of bytes written.
+                    Ready(Ok(writable_bytes))
+                }
+            },
+            FlushingBeforeShutdown | CompletingBeforeShutdown | ShutDown  => {
+                // If the writer is shutting down, we cannot write anymore writes, so we return an
+                // error for BrokenPipe.
+                Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "S3MultipartWriter is closed",
+                )))
+            }
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+        // Flushing is always allowed, even if the writer is shutting down. If there's nothing
+        // to flush, this will return Ok(()) immediately, making it a no-op.
+        match self.state {
+            AcceptingWrites | FlushingBeforeShutdown => {
+                let this = self.get_mut();
+
+                match this.state {
+                    AcceptingWrites => this.extract_and_upload_full_parts(),
+                    FlushingBeforeShutdown => this.extract_and_upload_all_parts(),
+                    _ => unreachable!("State was already checked before entering this match"),
+                }
+
+                // Poll the pending parts to ensure they are flushed.
+                while let Ready(maybe_chunk) = this.pending_parts.poll_next_unpin(cx) {
+                    match maybe_chunk {
+                        Some(part) => {
+                            // Handle completed part
+                            this.buffered_bytes -= part.data_len.get();
+                            this.completed_parts.push(part);
+                        },
+                        None => {
+                            // No more parts to process
+                            break;
+                        }
+                    }
+                }
+
+                // If there are still pending parts, we return Pending to make progress on flushing
+                // during the next poll.
+                if this.pending_parts.is_empty() {
+                    Ready(Ok(()))
+                } else {
+                    Pending
+                }
+
+            },
+            CompletingBeforeShutdown | ShutDown => {
+                // If the writer is shut down, we cannot flush anymore writes, so we return an OK.
+                // Returning OK here is a bit counterintuitive, but it makes flush() idempotent to
+                // call after shutdown.
+                Ready(Ok(()))
+            }
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+       match self.state {
+           AcceptingWrites => {
+               let this = self.get_mut();
+
+               // Transition to the Flushing state, to prevent new writes.
+               this.state = FlushingBeforeShutdown;
+
+               // Prepare all parts that are currently in the buffer, including the last part
+               // which might be smaller than the part size.
+               this.extract_and_upload_all_parts();
+
+               // Sanity check: the buffer should be empty after flushing.
+               assert!(this.buffer.is_empty(), "There should be no data left in the buffer after flushing.");
+
+               // Return pending, we'll do the remaining work in the next poll.
+               Pending
+           },
+           FlushingBeforeShutdown => {
+               let this = self.get_mut();
+
+               while let Ready(maybe_chunk) = this.pending_parts.poll_next_unpin(cx) {
+                     match maybe_chunk {
+                          Some(part) => {
+                            // Handle completed part
+                            this.buffered_bytes -= part.data_len.get();
+                            this.completed_parts.push(part);
+                          },
+                          None => {
+                            // No more parts to process
+                            break;
+                          }
+                     }
+               }
+
+               if this.pending_parts.is_empty() {
+                   match &this.completion_future {
+                       None => {
+                           let s3_client = this.s3_client.clone();
+                           let upload_id = this.upload_id.clone();
+                           let mut completed_parts = this.completed_parts.clone();
+                           completed_parts.sort_by_key(|part| part.part_number);
+                           let key = this.key.clone();
+                            let bucket = this.bucket.clone();
+
+                           let completion_future = async move {
+                               return s3_client.complete_multipart_upload(key, bucket, upload_id, completed_parts).await
+                           };
+                           this.completion_future = Some(Box::pin(completion_future));
+                       }
+                       Some(_) => {
+                            // Shouldn't happen, but we're being defensive about kicking off another
+                            // completion future. The state "Completing" is kind of an alias for
+                            // saying "we're waiting for the completion future to finish".
+                       }
+                   }
+                   cx.waker().wake_by_ref();
+                   this.state = CompletingBeforeShutdown;
+               }
+
+               // Return pending, we'll do the remaining work in the next poll.
+               Pending
+           },
+           CompletingBeforeShutdown => {
+                let this = self.get_mut();
+
+                if let Some(completion_future) = this.completion_future.as_mut() {
+                    // Poll the completion future to ensure the multipart upload is completed.
+                    match completion_future.poll_unpin(cx) {
+                        Ready(Ok(())) => {
+                            // Transition to ShutDown state after successful completion.
+                            this.state = ShutDown;
+                            Ready(Ok(()))
+                        },
+                        Ready(Err(e)) => {
+                            // If there was an error completing the upload, we transition to ShutDown
+                            // state and return the error.
+                            this.state = ShutDown;
+                            Ready(Err(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                format!("Failed to complete multipart upload: {e}"),
+                            )))
+                        },
+                        Pending => Pending,
+                    }
+                } else {
+                   panic!("S3 Multipart Writer is in Completing state, but no completion future is set.");
+                }
+           },
+           ShutDown => {
+                // If the writer is already shut down, we can just return Ok. This makes shutdown idempotent.
+                Ready(Ok(()))
+           }
+       }
+
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
-
+    use std::sync::Arc;
+    use std::time::Instant;
     use bytes::Bytes;
-    use common_io_config::S3Config;
+    use tokio::io::AsyncWriteExt;
+    use common_io_config::{ObfuscatedString, S3Config};
 
     use crate::{object_io::ObjectSource, s3_like::BytesChunker, Result, S3LikeSource};
+    use crate::s3_like::S3MultipartWriter;
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {
@@ -1530,6 +2162,45 @@ mod tests {
         let client = S3LikeSource::get_client(&config).await?;
 
         client.ls(file_path, true, None, None, None).await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_put_multipart() -> Result<()> {
+        let _ = env_logger::builder().is_test(true).try_init();
+
+
+
+        let config = S3Config {
+            anonymous: false,
+            region_name: Some("us-west-2".to_string()), // Replace with your region
+            key_id: Some("".to_string()),
+            access_key: Some(ObfuscatedString::from("".to_string())),
+            session_token: Some(ObfuscatedString::from("".to_string())),
+            ..Default::default()
+        };
+        let client = S3LikeSource::get_client(&config).await?;
+
+        let data = b"1234567890".repeat(500 * 1024 * 1024); // 100 MiB of data
+        let part_size = NonZeroUsize::new(128 * 1024 * 1024).unwrap(); // 5 MiB part size
+        let uri = "s3://desmond-test/rohit_s3_write/put_multipart_test2.txt";
+
+        let mut s3_writer = S3MultipartWriter::create(
+            uri,
+            part_size,
+            client.clone(),
+            NonZeroUsize::new(512 * 1024 * 1024).unwrap(),
+        ).await?;
+
+        let start = Instant::now();
+
+        s3_writer.write_all(data.as_slice()).await.unwrap();
+        s3_writer.shutdown().await.unwrap();
+
+        let duration = start.elapsed();
+
+        log::info!("S3 Write time: {:?}", duration.as_millis());
 
         Ok(())
     }
