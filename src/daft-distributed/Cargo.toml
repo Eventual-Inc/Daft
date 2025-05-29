@@ -19,9 +19,6 @@ tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 uuid.workspace = true
 
-[dev-dependencies]
-daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
-
 [features]
 python = [
   "dep:pyo3",
