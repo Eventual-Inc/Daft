@@ -71,6 +71,8 @@ class BaseSink(ABC, Generic[WriteResultType]):
 class DataSink(BaseSink[WriteResultType]):
     """Synchronous DataSink interface for writing data to a sink.
 
+    The `schema`, `write`, and `finalize` methods are required to be implemented, while `name` and `start` are optional.
+
     When a DataFrame is written using the `.write_sink()` method, the following sequence occurs:
 
     1. The sink's `.start()` method is called once at the beginning of the write process.
@@ -106,6 +108,8 @@ class DataSink(BaseSink[WriteResultType]):
 
 class AsyncDataSink(BaseSink[WriteResultType]):
     """Asynchronous DataSink interface for writing data to a sink.
+
+    The `schema`, `write`, and `finalize` methods are required to be implemented, while `name` and `start` are optional.
 
     When a DataFrame is written using the `.write_sink()` method, the following sequence occurs:
 
