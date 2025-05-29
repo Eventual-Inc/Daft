@@ -12,7 +12,6 @@ pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod sequence;
-pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
 pub mod uri;

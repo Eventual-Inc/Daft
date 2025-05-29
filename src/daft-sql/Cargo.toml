@@ -10,6 +10,7 @@ daft-core = {path = "../daft-core"}
 daft-dsl = {path = "../daft-dsl"}
 daft-functions = {path = "../daft-functions"}
 daft-functions-list = {path = "../daft-functions-list"}
+daft-functions-temporal = {path = "../daft-functions-temporal"}
 daft-functions-utf8 = {path = "../daft-functions-utf8"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
