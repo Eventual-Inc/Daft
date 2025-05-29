@@ -132,15 +132,14 @@ fn make_task_with_limit(
     let limit_plan =
         LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
 
-    let mut mpset = HashMap::new();
-    mpset.insert(node_id.to_string(), vec![partition]);
+    let mpset = HashMap::from([(node_id.to_string(), vec![partition])]);
 
     let task = SwordfishTask::new(
         limit_plan,
         config,
         mpset,
-        SchedulingStrategy::NodeAffinity {
-            node_id: worker_id.to_string(),
+        SchedulingStrategy::WorkerAffinity {
+            worker_id,
             soft: true,
         },
     );

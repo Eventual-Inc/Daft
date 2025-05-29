@@ -87,7 +87,11 @@ impl DistributedPipelineNode for IntermediateNode {
     }
 
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let input_node = self.children.first_mut().unwrap().start(stage_context);
+        let input_node = self
+            .children
+            .first_mut()
+            .expect("IntermediateNode::start: IntermediateNode must have at least 1 child")
+            .start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
@@ -116,7 +120,7 @@ fn make_task_for_materialized_output(
         cache_key.clone(),
         None,
         1,
-        partition_ref.size_bytes()?.unwrap(),
+        partition_ref.size_bytes()?.expect("make_task_for_materialized_output: Expect that the input partition ref for an intermediate node has a known size"),
         partition_ref.num_rows()?,
         None,
         None,
@@ -129,14 +133,13 @@ fn make_task_for_materialized_output(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
-    let mut psets = HashMap::new();
-    psets.insert(cache_key, vec![partition_ref]);
+    let psets = HashMap::from([(cache_key, vec![partition_ref])]);
     let task = SwordfishTask::new(
         transformed_plan,
         config,
         psets,
-        SchedulingStrategy::NodeAffinity {
-            node_id: worker_id.to_string(),
+        SchedulingStrategy::WorkerAffinity {
+            worker_id,
             soft: true,
         },
     );

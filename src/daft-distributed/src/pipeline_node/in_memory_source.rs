@@ -49,7 +49,7 @@ impl InMemorySourceNode {
         psets: HashMap<String, Vec<PartitionRef>>,
         result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
-        let partition_refs = psets.get(&in_memory_info.cache_key).unwrap().clone();
+        let partition_refs = psets.get(&in_memory_info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
         for partition_ref in partition_refs {
             let task = make_task_for_partition_ref(
                 plan.clone(),
@@ -100,7 +100,7 @@ fn make_task_for_partition_ref(
         cache_key.clone(),
         None,
         1,
-        partition_ref.size_bytes()?.unwrap(),
+        partition_ref.size_bytes()?.expect("make_task_for_partition_ref: Expect that the input partition ref for a in-memory source node has a known size"),
         partition_ref.num_rows()?,
         None,
         None,
@@ -113,8 +113,15 @@ fn make_task_for_partition_ref(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
-    let mut psets = HashMap::new();
-    psets.insert(cache_key, vec![partition_ref]);
-    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    let psets = HashMap::from([(cache_key, vec![partition_ref])]);
+    let task = SwordfishTask::new(
+        transformed_plan,
+        config,
+        psets,
+        SchedulingStrategy::WorkerAffinity {
+            worker_id: "TODO".into(),
+            soft: true,
+        },
+    );
     Ok(task)
 }

@@ -736,7 +736,7 @@ impl DynTreeNode for LocalPhysicalPlan {
     fn with_new_arc_children(self: Arc<Self>, children: Vec<Arc<Self>>) -> DaftResult<Arc<Self>> {
         let old_children = self.arc_children();
         if children.len() != old_children.len() {
-            panic!("LogicalPlan::with_new_arc_children: Wrong number of children")
+            panic!("LocalPhysicalPlan::with_new_arc_children: Wrong number of children")
         } else if children.is_empty()
             || children
                 .iter()

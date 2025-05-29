@@ -50,28 +50,7 @@ impl ScanSourceNode {
         result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
         for scan_task in scan_tasks.iter() {
-            let transformed_plan = plan
-                .clone()
-                .transform_up(|p| match p.as_ref() {
-                    LocalPhysicalPlan::PlaceholderScan(placeholder) => {
-                        let physical_scan = LocalPhysicalPlan::physical_scan(
-                            vec![scan_task.clone()].into(),
-                            pushdowns.clone(),
-                            placeholder.schema.clone(),
-                            StatsState::NotMaterialized,
-                        );
-                        Ok(Transformed::yes(physical_scan))
-                    }
-                    _ => Ok(Transformed::no(p)),
-                })?
-                .data;
-            let psets = HashMap::new();
-            let task = SwordfishTask::new(
-                transformed_plan,
-                config.clone(),
-                psets,
-                SchedulingStrategy::Spread,
-            );
+            let task = make_source_tasks(&plan, &pushdowns, scan_task.clone(), config.clone())?;
             if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                 break;
             }
@@ -103,4 +82,31 @@ impl DistributedPipelineNode for ScanSourceNode {
 
         RunningPipelineNode::new(result_rx)
     }
+}
+
+fn make_source_tasks(
+    plan: &LocalPhysicalPlanRef,
+    pushdowns: &Pushdowns,
+    scan_task: ScanTaskLikeRef,
+    config: Arc<DaftExecutionConfig>,
+) -> DaftResult<SwordfishTask> {
+    let transformed_plan = plan
+        .clone()
+        .transform_up(|p| match p.as_ref() {
+            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
+                let physical_scan = LocalPhysicalPlan::physical_scan(
+                    vec![scan_task.clone()].into(),
+                    pushdowns.clone(),
+                    placeholder.schema.clone(),
+                    StatsState::NotMaterialized,
+                );
+                Ok(Transformed::yes(physical_scan))
+            }
+            _ => Ok(Transformed::no(p)),
+        })?
+        .data;
+
+    let psets = HashMap::new();
+    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    Ok(task)
 }
