@@ -1637,14 +1637,42 @@ class Expression:
         expr = native.try_decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
 
-    def json_loads(self, dtype: DataTypeLike) -> Expression:
-        """Loads a JSON string into the given data type, returning null if there are any parsing errors."""
+
+    def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
+        """Deserializes the expression (string) using the specified format and data type.
+        
+        Args:
+            format (Literal["json"]): The serialization format.
+            dtype: The target data type to deserialize into.
+
+        Returns:
+            Expression: A new expression with the deserialized value.
+        """
         if isinstance(dtype, str):
             dtype = DataType._from_pydatatype(sql_datatype(dtype))
         else:
             assert isinstance(dtype, (DataType, type))
             dtype = DataType._infer_type(dtype)
-        return self._eval_expressions("json_loads", dtype._dtype)
+        return self._eval_expressions("deserialize", format, dtype._dtype)
+
+
+    def try_deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
+        """Deserializes the expression (string) using the specified format and data type, inserting nulls on failures.
+
+        Args:
+            format (Literal["json"]): The serialization format.
+            dtype: The target data type to deserialize into.
+
+        Returns:
+            Expression: A new expression with the deserialized value (or null).
+        """
+        if isinstance(dtype, str):
+            dtype = DataType._from_pydatatype(sql_datatype(dtype))
+        else:
+            assert isinstance(dtype, (DataType, type))
+            dtype = DataType._infer_type(dtype)
+        return self._eval_expressions("try_deserialize", format, dtype._dtype)
+
 
     def name(self) -> builtins.str:
         return self._expr.name()

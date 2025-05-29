@@ -1,22 +1,23 @@
 use daft_dsl::functions::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct JsonLoads;
+pub struct Deserialize;
 
 #[derive(FunctionArgs)]
-pub struct JsonLoadsArgs<T> {
+pub struct DeserializeArgs<T> {
     input: T,
+    format: String,
     dtype: DataType,
 }
 
 #[typetag::serde]
-impl ScalarUDF for JsonLoads {
+impl ScalarUDF for Deserialize {
     fn name(&self) -> &'static str {
-        "json_loads"
+        "deserialize"
     }
 
     fn docstring(&self) -> &'static str {
-        "Loads a JSON string as a Daft value, returning null if parsing fails."
+        "Deserializes the expression (string) using the specified format and data type."
     }
 
     fn function_args_to_field(
@@ -25,7 +26,11 @@ impl ScalarUDF for JsonLoads {
         schema: &Schema,
     ) -> DaftResult<Field> {
         // validate argument arity
-        let JsonLoadsArgs { input, dtype } = inputs.try_into()?;
+        let DeserializeArgs {
+            input,
+            format,
+            dtype,
+        } = inputs.try_into()?;
         // validate input argument type
         let input = input.to_field(schema)?;
         ensure!(
@@ -37,7 +42,11 @@ impl ScalarUDF for JsonLoads {
     }
 
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        let JsonLoadsArgs { input, dtype } = inputs.try_into()?;
+        let DeserializeArgs {
+            input,
+            format,
+            dtype,
+        } = inputs.try_into()?;
         json::loads(input.utf8()?, &dtype)
     }
 }

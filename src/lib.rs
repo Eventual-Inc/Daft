@@ -50,6 +50,7 @@ pub mod pylib {
     use std::sync::LazyLock;
 
     use common_tracing::{init_opentelemetry_providers, init_tracing};
+    use daft_functions_serde::SerdeFunctions;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);
@@ -158,6 +159,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions_list::ListFunctions>();
         functions_registry.register::<daft_functions_utf8::Utf8Functions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
+        functions_registry.register::<daft_functions_serde::SerdeFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
 
         Ok(())

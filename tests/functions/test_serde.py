@@ -1,20 +1,17 @@
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
 import daft
-from daft import DataFrame, col
-from daft import DataType as dt
+from daft import col
+from daft.datatype import DataType as dt
+from daft.datatype import DataTypeLike
 
 
-def assert_eq(df1: DataFrame, df2: DataFrame):
-    assert df1.to_pydict() == df2.to_pydict(0)
-
-
-def from_json(items: list[str], dtype: dt) -> list[Any]:
-    c = "some_json_text"
+def try_deserialize(items: list[str], format: Literal["json"], dtype: dt) -> list[Any]:
+    c = f"some_{format}_text"
     df = daft.from_pydict({c: items})
-    df = df.select(col(c).json_loads(dtype))
+    df = df.select(col(c).try_deserialize(format, dtype))
     return df.to_pydict()[c]
 
 
@@ -47,54 +44,61 @@ def from_json(items: list[str], dtype: dt) -> list[Any]:
         ('"hello"', dt.string(), "hello"),
     ],
 )
-def test_from_json_with_scalars(text, dtype, expected):
+def test_serde_json_with_scalars(text, dtype, expected):
     df = daft.from_pydict({"col": [text]})
-    df = df.select(col("col").json_loads(dtype))
+    df = df.select(col("col").deserialize(dtype))
     assert df.to_pydict()["col"][0] == expected
 
 
-def test_from_json_with_structs():
+@pytest.mark.parametrize(
+    "data_type_like",
+    [
+        "STRUCT(name STRING, age INT64)",
+        dt.struct({"name": dt.string(), "age": dt.int64()}),
+    ]
+)
+def test_serde_json_with_structs(data_type_like: DataTypeLike):
     items = [
         '{"name": "Alice", "age": 30}',
         '{"name": "Bob", "age": 25}',
         '{"name": "Charlie", "age": 35}',
     ]
-    # STRUCT<name: STRING, age: BIGINT>
-    dtype = dt.struct(
-        {
-            "name": dt.string(),
-            "age": dt.int64(),
-        }
-    )
-    assert from_json(items, dtype) == [
+    assert try_deserialize(items, "json", data_type_like) == [
         {"name": "Alice", "age": 30},
         {"name": "Bob", "age": 25},
         {"name": "Charlie", "age": 35},
     ]
 
 
-def test_from_json_with_list():
+@pytest.mark.parametrize(
+    "data_type_like",
+    [
+        "INT64[]",
+        dt.list(dt.int64()),
+    ]
+)
+def test_serde_json_with_list():
     items = [
         "[1, 2, 3]",
         "[4, 5, 6]",
     ]
     # BIGINT ARRAY[]
     dtype = dt.list(dt.int64())
-    assert from_json(items, dtype) == [
+    assert try_deserialize(items, "json", dtype) == [
         [1, 2, 3],
         [4, 5, 6],
     ]
 
 
 @pytest.mark.skip("arrow2 does not yet support json deserialize on the map type.")
-def test_from_json_with_map():
+def test_serde_json_with_map():
     items = [
         '{"a": 1, "b": 2}',
         '{"c": 3, "d": 4}',
     ]
     # MAP<STRING, BIGINT>
     dtype = dt.map(dt.string(), dt.int64())
-    assert from_json(items, dtype) == [
+    assert try_deserialize(items, dtype) == [
         {"a": 1, "b": 2},
         {"c": 3, "d": 4},
     ]

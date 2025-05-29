@@ -2023,6 +2023,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-json",
  "daft-functions-list",
+ "daft-functions-serde",
  "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-hash",
@@ -2319,7 +2320,6 @@ dependencies = [
 name = "daft-functions-json"
 version = "0.0.0"
 dependencies = [
- "arrow2",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2343,6 +2343,20 @@ dependencies = [
  "daft-dsl",
  "indexmap 2.9.0",
  "serde",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-serde"
+version = "0.0.0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "itertools 0.11.0",
+ "serde",
+ "serde_json",
  "typetag",
 ]
 

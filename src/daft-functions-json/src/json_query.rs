@@ -110,7 +110,7 @@ mod jq {
         Ok(compiled_filter)
     }
 
-    // This is only marked pub(crate) for mod test.
+    // This is only marked pub(crate) for mod test since it outside this module.
     pub(crate) fn json_query_impl(arr: &Utf8Array, query: &str) -> DaftResult<Utf8Array> {
         let compiled_filter = compile_filter(query)?;
         let inputs = RcIter::new(core::iter::empty());
