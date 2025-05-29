@@ -118,10 +118,9 @@ fn make_task_for_partition_ref(
         transformed_plan,
         config,
         psets,
-        SchedulingStrategy::WorkerAffinity {
-            worker_id: "TODO".into(),
-            soft: true,
-        },
+        // TODO: Replace with WorkerAffinity based on the psets location
+        // Need to get that from `ray.experimental.get_object_locations(object_refs)`
+        SchedulingStrategy::Spread,
     );
     Ok(task)
 }
