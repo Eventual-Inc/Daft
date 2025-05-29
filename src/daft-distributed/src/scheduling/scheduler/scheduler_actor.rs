@@ -9,6 +9,7 @@ use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 use super::{
     default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler, WorkerSnapshot,
@@ -82,18 +83,21 @@ where
         SchedulerHandle::new(scheduler_sender)
     }
 
+    #[instrument(name = "FlotillaScheduler", skip_all)]
     async fn run_scheduler_loop(
         mut scheduler: S,
         mut task_rx: Receiver<SchedulableTask<W::Task>>,
         mut dispatcher_handle: DispatcherHandle<W::Task>,
     ) -> DaftResult<()> {
         let mut input_exhausted = false;
+        // Keep running until the input is exhausted, i.e. no more new tasks, and there are no more pending tasks in the scheduler
         while !input_exhausted || scheduler.num_pending_tasks() > 0 {
             // 1: Get all tasks that are ready to be scheduled
             let scheduled_tasks = scheduler.get_schedulable_tasks();
             // 2: Dispatch tasks to the dispatcher
             if !scheduled_tasks.is_empty() {
-                println!("[Scheduler] Dispatching {} tasks", scheduled_tasks.len());
+                tracing::debug!("Dispatching tasks: {:?}", scheduled_tasks);
+
                 dispatcher_handle.dispatch_tasks(scheduled_tasks).await?;
             }
 
@@ -102,24 +106,27 @@ where
                 maybe_new_task = task_rx.recv() => {
                     // If there are any new tasks, enqueue them all
                     if let Some(new_task) = maybe_new_task {
-                        println!("[Scheduler] Received new task");
+                        tracing::debug!("Received new task: {:?}", new_task);
+
                         let mut enqueueable_tasks = vec![new_task];
                         while let Ok(task) = task_rx.try_recv() {
                             enqueueable_tasks.push(task);
                         }
                         scheduler.enqueue_tasks(enqueueable_tasks);
                     } else if !input_exhausted {
-                        println!("[Scheduler] Input exhausted");
+                        tracing::debug!("Input exhausted");
+
                         input_exhausted = true;
                     }
                 }
                 Some(snapshots) = dispatcher_handle.await_worker_updates() => {
-                    println!("[Scheduler] Received worker updates: {:?}", snapshots);
+                    tracing::debug!("Received worker updates: {:?}", snapshots);
+
                     scheduler.update_worker_state(&snapshots);
                 }
             }
         }
-        println!("[Scheduler] Scheduler loop complete");
+        tracing::debug!("Scheduler loop complete");
         Ok(())
     }
 }

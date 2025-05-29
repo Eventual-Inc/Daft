@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use common_error::DaftResult;
 
@@ -10,7 +10,7 @@ use super::{
 pub(crate) type WorkerId = Arc<str>;
 
 #[allow(dead_code)]
-pub(crate) trait Worker: Send + Sync + 'static {
+pub(crate) trait Worker: Send + Sync + Debug + 'static {
     type Task: Task;
     type TaskResultHandle: TaskResultHandle;
 
@@ -129,7 +129,7 @@ pub(super) mod tests {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct MockWorker {
         worker_id: WorkerId,
         total_num_cpus: usize,

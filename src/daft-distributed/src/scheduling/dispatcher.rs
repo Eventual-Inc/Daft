@@ -100,29 +100,40 @@ impl<W: Worker> DispatcherActor<W> {
         Ok(())
     }
 
+    #[tracing::instrument(name = "FlotillaDispatcher", skip_all)]
     async fn run_dispatcher_loop(
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         mut task_rx: Receiver<Vec<ScheduledTask<W::Task>>>,
         worker_update_sender: Sender<Vec<WorkerSnapshot>>,
-    ) -> DaftResult<()> {
+    ) -> DaftResult<()>
+    where
+        <W as Worker>::TaskResultHandle: std::marker::Send,
+    {
         let mut input_exhausted = false;
         let mut running_tasks = JoinSet::new();
         let mut running_tasks_by_id = HashMap::new();
+
         while !input_exhausted || !running_tasks.is_empty() {
             tokio::select! {
                 maybe_tasks = task_rx.recv() => {
                     if let Some(tasks) = maybe_tasks {
+                        tracing::debug!("Received new tasks: {:?}", tasks);
+
                         Self::dispatch_tasks(
                             tasks,
                             &worker_manager,
                             &mut running_tasks,
                             &mut running_tasks_by_id,
                         )?;
-                    } else {
+                    } else if !input_exhausted {
+                        tracing::debug!("Input exhausted");
+
                         input_exhausted = true;
                     }
                 }
                 Some((id, finished_task_result)) = running_tasks.join_next_with_id() => {
+                    tracing::debug!("Finished task: {:?}", id);
+
                      Self::handle_finished_task(
                         id,
                         finished_task_result,

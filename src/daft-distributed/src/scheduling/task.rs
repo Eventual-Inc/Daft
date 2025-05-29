@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, future::Future, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -39,7 +39,7 @@ impl TaskResourceRequest {
 pub(crate) type TaskId = Arc<str>;
 pub(crate) type TaskPriority = u32;
 #[allow(dead_code)]
-pub(crate) trait Task: Send + Sync + 'static {
+pub(crate) trait Task: Send + Sync + Debug + 'static {
     fn priority(&self) -> TaskPriority;
     fn task_id(&self) -> &TaskId;
     fn resource_request(&self) -> &TaskResourceRequest;
@@ -146,11 +146,9 @@ impl Task for SwordfishTask {
     }
 }
 
-pub(crate) trait TaskResultHandle: Send {
+pub(crate) trait TaskResultHandle: Send + Sync {
     #[allow(dead_code)]
-    fn get_result_future(
-        &mut self,
-    ) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static;
+    fn get_result(&mut self) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static;
     fn cancel_callback(&mut self) -> DaftResult<()>;
 }
 
@@ -195,7 +193,7 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
                     tracing::debug!("Failed to cancel task: {}", e);
                 }
             }
-            result = self.handle.get_result_future() => {
+            result = self.handle.get_result() => {
                 if self.result_sender.send(result).is_err() {
                     tracing::debug!("Task result receiver was dropped before task result could be sent");
                 }
@@ -393,12 +391,13 @@ pub(super) mod tests {
     }
 
     impl TaskResultHandle for MockTaskResultHandle {
-        fn get_result_future(
+        fn get_result(
             &mut self,
         ) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static {
             let sleep_duration = self.sleep_duration.clone();
             let failure = self.failure.clone();
             let result = self.result.clone();
+
             async move {
                 if let Some(sleep_duration) = sleep_duration {
                     tokio::time::sleep(sleep_duration).await;

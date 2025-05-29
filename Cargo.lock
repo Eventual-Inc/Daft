@@ -2255,7 +2255,6 @@ dependencies = [
  "daft-logical-plan",
  "daft-schema",
  "futures",
- "log",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",

@@ -13,11 +13,13 @@ use crate::scheduling::{
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
 #[allow(dead_code)]
 pub(crate) struct RayTaskResultHandle {
-    /// The handle to the task
+    /// The handle to the RaySwordfishTaskHandle
     handle: PyObject,
+    /// The coroutine to await the result of the task
+    coroutine: Option<PyObject>,
     /// The task locals, i.e. the asyncio event loop
     task_locals: Option<pyo3_async_runtimes::TaskLocals>,
-
+    /// The worker id
     worker_id: WorkerId,
 }
 
@@ -26,11 +28,13 @@ impl RayTaskResultHandle {
     #[allow(dead_code)]
     pub fn new(
         handle: PyObject,
+        coroutine: PyObject,
         task_locals: pyo3_async_runtimes::TaskLocals,
         worker_id: WorkerId,
     ) -> Self {
         Self {
             handle,
+            coroutine: Some(coroutine),
             task_locals: Some(task_locals),
             worker_id,
         }
@@ -39,28 +43,22 @@ impl RayTaskResultHandle {
 
 impl TaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
-    fn get_result_future(
-        &mut self,
-    ) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static {
-        // await the rust future in the scope of the asyncio event loop
+    fn get_result(&mut self) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static {
+        // Create a rust future that will await the coroutine
+        let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
-        // Create a coroutine that will await the result of the task
-        let coroutine = Python::with_gil(|py| {
-            self.handle
-                .call_method0(py, pyo3::intern!(py, "get_result"))
-                .expect("Failed to get result from RayTaskResultHandle")
-        });
-        async move {
-            // Create a rust future that will await the coroutine
-            let await_coroutine = async move {
-                let result = Python::with_gil(|py| {
-                    pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
-                })?;
-                DaftResult::Ok(result.await)
-            };
 
+        let await_coroutine = async move {
+            let result = Python::with_gil(|py| {
+                pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
+            })?
+            .await?;
+            DaftResult::Ok(result)
+        };
+
+        async move {
             let materialized_result =
-                pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await??;
+                pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
             let ray_part_ref =
                 Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
             let partition_ref = Arc::new(ray_part_ref) as PartitionRef;

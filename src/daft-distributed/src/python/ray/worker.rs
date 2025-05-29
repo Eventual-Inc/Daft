@@ -70,6 +70,7 @@ impl RaySwordfishWorker {
                 pyo3::intern!(py, "submit_task"),
                 (ray_swordfish_task,),
             )?;
+            let coroutine = py_task_handle.call_method0(py, pyo3::intern!(py, "get_result"))?;
 
             self.active_task_details
                 .lock()
@@ -77,8 +78,12 @@ impl RaySwordfishWorker {
                 .insert(task_id.clone(), task_details);
 
             let task_locals = task_locals.clone_ref(py);
-            let ray_task_result_handle =
-                RayTaskResultHandle::new(py_task_handle, task_locals, self.worker_id.clone());
+            let ray_task_result_handle = RayTaskResultHandle::new(
+                py_task_handle,
+                coroutine,
+                task_locals,
+                self.worker_id.clone(),
+            );
             let task_result_handle_awaiter = TaskResultHandleAwaiter::new(
                 task_id,
                 self.worker_id.clone(),
