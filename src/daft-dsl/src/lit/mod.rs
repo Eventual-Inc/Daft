@@ -569,8 +569,9 @@ impl LiteralValue {
                 Ok(lst.literal_value())
             }
             DataType::List(_) => {
-                let lst = s.list()?.get(idx).ok_or_else(err)?;
-                Ok(lst.literal_value())
+                let lst = s.list()?.slice(idx, idx + 1)?;
+
+                Ok(lst.into_series().literal_value())
             }
             DataType::Struct(fields) => {
                 let children = &s.struct_()?.children;

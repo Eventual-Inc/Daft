@@ -73,6 +73,42 @@ impl<'de> serde::de::SeqAccess<'de> for SeriesDeserializer<'de> {
     }
 }
 
+struct OwnedSeriesDeserializer {
+    values: Series,
+    index: usize,
+}
+
+impl OwnedSeriesDeserializer {
+    fn new(values: Series) -> Self {
+        OwnedSeriesDeserializer { values, index: 0 }
+    }
+}
+
+impl<'de> serde::de::SeqAccess<'de> for OwnedSeriesDeserializer {
+    type Error = LitError;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: serde::de::DeserializeSeed<'de>,
+    {
+        if self.index >= self.values.len() {
+            return Ok(None);
+        }
+
+        let value = LiteralValue::get_from_series(&self.values, self.index)
+            .map_err(|e| LitError::custom(e.to_string()))?;
+
+        self.index += 1;
+
+        let deserializer = OwnedLiteralValueDeserializer { lit: value };
+        seed.deserialize(deserializer).map(Some)
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        Some(self.values.len() - self.index)
+    }
+}
+
 struct StructDeserializer<'de> {
     fields: &'de IndexMap<Field, LiteralValue>,
     iter: indexmap::map::Iter<'de, Field, LiteralValue>,
@@ -323,7 +359,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralValueDeserializer {
             LiteralValue::Duration(..) => Err(LitError::custom("Not implemented: Duration")),
             LiteralValue::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             LiteralValue::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
-            LiteralValue::Series(_) => Err(LitError::custom("Not implemented: Series")),
+            LiteralValue::Series(s) => visitor.visit_seq(OwnedSeriesDeserializer::new(s)),
             #[cfg(feature = "python")]
             LiteralValue::Python(_) => Err(LitError::custom("Not implemented: Python")),
             LiteralValue::Struct(_) => Err(LitError::custom("Not implemented: Struct")),

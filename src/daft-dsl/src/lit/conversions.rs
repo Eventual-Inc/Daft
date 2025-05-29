@@ -2,11 +2,12 @@ use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use daft_core::{
     datatypes::IntervalValue,
-    prelude::{CountMode, ImageFormat, ImageMode},
+    prelude::{AsArrow, CountMode, ImageFormat, ImageMode},
     series::Series,
 };
 #[cfg(feature = "python")]
 use pyo3::{PyClass, Python};
+use serde::{de::DeserializeOwned, Deserialize};
 
 use super::{deserializer::LiteralValueDeserializer, FromLiteral, Literal, LiteralValue};
 #[cfg(feature = "python")]
@@ -194,6 +195,36 @@ where
     }
 }
 
+impl FromLiteral for Vec<String> {
+    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+        if *lit == LiteralValue::Null {
+            Ok(Vec::new())
+        } else if let LiteralValue::Series(s) = lit {
+            let lst = s.list()?;
+            if lst.len() != 1 {
+                return Err(DaftError::ValueError(format!(
+                    "Cannot convert series with multiple values to Vec<String>"
+                )));
+            }
+            let first = lst.get(0).unwrap();
+            let text = first.utf8()?;
+
+            if text.null_count() != 0 {
+                return Err(DaftError::ValueError(format!(
+                    "Cannot convert series with null values to Vec<String>"
+                )));
+            }
+            Ok(text
+                .as_arrow()
+                .values_iter()
+                .map(|s| s.to_string())
+                .collect())
+        } else {
+            panic!("Expected a series literal")
+        }
+    }
+}
+
 impl_strict_fromliteral!(String, Utf8);
 impl_strict_fromliteral!(bool, Boolean);
 impl_int_fromliteral!(i8);
@@ -212,3 +243,4 @@ impl_pyobj_fromliteral!(IOConfig, common_io_config::python::IOConfig);
 impl_pyobj_fromliteral!(ImageMode, ImageMode);
 impl_pyobj_fromliteral!(ImageFormat, ImageFormat);
 impl_pyobj_fromliteral!(CountMode, CountMode);
+impl_pyobj_fromliteral!(daft_core::prelude::DataType, daft_core::python::PyDataType);
