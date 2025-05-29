@@ -3,9 +3,8 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::extract_agg_expr;
 use itertools::Itertools;
 use tracing::{instrument, Span};
 
@@ -47,9 +46,9 @@ impl BlockingSinkState for AggregateState {
 }
 
 struct AggParams {
-    sink_agg_exprs: Vec<ExprRef>,
-    finalize_agg_exprs: Vec<ExprRef>,
-    final_projections: Vec<ExprRef>,
+    sink_agg_exprs: Vec<BoundAggExpr>,
+    finalize_agg_exprs: Vec<BoundAggExpr>,
+    final_projections: Vec<BoundExpr>,
 }
 
 pub struct AggregateSink {
@@ -57,23 +56,9 @@ pub struct AggregateSink {
 }
 
 impl AggregateSink {
-    pub fn new(aggregations: &[ExprRef], schema: &SchemaRef) -> DaftResult<Self> {
-        let aggregations = aggregations
-            .iter()
-            .map(extract_agg_expr)
-            .collect::<DaftResult<Vec<_>>>()?;
-        let (sink_aggs, finalize_aggs, final_projections) =
-            daft_physical_plan::populate_aggregation_stages(&aggregations, schema, &[]);
-        let sink_agg_exprs = sink_aggs
-            .values()
-            .cloned()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
-        let finalize_agg_exprs = finalize_aggs
-            .values()
-            .cloned()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
+    pub fn new(aggregations: &[BoundAggExpr], input_schema: &SchemaRef) -> DaftResult<Self> {
+        let (sink_agg_exprs, finalize_agg_exprs, final_projections) =
+            daft_physical_plan::populate_aggregation_stages_bound(aggregations, input_schema, &[])?;
 
         Ok(Self {
             agg_sink_params: Arc::new(AggParams {

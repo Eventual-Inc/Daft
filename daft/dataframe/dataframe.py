@@ -1,3 +1,4 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 #
 # This file uses strings for forward type annotations in public APIs,
@@ -11,6 +12,7 @@ import pathlib
 import sys
 import typing
 import warnings
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
@@ -18,15 +20,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
     Literal,
-    Mapping,
     Optional,
-    Set,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -312,7 +307,7 @@ class DataFrame:
         return self.__builder.schema()
 
     @property
-    def column_names(self) -> List[str]:
+    def column_names(self) -> list[str]:
         """Returns column names of DataFrame as a list of strings.
 
         Returns:
@@ -321,7 +316,7 @@ class DataFrame:
         return self.__builder.schema().column_names()
 
     @property
-    def columns(self) -> List[Expression]:
+    def columns(self) -> list[Expression]:
         """Returns column of DataFrame as a list of Expressions.
 
         Returns:
@@ -330,7 +325,7 @@ class DataFrame:
         return [col(field.name) for field in self.__builder.schema()]
 
     @DataframePublicAPI
-    def __iter__(self) -> Iterator[Dict[str, Any]]:
+    def __iter__(self) -> Iterator[dict[str, Any]]:
         """Alias of `self.iter_rows()` with default arguments for convenient access of data."""
         return self.iter_rows(results_buffer_size=None)
 
@@ -339,7 +334,7 @@ class DataFrame:
         self,
         results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
         column_format: Literal["python", "arrow"] = "python",
-    ) -> Iterator[Dict[str, Any]]:
+    ) -> Iterator[dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
 
         Each row will be a Python dictionary of the form `{ "key" : value, ...}`. If you are instead looking to iterate over
@@ -378,13 +373,13 @@ class DataFrame:
         if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
 
-        def arrow_iter_rows(table: "pyarrow.Table") -> Iterator[Dict[str, Any]]:
+        def arrow_iter_rows(table: "pyarrow.Table") -> Iterator[dict[str, Any]]:
             columns = table.columns
             for i in range(len(table)):
                 row = {col._name: col[i] for col in columns}
                 yield row
 
-        def python_iter_rows(pydict: Dict[str, List[Any]], num_rows: int) -> Iterator[Dict[str, Any]]:
+        def python_iter_rows(pydict: dict[str, list[Any]], num_rows: int) -> Iterator[dict[str, Any]]:
             for i in range(num_rows):
                 row = {key: value[i] for (key, value) in pydict.items()}
                 yield row
@@ -571,9 +566,9 @@ class DataFrame:
     ###
 
     @classmethod
-    def _from_pylist(cls, data: List[Dict[str, Any]]) -> "DataFrame":
+    def _from_pylist(cls, data: list[dict[str, Any]]) -> "DataFrame":
         """Creates a DataFrame from a list of dictionaries."""
-        headers: Set[str] = set()
+        headers: set[str] = set()
         for row in data:
             if not isinstance(row, dict):
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
@@ -594,7 +589,7 @@ class DataFrame:
         return cls._from_micropartitions(data_micropartition)
 
     @classmethod
-    def _from_arrow(cls, data: Union["pyarrow.Table", List["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
+    def _from_arrow(cls, data: Union["pyarrow.Table", list["pyarrow.Table"], Iterable["pyarrow.Table"]]) -> "DataFrame":
         """Creates a DataFrame from a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__."""
         if isinstance(data, Iterable):
             data = list(data)
@@ -604,7 +599,7 @@ class DataFrame:
         return cls._from_micropartitions(*parts)
 
     @classmethod
-    def _from_pandas(cls, data: Union["pandas.DataFrame", List["pandas.DataFrame"]]) -> "DataFrame":
+    def _from_pandas(cls, data: Union["pandas.DataFrame", list["pandas.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
             data = [data]
@@ -672,7 +667,7 @@ class DataFrame:
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
-        partition_cols: Optional[List[ColumnInputType]] = None,
+        partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
@@ -701,7 +696,7 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        cols: Optional[List[Expression]] = None
+        cols: Optional[list[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
@@ -743,7 +738,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
-        partition_cols: Optional[List[ColumnInputType]] = None,
+        partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
@@ -772,7 +767,7 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        cols: Optional[List[Expression]] = None
+        cols: Optional[list[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
@@ -871,7 +866,7 @@ class DataFrame:
             deleted_files = []
 
         schema = table.schema()
-        partitioning: Dict[str, list[Any]] = {
+        partitioning: dict[str, list[Any]] = {
             schema.find_field(field.source_id).name: [] for field in table.spec().fields
         }
 
@@ -964,13 +959,13 @@ class DataFrame:
     def write_deltalake(
         self,
         table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable", "UnityCatalogTable"],
-        partition_cols: Optional[List[str]] = None,
+        partition_cols: Optional[list[str]] = None,
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Optional[Literal["merge", "overwrite"]] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
         configuration: Optional[Mapping[str, Optional[str]]] = None,
-        custom_metadata: Optional[Dict[str, str]] = None,
+        custom_metadata: Optional[dict[str, str]] = None,
         dynamo_table_name: Optional[str] = None,
         allow_unsafe_rename: bool = False,
         io_config: Optional[IOConfig] = None,
@@ -1011,7 +1006,7 @@ class DataFrame:
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
-        def _create_metadata_param(metadata: Optional[Dict[str, str]]) -> Any:
+        def _create_metadata_param(metadata: Optional[dict[str, str]]) -> Any:
             """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
 
             Args:
@@ -1134,7 +1129,7 @@ class DataFrame:
 
         write_result = write_df.to_pydict()
         assert "add_action" in write_result
-        add_actions: List[AddAction] = write_result["add_action"]
+        add_actions: list[AddAction] = write_result["add_action"]
 
         operations = []
         paths = []
@@ -1287,11 +1282,11 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> List[Expression]:
+    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> list[Expression]:
         # TODO(Kevin): remove this method and use _column_inputs_to_expressions
         return [col(c) if isinstance(c, str) else c for c in columns]
 
-    def _wildcard_inputs_to_expressions(self, columns: Tuple[ManyColumnsInputType, ...]) -> List[Expression]:
+    def _wildcard_inputs_to_expressions(self, columns: tuple[ManyColumnsInputType, ...]) -> list[Expression]:
         """Handles wildcard argument column inputs."""
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
         return column_inputs_to_expressions(column_input)
@@ -1683,7 +1678,7 @@ class DataFrame:
     @DataframePublicAPI
     def with_columns(
         self,
-        columns: Dict[str, Expression],
+        columns: dict[str, Expression],
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select`` with all current columns and the new ones.
 
@@ -1752,7 +1747,7 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def with_columns_renamed(self, cols_map: Dict[str, str]) -> "DataFrame":
+    def with_columns_renamed(self, cols_map: dict[str, str]) -> "DataFrame":
         """Renames multiple columns in the current DataFrame.
 
         If the columns in the DataFrame schema do not exist, this will be a no-op.
@@ -1787,9 +1782,9 @@ class DataFrame:
     @DataframePublicAPI
     def sort(
         self,
-        by: Union[ColumnInputType, List[ColumnInputType]],
-        desc: Union[bool, List[bool]] = False,
-        nulls_first: Optional[Union[bool, List[bool]]] = None,
+        by: Union[ColumnInputType, list[ColumnInputType]],
+        desc: Union[bool, list[bool]] = False,
+        nulls_first: Optional[Union[bool, list[bool]]] = None,
     ) -> "DataFrame":
         """Sorts DataFrame globally.
 
@@ -2005,9 +2000,9 @@ class DataFrame:
     def join(
         self,
         other: "DataFrame",
-        on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
-        left_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
-        right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
+        on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
+        left_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
+        right_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
         strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
@@ -2469,7 +2464,7 @@ class DataFrame:
     def _apply_agg_fn(
         self,
         fn: Callable[[Expression], Expression],
-        cols: Tuple[ManyColumnsInputType, ...],
+        cols: tuple[ManyColumnsInputType, ...],
         group_by: Optional[ExpressionsProjection] = None,
     ) -> "DataFrame":
         if len(cols) == 0:
@@ -2709,7 +2704,7 @@ class DataFrame:
         to_agg_list = (
             list(to_agg[0])
             if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
-            else list(typing.cast("Tuple[Expression]", to_agg))
+            else list(typing.cast("tuple[Expression]", to_agg))
         )
 
         for expr in to_agg_list:
@@ -2768,7 +2763,7 @@ class DataFrame:
         pivot_col: ColumnInputType,
         value_col: ColumnInputType,
         agg_fn: str,
-        names: Optional[List[str]] = None,
+        names: Optional[list[str]] = None,
     ) -> "DataFrame":
         """Pivots a column of the DataFrame and performs an aggregation on the values.
 
@@ -3102,7 +3097,7 @@ class DataFrame:
             self._num_preview_rows = dataframe_len
         return self
 
-    def _construct_show_preview(self, n: int) -> "Preview":
+    def _construct_show_preview(self, n: int) -> Preview:
         """Helper for .show() which will construct the underlying Preview object."""
         preview_partition = self._preview.partition
         total_rows = self._preview.total_rows
@@ -3158,7 +3153,7 @@ class DataFrame:
         verbose: bool = False,
         max_width: int = 30,
         align: PreviewAlign = "left",
-        columns: Optional[List[PreviewColumn]] = None,
+        columns: Optional[list[PreviewColumn]] = None,
     ) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
@@ -3300,7 +3295,7 @@ class DataFrame:
         return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
 
     @DataframePublicAPI
-    def to_pydict(self) -> Dict[str, List[Any]]:
+    def to_pydict(self) -> dict[str, list[Any]]:
         """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
 
         If results have not computed yet, collect will be called.
@@ -3317,7 +3312,7 @@ class DataFrame:
         return result.to_pydict()
 
     @DataframePublicAPI
-    def to_pylist(self) -> List[Any]:
+    def to_pylist(self) -> list[Any]:
         """Converts the current Dataframe into a python list.
 
         Returns:
@@ -3462,9 +3457,9 @@ class DataFrame:
         meta: Union[
             "pandas.DataFrame",
             "pandas.Series[Any]",
-            Dict[str, Any],
+            dict[str, Any],
             Iterable[Any],
-            Tuple[Any],
+            tuple[Any],
             None,
         ] = None,
     ) -> "dask.DataFrame":
@@ -3561,11 +3556,11 @@ class GroupedDataFrame:
             if field.dtype == DataType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
-    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
+    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, DataFrame]:
         """Gets a column from the DataFrame as an Expression."""
         return self.df.__getitem__(item)
 
-    def sum(self, *cols: ColumnInputType) -> "DataFrame":
+    def sum(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped sum on this GroupedDataFrame.
 
         Args:
@@ -3576,7 +3571,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.sum, cols, self.group_by)
 
-    def mean(self, *cols: ColumnInputType) -> "DataFrame":
+    def mean(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped mean on this GroupedDataFrame.
 
         Args:
@@ -3587,7 +3582,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
 
-    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+    def stddev(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped standard deviation on this GroupedDataFrame.
 
         Args:
@@ -3617,7 +3612,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
 
-    def min(self, *cols: ColumnInputType) -> "DataFrame":
+    def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.
 
         Args:
@@ -3628,7 +3623,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.min, cols, self.group_by)
 
-    def max(self, *cols: ColumnInputType) -> "DataFrame":
+    def max(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped max on this GroupedDataFrame.
 
         Args:
@@ -3639,7 +3634,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.max, cols, self.group_by)
 
-    def any_value(self, *cols: ColumnInputType) -> "DataFrame":
+    def any_value(self, *cols: ColumnInputType) -> DataFrame:
         """Returns an arbitrary value on this GroupedDataFrame.
 
         Values for each column are not guaranteed to be from the same row.
@@ -3652,7 +3647,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.any_value, cols, self.group_by)
 
-    def count(self, *cols: ColumnInputType) -> "DataFrame":
+    def count(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped count on this GroupedDataFrame.
 
         Returns:
@@ -3660,7 +3655,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.count, cols, self.group_by)
 
-    def skew(self, *cols: ColumnInputType) -> "DataFrame":
+    def skew(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped skew on this GroupedDataFrame.
 
         Returns:
@@ -3668,7 +3663,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
+    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list on this GroupedDataFrame.
 
         Returns:
@@ -3676,7 +3671,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.agg_list, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
+    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped set on this GroupedDataFrame (ignoring nulls).
 
         Args:
@@ -3687,7 +3682,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.agg_set, cols, self.group_by)
 
-    def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
+    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped concat on this GroupedDataFrame.
 
         Returns:
@@ -3695,7 +3690,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.agg_concat, cols, self.group_by)
 
-    def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
+    def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Args:
@@ -3738,7 +3733,7 @@ class GroupedDataFrame:
         to_agg_list = (
             list(to_agg[0])
             if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
-            else list(typing.cast("Tuple[Expression]", to_agg))
+            else list(typing.cast("tuple[Expression]", to_agg))
         )
 
         for expr in to_agg_list:
@@ -3747,7 +3742,7 @@ class GroupedDataFrame:
 
         return self.df._agg(to_agg_list, group_by=self.group_by)
 
-    def map_groups(self, udf: Expression) -> "DataFrame":
+    def map_groups(self, udf: Expression) -> DataFrame:
         """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.
 
         Args:

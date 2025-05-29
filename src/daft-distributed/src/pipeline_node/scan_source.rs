@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -51,28 +50,7 @@ impl ScanSourceNode {
         result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
         for scan_task in scan_tasks.iter() {
-            let transformed_plan = plan
-                .clone()
-                .transform_up(|p| match p.as_ref() {
-                    LocalPhysicalPlan::PlaceholderScan(placeholder) => {
-                        let physical_scan = LocalPhysicalPlan::physical_scan(
-                            vec![scan_task.clone()].into(),
-                            pushdowns.clone(),
-                            placeholder.schema.clone(),
-                            StatsState::NotMaterialized,
-                        );
-                        Ok(Transformed::yes(physical_scan))
-                    }
-                    _ => Ok(Transformed::no(p)),
-                })?
-                .data;
-            let psets = HashMap::new();
-            let task = SwordfishTask::new(
-                transformed_plan,
-                config.clone(),
-                psets,
-                SchedulingStrategy::Spread,
-            );
+            let task = make_source_tasks(&plan, &pushdowns, scan_task.clone(), config.clone())?;
             if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                 break;
             }
@@ -91,11 +69,7 @@ impl DistributedPipelineNode for ScanSourceNode {
         vec![]
     }
 
-    fn start(
-        &mut self,
-        stage_context: &mut StageContext,
-        _psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    ) -> RunningPipelineNode {
+    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
             self.plan.clone(),
@@ -108,4 +82,31 @@ impl DistributedPipelineNode for ScanSourceNode {
 
         RunningPipelineNode::new(result_rx)
     }
+}
+
+fn make_source_tasks(
+    plan: &LocalPhysicalPlanRef,
+    pushdowns: &Pushdowns,
+    scan_task: ScanTaskLikeRef,
+    config: Arc<DaftExecutionConfig>,
+) -> DaftResult<SwordfishTask> {
+    let transformed_plan = plan
+        .clone()
+        .transform_up(|p| match p.as_ref() {
+            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
+                let physical_scan = LocalPhysicalPlan::physical_scan(
+                    vec![scan_task.clone()].into(),
+                    pushdowns.clone(),
+                    placeholder.schema.clone(),
+                    StatsState::NotMaterialized,
+                );
+                Ok(Transformed::yes(physical_scan))
+            }
+            _ => Ok(Transformed::no(p)),
+        })?
+        .data;
+
+    let psets = HashMap::new();
+    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    Ok(task)
 }

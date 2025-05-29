@@ -39,7 +39,7 @@ impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
 }
 
 #[allow(dead_code)]
-impl<W: Worker> SchedulerActor<W, LinearScheduler> {
+impl<W: Worker> SchedulerActor<W, LinearScheduler<W::Task>> {
     fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,

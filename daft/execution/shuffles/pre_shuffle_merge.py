@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import logging
 from collections import defaultdict
-from typing import Union
 
 import ray.experimental  # noqa: TID253
 
@@ -110,7 +111,7 @@ def pre_shuffle_merge(
                 return groups
 
             # Process each node's partitions and unknown location partitions
-            merge_groups: dict[Union[str, None], list[list[SingleOutputPartitionTask[ray.ObjectRef]]]] = {}
+            merge_groups: dict[str | None, list[list[SingleOutputPartitionTask[ray.ObjectRef]]]] = {}
 
             # Process node-specific groups
             for node_id, node_partitions in node_groups.items():

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.daft import (
     CsvConvertOptions,
@@ -25,6 +25,8 @@ from daft.recordbatch.recordbatch import RecordBatch
 from daft.series import Series
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import pandas as pd
 
 logger = logging.getLogger(__name__)

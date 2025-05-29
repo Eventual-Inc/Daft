@@ -21,6 +21,7 @@ pub(crate) struct InMemorySourceNode {
     config: Arc<DaftExecutionConfig>,
     info: InMemoryInfo,
     plan: LocalPhysicalPlanRef,
+    input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 }
 
 impl InMemorySourceNode {
@@ -30,12 +31,14 @@ impl InMemorySourceNode {
         config: Arc<DaftExecutionConfig>,
         info: InMemoryInfo,
         plan: LocalPhysicalPlanRef,
+        input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> Self {
         Self {
             node_id,
             config,
             info,
             plan,
+            input_psets,
         }
     }
 
@@ -46,7 +49,7 @@ impl InMemorySourceNode {
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         result_tx: Sender<PipelineOutput>,
     ) -> DaftResult<()> {
-        let partition_refs = psets.get(&in_memory_info.cache_key).unwrap().clone();
+        let partition_refs = psets.get(&in_memory_info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
         for partition_ref in partition_refs {
             let task = make_task_for_partition_ref(
                 plan.clone(),
@@ -71,17 +74,13 @@ impl DistributedPipelineNode for InMemorySourceNode {
         vec![]
     }
 
-    fn start(
-        &mut self,
-        stage_context: &mut StageContext,
-        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    ) -> RunningPipelineNode {
+    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
             self.plan.clone(),
             self.config.clone(),
             self.info.clone(),
-            psets,
+            self.input_psets.clone(),
             result_tx,
         );
         stage_context.joinset.spawn(execution_loop);
@@ -101,7 +100,7 @@ fn make_task_for_partition_ref(
         cache_key.clone(),
         None,
         1,
-        partition_ref.size_bytes()?.unwrap(),
+        partition_ref.size_bytes()?.expect("make_task_for_partition_ref: Expect that the input partition ref for a in-memory source node has a known size"),
         partition_ref.num_rows()?,
         None,
         None,
@@ -114,8 +113,14 @@ fn make_task_for_partition_ref(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
-    let mut psets = HashMap::new();
-    psets.insert(cache_key, vec![partition_ref]);
-    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    let psets = HashMap::from([(cache_key, vec![partition_ref])]);
+    let task = SwordfishTask::new(
+        transformed_plan,
+        config,
+        psets,
+        // TODO: Replace with WorkerAffinity based on the psets location
+        // Need to get that from `ray.experimental.get_object_locations(object_refs)`
+        SchedulingStrategy::Spread,
+    );
     Ok(task)
 }

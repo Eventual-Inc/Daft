@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_catalog::{
-    python::{PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper},
+    python::{PyCatalogWrapper, PyIdentifier, PyTableSource, PyTableWrapper},
     Identifier,
 };
 use daft_dsl::functions::python::WrappedUDFClass;
@@ -48,10 +48,11 @@ impl PySession {
         name: String,
         source: &PyTableSource,
         replace: bool,
-    ) -> PyResult<PyTable> {
-        let table = self.0.create_temp_table(name, source.as_ref(), replace)?;
-        let table = PyTable::new(table);
-        Ok(table)
+        py: Python,
+    ) -> PyResult<PyObject> {
+        self.0
+            .create_temp_table(name, source.as_ref(), replace)?
+            .to_py(py)
     }
 
     pub fn current_catalog(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {

@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use common_scan_info::{Pushdowns, ScanState, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_local_plan::translate;
@@ -18,6 +19,7 @@ use crate::pipeline_node::{
 pub(crate) fn logical_plan_to_pipeline_node(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
+    psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 ) -> DaftResult<Box<dyn DistributedPipelineNode>> {
     #[allow(dead_code)]
     struct PipelineNodeBoundarySplitter {
@@ -25,6 +27,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
         current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
         config: Arc<DaftExecutionConfig>,
         node_id_counter: usize,
+        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     }
 
     impl PipelineNodeBoundarySplitter {
@@ -59,6 +62,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     self.config.clone(),
                     info,
                     translated,
+                    self.psets.clone(),
                 ))
                     as Box<dyn DistributedPipelineNode>,
                 PipelineInput::ScanTasks {
@@ -118,6 +122,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
         current_nodes: vec![],
         config,
         node_id_counter: 0,
+        psets,
     };
 
     let transformed = plan.rewrite(&mut splitter)?;
@@ -257,8 +262,12 @@ mod tests {
         ];
         let plan = dummy_in_memory_scan(fields).unwrap().build();
 
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan,
+            Arc::new(DaftExecutionConfig::default()),
+            Arc::new(HashMap::new()),
+        )
+        .unwrap();
 
         assert_eq!(pipeline_node.name(), "InMemorySourceNode");
         assert_eq!(pipeline_node.children().len(), 0);
@@ -277,8 +286,12 @@ mod tests {
             .build();
         eprintln!("{}", plan.repr_ascii(false));
 
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan,
+            Arc::new(DaftExecutionConfig::default()),
+            Arc::new(HashMap::new()),
+        )
+        .unwrap();
 
         assert_eq!(pipeline_node.name(), "ScanSource");
         assert_eq!(pipeline_node.children().len(), 0);
@@ -296,8 +309,12 @@ mod tests {
             .optimize()? // To fill scan node with tasks
             .build();
 
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan,
+            Arc::new(DaftExecutionConfig::default()),
+            Arc::new(HashMap::new()),
+        )
+        .unwrap();
 
         assert_eq!(pipeline_node.name(), "Limit");
 
@@ -322,17 +339,16 @@ mod tests {
                 .alias("group_value")])?
             .optimize()? // To fill scan node with tasks
             .build();
-        eprintln!("{}", plan.repr_ascii(false));
 
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan,
+            Arc::new(DaftExecutionConfig::default()),
+            Arc::new(HashMap::new()),
+        )
+        .unwrap();
 
-        assert_eq!(pipeline_node.name(), "Intermediate");
-
-        let children = pipeline_node.children();
-        assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "ScanSource");
-        assert_eq!(children[0].children().len(), 0);
+        assert_eq!(pipeline_node.name(), "ScanSource");
+        assert_eq!(pipeline_node.children().len(), 0);
 
         Ok(())
     }
@@ -353,20 +369,20 @@ mod tests {
             .limit(20, false)?
             .select(vec![resolved_col("group_value")])?
             .build();
-        eprintln!("Plan testing {}", plan.repr_ascii(false));
 
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan, Arc::new(DaftExecutionConfig::default())).unwrap();
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan,
+            Arc::new(DaftExecutionConfig::default()),
+            Arc::new(HashMap::new()),
+        )
+        .unwrap();
 
+        // Intermediate <- Limit <- Source
         assert_eq!(pipeline_node.name(), "Intermediate");
 
         let children = pipeline_node.children();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].name(), "Limit");
-
-        let children = children[0].children();
-        assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "Intermediate");
 
         let children = children[0].children();
         assert_eq!(children.len(), 1);

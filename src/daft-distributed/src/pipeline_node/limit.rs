@@ -2,7 +2,6 @@ use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 use daft_schema::schema::SchemaRef;
@@ -98,12 +97,8 @@ impl DistributedPipelineNode for LimitNode {
         vec![self.child.as_ref()]
     }
 
-    fn start(
-        &mut self,
-        stage_context: &mut StageContext,
-        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    ) -> RunningPipelineNode {
-        let input_node = self.child.start(stage_context, psets);
+    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+        let input_node = self.child.start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
@@ -137,15 +132,14 @@ fn make_task_with_limit(
     let limit_plan =
         LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
 
-    let mut mpset = HashMap::new();
-    mpset.insert(node_id.to_string(), vec![partition]);
+    let mpset = HashMap::from([(node_id.to_string(), vec![partition])]);
 
     let task = SwordfishTask::new(
         limit_plan,
         config,
         mpset,
-        SchedulingStrategy::NodeAffinity {
-            node_id: worker_id.to_string(),
+        SchedulingStrategy::WorkerAffinity {
+            worker_id,
             soft: true,
         },
     );

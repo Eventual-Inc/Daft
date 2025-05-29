@@ -1,5 +1,3 @@
-use std::{collections::HashMap, sync::Arc};
-
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use futures::{Stream, StreamExt};
@@ -70,11 +68,7 @@ pub(crate) trait DistributedPipelineNode: Send + Sync {
     #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
     #[allow(dead_code)]
-    fn start(
-        &mut self,
-        stage_context: &mut StageContext,
-        psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    ) -> RunningPipelineNode;
+    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
 }
 
 #[allow(dead_code)]
