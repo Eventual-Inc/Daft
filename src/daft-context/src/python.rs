@@ -104,10 +104,10 @@ impl From<DaftContext> for PyDaftContext {
 }
 
 #[pyfunction]
-pub fn get_runner_config_from_env() -> PyRunnerConfig {
-    PyRunnerConfig {
-        _inner: super::get_runner_config_from_env(),
-    }
+pub fn get_runner_config_from_env() -> PyResult<PyRunnerConfig> {
+    Ok(PyRunnerConfig {
+        _inner: super::get_runner_config_from_env()?,
+    })
 }
 
 #[pyfunction]

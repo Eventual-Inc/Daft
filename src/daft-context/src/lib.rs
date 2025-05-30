@@ -63,7 +63,7 @@ impl ContextState {
             return Ok(runner.clone());
         }
 
-        let runner_cfg = get_runner_config_from_env();
+        let runner_cfg = get_runner_config_from_env()?;
         let runner = runner_cfg.create_runner()?;
 
         let runner = Arc::new(runner);
@@ -314,7 +314,7 @@ fn detect_ray_state() -> bool {
 }
 
 #[cfg(feature = "python")]
-fn get_runner_config_from_env() -> RunnerConfig {
+fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
     const DAFT_RUNNER: &str = "DAFT_RUNNER";
 
     let runner_from_envvar = std::env::var(DAFT_RUNNER)
@@ -322,15 +322,16 @@ fn get_runner_config_from_env() -> RunnerConfig {
         .to_lowercase();
 
     match runner_from_envvar.as_str() {
-        "native" => RunnerConfig::Native { num_threads: None },
-        "ray" => get_ray_runner_config_from_env(),
-        _ if detect_ray_state() => get_ray_runner_config_from_env(),
-        _ => RunnerConfig::Native { num_threads: None },
+        "native" => Ok(RunnerConfig::Native { num_threads: None }),
+        "ray" => Ok(get_ray_runner_config_from_env()),
+        "py" => Err(DaftError::ValueError("The PyRunner was removed from Daft from v0.5.0 onwards. Please set the env `DAFT_RUNNER=native` instead.".to_string())),
+        _ if detect_ray_state() => Ok(get_ray_runner_config_from_env()),
+        other => Err(DaftError::ValueError(format!("Invalid runner `{other}` specified in DAFT_RUNNER env")))
     }
 }
 
 #[cfg(not(feature = "python"))]
-fn get_runner_config_from_env() -> RunnerConfig {
+fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
     unimplemented!()
 }
 

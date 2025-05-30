@@ -20,20 +20,6 @@ def with_null_env():
             os.environ["DAFT_RUNNER"] = old_daft_runner
 
 
-def test_explicit_set_runner_py():
-    """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Python."""
-    explicit_set_runner_script = """
-import daft
-print(daft.context.get_context()._runner)
-daft.context.set_runner_py()
-print(daft.context.get_context()._runner.name)
-    """
-
-    with with_null_env():
-        result = subprocess.run([sys.executable, "-c", explicit_set_runner_script], capture_output=True)
-        assert result.stdout.decode().strip() == "None\npy"
-
-
 def test_explicit_set_runner_native():
     """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Native."""
     explicit_set_runner_script_native = """
@@ -92,36 +78,11 @@ print(daft.context.get_context()._runner.name)
         assert result.stdout.decode().strip() == "None\nray"
 
 
-def test_switch_local_runners():
-    """Test that a runner can be switched from Python to Native."""
-    switch_local_runners_script = """
-import daft
-print(daft.context.get_context()._runner)
-daft.context.set_runner_py()
-print(daft.context.get_context()._runner.name)
-daft.context.set_runner_native()
-print(daft.context.get_context()._runner.name)
-daft.context.set_runner_py()
-print(daft.context.get_context()._runner.name)
-    """
-
-    with with_null_env():
-        result = subprocess.run([sys.executable, "-c", switch_local_runners_script], capture_output=True)
-        assert result.stdout.decode().strip() == "None\npy\nnative\npy"
-
-
-@pytest.mark.parametrize(
-    "set_local_command",
-    [
-        pytest.param("daft.context.set_runner_native()", id="native_to_ray"),
-        pytest.param("daft.context.set_runner_py()", id="py_to_ray"),
-    ],
-)
-def test_cannot_switch_local_to_ray(set_local_command):
+def test_cannot_switch_local_to_ray():
     """Test that a runner cannot be switched from local to Ray."""
-    script = f"""
+    script = """
 import daft
-{set_local_command}
+daft.context.set_runner_native()
 daft.context.set_runner_ray()
 """
     with with_null_env():
@@ -133,7 +94,6 @@ daft.context.set_runner_ray()
     "set_new_runner_command",
     [
         pytest.param("daft.context.set_runner_native()", id="ray_to_native"),
-        pytest.param("daft.context.set_runner_py()", id="ray_to_py"),
         pytest.param("daft.context.set_runner_ray()", id="ray_to_ray"),
     ],
 )

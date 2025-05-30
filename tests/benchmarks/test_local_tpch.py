@@ -34,8 +34,6 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
     def f():
         if engine == "native":
             daft.context.set_runner_native()
-        elif engine == "python":
-            daft.context.set_runner_py()
         else:
             raise ValueError(f"{engine} unsupported")
 
@@ -81,8 +79,6 @@ def test_tpch_sql(tmp_path, check_answer, get_df, benchmark_with_memray, engine,
     def f():
         if engine == "native":
             daft.context.set_runner_native()
-        elif engine == "python":
-            daft.context.set_runner_py()
         else:
             raise ValueError(f"{engine} unsupported")
 
