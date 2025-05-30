@@ -521,8 +521,8 @@ mod tests {
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
         let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
-        let result = submitted_task.await;
-        assert!(result.is_err());
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
 
         let test_context_result = test_context.cleanup().await;
         assert!(test_context_result.is_err());

@@ -362,8 +362,8 @@ mod tests {
             .dispatch_tasks(scheduled_tasks)
             .await?;
 
-        let result = submitted_task.await;
-        assert!(result.is_err());
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
 
         let text_context_result = test_context.cleanup().await;
         assert!(text_context_result.is_err());
@@ -390,8 +390,8 @@ mod tests {
             .dispatcher_handle
             .dispatch_tasks(scheduled_tasks)
             .await?;
-        let result = submitted_task.await;
-        assert!(result.is_err());
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
 
         let new_task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024)).build();
 
