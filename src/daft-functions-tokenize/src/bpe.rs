@@ -13,7 +13,7 @@ use daft_io::{get_io_client, IOConfig};
 use snafu::{prelude::*, Snafu};
 use tiktoken_rs::CoreBPE;
 
-use super::special_tokens::get_special_tokens;
+use crate::special_tokens::get_special_tokens;
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 

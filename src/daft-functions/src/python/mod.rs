@@ -13,11 +13,7 @@ macro_rules! simple_python_wrapper {
 }
 
 mod binary;
-mod coalesce;
-mod misc;
-mod sequence;
 mod temporal;
-mod tokenize;
 
 use std::sync::Arc;
 
@@ -99,7 +95,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     }
     parent.add_function(wrap_pyfunction!(get_function_from_registry, parent)?)?;
 
-    add!(coalesce::coalesce);
     add!(binary::binary_length);
     add!(binary::binary_concat);
     add!(binary::binary_slice);
@@ -108,10 +103,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::decode);
     add!(binary::try_encode);
     add!(binary::try_decode);
-
-    add!(misc::to_struct);
-
-    add!(sequence::monotonically_increasing_id);
 
     add!(temporal::dt_date);
     add!(temporal::dt_day);
@@ -133,9 +124,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(temporal::dt_truncate);
     add!(temporal::dt_to_unix_epoch);
     add!(temporal::dt_strftime);
-
-    add!(tokenize::tokenize_encode);
-    add!(tokenize::tokenize_decode);
 
     Ok(())
 }

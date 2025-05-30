@@ -1,5 +1,4 @@
 [dependencies]
-arrow2 = {workspace = true}
 base64 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
@@ -13,7 +12,6 @@ num-traits = {workspace = true}
 paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}
 simdutf8 = "0.1.5"
-tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
 typetag = {workspace = true}
 xxhash-rust = {workspace = true, features = ["xxh64"]}
