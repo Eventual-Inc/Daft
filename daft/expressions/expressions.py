@@ -108,7 +108,8 @@ def lit(value: object) -> Expression:
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
-        lit_value = _series_lit(value._series)
+        agg_listed = value._series.agg_list()
+        lit_value = _series_lit(agg_listed)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -1453,7 +1454,7 @@ class Expression:
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
             series = item_to_series("items", other)
-            other = [Expression._to_expression(series)]
+            other = [Expression._from_pyexpr(_series_lit(series._series))]
         else:
             other = [other]
 
@@ -4369,7 +4370,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             patterns = [patterns]
         if not isinstance(patterns, Expression):
             series = item_to_series("items", patterns)
-            patterns = Expression._to_expression(series)
+            patterns = Expression._from_pyexpr(_series_lit(series._series))
 
         whole_words_expr = Expression._to_expression(whole_words)._expr
         case_sensitive_expr = Expression._to_expression(case_sensitive)._expr

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
+from daft.daft import CountMode, ImageFormat, ImageMode, PyExpr, PyRecordBatch, PySeries, series_lit
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -788,8 +788,10 @@ class Series:
         args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
 
         f = native.get_function_from_registry(func_name)
-
-        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items() if v is not None}).alias(name)
+        expr = f(
+            *args,
+            **{name: lit(v)._expr if not isinstance(v, PyExpr) else v for name, v in kwargs.items() if v is not None},
+        ).alias(name)
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(0)
@@ -959,9 +961,10 @@ class SeriesStringNamespace(SeriesNamespace):
         whole_words: bool = False,
         case_sensitive: bool = True,
     ) -> Series:
+        pattern_expr = series_lit(patterns._series)
         return self._eval_expressions(
             "count_matches",
-            patterns=patterns,
+            patterns=pattern_expr,
             whole_words=whole_words,
             case_sensitive=case_sensitive,
         )
@@ -1094,7 +1097,8 @@ class SeriesListNamespace(SeriesNamespace):
         return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
+        desc_expr = series_lit(desc._series) if isinstance(desc, Series) else desc
+        return self._eval_expressions("list_sort", desc=desc_expr, nulls_first=nulls_first)
 
 
 class SeriesMapNamespace(SeriesNamespace):
