@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
-use daft_py_runners::{NativeRunner, PyRunner, RayRunner};
+use daft_py_runners::{NativeRunner, RayRunner};
 use daft_py_runners::{Runner, RunnerConfig};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -101,26 +101,14 @@ impl DaftContext {
     /// Set the runner.
     /// IMPORTANT: This can only be set once. Setting it more than once will error.
     pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
-        use Runner::{Native, Py};
+        use Runner::Native;
         if let Some(current_runner) = self.runner() {
-            let runner = match (current_runner.as_ref(), runner.as_ref()) {
-                (Native(_), Native(_)) | (Py(_), Py(_)) => return Ok(()),
-                (Py(_), Native(_)) | (Native(_), Py(_)) => runner,
-
-                _ => {
-                    return Err(DaftError::InternalError(
-                        "Cannot set runner more than once".to_string(),
-                    ));
-                }
-            };
-
-            let mut state = self.state.write().map_err(|_| {
-                DaftError::InternalError("Failed to acquire write lock on DaftContext".to_string())
-            })?;
-
-            state.runner.replace(runner);
-
-            Ok(())
+            match (current_runner.as_ref(), runner.as_ref()) {
+                (Native(_), Native(_)) => Ok(()),
+                _ => Err(DaftError::InternalError(
+                    "Cannot set runner more than once".to_string(),
+                )),
+            }
         } else {
             let mut state = self.state.write().map_err(|_| {
                 DaftError::InternalError("Failed to acquire write lock on DaftContext".to_string())
@@ -247,26 +235,6 @@ pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> 
     unimplemented!()
 }
 
-#[cfg(feature = "python")]
-pub fn set_runner_py(
-    use_thread_pool: Option<bool>,
-    num_threads: Option<usize>,
-) -> DaftResult<DaftContext> {
-    let ctx = get_context();
-
-    let runner = Runner::Py(PyRunner::try_new(use_thread_pool, num_threads)?);
-    let runner = Arc::new(runner);
-
-    ctx.set_runner(runner)?;
-
-    Ok(ctx)
-}
-
-#[cfg(not(feature = "python"))]
-pub fn set_runner_py(_use_thread_pool: Option<bool>) -> DaftResult<DaftContext> {
-    unimplemented!()
-}
-
 /// Helper function to parse a boolean environment variable.
 fn parse_bool_env_var(var_name: &str) -> Option<bool> {
     std::env::var(var_name)
@@ -277,17 +245,6 @@ fn parse_bool_env_var(var_name: &str) -> Option<bool> {
 /// Helper function to parse a numeric environment variable.
 fn parse_usize_env_var(var_name: &str) -> Option<usize> {
     std::env::var(var_name).ok().and_then(|s| s.parse().ok())
-}
-
-/// Helper function to get the py runner config from the environment.
-#[cfg(feature = "python")]
-fn get_py_runner_config_from_env() -> RunnerConfig {
-    const DAFT_DEVELOPER_USE_THREAD_POOL: &str = "DAFT_DEVELOPER_USE_THREAD_POOL";
-
-    RunnerConfig::Py {
-        use_thread_pool: parse_bool_env_var(DAFT_DEVELOPER_USE_THREAD_POOL),
-        num_threads: None,
-    }
 }
 
 /// Helper function to get the ray runner config from the environment.
@@ -367,7 +324,6 @@ fn get_runner_config_from_env() -> RunnerConfig {
     match runner_from_envvar.as_str() {
         "native" => RunnerConfig::Native { num_threads: None },
         "ray" => get_ray_runner_config_from_env(),
-        "py" => get_py_runner_config_from_env(),
         _ if detect_ray_state() => get_ray_runner_config_from_env(),
         _ => RunnerConfig::Native { num_threads: None },
     }
@@ -387,7 +343,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::set_runner_ray, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::set_runner_native, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::set_runner_py, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     Ok(())
 }

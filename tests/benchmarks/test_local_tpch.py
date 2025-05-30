@@ -23,8 +23,8 @@ TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() not in {"py", "native"},
-    reason="requires PyRunner to be in use",
+    get_tests_daft_runner_name() != "native",
+    reason="requires Native Runner to be in use",
 )
 @pytest.mark.benchmark(group="tpch")
 @pytest.mark.parametrize("engine, q", itertools.product(ENGINES, TPCH_QUESTIONS))
@@ -49,8 +49,8 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() not in {"py", "native"},
-    reason="requires PyRunner to be in use",
+    get_tests_daft_runner_name() != "native",
+    reason="requires Native Runner to be in use",
 )
 @pytest.mark.benchmark(group="tpch")
 @pytest.mark.parametrize("engine, q", itertools.product(ENGINES, TPCH_QUESTIONS))

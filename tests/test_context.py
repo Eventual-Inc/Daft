@@ -149,7 +149,7 @@ daft.context.set_runner_ray()
         assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
 
 
-@pytest.mark.parametrize("daft_runner_envvar", ["py", "ray", "native"])
+@pytest.mark.parametrize("daft_runner_envvar", ["ray", "native"])
 def test_env_var(daft_runner_envvar):
     """Test that environment variables are correctly picked up."""
     autodetect_script = """
@@ -205,7 +205,7 @@ print(daft.context.get_context()._runner.name)
 
 #     with with_null_env():
 #         result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
-#         assert result.stdout.decode().strip() in {"py", "native"}
+#         assert result.stdout.decode().strip() in {"native"}
 
 
 # def test_in_ray_worker_launch_query():
@@ -244,5 +244,5 @@ daft.context.set_runner_ray()
 
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", cannot_set_runner_ray_after_py_script], capture_output=True)
-        assert result.stdout.decode().strip() in {"py", "native"}
+        assert result.stdout.decode().strip() in {"native"}
         assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
