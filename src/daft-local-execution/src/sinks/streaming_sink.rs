@@ -248,13 +248,13 @@ impl PipelineNode for StreamingSinkNode {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
                 let mut output_receiver = Self::spawn_workers(
@@ -274,7 +274,7 @@ impl PipelineNode for StreamingSinkNode {
 
                 let mut finished_states = Vec::with_capacity(num_workers);
                 while let Some(result) = task_set.join_next().await {
-                    let state = result.context(JoinSnafu)??;
+                    let state = result??;
                     finished_states.push(state);
                 }
 

@@ -18,11 +18,15 @@ use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{ChunkSpec, ScanTask};
 use daft_warc::WarcConvertOptions;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
 
-use crate::sources::source::{Source, SourceStream};
+use crate::{
+    channel::create_channel,
+    sources::source::{Source, SourceStream},
+    TaskSet,
+};
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
@@ -93,33 +97,93 @@ impl Source for ScanTaskSource {
     ) -> DaftResult<SourceStream<'static>> {
         let io_runtime = get_io_runtime(true);
         let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
-        let stream_of_streams =
-            futures::stream::iter(self.scan_tasks.clone().into_iter().map(move |scan_task| {
-                let io_stats = io_stats.clone();
-                let delete_map = delete_map.clone();
-                io_runtime.spawn(stream_scan_task(
-                    scan_task,
-                    io_stats,
-                    delete_map,
-                    maintain_order,
-                ))
-            }));
 
-        match maintain_order {
-            true => {
-                let buffered_and_flattened = stream_of_streams
-                    .buffered(self.num_parallel_tasks)
-                    .map(|r| r?)
-                    .try_flatten();
-                Ok(Box::pin(buffered_and_flattened))
-            }
+        let (senders, receivers) = match maintain_order {
+            true => (0..self.scan_tasks.len())
+                .map(|_| create_channel::<Arc<MicroPartition>>(0))
+                .unzip(),
             false => {
-                let buffered_and_flattened = stream_of_streams
-                    .then(|r| async { r.await? })
-                    .try_flatten_unordered(self.num_parallel_tasks);
-                Ok(Box::pin(buffered_and_flattened))
+                let (tx, rx) = create_channel(0);
+                (vec![tx; self.scan_tasks.len()], vec![rx; 1])
             }
-        }
+        };
+
+        let scan_tasks = self.scan_tasks.clone();
+        let num_parallel_tasks = self.num_parallel_tasks;
+
+        let task = io_runtime.spawn(async move {
+            let mut task_set = TaskSet::new();
+            let mut scan_task_and_sender_iter = scan_tasks.into_iter().zip(senders.into_iter());
+
+            for _ in 0..num_parallel_tasks {
+                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
+                    let io_stats = io_stats.clone();
+                    let delete_map = delete_map.clone();
+                    let scan_task = scan_task.clone();
+                    task_set.spawn(async move {
+                        let mut stream =
+                            stream_scan_task(scan_task, io_stats, delete_map, maintain_order)
+                                .await?;
+                        while let Some(result) = stream.next().await {
+                            if sender.send(result?).await.is_err() {
+                                break;
+                            }
+                        }
+                        DaftResult::Ok(())
+                    });
+                }
+            }
+
+            while let Some(result) = task_set.join_next().await {
+                result??;
+                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
+                    let io_stats = io_stats.clone();
+                    let delete_map = delete_map.clone();
+                    let scan_task = scan_task.clone();
+                    task_set.spawn(async move {
+                        let mut stream =
+                            stream_scan_task(scan_task, io_stats, delete_map, maintain_order)
+                                .await?;
+                        while let Some(result) = stream.next().await {
+                            if sender.send(result?).await.is_err() {
+                                break;
+                            }
+                        }
+                        DaftResult::Ok(())
+                    });
+                }
+            }
+
+            DaftResult::Ok(())
+        });
+
+        let flattened = Box::pin(
+            futures::stream::iter(receivers.into_iter().map(|rx| rx.into_stream()))
+                .flatten()
+                .map(Ok),
+        );
+
+        let flattened_with_task = futures::stream::unfold(
+            (flattened, Some(task)),
+            |(mut stream, mut task)| async move {
+                task.as_ref()?;
+                match stream.next().await {
+                    Some(r) => Some((r, (stream, task))),
+                    None => {
+                        if let Some(task) = task.take() {
+                            let task_result = task.await;
+                            match task_result {
+                                Ok(Ok(())) => None,
+                                Ok(Err(e)) | Err(e) => Some((Err(e), (stream, None))),
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                }
+            },
+        );
+        Ok(Box::pin(flattened_with_task))
     }
 
     fn name(&self) -> &'static str {
