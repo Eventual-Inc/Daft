@@ -2304,7 +2304,6 @@ dependencies = [
  "daft-hash",
  "daft-io",
  "flate2",
- "futures",
  "num-traits",
  "paste",
  "pyo3",
@@ -2313,7 +2312,6 @@ dependencies = [
  "snafu",
  "tiktoken-rs",
  "typetag",
- "uuid 1.16.0",
  "xxhash-rust",
 ]
 
@@ -2370,7 +2368,6 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "futures",
- "itertools 0.11.0",
  "serde",
  "tokio",
  "typetag",
@@ -2520,7 +2517,6 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
- "daft-functions",
  "daft-functions-list",
  "daft-functions-uri",
  "daft-io",
