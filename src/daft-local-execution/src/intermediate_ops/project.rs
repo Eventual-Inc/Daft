@@ -11,7 +11,7 @@ use daft_dsl::{
     },
     Expr,
 };
-use daft_functions::uri::download::UrlDownloadArgs;
+use daft_functions_uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -220,7 +220,7 @@ mod tests {
         functions::{FunctionArg, FunctionArgs},
         lit,
     };
-    use daft_functions::uri::download::UrlDownload;
+    use daft_functions_uri::download::UrlDownload;
 
     use super::*;
 
