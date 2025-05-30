@@ -6,7 +6,7 @@ use crate::{
     pipeline_node::PipelineOutput,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittedTask},
-        task::SwordfishTask,
+        task::Task,
     },
     utils::{
         channel::{create_channel, Receiver, Sender},
@@ -15,9 +15,9 @@ use crate::{
     },
 };
 
-pub(crate) fn materialize_all_pipeline_outputs(
-    input: impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static,
-    scheduler_handle: SchedulerHandle<SwordfishTask>,
+pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
+    input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static,
+    scheduler_handle: SchedulerHandle<T>,
 ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
     enum FinalizedTask {
         Materialized(MaterializedOutput),
@@ -25,10 +25,10 @@ pub(crate) fn materialize_all_pipeline_outputs(
     }
 
     /// Force all tasks in the `input`` stream to start running if un-submitted
-    async fn task_finalizer(
-        mut input: impl Stream<Item = DaftResult<PipelineOutput>> + Unpin,
+    async fn task_finalizer<T: Task>(
+        mut input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Unpin,
         tx: Sender<DaftResult<FinalizedTask>>,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
+        scheduler_handle: SchedulerHandle<T>,
     ) -> DaftResult<()> {
         while let Some(pipeline_result) = input.next().await {
             let pipeline_output = match pipeline_result {
@@ -121,18 +121,17 @@ pub(crate) fn materialize_all_pipeline_outputs(
 
 // This function is responsible for awaiting the results of any running tasks
 #[allow(dead_code)]
-pub(crate) fn materialize_running_pipeline_outputs(
-    input: impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static,
-) -> impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static {
-    async fn result_awaiter(
-        mut pipeline_output_stream: impl Stream<Item = DaftResult<PipelineOutput>>
+pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
+    input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static,
+) -> impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static {
+    async fn result_awaiter<T: Task>(
+        mut pipeline_output_stream: impl Stream<Item = DaftResult<PipelineOutput<T>>>
             + Send
             + Unpin
             + 'static,
-        tx: Sender<PipelineOutput>,
+        tx: Sender<PipelineOutput<T>>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: OrderedJoinSet<Option<DaftResult<Vec<PipelineOutput>>>> =
-            OrderedJoinSet::new();
+        let mut pending_tasks = OrderedJoinSet::new();
         loop {
             let num_pending = pending_tasks.num_pending();
 
@@ -205,20 +204,50 @@ mod tests {
     use crate::scheduling::{
         scheduler::spawn_default_scheduler_actor,
         task::Task,
-        tests::{create_mock_partition_ref, MockTaskBuilder, MockWorker, MockWorkerManager},
+        tests::{
+            create_mock_partition_ref, setup_workers, MockTask, MockTaskBuilder, MockWorkerManager,
+        },
+        worker::WorkerId,
     };
+
+    struct TestContext {
+        scheduler_handle: SchedulerHandle<MockTask>,
+        joinset: JoinSet<DaftResult<()>>,
+    }
+
+    impl TestContext {
+        fn new(worker_configs: &[(WorkerId, usize)]) -> DaftResult<Self> {
+            let workers = setup_workers(worker_configs);
+            let worker_manager = Arc::new(MockWorkerManager::new(workers));
+            let mut joinset = JoinSet::new();
+            let scheduler_handle = spawn_default_scheduler_actor(worker_manager, &mut joinset);
+            Ok(Self {
+                scheduler_handle,
+                joinset,
+            })
+        }
+
+        fn handle(&self) -> &SchedulerHandle<MockTask> {
+            &self.scheduler_handle
+        }
+
+        fn joinset(&mut self) -> &mut JoinSet<DaftResult<()>> {
+            &mut self.joinset
+        }
+
+        async fn cleanup(mut self) -> DaftResult<()> {
+            drop(self.scheduler_handle);
+            while let Some(result) = self.joinset.join_next().await {
+                result??;
+            }
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn test_materialize_all_pipeline_outputs_basic() -> DaftResult<()> {
         // Setup test context and partitions
-        let mut joinset = JoinSet::new();
-        let test_context = TestContext::new(
-            vec![("worker1".to_string(), 4)],
-            Box::new(spawn_default_scheduler_actor(
-                Arc::new(MockWorkerManager::new()),
-                &mut joinset,
-            )),
-        )?;
+        let test_context = TestContext::new(&[("worker1".into(), 4)])?;
         let partition_rows_and_bytes = vec![
             (100, 1024), // partition1
             (200, 2048), // partition2
@@ -278,14 +307,7 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_all_pipeline_outputs_large() -> DaftResult<()> {
         // Setup test context and partitions
-        let mut joinset = JoinSet::new();
-        let mut test_context = TestContext::new(
-            vec![("worker1".to_string(), 100)],
-            Box::new(spawn_default_scheduler_actor(
-                Arc::new(MockWorkerManager::new()),
-                &mut joinset,
-            )),
-        )?;
+        let mut test_context = TestContext::new(&[("worker1".into(), 100)])?;
 
         let num_partitions = 1000;
 
@@ -301,7 +323,7 @@ mod tests {
         // Create task to emit pipeline_outputs
         let (tx, rx) = create_channel(1);
         let handle = test_context.handle().clone();
-        test_context.spawn_on_joinset(async move {
+        test_context.joinset().spawn(async move {
             let mut rng = rand::rngs::StdRng::from_entropy();
             for i in 0..num_partitions {
                 let which_pipeline_output = rng.gen_range(0..3);
@@ -369,17 +391,7 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_all_pipeline_outputs_with_error() -> DaftResult<()> {
         // Create mock partitions
-        let mut joinset = JoinSet::new();
-        let mut test_context = TestContext::new(
-            vec![("worker1".to_string(), 10)],
-            Box::new(spawn_default_scheduler_actor(
-                Arc::new(MockWorkerManager::new(HashMap::from([(
-                    "worker1".to_string(),
-                    MockWorker::new("worker1".to_string(), 10),
-                )]))),
-                &mut joinset,
-            )),
-        )?;
+        let mut test_context = TestContext::new(&[("worker1".into(), 10)])?;
 
         let num_partitions = 100;
 
@@ -409,7 +421,7 @@ mod tests {
         let first_error_idx_clone = first_error_idx.clone();
 
         // Spawn the task to emit pipeline outputs
-        test_context.spawn_on_joinset(async move {
+        test_context.joinset().spawn(async move {
             let mut has_sent_error = false;
 
             for i in 0..num_partitions {
@@ -440,7 +452,7 @@ mod tests {
                     1 => {
                         let pipeline_output = Ok(PipelineOutput::Task(
                             MockTaskBuilder::new(partitions[i].clone())
-                                .with_task_id(format!("test-task-{}", i))
+                                .with_task_id(format!("test-task-{}", i).into())
                                 .with_sleep_duration(Duration::from_millis(100))
                                 .build(),
                         ));
@@ -450,7 +462,7 @@ mod tests {
                     }
                     2 => {
                         let task = MockTaskBuilder::new(partitions[i].clone())
-                            .with_task_id(format!("test-running-task-{}", i))
+                            .with_task_id(format!("test-running-task-{}", i).into())
                             .with_sleep_duration(Duration::from_millis(100))
                             .build();
                         let submitted_task = handle.submit_task(task).await?;
@@ -511,14 +523,7 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_running_pipeline_outputs_basic() -> DaftResult<()> {
         // Setup test context and partitions
-        let mut joinset = JoinSet::new();
-        let test_context = TestContext::new(
-            vec![("worker1".to_string(), 4)],
-            Box::new(spawn_default_scheduler_actor(
-                Arc::new(MockWorkerManager::new()),
-                &mut joinset,
-            )),
-        )?;
+        let test_context = TestContext::new(&[("worker1".into(), 4)])?;
         let partition_rows_and_bytes = vec![
             (100, 1024), // partition1
             (200, 2048), // partition2
@@ -605,14 +610,7 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_running_pipeline_outputs_large() -> DaftResult<()> {
         // Setup test context and partitions
-        let mut joinset = JoinSet::new();
-        let mut test_context = TestContext::new(
-            vec![("worker1".to_string(), 100)],
-            Box::new(spawn_default_scheduler_actor(
-                Arc::new(MockWorkerManager::new()),
-                &mut joinset,
-            )),
-        )?;
+        let mut test_context = TestContext::new(&[("worker1".into(), 100)])?;
 
         let num_partitions = 1000; // Using fewer partitions than the original test for faster execution
 
@@ -638,7 +636,7 @@ mod tests {
         let owned_output_types = output_types.clone();
 
         // Spawn the task to emit pipeline outputs
-        test_context.spawn_on_joinset(async move {
+        test_context.joinset().spawn(async move {
             for i in 0..num_partitions {
                 let which_pipeline_output = owned_output_types[i];
                 match which_pipeline_output {
@@ -722,14 +720,7 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_running_pipeline_outputs_with_error() -> DaftResult<()> {
         // Create mock partitions
-        let mut joinset = JoinSet::new();
-        let mut test_context = TestContext::new(
-            vec![("worker1".to_string(), 10)],
-            Box::new(spawn_default_scheduler_actor(
-                Arc::new(MockWorkerManager::new()),
-                &mut joinset,
-            )),
-        )?;
+        let mut test_context = TestContext::new(&[("worker1".into(), 10)])?;
 
         let num_partitions = 100;
 
@@ -759,7 +750,7 @@ mod tests {
         let first_error_idx_clone = first_error_idx.clone();
 
         // Spawn the task to emit pipeline outputs
-        test_context.spawn_on_joinset(async move {
+        test_context.joinset().spawn(async move {
             let mut has_sent_error = false;
 
             for i in 0..num_partitions {

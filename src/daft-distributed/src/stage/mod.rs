@@ -115,7 +115,8 @@ impl RunningStage {
 
     pub fn into_stream(
         self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static {
+    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
+    {
         JoinableForwardingStream::new(self.running_pipeline_node.into_stream(), self.joinset)
     }
 }

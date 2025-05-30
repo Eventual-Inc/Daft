@@ -1,12 +1,12 @@
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use futures::{Stream, StreamExt};
-use materialize::materialize_all_pipeline_outputs;
+use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};
 
 use crate::{
     scheduling::{
         scheduler::{SchedulerHandle, SubmittedTask},
-        task::SwordfishTask,
+        task::{SwordfishTask, Task},
         worker::WorkerId,
     },
     stage::StageContext,
@@ -57,9 +57,9 @@ impl MaterializedOutput {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) enum PipelineOutput {
+pub(crate) enum PipelineOutput<T: Task> {
     Materialized(MaterializedOutput),
-    Task(SwordfishTask),
+    Task(T),
     Running(SubmittedTask),
 }
 
@@ -74,17 +74,17 @@ pub(crate) trait DistributedPipelineNode: Send + Sync {
 
 #[allow(dead_code)]
 pub(crate) struct RunningPipelineNode {
-    result_receiver: Receiver<PipelineOutput>,
+    result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
 }
 
 impl RunningPipelineNode {
     #[allow(dead_code)]
-    fn new(result_receiver: Receiver<PipelineOutput>) -> Self {
+    fn new(result_receiver: Receiver<PipelineOutput<SwordfishTask>>) -> Self {
         Self { result_receiver }
     }
 
     #[allow(dead_code)]
-    pub fn into_inner(self) -> Receiver<PipelineOutput> {
+    pub fn into_inner(self) -> Receiver<PipelineOutput<SwordfishTask>> {
         self.result_receiver
     }
 
@@ -97,7 +97,17 @@ impl RunningPipelineNode {
         materialize_all_pipeline_outputs(stream, scheduler_handle)
     }
 
-    pub fn into_stream(self) -> impl Stream<Item = PipelineOutput> + Send + Unpin + 'static {
+    pub fn materialize_running(
+        self,
+    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
+    {
+        let stream = self.into_stream().map(Ok);
+        materialize_running_pipeline_outputs(stream)
+    }
+
+    pub fn into_stream(
+        self,
+    ) -> impl Stream<Item = PipelineOutput<SwordfishTask>> + Send + Unpin + 'static {
         ReceiverStream::new(self.result_receiver)
     }
 }

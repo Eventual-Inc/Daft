@@ -148,9 +148,17 @@ pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
     SchedulerActor::spawn_scheduler_actor(scheduler, joinset)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct SchedulerHandle<T: Task> {
     scheduler_sender: Sender<SchedulableTask<T>>,
+}
+
+impl<T: Task> Clone for SchedulerHandle<T> {
+    fn clone(&self) -> Self {
+        Self {
+            scheduler_sender: self.scheduler_sender.clone(),
+        }
+    }
 }
 
 impl<T: Task> SchedulerHandle<T> {
