@@ -2357,9 +2357,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "itertools 0.11.0",
  "serde",
- "serde_json",
  "typetag",
 ]
 

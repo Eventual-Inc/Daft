@@ -4,9 +4,7 @@ common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 serde = {workspace = true}
-serde_json = {workspace = true}
 typetag = {workspace = true}
-itertools.workspace = true
 
 [features]
 python = [
@@ -21,7 +19,3 @@ workspace = true
 [package]
 name = "daft-functions-serde"
 edition.workspace = true
-
-[package.metadata.cargo-machete]
-ignored = ["serde"]
-version.workspace = true
