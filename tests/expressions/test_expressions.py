@@ -432,18 +432,18 @@ def test_repr_functions_hash_2() -> None:
 
 def test_repr_functions_minhash() -> None:
     a = col("a")
-    y = a.minhash(1, 2)
+    y = a.minhash(num_hashes=1, ngram_size=2)
     repr_out = repr(y)
-    assert repr_out == "minhash(col(a))"
+    assert repr_out == 'minhash(col(a), lit(1), lit(2), lit(1), lit("murmurhash3"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
 
 def test_repr_functions_minhash_2() -> None:
     a = col("a")
-    y = a.minhash(1, 2, 3)
+    y = a.minhash(num_hashes=1, ngram_size=2, seed=3)
     repr_out = repr(y)
-    assert repr_out == "minhash(col(a))"
+    assert repr_out == 'minhash(col(a), lit(1), lit(2), lit(3), lit("murmurhash3"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
