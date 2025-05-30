@@ -3,7 +3,7 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
-use daft_functions::uri::download::UrlDownload;
+use daft_functions_uri::download::UrlDownload;
 use itertools::Itertools;
 
 use super::OptimizerRule;
@@ -211,10 +211,8 @@ mod tests {
 
     use common_scan_info::Pushdowns;
     use daft_dsl::{Column, ResolvedColumn};
-    use daft_functions::{
-        binary::{binary_concat, codecs::Codec, decode::decode, BinaryConcat},
-        uri::download::UrlDownload,
-    };
+    use daft_functions::binary::{binary_concat, codecs::Codec, decode::decode, BinaryConcat};
+    use daft_functions_uri::download::UrlDownload;
     use daft_functions_utf8::{capitalize, lower, Capitalize};
     use daft_schema::{dtype::DataType, field::Field};
 

@@ -13,6 +13,7 @@ daft-csv = {path = "../daft-csv", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
+daft-functions-uri = {workspace = true}
 daft-io = {path = "../daft-io", default-features = false}
 daft-json = {path = "../daft-json", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
