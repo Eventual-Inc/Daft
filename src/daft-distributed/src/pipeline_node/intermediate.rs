@@ -43,11 +43,12 @@ impl IntermediateNode {
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
         input: RunningPipelineNode,
-        result_tx: Sender<PipelineOutput>,
+        result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
-        let mut task_or_partition_ref_stream = input.into_stream();
+        let mut task_or_partition_ref_stream = input.materialize_running();
 
-        while let Some(pipeline_output) = task_or_partition_ref_stream.next().await {
+        while let Some(pipeline_result) = task_or_partition_ref_stream.next().await {
+            let pipeline_output = pipeline_result?;
             match pipeline_output {
                 PipelineOutput::Running(_) => {
                     unreachable!("All running tasks should be materialized before this point")
