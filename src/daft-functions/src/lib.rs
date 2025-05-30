@@ -52,9 +52,9 @@ macro_rules! invalid_argument_err {
     }};
 }
 
-pub struct MiscFunctions;
+pub struct HashFunctions;
 
-impl FunctionModule for MiscFunctions {
+impl FunctionModule for HashFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);

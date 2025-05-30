@@ -159,7 +159,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions_utf8::Utf8Functions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
-        functions_registry.register::<daft_functions::MiscFunctions>();
+        functions_registry.register::<daft_functions::HashFunctions>();
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
 
         Ok(())
