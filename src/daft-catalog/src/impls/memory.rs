@@ -15,18 +15,47 @@ use crate::{
     Catalog, Identifier, Table, TableRef,
 };
 
+type NamespaceTableMap = HashMap<Option<String>, HashMap<String, Arc<MemoryTable>>>;
+
 #[derive(Clone, Debug)]
+/// A catalog entirely stored in-memory.
+///
+/// Supports tables without namespaces or with a single level namespace.
 pub struct MemoryCatalog {
     name: String,
-    tables: Arc<RwLock<HashMap<String, Arc<MemoryTable>>>>,
+    /// map of optional namespace -> table name -> table
+    tables: Arc<RwLock<NamespaceTableMap>>,
 }
 
 impl MemoryCatalog {
     pub fn new(name: String) -> Self {
+        let mut tables = HashMap::new();
+
+        tables.insert(None, HashMap::new());
+
         Self {
             name,
-            tables: Arc::new(RwLock::new(HashMap::new())),
+            tables: Arc::new(RwLock::new(tables)),
         }
+    }
+
+    /// Gets the optional namespace and table name from the ident
+    fn split_table_ident(ident: &Identifier) -> CatalogResult<(Option<String>, &str)> {
+        let namespace = ident
+            .qualifier()
+            .map(|q| {
+                if let [namespace] = q {
+                    Ok(namespace.clone())
+                } else {
+                    Err(CatalogError::unsupported(
+                        "MemoryCatalog does not support nested namespaces",
+                    ))
+                }
+            })
+            .transpose()?;
+        let table_name = ident.name();
+
+        Ok((namespace, table_name))
     }
 }
 
@@ -57,104 +86,162 @@ impl Catalog for MemoryCatalog {
         self.name.clone()
     }
 
-    fn create_namespace(&self, _ident: &Identifier) -> CatalogResult<()> {
-        Err(CatalogError::unsupported(
-            "MemoryCatalog does not support namespaces".to_string(),
-        ))
-    }
-
-    fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
+    fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
         if ident.has_qualifier() {
             return Err(CatalogError::unsupported(
-                "MemoryCatalog does not support tables with qualifiers".to_string(),
+                "MemoryCatalog does not support nested namespaces",
             ));
         }
 
-        let name = ident.name();
+        let namespace = Some(ident.name().to_string());
 
-        if self.tables.read().unwrap().contains_key(name) {
-            return Err(CatalogError::obj_already_exists("table", ident));
+        if self.tables.read().unwrap().contains_key(&namespace) {
+            return Err(CatalogError::obj_already_exists("namespace", ident));
         }
-
-        let table = Arc::new(MemoryTable::new(name.to_string(), schema)?);
 
         self.tables
             .write()
             .unwrap()
-            .insert(name.to_string(), table.clone());
+            .insert(namespace, HashMap::new());
+
+        Ok(())
+    }
+
+    fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
+        let (namespace, table_name) = Self::split_table_ident(ident)?;
+
+        {
+            let tables = self.tables.read().unwrap();
+
+            let Some(namespace_tables) = tables.get(&namespace) else {
+                return Err(CatalogError::ObjectNotFound {
+                    type_: "namespace".to_string(),
+                    ident: namespace.unwrap(),
+                });
+            };
+
+            if namespace_tables.contains_key(table_name) {
+                return Err(CatalogError::obj_already_exists("table", ident));
+            }
+        }
+
+        let table = Arc::new(MemoryTable::new(table_name.to_string(), schema)?);
+
+        self.tables
+            .write()
+            .unwrap()
+            .get_mut(&namespace)
+            .unwrap()
+            .insert(table_name.to_string(), table.clone());
 
         Ok(table)
     }
 
-    fn drop_namespace(&self, _ident: &Identifier) -> CatalogResult<()> {
-        Err(CatalogError::unsupported(
-            "MemoryCatalog does not support namespaces".to_string(),
-        ))
+    fn drop_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
+        if ident.has_qualifier() {
+            return Err(CatalogError::obj_not_found("namespace", ident));
+        }
+
+        let namespace = Some(ident.name().to_string());
+
+        match self.tables.write().unwrap().remove(&namespace) {
+            Some(_) => Ok(()),
+            None => Err(CatalogError::obj_not_found("namespace", ident)),
+        }
     }
 
     fn drop_table(&self, ident: &Identifier) -> CatalogResult<()> {
-        if ident.has_qualifier() {
+        let (namespace, table_name) = Self::split_table_ident(ident)?;
+
+        let mut tables = self.tables.write().unwrap();
+        let Some(namespace_tables) = tables.get_mut(&namespace) else {
             return Err(CatalogError::obj_not_found("table", ident));
-        }
+        };
 
-        let name = ident.name();
-
-        match self.tables.write().unwrap().remove(name) {
+        match namespace_tables.remove(table_name) {
             Some(_) => Ok(()),
             None => Err(CatalogError::obj_not_found("table", ident)),
         }
     }
 
     fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef> {
-        if ident.has_qualifier() {
-            return Err(CatalogError::obj_not_found("table", ident));
-        }
-
-        let name = ident.name();
+        let (namespace, table_name) = Self::split_table_ident(ident)?;
 
         self.tables
             .read()
             .unwrap()
-            .get(name)
-            .map(|t| t.clone() as TableRef)
+            .get(&namespace)
+            .and_then(|namespace_tables| {
+                namespace_tables
+                    .get(table_name)
+                    .map(|t| t.clone() as TableRef)
+            })
             .ok_or_else(|| CatalogError::obj_not_found("table", ident))
     }
 
-    fn has_namespace(&self, _ident: &Identifier) -> CatalogResult<bool> {
-        Ok(false)
-    }
-
-    fn has_table(&self, ident: &Identifier) -> CatalogResult<bool> {
+    fn has_namespace(&self, ident: &Identifier) -> CatalogResult<bool> {
         if ident.has_qualifier() {
             return Ok(false);
         }
 
-        let name = ident.name();
+        let namespace = ident.name();
 
-        Ok(self.tables.read().unwrap().contains_key(name))
+        Ok(self
+            .tables
+            .read()
+            .unwrap()
+            .contains_key(&Some(namespace.to_string())))
     }
 
-    fn list_namespaces(&self, _pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
-        Ok(vec![])
+    fn has_table(&self, ident: &Identifier) -> CatalogResult<bool> {
+        let (namespace, table_name) = Self::split_table_ident(ident)?;
+
+        Ok(self
+            .tables
+            .read()
+            .unwrap()
+            .get(&namespace)
+            .is_some_and(|namespace_tables| namespace_tables.contains_key(table_name)))
+    }
+
+    fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        if pattern.is_some() {
+            return Err(CatalogError::unsupported(
+                "MemoryCatalog.list_namespaces does not support specifying a pattern.",
+            ));
+        }
+
+        Ok(self
+            .tables
+            .read()
+            .unwrap()
+            .keys()
+            .filter_map(|namespace| namespace.as_ref().map(Identifier::simple))
+            .collect())
     }
 
     fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        let tables = self.tables.read().unwrap();
         if let Some(pat) = pattern {
-            Ok(self
-                .tables
-                .read()
-                .unwrap()
-                .keys()
-                .filter(|name| name.starts_with(pat))
-                .map(Identifier::simple)
-                .collect())
+            if let Some(namespace_tables) = tables.get(&Some(pat.to_string())) {
+                Ok(namespace_tables
+                    .keys()
+                    .map(|table_name| Identifier::new(vec![pat, table_name]))
+                    .collect())
+            } else {
+                Ok(vec![])
+            }
         } else {
-            Ok(self
-                .tables
-                .read()
-                .unwrap()
-                .keys()
-                .map(Identifier::simple)
+            Ok(tables
+                .iter()
+                .flat_map(|(namespace, namespace_tables)| {
+                    namespace_tables
+                        .keys()
+                        .map(move |table_name| match namespace {
+                            Some(ns) => Identifier::new(vec![ns, table_name]),
+                            None => Identifier::simple(table_name),
+                        })
+                })
                 .collect())
         }
     }

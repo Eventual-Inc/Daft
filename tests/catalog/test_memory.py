@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 from daft import col
-from daft.catalog import Catalog, Table
+from daft.catalog import Catalog, Identifier, Table
 
 
 def test_table_from_pydict():
@@ -43,7 +45,6 @@ def test_catalog_from_pydict():
 
     assert catalog.name == "cat"
     assert sorted(str(ident) for ident in catalog.list_tables()) == ["bar", "baz", "foo"]
-    assert sorted(str(ident) for ident in catalog.list_tables("b")) == ["bar", "baz"]
     assert catalog.has_table("foo")
     assert catalog.has_table("bar")
     assert catalog.has_table("baz")
@@ -127,3 +128,86 @@ def test_table_overwrite():
     table.overwrite(df2)
 
     assert table.read().sort(col("a")).to_pydict() == {"a": [4, 5, 6], "b": ["a", "b", "c"]}
+
+
+def test_namespace_operations():
+    catalog = Catalog.from_pydict({}, "cat")
+
+    # Initially no namespaces
+    assert catalog.list_namespaces() == []
+
+    # Create a namespace
+    catalog.create_namespace("ns1")
+    assert catalog.has_namespace("ns1")
+    assert catalog.list_namespaces() == [Identifier("ns1")]
+
+    # Create a table in namespace
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+    catalog.create_table("ns1.table1", daft.from_pydict(data))
+    assert catalog.has_table("ns1.table1")
+    assert not catalog.has_table("table1")  # Table only exists in namespace
+
+    # List tables should show namespaced table
+    assert sorted(str(ident) for ident in catalog.list_tables()) == ["ns1.table1"]
+    assert sorted(str(ident) for ident in catalog.list_tables("ns1")) == ["ns1.table1"]
+
+    # Create another namespace
+    catalog.create_namespace("ns2")
+    assert sorted(str(ns) for ns in catalog.list_namespaces()) == ["ns1", "ns2"]
+
+    # Drop empty namespace
+    catalog.drop_namespace("ns2")
+    assert not catalog.has_namespace("ns2")
+    assert catalog.list_namespaces() == [Identifier("ns1")]
+
+    # Drop namespace with content
+    catalog.drop_namespace("ns1")
+    assert not catalog.has_namespace("ns1")
+    assert not catalog.has_table("ns1.table1")
+    assert catalog.list_tables() == []
+
+
+def test_namespace_errors():
+    catalog = Catalog.from_pydict({}, "cat")
+
+    # Test duplicate namespace creation
+    catalog.create_namespace("ns1")
+    with pytest.raises(Exception):
+        catalog.create_namespace("ns1")
+
+    # Test dropping non-existent namespace
+    with pytest.raises(Exception):
+        catalog.drop_namespace("nonexistent")
+
+    # Test nested namespaces not supported
+    with pytest.raises(Exception):
+        catalog.create_namespace("ns1.ns2")
+
+    # Test accessing table in non-existent namespace
+    with pytest.raises(Exception):
+        catalog.create_table("nonexistent.table", daft.from_pydict({"a": [1]}))
+
+
+def test_namespace_table_operations():
+    catalog = Catalog.from_pydict({}, "cat")
+
+    # Create namespace and tables
+    catalog.create_namespace("ns1")
+    data1 = {"a": [1, 2, 3]}
+    data2 = {"b": [4, 5, 6]}
+
+    catalog.create_table("ns1.table1", daft.from_pydict(data1))
+    catalog.create_table("ns1.table2", daft.from_pydict(data2))
+
+    # Verify tables exist and have correct data
+    table1 = catalog.get_table("ns1.table1")
+    assert table1.read().to_pydict() == data1
+
+    table2 = catalog.get_table("ns1.table2")
+    assert table2.read().to_pydict() == data2
+
+    # Drop table and verify namespace still exists
+    catalog.drop_table("ns1.table1")
+    assert not catalog.has_table("ns1.table1")
+    assert catalog.has_table("ns1.table2")
+    assert catalog.has_namespace("ns1")
