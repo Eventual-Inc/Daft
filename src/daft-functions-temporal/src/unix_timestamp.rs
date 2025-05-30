@@ -5,7 +5,7 @@ use daft_dsl::{functions::prelude::*, FromLiteral, LiteralValue};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UnixTimestamp;
 
-// simple wrapper to provide custom `fromliteral` impl
+/// simple wrapper to provide custom `fromliteral` impl
 struct WrappedTimeUnit(TimeUnit);
 
 impl FromLiteral for WrappedTimeUnit {
@@ -24,7 +24,8 @@ impl FromLiteral for WrappedTimeUnit {
 #[derive(FunctionArgs)]
 struct Args<T> {
     input: T,
-    time_unit: WrappedTimeUnit,
+    #[arg(optional)]
+    time_unit: Option<WrappedTimeUnit>,
 }
 
 #[typetag::serde]
@@ -35,8 +36,9 @@ impl ScalarUDF for UnixTimestamp {
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, time_unit } = inputs.try_into()?;
+        let tu = time_unit.map(|tu| tu.0).unwrap_or(TimeUnit::Seconds);
         input
-            .cast(&DataType::Timestamp(time_unit.0, None))
+            .cast(&DataType::Timestamp(tu, None))
             .and_then(|s| s.cast(&DataType::Int64))
     }
 
