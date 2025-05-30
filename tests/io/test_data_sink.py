@@ -114,39 +114,3 @@ def test_write_sink_remote_multiple_partitions(write_mode, minio_io_config):
 
         assert written_data["id"] == data["id"]
         assert written_data["value"] == data["value"]
-
-
-# @pytest.mark.parametrize("write_mode", ["overwrite", "append"])
-# def test_write_sink_write_modes(write_mode):
-#     """Test write sink with different write modes."""
-#     data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
-#     df = daft.from_pydict(data)
-
-#     with tempfile.TemporaryDirectory() as temp_dir:
-#         sink = MyWriteSink(temp_dir, write_mode=write_mode)
-#         result_df = df.write_sink(sink)
-
-#         result = result_df.collect()
-#         assert len(result) == 1
-
-#         # Verify files were created
-#         files = os.listdir(temp_dir)
-#         parquet_files = [f for f in files if f.endswith('.parquet')]
-#         assert len(parquet_files) >= 1
-
-
-# def test_write_sink_empty_dataframe():
-#     """Test write sink with empty dataframe."""
-#     df = daft.from_pydict({"id": [], "name": []})
-
-#     with tempfile.TemporaryDirectory() as temp_dir:
-#         sink = MyWriteSink(temp_dir)
-#         result_df = df.write_sink(sink)
-
-#         result = result_df.collect()
-#         assert len(result) == 1
-
-#         # Should have no files since dataframe was empty
-#         files = os.listdir(temp_dir)
-#         parquet_files = [f for f in files if f.endswith('.parquet')]
-#         assert len(parquet_files) == 0
