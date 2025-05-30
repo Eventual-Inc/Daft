@@ -50,7 +50,6 @@ pub mod pylib {
     use std::sync::LazyLock;
 
     use common_tracing::{init_opentelemetry_providers, init_tracing};
-    use daft_functions_serde::SerdeFunctions;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);

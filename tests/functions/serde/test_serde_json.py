@@ -1,18 +1,7 @@
-from typing import Any, Literal
-
 import pytest
 
-import daft
-from daft import col
 from daft.datatype import DataType as dt
 from daft.datatype import DataTypeLike
-
-
-def try_deserialize(items: list[str], format: Literal["json"], dtype: dt) -> list[Any]:
-    c = f"some_{format}_text"
-    df = daft.from_pydict({c: items})
-    df = df.select(col(c).try_deserialize(format, dtype))
-    return df.to_pydict()[c]
 
 
 @pytest.mark.parametrize(
@@ -44,26 +33,24 @@ def try_deserialize(items: list[str], format: Literal["json"], dtype: dt) -> lis
         ('"hello"', dt.string(), "hello"),
     ],
 )
-def test_serde_json_with_scalars(text, dtype, expected):
-    df = daft.from_pydict({"col": [text]})
-    df = df.select(col("col").deserialize(dtype))
-    assert df.to_pydict()["col"][0] == expected
+def test_deserialize_json_with_scalars(deserialize, text, dtype, expected):
+    assert deserialize([text], "json", dtype)[0] == expected
 
 
 @pytest.mark.parametrize(
     "data_type_like",
     [
-        "STRUCT(name STRING, age INT64)",
+        "STRUCT<name STRING, age INT64>",
         dt.struct({"name": dt.string(), "age": dt.int64()}),
     ],
 )
-def test_serde_json_with_structs(data_type_like: DataTypeLike):
+def test_deserialize_json_with_struct(deserialize, data_type_like: DataTypeLike):
     items = [
         '{"name": "Alice", "age": 30}',
         '{"name": "Bob", "age": 25}',
         '{"name": "Charlie", "age": 35}',
     ]
-    assert try_deserialize(items, "json", data_type_like) == [
+    assert deserialize(items, "json", data_type_like) == [
         {"name": "Alice", "age": 30},
         {"name": "Bob", "age": 25},
         {"name": "Charlie", "age": 35},
@@ -77,28 +64,53 @@ def test_serde_json_with_structs(data_type_like: DataTypeLike):
         dt.list(dt.int64()),
     ],
 )
-def test_serde_json_with_list():
+def test_deserialize_json_with_list(deserialize, data_type_like: DataTypeLike):
     items = [
         "[1, 2, 3]",
         "[4, 5, 6]",
     ]
-    # BIGINT ARRAY[]
-    dtype = dt.list(dt.int64())
-    assert try_deserialize(items, "json", dtype) == [
+    assert deserialize(items, "json", data_type_like) == [
         [1, 2, 3],
         [4, 5, 6],
     ]
 
 
-@pytest.mark.skip("arrow2 does not yet support json deserialize on the map type.")
-def test_serde_json_with_map():
+@pytest.mark.skip("our arrow2 does not yet support json deserialize on the map type.")
+def test_deserialize_json_with_map(deserialize):
     items = [
         '{"a": 1, "b": 2}',
         '{"c": 3, "d": 4}',
     ]
-    # MAP<STRING, BIGINT>
+    # MAP<STRING, INT64>
     dtype = dt.map(dt.string(), dt.int64())
-    assert try_deserialize(items, dtype) == [
+    assert deserialize(items, "json", dtype) == [
         {"a": 1, "b": 2},
         {"c": 3, "d": 4},
+    ]
+
+
+def test_try_deserialize_json(deserialize, try_deserialize):
+    items = [
+        "1",
+        "true",
+        "null",
+        '"abc"',
+        "3.14",
+    ]
+    assert try_deserialize(items, "json", dt.int64()) == [1, 1, None, None, 3]
+    assert try_deserialize(items, "json", dt.bool()) == [None, True, None, None, None]
+    assert try_deserialize(items, "json", dt.string()) == ["1", "true", None, "abc", "3.14"]
+
+
+def test_deserialize_json_with_missing_fields(deserialize):
+    items = [
+        '{"name": "Alice", "age": 30}',
+        '{ "age": 25}',
+        '{"name": "Charlie"}',
+    ]
+    dtype = dt.struct({"name": dt.string(), "age": dt.int64()})
+    assert deserialize(items, "json", dtype) == [
+        {"name": "Alice", "age": 30},
+        {"name": None, "age": 25},
+        {"name": "Charlie", "age": None},
     ]
