@@ -194,7 +194,9 @@ impl Catalog for MemoryCatalog {
     }
 
     fn has_table(&self, ident: &Identifier) -> CatalogResult<bool> {
-        let (namespace, table_name) = Self::split_table_ident(ident)?;
+        let Ok((namespace, table_name)) = Self::split_table_ident(ident) else {
+            return Ok(false);
+        };
 
         Ok(self
             .tables

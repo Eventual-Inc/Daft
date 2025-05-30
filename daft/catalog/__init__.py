@@ -269,10 +269,11 @@ class Catalog(ABC):
         """List all tables in the catalog. When a pattern is specified, list only tables matching the pattern."""
 
     @staticmethod
-    def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
+    def from_pydict(tables: dict[Identifier | str, object], name: str = "default") -> Catalog:
         """Returns an in-memory catalog from a dictionary of table-like objects.
 
         The table-like objects can be pydicts, dataframes, or a Table implementation.
+        For qualified tables, namespaces are created if necessary.
 
         Args:
             tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
@@ -303,7 +304,14 @@ class Catalog(ABC):
 
         catalog = MemoryCatalog._new(name)
 
-        for name, source in tables.items():
+        for ident, source in tables.items():
+            ident = ident if isinstance(ident, Identifier) else Identifier.from_str(ident)
+
+            # has namespace, create one if it doesn't exist
+            if len(ident) > 1:
+                namespace = Identifier(*ident[:-1])
+                catalog.create_namespace_if_not_exists(namespace)
+
             df: DataFrame
             if isinstance(source, Table):
                 df = source.read()
@@ -314,7 +322,7 @@ class Catalog(ABC):
             else:
                 raise ValueError(f"Unsupported table source {type(source)}")
 
-            catalog.create_table(Identifier(name), df)
+            catalog.create_table(ident, df)
 
         return catalog
 
