@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use daft_logical_plan::LogicalPlan;
+use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use daft_session::Session;
 
 use crate::{
@@ -17,8 +17,9 @@ pub(crate) type DataFrame = Arc<LogicalPlan>;
 pub(crate) fn execute_statement(
     sess: &Session,
     statement: &str,
+    ctes: HashMap<String, LogicalPlanBuilder>,
 ) -> SQLPlannerResult<Option<DataFrame>> {
-    let stmt = SQLPlanner::new(sess).plan(statement)?;
+    let stmt = SQLPlanner::new(sess).with_ctes(ctes).plan(statement)?;
     match stmt {
         Statement::Select(select) => execute_select(sess, select),
         Statement::Set(set) => execute_set(sess, set),

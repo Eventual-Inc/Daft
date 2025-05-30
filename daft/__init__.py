@@ -83,7 +83,6 @@ from daft.catalog import (
     Catalog,
     Identifier,
     Table,
-    register_table,
 )
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
@@ -221,7 +220,6 @@ __all__ = [
     "read_table",
     "read_warc",
     "refresh_logger",
-    "register_table",
     "register_viz_hook",
     "set_catalog",
     "set_execution_config",
