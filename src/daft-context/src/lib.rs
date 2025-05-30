@@ -322,7 +322,7 @@ fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
         .to_lowercase();
 
     match runner_from_envvar.as_str() {
-        "native" => Ok(RunnerConfig::Native { num_threads: None }),
+        "native" | "" => Ok(RunnerConfig::Native { num_threads: None }),
         "ray" => Ok(get_ray_runner_config_from_env()),
         "py" => Err(DaftError::ValueError("The PyRunner was removed from Daft from v0.5.0 onwards. Please set the env to `DAFT_RUNNER=native` instead.".to_string())),
         _ if detect_ray_state() => Ok(get_ray_runner_config_from_env()),
