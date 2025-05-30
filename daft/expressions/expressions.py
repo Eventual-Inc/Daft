@@ -1506,13 +1506,7 @@ class Expression:
             Null values will produce a hash value instead of being propagated as null.
 
         """
-        if seed is None:
-            expr = native.hash(self._expr)
-        else:
-            if not isinstance(seed, Expression):
-                seed = lit(seed)
-            expr = native.hash(self._expr, seed._expr)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("hash", seed=seed)
 
     def minhash(
         self,
@@ -5070,7 +5064,7 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
             (Showing first 2 of 2 rows)
 
         """
-        return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
+        return self._eval_expressions("cosine_distance", other)
 
 
 class ExpressionBinaryNamespace(ExpressionNamespace):

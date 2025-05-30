@@ -14,7 +14,6 @@ macro_rules! simple_python_wrapper {
 
 mod binary;
 mod coalesce;
-mod distance;
 mod misc;
 mod sequence;
 mod temporal;
@@ -101,7 +100,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(get_function_from_registry, parent)?)?;
 
     add!(coalesce::coalesce);
-    add!(distance::cosine_distance);
     add!(binary::binary_length);
     add!(binary::binary_concat);
     add!(binary::binary_slice);
@@ -112,7 +110,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::try_decode);
 
     add!(misc::to_struct);
-    add!(misc::hash);
     add!(misc::minhash);
 
     add!(sequence::monotonically_increasing_id);
