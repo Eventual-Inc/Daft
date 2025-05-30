@@ -109,7 +109,10 @@ def sql_expr(sql: str) -> Expression:
 
 @PublicAPI
 def sql(
-    sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool = True, ctes: dict[str, DataFrame] = {}
+    sql: str,
+    catalog: Optional[SQLCatalog] = None,
+    register_globals: bool = True,
+    **bindings: DataFrame,
 ) -> DataFrame:
     """Run a SQL query, returning the results as a DataFrame.
 
@@ -121,7 +124,7 @@ def sql(
         register_globals (bool, optional): Whether to incorporate global
             variables into the supplied catalog, in which case a copy of the
             catalog will be made and the original not modified. Defaults to True.
-        ctes: (dict[str,DataFrame]): Additional common table expression bindings to use for this query.
+        **bindings: (DataFrame): Additional DataFrame bindings (CTEs) to use for this query.
 
     Returns:
         DataFrame: Dataframe containing the results of the query
@@ -163,9 +166,9 @@ def sql(
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
         >>>
         >>> # Register dataframes as table expressions using a python dictionary.
-        >>> ctes = {"my_df": df}
+        >>> bindings = {"my_df": df}
         >>>
-        >>> daft.sql("SELECT a FROM my_df", ctes).show()
+        >>> daft.sql("SELECT a FROM my_df", **bindings).show()
         ╭───────╮
         │ a     │
         │ ---   │
@@ -209,7 +212,7 @@ def sql(
         py_ctes.update(catalog._catalog.to_pydict())
 
     # 3. Add explicit CTEs last so these can't be shadowed.
-    for alias, df in ctes.items():
+    for alias, df in bindings.items():
         py_ctes[alias] = df._builder._builder
 
     py_sess = daft.current_session()._session

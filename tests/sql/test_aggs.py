@@ -75,7 +75,7 @@ def test_having(agg, cond, expected):
             "values": [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 1.5],
         }
     )
-    ctes = {"df": df}
+    bindings = {"df": df}
 
     actual = daft.sql(
         f"""
@@ -86,7 +86,7 @@ def test_having(agg, cond, expected):
     having {cond}
     order by id
     """,
-        ctes=ctes,
+        **bindings,
     ).to_pydict()
 
     assert actual == expected
@@ -100,7 +100,7 @@ def test_having_non_grouped():
             "floats": [0.01, 0.011, 0.01047, 0.02, 0.019, 0.018, 0.017, 0.016, 0.015, 0.014],
         }
     )
-    ctes = {"df": df}
+    bindings = {"df": df}
 
     actual = daft.sql(
         """
@@ -109,7 +109,7 @@ def test_having_non_grouped():
     from df
     having sum(values) > 40
     """,
-        ctes=ctes,
+        **bindings,
     ).to_pydict()
 
     assert actual == {"count": [10]}
@@ -119,7 +119,7 @@ def test_simple_rollup():
     data = {"dept": ["IT", "IT", "HR", "HR"], "year": [2022, 2023, 2022, 2023], "cost": [100, 200, 300, 400]}
     expected = {"dept": ["HR", "IT", None], "year": [None, None, None], "total": [700, 300, 1000]}
     df = daft.from_pydict(data)
-    ctes = {"df": df}
+    bindings = {"df": df}
     sql = """
     SELECT
         dept,
@@ -130,7 +130,7 @@ def test_simple_rollup():
     HAVING year IS NULL
     ORDER BY dept NULLS LAST
     """
-    actual = daft.sql(sql, ctes=ctes).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -138,7 +138,7 @@ def test_rollup_null_handling():
     data = {"dept": ["IT", "IT", "HR", "HR"], "year": [2022, 2023, 2022, 2023], "cost": [100, 200, 300, 400]}
     expected = {"dept": ["HR", "IT", None], "year": [None, None, None], "total": [700, 300, 1000]}
     df = daft.from_pydict(data)
-    ctes = {"df": df}
+    bindings = {"df": df}
 
     sql = """
     SELECT dept, year, SUM(cost) as total
@@ -147,7 +147,7 @@ def test_rollup_null_handling():
     HAVING year IS NULL
     ORDER BY dept NULLS LAST
     """
-    actual = daft.sql(sql, ctes=ctes).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -161,7 +161,7 @@ def test_rollup_multiple_aggs():
     expected = {"region": ["East", "West", None], "total_qty": [30, 70, 100], "avg_price": [6.5, 7.5, 7.0]}
 
     df = daft.from_pydict(data)
-    ctes = {"df": df}
+    bindings = {"df": df}
 
     sql = """
     SELECT
@@ -173,7 +173,7 @@ def test_rollup_multiple_aggs():
     HAVING product IS NULL
     ORDER BY region NULLS LAST
     """
-    actual = daft.sql(sql, ctes=ctes).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -195,7 +195,7 @@ def test_groupby_rollup():
         "roi": [2.5, 2.4705882352941178],
     }
     df = daft.from_pydict(data)
-    ctes = {"sales": df}
+    bindings = {"sales": df}
 
     sql = """
     SELECT
@@ -211,7 +211,7 @@ def test_groupby_rollup():
     HAVING SUM(sales) > 1000
     ORDER BY region, product, channel;
     """
-    actual = daft.sql(sql, ctes=ctes).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -226,8 +226,7 @@ def test_groupby_rollup():
 )
 def test_various_groupby_positions(query):
     data = daft.from_pydict({"strings": ["foo", "bar"]})
-
-    res = daft.sql(query, ctes={"data": data})
+    res = daft.sql(query, **{"data": data})
     if "s" in res.column_names:
         res = res.sort("s").to_pydict()
         assert res == {"s": ["Bar", "Foo"], "count": [1, 1]}
