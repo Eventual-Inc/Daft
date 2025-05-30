@@ -27,7 +27,7 @@ hyper = "0.14.27"
 hyper-tls = "0.5.0"
 itertools = {workspace = true}
 log = {workspace = true}
-openssl-sys = {version = "0.9.102", features = ["vendored"]}
+openssl-sys = {version = "0.9.102"}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.10.4"}
