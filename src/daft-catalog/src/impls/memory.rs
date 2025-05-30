@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 use common_error::DaftResult;
 use daft_context::get_context;
@@ -9,13 +6,14 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::{ops::Source, InMemoryInfo, LogicalPlan, LogicalPlanBuilder, SourceInfo};
 use daft_micropartition::partitioning::{MicroPartitionSet, PartitionSet};
+use indexmap::IndexMap;
 
 use crate::{
     error::{CatalogError, CatalogResult},
     Catalog, Identifier, Table, TableRef,
 };
 
-type NamespaceTableMap = HashMap<Option<String>, HashMap<String, Arc<MemoryTable>>>;
+type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTable>>>;
 
 #[derive(Clone, Debug)]
 /// A catalog entirely stored in-memory.
@@ -29,9 +27,9 @@ pub struct MemoryCatalog {
 
 impl MemoryCatalog {
     pub fn new(name: String) -> Self {
-        let mut tables = HashMap::new();
+        let mut tables = IndexMap::new();
 
-        tables.insert(None, HashMap::new());
+        tables.insert(None, IndexMap::new());
 
         Self {
             name,
@@ -102,7 +100,7 @@ impl Catalog for MemoryCatalog {
         self.tables
             .write()
             .unwrap()
-            .insert(namespace, HashMap::new());
+            .insert(namespace, IndexMap::new());
 
         Ok(())
     }
@@ -144,7 +142,7 @@ impl Catalog for MemoryCatalog {
 
         let namespace = Some(ident.name().to_string());
 
-        match self.tables.write().unwrap().remove(&namespace) {
+        match self.tables.write().unwrap().shift_remove(&namespace) {
             Some(_) => Ok(()),
             None => Err(CatalogError::obj_not_found("namespace", ident)),
         }
@@ -158,7 +156,7 @@ impl Catalog for MemoryCatalog {
             return Err(CatalogError::obj_not_found("table", ident));
         };
 
-        match namespace_tables.remove(table_name) {
+        match namespace_tables.shift_remove(table_name) {
             Some(_) => Ok(()),
             None => Err(CatalogError::obj_not_found("table", ident)),
         }
@@ -286,7 +284,7 @@ impl Table for MemoryTable {
     fn append(
         &self,
         plan: LogicalPlanBuilder,
-        options: HashMap<String, LiteralValue>,
+        options: IndexMap<String, LiteralValue>,
     ) -> CatalogResult<()> {
         let append_plan = self.to_logical_plan()?.concat(&plan)?;
 
@@ -297,7 +295,7 @@ impl Table for MemoryTable {
     fn overwrite(
         &self,
         plan: LogicalPlanBuilder,
-        _options: HashMap<String, LiteralValue>,
+        _options: IndexMap<String, LiteralValue>,
     ) -> CatalogResult<()> {
         use common_error::DaftError;
 
@@ -348,7 +346,7 @@ impl Table for MemoryTable {
     fn overwrite(
         &self,
         plan: LogicalPlanBuilder,
-        options: HashMap<String, LiteralValue>,
+        options: IndexMap<String, LiteralValue>,
     ) -> CatalogResult<()> {
         unimplemented!("MemoryTable.overwrite requires Python")
     }

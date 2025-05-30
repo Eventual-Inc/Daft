@@ -2077,6 +2077,7 @@ dependencies = [
  "daft-dsl",
  "daft-logical-plan",
  "daft-micropartition",
+ "indexmap 2.8.0",
  "pyo3",
  "snafu",
  "sqlparser",

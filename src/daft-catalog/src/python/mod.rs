@@ -2,11 +2,12 @@
 
 mod wrappers;
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use daft_core::python::PySchema;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use indexmap::IndexMap;
 use pyo3::{exceptions::PyIndexError, intern, prelude::*, types::PyDict};
 pub use wrappers::{PyCatalogWrapper, PyTableWrapper};
 
@@ -90,7 +91,7 @@ pub struct PyTable(pub TableRef);
 impl PyTable {
     fn pydict_to_options(
         options: Option<&Bound<PyDict>>,
-    ) -> PyResult<HashMap<String, LiteralValue>> {
+    ) -> PyResult<IndexMap<String, LiteralValue>> {
         if let Some(options) = options {
             options
                 .iter()
@@ -102,7 +103,7 @@ impl PyTable {
                 })
                 .collect()
         } else {
-            Ok(HashMap::new())
+            Ok(IndexMap::new())
         }
     }
 }

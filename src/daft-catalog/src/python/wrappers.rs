@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use daft_core::{prelude::SchemaRef, python::PySchema};
+use daft_dsl::LiteralValue;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use indexmap::IndexMap;
 use pyo3::{intern, prelude::*, types::PyList};
 
 use super::PyIdentifier;
@@ -189,7 +191,7 @@ impl Table for PyTableWrapper {
     fn append(
         &self,
         plan: LogicalPlanBuilder,
-        options: std::collections::HashMap<String, daft_dsl::LiteralValue>,
+        options: IndexMap<String, LiteralValue>,
     ) -> CatalogResult<()> {
         Python::with_gil(|py| {
             let table = self.0.bind(py);
@@ -206,7 +208,7 @@ impl Table for PyTableWrapper {
     fn overwrite(
         &self,
         plan: LogicalPlanBuilder,
-        options: std::collections::HashMap<String, daft_dsl::LiteralValue>,
+        options: IndexMap<String, LiteralValue>,
     ) -> CatalogResult<()> {
         Python::with_gil(|py| {
             let table = self.0.bind(py);
