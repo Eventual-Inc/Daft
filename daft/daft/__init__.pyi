@@ -1231,11 +1231,6 @@ class ConnectionHandle:
     def port(self) -> int: ...
 
 # ---
-# expr.json namespace
-# ---
-def json_query(expr: PyExpr, query: str) -> PyExpr: ...
-
-# ---
 # expr.dt namespace
 # ---
 def dt_date(expr: PyExpr) -> PyExpr: ...

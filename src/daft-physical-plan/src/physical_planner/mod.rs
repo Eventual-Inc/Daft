@@ -11,7 +11,9 @@ pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput, StageS
 
 use crate::{optimization::optimizer::PhysicalOptimizer, PhysicalPlanRef};
 mod translate;
-pub use translate::{extract_agg_expr, populate_aggregation_stages};
+pub use translate::{
+    extract_agg_expr, populate_aggregation_stages, populate_aggregation_stages_bound,
+};
 
 mod display;
 

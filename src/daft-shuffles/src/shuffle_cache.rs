@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock};
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_runtime, RuntimeRef, RuntimeTask};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{parse_url, SourceType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -288,7 +288,8 @@ async fn partitioner_task(
             .spawn(async move {
                 let partitioned = match &partition_by {
                     Some(partition_by) => {
-                        partition.partition_by_hash(partition_by, num_partitions)?
+                        let partition_by = BoundExpr::bind_all(partition_by, &partition.schema())?;
+                        partition.partition_by_hash(&partition_by, num_partitions)?
                     }
                     None => partition.partition_by_random(num_partitions, 0)?,
                 };
