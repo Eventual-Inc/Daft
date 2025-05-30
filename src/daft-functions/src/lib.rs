@@ -24,6 +24,7 @@ use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
+use to_struct::ToStructFunction;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -58,5 +59,13 @@ impl FunctionModule for HashFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
+    }
+}
+
+pub struct StructFunctions;
+
+impl FunctionModule for StructFunctions {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(ToStructFunction);
     }
 }

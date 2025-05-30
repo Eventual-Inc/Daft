@@ -33,7 +33,6 @@ from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
-from daft.daft import struct as _struct
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import tokenize_decode as _tokenize_decode
@@ -229,7 +228,8 @@ def struct(*fields: Expression | str) -> Expression:
             pyinputs.append(col(field)._expr)
         else:
             raise TypeError("expected Expression or str as input for struct()")
-    return Expression._from_pyexpr(_struct(pyinputs))
+    f = native.get_function_from_registry("struct")
+    return Expression._from_pyexpr(f(*pyinputs))
 
 
 def interval(
@@ -278,7 +278,9 @@ def coalesce(*args: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
+    f = native.get_function_from_registry("coalesce")
+
+    return Expression._from_pyexpr(f(*[arg._expr for arg in args]))
 
 
 class Expression:
