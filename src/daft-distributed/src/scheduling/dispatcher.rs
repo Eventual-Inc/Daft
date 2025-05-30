@@ -240,7 +240,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = submitted_task.await.unwrap()?;
+        let result = submitted_task.await?;
         let partition = result[0].partition();
         assert!(Arc::ptr_eq(&partition, &partition_ref));
 
@@ -274,7 +274,7 @@ mod tests {
         test_context.joinset.spawn(async move {
             let mut count = 0;
             for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
-                let result = submitted_task.await.expect("Task should be completed")?;
+                let result = submitted_task.await?;
                 let partition = result[0].partition();
                 assert_eq!(partition.num_rows().unwrap(), 100 + i);
                 assert_eq!(partition.size_bytes().unwrap(), Some(1024 * (i + 1)));
@@ -335,10 +335,10 @@ mod tests {
             .dispatch_tasks(scheduled_tasks)
             .await?;
 
-        let result = submitted_task.await.expect("Task should be completed");
+        let result = submitted_task.await;
         assert!(result.is_err());
         assert_eq!(
-            result.err().unwrap().to_string(),
+            result.unwrap_err().to_string(),
             "DaftError::InternalError test error"
         );
 
@@ -363,13 +363,12 @@ mod tests {
             .await?;
 
         let result = submitted_task.await;
-        assert!(result.is_none());
+        assert!(result.is_err());
 
         let text_context_result = test_context.cleanup().await;
         assert!(text_context_result.is_err());
         assert!(text_context_result
-            .err()
-            .unwrap()
+            .unwrap_err()
             .to_string()
             .contains("panicked with message \"test panic\""));
 
@@ -392,7 +391,7 @@ mod tests {
             .dispatch_tasks(scheduled_tasks)
             .await?;
         let result = submitted_task.await;
-        assert!(result.is_none());
+        assert!(result.is_err());
 
         let new_task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024)).build();
 
@@ -413,8 +412,7 @@ mod tests {
         let cleanup_result = test_context.cleanup().await;
         assert!(cleanup_result.is_err());
         assert!(cleanup_result
-            .err()
-            .unwrap()
+            .unwrap_err()
             .to_string()
             .contains("test panic"));
 
