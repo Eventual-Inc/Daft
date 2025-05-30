@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
+use serde::{Serialize, Deserialize};
 
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;
@@ -11,7 +12,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sink {
     pub plan_id: Option<usize>,
     // Upstream node.

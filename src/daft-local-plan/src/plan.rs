@@ -635,7 +635,8 @@ impl LocalPhysicalPlan {
     }
 
     pub fn resource_request(&self) -> ResourceRequest {
-        todo!("Implement resource request for local physical plan");
+        // TODO: Implement resource request for local physical plan
+        ResourceRequest::default_cpu()
     }
 
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {

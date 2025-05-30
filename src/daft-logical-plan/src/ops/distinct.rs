@@ -5,7 +5,9 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Distinct {
     pub plan_id: Option<usize>,
     // Upstream node.
