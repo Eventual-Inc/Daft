@@ -68,6 +68,9 @@ impl DaftError {
     pub fn not_implemented<T: std::fmt::Display>(msg: T) -> Self {
         Self::NotImplemented(msg.to_string())
     }
+    pub fn type_error<T: std::fmt::Display>(msg: T) -> Self {
+        Self::TypeError(msg.to_string())
+    }
 }
 
 #[macro_export]

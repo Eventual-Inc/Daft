@@ -9,7 +9,6 @@ pub mod partitioning;
 pub mod python;
 pub mod sketch;
 pub mod structs;
-pub mod temporal;
 pub mod utf8;
 pub mod window;
 
@@ -20,7 +19,6 @@ pub use partitioning::SQLModulePartitioning;
 pub use python::SQLModulePython;
 pub use sketch::SQLModuleSketch;
 pub use structs::SQLModuleStructs;
-pub use temporal::SQLModuleTemporal;
 pub use utf8::SQLModuleUtf8;
 pub use window::SQLModuleWindow;
 
