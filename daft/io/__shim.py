@@ -37,7 +37,7 @@ class _DataSourceShim(ScanOperator):
         return f"DataSource({self.name()})"
 
     def partitioning_keys(self) -> list[PyPartitionField]:
-        return []
+        return [pf._partition_field for pf in self._source.get_partition_fields()]
 
     def can_absorb_filter(self) -> bool:
         return False
