@@ -22,22 +22,18 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
-      use_old_name: ${{ matrix.use_old_name }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos, windows]
         arch: [x86_64, aarch64]
         lts: [false, true]
-        use_old_name: [false, true]
 
         exclude:
         - os: windows
           arch: aarch64
         - lts: true
           arch: aarch64
-        - lts: true
-          use_old_name: false
 
   publish:
     name: Publish wheels to PyPI
