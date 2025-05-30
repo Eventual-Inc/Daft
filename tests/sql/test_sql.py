@@ -8,7 +8,6 @@ import pytest
 import daft
 from daft import DataType, Series, col
 from daft.exceptions import DaftCoreException
-from daft.sql.sql import SQLCatalog
 from tests.assets import TPCH_QUERIES
 
 
@@ -42,8 +41,8 @@ all_tpch_queries = load_tpch_queries()
 
 
 def test_sanity():
-    catalog = SQLCatalog({"test": daft.from_pydict({"a": [1, 2, 3]})})
-    df = daft.sql("SELECT * FROM test", catalog=catalog)
+    ctes = {"test": daft.from_pydict({"a": [1, 2, 3]})}
+    df = daft.sql("SELECT * FROM test", ctes=ctes)
     assert isinstance(df, daft.DataFrame)
 
 
@@ -58,7 +57,7 @@ def test_parse_ok(name, sql):
 def test_fizzbuzz_sql():
     arr = np.arange(100)
     df = daft.from_pydict({"a": arr})
-    catalog = SQLCatalog({"test": df})
+    ctes = {"test": df}
     # test case expression
     expected = daft.from_pydict(
         {
@@ -81,7 +80,7 @@ def test_fizzbuzz_sql():
         END AS fizzbuzz
     FROM test
     """,
-        catalog=catalog,
+        ctes=ctes,
     ).collect()
     assert df.to_pydict() == expected.to_pydict()
 
@@ -104,13 +103,13 @@ def test_sql_expr(actual, expected):
 
 def test_sql_global_agg():
     df = daft.from_pydict({"n": [1, 2, 3]})
-    catalog = SQLCatalog({"test": df})
-    df = daft.sql("SELECT max(n) max_n, sum(n) sum_n FROM test", catalog=catalog)
+    ctes = {"test": df}
+    df = daft.sql("SELECT max(n) max_n, sum(n) sum_n FROM test", ctes=ctes)
     assert df.collect().to_pydict() == {"max_n": [3], "sum_n": [6]}
     # If there is agg and non-agg, it should fail
     # TODO: we can emit a better error message if our agg op can also include expressions on groupby expressions
     with pytest.raises(Exception):
-        daft.sql("SELECT n,max(n) max_n FROM test", catalog=catalog).collect()
+        daft.sql("SELECT n,max(n) max_n FROM test", ctes=ctes).collect()
 
 
 @pytest.mark.parametrize(
@@ -125,8 +124,8 @@ def test_sql_global_agg():
 )
 def test_sql_groupby_agg(query, expected):
     df = daft.from_pydict({"n": [1, 1, 2, 2], "v": [1, 2, 3, 4]})
-    catalog = SQLCatalog({"test": df})
-    actual = daft.sql(query, catalog=catalog)
+    ctes = {"test": df}
+    actual = daft.sql(query, ctes=ctes)
     assert actual.collect().to_pydict() == expected
 
 
@@ -137,12 +136,12 @@ def test_sql_count_star():
             "b": [4, 3, 2, None],
         }
     )
-    catalog = SQLCatalog({"df": df})
-    df2 = daft.sql("SELECT count(*) FROM df", catalog)
+    ctes = {"df": df}
+    df2 = daft.sql("SELECT count(*) FROM df", ctes=ctes)
     actual = df2.collect().to_pydict()
     expected = df.count().collect().to_pydict()
     assert actual == expected
-    df2 = daft.sql("SELECT count(b) FROM df", catalog)
+    df2 = daft.sql("SELECT count(b) FROM df", ctes=ctes)
     actual = df2.collect().to_pydict()
     expected = df.agg(daft.col("b").count()).collect().to_pydict()
     assert actual == expected
@@ -171,7 +170,7 @@ def test_sql_function_locals_shadow_globals(set_global_df):
 
 def test_sql_function_globals_are_added_to_catalog(set_global_df):
     df = daft.from_pydict({"n": [1], "x": [2]})
-    res = daft.sql("SELECT * FROM GLOBAL_DF g JOIN df d USING (n)", catalog=SQLCatalog({"df": df}))
+    res = daft.sql("SELECT * FROM GLOBAL_DF g JOIN df d USING (n)", ctes=({"df": df}))
     joined = GLOBAL_DF.join(df, on="n")
     assert res.collect().to_pydict() == joined.collect().to_pydict()
 
@@ -180,17 +179,12 @@ def test_sql_function_catalog_is_final(set_global_df):
     df = daft.from_pydict({"a": [1]})
     # sanity check to ensure validity of below test
     assert df.collect().to_pydict() != GLOBAL_DF.collect().to_pydict()
-    res = daft.sql("SELECT * FROM GLOBAL_DF", catalog=SQLCatalog({"GLOBAL_DF": df}))
+    res = daft.sql("SELECT * FROM GLOBAL_DF", ctes=({"GLOBAL_DF": df}))
     assert res.collect().to_pydict() == df.collect().to_pydict()
 
 
 def test_sql_function_register_globals(set_global_df):
     with pytest.raises(Exception, match="Table not found"):
-        daft.sql("SELECT * FROM GLOBAL_DF", SQLCatalog({}), register_globals=False)
-
-
-def test_sql_function_requires_catalog_or_globals(set_global_df):
-    with pytest.raises(Exception, match="Must supply a catalog"):
         daft.sql("SELECT * FROM GLOBAL_DF", register_globals=False)
 
 
@@ -201,14 +195,13 @@ def test_sql_function_raises_when_cant_get_frame(monkeypatch):
 
 
 def test_sql_multi_statement_sql_error():
-    catalog = SQLCatalog({})
     with pytest.raises(Exception, match="one SQL statement allowed"):
-        daft.sql("SELECT * FROM df; SELECT * FROM df", catalog)
+        daft.sql("SELECT * FROM df; SELECT * FROM df")
 
 
 def test_sql_tbl_alias():
-    catalog = SQLCatalog({"df": daft.from_pydict({"n": [1, 2, 3]})})
-    df = daft.sql("SELECT df_alias.n FROM df AS df_alias where df_alias.n = 2", catalog)
+    ctes = {"df": daft.from_pydict({"n": [1, 2, 3]})}
+    df = daft.sql("SELECT df_alias.n FROM df AS df_alias where df_alias.n = 2", ctes=ctes)
     assert df.collect().to_pydict() == {"n": [2]}
 
 
@@ -243,9 +236,9 @@ def test_compiles(query):
             "i32": [1, 2, 3, 3],
         }
     )
-    catalog = SQLCatalog({"tbl1": tbl1})
+    ctes = {"tbl1": tbl1}
     try:
-        res = daft.sql(query, catalog=catalog)
+        res = daft.sql(query, ctes=ctes)
         data = res.collect().to_pydict()
         assert data
 
@@ -325,5 +318,5 @@ def test_cast_image():
 
     s = Series.from_pylist(data, pyobj="force")
     df = daft.from_pydict({"img": s})
-    actual = daft.sql("select cast(img as image(RGB)) from df", catalog=SQLCatalog({"df": df})).collect()
+    actual = daft.sql("select cast(img as image(RGB)) from df", ctes=({"df": df})).collect()
     assert actual.schema()["img"].dtype == DataType.image("RGB")

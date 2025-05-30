@@ -36,15 +36,6 @@ def test_try_from_unity():
     assert Catalog.from_unity(unity_catalog) is not None
 
 
-def test_register_python_catalog():
-    import daft.unity_catalog
-
-    # sanity check for backwards compatibility
-    cat1 = daft.unity_catalog.UnityCatalog("", "")
-    daft.catalog.register_python_catalog(cat1, "test")
-    daft.catalog.unregister_catalog("test")
-
-
 def test_from_pydict():
     import daft
     from daft.catalog import Catalog, Table
