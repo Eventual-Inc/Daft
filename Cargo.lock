@@ -2024,6 +2024,7 @@ dependencies = [
  "daft-functions-json",
  "daft-functions-list",
  "daft-functions-temporal",
+ "daft-functions-tokenize",
  "daft-functions-utf8",
  "daft-hash",
  "daft-image",
@@ -2294,7 +2295,6 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "base64 0.22.1",
  "bytes",
  "common-error",
@@ -2311,7 +2311,6 @@ dependencies = [
  "serde",
  "simdutf8",
  "snafu",
- "tiktoken-rs",
  "tokio",
  "typetag",
  "uuid 1.16.0",
@@ -2357,6 +2356,24 @@ dependencies = [
  "daft-dsl",
  "paste",
  "serde",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-tokenize"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "base64 0.22.1",
+ "common-error",
+ "common-runtime",
+ "daft-core",
+ "daft-dsl",
+ "daft-io",
+ "itertools 0.11.0",
+ "serde",
+ "snafu",
+ "tiktoken-rs",
  "typetag",
 ]
 

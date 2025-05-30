@@ -35,8 +35,6 @@ from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
-from daft.daft import tokenize_decode as _tokenize_decode
-from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
@@ -4255,19 +4253,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
             strings in certain edge cases. This may result in slightly different encodings in these cases.
 
         """
-        # if special tokens are passed in, enable using special tokens
-        if use_special_tokens is None:
-            use_special_tokens = special_tokens is not None
-
-        return Expression._from_pyexpr(
-            _tokenize_encode(
-                self._expr,
-                tokens_path,
-                use_special_tokens,
-                io_config,
-                pattern,
-                special_tokens,
-            )
+        return self._eval_expressions(
+            "tokenize_encode",
+            tokens_path=tokens_path,
+            use_special_tokens=use_special_tokens,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
         )
 
     def tokenize_decode(
@@ -4294,7 +4286,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with decoded strings.
         """
-        return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config, pattern, special_tokens))
+        return self._eval_expressions(
+            "tokenize_decode",
+            tokens_path=tokens_path,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
+        )
 
     def count_matches(
         self,

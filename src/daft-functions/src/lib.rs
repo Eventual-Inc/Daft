@@ -14,7 +14,6 @@ pub mod numeric;
 pub mod python;
 pub mod temporal;
 pub mod to_struct;
-pub mod tokenize;
 pub mod uri;
 
 use common_error::DaftError;

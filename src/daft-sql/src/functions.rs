@@ -18,9 +18,8 @@ use sqlparser::ast::{
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
-        coalesce::SQLCoalesce, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap,
-        SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs,
-        SQLModuleTemporal, SQLModuleUtf8, SQLModuleWindow,
+        SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -36,10 +35,8 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleTemporal>();
-    functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
-    functions.add_fn("coalesce", SQLCoalesce {});
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
         // Note:
         //  FunctionModule came from SQLModule, but SQLModule still remains.

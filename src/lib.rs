@@ -162,6 +162,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::HashFunctions>();
         functions_registry.register::<daft_functions::StructFunctions>();
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
+        functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry

@@ -14,7 +14,6 @@ macro_rules! simple_python_wrapper {
 
 mod binary;
 mod temporal;
-mod tokenize;
 
 use std::sync::Arc;
 
@@ -125,9 +124,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(temporal::dt_truncate);
     add!(temporal::dt_to_unix_epoch);
     add!(temporal::dt_strftime);
-
-    add!(tokenize::tokenize_encode);
-    add!(tokenize::tokenize_decode);
 
     Ok(())
 }
