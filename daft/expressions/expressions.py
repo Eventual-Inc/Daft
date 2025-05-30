@@ -1531,13 +1531,9 @@ class Expression:
             hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
 
         """
-        assert isinstance(num_hashes, int)
-        assert isinstance(ngram_size, int)
-        assert isinstance(seed, int)
-        assert isinstance(hash_function, str)
-        assert hash_function in ["murmurhash3", "xxhash", "sha1"], f"Hash function {hash_function} not found"
-
-        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
+        return self._eval_expressions(
+            "minhash", num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
+        )
 
     def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.

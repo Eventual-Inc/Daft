@@ -110,7 +110,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::try_decode);
 
     add!(misc::to_struct);
-    add!(misc::minhash);
 
     add!(sequence::monotonically_increasing_id);
 
