@@ -35,7 +35,7 @@ use crate::{
     functions::{
         function_display_without_formatter, function_semantic_id,
         python::PythonUDF,
-        scalar_function_semantic_id,
+        scalar::scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
         FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,

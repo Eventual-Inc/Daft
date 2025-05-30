@@ -10,7 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::{join::get_common_join_cols, resolved_col};
+use daft_dsl::join::get_common_join_cols;
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
@@ -106,6 +106,9 @@ pub fn physical_plan_to_pipeline(
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
+        LocalPhysicalPlan::PlaceholderScan(_) => {
+            panic!("PlaceholderScan should not be converted to a pipeline node")
+        }
         LocalPhysicalPlan::EmptyScan(EmptyScan {
             schema,
             stats_state,
@@ -338,12 +341,11 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
-            schema,
             stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let agg_sink = AggregateSink::new(aggregations, schema).with_context(|_| {
+            let agg_sink = AggregateSink::new(aggregations, input.schema()).with_context(|_| {
                 PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 }
@@ -354,15 +356,14 @@ pub fn physical_plan_to_pipeline(
             input,
             aggregations,
             group_by,
-            schema,
             stats_state,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let agg_sink = GroupedAggregateSink::new(aggregations, group_by, schema, cfg)
+            let agg_sink = GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg)
                 .with_context(|_| PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                })?;
+                plan_name: physical_plan.name(),
+            })?;
             BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats_state.clone()).boxed()
         }
         LocalPhysicalPlan::Unpivot(Unpivot {
@@ -562,11 +563,11 @@ pub fn physical_plan_to_pipeline(
                     .collect();
                 let build_key_fields = build_on
                     .iter()
-                    .map(|e| e.to_field(build_schema))
+                    .map(|e| e.inner().to_field(build_schema))
                     .collect::<DaftResult<Vec<_>>>()?;
                 let probe_key_fields = probe_on
                     .iter()
-                    .map(|e| e.to_field(probe_schema))
+                    .map(|e| e.inner().to_field(probe_schema))
                     .collect::<DaftResult<Vec<_>>>()?;
 
                 for (build_field, probe_field) in build_key_fields.iter().zip(probe_key_fields.iter()) {
@@ -764,11 +765,10 @@ pub fn physical_plan_to_pipeline(
                     if let Some(partition_cols) = &dl.partition_cols
                         && !partition_cols.is_empty()
                     {
-                        let partition_col_exprs = partition_cols
-                            .iter()
-                            .map(|name| resolved_col(name.as_str()))
-                            .collect::<Vec<_>>();
-                        (Some(partition_col_exprs), WriteFormat::PartitionedDeltalake)
+                        (
+                            Some(partition_cols.clone()),
+                            WriteFormat::PartitionedDeltalake,
+                        )
                     } else {
                         (None, WriteFormat::Deltalake)
                     }

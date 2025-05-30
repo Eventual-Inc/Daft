@@ -108,27 +108,30 @@ pub fn udf(
 
 /// Generates a ResourceRequest by inspecting an iterator of expressions.
 /// Looks for ResourceRequests on UDFs in each expression presented, and merges ResourceRequests across all expressions.
-pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
+pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
+    exprs: impl IntoIterator<Item = E>,
+) -> Option<ResourceRequest> {
     let merged_resource_requests = exprs
-        .iter()
+        .into_iter()
         .filter_map(|expr| {
             let mut resource_requests = Vec::new();
-            expr.apply(|e| match e.as_ref() {
-                Expr::Function {
-                    func:
-                        FunctionExpr::Python(PythonUDF {
-                            resource_request, ..
-                        }),
-                    ..
-                } => {
-                    if let Some(rr) = resource_request {
-                        resource_requests.push(rr.clone());
+            expr.into()
+                .apply(|e| match e.as_ref() {
+                    Expr::Function {
+                        func:
+                            FunctionExpr::Python(PythonUDF {
+                                resource_request, ..
+                            }),
+                        ..
+                    } => {
+                        if let Some(rr) = resource_request {
+                            resource_requests.push(rr.clone());
+                        }
+                        Ok(TreeNodeRecursion::Continue)
                     }
-                    Ok(TreeNodeRecursion::Continue)
-                }
-                _ => Ok(TreeNodeRecursion::Continue),
-            })
-            .unwrap();
+                    _ => Ok(TreeNodeRecursion::Continue),
+                })
+                .unwrap();
             if resource_requests.is_empty() {
                 None
             } else {

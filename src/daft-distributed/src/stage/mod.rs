@@ -14,7 +14,7 @@ use stage_builder::StagePlanBuilder;
 use crate::{
     pipeline_node::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        PipelineOutput, RunningPipelineNode,
+        MaterializedOutput, PipelineOutput, RunningPipelineNode,
     },
     scheduling::{
         scheduler::SchedulerHandle,
@@ -85,7 +85,8 @@ impl Stage {
         let mut stage_context = StageContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
+                let mut pipeline_node =
+                    logical_plan_to_pipeline_node(plan.clone(), config, Arc::new(psets))?;
                 let running_node = pipeline_node.start(&mut stage_context);
                 Ok(RunningStage::new(running_node, stage_context.joinset))
             }
@@ -111,7 +112,7 @@ impl RunningStage {
     pub fn materialize<T: Task>(
         self,
         scheduler_handle: SchedulerHandle<T>,
-    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+    ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
         let stream = self.into_stream();
         materialize_all_pipeline_outputs(stream, scheduler_handle)
     }

@@ -1,3 +1,4 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
 import inspect
@@ -6,7 +7,7 @@ from typing import Optional
 import daft
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.daft import PyCatalog as _PyCatalog
+from daft.daft import PySqlCatalog as _PySqlCatalog
 from daft.daft import sql as _sql
 from daft.daft import sql_expr as _sql_expr
 from daft.dataframe import DataFrame
@@ -21,11 +22,11 @@ class SQLCatalog:
     EXPERIMENTAL: This features is early in development and will change.
     """
 
-    _catalog: _PyCatalog = None  # type: ignore
+    _catalog: _PySqlCatalog = None  # type: ignore
 
     def __init__(self, tables: dict[str, DataFrame]) -> None:
         """Create a new SQLCatalog from a dictionary of table names to dataframes."""
-        self._catalog = _PyCatalog.new()
+        self._catalog = _PySqlCatalog.new()
         for name, df in tables.items():
             self._catalog.register_table(name, df._get_current_builder()._builder)
 
