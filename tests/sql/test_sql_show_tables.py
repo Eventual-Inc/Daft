@@ -54,8 +54,8 @@ def test_show_tables_all(sess):
     assert actual == expect
 
 
-@pytest.skip(
-    reason="`SHOW TABLES LIKE` is not properly supported yet. See https://github.com/Eventual-Inc/Daft/issues/4461"
+@pytest.mark.skip(
+    "`SHOW TABLES LIKE` is not properly supported yet. See https://github.com/Eventual-Inc/Daft/issues/4461"
 )
 def test_show_tables_with_pattern(sess):
     # test: show tables in the current catalog and current namespace matching the pattern
@@ -73,8 +73,8 @@ def test_show_tables_in_catalog(sess):
     assert "dd_table" in res["table"]
 
 
-@pytest.skip(
-    reason="`SHOW TABLES LIKE` is not properly supported yet. See https://github.com/Eventual-Inc/Daft/issues/4461"
+@pytest.mark.skip(
+    "`SHOW TABLES LIKE` is not properly supported yet. See https://github.com/Eventual-Inc/Daft/issues/4461"
 )
 def test_show_tables_in_catalog_with_pattern(sess):
     # test: show tables in catalog `cat2` matching the pattern
