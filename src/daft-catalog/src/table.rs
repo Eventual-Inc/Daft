@@ -135,7 +135,7 @@ impl Table for View {
         let pytable = PyTable(Arc::new(self.clone()));
 
         Ok(py
-            .import(intern!(py, "daft.catalog.__rust"))?
+            .import(intern!(py, "daft.catalog.__internal"))?
             .getattr("View")?
             .call1((pytable,))?
             .unbind())

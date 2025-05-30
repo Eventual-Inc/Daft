@@ -182,6 +182,7 @@ impl Catalog for MemoryCatalog {
             return Ok(false);
         }
 
+        // works because we only support a single-level namespace
         let namespace = ident.name();
 
         Ok(self
@@ -255,7 +256,7 @@ impl Catalog for MemoryCatalog {
         let pycatalog = PyCatalog(Arc::new(self.clone()));
 
         Ok(py
-            .import(intern!(py, "daft.catalog.__rust"))?
+            .import(intern!(py, "daft.catalog.__internal"))?
             .getattr("MemoryCatalog")?
             .call1((pycatalog,))?
             .unbind())
@@ -360,7 +361,7 @@ impl Table for MemoryTable {
         let pytable = PyTable(Arc::new(self.clone()));
 
         Ok(py
-            .import(intern!(py, "daft.catalog.__rust"))?
+            .import(intern!(py, "daft.catalog.__internal"))?
             .getattr("MemoryTable")?
             .call1((pytable,))?
             .unbind())

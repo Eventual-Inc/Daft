@@ -300,7 +300,7 @@ class Catalog(ABC):
             ['R', 'S', 'T']
 
         """
-        from daft.catalog.__rust import MemoryCatalog
+        from daft.catalog.__internal import MemoryCatalog
 
         catalog = MemoryCatalog._new(name)
 
@@ -821,7 +821,7 @@ class Table(ABC):
             >>> Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3]}))
 
         """
-        from daft.catalog.__rust import MemoryTable
+        from daft.catalog.__internal import MemoryTable
 
         table = MemoryTable._new(name, dataframe.schema())
         table.append(dataframe)

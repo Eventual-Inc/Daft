@@ -741,7 +741,11 @@ impl<'py> IntoPyObject<'py> for LiteralValue {
                 .import(intern!(py, "decimal"))?
                 .getattr(intern!(py, "Decimal"))?
                 .call1((display_decimal128(val, p, s),)),
-            Self::Series(series) => PySeries { series }.into_bound_py_any(py),
+            Self::Series(series) => py
+                .import(intern!(py, "daft.series"))?
+                .getattr(intern!(py, "Series"))?
+                .getattr(intern!(py, "_from_pyseries"))?
+                .call1((PySeries { series },)),
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
             Self::Struct(entries) => entries
                 .into_iter()
