@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 pub mod pylib {
     use common_daft_config::PyDaftExecutionConfig;
     use common_file_formats::{FileFormat, WriteMode};
-    use daft_dsl::python::PyExpr;
+    use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_io::python::IOConfig;
     use daft_logical_plan::OutputFileInfo;
     use daft_micropartition::python::PyMicroPartition;
@@ -24,8 +24,10 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         execution_cfg: &PyDaftExecutionConfig,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let partition_cols =
-            partition_cols.map(|cols| cols.into_iter().map(Into::into).collect::<Vec<_>>());
+        let schema = micropartition.schema()?.schema;
+        let partition_cols = partition_cols
+            .map(|cols| BoundExpr::bind_all(&cols, &schema))
+            .transpose()?;
         let io_config = io_config.unwrap_or_default().config.into();
         let file_info = OutputFileInfo::new(
             root_dir,

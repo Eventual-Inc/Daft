@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import multiprocessing
 from concurrent.futures import wait
 

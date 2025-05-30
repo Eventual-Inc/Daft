@@ -232,6 +232,42 @@ class Catalog(ABC):
     def name(self) -> str:
         """Returns the catalog's name."""
 
+    @abstractmethod
+    def _create_namespace(self, ident: Identifier) -> None:
+        """Create a namespace in the catalog, erroring if the namespace already exists."""
+
+    @abstractmethod
+    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+        """Create a table in the catalog, erroring if the table already exists."""
+
+    @abstractmethod
+    def _drop_namespace(self, ident: Identifier) -> None:
+        """Remove a namespace from the catalog, erroring if the namespace did not exist."""
+
+    @abstractmethod
+    def _drop_table(self, ident: Identifier) -> None:
+        """Remove a table from the catalog, erroring if the table did not exist."""
+
+    @abstractmethod
+    def _get_table(self, ident: Identifier) -> Table:
+        """Get a table from the catalog."""
+
+    @abstractmethod
+    def _has_namespace(self, ident: Identifier) -> bool:
+        """Check if a namespace exists in the catalog."""
+
+    @abstractmethod
+    def _has_table(self, ident: Identifier) -> bool:
+        """Check if a table exists in the catalog."""
+
+    @abstractmethod
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """List all namespaces in the catalog. When a pattern is specified, list only namespaces matching the pattern."""
+
+    @abstractmethod
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+        """List all tables in the catalog. When a pattern is specified, list only tables matching the pattern."""
+
     @staticmethod
     def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
         """Returns an in-memory catalog from a dictionary of table-like objects.
@@ -403,14 +439,16 @@ class Catalog(ABC):
     # create_*
     ###
 
-    @abstractmethod
     def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in this catalog.
 
         Args:
             identifier (Identifier | str): namespace identifier
         """
-        raise NotImplementedError
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        self._create_namespace(identifier)
 
     def create_namespace_if_not_exists(self, identifier: Identifier | str) -> None:
         """Creates a namespace in this catalog if it does not already exist.
@@ -421,7 +459,6 @@ class Catalog(ABC):
         if not self.has_namespace(identifier):
             self.create_namespace(identifier)
 
-    @abstractmethod
     def create_table(
         self,
         identifier: Identifier | str,
@@ -437,7 +474,15 @@ class Catalog(ABC):
         Returns:
             Table: new table instance.
         """
-        raise NotImplementedError
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+        schema = source.schema() if isinstance(source, DataFrame) else source
+
+        table = self._create_table(identifier, schema, properties)
+        if isinstance(source, DataFrame):
+            table.append(source)
+
+        return table
 
     def create_table_if_not_exists(
         self,
@@ -454,9 +499,9 @@ class Catalog(ABC):
         Returns:
             Table: the existing table (if exists) or the new table instance.
         """
-        try:
+        if self.has_table(identifier):
             return self.get_table(identifier)
-        except NotFoundError:
+        else:
             return self.create_table(identifier, source, properties)
 
     ###
@@ -465,31 +510,38 @@ class Catalog(ABC):
 
     def has_namespace(self, identifier: Identifier | str) -> bool:
         """Returns True if the namespace exists, otherwise False."""
-        raise NotImplementedError(f"Catalog implementation {type(self)} does not support has_namespace")
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._has_namespace(identifier)
 
     def has_table(self, identifier: Identifier | str) -> bool:
         """Returns True if the table exists, otherwise False."""
-        try:
-            _ = self.get_table(identifier)
-            return True
-        except NotFoundError:
-            return False
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._has_table(identifier)
 
     ###
     # drop_*
     ###
 
-    @abstractmethod
-    def drop_namespace(self, identifier: Identifier | str) -> None: ...
+    def drop_namespace(self, identifier: Identifier | str) -> None:
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
 
-    @abstractmethod
-    def drop_table(self, identifier: Identifier | str) -> None: ...
+        self._drop_namespace(identifier)
+
+    def drop_table(self, identifier: Identifier | str) -> None:
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        self._drop_table(identifier)
 
     ###
     # get_*
     ###
 
-    @abstractmethod
     def get_table(self, identifier: Identifier | str) -> Table:
         """Get a table by its identifier or raises if the table does not exist.
 
@@ -499,12 +551,15 @@ class Catalog(ABC):
         Returns:
             Table: matched table or raises if the table does not exist.
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._get_table(identifier)
 
     ###
     # list_*
     ###
 
-    @abstractmethod
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         """List namespaces in the catalog which match the given pattern.
 
@@ -514,9 +569,9 @@ class Catalog(ABC):
         Returns:
             list[Identifier]: list of namespace identifiers matching the pattern.
         """
+        return self._list_namespaces(pattern)
 
-    @abstractmethod
-    def list_tables(self, pattern: str | None = None) -> list[str]:
+    def list_tables(self, pattern: str | None = None) -> list[Identifier]:
         """List tables in the catalog which match the given pattern.
 
         Args:
@@ -525,6 +580,7 @@ class Catalog(ABC):
         Returns:
             list[str]: list of table identifiers matching the pattern.
         """
+        return self._list_tables(pattern)
 
     ###
     # read_*
@@ -689,6 +745,10 @@ class Table(ABC):
     @abstractmethod
     def name(self) -> str:
         """Returns the table's name."""
+
+    @abstractmethod
+    def schema(self) -> Schema:
+        """Returns the table's schema."""
 
     @staticmethod
     def from_pydict(name: str, data: dict[str, InputListType]) -> Table:

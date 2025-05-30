@@ -20,13 +20,11 @@ import logging
 import math
 from abc import abstractmethod
 from collections import deque
+from collections.abc import Generator, Iterable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
-    Generator,
     Generic,
-    Iterable,
-    Iterator,
     TypeVar,
     Union,
 )
@@ -183,7 +181,7 @@ def deltalake_write(
     base_path: str,
     large_dtypes: bool,
     version: int,
-    partition_cols: list[str] | None,
+    partition_cols: ExpressionsProjection | None,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""

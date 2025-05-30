@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from daft.context import get_context
 from daft.daft import (
@@ -29,6 +30,7 @@ from daft.utils import column_inputs_to_expressions
 
 if TYPE_CHECKING:
     import pathlib
+    from collections.abc import Mapping
 
     import pandas as pd
 

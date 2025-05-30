@@ -22,8 +22,11 @@ mod tokenize;
 
 use std::sync::Arc;
 
+use daft_core::prelude::Schema;
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
+    functions::{
+        FunctionArg, FunctionArgs, ScalarFunction, ScalarFunctionFactory, FUNCTION_REGISTRY,
+    },
     python::PyExpr,
     ExprRef,
 };
@@ -34,8 +37,9 @@ use pyo3::{
 
 #[pyo3::pyclass]
 pub struct PyScalarFunction {
-    pub inner: Arc<dyn ScalarUDF>,
+    pub inner: Arc<dyn ScalarFunctionFactory>,
 }
+
 use pyo3::prelude::*;
 
 #[pyo3::pymethods]
@@ -63,24 +67,29 @@ impl PyScalarFunction {
             }
         }
 
-        let expr: ExprRef = ScalarFunction {
-            udf: self.inner.clone(),
-            inputs: FunctionArgs::try_new(inputs)?,
-        }
-        .into();
+        // Python only uses dynamic function, so we pass an empty schema.
+        // Once ExprRef uses the ScalarFunctionFactory, then we can do function
+        // resolution in the planner. For now, we'll necessarily get the single dynamic function
+        // out of the DynamicScalarFunctionFactory which replicates the behavior of
+        // today and covers name resolution in the DSL.
+        let schema = Schema::empty();
+        let inputs = FunctionArgs::try_new(inputs)?;
+        let udf = self.inner.get_function(inputs.clone(), &schema)?;
 
+        let expr: ExprRef = ScalarFunction { udf, inputs }.into();
         Ok(expr.into())
     }
 }
 
+/// Lookup a scalar function factory by name.
 #[pyo3::pyfunction]
 pub fn get_function_from_registry(name: &str) -> PyResult<PyScalarFunction> {
-    let f = FUNCTION_REGISTRY.read().unwrap().get(name);
-    if let Some(f) = f {
-        Ok(PyScalarFunction { inner: f })
-    } else {
-        panic!("Function not found in registry: {}", name)
-    }
+    Ok(FUNCTION_REGISTRY
+        .read()
+        .unwrap()
+        .get(name)
+        .map(|inner| PyScalarFunction { inner })
+        .expect("Function was missing an implementation"))
 }
 
 pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {

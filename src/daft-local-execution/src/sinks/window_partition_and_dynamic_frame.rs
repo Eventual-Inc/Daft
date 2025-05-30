@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr},
-    AggExpr, ExprRef, WindowFrame,
+    WindowFrame,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -20,11 +20,11 @@ use super::{
 use crate::ExecutionTaskSpawner;
 
 struct WindowPartitionAndDynamicFrameParams {
-    aggregations: Vec<AggExpr>,
+    aggregations: Vec<BoundAggExpr>,
     min_periods: usize,
     aliases: Vec<String>,
-    partition_by: Vec<ExprRef>,
-    order_by: Vec<ExprRef>,
+    partition_by: Vec<BoundExpr>,
+    order_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     frame: WindowFrame,
     original_schema: SchemaRef,
@@ -35,7 +35,7 @@ impl WindowSinkParams for WindowPartitionAndDynamicFrameParams {
         &self.original_schema
     }
 
-    fn partition_by(&self) -> &[ExprRef] {
+    fn partition_by(&self) -> &[BoundExpr] {
         &self.partition_by
     }
 
@@ -51,11 +51,11 @@ pub struct WindowPartitionAndDynamicFrameSink {
 impl WindowPartitionAndDynamicFrameSink {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        aggregations: &[AggExpr],
+        aggregations: &[BoundAggExpr],
         min_periods: usize,
         aliases: &[String],
-        partition_by: &[ExprRef],
-        order_by: &[ExprRef],
+        partition_by: &[BoundExpr],
+        order_by: &[BoundExpr],
         descending: &[bool],
         frame: &WindowFrame,
         schema: &SchemaRef,
@@ -143,24 +143,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
 
                         let params = params.clone();
 
-                        let input_schema = &all_partitions[0].schema;
-
-                        let partition_by = params.partition_by
-                            .iter()
-                            .map(|expr| BoundExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        let order_by = params.order_by
-                            .iter()
-                            .map(|expr| BoundExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        let aggregations = params.aggregations
-                            .iter()
-                            .map(|expr| BoundAggExpr::try_new(expr.clone(), input_schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        if partition_by.is_empty() {
+                        if params.partition_by.is_empty() {
                             return Err(DaftError::ValueError(
                                 "Partition by cannot be empty for window functions".into(),
                             ));
@@ -173,7 +156,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                                 return RecordBatch::empty(Some(params.original_schema.clone()));
                             }
 
-                            let partitionby_table = input_data.eval_expression_list(&partition_by)?;
+                            let partitionby_table = input_data.eval_expression_list(&params.partition_by)?;
                             let (_, partitionvals_indices) = partitionby_table.make_groups()?;
 
                             let mut partitions = partitionvals_indices.iter().map(|indices| {
@@ -183,11 +166,11 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
 
                             for partition in &mut partitions {
                                 // Sort the partition by the order_by columns (default for nulls_first is to be same as descending)
-                                *partition = partition.sort(&order_by, &params.descending, &params.descending)?;
+                                *partition = partition.sort(&params.order_by, &params.descending, &params.descending)?;
 
-                                for (agg_expr, name) in aggregations.iter().zip(params.aliases.iter()) {
+                                for (agg_expr, name) in params.aggregations.iter().zip(params.aliases.iter()) {
                                     let dtype = agg_expr.as_ref().to_field(&params.original_schema)?.dtype;
-                                    *partition = partition.window_agg_dynamic_frame(name.clone(), agg_expr, &order_by, &params.descending, params.min_periods, &dtype, &params.frame)?;
+                                    *partition = partition.window_agg_dynamic_frame(name.clone(), agg_expr, &params.order_by, &params.descending, params.min_periods, &dtype, &params.frame)?;
                                 }
                             }
 

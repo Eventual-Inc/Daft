@@ -270,6 +270,10 @@ class SQLScanOperator(ScanOperator):
             sql = self.conn.construct_sql_query(self.sql, partition_bounds=partition_bounds)
 
         file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql, self.conn))
+
+        # keep column pushdowns because they are used for deriving the materialized schema
+        remaining_pushdowns = pushdowns if not apply_pushdowns_to_sql else PyPushdowns(columns=pushdowns.columns)
+
         return ScanTask.sql_scan_task(
             url=self.conn.url,
             file_format=file_format_config,
@@ -277,6 +281,6 @@ class SQLScanOperator(ScanOperator):
             storage_config=self.storage_config,
             num_rows=num_rows,
             size_bytes=size_bytes,
-            pushdowns=pushdowns if not apply_pushdowns_to_sql else None,
+            pushdowns=remaining_pushdowns,
             stats=stats,
         )
