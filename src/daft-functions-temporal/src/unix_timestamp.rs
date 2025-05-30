@@ -1,13 +1,30 @@
+use common_error::DaftError;
 use daft_core::prelude::TimeUnit;
-use daft_dsl::functions::prelude::*;
+use daft_dsl::{functions::prelude::*, FromLiteral, LiteralValue};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UnixTimestamp;
 
+// simple wrapper to provide custom `fromliteral` impl
+struct WrappedTimeUnit(TimeUnit);
+
+impl FromLiteral for WrappedTimeUnit {
+    fn try_from_literal(lit: &daft_dsl::LiteralValue) -> DaftResult<Self> {
+        if let Ok(tu) = TimeUnit::try_from_literal(lit) {
+            Ok(Self(tu))
+        } else if let LiteralValue::Utf8(s) = lit {
+            Ok(Self(s.parse()?))
+        } else {
+            Err(DaftError::type_error(
+                "Expected string literal for time unit",
+            ))
+        }
+    }
+}
 #[derive(FunctionArgs)]
 struct Args<T> {
     input: T,
-    time_unit: TimeUnit,
+    time_unit: WrappedTimeUnit,
 }
 
 #[typetag::serde]
@@ -19,7 +36,7 @@ impl ScalarUDF for UnixTimestamp {
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, time_unit } = inputs.try_into()?;
         input
-            .cast(&DataType::Timestamp(time_unit, None))
+            .cast(&DataType::Timestamp(time_unit.0, None))
             .and_then(|s| s.cast(&DataType::Int64))
     }
 

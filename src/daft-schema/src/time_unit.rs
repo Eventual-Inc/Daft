@@ -9,13 +9,9 @@ use serde::{Deserialize, Serialize};
     Copy, Clone, Debug, Display, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
 )]
 pub enum TimeUnit {
-    #[serde(alias = "ns")]
     Nanoseconds,
-    #[serde(alias = "us")]
     Microseconds,
-    #[serde(alias = "ms")]
     Milliseconds,
-    #[serde(alias = "s")]
     Seconds,
 }
 
