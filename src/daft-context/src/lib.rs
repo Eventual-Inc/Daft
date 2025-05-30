@@ -324,9 +324,9 @@ fn get_runner_config_from_env() -> DaftResult<RunnerConfig> {
     match runner_from_envvar.as_str() {
         "native" => Ok(RunnerConfig::Native { num_threads: None }),
         "ray" => Ok(get_ray_runner_config_from_env()),
-        "py" => Err(DaftError::ValueError("The PyRunner was removed from Daft from v0.5.0 onwards. Please set the env `DAFT_RUNNER=native` instead.".to_string())),
+        "py" => Err(DaftError::ValueError("The PyRunner was removed from Daft from v0.5.0 onwards. Please set the env to `DAFT_RUNNER=native` instead.".to_string())),
         _ if detect_ray_state() => Ok(get_ray_runner_config_from_env()),
-        other => Err(DaftError::ValueError(format!("Invalid runner `{other}` specified in DAFT_RUNNER env")))
+        other => Err(DaftError::ValueError(format!("Invalid runner type `DAFT_RUNNER={other}` specified through the env. Please use either `native` or `ray` instead.")))
     }
 }
 
