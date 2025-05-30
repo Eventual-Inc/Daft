@@ -8,10 +8,10 @@ pub mod distance;
 pub mod float;
 pub mod hash;
 pub mod minhash;
+pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
-pub mod sequence;
 pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;

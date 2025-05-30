@@ -164,6 +164,8 @@ pub mod pylib {
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
+        functions_registry
+            .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
 
         Ok(())
     }

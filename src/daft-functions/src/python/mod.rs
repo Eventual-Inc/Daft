@@ -13,7 +13,6 @@ macro_rules! simple_python_wrapper {
 }
 
 mod binary;
-mod sequence;
 mod temporal;
 mod tokenize;
 
@@ -105,8 +104,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(binary::decode);
     add!(binary::try_encode);
     add!(binary::try_decode);
-
-    add!(sequence::monotonically_increasing_id);
 
     add!(temporal::dt_date);
     add!(temporal::dt_day);
