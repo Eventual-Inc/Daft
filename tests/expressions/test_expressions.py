@@ -452,7 +452,7 @@ def test_repr_functions_tokenize_encode() -> None:
     a = col("a")
     y = a.str.tokenize_encode("cl100k_base")
     repr_out = repr(y)
-    assert repr_out == "tokenize_encode(col(a))"
+    assert repr_out == 'tokenize_encode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -461,7 +461,7 @@ def test_repr_functions_tokenize_decode() -> None:
     a = col("a")
     y = a.str.tokenize_decode("cl100k_base")
     repr_out = repr(y)
-    assert repr_out == "tokenize_decode(col(a))"
+    assert repr_out == 'tokenize_decode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
