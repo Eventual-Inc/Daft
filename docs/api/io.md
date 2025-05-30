@@ -108,6 +108,11 @@ Daft supports diverse input sources and output sinks, this section covers lower-
 
     These APIs are considered experimental.
 
+::: daft.io.sink.AsyncDataSink
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
 ::: daft.io.source.DataSource
     options:
         filters: ["!^_"]
