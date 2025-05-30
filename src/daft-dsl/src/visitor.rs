@@ -285,6 +285,16 @@ impl<'py> PyVisitor<'py> {
         ))
     }
 
+    // Developer Note
+    // ==============
+    // These *could* be factored out as IntoPyObject implementations,
+    // but there are few caveats, and I wish to keep these conversions
+    // scoped to interactions with the visitor for now. For types like
+    // Expr and DataType we cannot implement the trait on the external
+    // type. We don't want to implement IntoPyObject for PyExpr etc. since
+    // these types are already py objects, just different than the
+    // conversions we want here.
+
     /// Converts an ExprRef (rs) to an Expression (py)
     fn to_expr(&self, expr: &ExprRef) -> PyResult<Bound<'py, PyAny>> {
         let expr_mod = self.py.import("daft.expressions.expressions")?;

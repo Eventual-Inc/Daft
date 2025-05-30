@@ -15,10 +15,10 @@ use crate::{
 
 type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTable>>>;
 
-#[derive(Clone, Debug)]
 /// A catalog entirely stored in-memory.
 ///
 /// Supports tables without namespaces or with a single level namespace.
+#[derive(Clone, Debug)]
 pub struct MemoryCatalog {
     name: String,
     /// map of optional namespace -> table name -> table
