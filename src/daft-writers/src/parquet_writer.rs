@@ -1,15 +1,17 @@
 use std::{
-    io::BufWriter,
+    io::{BufWriter, Write},
+    num::NonZeroUsize,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::prelude::*;
-use daft_io::{parse_url, SourceType};
+use daft_io::{parse_url, IOConfig, S3LikeSource, SourceType};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
@@ -29,22 +31,45 @@ use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
 type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 
+enum OutputTarget {
+    File(BufWriter<std::fs::File>),
+    // TODO: Currently this is a simple buffer, but a buffer pool that initiates uploads as we
+    // go along would be more appropriate.
+    InMemory(Arc<Mutex<Vec<u8>>>),
+}
+
+impl Write for OutputTarget {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::File(f) => f.write(buf),
+            Self::InMemory(w) => w.lock().unwrap().write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::File(f) => f.flush(),
+            Self::InMemory(w) => w.lock().unwrap().flush(),
+        }
+    }
+}
+
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_parquet_writer_supported(
     file_format: FileFormat,
     root_dir: &str,
     file_schema: &SchemaRef,
+    remote_writes_enabled: bool,
 ) -> DaftResult<bool> {
     // TODO(desmond): Currently we only support native parquet writes.
     if !matches!(file_format, FileFormat::Parquet) {
         return Ok(false);
     }
-    // TODO(desmond): Currently we only support local writes.
-    // TODO(desmond): We return false on an error because S3n is incorrectly reported to be unsupported
-    // in parse_url. I'll fix this in another PR.
     let (source_type, _) = parse_url(root_dir)?;
-    if !matches!(source_type, SourceType::File) {
-        return Ok(false);
+    match source_type {
+        SourceType::File => {}
+        SourceType::S3 if remote_writes_enabled => {}
+        _ => return Ok(false),
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
     let arrow_schema = match file_schema.to_arrow() {
@@ -75,25 +100,39 @@ pub(crate) fn create_native_parquet_writer(
     schema: &SchemaRef,
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
+    io_config: Option<IOConfig>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
-    debug_assert!(
-        matches!(source_type, SourceType::File),
-        "Native writes are currently enabled for local writes only"
-    );
-    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
-    let dir = if let Some(partition_values) = partition_values {
-        let partition_path = record_batch_to_partition_path(partition_values, None)?;
-        root_dir.join(partition_path)
-    } else {
-        root_dir.to_path_buf()
-    };
-    // Create the directories if they don't exist.
-    std::fs::create_dir_all(&dir)?;
+    let filename = if matches!(source_type, SourceType::File) {
+        let root_dir = Path::new(root_dir.trim_start_matches("file://"));
+        let dir = if let Some(partition_values) = partition_values {
+            let partition_path = record_batch_to_partition_path(partition_values, None)?;
+            root_dir.join(partition_path)
+        } else {
+            root_dir.to_path_buf()
+        };
+        // Create the directories if they don't exist.
+        std::fs::create_dir_all(&dir)?;
 
-    let filename = dir.join(format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx));
+        dir.join(format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx))
+    } else {
+        let root = root_dir.trim_start_matches("s3://");
+        let (bucket, prefix) = root.split_once('/').unwrap();
+        let partition_path = if let Some(partition_values) = partition_values {
+            record_batch_to_partition_path(partition_values, None)?
+        } else {
+            PathBuf::new()
+        };
+        let key = Path::new(prefix).join(partition_path).join(format!(
+            "{}-{}.parquet",
+            uuid::Uuid::new_v4(),
+            file_idx
+        ));
+
+        PathBuf::from(format!("s3://{}/{}", bucket, key.display()))
+    };
 
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
@@ -117,6 +156,7 @@ pub(crate) fn create_native_parquet_writer(
         arrow_schema,
         parquet_schema,
         partition_values.cloned(),
+        io_config,
     )))
 }
 
@@ -126,7 +166,10 @@ struct ParquetWriter {
     arrow_schema: Arc<arrow_schema::Schema>,
     parquet_schema: SchemaDescriptor,
     partition_values: Option<RecordBatch>,
-    file_writer: Option<SerializedFileWriter<BufWriter<std::fs::File>>>,
+    file_writer: Option<SerializedFileWriter<OutputTarget>>,
+    buffered_data: Option<Arc<Mutex<Vec<u8>>>>,
+    io_config: Option<IOConfig>,
+    s3_client: Option<Arc<S3LikeSource>>,
 }
 
 impl ParquetWriter {
@@ -141,6 +184,7 @@ impl ParquetWriter {
         arrow_schema: Arc<arrow_schema::Schema>,
         parquet_schema: SchemaDescriptor,
         partition_values: Option<RecordBatch>,
+        io_config: Option<IOConfig>,
     ) -> Self {
         Self {
             filename,
@@ -149,14 +193,26 @@ impl ParquetWriter {
             parquet_schema,
             partition_values,
             file_writer: None,
+            buffered_data: None,
+            io_config,
+            s3_client: None,
         }
     }
 
     fn create_writer(&mut self) -> DaftResult<()> {
-        let file = std::fs::File::create(&self.filename)?;
-        let bufwriter = BufWriter::with_capacity(Self::DEFAULT_WRITE_BUFFER_SIZE, file);
+        let output_target = if !self.filename.to_string_lossy().starts_with("s3") {
+            let file = std::fs::File::create(&self.filename)?;
+            OutputTarget::File(BufWriter::with_capacity(
+                Self::DEFAULT_WRITE_BUFFER_SIZE,
+                file,
+            ))
+        } else {
+            let buffer = Arc::new(Mutex::new(vec![]));
+            self.buffered_data = Some(buffer.clone());
+            OutputTarget::InMemory(buffer)
+        };
         let writer = SerializedFileWriter::new(
-            bufwriter,
+            output_target,
             self.parquet_schema.root_schema_ptr(),
             self.writer_properties.clone(),
         )
@@ -260,6 +316,7 @@ impl AsyncFileWriter for ParquetWriter {
             .expect("File writer should be created by now")
             .next_row_group()
             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
         for handle in column_writer_handles {
             let chunk = handle.await??;
             chunk
@@ -283,6 +340,30 @@ impl AsyncFileWriter for ParquetWriter {
             .expect("File writer should be created by now")
             .finish()
             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+        // TODO: Ideally we kick off multipart uploads once we have columns or row groups
+        // ready to upload. For now we just do it after the parquet file is ready.
+
+        // For in-memory targets, upload the results to S3.
+        if let Some(buffered_data) = &self.buffered_data {
+            if self.s3_client.is_none() {
+                let s3_conf = &self.io_config.as_ref().unwrap().s3;
+                self.s3_client = Some(S3LikeSource::get_client(s3_conf).await?);
+            }
+            let buffer = std::mem::take(&mut *buffered_data.lock().unwrap());
+            let bytes = Bytes::from(buffer);
+            self.s3_client
+                .as_ref()
+                .unwrap()
+                .put_multipart(
+                    &self.filename.to_string_lossy(),
+                    bytes,
+                    unsafe { NonZeroUsize::new_unchecked(5 * 1024 * 1024) },
+                    None,
+                )
+                .await?;
+        }
+
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
