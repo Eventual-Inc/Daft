@@ -41,8 +41,6 @@ def test_streaming_write(
     def f():
         if engine == "native":
             daft.context.set_runner_native()
-        elif engine == "python":
-            daft.context.set_runner_py()
         else:
             raise ValueError(f"{engine} unsupported")
 
