@@ -4,6 +4,8 @@ Welcome to **Daft**!
 
 Daft is a simple, reliable, and performant data engine for any modality or scale, from local to petabyte-scale distributed workloads without compromising on capability. The core engine is written in Rust and exposes both SQL and Python DataFrame interfaces as first-class citizens.
 
+![Daft python dataframes make it easy to load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying](img/daft_diagram.png)
+
 ## Why Daft?
 
 **:octicons-image-24: Unified multimodal data processing**
@@ -56,10 +58,6 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 
     Install Daft, create your first DataFrame, and get started with common DataFrame operations.
 
-- [:octicons-book-16: **Terminology**](terms.md)
-
-    Learn about the terminology related to Daft, such as DataFrames, Expressions, Query Plans, and more.
-
 - [:simple-elasticstack: **Architecture**](resources/architecture.md)
 
     Understand the different components to Daft under-the-hood.
@@ -97,6 +95,10 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 - [:material-select-group: **Aggregations and Grouping**](core_concepts.md#aggregations-and-grouping)
 
     Daft supports aggregations and grouping across entire DataFrames and within grouped subsets of data.
+
+- [:material-window-closed-variant: **Window Functions**](core_concepts.md#window-functions)
+
+    Daft's window functions allow you to perform calculations across a set of rows related to the current row.
 
 - [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
 
