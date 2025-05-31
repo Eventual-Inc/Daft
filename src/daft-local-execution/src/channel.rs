@@ -20,12 +20,10 @@ impl<T> Receiver<T> {
     }
 
     pub(crate) fn into_stream(self) -> impl Stream<Item = T> {
-        futures::stream::unfold(self, |rx| async move {
-            match rx.recv().await {
-                Some(item) => Some((item, rx)),
-                None => None,
-            }
-        })
+        futures::stream::unfold(
+            self,
+            |rx| async move { rx.recv().await.map(|item| (item, rx)) },
+        )
     }
 }
 

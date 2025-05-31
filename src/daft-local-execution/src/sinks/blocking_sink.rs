@@ -5,7 +5,6 @@ use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
