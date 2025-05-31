@@ -14,6 +14,8 @@ from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
 
 if TYPE_CHECKING:
+    import pathlib
+
     import pyarrow as pa
     import ray
     from pyiceberg.schema import Schema as IcebergSchema
@@ -892,6 +894,15 @@ def read_json_schema(
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
 ) -> PySchema: ...
+async def write_micropartition_to_parquet(
+    micropartition: PyMicroPartition,
+    root_dir: str | pathlib.Path,
+    write_mode: Literal["append", "overwrite", "overwrite-partitions"],
+    partition_cols: list[PyExpr] | None,
+    compression: str,
+    io_config: IOConfig | None,
+    execution_cfg: PyDaftExecutionConfig,
+) -> list[PyRecordBatch]: ...
 
 class PyTimeUnit:
     @staticmethod
