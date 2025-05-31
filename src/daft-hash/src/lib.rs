@@ -50,8 +50,9 @@ impl Hasher for Sha1Hasher {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HashFunctionKind {
+    #[default]
     MurmurHash3,
     XxHash,
     Sha1,

@@ -1,10 +1,97 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::NumericNative, prelude::*};
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
+use daft_dsl::functions::{prelude::*, ScalarFunction};
 use serde::{Deserialize, Serialize};
+
+#[derive(FunctionArgs)]
+struct Args<T> {
+    input: T,
+    query: T,
+}
+#[typetag::serde]
+impl ScalarUDF for CosineDistanceFunction {
+    fn name(&self) -> &'static str {
+        "cosine_distance"
+    }
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let Args {
+            input: source,
+            query,
+        } = inputs.try_into()?;
+        let source_name = source.name();
+        let source = source.fixed_size_list()?;
+
+        let res = match query.data_type() {
+            DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
+                DataType::Int8 => compute_cosine_distance::<i8>(source, &query),
+                DataType::Float32 => compute_cosine_distance::<f32>(source, &query),
+                DataType::Float64 => compute_cosine_distance::<f64>(source, &query),
+                _ => {
+                    return Err(DaftError::ValueError(
+                        "'cosine_distance' only supports Int8|Float32|Float32 datatypes"
+                            .to_string(),
+                    ));
+                }
+            },
+            _ => {
+                return Err(DaftError::ValueError(
+                    "Expected query to be a nested list".to_string(),
+                ));
+            }
+        }?;
+
+        let output =
+            Float64Array::from_iter(Field::new(source_name, DataType::Float64), res.into_iter());
+
+        Ok(output.into_series())
+    }
+
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let Args {
+            input: source,
+            query,
+        } = inputs.try_into()?;
+        let source = source.to_field(schema)?;
+        let query = query.to_field(schema)?;
+        let source_is_numeric = source.dtype.is_fixed_size_numeric();
+        let query_is_numeric = query.dtype.is_fixed_size_numeric();
+
+        if let Ok((source_size, query_size)) = source
+            .dtype
+            .fixed_size()
+            .and_then(|source| query.dtype.fixed_size().map(|q| (source, q)))
+        {
+            if source_size != query_size {
+                return Err(DaftError::ValueError(format!(
+                    "Expected source and query to have the same size, instead got {source_size} and {query_size}"
+                )));
+            }
+        } else {
+            return Err(DaftError::ValueError(format!(
+                "Expected source and query to be fixed size, instead got {} and {}",
+                source.dtype, query.dtype
+            )));
+        }
+
+        if source_is_numeric && query_is_numeric {
+            Ok(Field::new(source.name, DataType::Float64))
+        } else {
+            Err(DaftError::ValueError(format!(
+                "Expected nested list for source and numeric list for query, instead got {} and {}",
+                source.dtype, query.dtype
+            )))
+        }
+    }
+}
+
+#[must_use]
+pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
+    ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
+}
 
 trait SpatialSimilarity {
     fn cosine(a: &[Self], b: &[Self]) -> Option<f64>
@@ -48,7 +135,7 @@ impl SpatialSimilarity for i8 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CosineDistanceFunction {}
+pub struct CosineDistanceFunction;
 
 fn compute_cosine_distance<T>(
     source: &FixedSizeListArray,
@@ -92,95 +179,4 @@ where
             })
             .collect::<Vec<_>>())
     }
-}
-
-#[typetag::serde]
-impl ScalarUDF for CosineDistanceFunction {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
-    }
-
-    fn name(&self) -> &'static str {
-        "cosine_distance"
-    }
-
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [source, query] => {
-                let source_name = source.name();
-                let source = source.fixed_size_list()?;
-
-                let res = match query.data_type() {
-                    DataType::FixedSizeList(dtype, _) => match dtype.as_ref() {
-                        DataType::Int8 => compute_cosine_distance::<i8>(source, query),
-                        DataType::Float32 => compute_cosine_distance::<f32>(source, query),
-                        DataType::Float64 => compute_cosine_distance::<f64>(source, query),
-                        _ => {
-                            return Err(DaftError::ValueError(
-                                "'cosine_distance' only supports Int8|Float32|Float32 datatypes"
-                                    .to_string(),
-                            ));
-                        }
-                    },
-                    _ => {
-                        return Err(DaftError::ValueError(
-                            "Expected query to be a nested list".to_string(),
-                        ));
-                    }
-                }?;
-
-                let output = Float64Array::from_iter(
-                    Field::new(source_name, DataType::Float64),
-                    res.into_iter(),
-                );
-
-                Ok(output.into_series())
-            }
-            _ => Err(DaftError::ValueError("Expected 2 input arg".to_string())),
-        }
-    }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [source, query] => {
-                let source = source.to_field(schema)?;
-                let query = query.to_field(schema)?;
-                let source_is_numeric = source.dtype.is_fixed_size_numeric();
-                let query_is_numeric = query.dtype.is_fixed_size_numeric();
-
-                if let Ok((source_size, query_size)) = source
-                    .dtype
-                    .fixed_size()
-                    .and_then(|source| query.dtype.fixed_size().map(|q| (source, q)))
-                {
-                    if source_size != query_size {
-                        return Err(DaftError::ValueError(format!(
-                            "Expected source and query to have the same size, instead got {source_size} and {query_size}"
-                        )));
-                    }
-                } else {
-                    return Err(DaftError::ValueError(format!(
-                        "Expected source and query to be fixed size, instead got {} and {}",
-                        source.dtype, query.dtype
-                    )));
-                }
-
-                if source_is_numeric && query_is_numeric {
-                    Ok(Field::new(source.name, DataType::Float64))
-                } else {
-                    Err(DaftError::ValueError(format!(
-                        "Expected nested list for source and numeric list for query, instead got {} and {}",
-                        source.dtype, query.dtype
-                    )))
-                }
-            }
-            _ => Err(DaftError::ValueError("Expected 2 input arg".to_string())),
-        }
-    }
-}
-
-#[must_use]
-pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
-    ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
 }

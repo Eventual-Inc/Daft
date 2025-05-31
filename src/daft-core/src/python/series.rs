@@ -199,23 +199,6 @@ impl PySeries {
         Ok(self.series.argsort(descending, nulls_first)?.into())
     }
 
-    #[pyo3(signature = (seed=None))]
-    pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {
-        let seed_series;
-        let mut seed_array = None;
-        if let Some(s) = seed {
-            if s.series.data_type() != &DataType::UInt64 {
-                return Err(PyValueError::new_err(format!(
-                    "We can only use UInt64 as a seed for hashing, got {}",
-                    s.series.data_type()
-                )));
-            }
-            seed_series = s.series;
-            seed_array = Some(seed_series.u64()?);
-        }
-        Ok(self.series.hash(seed_array)?.into_series().into())
-    }
-
     pub fn minhash(
         &self,
         num_hashes: i64,

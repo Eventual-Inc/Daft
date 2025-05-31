@@ -1,9 +1,10 @@
 //! Contains the [`hash`] and typed (e.g. [`hash_primitive`]) operators.
 // multiversion does not copy documentation, causing a false positive
 #![allow(missing_docs)]
+use std::hash::Hash;
+
 use ahash::RandomState;
 use multiversion::multiversion;
-use std::hash::Hash;
 
 macro_rules! new_state {
     () => {
@@ -11,6 +12,7 @@ macro_rules! new_state {
     };
 }
 
+use super::arity::unary;
 use crate::{
     array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array},
     datatypes::{DataType, PhysicalType, PrimitiveType},
@@ -18,8 +20,6 @@ use crate::{
     offset::Offset,
     types::NativeType,
 };
-
-use super::arity::unary;
 
 #[multiversion(targets("x86_64+aes+sse3+ssse3+avx+avx2"))]
 /// Element-wise hash of a [`PrimitiveArray`]. Validity is preserved.

@@ -3,7 +3,6 @@ use crate::functions::SQLFunctions;
 pub mod aggs;
 pub mod coalesce;
 pub mod config;
-pub mod hashing;
 pub mod map;
 pub mod partitioning;
 pub mod python;
