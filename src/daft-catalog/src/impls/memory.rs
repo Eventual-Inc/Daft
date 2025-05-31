@@ -5,7 +5,10 @@ use daft_context::get_context;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::LiteralValue;
 use daft_logical_plan::{ops::Source, InMemoryInfo, LogicalPlan, LogicalPlanBuilder, SourceInfo};
-use daft_micropartition::partitioning::{MicroPartitionSet, PartitionSet};
+use daft_micropartition::{
+    partitioning::{MicroPartitionSet, PartitionSet},
+    MicroPartition,
+};
 use indexmap::IndexMap;
 
 use crate::{
@@ -66,6 +69,7 @@ pub struct MemoryTable {
 impl MemoryTable {
     pub fn new(name: String, schema: SchemaRef) -> DaftResult<Self> {
         let pset = Arc::new(MicroPartitionSet::empty());
+        pset.set_partition(0, &Arc::new(MicroPartition::empty(Some(schema.clone()))))?;
 
         let cache_entry = daft_context::partition_cache::put_partition_set_into_cache(pset)?;
         let cache_key = cache_entry.key();
