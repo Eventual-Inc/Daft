@@ -6,6 +6,7 @@ common-resource-request = {path = "../common/resource-request", default-features
 common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
@@ -17,6 +18,7 @@ rand = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
+serde = {workspace = true}
 tracing = {workspace = true}
 uuid.workspace = true
 

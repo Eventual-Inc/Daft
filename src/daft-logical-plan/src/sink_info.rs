@@ -14,7 +14,7 @@ use pyo3::PyObject;
 use serde::{Deserialize, Serialize};
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SinkInfo<E = ExprRef> {
     OutputFileInfo(OutputFileInfo<E>),
     #[cfg(feature = "python")]

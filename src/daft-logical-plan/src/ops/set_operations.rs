@@ -101,7 +101,7 @@ const V_COL_R: &str = "__v_col_r";
 const V_R_CNT: &str = "__v_r_cnt";
 const V_MIN_COUNT: &str = "__min_count";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Intersect {
     pub plan_id: Option<usize>,
     // Upstream nodes.
@@ -248,7 +248,7 @@ impl Intersect {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Union {
     pub plan_id: Option<usize>,
     // Upstream nodes.

@@ -3,13 +3,14 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Source {
     pub plan_id: Option<usize>,
     /// The schema of the output of this node (the source data schema).

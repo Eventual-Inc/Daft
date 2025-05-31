@@ -3,6 +3,7 @@ use std::sync::Arc;
 use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
+use serde::{Serialize, Deserialize};
 
 use crate::{
     logical_plan::{self},
@@ -10,7 +11,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Explode {
     pub plan_id: Option<usize>,
     // Upstream node.

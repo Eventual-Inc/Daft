@@ -14,13 +14,14 @@ use daft_dsl::{
 };
 use daft_schema::{field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogicalPlan {
     Source(Source),
     Project(Project),
@@ -48,7 +49,7 @@ pub enum LogicalPlan {
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubqueryAlias {
     pub plan_id: Option<usize>,
     pub input: LogicalPlanRef,

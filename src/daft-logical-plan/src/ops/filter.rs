@@ -4,6 +4,7 @@ use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{estimated_selectivity, ExprRef};
 use snafu::ResultExt;
+use serde::{Serialize, Deserialize};
 
 use crate::{
     logical_plan::{self, CreationSnafu},
@@ -11,7 +12,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Filter {
     pub plan_id: Option<usize>,
     // Upstream node.

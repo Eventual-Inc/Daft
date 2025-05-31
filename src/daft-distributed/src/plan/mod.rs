@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_logical_plan::LogicalPlanBuilder;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     pipeline_node::MaterializedOutput,
@@ -17,6 +18,7 @@ use crate::{
 mod runner;
 pub(crate) use runner::PlanRunner;
 
+#[derive(Serialize, Deserialize)]
 pub(crate) struct DistributedPhysicalPlan {
     stage_plan: StagePlan,
     config: Arc<DaftExecutionConfig>,
