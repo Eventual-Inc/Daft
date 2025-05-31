@@ -6,7 +6,6 @@ use daft_session::Session;
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     statement::{self, Statement},
-    table_provider::in_memory,
     unsupported_sql_err, SQLPlanner,
 };
 
@@ -83,7 +82,7 @@ fn execute_show_tables(
     }
 
     // create an in-memory scan arrow arrays
-    let scan = in_memory::from_arrow(
+    let scan = daft_context::partition_cache::logical_plan_from_arrow(
         schema,
         vec![cat_array.as_box(), nsp_array.as_box(), tbl_array.as_box()],
     )?;

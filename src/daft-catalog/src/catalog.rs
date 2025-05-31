@@ -15,7 +15,7 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
     /// Create a namespace in the catalog, erroring if the namespace already exists.
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()>;
     /// Create a table in the catalog, erroring if the table already exists.
-    fn create_table(&self, ident: &Identifier, schema: &SchemaRef) -> CatalogResult<TableRef>;
+    fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef>;
     /// Remove a namespace from the catalog, erroring if the namespace did not exist.
     fn drop_namespace(&self, ident: &Identifier) -> CatalogResult<()>;
     /// Remove a table from the catalog, erroring if the table did not exist.

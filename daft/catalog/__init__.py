@@ -130,10 +130,11 @@ class Catalog(ABC):
         """List all tables in the catalog. When a pattern is specified, list only tables matching the pattern."""
 
     @staticmethod
-    def from_pydict(tables: dict[str, object], name: str = "default") -> Catalog:
+    def from_pydict(tables: dict[Identifier | str, object], name: str = "default") -> Catalog:
         """Returns an in-memory catalog from a dictionary of table-like objects.
 
         The table-like objects can be pydicts, dataframes, or a Table implementation.
+        For qualified tables, namespaces are created if necessary.
 
         Args:
             tables (dict[str,object]): a dictionary of table-like objects (pydicts, dataframes, and tables)
@@ -160,9 +161,31 @@ class Catalog(ABC):
             ['R', 'S', 'T']
 
         """
-        from daft.catalog.__memory import MemoryCatalog
+        from daft.catalog.__internal import MemoryCatalog
 
-        return MemoryCatalog._from_pydict(name, tables)
+        catalog = MemoryCatalog._new(name)
+
+        for ident, source in tables.items():
+            ident = ident if isinstance(ident, Identifier) else Identifier.from_str(ident)
+
+            # has namespace, create one if it doesn't exist
+            if len(ident) > 1:
+                namespace = Identifier(*ident[:-1])
+                catalog.create_namespace_if_not_exists(namespace)
+
+            df: DataFrame
+            if isinstance(source, Table):
+                df = source.read()
+            elif isinstance(source, DataFrame):
+                df = source
+            elif isinstance(source, dict):
+                df = DataFrame._from_pydict(source)
+            else:
+                raise ValueError(f"Unsupported table source {type(source)}")
+
+            catalog.create_table(ident, df)
+
+        return catalog
 
     @staticmethod
     def from_iceberg(catalog: object) -> Catalog:
@@ -627,9 +650,8 @@ class Table(ABC):
             (Showing first 2 of 2 rows)
 
         """
-        from daft.catalog.__memory import MemoryTable
-
-        return MemoryTable(name, DataFrame._from_pydict(data))
+        df = DataFrame._from_pydict(data)
+        return Table.from_df(name, df)
 
     @staticmethod
     def from_df(name: str, dataframe: DataFrame) -> Table:
@@ -648,9 +670,12 @@ class Table(ABC):
             >>> Table.from_df("my_table", daft.from_pydict({"x": [1, 2, 3]}))
 
         """
-        from daft.catalog.__memory import MemoryTable
+        from daft.catalog.__internal import MemoryTable
 
-        return MemoryTable(name, dataframe)
+        table = MemoryTable._new(name, dataframe.schema())
+        table.append(dataframe)
+
+        return table
 
     @staticmethod
     def from_iceberg(table: object) -> Table:
@@ -753,7 +778,6 @@ class Table(ABC):
     # write methods
     ###
 
-    @abstractmethod
     def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
         """Writes the DataFrame to this table.
 
@@ -762,7 +786,10 @@ class Table(ABC):
             mode (str): write mode such as 'append' or 'overwrite'
             **options (Any): additional format-dependent write options
         """
+        if mode == "append":
+            return self.append(df, **options)
 
+    @abstractmethod
     def append(self, df: DataFrame, **options: Any) -> None:
         """Appends the DataFrame to this table.
 
@@ -770,8 +797,8 @@ class Table(ABC):
             df (DataFrame): dataframe to append
             **options (Any): additional format-dependent write options
         """
-        self.write(df, mode="append", **options)
 
+    @abstractmethod
     def overwrite(self, df: DataFrame, **options: Any) -> None:
         """Overwrites this table with the given DataFrame.
 
@@ -779,7 +806,6 @@ class Table(ABC):
             df (DataFrame): dataframe to overwrite this table with
             **options (Any): additional format-dependent write options
         """
-        self.write(df, mode="overwrite", **options)
 
     ###
     # python methods

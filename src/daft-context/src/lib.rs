@@ -12,6 +12,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 mod python;
 
+pub mod partition_cache;
 /// Wrapper around the ContextState to provide a thread-safe interface.
 /// IMPORTANT: Do not create this directly, use `get_context` instead.
 /// This is a singleton, and should only be created once.

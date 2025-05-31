@@ -2072,8 +2072,12 @@ name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "daft-context",
  "daft-core",
+ "daft-dsl",
  "daft-logical-plan",
+ "daft-micropartition",
+ "indexmap 2.9.0",
  "pyo3",
  "snafu",
  "sqlparser",
@@ -2136,8 +2140,12 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
+ "daft-core",
+ "daft-logical-plan",
+ "daft-micropartition",
  "daft-py-runners",
  "log",
  "pyo3",
@@ -2887,7 +2895,6 @@ dependencies = [
  "daft-functions-list",
  "daft-functions-utf8",
  "daft-logical-plan",
- "daft-micropartition",
  "daft-scan",
  "daft-session",
  "itertools 0.11.0",
