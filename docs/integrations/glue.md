@@ -28,7 +28,7 @@ Daft integrates with [AWS Glue](https://docs.aws.amazon.com/glue/latest/dg/what-
     # load a glue table
     tbl = catalog.get_table("my_namespace.my_table")
 
-    # read the table as a daft dataframe
+    # read the table as a dataframe in Daft
     df = tbl.read()
     df.show()
     ```

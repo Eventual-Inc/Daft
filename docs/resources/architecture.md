@@ -41,7 +41,7 @@ b. **Series:** Each column in a Table is a Series. Series expose methods which i
 
 ## Execution Model
 
-Daft DataFrames are lazy. When operations are called on the DataFrame, their actual execution is delayed. These operations are “enqueued” for execution in a LogicalPlan, which is a tree datastructure which describes the operations that will need to be performed to produce the requested DataFrame.
+Daft is lazy. When operations are called on the DataFrame, their actual execution is delayed. These operations are “enqueued” for execution in a LogicalPlan, which is a tree datastructure which describes the operations that will need to be performed to produce the requested DataFrame.
 
 === "🐍 Python"
 
@@ -69,7 +69,7 @@ By default, Daft runs on the Native Runner which uses native multithreading as i
 
 ## DataFrame Partitioning
 
-Daft DataFrames are Partitioned - meaning that under the hood they are split row-wise into Partitions of data.
+DataFrames in Daft are partitioned - meaning that under the hood they are split row-wise into Partitions of data.
 
 This is useful for a few reasons:
 

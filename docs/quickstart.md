@@ -24,7 +24,7 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 
 For more advanced installation options, please see [Installation](install.md).
 
-### Create Your First Daft DataFrame
+### Create Your First DataFrame in Daft
 
 See also [I/O API Docs](api/io.md). Let's create a DataFrame from a dictionary of columns:
 
@@ -108,7 +108,7 @@ Why does it say `(No data to display: Dataframe not materialized)` and where are
 
 ### Execute Your DataFrame and View Data
 
-Daft DataFrames are **lazy** by default. This means that the contents will not be computed (“materialized”) unless you explicitly tell Daft to do so. This is best practice for working with larger-than-memory datasets and parallel/distributed architectures.
+Daft is **lazy** by default. This means that the contents will not be computed (“materialized”) unless you explicitly tell Daft to do so. This is best practice for working with larger-than-memory datasets and parallel/distributed architectures.
 
 The file we have just loaded only has 5 rows. You can materialize the whole DataFrame in memory easily using the [`df.collect()`][daft.DataFrame.collect] method:
 

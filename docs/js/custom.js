@@ -49,7 +49,7 @@ document.addEventListener("DOMContentLoaded", function () {
   script.setAttribute("runllm-position-y", "20px");
   script.setAttribute("runllm-assistant-id", "160");
   script.setAttribute("runllm-preset", "mkdocs");
-  script.setAttribute("runllm-theme-color", "#7862ff");
+  script.setAttribute("runllm-theme-color", "#ff00ff");
   script.setAttribute("runllm-join-community-text", "Join Daft Slack!");
   script.setAttribute("runllm-community-url", "https://www.getdaft.io/slack.html?utm_source=docs&utm_medium=button&utm_campaign=docs_ask_ai");
   script.setAttribute("runllm-community-type", "slack");

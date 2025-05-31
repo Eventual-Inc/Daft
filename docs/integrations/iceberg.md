@@ -16,7 +16,7 @@ A detailed Iceberg roadmap for Daft can be found on [our Github issues](https://
 
 To read from the Apache Iceberg table format, use the [`daft.read_iceberg`][daft.read_iceberg] function.
 
-We integrate closely with [PyIceberg](https://py.iceberg.apache.org/) (the official Python implementation for Apache Iceberg) and allow the reading of Daft dataframes easily from PyIceberg's Table objects. The following is an example snippet of loading an example table, but for more information please consult the [PyIceberg Table loading documentation](https://py.iceberg.apache.org/api/#load-a-table).
+We integrate closely with [PyIceberg](https://py.iceberg.apache.org/) (the official Python implementation for Apache Iceberg) and allow the reading of Daft's DataFrames easily from PyIceberg's Table objects. The following is an example snippet of loading an example table, but for more information please consult the [PyIceberg Table loading documentation](https://py.iceberg.apache.org/api/#load-a-table).
 
 === "🐍 Python"
 
@@ -33,7 +33,7 @@ After a table is loaded as the `table` object, reading it into a DataFrame is ex
 === "🐍 Python"
 
     ```python
-    # Create a Daft Dataframe
+    # Create a DataFrame in Daft
     import daft
 
     df = daft.read_iceberg(table)

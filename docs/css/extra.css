@@ -1,21 +1,8 @@
-/*https://github.com/squidfunk/mkdocs-material/issues/2574#issuecomment-821979698*/
-/* search bar slash button */
-[data-md-toggle="search"]:not(:checked) ~ .md-header .md-search__form::after {
-    position: absolute;
-    top: .3rem;
-    right: .3rem;
-    display: block;
-    padding: .1rem .4rem;
-    color: #fff;
-    font-weight: bold;
-    font-size: .8rem;
-    border: .05rem solid #ffffff4d;
-    border-radius: .1rem;
-}
-
 :root {
-  --md-primary-fg-color: #532687;
-  --md-accent-fg-color: #ad9fff;
+  --md-primary-fg-color: #7f007f;
+  --md-accent-fg-color: var(--daft-magenta-light);
+  --daft-magenta: #ff00ff;
+  --daft-magenta-light: #ff00ff40;
 }
 
 /* hide readthedocs flyout for future versions (>0.4.15) */
@@ -24,21 +11,21 @@ readthedocs-flyout {
 }
 
 [data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
-  --md-typeset-a-color: #7862FF;
+  --md-typeset-a-color: var(--daft-magenta);
 }
 
 /* NOTE ADMONITIONS */
 
-/* use daft purple for note admonitions */
+/* use daft pink for note admonitions */
 .md-typeset .admonition.note,
 .md-typeset details.note {
-  border-color: rgb(120,98,255);
+  border-color: var(--daft-magenta);
 }
 
 /* heading background color for note admonitions */
 .md-typeset .note > .admonition-title,
 .md-typeset .note > summary {
-  background-color: rgb(120,98,255, 0.1);
+  background-color: var(--daft-magenta-light);
 }
 
 /* color of icon (before) & arrow (after) for note admonitions */
@@ -46,13 +33,13 @@ readthedocs-flyout {
 .md-typeset .note > summary::before,
 .md-typeset .note > .admonition-title::after,
 .md-typeset .note > summary::after {
-  background-color: rgb(120,98,255);
+  background-color: var(--daft-magenta);
 }
 
 /* box shadow on click for expanding boxes for note admonitions */
 .md-typeset .admonition.note:focus-within,
 .md-typeset details.note:focus-within {
-  box-shadow: 0 0 0 .2rem rgba(120,98,255, 0.1)
+  box-shadow: 0 0 0 .2rem --daft-magenta-light;
 }
 
 /* EXAMPLE ADMONITIONS */

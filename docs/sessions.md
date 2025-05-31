@@ -157,7 +157,7 @@ sess.create_temp_table("temp", daft.read_csv("/tmp/daft/row.csv"))
 
 ### Read & Write
 
-Using sessions abstracts away underlying catalog and table implementations so you can easily read and write daft DataFrames.
+Using sessions abstracts away underlying catalog and table implementations so you can easily read and write DataFrames in Daft.
 
 ```python
 # we can read our table back as a DataFrame instance
