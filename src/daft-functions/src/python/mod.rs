@@ -12,7 +12,6 @@ macro_rules! simple_python_wrapper {
     };
 }
 
-mod binary;
 mod coalesce;
 mod distance;
 mod misc;
@@ -102,14 +101,6 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
 
     add!(coalesce::coalesce);
     add!(distance::cosine_distance);
-    add!(binary::binary_length);
-    add!(binary::binary_concat);
-    add!(binary::binary_slice);
-
-    add!(binary::encode);
-    add!(binary::decode);
-    add!(binary::try_encode);
-    add!(binary::try_decode);
 
     add!(misc::to_struct);
     add!(misc::hash);

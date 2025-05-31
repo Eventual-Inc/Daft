@@ -1,5 +1,8 @@
+use std::{fmt::Display, str::FromStr};
+
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::DataType;
+use daft_dsl::{FromLiteral, Literal, LiteralValue};
 use serde::{Deserialize, Serialize};
 use simdutf8::basic::from_utf8;
 
@@ -10,6 +13,36 @@ pub enum Codec {
     Gzip,
     Utf8,
     Zlib,
+}
+
+impl Display for Codec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Deflate => "deflate",
+            Self::Gzip => "gzip",
+            Self::Utf8 => "utf8",
+            Self::Zlib => "zlib",
+        })
+    }
+}
+
+impl Literal for Codec {
+    fn literal_value(self) -> daft_dsl::LiteralValue {
+        LiteralValue::Utf8(self.to_string())
+    }
+}
+
+impl FromLiteral for Codec {
+    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
+        if let LiteralValue::Utf8(s) = lit {
+            s.parse()
+        } else {
+            Err(DaftError::ValueError(format!(
+                "Expected a string literal, got {:?}",
+                lit
+            )))
+        }
+    }
 }
 
 /// Determines if the decoded output should be a binary or text.
@@ -59,15 +92,15 @@ impl Codec {
     }
 }
 
-impl TryFrom<&str> for Codec {
-    type Error = DaftError;
+impl FromStr for Codec {
+    type Err = DaftError;
 
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "deflate" => Ok(Self::Deflate),
             "gzip" | "gz" => Ok(Self::Gzip),
             "zlib" => Ok(Self::Zlib),
-            "utf-8" => Ok(Self::Utf8),
+            "utf-8" | "utf8" => Ok(Self::Utf8),
             _ => Err(DaftError::not_implemented(format!(
                 "unsupported codec: {}",
                 s
@@ -176,18 +209,18 @@ mod tests {
 
     #[test]
     fn test_codec_from_str() {
-        assert_eq!(Codec::try_from("DEFLATE").unwrap(), Codec::Deflate);
-        assert_eq!(Codec::try_from("deflate").unwrap(), Codec::Deflate);
-        assert_eq!(Codec::try_from("gz").unwrap(), Codec::Gzip);
-        assert_eq!(Codec::try_from("GZ").unwrap(), Codec::Gzip);
-        assert_eq!(Codec::try_from("gzip").unwrap(), Codec::Gzip);
-        assert_eq!(Codec::try_from("GZIP").unwrap(), Codec::Gzip);
-        assert_eq!(Codec::try_from("GzIp").unwrap(), Codec::Gzip);
-        assert_eq!(Codec::try_from("utf-8").unwrap(), Codec::Utf8);
-        assert_eq!(Codec::try_from("UTF-8").unwrap(), Codec::Utf8);
-        assert_eq!(Codec::try_from("zlib").unwrap(), Codec::Zlib);
-        assert_eq!(Codec::try_from("ZLIB").unwrap(), Codec::Zlib);
-        assert_eq!(Codec::try_from("ZlIb").unwrap(), Codec::Zlib);
-        assert!(Codec::try_from("unknown").is_err());
+        assert_eq!("DEFLATE".parse::<Codec>().unwrap(), Codec::Deflate);
+        assert_eq!("deflate".parse::<Codec>().unwrap(), Codec::Deflate);
+        assert_eq!("gz".parse::<Codec>().unwrap(), Codec::Gzip);
+        assert_eq!("GZ".parse::<Codec>().unwrap(), Codec::Gzip);
+        assert_eq!("gzip".parse::<Codec>().unwrap(), Codec::Gzip);
+        assert_eq!("GZIP".parse::<Codec>().unwrap(), Codec::Gzip);
+        assert_eq!("GzIp".parse::<Codec>().unwrap(), Codec::Gzip);
+        assert_eq!("utf-8".parse::<Codec>().unwrap(), Codec::Utf8);
+        assert_eq!("UTF-8".parse::<Codec>().unwrap(), Codec::Utf8);
+        assert_eq!("zlib".parse::<Codec>().unwrap(), Codec::Zlib);
+        assert_eq!("ZLIB".parse::<Codec>().unwrap(), Codec::Zlib);
+        assert_eq!("ZlIb".parse::<Codec>().unwrap(), Codec::Zlib);
+        assert!("unknown".parse::<Codec>().is_err());
     }
 }
