@@ -5,7 +5,6 @@ use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
@@ -200,13 +199,13 @@ impl PipelineNode for BlockingSinkNode {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
                 Self::spawn_workers(
@@ -219,7 +218,7 @@ impl PipelineNode for BlockingSinkNode {
 
                 let mut finished_states = Vec::with_capacity(num_workers);
                 while let Some(result) = task_set.join_next().await {
-                    let state = result.context(JoinSnafu)??;
+                    let state = result??;
                     finished_states.push(state);
                 }
 

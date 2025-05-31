@@ -34,7 +34,7 @@ use crate::{
     pipeline::{physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid},
     progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
-    Error, ExecutionRuntimeContext,
+    ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -301,13 +301,9 @@ impl NativeExecutor {
 
                 while let Some(result) = runtime_handle.join_next().await {
                     match result {
-                        Ok(Err(e)) => {
+                        Ok(Err(e)) | Err(e) => {
                             runtime_handle.shutdown().await;
                             return DaftResult::Err(e.into());
-                        }
-                        Err(e) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(Error::JoinError { source: e }.into());
                         }
                         _ => {}
                     }
