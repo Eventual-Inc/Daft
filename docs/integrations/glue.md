@@ -19,16 +19,16 @@ Daft integrates with [AWS Glue](https://docs.aws.amazon.com/glue/latest/dg/what-
     ```python
     from daft.catalog.__glue import load_glue
 
-    # load a glue catalog instance
+    # Load a glue catalog instance
     catalog = load_glue(
         name="my_glue_catalog",
         region_name="us-west-2"
     )
 
-    # load a glue table
+    # Load a glue table
     tbl = catalog.get_table("my_namespace.my_table")
 
-    # read the table as a dataframe in Daft
+    # Read the table as a DataFrame
     df = tbl.read()
     df.show()
     ```

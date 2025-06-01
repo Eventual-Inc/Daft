@@ -109,7 +109,7 @@ You can use User-Defined Functions (UDFs) to run computations over multiple rows
 
 Dask offers some distributed Machine Learning functionality through the [dask-ml library](https://ml.dask.org/). This library provides parallel implementations of a few common scikit-learn algorithms. Note that `dask-ml` is not a core Dask library and is not as actively maintained. It also does not offer support for deep-learning algorithms or neural networks.
 
-Daft is built as a DataFrame API for distributed Machine learning. You can use Daft UDFs to apply Machine Learning tasks to the data stored in your DataFrame in Daft, including deep learning algorithms from libraries like PyTorch. See our [MNIST Digit Classification tutorial](../resources/tutorials.md#mnist-digit-classification) for an example.
+Daft exposes a DataFrame API for distributed Machine learning. You can use Daft UDFs to apply Machine Learning tasks to the data stored in your DataFrame, including deep learning algorithms from libraries like PyTorch. See our [MNIST Digit Classification tutorial](../resources/tutorials.md#mnist-digit-classification) for an example.
 
 ## Daft supports Multimodal Data Types
 

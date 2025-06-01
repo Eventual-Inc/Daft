@@ -21,7 +21,7 @@ For other file formats, you will need to manually specify the path or glob patte
     df = daft.read_parquet("hf://datasets/username/dataset_name")
     ```
 
-This will read the entire dataset into a DataFrame in Daft.
+This will read the entire dataset into a DataFrame.
 
 Not only can you read entire datasets, but you can also read individual files from a dataset.
 

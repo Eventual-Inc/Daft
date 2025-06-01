@@ -1,6 +1,6 @@
 # SQL
 
-You can read the results of SQL queries from databases, data warehouses, and query engines, into Daft via the [`daft.read_sql()`][daft.read_sql] function.
+You can read the results of SQL queries from databases, data warehouses, and query engines via the [`daft.read_sql()`][daft.read_sql] function.
 
 Daft currently supports:
 
@@ -52,7 +52,7 @@ After writing this local example table, we can easily read it into Daft as a Dat
 === "🐍 Python"
 
     ```python
-    # Read SQL query into Daft
+    # Read SQL query
     import daft
 
     df = daft.read_sql(
@@ -68,7 +68,7 @@ You can also directly provide a SQL alchemy connection via a **connection factor
 === "🐍 Python"
 
     ```python
-    # Read SQL query into Daft using a connection factory
+    # Read SQL query using a connection factory
     import daft
     from sqlalchemy import create_engine
 
@@ -87,7 +87,7 @@ Supply the [`daft.read_sql()`][daft.read_sql] function with a **partition column
 === "🐍 Python"
 
     ```python
-    # Read SQL query into Daft with parallel reads
+    # Read SQL query with parallel reads
     import daft
 
     df = daft.read_sql(

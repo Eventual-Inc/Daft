@@ -28,7 +28,7 @@ To read from an Apache Hudi table, use the [`daft.read_hudi()`][daft.read_hudi] 
 === "🐍 Python"
 
     ```python
-    # Read Apache Hudi table into a DataFrame in Daft.
+    # Read Apache Hudi table
     import daft
 
     df = daft.read_hudi("some-table-uri")

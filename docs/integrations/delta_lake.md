@@ -43,12 +43,12 @@ The below example uses the [deltalake](https://pypi.org/project/deltalake/) Pyth
     write_deltalake("some-table", df, partition_by="group")
     ```
 
-After writing this local example table, we can easily read it into Daft as a DataFrame.
+After writing this local example table, we can easily read it into Daft.
 
 === "🐍 Python"
 
     ```python
-    # Read Delta Lake table into Daft.
+    # Read a Delta Lake table
     import daft
 
     df = daft.read_deltalake("some-table")
@@ -78,7 +78,7 @@ Filters on non-partition columns will still benefit from automatic file pruning 
 
 ## Write to Delta Lake
 
-You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write Daft to a Delta table:
+You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write a DataFrame to a Delta table:
 
 === "🐍 Python"
 

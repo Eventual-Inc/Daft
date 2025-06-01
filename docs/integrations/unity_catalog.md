@@ -37,7 +37,7 @@ Daft includes an abstraction for the Unity Catalog. For more information, see al
     print(unity.list_tables("my_catalog_name.my_schema_name"))
     ```
 
-## Loading to a Dataframe in Daft from a Delta Lake table in Unity Catalog
+## Loading a Dataframe from a Delta Lake table in Unity Catalog
 
 === "🐍 Python"
 

@@ -105,7 +105,7 @@ In this case, Daft is just deferring the work required to read the data and sele
 
 !!! info "Info"
 
-    When you call methods on a DataFrame in Daft, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling [`df.explain()`][daft.DataFrame.explain]!
+    When you call methods on a DataFrame, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling [`df.explain()`][daft.DataFrame.explain]!
 
     Passing the `show_all=True` argument will show you the plan after Daft applies its query optimizations and the physical (lower-level) plan.
 
@@ -326,17 +326,19 @@ Select specific columns in a DataFrame using [`df.select()`][daft.DataFrame.sele
     ```
 
 ``` {title="Output"}
+╭───────╮
+│ A     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 1     │
+├╌╌╌╌╌╌╌┤
+│ 2     │
+├╌╌╌╌╌╌╌┤
+│ 3     │
+╰───────╯
 
-# #00 - Data Access
-
-This Feature-of-the-Week tutorial shows the canonical way of accessing data with Daft.
-
-Daft reads from 3 main data sources:
-1. Files (local and remote)
-2. SQL Databases
-3. Data Catalogs
-
-Let's dive into each type of data access in more detail 🪂
+(Showing first 3 of 3 rows)
 ```
 
 A useful alias for [`df.select()`][daft.DataFrame.select] is indexing a DataFrame with a list of column names or Expressions:
@@ -680,7 +682,7 @@ Most commonly you will be creating expressions by using the [`daft.col()`][daft.
 
 #### Using SQL
 
-Daft can also parse valid SQL as expressions. The below example will create an expression representing the column `A` incremented by 1. For many APIs, [`sql_expr`][daft.sql.sql.sql_expr] will actually be applied for you as syntactic sugar!
+Daft can also parse valid SQL as expressions.
 
 === "⚙️ SQL"
     ```python
@@ -1413,7 +1415,7 @@ Daft can read data from a variety of sources, and write data to many destination
 
 ## Query Plan
 
-As mentioned earlier, Daft is lazy. Under the hood, each DataFrame in Daft is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
+As mentioned earlier, Daft is lazy. Under the hood, each DataFrame is represented by `LogicalPlan`, a plan of operations that describes how to compute that DataFrame. This plan is called the "query plan" and calling methods on the DataFrame actually adds steps to the query plan! When your DataFrame is executed, Daft will read this plan, optimize it to make it run faster and then execute it to compute the requested results.
 
 You can examine a logical plan using [`df.explain()`][daft.DataFrame.explain], here's an example:
 
