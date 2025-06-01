@@ -192,13 +192,13 @@ def get_daft_version() -> str:
     return daft.get_version()
 
 
-def get_daft_benchmark_runner_name() -> Literal["ray"] | Literal["py"] | Literal["native"]:
+def get_daft_benchmark_runner_name() -> Literal["ray"] | Literal["native"]:
     """Test utility that checks the environment variable for the runner that is being used for the benchmarking."""
     name = os.getenv("DAFT_RUNNER")
     assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
     name = name.lower()
 
-    assert name in {"ray", "py", "native"}, f"Runner name not recognized: {name}"
+    assert name in {"ray", "native"}, f"Runner name not recognized: {name}"
     return name
 
 

@@ -7,7 +7,6 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_context::get_context;
 use daft_core::prelude::SchemaRef;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -15,18 +14,22 @@ use daft_micropartition::{
     MicroPartition,
 };
 
+use crate::get_context;
+
 /// Create an in-memory scan from arrow arrays, like `DataFrame._from_arrow`
-pub fn from_arrow<S: Into<SchemaRef>>(
+pub fn logical_plan_from_arrow<S: Into<SchemaRef>>(
     schema: S,
     arrays: Vec<Box<dyn arrow2::array::Array>>,
 ) -> DaftResult<LogicalPlanBuilder> {
     let schema = schema.into();
     let part = MicroPartition::from_arrow(schema, arrays)?;
-    from_micropartitions(vec![part])
+    logical_plan_from_micropartitions(vec![part])
 }
 
 /// Create an in-memory scan from load micropartitions, like `DataFrame._from_micropartitions`
-pub fn from_micropartitions(parts: Vec<MicroPartition>) -> DaftResult<LogicalPlanBuilder> {
+pub fn logical_plan_from_micropartitions(
+    parts: Vec<MicroPartition>,
+) -> DaftResult<LogicalPlanBuilder> {
     if parts.is_empty() {
         return Err(DaftError::InternalError(
             "from_micropartitions requires at least one partition.".to_string(),
@@ -59,7 +62,9 @@ pub fn from_micropartitions(parts: Vec<MicroPartition>) -> DaftResult<LogicalPla
 }
 
 #[cfg(feature = "python")]
-fn put_partition_set_into_cache(pset: Arc<MicroPartitionSet>) -> DaftResult<PartitionCacheEntry> {
+pub fn put_partition_set_into_cache(
+    pset: Arc<MicroPartitionSet>,
+) -> DaftResult<PartitionCacheEntry> {
     use daft_micropartition::python::PyMicroPartitionSet;
     use pyo3::{types::PyAnyMethods, Python};
 
@@ -88,9 +93,11 @@ fn put_partition_set_into_cache(pset: Arc<MicroPartitionSet>) -> DaftResult<Part
 }
 
 #[cfg(not(feature = "python"))]
-fn put_partition_set_into_cache(pset: Arc<MicroPartitionSet>) -> DaftResult<PartitionCacheEntry> {
+pub fn put_partition_set_into_cache(
+    pset: Arc<MicroPartitionSet>,
+) -> DaftResult<PartitionCacheEntry> {
     Err(DaftError::InternalError(
-        "from_arrow requires 'python' feature".to_string(),
+        "put_partition_set_into_cache requires 'python' feature".to_string(),
     ))
 }
 
@@ -111,7 +118,7 @@ mod test {
         let array = Int64Array::from_vec(vec![1, 2, 3, 4]);
         let arrays = vec![Box::new(array) as Box<dyn arrow2::array::Array>];
         // verify from_arrow does not fail
-        let result = from_arrow(schema, arrays);
+        let result = logical_plan_from_arrow(schema, arrays);
         let builder = result.expect("from_arrow should have been ok");
         assert!(builder.schema().len() == 1);
     }

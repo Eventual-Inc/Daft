@@ -1,27 +1,17 @@
 use std::sync::Arc;
 
 use daft_core::{prelude::SchemaRef, python::PySchema};
+use daft_dsl::LiteralValue;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use indexmap::IndexMap;
 use pyo3::{intern, prelude::*, types::PyList};
 
 use super::PyIdentifier;
-use crate::{error::CatalogResult, Catalog, CatalogRef, Identifier, Table, TableRef};
+use crate::{error::CatalogResult, Catalog, Identifier, Table, TableRef};
 
 /// Newtype to implement the Catalog trait for a Python catalog
 #[derive(Debug)]
-pub struct PyCatalogWrapper(PyObject);
-
-impl From<PyObject> for PyCatalogWrapper {
-    fn from(obj: PyObject) -> Self {
-        Self(obj)
-    }
-}
-
-impl PyCatalogWrapper {
-    pub fn wrap(obj: PyObject) -> CatalogRef {
-        Arc::new(Self::from(obj))
-    }
-}
+pub struct PyCatalogWrapper(pub(super) PyObject);
 
 impl Catalog for PyCatalogWrapper {
     fn name(&self) -> String {
@@ -88,13 +78,11 @@ impl Catalog for PyCatalogWrapper {
         })
     }
 
-    fn create_table(&self, ident: &Identifier, schema: &SchemaRef) -> CatalogResult<TableRef> {
+    fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
         Python::with_gil(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
-            let schema = PySchema {
-                schema: schema.clone(),
-            };
+            let schema = PySchema { schema };
             let schema_py = py
                 .import(intern!(py, "daft.schema"))?
                 .getattr(intern!(py, "Schema"))?
@@ -154,19 +142,7 @@ impl Catalog for PyCatalogWrapper {
 
 /// Newtype to implement the Table trait for a Python table
 #[derive(Debug)]
-pub struct PyTableWrapper(PyObject);
-
-impl From<PyObject> for PyTableWrapper {
-    fn from(obj: PyObject) -> Self {
-        Self(obj)
-    }
-}
-
-impl PyTableWrapper {
-    pub fn wrap(obj: PyObject) -> TableRef {
-        Arc::new(Self::from(obj))
-    }
-}
+pub struct PyTableWrapper(pub(super) PyObject);
 
 impl Table for PyTableWrapper {
     fn name(&self) -> String {
@@ -212,7 +188,11 @@ impl Table for PyTableWrapper {
         })
     }
 
-    fn write(&self, plan: LogicalPlanBuilder, mode: &str) -> CatalogResult<()> {
+    fn append(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, LiteralValue>,
+    ) -> CatalogResult<()> {
         Python::with_gil(|py| {
             let table = self.0.bind(py);
             let plan_py = PyLogicalPlanBuilder { builder: plan };
@@ -220,7 +200,24 @@ impl Table for PyTableWrapper {
                 .import(intern!(py, "daft.dataframe"))?
                 .getattr(intern!(py, "DataFrame"))?
                 .call1((plan_py,))?;
-            table.call_method1(intern!(py, "write"), (df, mode))?;
+            table.call_method1(intern!(py, "append"), (df, options))?;
+            Ok(())
+        })
+    }
+
+    fn overwrite(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, LiteralValue>,
+    ) -> CatalogResult<()> {
+        Python::with_gil(|py| {
+            let table = self.0.bind(py);
+            let plan_py = PyLogicalPlanBuilder { builder: plan };
+            let df = py
+                .import(intern!(py, "daft.dataframe"))?
+                .getattr(intern!(py, "DataFrame"))?
+                .call1((plan_py,))?;
+            table.call_method1(intern!(py, "overwrite"), (df, options))?;
             Ok(())
         })
     }

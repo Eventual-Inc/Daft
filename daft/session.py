@@ -106,7 +106,7 @@ class Session:
         """
         py_sess = self._session
         py_config = get_context().daft_planning_config
-        py_object = sql_exec(sql, py_sess, py_config)
+        py_object = sql_exec(sql, py_sess, {}, py_config)
         if py_object is None:
             return None
         elif isinstance(py_object, PyBuilder):

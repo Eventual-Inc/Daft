@@ -1,6 +1,6 @@
 use std::{future::ready, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
 use daft_context::get_context;
@@ -40,7 +40,9 @@ impl ConnectSession {
         let runner = get_context().get_or_create_runner()?;
 
         let result_set = tokio::task::spawn_blocking(move || {
-            Python::with_gil(|py| runner.run_iter_tables(py, lp, None))
+            Python::with_gil(|py| {
+                Ok::<_, DaftError>(runner.run_iter_tables(py, lp, None)?.collect::<Vec<_>>())
+            })
         })
         .await??;
 

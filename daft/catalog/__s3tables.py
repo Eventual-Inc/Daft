@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import boto3
 import botocore
@@ -345,7 +345,10 @@ class S3Table(Table):
     def read(self, **options: Any) -> DataFrame:
         return self._catalog._read_iceberg(self)
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
+        raise ValueError("S3 Table writes require using Iceberg REST.")
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
         raise ValueError("S3 Table writes require using Iceberg REST.")
 
 

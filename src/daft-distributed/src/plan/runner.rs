@@ -7,6 +7,7 @@ use futures::StreamExt;
 
 use super::{DistributedPhysicalPlan, PlanResult};
 use crate::{
+    pipeline_node::MaterializedOutput,
     scheduling::{
         scheduler::{spawn_default_scheduler_actor, SchedulerHandle},
         task::SwordfishTask,
@@ -34,7 +35,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        sender: Sender<PartitionRef>,
+        sender: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
             return Err(DaftError::ValueError(format!(

@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, Iterator, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
-from daft.recordbatch import MicroPartition
-from daft.schema import Schema
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from daft.recordbatch import MicroPartition
+    from daft.schema import Schema
 
 WriteResultType = TypeVar("WriteResultType")
 

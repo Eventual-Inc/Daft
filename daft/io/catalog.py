@@ -1,3 +1,4 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
 from dataclasses import dataclass
@@ -37,7 +38,7 @@ class DataCatalogTable:
         import warnings
 
         warnings.warn(
-            "This API will soon be deprecated. Users should use the new functionality in daft.catalog.",
+            "This API is deprecated in daft >=0.5.0 and will be removed in >=0.6.0. Users should use the new functionality in daft.catalog.",
             DeprecationWarning,
             stacklevel=2,
         )
