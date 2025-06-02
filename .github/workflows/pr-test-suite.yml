@@ -83,6 +83,9 @@ jobs:
       if: ${{ (matrix.pyarrow-version == '8.0.0') }}
       run: uv pip install deltalake==0.10.0
 
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+
     # Rust code coverage does not work on ubuntu-latest, so we only run it on macOS
     # For more info: https://github.com/Eventual-Inc/Daft/issues/3801
     - name: Build library and Test with pytest (Linux)
