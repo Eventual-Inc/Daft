@@ -1591,7 +1591,7 @@ class Expression:
         """
         return self._eval_expressions("binary_encode", codec=codec)
 
-    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "utf8", "zlib"]) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Args:
