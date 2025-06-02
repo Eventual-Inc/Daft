@@ -189,7 +189,7 @@ def set_execution_config(
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
     These configuration values
-    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.select)).
+    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.select)).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates

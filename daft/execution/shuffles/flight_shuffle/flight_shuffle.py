@@ -35,7 +35,7 @@ try:
     from ray._private.state import total_resources_per_node
 except ImportError:
     logger.error(
-        "Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+        "Error when importing Ray. Please ensure that getdaft was installed with the Ray extras tag: getdaft[ray] (https://docs.getdaft.io/en/latest/install)"
     )
     raise
 
