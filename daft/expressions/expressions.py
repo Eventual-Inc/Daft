@@ -50,6 +50,8 @@ if TYPE_CHECKING:
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
+    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
+
 
 def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
@@ -1546,7 +1548,7 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
-    def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def encode(self, codec: EncodingCodec) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1590,10 +1592,9 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        expr = native.encode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("encode", codec=codec)
 
-    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def decode(self, codec: EncodingCodec) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1623,18 +1624,15 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        expr = native.decode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("decode", codec=codec)
 
-    def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_encode(self, codec: EncodingCodec) -> Expression:
         """Encodes or returns null, see `Expression.encode`."""
-        expr = native.try_encode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("try_encode", codec=codec)
 
-    def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_decode(self, codec: EncodingCodec) -> Expression:
         """Decodes or returns null, see `Expression.decode`."""
-        expr = native.try_decode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("try_decode", codec=codec)
 
     def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type.
@@ -5137,7 +5135,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.binary_length(self._expr))
+        return self._eval_expressions("binary_length")
 
     def concat(self, other: Expression) -> Expression:
         r"""Concatenates two binary strings.
@@ -5172,8 +5170,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 4 of 4 rows)
 
         """
-        other_expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(native.binary_concat(self._expr, other_expr._expr))
+        return self._eval_expressions("binary_concat", other)
 
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a slice of each binary string.
@@ -5205,6 +5202,4 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        start_expr = Expression._to_expression(start)
-        length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(native.binary_slice(self._expr, start_expr._expr, length_expr._expr))
+        return self._eval_expressions("binary_slice", start, length)
