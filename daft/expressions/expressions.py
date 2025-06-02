@@ -5104,9 +5104,9 @@ class ExpressionJsonNamespace(ExpressionNamespace):
             stacklevel=2,
         )
         f = native.get_function_from_registry("jq")
-        query = Expression._to_expression(jq_query)._expr
+        filter = Expression._to_expression(jq_query)._expr
 
-        return Expression._from_pyexpr(f(self._expr, query=query))
+        return Expression._from_pyexpr(f(self._expr, filter))
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
