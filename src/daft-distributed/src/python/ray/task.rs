@@ -5,9 +5,12 @@ use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
 
-use crate::scheduling::{
-    task::{SwordfishTask, TaskResultHandle},
-    worker::WorkerId,
+use crate::{
+    pipeline_node::MaterializedOutput,
+    scheduling::{
+        task::{SwordfishTask, TaskResultHandle},
+        worker::WorkerId,
+    },
 };
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
@@ -43,7 +46,9 @@ impl RayTaskResultHandle {
 
 impl TaskResultHandle for RayTaskResultHandle {
     /// Get the result of the task, awaiting if necessary
-    fn get_result(&mut self) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static {
+    fn get_result(
+        &mut self,
+    ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
@@ -56,13 +61,14 @@ impl TaskResultHandle for RayTaskResultHandle {
             DaftResult::Ok(result)
         };
 
+        let worker_id = self.worker_id.clone();
         async move {
             let materialized_result =
                 pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
             let ray_part_ref =
                 Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
             let partition_ref = Arc::new(ray_part_ref) as PartitionRef;
-            Ok(partition_ref)
+            Ok(vec![MaterializedOutput::new(partition_ref, worker_id)])
         }
     }
 

@@ -47,7 +47,7 @@ impl InMemorySourceNode {
         config: Arc<DaftExecutionConfig>,
         in_memory_info: InMemoryInfo,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        result_tx: Sender<PipelineOutput>,
+        result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let partition_refs = psets.get(&in_memory_info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
         for partition_ref in partition_refs {
