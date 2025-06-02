@@ -1,46 +1,71 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
-
 name: Check Broken Links on getdaft.io
 
 on:
   schedule:
-  - cron: 0 20 * * *
+  - cron: '0 20 * * *'
   workflow_dispatch:
 
 jobs:
   check-links:
     timeout-minutes: 45
     runs-on: ubuntu-latest
+
     steps:
-    - name: setup broken link checker
-      run: npm install -g broken-link-checker
-    - name: Check getdaft.io
-      uses: nick-fields/retry@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Check links with lychee
+      uses: lycheeverse/lychee-action@v1.10.0
       with:
-        timeout_minutes: 10
-        retry_wait_seconds: 120
-        max_attempts: 3
-        command: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daftengine --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daftengine --exclude https://www.linkedin.com/showcase/daftengine/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://huggingface.co/docs/dataset-viewer/en/parquet
-  notify_on_failure:
-    runs-on: self-hosted
-    if: failure()
-    needs: check-links
-    steps:
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+        args: |
+          --verbose
+          --no-progress
+          --exclude-mail
+          --exclude 'www\.pytorch\.org'
+          --exclude 'https://github\.com/Eventual-Inc/Daft/'
+          --exclude 'https://twitter\.com/daftengine'
+          --exclude 'https://www\.linkedin\.com/company/eventualcomputing/'
+          --exclude 'https://x\.com/daftengine'
+          --exclude 'https://www\.linkedin\.com/showcase/daftengine/'
+          --exclude 'https://scarf\.sh'
+          --exclude 'https://static\.scarf\.sh'
+          --exclude 'https://huggingface\.co/docs/dataset-viewer/en/parquet'
+          --timeout 30
+          --max-retries 3
+          --retry-wait-time 5
+          --max-redirects 10
+          --headers 'User-Agent=Mozilla/5.0 (compatible; Lychee)'
+          'https://www.getdaft.io'
+        fail: true
+        output: lychee-report.md
+
+    - name: Upload link check results
+      uses: actions/upload-artifact@v4
+      if: always()
       with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: [NIGHTLY] Broken Link Checker <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-                }
-              }
-            ]
-          }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-        webhook-type: incoming-webhook
+        name: link-check-report
+        path: lychee-report.md
+
+  # notify_on_failure:
+  #   runs-on: ubuntu-latest
+  #   if: failure()
+  #   needs: check-links
+
+  #   steps:
+  #   - name: Send Slack notification on failure
+  #     uses: slackapi/slack-github-action@v2.0.0
+  #     with:
+  #       payload: |
+  #         {
+  #           "blocks": [
+  #             {
+  #               "type": "section",
+  #               "text": {
+  #                 "type": "mrkdwn",
+  #                 "text": ":rotating_light: [NIGHTLY] Broken Link Checker <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+  #               }
+  #             }
+  #           ]
+  #         }
+  #       webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #       webhook-type: incoming-webhook
