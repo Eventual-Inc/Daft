@@ -14,7 +14,7 @@ If you are coming from other data tools such as Pandas or Polars, here are some 
 
 3. **Multimodal:** Unlike traditional tables that usually contain simple data types like numbers and text, Daft can handle complex data types in its columns. This includes things like images, audio files, or even custom Python objects.
 
-For a full comparison between Daft and other data tools, see [Tool Comparison](resources/tool_comparison.md).
+For a full comparison between Daft and other data engines, see [Engine Comparison](resources/engine_comparison.md).
 
 Common data operations that you would perform on DataFrames are:
 

@@ -1,6 +1,6 @@
-# Tool Comparison
+# Engine Comparison
 
-If you are familiar with data tools that have DataFrame APIs like Pandas or Spark Dataframes, you will be right at home with Daft! Daft exposes a familiar DataFrame API which can be used for:
+If you are familiar with DataFrame APIs like Pandas or Spark Dataframes, you will be right at home with Daft! Daft exposes a familiar DataFrame API which can be used for:
 
 * Interactive Data Science: Performing interactive and ad-hoc exploration of data in a Notebook environment
 * Extract/Transform/Load (ETL): Defining data pipelines that clean and process data for consumption by other users
@@ -8,7 +8,7 @@ If you are familiar with data tools that have DataFrame APIs like Pandas or Spar
 
 Daft focuses on Machine Learning/Deep Learning workloads that often involve complex media data (images, video, audio, text documents and more).
 
-Below we discuss some other data tools and compare them to Daft.
+Below we discuss some other data engines and compare them to Daft.
 
 <!-- .. csv-table::
  :file: ../_static/dataframe-comp-table.csv

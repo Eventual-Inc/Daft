@@ -44,7 +44,7 @@ nav:
     - Partitioning: advanced/partitioning.md
   - Resources:
     - Architecture: resources/architecture.md
-    - Tool Comparison: resources/tool_comparison.md
+    - Engine Comparison: resources/engine_comparison.md
     # - Feature of the Week:
     #   - 00 - Data Access: fotw/00-data-access.ipynb
     #   - 01 - Multimodal (Images): fotw/01-images.ipynb
