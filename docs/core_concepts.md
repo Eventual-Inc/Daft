@@ -1354,7 +1354,6 @@ You can parse strings as timestamps with time zones and convert between differen
 │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-01 23:30:00.456 EST                       │
 ╰───────────────────────────────┴───────────────────────────────────────────────────╯
 ```
-
 ##### Temporal Truncation
 
 The [`.dt.truncate()`][daft.expressions.expressions.ExpressionDatetimeNamespace.truncate] method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods. For example, to truncate timestamps to the nearest hour:
@@ -2525,6 +2524,29 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
     df_family = df_family.with_column("image", daft.col("image_bytes").image.decode())
     df_family.show()
     ```
+
+### Dynamic Execution for Multimodal Workloads
+
+Daft uses **dynamic execution** to automatically adjust batch sizes based on the operation type and data characteristics.
+
+This is necessary because multimodal data such as images, videos, and audio files have different memory and processing characteristics that can cause issues with fixed batching: large batches may exceed available memory, while small batches may not fully utilize hardware optimizations or network bandwidth.
+
+#### How Batch Sizes Are Determined
+
+**Multimodal Downloads:** Downloads for multimodal data use smaller batch sizes (typically a factor of the max_connections parameter) to prevent memory exhaustion when downloading large files, while maintaining network throughput.
+
+**Vectorized Operations:** Operations that can operate on many rows in parallel, such as byte decoding / encoding, aggregations, and scalar projections, will use larger batch sizes that can take advantage of vectorized execution using SIMD.
+
+
+=== "🐍 Python"
+    ```python
+    # Each operation uses different batch sizes automatically
+    df = daft.read_parquet("metadata.parquet") # Large batches
+          .with_column("image_data", col("image_url").url.download())  # Small batches
+          .with_column("resized", col("image_data").image.resize(224, 224))  # Medium batches
+    ```
+
+This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.
 
 ## Example: UDFs in ML + Multimodal Workload
 
