@@ -11,22 +11,22 @@ use daft_dsl::functions::prelude::*;
 ///
 /// A `DaftResult` containing the resulting UTF-8 array after applying the query.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct JsonQuery;
+pub struct Jq;
 
 #[derive(FunctionArgs)]
-struct JsonQueryArgs<T> {
+struct JqArgs<T> {
     input: T,
     query: String,
 }
 
 #[typetag::serde]
-impl ScalarUDF for JsonQuery {
+impl ScalarUDF for Jq {
     fn name(&self) -> &'static str {
-        "json_query"
+        "jq"
     }
 
     fn docstring(&self) -> &'static str {
-        "Extracts a JSON object from a JSON string using a JSONPath expression."
+        "Applies a jq query to a JSON string expression, returning the result as a string."
     }
 
     fn function_args_to_field(
@@ -34,7 +34,7 @@ impl ScalarUDF for JsonQuery {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let JsonQueryArgs {
+        let JqArgs {
             input,
             query: _query,
         } = inputs.try_into()?;
@@ -44,13 +44,13 @@ impl ScalarUDF for JsonQuery {
     }
 
     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        let JsonQueryArgs { input, query } = inputs.try_into()?;
-        jq::query_series(&input, &query)
+        let JqArgs { input, query } = inputs.try_into()?;
+        jaq::execute(&input, &query)
     }
 }
 
 /// Encapsulate all jq functionality, could be pulled out if needs reuse later!
-mod jq {
+mod jaq {
 
     use std::sync::{LazyLock, Mutex};
 
@@ -60,7 +60,7 @@ mod jq {
         series::Series,
     };
     use itertools::Itertools;
-    use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter};
+    use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter, Val};
     use serde_json::Value;
 
     /// The jaq context with one-time initialization.
@@ -74,8 +74,8 @@ mod jq {
         defs
     }
 
-    /// Consider returning a typed series after `from_json` is implemented.
-    pub fn query_series(input: &Series, query: &str) -> DaftResult<Series> {
+    /// Consider returning a typed series based upon a data_type parameter.
+    pub fn execute(input: &Series, query: &str) -> DaftResult<Series> {
         match input.data_type() {
             DataType::Utf8 => {
                 let arr = input.utf8()?;
@@ -87,9 +87,9 @@ mod jq {
         }
     }
 
-    fn compile_filter(query: &str) -> DaftResult<Filter> {
-        // parse the filter
-        let (filter, errs) = jaq_parse::parse(query, jaq_parse::main());
+    fn compile_query(query: &str) -> DaftResult<Filter> {
+        // parse the query
+        let (parsed_query, errs) = jaq_parse::parse(query, jaq_parse::main());
         if !errs.is_empty() {
             return Err(DaftError::ValueError(format!(
                 "Error parsing json query ({query}): {}",
@@ -97,9 +97,9 @@ mod jq {
             )));
         }
 
-        // compile the filter executable
+        // compile the query
         let mut defs = PARSE_CTX.lock().unwrap();
-        let compiled_filter = defs.compile(filter.unwrap());
+        let compiled_query = defs.compile(parsed_query.unwrap());
         if !defs.errs.is_empty() {
             return Err(DaftError::ComputeError(format!(
                 "Error compiling json query ({query}): {}",
@@ -107,12 +107,12 @@ mod jq {
             )));
         }
 
-        Ok(compiled_filter)
+        Ok(compiled_query)
     }
 
     // This is only marked pub(crate) for mod test since it outside this module.
     pub(crate) fn json_query_impl(arr: &Utf8Array, query: &str) -> DaftResult<Utf8Array> {
-        let compiled_filter = compile_filter(query)?;
+        let compiled_query = compile_query(query)?;
         let inputs = RcIter::new(core::iter::empty());
 
         let self_arrow = arr.as_arrow();
@@ -125,17 +125,23 @@ mod jq {
                     serde_json::from_str::<Value>(s)
                         .map_err(DaftError::from)
                         .and_then(|json| {
-                            let res = compiled_filter
+                            let res = compiled_query
                                 .run((Ctx::new([], &inputs), json.into()))
                                 .map(|result| {
-                                    result.map(|v| v.to_string()).map_err(|e| {
+                                    result.map_err(|e| {
                                         DaftError::ComputeError(format!(
                                             "Error running json query ({query}): {e}"
                                         ))
                                     })
                                 })
                                 .collect::<DaftResult<Vec<_>>>()
-                                .map(|values| Some(values.join("\n")));
+                                .map(|values| {
+                                    match values.len() {
+                                        0 => None,
+                                        1 => Some(values[0].to_string()),
+                                        _ => Some(Val::arr(values).to_string()), // need multiple matches to still be a valid JSON string
+                                    }
+                                });
                             res
                         })
                 })
@@ -167,7 +173,7 @@ mod tests {
         );
 
         let query = r".foo.bar";
-        let result = jq::json_query_impl(&data, query)?;
+        let result = jaq::json_query_impl(&data, query)?;
         assert_eq!(result.len(), 3);
         assert_eq!(result.as_arrow().value(0), "1");
         assert_eq!(result.as_arrow().value(1), "2");
