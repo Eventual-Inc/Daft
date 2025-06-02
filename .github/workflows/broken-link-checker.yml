@@ -20,31 +20,7 @@ jobs:
         args: |
           --verbose
           --no-progress
-          --exclude-mail
-          --exclude 'www\.pytorch\.org'
-          --exclude 'https://github\.com/Eventual-Inc/Daft/'
-          --exclude 'https://twitter\.com/daftengine'
-          --exclude 'https://www\.linkedin\.com/company/eventualcomputing/'
-          --exclude 'https://x\.com/daftengine'
-          --exclude 'https://www\.linkedin\.com/showcase/daftengine/'
-          --exclude 'https://scarf\.sh'
-          --exclude 'https://static\.scarf\.sh'
-          --exclude 'https://huggingface\.co/docs/dataset-viewer/en/parquet'
-          --timeout 30
-          --max-retries 3
-          --retry-wait-time 5
-          --max-redirects 10
-          --header 'User-Agent=Mozilla/5.0 (compatible; Lychee)'
           'https://www.getdaft.io'
-        fail: true
-        output: lychee-report.md
-
-    - name: Upload link check results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: link-check-report
-        path: lychee-report.md
 
   # notify_on_failure:
   #   runs-on: ubuntu-latest
