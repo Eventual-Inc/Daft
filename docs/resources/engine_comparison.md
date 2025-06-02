@@ -1,21 +1,21 @@
-# Dataframe Comparison
+# Engine Comparison
 
-A Dataframe can be thought of conceptually as a "table of data", with rows and columns. If you are familiar with Pandas or Spark Dataframes, you will be right at home with Daft! Dataframes are used for:
+If you are familiar with DataFrame APIs like Pandas or Spark Dataframes, you will be right at home with Daft! Daft exposes a familiar DataFrame API which can be used for:
 
 * Interactive Data Science: Performing interactive and ad-hoc exploration of data in a Notebook environment
 * Extract/Transform/Load (ETL): Defining data pipelines that clean and process data for consumption by other users
 * Data Analytics: Analyzing data by producing summaries and reports
 
-Daft Dataframe focuses on Machine Learning/Deep Learning workloads that often involve Complex media data (images, video, audio, text documents and more).
+Daft focuses on Machine Learning/Deep Learning workloads that often involve complex media data (images, video, audio, text documents and more).
 
-Below we discuss some other Dataframe libraries and compare them to Daft.
+Below we discuss some other data engines and compare them to Daft.
 
 <!-- .. csv-table::
  :file: ../_static/dataframe-comp-table.csv
  :widths: 30, 30, 50, 30, 50, 30, 30
  :header-rows: 1 -->
 
-| Dataframe                                      | Query Optimizer | Multimodal | Distributed | Arrow Backed | Vectorized Execution Engine | Out-of-Core |
+| Engine                                         | Query Optimizer | Multimodal | Distributed | Arrow Backed | Vectorized Execution Engine | Out-of-Core |
 | -----------------------------------------------| :--------------:| :--------: | :---------: | :----------: | :-------------------------: | :---------: |
 | Daft                                           | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Pandas](https://github.com/pandas-dev/pandas) | ❌ | Python object | ❌ | optional >= 2.0 | some (Numpy) | ❌ |
@@ -73,4 +73,4 @@ Ray Datasets make it easy to feed data really efficiently into Ray's model train
 
 However, Ray Datasets are not a fully-fledged Dataframe abstraction (and [it is explicit in not being an ETL framework for data science](https://docs.ray.io/en/latest/data/data.html)) which means that it lacks key features in data querying, visualization and aggregations.
 
-Instead, Ray Data is a perfect destination for processed data from DaFt Dataframes to be sent to with a simple [`df.to_ray_dataset()`][daft.DataFrame.to_ray_dataset] call. This is useful as an entrypoint into your model training and inference ecosystem!
+Instead, Ray Data serves as an ideal destination for processed data from Daft, easily sent with a simple [df.to_ray_dataset()][daft.DataFrame.to_ray_dataset] call. This makes it a convenient entry point into your model training and inference pipeline.
