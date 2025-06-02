@@ -87,6 +87,13 @@ macro_rules! ensure {
     };
 }
 
+#[macro_export]
+macro_rules! value_err {
+    ($($arg:tt)*) => {
+        return Err(common_error::DaftError::ValueError(format!($($arg)*)))
+    };
+}
+
 impl From<arrow2::error::Error> for DaftError {
     fn from(error: arrow2::error::Error) -> Self {
         match error {

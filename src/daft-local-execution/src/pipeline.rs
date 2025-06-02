@@ -106,6 +106,9 @@ pub fn physical_plan_to_pipeline(
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
+        LocalPhysicalPlan::PlaceholderScan(_) => {
+            panic!("PlaceholderScan should not be converted to a pipeline node")
+        }
         LocalPhysicalPlan::EmptyScan(EmptyScan {
             schema,
             stats_state,

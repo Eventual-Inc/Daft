@@ -1,10 +1,10 @@
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
-use daft_core::python::PyTimeUnit;
+use daft_core::python::{PyDataType, PyTimeUnit};
 use daft_core::{
     datatypes::IntervalValue,
-    prelude::{CountMode, ImageFormat, ImageMode, TimeUnit},
+    prelude::{CountMode, DataType, ImageFormat, ImageMode, TimeUnit},
     series::Series,
 };
 #[cfg(feature = "python")]
@@ -215,3 +215,4 @@ impl_pyobj_fromliteral!(ImageMode, ImageMode);
 impl_pyobj_fromliteral!(ImageFormat, ImageFormat);
 impl_pyobj_fromliteral!(CountMode, CountMode);
 impl_pyobj_fromliteral!(TimeUnit, PyTimeUnit);
+impl_pyobj_fromliteral!(DataType, PyDataType);

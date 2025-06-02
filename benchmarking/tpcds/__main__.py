@@ -324,7 +324,7 @@ def run_benchmarks(
 
     if runner == "ray":
         return run_query_on_ray(run_args)
-    elif runner == "py" or runner == "native":
+    elif runner == "native":
         return run_query_on_local(run_args)
     else:
         typing.assert_never(runner)

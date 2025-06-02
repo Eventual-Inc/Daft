@@ -166,10 +166,15 @@ class IcebergTable(Table):
         Table._validate_options("Iceberg read", options, IcebergTable._read_options)
         return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
 
-    def write(self, df: DataFrame, mode: str = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Iceberg write", options, IcebergTable._write_options)
 
-        df.write_iceberg(self._inner, mode=mode)
+        df.write_iceberg(self._inner, mode="append")
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Iceberg write", options, IcebergTable._write_options)
+
+        df.write_iceberg(self._inner, mode="overwrite")
 
 
 def _to_pyiceberg_ident(ident: Identifier | str) -> tuple[str, ...] | str:

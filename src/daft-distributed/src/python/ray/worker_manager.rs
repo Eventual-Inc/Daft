@@ -5,7 +5,8 @@ use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
-    task::{SwordfishTask, TaskId},
+    scheduler::SchedulableTask,
+    task::{SwordfishTask, TaskId, TaskResultHandleAwaiter},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -43,11 +44,11 @@ impl WorkerManager for RayWorkerManager {
 
     fn submit_tasks_to_workers(
         &self,
-        total_tasks: usize,
-        tasks_per_worker: HashMap<WorkerId, Vec<SwordfishTask>>,
-    ) -> DaftResult<Vec<RayTaskResultHandle>> {
+        tasks_per_worker: HashMap<WorkerId, Vec<SchedulableTask<SwordfishTask>>>,
+    ) -> DaftResult<Vec<TaskResultHandleAwaiter<RayTaskResultHandle>>> {
         Python::with_gil(|py| {
-            let mut task_result_handles = Vec::with_capacity(total_tasks);
+            let mut task_result_handles =
+                Vec::with_capacity(tasks_per_worker.values().map(|v| v.len()).sum());
             for (worker_id, tasks) in tasks_per_worker {
                 let handles = self
                     .ray_workers
@@ -64,9 +65,9 @@ impl WorkerManager for RayWorkerManager {
         &self.ray_workers
     }
 
-    fn mark_task_finished(&self, task_id: TaskId, worker_id: WorkerId) {
+    fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId) {
         self.ray_workers
-            .get(&worker_id)
+            .get(worker_id)
             .expect("Worker should be present in RayWorkerManager")
             .mark_task_finished(task_id);
     }
@@ -74,7 +75,7 @@ impl WorkerManager for RayWorkerManager {
     fn total_available_cpus(&self) -> usize {
         self.ray_workers
             .values()
-            .map(|w| w.num_cpus() - w.active_task_ids().len())
+            .map(|w| w.available_num_cpus())
             .sum()
     }
 

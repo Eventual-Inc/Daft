@@ -35,6 +35,7 @@ impl PythonPartitionRefStream {
                     Some(result) => {
                         let result = result?;
                         let ray_part_ref = result
+                            .partition()
                             .as_any()
                             .downcast_ref::<RayPartitionRef>()
                             .expect("Failed to downcast to RayPartitionRef");

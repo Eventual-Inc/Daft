@@ -1,12 +1,11 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use daft_logical_plan::LogicalPlan;
+use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use daft_session::Session;
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     statement::{self, Statement},
-    table_provider::in_memory,
     unsupported_sql_err, SQLPlanner,
 };
 
@@ -17,8 +16,9 @@ pub(crate) type DataFrame = Arc<LogicalPlan>;
 pub(crate) fn execute_statement(
     sess: &Session,
     statement: &str,
+    ctes: HashMap<String, LogicalPlanBuilder>,
 ) -> SQLPlannerResult<Option<DataFrame>> {
-    let stmt = SQLPlanner::new(sess).plan(statement)?;
+    let stmt = SQLPlanner::new(sess).with_ctes(ctes).plan(statement)?;
     match stmt {
         Statement::Select(select) => execute_select(sess, select),
         Statement::Set(set) => execute_set(sess, set),
@@ -82,7 +82,7 @@ fn execute_show_tables(
     }
 
     // create an in-memory scan arrow arrays
-    let scan = in_memory::from_arrow(
+    let scan = daft_context::partition_cache::logical_plan_from_arrow(
         schema,
         vec![cat_array.as_box(), nsp_array.as_box(), tbl_array.as_box()],
     )?;

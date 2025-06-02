@@ -21,7 +21,6 @@ use pyo3::prelude::*;
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PySqlCatalog>()?;
     parent.add_function(wrap_pyfunction!(python::sql_exec, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_datatype, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::list_sql_functions, parent)?)?;
