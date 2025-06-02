@@ -19,7 +19,7 @@ use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{ChunkSpec, ScanTask};
 use daft_warc::WarcConvertOptions;
-use futures::{Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
 
@@ -163,7 +163,7 @@ impl Source for ScanTaskSource {
         let task = self.spawn_scan_task_processor(senders, io_stats, delete_map, maintain_order);
 
         // Flatten the receivers into a stream
-        let result_stream = flatten_receivers_into_stream(receivers, async move { task.await? });
+        let result_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
 
         Ok(Box::pin(result_stream))
     }

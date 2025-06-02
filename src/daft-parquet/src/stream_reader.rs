@@ -7,7 +7,7 @@ use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{stream::BoxStream, FutureExt, StreamExt};
 use itertools::Itertools;
 use rayon::{
     iter::ParallelIterator,
@@ -598,7 +598,7 @@ pub async fn local_parquet_stream(
 
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
-    let parquet_task = async move { parquet_task.await? };
+    let parquet_task = parquet_task.map(|x| x?);
     let combined = match maintain_order {
         true => combine_stream(stream_of_streams.flatten(), parquet_task).boxed(),
         false => combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed(),

@@ -12,7 +12,7 @@ use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
-use futures::{future::try_join_all, stream::BoxStream, StreamExt};
+use futures::{future::try_join_all, stream::BoxStream, FutureExt, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},
     read::get_owned_page_stream_from_column_start,
@@ -546,7 +546,7 @@ impl ParquetFileReader {
 
         let stream_of_streams =
             futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
-        let parquet_task = async move { parquet_task.await? };
+        let parquet_task = parquet_task.map(|x| x?);
         match maintain_order {
             true => Ok(combine_stream(stream_of_streams.flatten(), parquet_task).boxed()),
             false => {
