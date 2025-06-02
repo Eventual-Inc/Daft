@@ -14,12 +14,12 @@ pub struct TokenizeDecodeFunction;
 #[derive(FunctionArgs)]
 struct DecodeArgs<T> {
     pub input: T,
+    pub tokens_path: String,
 
     // force all othes to be kwargs
-    // similar to python `input, *, ...`
+    // similar to python `input, tokens_path, *, ...`
     #[arg(variadic)]
     pub _varargs: Vec<T>,
-    pub tokens_path: String,
     #[arg(optional)]
     pub io_config: Option<IOConfig>,
     #[arg(optional)]
