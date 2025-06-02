@@ -1,32 +1,31 @@
+# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
+
 name: Check Broken Links on getdaft.io
 
 on:
   schedule:
-  - cron: '0 20 * * *'
+  - cron: 0 20 * * *
   workflow_dispatch:
 
 jobs:
   check-links:
     timeout-minutes: 45
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Check links with lychee
-      uses: lycheeverse/lychee-action@v1.10.0
+    - name: setup broken link checker
+      run: npm install -g broken-link-checker
+    - name: Check getdaft.io
+      uses: nick-fields/retry@v3
       with:
-        args: |
-          --verbose
-          --no-progress
-          'https://www.getdaft.io'
-
+        timeout_minutes: 10
+        retry_wait_seconds: 120
+        max_attempts: 3
+        command: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daftengine --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daftengine --exclude https://www.linkedin.com/showcase/daftengine/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://huggingface.co/docs/dataset-viewer/en/parquet
   # notify_on_failure:
-  #   runs-on: ubuntu-latest
+  #   runs-on: self-hosted
   #   if: failure()
   #   needs: check-links
-
   #   steps:
   #   - name: Send Slack notification on failure
   #     uses: slackapi/slack-github-action@v2.0.0
