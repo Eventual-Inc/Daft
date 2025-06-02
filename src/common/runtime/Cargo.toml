@@ -4,6 +4,7 @@ futures = {workspace = true}
 log = {workspace = true}
 oneshot = "0.1.8"
 tokio = {workspace = true}
+rand = {workspace = true}
 
 [lints]
 workspace = true

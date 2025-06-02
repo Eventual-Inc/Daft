@@ -11,10 +11,10 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use futures::FutureExt;
-use tokio::{
-    runtime::{Handle, RuntimeFlavor},
-    task::JoinSet,
-};
+use tokio::runtime::{Handle, RuntimeFlavor};
+
+mod joinset;
+pub use joinset::*;
 
 static NUM_CPUS: LazyLock<usize> =
     LazyLock::new(|| std::thread::available_parallelism().unwrap().get());

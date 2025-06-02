@@ -8,16 +8,14 @@ use std::{
     time::Instant,
 };
 
+use common_error::DaftResult;
 use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
-use kanal::SendError;
+use futures::{Stream, StreamExt};
 use opentelemetry::{global, metrics::Counter, KeyValue};
 use tracing::{instrument::Instrumented, Instrument};
 
-use crate::{
-    channel::{Receiver, Sender},
-    progress_bar::OperatorProgressBar,
-};
+use crate::{channel::Sender, progress_bar::OperatorProgressBar};
 
 #[derive(Default)]
 pub struct RuntimeStatsContext {
@@ -236,7 +234,10 @@ impl CountingSender {
         }
     }
     #[inline]
-    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
+    pub(crate) async fn send(
+        &self,
+        v: Arc<MicroPartition>,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<Arc<MicroPartition>>> {
         self.rt.mark_rows_emitted(v.len() as u64);
         if let Some(ref pb) = self.progress_bar {
             pb.render();
@@ -246,33 +247,46 @@ impl CountingSender {
     }
 }
 
-pub struct CountingReceiver {
-    receiver: Receiver<Arc<MicroPartition>>,
+pub(crate) struct CountingStream<S> {
+    stream: S,
     rt: Arc<RuntimeStatsContext>,
     progress_bar: Option<Arc<OperatorProgressBar>>,
 }
 
-impl CountingReceiver {
-    pub(crate) fn new(
-        receiver: Receiver<Arc<MicroPartition>>,
+impl<S> CountingStream<S> {
+    pub fn new(
+        stream: S,
         rt: Arc<RuntimeStatsContext>,
         progress_bar: Option<Arc<OperatorProgressBar>>,
     ) -> Self {
         Self {
-            receiver,
+            stream,
             rt,
             progress_bar,
         }
     }
     #[inline]
-    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
-        let v = self.receiver.recv().await;
-        if let Some(ref v) = v {
-            self.rt.mark_rows_received(v.len() as u64);
-            if let Some(ref pb) = self.progress_bar {
-                pb.render();
-            }
+    pub(crate) fn handle(&self, v: Arc<MicroPartition>) -> Arc<MicroPartition> {
+        self.rt.mark_rows_received(v.len() as u64);
+        if let Some(ref pb) = self.progress_bar {
+            pb.render();
         }
         v
+    }
+}
+
+impl<S> Stream for CountingStream<S>
+where
+    S: Stream<Item = DaftResult<Arc<MicroPartition>>> + Unpin,
+{
+    type Item = DaftResult<Arc<MicroPartition>>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        match self.stream.poll_next_unpin(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(Ok(item))) => Poll::Ready(Some(Ok(self.handle(item)))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(None) => Poll::Ready(None),
+        }
     }
 }

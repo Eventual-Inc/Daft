@@ -15,10 +15,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::ExecutionTaskSpawner;
 
 #[derive(Debug)]
 pub enum WriteFormat {
@@ -213,19 +210,6 @@ impl BlockingSink for WriteSink {
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         let writer = self.writer_factory.create_writer(0, None)?;
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
-    }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-    ) -> Arc<dyn DispatchSpawner> {
-        if let Some(partition_by) = &self.partition_by {
-            Arc::new(PartitionedDispatcher::new(partition_by.clone()))
-        } else {
-            // Unnecessary to buffer by morsel size because we are writing.
-            // Writers also have their own internal buffering.
-            Arc::new(UnorderedDispatcher::unbounded())
-        }
     }
 
     fn multiline_display(&self) -> Vec<String> {

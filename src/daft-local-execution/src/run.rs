@@ -268,7 +268,7 @@ impl NativeExecutor {
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
-        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
+        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
 
         let rt = self.runtime.clone();
         let pb_manager = self.pb_manager.clone();
@@ -291,7 +291,7 @@ impl NativeExecutor {
                     memory_manager.clone(),
                     pb_manager,
                 );
-                let receiver = pipeline.start(true, &mut runtime_handle)?;
+                let mut receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {
@@ -425,7 +425,7 @@ fn should_enable_progress_bar() -> bool {
 }
 
 pub struct ExecutionEngineReceiverIterator {
-    receiver: kanal::Receiver<Arc<MicroPartition>>,
+    receiver: Receiver<Arc<MicroPartition>>,
     handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
 }
 
@@ -433,7 +433,7 @@ impl Iterator for ExecutionEngineReceiverIterator {
     type Item = DaftResult<Arc<MicroPartition>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.receiver.recv().ok() {
+        match self.receiver.blocking_recv() {
             Some(part) => Some(Ok(part)),
             None => {
                 if self.handle.is_some() {
@@ -502,7 +502,7 @@ impl IntoIterator for ExecutionEngineResult {
 
     fn into_iter(self) -> Self::IntoIter {
         ExecutionEngineReceiverIterator {
-            receiver: self.receiver.into_inner().to_sync(),
+            receiver: self.receiver,
             handle: Some(self.handle),
         }
     }
