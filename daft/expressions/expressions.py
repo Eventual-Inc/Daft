@@ -1670,16 +1670,16 @@ class Expression:
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("try_deserialize", format, dtype._dtype)
 
-    def jq(self, query: builtins.str) -> Expression:
+    def jq(self, filter: builtins.str) -> Expression:
         """Applies a [https://jqlang.github.io/jq/manual/](jq) to the expression (string), returning the results as a string.
 
         This expression uses jaq as the underlying executor, see [https://github.com/01mf02/jaq](jaq) for the full list of supported filters.
 
         Args:
-            query (str): The jq query string.
+            file (str): The jq filter.
 
         Returns:
-            Expression: Expression representing the result of the jq query as a column of JSON-compatible strings
+            Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
 
         Examples:
             >>> import daft
@@ -1700,7 +1700,7 @@ class Expression:
             (Showing first 3 of 3 rows)
 
         """
-        return self._eval_expressions("jq", query)
+        return self._eval_expressions("jq", filter)
 
     def name(self) -> builtins.str:
         return self._expr.name()

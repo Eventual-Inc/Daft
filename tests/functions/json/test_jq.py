@@ -128,7 +128,7 @@ def test_jq_complex_transformation(series):
             ]
         }""",
     ]
-    # some jq query to get average scores because jq is not jsonpath
+    # some jq filter to get average scores because jq is not jsonpath
     assert series(items).jq(".users[] | {name: .name, avg_score: ([.scores[]] | add / length | round)}") == [
         '[{"name":"Alice","avg_score":85.0},{"name":"Bob","avg_score":91.0}]',
         '[{"name":"Charlie","avg_score":88.0},{"name":"Dave","avg_score":88.0}]',
@@ -155,7 +155,7 @@ def test_jq_with_deserialize():
     )
 
     # select all objects, using 0 as the default for missing keys
-    query = """
+    filter = """
         (. | objects?) | { x: .x // 0, y: .y // 0 }
     """
 
@@ -163,7 +163,7 @@ def test_jq_with_deserialize():
     point_t = dt.struct({"x": dt.int64(), "y": dt.int64()})
 
     # we have the successfully extracted each sample point, now deserialize into our type.
-    points = (df.select(col("sample").jq(query).try_deserialize("json", point_t).alias("point"))).drop_null()
+    points = (df.select(col("sample").jq(filter).try_deserialize("json", point_t).alias("point"))).drop_null()
 
     # now find the max from the origin, no need to sqrt it.
     p = col("point")
