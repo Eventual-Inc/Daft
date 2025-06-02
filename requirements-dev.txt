@@ -4,8 +4,8 @@ maturin
 pre-commit
 docker
 
-# Pinned aiohttp due to Ray connection issue in aiohttp==3.12.7
-aiohttp==3.12.6
+# Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
+aiohttp==3.12.4
 
 # Pinned requests due to docker-py issue: https://github.com/docker/docker-py/issues/3256
 requests<2.32.0
