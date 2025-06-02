@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from unitycatalog import NotFoundError as UnityNotFoundError
 
@@ -170,19 +170,12 @@ class UnityTable(Table):
     # write methods
     ###
 
-    def write(
-        self, df: DataFrame, mode: Literal["append", "overwrite", "error", "ignore"] = "append", **options: Any
-    ) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Unity write", options, UnityTable._write_options)
 
-        df.write_deltalake(
-            self._inner,
-            mode=mode,
-            schema_mode=options.get("schema_mode"),
-            partition_cols=options.get("partition_cols"),
-            description=options.get("description"),
-            configuration=options.get("configuration"),
-            custom_metadata=options.get("custom_metadata"),
-            dynamo_table_name=options.get("dynamo_table_name"),
-            allow_unsafe_rename=options.get("allow_unsafe_rename", False),
-        )
+        df.write_deltalake(self._inner, mode="append", **options)
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Unity write", options, UnityTable._write_options)
+
+        df.write_deltalake(self._inner, mode="overwrite", **options)

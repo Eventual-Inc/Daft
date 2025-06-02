@@ -1539,7 +1539,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-io-config",
  "common-py-serde",
- "log",
  "pyo3",
  "serde",
 ]
@@ -2021,6 +2020,7 @@ dependencies = [
  "daft-distributed",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-binary",
  "daft-functions-json",
  "daft-functions-list",
  "daft-functions-serde",
@@ -2073,8 +2073,12 @@ name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "daft-context",
  "daft-core",
+ "daft-dsl",
  "daft-logical-plan",
+ "daft-micropartition",
+ "indexmap 2.9.0",
  "pyo3",
  "snafu",
  "sqlparser",
@@ -2137,8 +2141,12 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
+ "daft-core",
+ "daft-logical-plan",
+ "daft-micropartition",
  "daft-py-runners",
  "log",
  "pyo3",
@@ -2306,19 +2314,32 @@ dependencies = [
  "daft-dsl",
  "daft-hash",
  "daft-io",
- "flate2",
  "futures",
  "num-traits",
  "paste",
  "pyo3",
  "serde",
- "simdutf8",
  "snafu",
  "tiktoken-rs",
  "tokio",
  "typetag",
  "uuid 1.17.0",
  "xxhash-rust",
+]
+
+[[package]]
+name = "daft-functions-binary"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "common-macros",
+ "daft-core",
+ "daft-dsl",
+ "flate2",
+ "serde",
+ "simdutf8",
+ "typetag",
 ]
 
 [[package]]
@@ -2586,6 +2607,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-binary",
  "daft-functions-list",
  "daft-functions-utf8",
  "daft-schema",
@@ -2890,7 +2912,6 @@ dependencies = [
  "daft-functions-list",
  "daft-functions-utf8",
  "daft-logical-plan",
- "daft-micropartition",
  "daft-scan",
  "daft-session",
  "itertools 0.11.0",

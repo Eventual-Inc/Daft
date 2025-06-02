@@ -55,7 +55,8 @@ if TYPE_CHECKING:
     import ray
     import torch
 
-    from daft.io import DataCatalogTable, DataSink
+    from daft.io import DataSink
+    from daft.io.catalog import DataCatalogTable
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
 

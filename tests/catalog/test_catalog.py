@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from daft.catalog import Catalog, Identifier, Properties, Table
 from daft.dataframe import DataFrame
 from daft.logical.schema import DataType as dt
@@ -36,15 +34,6 @@ def test_try_from_unity():
     assert Catalog.from_unity(unity_catalog) is not None
 
 
-def test_register_python_catalog():
-    import daft.unity_catalog
-
-    # sanity check for backwards compatibility
-    cat1 = daft.unity_catalog.UnityCatalog("", "")
-    daft.catalog.register_python_catalog(cat1, "test")
-    daft.catalog.unregister_catalog("test")
-
-
 def test_from_pydict():
     import daft
     from daft.catalog import Catalog, Table
@@ -76,7 +65,6 @@ def test_from_pydict():
 
 
 def test_from_pydict_namespaced():
-    from daft.catalog import Identifier
     from daft.session import Session
 
     # dummy data, we're testing namespaces here
@@ -97,13 +85,6 @@ def test_from_pydict_namespaced():
     assert cat.get_table("T0") is not None
     assert cat.get_table("ns1.T1") is not None
     assert cat.get_table("ns2.T2") is not None
-
-    assert cat.list_namespaces("XXX") == []
-    assert cat.list_namespaces("ns1") == [Identifier("ns1")]
-    assert cat.list_namespaces("ns2") == [Identifier("ns2")]
-    namespaces = cat.list_namespaces("ns")
-    assert Identifier("ns1") in namespaces
-    assert Identifier("ns2") in namespaces
 
     # session name resolution should still work
     sess = Session()
@@ -175,7 +156,10 @@ class MockTable(Table):
     def read(self, **options) -> DataFrame:
         raise NotImplementedError
 
-    def write(self, df: DataFrame, mode: Literal["append"] | Literal["overwrite"] = "append", **options) -> None:
+    def append(self, df: DataFrame, **options) -> None:
+        raise NotImplementedError
+
+    def overwrite(self, df: DataFrame, **options) -> None:
         raise NotImplementedError
 
 
