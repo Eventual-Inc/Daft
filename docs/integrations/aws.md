@@ -24,8 +24,6 @@ If instead you wish to have Daft use credentials from the "driver", you may wish
 
 You may also choose to pass these values into your Daft I/O function calls using an [`daft.io.S3Config`][daft.io.S3Config] config object.
 
-<!-- todo(docs - jay): add SQL S3Config https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/sql_funcs/daft.sql._sql_funcs.S3Config.html -->
-
 [`daft.set_planning_config`][daft.context.set_planning_config] is a convenient way to set your [`daft.io.IOConfig`][daft.io.IOConfig] as the default config to use on any subsequent Daft method calls.
 
 === "🐍 Python"

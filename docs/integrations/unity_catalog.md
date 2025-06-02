@@ -14,7 +14,7 @@ pip install daft[unity]
 
 ## Connecting to the Unity Catalog
 
-Daft includes an abstraction for the Unity Catalog. For more information, see also [Unity Catalog Documentation](https://www.getdaft.io/projects/docs/en/stable/integrations/unity_catalog/).
+Daft includes an abstraction for the Unity Catalog. For more information, see also [Unity Catalog Documentation](https://docs.unitycatalog.io/integrations/unity-catalog-daft/).
 
 === "🐍 Python"
 
