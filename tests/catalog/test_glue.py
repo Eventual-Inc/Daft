@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import boto3
 import botocore
@@ -279,10 +279,16 @@ class GlueTestTable(GlueTable):
     def read(self, **options) -> DataFrame:
         raise NotImplementedError
 
-    def write(
+    def append(
         self,
         df: DataFrame,
-        mode: Literal["append"] | Literal["overwrite"] = "append",
+        **options,
+    ) -> None:
+        raise NotImplementedError
+
+    def overwrite(
+        self,
+        df: DataFrame,
         **options,
     ) -> None:
         raise NotImplementedError

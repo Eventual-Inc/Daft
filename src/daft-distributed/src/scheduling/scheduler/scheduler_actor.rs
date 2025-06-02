@@ -6,7 +6,6 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_partitioning::PartitionRef;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
@@ -15,6 +14,7 @@ use super::{
     default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler, WorkerSnapshot,
 };
 use crate::{
+    pipeline_node::MaterializedOutput,
     scheduling::{
         dispatcher::{DispatcherActor, DispatcherHandle},
         task::{Task, TaskId},
@@ -148,9 +148,17 @@ pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
     SchedulerActor::spawn_scheduler_actor(scheduler, joinset)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct SchedulerHandle<T: Task> {
     scheduler_sender: Sender<SchedulableTask<T>>,
+}
+
+impl<T: Task> Clone for SchedulerHandle<T> {
+    fn clone(&self) -> Self {
+        Self {
+            scheduler_sender: self.scheduler_sender.clone(),
+        }
+    }
 }
 
 impl<T: Task> SchedulerHandle<T> {
@@ -185,7 +193,7 @@ impl<T: Task> SchedulerHandle<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
     _task_id: TaskId,
-    result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+    result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
     finished: bool,
 }
@@ -193,7 +201,7 @@ pub(crate) struct SubmittedTask {
 impl SubmittedTask {
     fn new(
         task_id: TaskId,
-        result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
+        result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
         Self {
@@ -211,17 +219,18 @@ impl SubmittedTask {
 }
 
 impl Future for SubmittedTask {
-    type Output = Option<DaftResult<PartitionRef>>;
+    type Output = DaftResult<Vec<MaterializedOutput>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
-                Poll::Ready(Some(result))
+                Poll::Ready(result)
             }
+            // If the receiver is dropped, return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
-                Poll::Ready(None)
+                Poll::Ready(Ok(vec![]))
             }
             Poll::Pending => Poll::Pending,
         }
@@ -246,7 +255,8 @@ mod tests {
     use super::*;
     use crate::scheduling::{
         scheduler::test_utils::setup_workers,
-        task::tests::{create_mock_partition_ref, MockTask, MockTaskBuilder, MockTaskFailure},
+        task::tests::MockTaskFailure,
+        tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
         worker::{tests::MockWorkerManager, WorkerId},
     };
 
@@ -288,8 +298,8 @@ mod tests {
 
         let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
 
-        let result = submitted_task.await.unwrap()?;
-        assert!(Arc::ptr_eq(&result, &partition_ref));
+        let result = submitted_task.await?;
+        assert!(Arc::ptr_eq(&result[0].partition(), &partition_ref));
 
         test_context.cleanup().await?;
         Ok(())
@@ -319,7 +329,8 @@ mod tests {
 
         let mut counter = 0;
         for submitted_task in submitted_tasks {
-            let partition = submitted_task.await.unwrap()?;
+            let result = submitted_task.await?;
+            let partition = result[0].partition();
             assert_eq!(partition.num_rows().unwrap(), 100 + counter);
             assert_eq!(partition.size_bytes().unwrap(), Some(1024 + 1));
             counter += 1;
@@ -372,7 +383,8 @@ mod tests {
 
         drop(submitted_task_tx);
         while let Some((submitted_task, num_rows, num_bytes)) = submitted_task_rx.recv().await {
-            let partition = submitted_task.await.unwrap()?;
+            let result = submitted_task.await?;
+            let partition = result[0].partition();
             assert_eq!(partition.num_rows().unwrap(), num_rows);
             assert_eq!(partition.size_bytes().unwrap(), Some(num_bytes));
         }
@@ -469,7 +481,8 @@ mod tests {
                 drop(submitted_task);
                 cancel_receiver.await.unwrap();
             } else {
-                let partition = submitted_task.await.unwrap()?;
+                let result = submitted_task.await?;
+                let partition = result[0].partition();
                 assert_eq!(partition.num_rows().unwrap(), num_rows);
                 assert_eq!(partition.size_bytes().unwrap(), Some(num_bytes));
             }
@@ -488,7 +501,7 @@ mod tests {
             .with_failure(MockTaskFailure::Error("test error".to_string()))
             .build();
         let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
-        let result = submitted_task.await.unwrap();
+        let result = submitted_task.await;
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -508,8 +521,8 @@ mod tests {
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
         let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
-        let result = submitted_task.await;
-        assert!(result.is_none());
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
 
         let test_context_result = test_context.cleanup().await;
         assert!(test_context_result.is_err());

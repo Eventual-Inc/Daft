@@ -1,12 +1,8 @@
-use daft_core::{
-    prelude::DataType,
-    python::{PyDataType, PySeries},
-    utils::display::display_decimal128,
-};
+use daft_core::{prelude::DataType, python::PyDataType};
 use pyo3::{
     exceptions::PyValueError,
-    types::{PyAnyMethods, PyBool, PyDict, PyList, PyListMethods},
-    Bound, IntoPyObjectExt, PyAny, PyResult, Python,
+    types::{PyAnyMethods, PyList, PyListMethods},
+    Bound, PyAny, PyResult, Python,
 };
 
 use crate::{
@@ -14,15 +10,6 @@ use crate::{
     python::PyExpr,
     AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec,
 };
-
-/// Helper to downcast some specific pyo3 type to a PyAny.
-macro_rules! into_pyany {
-    ($value:expr, $py:expr) => {{
-        let obj = $value.into_pyobject_or_pyerr($py)?;
-        let any = obj.into_any();
-        Ok(any)
-    }};
-}
 
 /// The generic `R` of the py visitor implementation.
 type PyVisitorResult<'py> = PyResult<Bound<'py, PyAny>>;
@@ -81,8 +68,7 @@ impl<'py> PyVisitor<'py> {
 
     fn visit_lit(&self, lit: &LiteralValue) -> PyVisitorResult<'py> {
         let attr = "visit_lit";
-        let args = (self.to_lit(lit)?,);
-        self.visitor.call_method1(attr, args)
+        self.visitor.call_method1(attr, (lit.clone(),))
     }
 
     fn visit_alias(&self, expr: &ExprRef, alias: String) -> PyVisitorResult<'py> {
@@ -305,9 +291,7 @@ impl<'py> PyVisitor<'py> {
     // but there are few caveats, and I wish to keep these conversions
     // scoped to interactions with the visitor for now. For types like
     // Expr and DataType we cannot implement the trait on the external
-    // type. We can implement IntoPyObject for LiteralValue, but again
-    // I wish to have these conversions limited in scope and usage.
-    // We don't want to implement IntoPyObject for PyExpr etc. since
+    // type. We don't want to implement IntoPyObject for PyExpr etc. since
     // these types are already py objects, just different than the
     // conversions we want here.
 
@@ -328,64 +312,5 @@ impl<'py> PyVisitor<'py> {
                 dtype: data_type.clone(),
             },),
         )
-    }
-
-    /// Converts a LiteralValue (rs) to an object (py).
-    fn to_lit(&self, lit: &LiteralValue) -> PyResult<Bound<'py, PyAny>> {
-        let py = self.py;
-        match lit {
-            LiteralValue::Null => into_pyany!(py.None(), py),
-            LiteralValue::Boolean(b) => {
-                let obj = PyBool::new(py, *b).to_owned();
-                let any = obj.into_any();
-                Ok(any)
-            }
-            LiteralValue::Utf8(s) => into_pyany!(s, py),
-            LiteralValue::Int8(i) => into_pyany!(i, py),
-            LiteralValue::UInt8(i) => into_pyany!(i, py),
-            LiteralValue::Int16(i) => into_pyany!(i, py),
-            LiteralValue::UInt16(i) => into_pyany!(i, py),
-            LiteralValue::Int32(i) => into_pyany!(i, py),
-            LiteralValue::UInt32(i) => into_pyany!(i, py),
-            LiteralValue::Int64(i) => into_pyany!(i, py),
-            LiteralValue::UInt64(i) => into_pyany!(i, py),
-            LiteralValue::Binary(b) => into_pyany!(b.as_slice(), py),
-            LiteralValue::Float64(f) => into_pyany!(f, py),
-            LiteralValue::Decimal(value, precision, scale) => {
-                let decimal = display_decimal128(*value, *precision, *scale);
-                let decimal = py
-                    .import("decimal")?
-                    .getattr("Decimal")?
-                    .call1((decimal,))?;
-                Ok(decimal)
-            }
-            LiteralValue::Series(series) => {
-                let series = PySeries {
-                    series: series.clone(),
-                };
-                let series = py
-                    .import("daft.series")?
-                    .getattr("Series")?
-                    .getattr("_from_pyseries")?
-                    .call1((series,))?;
-                Ok(series)
-            }
-            LiteralValue::Python(obj) => {
-                let any = obj.0.clone_ref(py);
-                let any = any.bind(py).to_owned();
-                Ok(any)
-            }
-            LiteralValue::Struct(entries) => {
-                let dict = PyDict::new(py);
-                for (key, value) in entries {
-                    dict.set_item(&key.name, self.to_lit(value)?)?;
-                }
-                Ok(dict.into_any())
-            }
-            _ => Err(PyValueError::new_err(format!(
-                "Cannot convert literal to python object, `{}`",
-                lit,
-            ))),
-        }
     }
 }

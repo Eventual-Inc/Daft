@@ -49,7 +49,8 @@ pub(super) mod tests {
     use std::sync::{atomic::AtomicBool, Mutex};
 
     use super::*;
-    use crate::scheduling::task::tests::{MockTask, MockTaskResultHandle};
+    use crate::scheduling::tests::{MockTask, MockTaskResultHandle};
+
     /// A mock implementation of the WorkerManager trait for testing
     #[derive(Clone)]
     pub struct MockWorkerManager {

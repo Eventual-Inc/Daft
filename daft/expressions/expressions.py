@@ -108,7 +108,8 @@ def lit(value: object) -> Expression:
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
-        lit_value = _series_lit(value._series)
+        agg_listed = value._series.agg_list()
+        lit_value = _series_lit(agg_listed)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -1453,7 +1454,7 @@ class Expression:
             other = [Expression._to_expression(item) for item in other]
         elif not isinstance(other, Expression):
             series = item_to_series("items", other)
-            other = [Expression._to_expression(series)]
+            other = [Expression._from_pyexpr(_series_lit(series._series))]
         else:
             other = [other]
 
@@ -1634,6 +1635,40 @@ class Expression:
         """Decodes or returns null, see `Expression.decode`."""
         expr = native.try_decode(self._expr, codec)
         return Expression._from_pyexpr(expr)
+
+    def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
+        """Deserializes the expression (string) using the specified format and data type.
+
+        Args:
+            format (Literal["json"]): The serialization format.
+            dtype: The target data type to deserialize into.
+
+        Returns:
+            Expression: A new expression with the deserialized value.
+        """
+        if isinstance(dtype, str):
+            dtype = DataType._from_pydatatype(sql_datatype(dtype))
+        else:
+            assert isinstance(dtype, (DataType, type))
+            dtype = DataType._infer_type(dtype)
+        return self._eval_expressions("deserialize", format, dtype._dtype)
+
+    def try_deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
+        """Deserializes the expression (string) using the specified format and data type, inserting nulls on failures.
+
+        Args:
+            format (Literal["json"]): The serialization format.
+            dtype: The target data type to deserialize into.
+
+        Returns:
+            Expression: A new expression with the deserialized value (or null).
+        """
+        if isinstance(dtype, str):
+            dtype = DataType._from_pydatatype(sql_datatype(dtype))
+        else:
+            assert isinstance(dtype, (DataType, type))
+            dtype = DataType._infer_type(dtype)
+        return self._eval_expressions("try_deserialize", format, dtype._dtype)
 
     def name(self) -> builtins.str:
         return self._expr.name()
@@ -4335,7 +4370,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             patterns = [patterns]
         if not isinstance(patterns, Expression):
             series = item_to_series("items", patterns)
-            patterns = Expression._to_expression(series)
+            patterns = Expression._from_pyexpr(_series_lit(series._series))
 
         whole_words_expr = Expression._to_expression(whole_words)._expr
         case_sensitive_expr = Expression._to_expression(case_sensitive)._expr

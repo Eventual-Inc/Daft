@@ -57,25 +57,6 @@ analytics_client.track_import()
 track_import_on_scarf()
 
 ###
-# Warn if using the old package name
-###
-try:
-    if sys.version_info < (3, 10):
-        from importlib_metadata import packages_distributions
-    else:
-        from importlib.metadata import packages_distributions
-
-    package_map = packages_distributions()
-    if "getdaft" in package_map["daft"]:
-        import warnings
-
-        warnings.warn(
-            "The 'getdaft' PyPI package is migrating to `daft` and will no longer will receive updates v0.5.0 onwards.\nPlease install Daft via\n\t'pip install daft'"
-        )
-except Exception:
-    pass
-
-###
 # Daft top-level imports
 ###
 
@@ -83,7 +64,6 @@ from daft.catalog import (
     Catalog,
     Identifier,
     Table,
-    register_table,
 )
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
@@ -221,7 +201,6 @@ __all__ = [
     "read_table",
     "read_warc",
     "refresh_logger",
-    "register_table",
     "register_viz_hook",
     "set_catalog",
     "set_execution_config",

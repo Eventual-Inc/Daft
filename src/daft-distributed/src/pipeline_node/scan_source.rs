@@ -47,7 +47,7 @@ impl ScanSourceNode {
         config: Arc<DaftExecutionConfig>,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-        result_tx: Sender<PipelineOutput>,
+        result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         for scan_task in scan_tasks.iter() {
             let task = make_source_tasks(&plan, &pushdowns, scan_task.clone(), config.clone())?;

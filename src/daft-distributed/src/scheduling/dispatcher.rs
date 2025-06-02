@@ -187,7 +187,8 @@ mod tests {
     use crate::{
         scheduling::{
             scheduler::{test_utils::setup_workers, SchedulerHandle, SubmittedTask},
-            task::tests::{create_mock_partition_ref, MockTask, MockTaskBuilder, MockTaskFailure},
+            task::tests::MockTaskFailure,
+            tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
             worker::tests::MockWorkerManager,
         },
         utils::channel::create_oneshot_channel,
@@ -239,8 +240,9 @@ mod tests {
             .await
             .unwrap();
 
-        let result = submitted_task.await.unwrap()?;
-        assert!(Arc::ptr_eq(&result, &partition_ref));
+        let result = submitted_task.await?;
+        let partition = result[0].partition();
+        assert!(Arc::ptr_eq(&partition, &partition_ref));
 
         test_context.cleanup().await?;
         Ok(())
@@ -272,9 +274,10 @@ mod tests {
         test_context.joinset.spawn(async move {
             let mut count = 0;
             for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
-                let result = submitted_task.await.expect("Task should be completed")?;
-                assert_eq!(result.num_rows().unwrap(), 100 + i);
-                assert_eq!(result.size_bytes().unwrap(), Some(1024 * (i + 1)));
+                let result = submitted_task.await?;
+                let partition = result[0].partition();
+                assert_eq!(partition.num_rows().unwrap(), 100 + i);
+                assert_eq!(partition.size_bytes().unwrap(), Some(1024 * (i + 1)));
                 count += 1;
             }
             assert_eq!(count, num_tasks);
@@ -332,10 +335,10 @@ mod tests {
             .dispatch_tasks(scheduled_tasks)
             .await?;
 
-        let result = submitted_task.await.expect("Task should be completed");
+        let result = submitted_task.await;
         assert!(result.is_err());
         assert_eq!(
-            result.err().unwrap().to_string(),
+            result.unwrap_err().to_string(),
             "DaftError::InternalError test error"
         );
 
@@ -359,14 +362,13 @@ mod tests {
             .dispatch_tasks(scheduled_tasks)
             .await?;
 
-        let result = submitted_task.await;
-        assert!(result.is_none());
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
 
         let text_context_result = test_context.cleanup().await;
         assert!(text_context_result.is_err());
         assert!(text_context_result
-            .err()
-            .unwrap()
+            .unwrap_err()
             .to_string()
             .contains("panicked with message \"test panic\""));
 
@@ -388,8 +390,8 @@ mod tests {
             .dispatcher_handle
             .dispatch_tasks(scheduled_tasks)
             .await?;
-        let result = submitted_task.await;
-        assert!(result.is_none());
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
 
         let new_task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024)).build();
 
@@ -410,8 +412,7 @@ mod tests {
         let cleanup_result = test_context.cleanup().await;
         assert!(cleanup_result.is_err());
         assert!(cleanup_result
-            .err()
-            .unwrap()
+            .unwrap_err()
             .to_string()
             .contains("test panic"));
 
