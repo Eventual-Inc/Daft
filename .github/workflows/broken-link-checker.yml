@@ -21,7 +21,7 @@ jobs:
         timeout_minutes: 10
         retry_wait_seconds: 120
         max_attempts: 3
-        command: blc https://www.getdaft.io/daft -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daftengine --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daftengine --exclude https://www.linkedin.com/showcase/daftengine/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://huggingface.co/docs/dataset-viewer/en/parquet
+        command: blc https://www.getdaft.io/daft -ro --verbose --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daftengine --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daftengine --exclude https://www.linkedin.com/showcase/daftengine/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://huggingface.co/docs/dataset-viewer/en/parquet
   notify_on_failure:
     runs-on: self-hosted
     if: failure()
