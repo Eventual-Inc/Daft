@@ -1510,7 +1510,6 @@ class Expression:
 
     def minhash(
         self,
-        *,
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
