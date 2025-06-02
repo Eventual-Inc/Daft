@@ -144,7 +144,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
    :alt: Benchmarks for SF100 TPCH
 
-.. |Banner| image:: https://github.com/user-attachments/assets/a48a8348-8d28-4772-867b-710aefaeff9f
+.. |Banner| image:: https://github.com/user-attachments/assets/9fb749e4-2f6d-4e45-bb28-97e9cb07050d
    :target: https://www.getdaft.io
    :alt: Daft dataframes can load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying
 
