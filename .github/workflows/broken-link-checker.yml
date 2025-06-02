@@ -34,7 +34,7 @@ jobs:
           --max-retries 3
           --retry-wait-time 5
           --max-redirects 10
-          --headers 'User-Agent=Mozilla/5.0 (compatible; Lychee)'
+          --header 'User-Agent=Mozilla/5.0 (compatible; Lychee)'
           'https://www.getdaft.io'
         fail: true
         output: lychee-report.md
