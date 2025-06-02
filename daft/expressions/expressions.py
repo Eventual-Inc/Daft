@@ -1671,13 +1671,16 @@ class Expression:
     def jq(self, filter: builtins.str) -> Expression:
         """Applies a [https://jqlang.github.io/jq/manual/](jq) to the expression (string), returning the results as a string.
 
-        This expression uses jaq as the underlying executor, see [https://github.com/01mf02/jaq](jaq) for the full list of supported filters.
-
         Args:
             file (str): The jq filter.
 
         Returns:
             Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
+
+        Warning:
+            This expression uses [https://github.com/01mf02/jaq](jaq) as its filter executor which can differ from the
+            [https://jqlang.org/](jq) command-line tool. Please consult [https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq][jq vs. jaq]
+            for a detailed look into possible differences.
 
         Examples:
             >>> import daft
@@ -5099,7 +5102,7 @@ class ExpressionJsonNamespace(ExpressionNamespace):
 
         """
         warnings.warn(
-            "This API is deprecated in daft >=0.5.0 and will be removed in >=0.6.0. Users should use `Expression.jq` instead.",
+            "This API is deprecated in daft >=0.5.1 and will be removed in >=0.6.0. Users should use `Expression.jq` instead.",
             DeprecationWarning,
             stacklevel=2,
         )

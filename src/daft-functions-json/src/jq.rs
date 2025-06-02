@@ -82,7 +82,7 @@ mod jaq {
                 json_filter_impl(arr, filter).map(daft_core::series::IntoSeries::into_series)
             }
             dt => Err(DaftError::TypeError(format!(
-                "json filter not implemented for {dt}"
+                "jq filter not implemented for {dt}"
             ))),
         }
     }
@@ -92,7 +92,7 @@ mod jaq {
         let (parsed_filter, errs) = jaq_parse::parse(filter, jaq_parse::main());
         if !errs.is_empty() {
             return Err(DaftError::ValueError(format!(
-                "Error parsing json filter ({filter}): {}",
+                "Error parsing jq filter ({filter}): {}",
                 errs.iter().map(std::string::ToString::to_string).join(", ")
             )));
         }
@@ -102,7 +102,7 @@ mod jaq {
         let compiled_filter = defs.compile(parsed_filter.unwrap());
         if !defs.errs.is_empty() {
             return Err(DaftError::ComputeError(format!(
-                "Error compiling json filter ({filter}): {}",
+                "Error compiling jq filter ({filter}): {}",
                 defs.errs.iter().map(|(e, _)| e.to_string()).join(", ")
             )));
         }
@@ -130,7 +130,7 @@ mod jaq {
                                 .map(|result| {
                                     result.map_err(|e| {
                                         DaftError::ComputeError(format!(
-                                            "Error running json filter ({filter}): {e}"
+                                            "Error running jq filter ({filter}): {e}"
                                         ))
                                     })
                                 })
