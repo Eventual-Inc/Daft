@@ -50,6 +50,8 @@ if TYPE_CHECKING:
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
+    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
+
 
 def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
@@ -1545,7 +1547,7 @@ class Expression:
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
-    def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def encode(self, codec: EncodingCodec) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1589,9 +1591,9 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        return self._eval_expressions("binary_encode", codec=codec)
+        return self._eval_expressions("encode", codec=codec)
 
-    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "utf8", "zlib"]) -> Expression:
+    def decode(self, codec: EncodingCodec) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1621,15 +1623,15 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        return self._eval_expressions("binary_decode", codec=codec)
+        return self._eval_expressions("decode", codec=codec)
 
-    def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_encode(self, codec: EncodingCodec) -> Expression:
         """Encodes or returns null, see `Expression.encode`."""
-        return self._eval_expressions("binary_try_encode", codec=codec)
+        return self._eval_expressions("try_encode", codec=codec)
 
-    def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_decode(self, codec: EncodingCodec) -> Expression:
         """Decodes or returns null, see `Expression.decode`."""
-        return self._eval_expressions("binary_try_decode", codec=codec)
+        return self._eval_expressions("try_decode", codec=codec)
 
     def name(self) -> builtins.str:
         return self._expr.name()

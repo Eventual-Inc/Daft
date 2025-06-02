@@ -25,7 +25,7 @@ struct Args<T> {
 #[typetag::serde]
 impl ScalarUDF for BinaryEncode {
     fn name(&self) -> &'static str {
-        "binary_encode"
+        "encode"
     }
     fn function_args_to_field(
         &self,
@@ -75,7 +75,7 @@ pub struct BinaryTryEncode;
 #[typetag::serde]
 impl ScalarUDF for BinaryTryEncode {
     fn name(&self) -> &'static str {
-        "binary_try_encode"
+        "try_encode"
     }
 
     fn function_args_to_field(
