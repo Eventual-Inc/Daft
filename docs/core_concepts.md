@@ -2544,8 +2544,6 @@ Daft uses **dynamic execution** to automatically adjust batch sizes based on the
 
 This is necessary because multimodal data such as images, videos, and audio files have different memory and processing characteristics that can cause issues with fixed batching: large batches may exceed available memory, while small batches may not fully utilize hardware optimizations or network bandwidth.
 
-The execution engine adapts the number of rows processed together for each operation in the query plan.
-
 #### How Batch Sizes Are Determined
 
 **Multimodal Downloads:** Downloads for multimodal data use smaller batch sizes (typically a factor of the max_connections parameter) to prevent memory exhaustion when downloading large files, while maintaining network throughput.
