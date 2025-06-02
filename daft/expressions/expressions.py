@@ -4273,7 +4273,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     ) -> Expression:
         """Decodes each list of integer tokens into a string using a tokenizer.
 
-        Uses https://github.com/openai/tiktoken for tokenization.
+        Uses [https://github.com/openai/tiktoken](https://github.com/openai/tiktoken) for tokenization.
 
         Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
         loading tokens from a file in tiktoken format.
