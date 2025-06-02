@@ -6,7 +6,7 @@ use std::{
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
-use common_runtime::get_io_runtime;
+use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{IOClient, IOStatsRef};
@@ -28,7 +28,6 @@ use crate::{
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics,
     stream_reader::spawn_column_iters_to_table_task,
-    utils::combine_stream,
     JoinSnafu, OneShotRecvSnafu, UnableToBindExpressionSnafu,
     UnableToConvertRowGroupMetadataToStatsSnafu, UnableToCreateParquetPageStreamSnafu,
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
@@ -547,6 +546,7 @@ impl ParquetFileReader {
 
         let stream_of_streams =
             futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
+        let parquet_task = async move { parquet_task.await? };
         match maintain_order {
             true => Ok(combine_stream(stream_of_streams.flatten(), parquet_task).boxed()),
             false => {

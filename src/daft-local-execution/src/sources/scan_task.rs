@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     sync::Arc,
 };
 
@@ -8,7 +9,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_runtime::{get_compute_pool_num_threads, get_io_runtime};
+use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -162,7 +163,7 @@ impl Source for ScanTaskSource {
         let task = self.spawn_scan_task_processor(senders, io_stats, delete_map, maintain_order);
 
         // Flatten the receivers into a stream
-        let result_stream = flatten_receivers_into_stream(receivers, task);
+        let result_stream = flatten_receivers_into_stream(receivers, async move { task.await? });
 
         Ok(Box::pin(result_stream))
     }
@@ -354,7 +355,7 @@ async fn get_delete_map(
 /// Creates the final result stream by flattening receivers and handling task completion
 fn flatten_receivers_into_stream(
     receivers: Vec<crate::channel::Receiver<Arc<MicroPartition>>>,
-    background_task: common_runtime::RuntimeTask<DaftResult<()>>,
+    background_task: impl Future<Output = DaftResult<()>>,
 ) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
     let flattened_receivers =
         futures::stream::iter(receivers.into_iter().map(|rx| rx.into_stream()))
@@ -362,30 +363,7 @@ fn flatten_receivers_into_stream(
             .map(Ok);
 
     // Handle the background task completion and forward any errors
-    futures::stream::unfold(
-        (Box::pin(flattened_receivers), Some(background_task)),
-        |(mut stream, mut task)| async move {
-            // If task is already completed/taken, we don't need to check it
-            task.as_ref()?;
-
-            match stream.next().await {
-                Some(result) => Some((result, (stream, task))),
-                None => {
-                    // Stream is done, check if background task completed successfully
-                    if let Some(task) = task.take() {
-                        let task_result = task.await;
-                        match task_result {
-                            Ok(Ok(())) => None,                              // Success, stream ends
-                            Ok(Err(e)) => Some((Err(e), (stream, None))),    // Forward error
-                            Err(e) => Some((Err(e.into()), (stream, None))), // Convert join error
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
-        },
-    )
+    combine_stream(Box::pin(flattened_receivers), background_task)
 }
 
 async fn forward_scan_task_stream(
