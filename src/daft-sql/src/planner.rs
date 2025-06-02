@@ -59,6 +59,11 @@ impl<T> Bindings<T> {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+
+    /// Inserts all bindings from the iterator of binding pairs.
+    fn extend<I: IntoIterator<Item = (String, T)>>(&mut self, iter: I) {
+        self.0.extend(iter);
+    }
 }
 
 impl<T> Default for Bindings<T> {
@@ -80,9 +85,6 @@ struct OrderByExprs {
 pub(crate) struct PlannerContext {
     /// Bindings for common table expressions (cte).
     bound_ctes: Bindings<LogicalPlanBuilder>,
-    /// tables that are bound to the sql context only.
-    /// We don't bind them directly to the session because they are scoped to the sql context, not the session.
-    bound_tables: Bindings<LogicalPlanRef>,
 }
 
 impl PlannerContext {
@@ -90,7 +92,6 @@ impl PlannerContext {
     fn new() -> Self {
         Self {
             bound_ctes: Bindings::default(),
-            bound_tables: Bindings::default(),
         }
     }
 
@@ -169,6 +170,16 @@ impl SQLPlanner<'_> {
         }
     }
 
+    /// Binds each CTE and returning self for use in a builder pattern.
+    pub fn with_ctes(&mut self, ctes: HashMap<String, LogicalPlanBuilder>) -> &mut Self {
+        // !! IMPORTANT: name resolution requires adding an alias to each CTE !!
+        let ctes_with_alias = ctes
+            .iter()
+            .map(|(alias, plan)| (alias.to_string(), plan.alias(alias.as_str())));
+        self.context.borrow_mut().bound_ctes.extend(ctes_with_alias);
+        self
+    }
+
     /// Set `self.current_plan`. Should only be called once per query.
     fn set_plan(&mut self, plan: LogicalPlanBuilder) {
         debug_assert!(self.current_plan.is_none());
@@ -204,12 +215,11 @@ impl SQLPlanner<'_> {
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
         let name_str = name.to_string();
         let ctx = self.context.borrow();
-        let table = ctx.bound_tables.get(&name_str);
-        if let Some(table) = table {
-            Ok(LogicalPlanBuilder::from(table.clone()).alias(name_str))
+        let cte = ctx.bound_ctes.get(&name_str);
+        if let Some(plan) = cte {
+            Ok(LogicalPlanBuilder::from(plan.clone()).alias(name_str))
         } else {
             let table = self.session().get_table(name)?;
-
             let plan = table.to_logical_plan()?;
             Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
         }
@@ -243,10 +253,6 @@ impl SQLPlanner<'_> {
                 .insert(cte.alias.name.value.clone(), plan);
         }
         Ok(())
-    }
-
-    pub fn bind_table(&self, name: String, plan: LogicalPlanRef) {
-        self.context_mut().bound_tables.insert(name, plan);
     }
 
     pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
