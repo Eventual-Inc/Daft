@@ -133,3 +133,46 @@ def test_jq_complex_transformation(series):
         '[{"name":"Alice","avg_score":85.0},{"name":"Bob","avg_score":91.0}]',
         '[{"name":"Charlie","avg_score":88.0},{"name":"Dave","avg_score":88.0}]',
     ]
+
+
+def test_jq_with_deserialize():
+    import daft
+    from daft import DataType as dt
+    from daft import col
+
+    # here's our raw sample data which is just some json dump from a sensor
+    df = daft.from_pydict(
+        {
+            "sample": [
+                '{ "x": 1 }',  # missing y, we'll insert 0 in its place
+                '{ "x": 1, "y": 1 }',  # ok
+                '"HELLO, WORLD!"',  # you're not supposed to be here..
+                '{ "x": 3, "y": 3 }',  # ok
+                '{ "x": 4, "y": 4 }',  # ok
+                '{ "x": false }',  # wrong data type..
+            ]
+        }
+    )
+
+    # select all objects, using 0 as the default for missing keys
+    query = """
+        (. | objects?) | { x: .x // 0, y: .y // 0 }
+    """
+
+    # our point type is an x/y pair.
+    point_t = dt.struct({"x": dt.int64(), "y": dt.int64()})
+
+    # we have the successfully extracted each sample point, now deserialize into our type.
+    points = (df.select(col("sample").jq(query).try_deserialize("json", point_t).alias("point"))).drop_null()
+
+    # now find the max from the origin, no need to sqrt it.
+    p = col("point")
+    furthest_point = (
+        points.with_column("distance", p["x"] * p["x"] + p["y"] * p["y"])
+        .sort("distance", desc=True)
+        .limit(1)
+        .select(p)
+        .to_pydict()["point"][0]
+    )
+
+    assert furthest_point == {"x": 4, "y": 4}
