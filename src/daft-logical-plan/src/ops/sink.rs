@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;

@@ -9,6 +9,7 @@ from daft.execution import physical_plan
 from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.io.sink import WriteResultType
+from daft.runners.distributed_swordfish import RaySwordfishActorHandle
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -1766,6 +1767,7 @@ class DistributedPhysicalPlan:
     def from_logical_plan_builder(
         builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
+    def id(self) -> str: ...
     # def run_plan(self, psets: dict[str, list[RayPartitionRef]]) -> AsyncIterator[tuple[object, int, int]]: ...
 
 class DistributedPhysicalPlanRunner:
@@ -1789,6 +1791,15 @@ class RaySwordfishTask:
     def plan(self) -> LocalPhysicalPlan: ...
     def psets(self) -> dict[str, list[RayPartitionRef]]: ...
     def config(self) -> PyDaftExecutionConfig: ...
+
+class RaySwordfishWorker:
+    def __init__(
+        self,
+        worker_id: str,
+        actor_handle: RaySwordfishActorHandle,
+        num_cpus: int,
+        total_memory_bytes: int,
+    ) -> None: ...
 
 class NativeExecutor:
     def __init__(self) -> None: ...

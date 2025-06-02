@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{expr::window::WindowSpec, WindowExpr};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{LogicalPlan, Result},

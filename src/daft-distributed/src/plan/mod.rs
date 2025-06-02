@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -18,8 +21,11 @@ use crate::{
 mod runner;
 pub(crate) use runner::PlanRunner;
 
+static PLAN_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 #[derive(Serialize, Deserialize)]
 pub(crate) struct DistributedPhysicalPlan {
+    id: String,
     stage_plan: StagePlan,
     config: Arc<DaftExecutionConfig>,
 }
@@ -32,7 +38,15 @@ impl DistributedPhysicalPlan {
         let logical_plan = builder.build();
         let stage_plan = StagePlan::from_logical_plan(logical_plan)?;
 
-        Ok(Self { stage_plan, config })
+        Ok(Self {
+            id: format!("plan_{}", PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed)),
+            stage_plan,
+            config,
+        })
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {

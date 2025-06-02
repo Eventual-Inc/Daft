@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 import logging
 from dataclasses import dataclass
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -26,6 +25,9 @@ from daft.runners.partitioning import (
     PartitionSet,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, AsyncIterator
+
 try:
     import ray
     import ray.util.scheduling_strategies
@@ -45,7 +47,7 @@ class RaySwordfishActor:
     It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.native_executor = NativeExecutor()
 
     async def run_plan(
@@ -58,9 +60,7 @@ class RaySwordfishActor:
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
-        async for partition in self.native_executor.run_async(
-            plan, psets_mp, config, None
-        ):
+        async for partition in self.native_executor.run_async(plan, psets_mp, config, None):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
@@ -80,16 +80,14 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
-    task: asyncio.Task | None = None
+    task: asyncio.Task[list[RayPartitionRef]] | None = None
 
     async def _get_result(self) -> list[RayPartitionRef]:
         results = []
         async for result in self.result_handle:
             results.append(result)
 
-        metadatas = self.actor_handle.get_metadatas.options(
-            num_returns=len(results)
-        ).remote(*results)
+        metadatas = self.actor_handle.get_metadatas.options(num_returns=len(results)).remote(*results)
         metadatas = await metadatas
         res = [
             RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
@@ -101,7 +99,7 @@ class RaySwordfishTaskHandle:
         self.task = asyncio.create_task(self._get_result())
         return await self.task
 
-    def cancel(self):
+    def cancel(self) -> None:
         if self.task:
             self.task.cancel()
         ray.cancel(self.result_handle)
@@ -127,7 +125,7 @@ class RaySwordfishActorHandle:
             self.actor_handle,
         )
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         ray.kill(self.actor_handle)
 
 
@@ -141,7 +139,7 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
             and node["Resources"]["CPU"] > 0
             and node["Resources"]["memory"] > 0
         ):
-            actor = RaySwordfishActor.options(
+            actor = RaySwordfishActor.options(  # type: ignore
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
                     soft=False,
@@ -162,38 +160,31 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
 
 @ray.remote(num_cpus=0)
 class FlotillaScheduler:
-    def __init__(self):
-        self.curr_plan: DistributedPhysicalPlan | None = None
-        self.curr_result_gen: AsyncIterator[tuple[ray.ObjectRef, int, int]] | None = (
-            None
-        )
+    def __init__(self) -> None:
+        self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
+        self.curr_result_gens: dict[str, AsyncIterator[tuple[ray.ObjectRef, int, int]]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
 
     def run_plan(
         self,
         plan: DistributedPhysicalPlan,
-        partition_sets: dict[str, PartitionSet],
-    ):
+        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
+    ) -> None:
         psets = {
-            k: [
-                RayPartitionRef(
-                    v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0
-                )
-                for v in v.values()
-            ]
+            k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
             for k, v in partition_sets.items()
         }
-        self.curr_plan = plan
-        self.curr_result_gen = self.plan_runner.run_plan(plan, psets)
+        self.curr_plans[plan.id()] = plan
+        self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self) -> tuple[ray.ObjectRef, int, int] | None:
-        if self.curr_result_gen is None:
+    async def get_next_partition(self, plan_id: str) -> tuple[ray.ObjectRef, int, int] | None:
+        if plan_id not in self.curr_result_gens:
             return None
 
-        next_result = await self.curr_result_gen.__anext__()
+        next_result = await self.curr_result_gens[plan_id].__anext__()
         if next_result is None:
-            self.curr_plan = None
-            self.curr_result_gen = None
+            self.curr_plans.pop(plan_id)
+            self.curr_result_gens.pop(plan_id)
             return None
 
         obj, num_rows, size_bytes = next_result

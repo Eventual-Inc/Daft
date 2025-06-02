@@ -10,7 +10,6 @@ mod scan_operator;
 mod scan_task;
 pub mod test;
 
-use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use daft_schema::schema::SchemaRef;
@@ -21,6 +20,7 @@ pub use pushdowns::Pushdowns;
 pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ScanState {

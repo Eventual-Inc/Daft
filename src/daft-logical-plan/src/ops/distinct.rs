@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
-
-use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Distinct {

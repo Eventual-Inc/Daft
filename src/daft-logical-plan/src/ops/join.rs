@@ -14,7 +14,7 @@ use daft_dsl::{
 use indexmap::IndexSet;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},

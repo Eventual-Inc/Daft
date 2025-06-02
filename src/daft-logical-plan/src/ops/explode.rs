@@ -3,7 +3,7 @@ use std::sync::Arc;
 use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},

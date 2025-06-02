@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use serde::{Serialize, Deserialize};
 
 use crate::{
     logical_plan::{self, CreationSnafu},

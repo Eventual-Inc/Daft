@@ -20,7 +20,7 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan, DistributedPhysicalPlanRunner, RayPartitionRef
+from daft.daft import DistributedPhysicalPlan
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
@@ -29,7 +29,6 @@ from daft.runners.distributed_swordfish import FlotillaScheduler
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
-from daft.utils import SyncFromAsyncIterator
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Iterator
@@ -1253,6 +1252,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 use_ray_tqdm=False,
             )
 
+        self.flotilla_scheduler: FlotillaScheduler | None = None
+
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return PartitionSetCache()
 
@@ -1376,15 +1377,16 @@ class RayRunner(Runner[ray.ObjectRef]):
                 # Fallback to regular execution
                 self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
-                self.flotilla_scheduler = FlotillaScheduler.remote()
+                if self.flotilla_scheduler is None:
+                    self.flotilla_scheduler = FlotillaScheduler.remote()  # type: ignore
 
                 ray.get(
-                    self.flotilla_scheduler.run_plan.remote(
+                    self.flotilla_scheduler.run_plan.remote(  # type: ignore
                         distributed_plan, self._part_set_cache.get_all_partition_sets()
                     )
                 )
                 while True:
-                    next_partition = ray.get(self.flotilla_scheduler.get_next_partition.remote())
+                    next_partition = ray.get(self.flotilla_scheduler.get_next_partition.remote())  # type: ignore
                     if next_partition is None:
                         break
                     obj, num_rows, size_bytes = next_partition

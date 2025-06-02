@@ -74,6 +74,10 @@ impl PyDistributedPhysicalPlan {
         )?;
         Ok(Self { plan })
     }
+
+    fn id(&self) -> String {
+        self.plan.id().to_string()
+    }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 
