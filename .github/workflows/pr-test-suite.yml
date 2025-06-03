@@ -653,8 +653,8 @@ jobs:
   integration-test-unity:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # needs:
-    # - integration-test-build
+    needs:
+    - integration-test-build
     env:
       package-name: daft
     strategy:
