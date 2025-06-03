@@ -13,7 +13,6 @@ macro_rules! simple_python_wrapper {
 }
 
 mod coalesce;
-mod distance;
 mod misc;
 mod sequence;
 mod tokenize;
@@ -99,11 +98,8 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(get_function_from_registry, parent)?)?;
 
     add!(coalesce::coalesce);
-    add!(distance::cosine_distance);
 
     add!(misc::to_struct);
-    add!(misc::hash);
-    add!(misc::minhash);
 
     add!(sequence::monotonically_increasing_id);
 
