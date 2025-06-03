@@ -5,9 +5,10 @@ use std::{
 
 use daft_core::prelude::Schema;
 use daft_dsl::{
+    binary_op,
     expr::window::{WindowBoundary, WindowFrame},
     functions::{FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
-    Expr, ExprRef, WindowExpr, WindowSpec,
+    Expr, ExprRef, Operator, WindowExpr, WindowSpec,
 };
 use daft_session::Session;
 use sqlparser::ast::{
@@ -17,14 +18,42 @@ use sqlparser::ast::{
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
+    invalid_operation_err,
     modules::{
-        coalesce::SQLCoalesce, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap,
-        SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleUtf8,
-        SQLModuleWindow,
+        SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
 };
+pub struct SQLConcat;
+
+impl SQLFunction for SQLConcat {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input).map(|arg| arg.into_inner()))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        let mut inputs = inputs.into_iter();
+
+        let Some(mut first) = inputs.next() else {
+            invalid_operation_err!("concat requires at least one argument")
+        };
+        for input in inputs {
+            first = binary_op(Operator::Plus, first, input);
+        }
+
+        Ok(first)
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Concatenate the inputs into a single string".to_string()
+    }
+}
 
 /// [SQL_FUNCTIONS] is a singleton that holds all the registered SQL functions.
 pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
@@ -35,10 +64,9 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModulePython>();
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
-    functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
-    functions.add_fn("coalesce", SQLCoalesce {});
+    functions.add_fn("concat", SQLConcat);
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
         // Note:
         //  FunctionModule came from SQLModule, but SQLModule still remains.
