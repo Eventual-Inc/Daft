@@ -3,7 +3,6 @@ from __future__ import annotations
 import ray
 
 import daft
-import daft.context
 from daft import DataType, ResourceRequest
 from daft.daft import PyDaftExecutionConfig
 from daft.expressions import ExpressionsProjection
