@@ -69,7 +69,7 @@ mod jaq {
         match input.data_type() {
             DataType::Utf8 => {
                 let arr = input.utf8()?;
-                execute_filter(arr, filter).map(daft_core::series::IntoSeries::into_series)
+                execute_jaq_filter(arr, filter).map(daft_core::series::IntoSeries::into_series)
             }
             dt => Err(DaftError::TypeError(format!(
                 "jq filter not implemented for {dt}"
@@ -99,7 +99,7 @@ mod jaq {
     }
 
     // This is only marked pub(crate) for mod test since mode test was moved outside this module.
-    pub(crate) fn execute_filter(arr: &Utf8Array, filter: &str) -> DaftResult<Utf8Array> {
+    pub(crate) fn execute_jaq_filter(arr: &Utf8Array, filter: &str) -> DaftResult<Utf8Array> {
         // prepare jaq deps for execution
         let compiled_filter = compile_jaq_filter(filter)?;
         let inputs = RcIter::new(core::iter::empty());
@@ -111,20 +111,20 @@ mod jaq {
         // execute the filter on each input, mapping to some string result
         let values = self_arrow
             .iter()
-            .flatten()
-            .map(parse_json)
-            .map(|rv| {
-                // execute the jaq filter for this rv: Result<Val>, short-circuiting on a json error.
-                let rv = rv?;
-                let rv = compiled_filter.run((Ctx::new([], &inputs), rv));
-                // map the results to an Option<String>
-                rv.map(|res| res.map_err(|err| map_compute_err(filter, err)))
-                    .collect::<DaftResult<Vec<_>>>()
-                    .map(|values| match values.len() {
-                        0 => None,
-                        1 => Some(values[0].to_string()),
-                        _ => Some(Val::Arr(values.into()).to_string()), // need multiple matches to still be a valid JSON string
+            .map(|value| {
+                value.map_or(Ok(None), |input| {
+                    parse_json(input).and_then(|val| {
+                        compiled_filter
+                            .run((Ctx::new([], &inputs), val))
+                            .map(|res| res.map_err(|err| map_compute_err(filter, err)))
+                            .collect::<DaftResult<Vec<_>>>()
+                            .map(|values| match values.len() {
+                                0 => None,
+                                1 => Some(values[0].to_string()),
+                                _ => Some(Val::Arr(values.into()).to_string()), // need multiple matches to still be a valid JSON string
+                            })
                     })
+                })
             })
             .collect::<DaftResult<Utf8Array>>()?;
 
@@ -197,7 +197,7 @@ mod tests {
         );
 
         let filter = r".foo.bar";
-        let result = jaq::execute_filter(&data, filter)?;
+        let result = jaq::execute_jaq_filter(&data, filter)?;
         assert_eq!(result.len(), 3);
         assert_eq!(result.as_arrow().value(0), "1");
         assert_eq!(result.as_arrow().value(1), "2");

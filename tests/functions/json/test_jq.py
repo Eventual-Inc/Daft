@@ -21,6 +21,24 @@ def test_jq(series):
 
 
 @pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
+def test_jq_with_nulls(series):
+    items = [
+        None,
+        '{ "a": null, "b": true, "c": 1, "d": 1.1, "e": "ABC" }',
+        None,
+        None,
+        '{ "a": null, "b": false, "c": 2, "d": 2.2, "e": "DEF" }',
+        None,
+    ]
+    # sanity selector tests for various types
+    assert series(items).jq(".a") == [None, "null", None, None, "null", None]
+    assert series(items).jq(".b") == [None, "true", None, None, "false", None]
+    assert series(items).jq(".c") == [None, "1", None, None, "2", None]
+    assert series(items).jq(".d") == [None, "1.1", None, None, "2.2", None]
+    assert series(items).jq(".e") == [None, '"ABC"', None, None, '"DEF"', None]
+
+
+@pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
 def test_jq_simple_nested_path(series):
     items = [
         '{ "a": { "b": { "c": "deep" } } }',

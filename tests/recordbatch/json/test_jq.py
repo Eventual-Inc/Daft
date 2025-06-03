@@ -23,7 +23,7 @@ from daft.recordbatch import MicroPartition
         pytest.param(["[1, 2, 3]", "[4, 5, 6]", "[7, 8, 9]", None], ".[1]", ["2", "5", "8", None], id="array"),
         # Test with nested arrays
         pytest.param(
-            ["[[1, 2, 3]]", "[[4, 5, 6]]", "[[7, 8, 9]]", None], ".[0].[1]", ["2", "5", "8", None], id="nested_array"
+            ["[[1, 2, 3]]", "[[4, 5, 6]]", "[[7, 8, 9]]", None], ".[0][1]", ["2", "5", "8", None], id="nested_array"
         ),
         # Test length
         pytest.param(['"1"', "[1, 2]", '{"a": 3, "b": 4, "c": 5}'], "length", ["1", "2", "3"], id="length"),
