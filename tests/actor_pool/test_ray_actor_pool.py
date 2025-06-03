@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import pytest
 import ray
 
 import daft
+import daft.context
 from daft import DataType, ResourceRequest
 from daft.daft import PyDaftExecutionConfig
 from daft.expressions import ExpressionsProjection
@@ -21,6 +23,9 @@ class MyUDF:
         return [i + self.state for i in x.to_pylist()]
 
 
+@pytest.mark.skipif(
+    daft.context.get_context().daft_execution_config.flotilla, reason="Skip ray actor pool tests in Flotilla"
+)
 def test_ray_actor_pool():
     projection = ExpressionsProjection([MyUDF(daft.col("x"))])
     pool = RayRoundRobinActorPool(
