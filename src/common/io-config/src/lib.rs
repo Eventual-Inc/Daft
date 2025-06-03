@@ -8,6 +8,7 @@ mod config;
 mod gcs;
 mod http;
 mod s3;
+pub mod unity;
 
 use std::{
     fmt::{Debug, Display},

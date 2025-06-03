@@ -13,14 +13,17 @@ mod retry;
 mod s3_like;
 mod stats;
 mod stream_utils;
+mod unity;
 
 use std::sync::LazyLock;
 
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
+use common_io_config::unity::UnityCatalog;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
+use unity::UnitySource;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -187,13 +190,22 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 pub struct IOClient {
     source_type_to_store: tokio::sync::RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>>,
     config: Arc<IOConfig>,
+    unity_catalog: Option<Arc<UnityCatalog>>,
 }
 
 impl IOClient {
     pub fn new(config: Arc<IOConfig>) -> Result<Self> {
+        Self::new_with_unity(config, None)
+    }
+
+    pub fn new_with_unity(
+        config: Arc<IOConfig>,
+        unity_catalog: Option<UnityCatalog>,
+    ) -> Result<Self> {
         Ok(Self {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
+            unity_catalog: unity_catalog.map(Arc::new),
         })
     }
 
@@ -229,6 +241,19 @@ impl IOClient {
             }
             SourceType::HF => {
                 HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+            }
+            SourceType::Unity => {
+                let Some(unity_catalog) = &self.unity_catalog else {
+                    return Err(Error::UnableToCreateClient {
+                        store: source_type,
+                        source: Box::new(DaftError::ValueError(
+                            "Unity Catalog must be provided in order to access `dbfs` paths"
+                                .to_string(),
+                        )),
+                    });
+                };
+
+                UnitySource::get_client(unity_catalog.clone())
             }
         };
 
@@ -372,6 +397,7 @@ pub enum SourceType {
     AzureBlob,
     GCS,
     HF,
+    Unity,
 }
 
 impl std::fmt::Display for SourceType {
@@ -383,6 +409,7 @@ impl std::fmt::Display for SourceType {
             Self::AzureBlob => write!(f, "AzureBlob"),
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
+            Self::Unity => write!(f, "dbfs"),
         }
     }
 }
@@ -422,6 +449,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
+        "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
@@ -435,6 +463,14 @@ static CLIENT_CACHE: LazyLock<std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>
     LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
 
 pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
+    get_io_client_with_unity(multi_thread, config, None)
+}
+
+pub fn get_io_client_with_unity(
+    multi_thread: bool,
+    config: Arc<IOConfig>,
+    unity_catalog: Option<UnityCatalog>,
+) -> DaftResult<Arc<IOClient>> {
     let read_handle = CLIENT_CACHE.read().unwrap();
     let key = (multi_thread, config.clone());
     if let Some(client) = read_handle.get(&key) {
@@ -446,7 +482,7 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
-            let client = Arc::new(IOClient::new(config)?);
+            let client = Arc::new(IOClient::new_with_unity(config, unity_catalog)?);
             w_handle.insert(key, client.clone());
             Ok(client)
         }

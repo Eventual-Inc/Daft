@@ -45,6 +45,7 @@ from daft.series import Series, item_to_series
 if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
+    from daft.unity_catalog import UnityCatalog
     from daft.window import Window
 
     EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
@@ -1893,6 +1894,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
+        unity_catalog: UnityCatalog | None = None,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
@@ -1922,6 +1924,15 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         multi_thread_expr = Expression._to_expression(multi_thread)._expr
         io_config_expr = Expression._to_expression(io_config)._expr
 
+        if unity_catalog is None:
+            from daft.catalog.__unity import UnityCatalog
+            from daft.session import current_catalog
+
+            catalog = current_catalog()
+            if isinstance(catalog, UnityCatalog):
+                unity_catalog = catalog._inner
+        unity_catalog_expr = Expression._to_expression(unity_catalog)._expr
+
         f = native.get_function_from_registry("url_download")
 
         return Expression._from_pyexpr(
@@ -1931,6 +1942,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 on_error=on_error_expr,
                 max_connections=max_connections_expr,
                 io_config=io_config_expr,
+                unity_catalog=unity_catalog_expr,
             )
         )
 
