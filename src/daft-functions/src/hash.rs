@@ -24,6 +24,21 @@ impl ScalarUDF for HashFunction {
         let Args { input, seed } = inputs.try_into()?;
         if let Some(seed) = seed {
             match seed.len() {
+                1 if seed.data_type().is_list() => {
+                    let seed = seed.list()?;
+                    ensure!(
+                        seed.len() == 1,
+                        "Seed must be a single value or the same length as the input"
+                    );
+                    let seed = seed.get(0).unwrap();
+                    ensure!(
+                        seed.len() == input.len(),
+                        ValueError: "Seed must be a single value or the same length as the input"
+                    );
+                    let seed = seed.cast(&DataType::UInt64)?;
+                    let seed = seed.u64().unwrap();
+                    input.hash(Some(seed)).map(IntoSeries::into_series)
+                }
                 1 => {
                     let seed = seed.cast(&DataType::UInt64)?;
                     // There's no way to natively extend the array, so we extract the element and repeat it.
@@ -59,8 +74,11 @@ impl ScalarUDF for HashFunction {
 
         if let Some(seed) = seed {
             let seed = seed.to_field(schema)?;
+            let cond = (seed.dtype.is_null_or(DataType::is_numeric)
+                || matches!(&seed.dtype, DataType::List(inner) if inner.is_numeric() && !inner.is_floating()))
+                && !seed.dtype.is_floating();
             ensure!(
-                seed.dtype.is_numeric() && !seed.dtype.is_floating(),
+                cond,
                 TypeError: "seed must be a numeric type"
             );
         }
