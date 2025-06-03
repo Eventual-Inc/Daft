@@ -1,10 +1,8 @@
 [dependencies]
 common-error = {path = "../common/error", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-hash = {workspace = true}
-daft-io = {path = "../daft-io", default-features = false}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 typetag = {workspace = true}
@@ -17,7 +15,6 @@ python = [
   "common-error/python",
   "daft-core/python",
   "daft-dsl/python",
-  "daft-io/python",
   "dep:pyo3"
 ]
 

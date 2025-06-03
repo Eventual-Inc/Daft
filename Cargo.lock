@@ -2307,11 +2307,9 @@ name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-hash",
- "daft-io",
  "num-traits",
  "pyo3",
  "serde",
