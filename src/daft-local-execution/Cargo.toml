@@ -41,6 +41,9 @@ tokio = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
 
+[dev-dependencies]
+daft-functions = {path = "../daft-functions", default-features = false}
+
 [features]
 python = [
   "dep:pyo3",

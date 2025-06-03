@@ -2020,6 +2020,7 @@ dependencies = [
  "daft-distributed",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-binary",
  "daft-functions-json",
  "daft-functions-list",
  "daft-functions-serde",
@@ -2115,6 +2116,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-io",
  "daft-logical-plan",
@@ -2311,16 +2313,28 @@ dependencies = [
  "daft-dsl",
  "daft-hash",
  "daft-io",
- "flate2",
  "num-traits",
- "paste",
  "pyo3",
  "serde",
- "simdutf8",
  "snafu",
  "tiktoken-rs",
  "typetag",
  "xxhash-rust",
+]
+
+[[package]]
+name = "daft-functions-binary"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "common-macros",
+ "daft-core",
+ "daft-dsl",
+ "flate2",
+ "serde",
+ "simdutf8",
+ "typetag",
 ]
 
 [[package]]
@@ -2537,6 +2551,7 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
+ "daft-functions",
  "daft-functions-list",
  "daft-functions-uri",
  "daft-io",
@@ -2605,6 +2620,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-binary",
  "daft-functions-list",
  "daft-functions-uri",
  "daft-functions-utf8",
@@ -2908,6 +2924,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-list",
+ "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-logical-plan",
  "daft-scan",

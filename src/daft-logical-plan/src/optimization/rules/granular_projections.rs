@@ -210,8 +210,8 @@ impl SplitGranularProjection {
 mod tests {
 
     use common_scan_info::Pushdowns;
-    use daft_dsl::{Column, ResolvedColumn};
-    use daft_functions::binary::{binary_concat, codecs::Codec, decode::decode, BinaryConcat};
+    use daft_dsl::{lit, Column, ExprRef, ResolvedColumn};
+    use daft_functions_binary::{BinaryConcat, BinaryDecode, Codec};
     use daft_functions_uri::download::UrlDownload;
     use daft_functions_utf8::{capitalize, lower, Capitalize};
     use daft_schema::{dtype::DataType, field::Field};
@@ -274,10 +274,13 @@ mod tests {
             Pushdowns::default(),
         )
         .select(vec![
-            decode(
-                ScalarFunction::new(UrlDownload, vec![resolved_col("url")]).into(),
-                Codec::Utf8,
-            )
+            ExprRef::from(ScalarFunction::new(
+                BinaryDecode,
+                vec![
+                    ScalarFunction::new(UrlDownload, vec![resolved_col("url")]).into(),
+                    lit(Codec::Utf8),
+                ],
+            ))
             .alias("url_data"),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
                 .alias("name_lower"),
@@ -313,7 +316,10 @@ mod tests {
         let Expr::Alias(func, ..) = top_project.projection[0].as_ref() else {
             panic!("Expected alias");
         };
-        assert!(matches!(func.as_ref(), Expr::Cast(..)));
+        assert!(matches!(
+            func.as_ref(),
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<BinaryDecode>()
+        ));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(
@@ -357,10 +363,13 @@ mod tests {
             Pushdowns::default(),
         )
         .select(vec![
-            binary_concat(
-                ScalarFunction::new(UrlDownload, vec![capitalize(resolved_col("url"))]).into(),
-                resolved_col("extra"),
-            )
+            ExprRef::from(ScalarFunction::new(
+                BinaryConcat,
+                vec![
+                    ScalarFunction::new(UrlDownload, vec![capitalize(resolved_col("url"))]).into(),
+                    resolved_col("extra"),
+                ],
+            ))
             .alias("url_data"),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
                 .alias("name_lower"),

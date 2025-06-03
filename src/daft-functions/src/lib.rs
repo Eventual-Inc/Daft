@@ -2,7 +2,6 @@
     deprecated,
     reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
 )]
-pub mod binary;
 pub mod coalesce;
 pub mod distance;
 pub mod float;
@@ -12,11 +11,13 @@ pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod sequence;
-pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
 
 use common_error::DaftError;
+use daft_dsl::functions::FunctionModule;
+use hash::HashFunction;
+use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
@@ -46,4 +47,13 @@ macro_rules! invalid_argument_err {
         let msg = format!($($arg)*);
         return Err(common_error::DaftError::TypeError(msg).into());
     }};
+}
+
+pub struct HashFunctions;
+
+impl FunctionModule for HashFunctions {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(HashFunction);
+        parent.add_fn(MinHashFunction);
+    }
 }

@@ -69,10 +69,10 @@ def test_hash_exprs():
 
     assert actual == expected
 
-    with pytest.raises(Exception, match="Invalid arguments for minhash"):
+    with pytest.raises(Exception, match="Required argument `input` not found"):
         daft.sql("SELECT minhash() as hash_a FROM df").collect()
 
-    with pytest.raises(Exception, match="num_hashes is required"):
+    with pytest.raises(Exception, match="Required argument `num_hashes` not found"):
         daft.sql("SELECT minhash(a) as hash_a FROM df").collect()
 
 
