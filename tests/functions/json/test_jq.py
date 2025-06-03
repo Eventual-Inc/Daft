@@ -130,8 +130,8 @@ def test_jq_complex_transformation(series):
     ]
     # some jq filter to get average scores because jq is not jsonpath
     assert series(items).jq(".users[] | {name: .name, avg_score: ([.scores[]] | add / length | round)}") == [
-        '[{"name":"Alice","avg_score":85.0},{"name":"Bob","avg_score":91.0}]',
-        '[{"name":"Charlie","avg_score":88.0},{"name":"Dave","avg_score":88.0}]',
+        '[{"name":"Alice","avg_score":85},{"name":"Bob","avg_score":91}]',
+        '[{"name":"Charlie","avg_score":88},{"name":"Dave","avg_score":88}]',
     ]
 
 

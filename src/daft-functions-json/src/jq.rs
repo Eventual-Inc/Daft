@@ -51,35 +51,25 @@ impl ScalarUDF for Jq {
 
 /// Encapsulate all jq functionality, could be pulled out if needs reuse later!
 mod jaq {
-
-    use std::sync::{LazyLock, Mutex};
-
     use common_error::{DaftError, DaftResult};
     use daft_core::{
         prelude::{AsArrow, DataType, Utf8Array},
         series::Series,
     };
-    use itertools::Itertools;
-    use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter, Val};
+    use jaq_core::{
+        compile, load,
+        load::{Arena, File, Loader},
+        Compiler, Ctx, Filter, Native, RcIter,
+    };
+    use jaq_json::Val;
     use serde_json::Value;
-
-    /// The jaq context with one-time initialization.
-    static PARSE_CTX: LazyLock<Mutex<ParseCtx>> = LazyLock::new(|| Mutex::new(create_parse_ctx()));
-
-    /// Create the context with jaq_core and jaq_std, see: https://github.com/01mf02/jaq/tree/main?tab=readme-ov-file#features.
-    fn create_parse_ctx() -> ParseCtx {
-        let mut defs = ParseCtx::new(Vec::new());
-        defs.insert_natives(jaq_core::core());
-        defs.insert_defs(jaq_std::std());
-        defs
-    }
 
     /// Consider returning a typed series based upon a data_type parameter.
     pub fn execute(input: &Series, filter: &str) -> DaftResult<Series> {
         match input.data_type() {
             DataType::Utf8 => {
                 let arr = input.utf8()?;
-                json_filter_impl(arr, filter).map(daft_core::series::IntoSeries::into_series)
+                execute_filter(arr, filter).map(daft_core::series::IntoSeries::into_series)
             }
             dt => Err(DaftError::TypeError(format!(
                 "jq filter not implemented for {dt}"
@@ -87,70 +77,104 @@ mod jaq {
         }
     }
 
-    fn compile_filter(filter: &str) -> DaftResult<Filter> {
-        // parse the filter
-        let (parsed_filter, errs) = jaq_parse::parse(filter, jaq_parse::main());
-        if !errs.is_empty() {
-            return Err(DaftError::ValueError(format!(
-                "Error parsing jq filter ({filter}): {}",
-                errs.iter().map(std::string::ToString::to_string).join(", ")
-            )));
-        }
-
-        // compile the filter
-        let mut defs = PARSE_CTX.lock().unwrap();
-        let compiled_filter = defs.compile(parsed_filter.unwrap());
-        if !defs.errs.is_empty() {
-            return Err(DaftError::ComputeError(format!(
-                "Error compiling jq filter ({filter}): {}",
-                defs.errs.iter().map(|(e, _)| e.to_string()).join(", ")
-            )));
-        }
-
-        Ok(compiled_filter)
+    /// Compiles the jaq filter string to an executable Filter object.
+    fn compile_jaq_filter(filter: &str) -> DaftResult<Filter<Native<Val>>> {
+        // these are required to create the loader backed by a `&str` basd "File"
+        let arena = Arena::default();
+        let file = File {
+            path: (),
+            code: filter,
+        };
+        // jaq "parsing" is handled by the loader which creates compile-able "modules"
+        let loader = Loader::new(jaq_std::defs().chain(jaq_json::defs()));
+        let modules = loader
+            .load(&arena, file)
+            .map_err(|errs| map_load_errs(filter, errs))?;
+        // jaq compiles the "modules" into an executable filter
+        let compiler = Compiler::default().with_funs(jaq_std::funs().chain(jaq_json::funs()));
+        let filter = compiler
+            .compile(modules)
+            .map_err(|errs| map_compile_errs(filter, errs))?;
+        Ok(filter)
     }
 
-    // This is only marked pub(crate) for mod test since it outside this module.
-    pub(crate) fn json_filter_impl(arr: &Utf8Array, filter: &str) -> DaftResult<Utf8Array> {
-        let compiled_filter = compile_filter(filter)?;
+    // This is only marked pub(crate) for mod test since mode test was moved outside this module.
+    pub(crate) fn execute_filter(arr: &Utf8Array, filter: &str) -> DaftResult<Utf8Array> {
+        // prepare jaq deps for execution
+        let compiled_filter = compile_jaq_filter(filter)?;
         let inputs = RcIter::new(core::iter::empty());
 
-        let self_arrow = arr.as_arrow();
+        // used for the output array
         let name = arr.name().to_string();
+        let self_arrow = arr.as_arrow();
 
+        // execute the filter on each input, mapping to some string result
         let values = self_arrow
             .iter()
-            .map(|opt| {
-                opt.map_or(Ok(None), |s| {
-                    serde_json::from_str::<Value>(s)
-                        .map_err(DaftError::from)
-                        .and_then(|json| {
-                            let res = compiled_filter
-                                .run((Ctx::new([], &inputs), json.into()))
-                                .map(|result| {
-                                    result.map_err(|e| {
-                                        DaftError::ComputeError(format!(
-                                            "Error running jq filter ({filter}): {e}"
-                                        ))
-                                    })
-                                })
-                                .collect::<DaftResult<Vec<_>>>()
-                                .map(|values| {
-                                    match values.len() {
-                                        0 => None,
-                                        1 => Some(values[0].to_string()),
-                                        _ => Some(Val::arr(values).to_string()), // need multiple matches to still be a valid JSON string
-                                    }
-                                });
-                            res
-                        })
-                })
+            .flatten()
+            .map(parse_json)
+            .map(|rv| {
+                // execute the jaq filter for this rv: Result<Val>, short-circuiting on a json error.
+                let rv = rv?;
+                let rv = compiled_filter.run((Ctx::new([], &inputs), rv));
+                // map the results to an Option<String>
+                rv.map(|res| res.map_err(|err| map_compute_err(filter, err)))
+                    .collect::<DaftResult<Vec<_>>>()
+                    .map(|values| match values.len() {
+                        0 => None,
+                        1 => Some(values[0].to_string()),
+                        _ => Some(Val::Arr(values.into()).to_string()), // need multiple matches to still be a valid JSON string
+                    })
             })
             .collect::<DaftResult<Utf8Array>>()?;
 
+        // be sure to apply the name and validity of the input
         values
             .rename(&name)
             .with_validity(self_arrow.validity().cloned())
+    }
+
+    /// We need serde_json to parse, but then convert to a jaq Val to be evaluated.
+    fn parse_json(input: &str) -> DaftResult<Val> {
+        let v: Value = serde_json::from_str(input)?;
+        let v: Val = v.into();
+        Ok(v)
+    }
+
+    /// Combine all jaq parsing (load) errors into a list.
+    fn map_load_errs(filter: &str, errs: load::Errors<&str, ()>) -> DaftError {
+        // had to add the `.collect` to ensure all branches are the same type
+        let errs = errs.into_iter().flat_map(|(_, err)| match err {
+            load::Error::Io(items) => items.into_iter().map(|(_, e)| e).collect::<Vec<String>>(),
+            load::Error::Lex(items) => items
+                .into_iter()
+                .map(|(_, e)| e.to_string())
+                .collect::<Vec<String>>(),
+            load::Error::Parse(items) => items
+                .into_iter()
+                .map(|(_, e)| e.to_string())
+                .collect::<Vec<String>>(),
+        });
+        DaftError::ValueError(format!(
+            "Error parsing jq filter ({filter}): {}",
+            errs.collect::<Vec<_>>().join(", ")
+        ))
+    }
+
+    /// Combine all jaq compilation errors into a list.
+    fn map_compile_errs(filter: &str, errs: compile::Errors<&str, ()>) -> DaftError {
+        DaftError::ComputeError(format!(
+            "Error compiling jq filter ({filter}): {}",
+            errs.into_iter()
+                .flat_map(|(_, errs)| errs.into_iter().map(|(err, _)| err.to_string()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    }
+
+    /// Converts an error that would occur during execution.
+    fn map_compute_err(filter: &str, err: jaq_core::Error<Val>) -> DaftError {
+        DaftError::ComputeError(format!("Error running jq filter ({filter}): {err}"))
     }
 }
 
@@ -173,7 +197,7 @@ mod tests {
         );
 
         let filter = r".foo.bar";
-        let result = jaq::json_filter_impl(&data, filter)?;
+        let result = jaq::execute_filter(&data, filter)?;
         assert_eq!(result.len(), 3);
         assert_eq!(result.as_arrow().value(0), "1");
         assert_eq!(result.as_arrow().value(1), "2");
