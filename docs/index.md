@@ -117,7 +117,7 @@ This user guide aims to help Daft users master the usage of Daft for all your da
 <div class="grid cards" markdown>
 
 - [:material-star-shooting: **Advanced Daft**](advanced/memory.md)
-- [:material-file-compare: **DataFrame Comparison**](resources/tool_comparison.md)
+- [:material-file-compare: **Engine Comparison**](resources/engine_comparison.md)
 - [:material-file-document: **Tutorials**](resources/tutorials.md)
 - [:material-chart-bar: **Benchmarks**](resources/benchmarks/tpch.md)
 

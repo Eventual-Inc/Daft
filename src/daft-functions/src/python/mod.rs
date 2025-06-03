@@ -12,11 +12,9 @@ macro_rules! simple_python_wrapper {
     };
 }
 
-mod binary;
 mod coalesce;
 mod misc;
 mod sequence;
-mod temporal;
 mod tokenize;
 
 use std::sync::Arc;
@@ -100,39 +98,10 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(get_function_from_registry, parent)?)?;
 
     add!(coalesce::coalesce);
-    add!(binary::binary_length);
-    add!(binary::binary_concat);
-    add!(binary::binary_slice);
-
-    add!(binary::encode);
-    add!(binary::decode);
-    add!(binary::try_encode);
-    add!(binary::try_decode);
 
     add!(misc::to_struct);
 
     add!(sequence::monotonically_increasing_id);
-
-    add!(temporal::dt_date);
-    add!(temporal::dt_day);
-    add!(temporal::dt_day_of_week);
-    add!(temporal::dt_day_of_month);
-    add!(temporal::dt_day_of_year);
-    add!(temporal::dt_week_of_year);
-    add!(temporal::dt_hour);
-    add!(temporal::dt_minute);
-    add!(temporal::dt_month);
-    add!(temporal::dt_quarter);
-    add!(temporal::dt_second);
-    add!(temporal::dt_millisecond);
-    add!(temporal::dt_microsecond);
-    add!(temporal::dt_nanosecond);
-    add!(temporal::dt_unix_date);
-    add!(temporal::dt_time);
-    add!(temporal::dt_year);
-    add!(temporal::dt_truncate);
-    add!(temporal::dt_to_unix_epoch);
-    add!(temporal::dt_strftime);
 
     add!(tokenize::tokenize_encode);
     add!(tokenize::tokenize_decode);

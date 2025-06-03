@@ -618,19 +618,6 @@ The [`df.explode()`][daft.DataFrame.explode] method can be used to explode a col
 (Showing first 8 rows)
 ```
 
-<!-- Commented out because there's Advanced/Partitioning section -->
-<!-- ## Repartitioning
-
-Daft is a distributed DataFrame, and the dataframe is broken into multiple "partitions" which are processed in parallel across the cores in your machine or cluster.
-
-You may choose to increase or decrease the number of partitions with [`df.repartition()`](https://www.getdaft.io/projects/docs/en/stable/api_docs/doc_gen/dataframe_methods/daft.DataFrame.repartition.html#daft.DataFrame.repartition).
-
-1. Increasing the number of partitions to 2x the total number of CPUs could help with resource utilization
-2. If each partition is potentially overly large (e.g. containing large images), causing memory issues, you may increase the number of partitions to reduce the size of each individual partition
-3. If you have too many partitions, global operations such as a sort or a join may take longer to execute
-
-A good rule of thumb is to keep the number of partitions as twice the number of CPUs available on your backend, increasing the number of partitions as necessary if they cannot be processed in memory. -->
-
 ## Expressions
 
 Expressions are a fundamental concept in Daft that allows you to define computations on DataFrame columns. They are the building blocks for transforming and manipulating data within your DataFrame and will be your best friend if you are working with Daft primarily using the Python API.
@@ -1367,7 +1354,6 @@ You can parse strings as timestamps with time zones and convert between differen
 │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-01 23:30:00.456 EST                       │
 ╰───────────────────────────────┴───────────────────────────────────────────────────╯
 ```
-
 ##### Temporal Truncation
 
 The [`.dt.truncate()`][daft.expressions.expressions.ExpressionDatetimeNamespace.truncate] method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods. For example, to truncate timestamps to the nearest hour:
@@ -2538,6 +2524,29 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
     df_family = df_family.with_column("image", daft.col("image_bytes").image.decode())
     df_family.show()
     ```
+
+### Dynamic Execution for Multimodal Workloads
+
+Daft uses **dynamic execution** to automatically adjust batch sizes based on the operation type and data characteristics.
+
+This is necessary because multimodal data such as images, videos, and audio files have different memory and processing characteristics that can cause issues with fixed batching: large batches may exceed available memory, while small batches may not fully utilize hardware optimizations or network bandwidth.
+
+#### How Batch Sizes Are Determined
+
+**Multimodal Downloads:** Downloads for multimodal data use smaller batch sizes (typically a factor of the max_connections parameter) to prevent memory exhaustion when downloading large files, while maintaining network throughput.
+
+**Vectorized Operations:** Operations that can operate on many rows in parallel, such as byte decoding / encoding, aggregations, and scalar projections, will use larger batch sizes that can take advantage of vectorized execution using SIMD.
+
+
+=== "🐍 Python"
+    ```python
+    # Each operation uses different batch sizes automatically
+    df = daft.read_parquet("metadata.parquet") # Large batches
+          .with_column("image_data", col("image_url").url.download())  # Small batches
+          .with_column("resized", col("image_data").image.resize(224, 224))  # Medium batches
+    ```
+
+This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.
 
 ## Example: UDFs in ML + Multimodal Workload
 

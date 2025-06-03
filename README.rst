@@ -2,7 +2,7 @@
 
 |CI| |PyPI| |Latest Tag| |Coverage| |Slack|
 
-`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/projects/docs/>`_ • `Installation`_ • `Daft Quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
+`Website <https://www.getdaft.io>`_ • `Docs <https://docs.getdaft.io>`_ • `Installation <https://docs.getdaft.io/en/stable/install/>`_ • `Daft Quickstart <https://docs.getdaft.io/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
 Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 ============================================================
@@ -42,12 +42,12 @@ Installation
 
 Install Daft with ``pip install daft``.
 
-For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://www.getdaft.io/projects/docs/en/stable/install/>`_
+For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://docs.getdaft.io/en/stable/install/>`_
 
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_!
+  Check out our `quickstart <https://docs.getdaft.io/en/stable/quickstart/>`_!
 
 In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
 
@@ -75,15 +75,16 @@ Benchmarks
 ----------
 |Benchmark Image|
 
-To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://www.getdaft.io/projects/docs/en/stable/resources/benchmarks/tpch/>`_
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.getdaft.io/en/stable/resources/benchmarks/tpch/>`_
 
 
 More Resources
 ^^^^^^^^^^^^^^
 
-* `Daft Quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
-* `User Guide <https://www.getdaft.io/projects/docs/>`_ - take a deep-dive into each topic within Daft
-* `API Reference <https://www.getdaft.io/projects/docs/en/stable/api_docs/>`_ - API reference for public classes/functions of Daft
+* `Daft Quickstart <https://docs.getdaft.io/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
+* `User Guide <https://docs.getdaft.io/en/stable/>`_ - take a deep-dive into each topic within Daft
+* `API Reference <https://docs.getdaft.io/en/stable/api/>`_ - API reference for public classes/functions of Daft
+* `SQL Reference <https://docs.getdaft.io/en/stable/sql/>`_ - Daft SQL reference
 
 Contributing
 ------------
@@ -107,7 +108,7 @@ The data that we collect is:
 2. **Metadata-only:** We do not collect any of our users’ proprietary code or data
 3. **For development only:** We do not buy or sell any user data
 
-Please see our `documentation <https://www.getdaft.io/projects/docs/en/stable/resources/telemetry/>`_ for more details.
+Please see our `documentation <https://docs.getdaft.io/en/stable/resources/telemetry/>`_ for more details.
 
 .. image:: https://static.scarf.sh/a.png?x-pxid=31f8d5ba-7e09-4d75-8895-5252bbf06cf6
 
@@ -115,7 +116,7 @@ Related Projects
 ----------------
 
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| Dataframe                                         | Query Optimizer | Multimodal    | Distributed | Arrow Backed    | Vectorized Execution Engine | Out-of-core |
+| Engine                                            | Query Optimizer | Multimodal    | Distributed | Arrow Backed    | Vectorized Execution Engine | Out-of-core |
 +===================================================+=================+===============+=============+=================+=============================+=============+
 | Daft                                              | Yes             | Yes           | Yes         | Yes             | Yes                         | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
@@ -130,7 +131,7 @@ Related Projects
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 
-Check out our `dataframe comparison page <https://www.getdaft.io/projects/docs/en/stable/resources/dataframe_comparison/>`_ for more details!
+Check out our `engine comparison page <https://docs.getdaft.io/en/stable/resources/engine_comparison/>`_ for more details!
 
 License
 -------
@@ -144,7 +145,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
    :alt: Benchmarks for SF100 TPCH
 
-.. |Banner| image:: https://github.com/user-attachments/assets/a48a8348-8d28-4772-867b-710aefaeff9f
+.. |Banner| image:: https://github.com/user-attachments/assets/9fb749e4-2f6d-4e45-bb28-97e9cb07050d
    :target: https://www.getdaft.io
    :alt: Daft dataframes can load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying
 

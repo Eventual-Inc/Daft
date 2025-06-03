@@ -50,6 +50,8 @@ if TYPE_CHECKING:
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
+    EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
+
 
 def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
@@ -118,7 +120,7 @@ def lit(value: object) -> Expression:
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
-    See [Column Wildcards](https://www.getdaft.io/projects/docs/en/stable/core_concepts/#selecting-columns-using-wildcards) for details on wildcards.
+    See [Column Wildcards](https://docs.getdaft.io/en/stable/core_concepts/#selecting-columns-using-wildcards) for details on wildcards.
 
     Args:
         name: Name of column
@@ -595,7 +597,7 @@ class Expression:
             (Showing first 2 of 2 rows)
 
         Tip: See Also
-            [list.get](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.get) and [struct.get](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStructNamespace.get)
+            [list.get](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.get) and [struct.get](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStructNamespace.get)
 
         """
         if isinstance(key, int):
@@ -682,7 +684,7 @@ class Expression:
 
         Note:
             - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
-            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://www.getdaft.io/projects/docs/en/stable/sql/datatypes/) for supported datatypes.
+            - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://docs.getdaft.io/en/stable/sql/datatypes/) for supported datatypes.
             - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
 
         Examples:
@@ -1536,7 +1538,7 @@ class Expression:
             "minhash", num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
         )
 
-    def encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def encode(self, codec: EncodingCodec) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1580,10 +1582,9 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        expr = native.encode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("encode", codec=codec)
 
-    def decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def decode(self, codec: EncodingCodec) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
         Args:
@@ -1613,18 +1614,15 @@ class Expression:
             (Showing first 1 of 1 rows)
 
         """
-        expr = native.decode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("decode", codec=codec)
 
-    def try_encode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_encode(self, codec: EncodingCodec) -> Expression:
         """Encodes or returns null, see `Expression.encode`."""
-        expr = native.try_encode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("try_encode", codec=codec)
 
-    def try_decode(self, codec: Literal["deflate", "gzip", "gz", "utf-8", "zlib"]) -> Expression:
+    def try_decode(self, codec: EncodingCodec) -> Expression:
         """Decodes or returns null, see `Expression.decode`."""
-        expr = native.try_decode(self._expr, codec)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("try_decode", codec=codec)
 
     def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type.
@@ -2160,7 +2158,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_date(self._expr))
+        return self._eval_expressions("date")
 
     def day(self) -> Expression:
         """Retrieves the day for a datetime column.
@@ -2196,7 +2194,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_day(self._expr))
+        return self._eval_expressions("day")
 
     def hour(self) -> Expression:
         """Retrieves the day for a datetime column.
@@ -2232,7 +2230,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_hour(self._expr))
+        return self._eval_expressions("hour")
 
     def minute(self) -> Expression:
         """Retrieves the minute for a datetime column.
@@ -2268,7 +2266,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_minute(self._expr))
+        return self._eval_expressions("minute")
 
     def second(self) -> Expression:
         """Retrieves the second for a datetime column.
@@ -2304,7 +2302,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_second(self._expr))
+        return self._eval_expressions("second")
 
     def millisecond(self) -> Expression:
         """Retrieves the millisecond for a datetime column.
@@ -2337,7 +2335,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        return Expression._from_pyexpr(native.dt_millisecond(self._expr))
+        return self._eval_expressions("millisecond")
 
     def microsecond(self) -> Expression:
         """Retrieves the microsecond for a datetime column.
@@ -2370,7 +2368,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_microsecond(self._expr))
+        return self._eval_expressions("microsecond")
 
     def nanosecond(self) -> Expression:
         """Retrieves the nanosecond for a datetime column.
@@ -2404,7 +2402,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_nanosecond(self._expr))
+        return self._eval_expressions("nanosecond")
 
     def unix_date(self) -> Expression:
         """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
@@ -2441,7 +2439,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_unix_date(self._expr))
+        return self._eval_expressions("unix_date")
 
     def time(self) -> Expression:
         """Retrieves the time for a datetime column.
@@ -2477,7 +2475,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_time(self._expr))
+        return self._eval_expressions("time")
 
     def month(self) -> Expression:
         """Retrieves the month for a datetime column.
@@ -2512,7 +2510,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_month(self._expr))
+        return self._eval_expressions("month")
 
     def quarter(self) -> Expression:
         """Retrieves the quarter for a datetime column.
@@ -2547,7 +2545,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_quarter(self._expr))
+        return self._eval_expressions("quarter")
 
     def year(self) -> Expression:
         """Retrieves the year for a datetime column.
@@ -2582,7 +2580,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_year(self._expr))
+        return self._eval_expressions("year")
 
     def day_of_week(self) -> Expression:
         """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
@@ -2617,7 +2615,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
+        return self._eval_expressions("day_of_week")
 
     def day_of_month(self) -> Expression:
         """Retrieves the day of the month for a datetime column.
@@ -2655,7 +2653,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.dt_day_of_month(self._expr))
+        return self._eval_expressions("day_of_month")
 
     def day_of_year(self) -> Expression:
         """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
@@ -2693,7 +2691,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.dt_day_of_year(self._expr))
+        return self._eval_expressions("day_of_year")
 
     def week_of_year(self) -> Expression:
         """Retrieves the week of the year for a datetime column.
@@ -2731,7 +2729,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.dt_week_of_year(self._expr))
+        return self._eval_expressions("week_of_year")
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
@@ -2770,13 +2768,12 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        relative_to = Expression._to_expression(relative_to)
-        return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
+        return self._eval_expressions("truncate", relative_to, interval=interval)
 
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
-        See [daft.datatype.TimeUnit](https://www.getdaft.io/projects/docs/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
+        See [daft.datatype.TimeUnit](https://docs.getdaft.io/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
 
         Examples:
             >>> import daft
@@ -2808,12 +2805,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        if time_unit is None:
-            time_unit = TimeUnit.s()
-        if isinstance(time_unit, str):
-            time_unit = TimeUnit.from_str(time_unit)
-
-        return Expression._from_pyexpr(native.dt_to_unix_epoch(self._expr, time_unit._timeunit))
+        return self._eval_expressions("to_unix_epoch", time_unit=time_unit)
 
     def strftime(self, format: str | None = None) -> Expression:
         """Converts a datetime/date column to a string column.
@@ -2861,7 +2853,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        return Expression._from_pyexpr(native.dt_strftime(self._expr, format))
+        return self._eval_expressions("strftime", format=format)
 
     def total_seconds(self) -> Expression:
         """Calculates the total number of seconds for a duration column.
@@ -2905,8 +2897,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_seconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_seconds")
 
     def total_milliseconds(self) -> Expression:
         """Calculates the total number of milliseconds for a duration column.
@@ -2950,8 +2941,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_milliseconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_milliseconds")
 
     def total_microseconds(self) -> Expression:
         """Calculates the total number of microseconds for a duration column.
@@ -2995,8 +2985,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_microseconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_microseconds")
 
     def total_nanoseconds(self) -> Expression:
         """Calculates the total number of nanoseconds for a duration column.
@@ -3040,8 +3029,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_nanoseconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_nanoseconds")
 
     def total_minutes(self) -> Expression:
         """Calculates the total number of minutes for a duration column.
@@ -3085,8 +3073,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_minutes")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_minutes")
 
     def total_hours(self) -> Expression:
         """Calculates the total number of hours for a duration column.
@@ -3130,8 +3117,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_hours")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_hours")
 
     def total_days(self) -> Expression:
         """Calculates the total number of days for a duration column.
@@ -3175,8 +3161,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_days")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_days")
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
@@ -3455,7 +3440,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
 
         Tip: See Also
-            [extract_all](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
+            [extract_all](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract_all)
         """
         pattern_expr = Expression._to_expression(pattern)
         idx = Expression._to_expression(index)
@@ -3513,7 +3498,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Tip: See Also
-            [extract](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
+            [extract](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.extract)
         """
         pattern_expr = Expression._to_expression(pattern)
         idx = Expression._to_expression(index)
@@ -4659,7 +4644,7 @@ class ExpressionListNamespace(ExpressionNamespace):
     def unique(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
-        Alias for [Expression.list.distinct](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct).
+        Alias for [Expression.list.distinct](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct).
 
         Returns:
             Expression: An expression with lists containing only distinct elements
@@ -4703,7 +4688,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         Tip: See Also
-            [Expression.list.distinct](https://www.getdaft.io/projects/docs/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct)
+            [Expression.list.distinct](https://docs.getdaft.io/en/stable/api/expressions/#daft.expressions.expressions.ExpressionListNamespace.distinct)
 
         """
         return self.distinct()
@@ -5127,7 +5112,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.binary_length(self._expr))
+        return self._eval_expressions("binary_length")
 
     def concat(self, other: Expression) -> Expression:
         r"""Concatenates two binary strings.
@@ -5162,8 +5147,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 4 of 4 rows)
 
         """
-        other_expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(native.binary_concat(self._expr, other_expr._expr))
+        return self._eval_expressions("binary_concat", other)
 
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a slice of each binary string.
@@ -5195,6 +5179,4 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        start_expr = Expression._to_expression(start)
-        length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(native.binary_slice(self._expr, start_expr._expr, length_expr._expr))
+        return self._eval_expressions("binary_slice", start, length)
