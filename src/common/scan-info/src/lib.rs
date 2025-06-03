@@ -25,8 +25,29 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ScanState {
     Tasks(Arc<Vec<ScanTaskLikeRef>>),
-    #[serde(skip)]
+    #[serde(
+        serialize_with = "serialize_invalid",
+        deserialize_with = "deserialize_invalid"
+    )]
     Operator(ScanOperatorRef),
+}
+
+fn serialize_invalid<S>(_: &ScanOperatorRef, _: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    Err(serde::ser::Error::custom(
+        "ScanOperatorRef cannot be serialized",
+    ))
+}
+
+fn deserialize_invalid<'de, D>(_: D) -> Result<ScanOperatorRef, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Err(serde::de::Error::custom(
+        "ScanOperatorRef cannot be deserialized",
+    ))
 }
 
 impl ScanState {
