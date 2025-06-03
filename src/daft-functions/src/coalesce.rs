@@ -5,46 +5,19 @@ use daft_core::{
     utils::supertype::try_get_collection_supertype,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Coalesce {}
+pub struct Coalesce;
 
 #[typetag::serde]
 impl ScalarUDF for Coalesce {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        self.evaluate_from_series(&inputs)
-    }
-
     fn name(&self) -> &'static str {
         "coalesce"
     }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [] => Err(DaftError::SchemaMismatch(
-                "Expected at least 1 input args, got 0".to_string(),
-            )),
-            [input] => {
-                let input_field = input.to_field(schema)?;
-                Ok(input_field)
-            }
-            _ => {
-                let field_name = inputs[0].to_field(schema)?.name;
-                let field_types = inputs
-                    .iter()
-                    .map(|e| e.get_type(schema))
-                    .collect::<DaftResult<Vec<_>>>()?;
-                let field_type = try_get_collection_supertype(&field_types)?;
-                Ok(Field::new(field_name, field_type))
-            }
-        }
-    }
-
     /// Coalesce is a special case of the case-when expression.
     ///
     /// SQL-2023 - 6.12 General Rules 2.a
@@ -53,7 +26,9 @@ impl ScalarUDF for Coalesce {
     ///  > the <result> of the first (leftmost) <searched when clause> whose <search
     ///  > condition> evaluates to True, cast as the declared type of the <case
     ///  > specification>.
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
+        let inputs = inputs.as_slice();
         match inputs.len() {
             0 => Err(DaftError::ComputeError("No inputs provided".to_string())),
             1 => Ok(inputs[0].clone()),
@@ -88,6 +63,33 @@ impl ScalarUDF for Coalesce {
                 }
 
                 Ok(current_value.rename(name))
+            }
+        }
+    }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let inputs = inputs.into_inner();
+        let inputs = inputs.as_slice();
+
+        match inputs {
+            [] => Err(DaftError::SchemaMismatch(
+                "Expected at least 1 input args, got 0".to_string(),
+            )),
+            [input] => {
+                let input_field = input.to_field(schema)?;
+                Ok(input_field)
+            }
+            _ => {
+                let field_name = inputs[0].to_field(schema)?.name;
+                let field_types = inputs
+                    .iter()
+                    .map(|e| e.get_type(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let field_type = try_get_collection_supertype(&field_types)?;
+                Ok(Field::new(field_name, field_type))
             }
         }
     }

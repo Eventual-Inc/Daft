@@ -33,11 +33,8 @@ from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
-from daft.daft import struct as _struct
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
-from daft.daft import tokenize_decode as _tokenize_decode
-from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
@@ -232,7 +229,8 @@ def struct(*fields: Expression | str) -> Expression:
             pyinputs.append(col(field)._expr)
         else:
             raise TypeError("expected Expression or str as input for struct()")
-    return Expression._from_pyexpr(_struct(pyinputs))
+    f = native.get_function_from_registry("struct")
+    return Expression._from_pyexpr(f(*pyinputs))
 
 
 def interval(
@@ -281,7 +279,9 @@ def coalesce(*args: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
+    f = native.get_function_from_registry("coalesce")
+
+    return Expression._from_pyexpr(f(*[arg._expr for arg in args]))
 
 
 class Expression:
@@ -1513,6 +1513,7 @@ class Expression:
 
     def minhash(
         self,
+        *,
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
@@ -4273,19 +4274,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
             strings in certain edge cases. This may result in slightly different encodings in these cases.
 
         """
-        # if special tokens are passed in, enable using special tokens
-        if use_special_tokens is None:
-            use_special_tokens = special_tokens is not None
-
-        return Expression._from_pyexpr(
-            _tokenize_encode(
-                self._expr,
-                tokens_path,
-                use_special_tokens,
-                io_config,
-                pattern,
-                special_tokens,
-            )
+        return self._eval_expressions(
+            "tokenize_encode",
+            tokens_path=tokens_path,
+            use_special_tokens=use_special_tokens,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
         )
 
     def tokenize_decode(
@@ -4298,7 +4293,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     ) -> Expression:
         """Decodes each list of integer tokens into a string using a tokenizer.
 
-        Uses https://github.com/openai/tiktoken for tokenization.
+        Uses [https://github.com/openai/tiktoken](https://github.com/openai/tiktoken) for tokenization.
 
         Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
         loading tokens from a file in tiktoken format.
@@ -4312,7 +4307,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with decoded strings.
         """
-        return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config, pattern, special_tokens))
+        return self._eval_expressions(
+            "tokenize_decode",
+            tokens_path=tokens_path,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
+        )
 
     def count_matches(
         self,
