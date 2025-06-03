@@ -7,12 +7,11 @@ pub mod distance;
 pub mod float;
 pub mod hash;
 pub mod minhash;
+pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
-pub mod sequence;
 pub mod to_struct;
-pub mod tokenize;
 pub mod uri;
 
 use common_error::DaftError;
@@ -22,6 +21,7 @@ use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
+use to_struct::ToStructFunction;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -56,5 +56,13 @@ impl FunctionModule for HashFunctions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
+    }
+}
+
+pub struct StructFunctions;
+
+impl FunctionModule for StructFunctions {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(ToStructFunction);
     }
 }

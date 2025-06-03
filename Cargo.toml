@@ -27,6 +27,7 @@ daft-functions-json = {path = "src/daft-functions-json", default-features = fals
 daft-functions-list = {path = "src/daft-functions-list", default-features = false}
 daft-functions-serde = {path = "src/daft-functions-serde", default-features = false}
 daft-functions-temporal = {path = "src/daft-functions-temporal", default-features = false}
+daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
@@ -175,6 +176,7 @@ members = [
   "src/daft-functions-binary",
   "src/daft-functions-json",
   "src/daft-functions-list",
+  "src/daft-functions-tokenize",
   "src/daft-functions-utf8",
   "src/daft-functions-temporal",
   "src/daft-hash",
@@ -231,6 +233,7 @@ daft-functions-binary = {path = "src/daft-functions-binary"}
 daft-functions-json = {path = "src/daft-functions-json"}
 daft-functions-list = {path = "src/daft-functions-list"}
 daft-functions-temporal = {path = "src/daft-functions-temporal"}
+daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}

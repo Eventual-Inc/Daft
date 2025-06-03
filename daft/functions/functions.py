@@ -38,7 +38,8 @@ def monotonically_increasing_id() -> Expression:
         (Showing first 4 of 4 rows)
 
     """
-    return Expression._from_pyexpr(native.monotonically_increasing_id())
+    f = native.get_function_from_registry("monotonically_increasing_id")
+    return Expression._from_pyexpr(f())
 
 
 def columns_sum(*exprs: Expression | str) -> Expression:

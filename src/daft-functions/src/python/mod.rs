@@ -1,22 +1,3 @@
-macro_rules! simple_python_wrapper {
-    (
-        $fn_name:ident
-        , $function:path
-        , [$($arg:ident: $t:ty),* $(,)?]
-        $(,)?
-    ) => {
-        #[pyfunction]
-        pub fn $fn_name($($arg: $t),*) -> PyResult<PyExpr> {
-            Ok($function($($arg.into()),*).into())
-        }
-    };
-}
-
-mod coalesce;
-mod misc;
-mod sequence;
-mod tokenize;
-
 use std::sync::Arc;
 
 use daft_core::prelude::Schema;
@@ -90,21 +71,7 @@ pub fn get_function_from_registry(name: &str) -> PyResult<PyScalarFunction> {
 }
 
 pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
-    macro_rules! add {
-        ($p:path) => {
-            parent.add_function(wrap_pyfunction!($p, parent)?)?;
-        };
-    }
     parent.add_function(wrap_pyfunction!(get_function_from_registry, parent)?)?;
-
-    add!(coalesce::coalesce);
-
-    add!(misc::to_struct);
-
-    add!(sequence::monotonically_increasing_id);
-
-    add!(tokenize::tokenize_encode);
-    add!(tokenize::tokenize_decode);
 
     Ok(())
 }
