@@ -2026,6 +2026,7 @@ dependencies = [
  "daft-functions-serde",
  "daft-functions-temporal",
  "daft-functions-tokenize",
+ "daft-functions-uri",
  "daft-functions-utf8",
  "daft-hash",
  "daft-image",
@@ -2305,21 +2306,15 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
- "bytes",
  "common-error",
- "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-hash",
- "daft-io",
- "futures",
  "num-traits",
  "pyo3",
  "serde",
  "snafu",
- "tokio",
  "typetag",
- "uuid 1.16.0",
  "xxhash-rust",
 ]
 
@@ -2407,6 +2402,23 @@ dependencies = [
  "snafu",
  "tiktoken-rs",
  "typetag",
+]
+
+[[package]]
+name = "daft-functions-uri"
+version = "0.3.0-dev0"
+dependencies = [
+ "bytes",
+ "common-error",
+ "common-runtime",
+ "daft-core",
+ "daft-dsl",
+ "daft-io",
+ "futures",
+ "serde",
+ "tokio",
+ "typetag",
+ "uuid 1.16.0",
 ]
 
 [[package]]
@@ -2552,8 +2564,8 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
- "daft-functions",
  "daft-functions-list",
+ "daft-functions-uri",
  "daft-io",
  "daft-json",
  "daft-local-plan",
@@ -2622,6 +2634,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-binary",
  "daft-functions-list",
+ "daft-functions-uri",
  "daft-functions-utf8",
  "daft-schema",
  "derivative",

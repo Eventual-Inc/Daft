@@ -12,7 +12,6 @@ pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod to_struct;
-pub mod uri;
 
 use common_error::DaftError;
 use daft_dsl::functions::FunctionModule;
