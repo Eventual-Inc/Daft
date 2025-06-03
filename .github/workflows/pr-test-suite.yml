@@ -710,13 +710,14 @@ jobs:
         submodules: true
         path: unitycatalog
     - name: Start UC Server
-      run: unitycatalog/bin/start-uc-server
-    # - name: Run unity integration tests
-    #   run: |
-    #     pytest tests/integration/unity -m 'integration or not integration' --durations=50
-    #   env:
-    #     DAFT_RUNNER: ${{ matrix.daft-runner }}
-    #     DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+      working-directory: ./unitycatalog
+      run: bin/start-uc-server &
+    - name: Run unity integration tests
+      run: |
+        pytest tests/integration/unity -m 'integration or not integration' --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
