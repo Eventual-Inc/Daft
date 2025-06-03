@@ -9,7 +9,6 @@ daft-hash = {workspace = true}
 daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
 num-traits = {workspace = true}
-paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}
 tiktoken-rs = {workspace = true}
 tokio = {workspace = true}

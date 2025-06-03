@@ -1509,13 +1509,7 @@ class Expression:
             Null values will produce a hash value instead of being propagated as null.
 
         """
-        if seed is None:
-            expr = native.hash(self._expr)
-        else:
-            if not isinstance(seed, Expression):
-                seed = lit(seed)
-            expr = native.hash(self._expr, seed._expr)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("hash", seed=seed)
 
     def minhash(
         self,
@@ -1540,13 +1534,9 @@ class Expression:
             hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
 
         """
-        assert isinstance(num_hashes, int)
-        assert isinstance(ngram_size, int)
-        assert isinstance(seed, int)
-        assert isinstance(hash_function, str)
-        assert hash_function in ["murmurhash3", "xxhash", "sha1"], f"Hash function {hash_function} not found"
-
-        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
+        return self._eval_expressions(
+            "minhash", num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
+        )
 
     def encode(self, codec: EncodingCodec) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
@@ -2203,7 +2193,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_date(self._expr))
+        return self._eval_expressions("date")
 
     def day(self) -> Expression:
         """Retrieves the day for a datetime column.
@@ -2239,7 +2229,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_day(self._expr))
+        return self._eval_expressions("day")
 
     def hour(self) -> Expression:
         """Retrieves the day for a datetime column.
@@ -2275,7 +2265,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_hour(self._expr))
+        return self._eval_expressions("hour")
 
     def minute(self) -> Expression:
         """Retrieves the minute for a datetime column.
@@ -2311,7 +2301,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_minute(self._expr))
+        return self._eval_expressions("minute")
 
     def second(self) -> Expression:
         """Retrieves the second for a datetime column.
@@ -2347,7 +2337,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_second(self._expr))
+        return self._eval_expressions("second")
 
     def millisecond(self) -> Expression:
         """Retrieves the millisecond for a datetime column.
@@ -2380,7 +2370,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        return Expression._from_pyexpr(native.dt_millisecond(self._expr))
+        return self._eval_expressions("millisecond")
 
     def microsecond(self) -> Expression:
         """Retrieves the microsecond for a datetime column.
@@ -2413,7 +2403,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_microsecond(self._expr))
+        return self._eval_expressions("microsecond")
 
     def nanosecond(self) -> Expression:
         """Retrieves the nanosecond for a datetime column.
@@ -2447,7 +2437,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_nanosecond(self._expr))
+        return self._eval_expressions("nanosecond")
 
     def unix_date(self) -> Expression:
         """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
@@ -2484,7 +2474,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_unix_date(self._expr))
+        return self._eval_expressions("unix_date")
 
     def time(self) -> Expression:
         """Retrieves the time for a datetime column.
@@ -2520,7 +2510,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_time(self._expr))
+        return self._eval_expressions("time")
 
     def month(self) -> Expression:
         """Retrieves the month for a datetime column.
@@ -2555,7 +2545,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_month(self._expr))
+        return self._eval_expressions("month")
 
     def quarter(self) -> Expression:
         """Retrieves the quarter for a datetime column.
@@ -2590,7 +2580,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_quarter(self._expr))
+        return self._eval_expressions("quarter")
 
     def year(self) -> Expression:
         """Retrieves the year for a datetime column.
@@ -2625,7 +2615,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_year(self._expr))
+        return self._eval_expressions("year")
 
     def day_of_week(self) -> Expression:
         """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
@@ -2660,7 +2650,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
+        return self._eval_expressions("day_of_week")
 
     def day_of_month(self) -> Expression:
         """Retrieves the day of the month for a datetime column.
@@ -2698,7 +2688,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.dt_day_of_month(self._expr))
+        return self._eval_expressions("day_of_month")
 
     def day_of_year(self) -> Expression:
         """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
@@ -2736,7 +2726,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.dt_day_of_year(self._expr))
+        return self._eval_expressions("day_of_year")
 
     def week_of_year(self) -> Expression:
         """Retrieves the week of the year for a datetime column.
@@ -2774,7 +2764,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        return Expression._from_pyexpr(native.dt_week_of_year(self._expr))
+        return self._eval_expressions("week_of_year")
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
@@ -2813,8 +2803,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        relative_to = Expression._to_expression(relative_to)
-        return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
+        return self._eval_expressions("truncate", relative_to, interval=interval)
 
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
@@ -2851,12 +2840,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
-        if time_unit is None:
-            time_unit = TimeUnit.s()
-        if isinstance(time_unit, str):
-            time_unit = TimeUnit.from_str(time_unit)
-
-        return Expression._from_pyexpr(native.dt_to_unix_epoch(self._expr, time_unit._timeunit))
+        return self._eval_expressions("to_unix_epoch", time_unit=time_unit)
 
     def strftime(self, format: str | None = None) -> Expression:
         """Converts a datetime/date column to a string column.
@@ -2904,7 +2888,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        return Expression._from_pyexpr(native.dt_strftime(self._expr, format))
+        return self._eval_expressions("strftime", format=format)
 
     def total_seconds(self) -> Expression:
         """Calculates the total number of seconds for a duration column.
@@ -2948,8 +2932,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_seconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_seconds")
 
     def total_milliseconds(self) -> Expression:
         """Calculates the total number of milliseconds for a duration column.
@@ -2993,8 +2976,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_milliseconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_milliseconds")
 
     def total_microseconds(self) -> Expression:
         """Calculates the total number of microseconds for a duration column.
@@ -3038,8 +3020,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_microseconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_microseconds")
 
     def total_nanoseconds(self) -> Expression:
         """Calculates the total number of nanoseconds for a duration column.
@@ -3083,8 +3064,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_nanoseconds")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_nanoseconds")
 
     def total_minutes(self) -> Expression:
         """Calculates the total number of minutes for a duration column.
@@ -3128,8 +3108,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_minutes")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_minutes")
 
     def total_hours(self) -> Expression:
         """Calculates the total number of hours for a duration column.
@@ -3173,8 +3152,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_hours")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_hours")
 
     def total_days(self) -> Expression:
         """Calculates the total number of days for a duration column.
@@ -3218,8 +3196,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
-        f = native.get_function_from_registry("total_days")
-        return Expression._from_pyexpr(f(self._expr))
+        return self._eval_expressions("total_days")
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
@@ -5143,7 +5120,7 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
             (Showing first 2 of 2 rows)
 
         """
-        return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
+        return self._eval_expressions("cosine_distance", other)
 
 
 class ExpressionBinaryNamespace(ExpressionNamespace):

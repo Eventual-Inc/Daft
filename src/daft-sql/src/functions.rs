@@ -18,9 +18,9 @@ use sqlparser::ast::{
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
-        coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleMap, SQLModulePartitioning, SQLModulePython, SQLModuleSketch,
-        SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8, SQLModuleWindow,
+        coalesce::SQLCoalesce, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap,
+        SQLModulePartitioning, SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleUtf8,
+        SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -30,13 +30,11 @@ use crate::{
 pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
-    functions.register::<SQLModuleHashing>();
     functions.register::<SQLModuleMap>();
     functions.register::<SQLModulePartitioning>();
     functions.register::<SQLModulePython>();
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
-    functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();

@@ -1,5 +1,5 @@
 use daft_core::datatypes::TimeUnit;
-use daft_functions::temporal::{
+use daft_functions_temporal::{
     Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Minute, Month, Quarter, Second, UnixDate,
     WeekOfYear, Year,
 };

@@ -176,6 +176,7 @@ members = [
   "src/daft-functions-json",
   "src/daft-functions-list",
   "src/daft-functions-utf8",
+  "src/daft-functions-temporal",
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
@@ -199,8 +200,7 @@ members = [
   "src/hyperloglog",
   "src/parquet2",
   "src/generated/spark-connect",
-  "src/daft-cli",
-  "src/daft-functions-temporal"
+  "src/daft-cli"
 ]
 
 [workspace.dependencies]
@@ -230,6 +230,7 @@ daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}
 daft-functions-json = {path = "src/daft-functions-json"}
 daft-functions-list = {path = "src/daft-functions-list"}
+daft-functions-temporal = {path = "src/daft-functions-temporal"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}

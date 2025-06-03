@@ -227,6 +227,28 @@ pub fn get_compute_pool_num_threads() -> usize {
     get_or_init_compute_runtime_num_worker_threads()
 }
 
+// Helper function to combine a stream with a future that returns a result
+pub fn combine_stream<T, E>(
+    stream: impl futures::Stream<Item = Result<T, E>> + Unpin,
+    future: impl Future<Output = Result<(), E>>,
+) -> impl futures::Stream<Item = Result<T, E>> {
+    use futures::{stream::unfold, StreamExt};
+
+    let initial_state = (Some(future), stream);
+
+    unfold(initial_state, |(mut future, mut stream)| async move {
+        future.as_ref()?;
+
+        match stream.next().await {
+            Some(item) => Some((item, (future, stream))),
+            None => match future.take().unwrap().await {
+                Err(error) => Some((Err(error), (None, stream))),
+                Ok(()) => None,
+            },
+        }
+    })
+}
+
 mod tests {
 
     #[tokio::test]
