@@ -6,7 +6,7 @@ use std::{
 
 use common_arrow_ffi as ffi;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
-use daft_schema::python::{PyDataType, PyTimeUnit};
+use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -343,90 +343,6 @@ impl PySeries {
 
     pub fn data_type(&self) -> PyResult<PyDataType> {
         Ok(self.series.data_type().clone().into())
-    }
-
-    pub fn dt_date(&self) -> PyResult<Self> {
-        Ok(self.series.dt_date()?.into())
-    }
-
-    pub fn dt_day(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day()?.into())
-    }
-
-    pub fn dt_hour(&self) -> PyResult<Self> {
-        Ok(self.series.dt_hour()?.into())
-    }
-
-    pub fn dt_minute(&self) -> PyResult<Self> {
-        Ok(self.series.dt_minute()?.into())
-    }
-
-    pub fn dt_second(&self) -> PyResult<Self> {
-        Ok(self.series.dt_second()?.into())
-    }
-
-    pub fn dt_millisecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_millisecond()?.into())
-    }
-
-    pub fn dt_microsecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_microsecond()?.into())
-    }
-
-    pub fn dt_nanosecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_nanosecond()?.into())
-    }
-
-    pub fn dt_unix_date(&self) -> PyResult<Self> {
-        Ok(self.series.dt_unix_date()?.into())
-    }
-
-    pub fn dt_time(&self) -> PyResult<Self> {
-        Ok(self.series.dt_time()?.into())
-    }
-
-    pub fn dt_month(&self) -> PyResult<Self> {
-        Ok(self.series.dt_month()?.into())
-    }
-
-    pub fn dt_quarter(&self) -> PyResult<Self> {
-        Ok(self.series.dt_quarter()?.into())
-    }
-
-    pub fn dt_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_year()?.into())
-    }
-
-    pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_week()?.into())
-    }
-
-    pub fn dt_day_of_month(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_month()?.into())
-    }
-
-    pub fn dt_day_of_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_year()?.into())
-    }
-
-    pub fn dt_week_of_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_week_of_year()?.into())
-    }
-
-    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .dt_truncate(interval, &relative_to.series)?
-            .into())
-    }
-
-    pub fn dt_to_unix_epoch(&self, unit: PyTimeUnit) -> PyResult<Self> {
-        Ok(self.series.dt_to_unix_epoch(unit.timeunit)?.into())
-    }
-
-    #[pyo3(signature = (format=None))]
-    pub fn dt_strftime(&self, format: Option<&str>) -> PyResult<Self> {
-        Ok(self.series.dt_strftime(format)?.into())
     }
 
     pub fn partitioning_days(&self) -> PyResult<Self> {

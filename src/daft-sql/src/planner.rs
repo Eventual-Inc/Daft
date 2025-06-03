@@ -10,6 +10,7 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
     has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
     ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
@@ -1304,45 +1305,49 @@ impl SQLPlanner<'_> {
                 syntax: _,
                 expr,
             } => {
-                use daft_functions::temporal::{self as dt};
+                use daft_functions_temporal as dt;
                 let expr = self.plan_expr(expr)?;
 
+                fn scalar<UDF: ScalarUDF + 'static>(udf: UDF, input: ExprRef) -> ExprRef {
+                    ScalarFunction::new(udf, vec![input]).into()
+                }
+
                 match field {
-                    DateTimeField::Year => Ok(dt::dt_year(expr)),
-                    DateTimeField::Quarter => Ok(dt::dt_quarter(expr)),
-                    DateTimeField::Month => Ok(dt::dt_month(expr)),
-                    DateTimeField::Day => Ok(dt::dt_day(expr)),
+                    DateTimeField::Year => Ok(scalar(dt::Year, expr)),
+                    DateTimeField::Quarter => Ok(scalar(dt::Quarter, expr)),
+                    DateTimeField::Month => Ok(scalar(dt::Month, expr)),
+                    DateTimeField::Day => Ok(scalar(dt::Day, expr)),
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_week" =>
                     {
-                        Ok(dt::dt_day_of_week(expr))
+                        Ok(scalar(dt::DayOfWeek, expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_month" =>
                     {
-                        Ok(dt::dt_day_of_month(expr))
+                        Ok(scalar(dt::DayOfMonth, expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_year" =>
                     {
-                        Ok(dt::dt_day_of_year(expr))
+                        Ok(scalar(dt::DayOfYear, expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "week_of_year" =>
                     {
-                        Ok(dt::dt_week_of_year(expr))
+                        Ok(scalar(dt::WeekOfYear, expr))
                     }
-                    DateTimeField::Date => Ok(dt::dt_date(expr)),
-                    DateTimeField::Hour => Ok(dt::dt_hour(expr)),
-                    DateTimeField::Minute => Ok(dt::dt_minute(expr)),
-                    DateTimeField::Second => Ok(dt::dt_second(expr)),
-                    DateTimeField::Millisecond => Ok(dt::dt_millisecond(expr)),
-                    DateTimeField::Microsecond => Ok(dt::dt_microsecond(expr)),
-                    DateTimeField::Nanosecond => Ok(dt::dt_nanosecond(expr)),
+                    DateTimeField::Date => Ok(scalar(dt::Date, expr)),
+                    DateTimeField::Hour => Ok(scalar(dt::Hour, expr)),
+                    DateTimeField::Minute => Ok(scalar(dt::Minute, expr)),
+                    DateTimeField::Second => Ok(scalar(dt::Second, expr)),
+                    DateTimeField::Millisecond => Ok(scalar(dt::Millisecond, expr)),
+                    DateTimeField::Microsecond => Ok(scalar(dt::Microsecond, expr)),
+                    DateTimeField::Nanosecond => Ok(scalar(dt::Nanosecond, expr)),
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "unix_date" =>
                     {
-                        Ok(dt::dt_unix_date(expr))
+                        Ok(scalar(dt::UnixDate, expr))
                     }
                     other => unsupported_sql_err!("EXTRACT ({other})"),
                 }
