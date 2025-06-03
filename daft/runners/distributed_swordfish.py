@@ -24,13 +24,13 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionSet,
 )
+from daft.runners.ray_runner import PartitionMetadataAccessor, RayMaterializedResult
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator
 
 try:
     import ray
-    import ray.util.scheduling_strategies
 except ImportError:
     raise
 
@@ -159,7 +159,19 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
     return handles
 
 
-@ray.remote(num_cpus=0)
+def get_head_node_id() -> str:
+    nodes = ray.util.state.list_nodes(filters=[("is_head_node", "=", True)])
+    assert len(nodes) == 1, "There should be exactly one head node"
+    return nodes[0].node_id
+
+
+@ray.remote(
+    num_cpus=0,
+    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+        node_id=get_head_node_id(),
+        soft=False,
+    ),
+)
 class FlotillaScheduler:
     def __init__(self) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
@@ -178,9 +190,9 @@ class FlotillaScheduler:
         self.curr_plans[plan.id()] = plan
         self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self, plan_id: str) -> tuple[ray.ObjectRef, int, int] | None:
+    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
         if plan_id not in self.curr_result_gens:
-            return None
+            raise ValueError(f"Plan {plan_id} not found in FlotillaScheduler")
 
         next_result = await self.curr_result_gens[plan_id].__anext__()
         if next_result is None:
@@ -189,4 +201,10 @@ class FlotillaScheduler:
             return None
 
         obj, num_rows, size_bytes = next_result
-        return (obj, num_rows, size_bytes)
+        metadata_accessor = PartitionMetadataAccessor.from_metadata_list([PartitionMetadata(num_rows, size_bytes)])
+        materialized_result = RayMaterializedResult(
+            partition=obj,
+            metadatas=metadata_accessor,
+            metadata_idx=0,
+        )
+        return materialized_result

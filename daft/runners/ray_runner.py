@@ -1387,18 +1387,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                     )
                 )
                 while True:
-                    next_partition = ray.get(self.flotilla_scheduler.get_next_partition.remote(plan_id))  # type: ignore
-                    if next_partition is None:
+                    materialized_result = ray.get(self.flotilla_scheduler.get_next_partition.remote(plan_id))  # type: ignore
+                    if materialized_result is None:
                         break
-                    obj, num_rows, size_bytes = next_partition
-                    metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
-                        [PartitionMetadata(num_rows, size_bytes)]
-                    )
-                    materialized_result = RayMaterializedResult(
-                        partition=obj,
-                        metadatas=metadata_accessor,
-                        metadata_idx=0,
-                    )
                     yield materialized_result
         else:
             yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
