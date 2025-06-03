@@ -683,26 +683,6 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: '17'
-    # - name: Download built wheels
-    #   uses: actions/download-artifact@v4
-    #   with:
-    #     pattern: wheels-*
-    #     merge-multiple: true
-    #     path: dist
-    # - name: Setup Virtual Env
-    #   run: |
-    #     python -m venv venv
-    #     echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-    #     pip install uv
-    # - name: Install Daft and dev dependencies
-    #   uses: nick-fields/retry@v3
-    #   with:
-    #     timeout_minutes: 10
-    #     max_attempts: 3
-    #     retry_wait_seconds: 10
-    #     command: |
-    #       uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-    #       rm -rf daft
     - uses: actions/checkout@v4
       with:
         repository: unitycatalog/unitycatalog
@@ -711,13 +691,33 @@ jobs:
         path: unitycatalog
     - name: Start UC Server
       working-directory: ./unitycatalog
-      run: bin/start-uc-server
-    # - name: Run unity integration tests
-    #   run: |
-    #     pytest tests/integration/unity -m 'integration or not integration' --durations=50
-    #   env:
-    #     DAFT_RUNNER: ${{ matrix.daft-runner }}
-    #     DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+      run: bin/start-uc-server &
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
+    - name: Run unity integration tests
+      run: |
+        pytest tests/integration/unity -m 'integration or not integration' --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
