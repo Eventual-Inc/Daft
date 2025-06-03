@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing as mp
-import traceback
+import os
+import secrets
+import subprocess
+import sys
+import tempfile
 from multiprocessing import resource_tracker, shared_memory
+from multiprocessing.connection import Listener
 from typing import TYPE_CHECKING
+
+import cloudpickle
 
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from multiprocessing.connection import Connection
-
     from daft.daft import PyExpr, PyMicroPartition
 
 logger = logging.getLogger(__name__)
@@ -42,45 +46,39 @@ class SharedMemoryTransport:
         return data
 
 
-def actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Connection) -> None:
-    transport = SharedMemoryTransport()
-    try:
-        initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
-
-        while True:
-            name, size = conn.recv()
-            if (name, size) == _SENTINEL:
-                break
-
-            input_bytes = transport.read_and_release(name, size)
-            input = MicroPartition.from_ipc_stream(input_bytes)
-            evaluated = input.eval_expression_list(initialized_projection)
-            output_bytes = evaluated.to_ipc_stream()
-
-            out_name, out_size = transport.write_and_close(output_bytes)
-            conn.send(("success", out_name, out_size))
-    except Exception as e:
-        try:
-            conn.send(("error", type(e).__name__, traceback.format_exc()))
-        except Exception:
-            # If the connection is broken, it's because the parent process has died.
-            # We can just exit here.
-            pass
-    finally:
-        conn.close()
-
-
-class ActorHandle:
+class UdfHandle:
     def __init__(self, projection: list[PyExpr]) -> None:
-        self.handle_conn, actor_conn = mp.Pipe(duplex=True)
-        expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
-        self.actor_process = mp.Process(target=actor_event_loop, args=(expr_projection, actor_conn), daemon=True)
-        self.actor_process.start()
+        # Construct UNIX socket path for basic communication
+        with tempfile.NamedTemporaryFile(delete=True) as tmp:
+            self.socket_path = tmp.name
+        # Generate a random secret for establishing socket communication
+        secret = secrets.token_bytes(32)
+        # Initialize the main process listener
+        self.listener = Listener(self.socket_path, authkey=secret)
+
+        # Start the worker process
+        self.process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "daft.execution.udf_worker",
+                self.socket_path,
+                secret.hex(),
+            ]
+        )
+
+        # Initialize communication
+        self.handle_conn = self.listener.accept()
         self.transport = SharedMemoryTransport()
 
+        # Serialize and send the expression projection
+        expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
+        expr_projection_bytes = cloudpickle.dumps(expr_projection)
+        self.handle_conn.send(("__ENTER__", expr_projection_bytes))
+
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
-        if not self.actor_process.is_alive():
-            raise RuntimeError("Actor process is not alive")
+        if self.process.poll() is not None:
+            raise RuntimeError("UDF process has terminated")
 
         serialized = input.write_to_ipc_stream()
         shm_name, shm_size = self.transport.write_and_close(serialized)
@@ -103,12 +101,16 @@ class ActorHandle:
         try:
             self.handle_conn.send(_SENTINEL)
         except (BrokenPipeError, EOFError):
-            # If the connection is broken, just exit and join the actor process.
+            # If the connection is broken, just exit and join the process.
             pass
         self.handle_conn.close()
+        self.listener.close()
 
-        self.actor_process.join(timeout)
-        if self.actor_process.is_alive():
-            logger.warning("Actor did not shut down in time; terminating...")
-            self.actor_process.terminate()
-            self.actor_process.join()
+        self.process.wait(timeout)
+        if self.process.poll() is None:
+            logger.warning("UDF did not shut down in time; terminating...")
+            self.process.terminate()
+            self.process.wait()
+
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)

@@ -175,6 +175,29 @@ pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
     projection_concurrency.expect("get_concurrency expects one UDF with concurrency set")
 }
 
+pub fn try_get_concurrency(exprs: &[ExprRef]) -> Option<usize> {
+    let mut projection_concurrency = None;
+    for expr in exprs {
+        let mut found_actor_pool_udf = false;
+        expr.apply(|e| match e.as_ref() {
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
+                ..
+            } => {
+                found_actor_pool_udf = true;
+                projection_concurrency = *concurrency;
+                Ok(common_treenode::TreeNodeRecursion::Stop)
+            }
+            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+        })
+        .unwrap();
+        if found_actor_pool_udf {
+            break;
+        }
+    }
+    projection_concurrency
+}
+
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 /// Errors if no UDF is found
 pub fn try_get_batch_size_from_udf(exprs: &[ExprRef]) -> DaftResult<Option<usize>> {

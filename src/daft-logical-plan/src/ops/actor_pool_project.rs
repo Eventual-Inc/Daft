@@ -4,7 +4,7 @@ use common_error::DaftError;
 use common_resource_request::ResourceRequest;
 use daft_dsl::{
     count_actor_pool_udfs, exprs_to_schema,
-    functions::python::{get_concurrency, get_resource_request, get_udf_names},
+    functions::python::{get_resource_request, get_udf_names, try_get_concurrency},
     ExprRef,
 };
 use daft_schema::schema::SchemaRef;
@@ -60,8 +60,8 @@ impl ActorPoolProject {
         get_resource_request(self.projection.as_slice())
     }
 
-    pub fn concurrency(&self) -> usize {
-        get_concurrency(self.projection.as_slice())
+    pub fn concurrency(&self) -> Option<usize> {
+        try_get_concurrency(self.projection.as_slice())
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -75,7 +75,7 @@ impl ActorPoolProject {
             "UDFs = [{}]",
             self.projection.iter().flat_map(get_udf_names).join(", ")
         ));
-        res.push(format!("Concurrency = {}", self.concurrency()));
+        res.push(format!("Concurrency = {:?}", self.concurrency()));
         if let Some(resource_request) = self.resource_request() {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
