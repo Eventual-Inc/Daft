@@ -10,7 +10,6 @@ serde = {workspace = true}
 snafu = {workspace = true}
 tiktoken-rs = {workspace = true}
 typetag = {workspace = true}
-itertools.workspace = true
 
 [lints]
 workspace = true

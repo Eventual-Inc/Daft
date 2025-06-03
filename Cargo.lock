@@ -2305,7 +2305,6 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
- "base64 0.22.1",
  "bytes",
  "common-error",
  "common-runtime",
@@ -2318,7 +2317,6 @@ dependencies = [
  "pyo3",
  "serde",
  "snafu",
- "tiktoken-rs",
  "tokio",
  "typetag",
  "uuid 1.16.0",
@@ -2405,7 +2403,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
- "itertools 0.11.0",
  "serde",
  "snafu",
  "tiktoken-rs",
