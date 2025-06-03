@@ -24,10 +24,11 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionSet,
 )
-from daft.runners.ray_runner import PartitionMetadataAccessor, RayMaterializedResult
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator
+
+    from daft.runners.ray_runner import RayMaterializedResult
 
 try:
     import ray
@@ -159,18 +160,8 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
     return handles
 
 
-def get_head_node_id() -> str:
-    nodes = ray.util.state.list_nodes(filters=[("is_head_node", "=", True)])
-    assert len(nodes) == 1, "There should be exactly one head node"
-    return nodes[0].node_id
-
-
 @ray.remote(
     num_cpus=0,
-    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-        node_id=get_head_node_id(),
-        soft=False,
-    ),
 )
 class FlotillaPlanRunner:
     def __init__(self) -> None:
@@ -191,6 +182,8 @@ class FlotillaPlanRunner:
         self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets)
 
     async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
+        from daft.runners.ray_runner import PartitionMetadataAccessor, RayMaterializedResult
+
         if plan_id not in self.curr_result_gens:
             raise ValueError(f"Plan {plan_id} not found in FlotillaPlanRunner")
 

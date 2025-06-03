@@ -1020,6 +1020,17 @@ SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
 
 
+def get_head_node_id() -> str | None:
+    for node in ray.nodes():
+        if (
+            "Resources" in node
+            and "node:__internal_head__" in node["Resources"]
+            and node["Resources"]["node:__internal_head__"] == 1
+        ):
+            return node["NodeID"]
+    return None
+
+
 @ray.remote(num_cpus=1)
 class SchedulerActor(Scheduler):
     def __init__(self, *n: Any, **kw: Any) -> None:
@@ -1378,7 +1389,16 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
                 if self.flotilla_plan_runner is None:
-                    self.flotilla_plan_runner = FlotillaPlanRunner.remote()  # type: ignore
+                    head_node_id = get_head_node_id()
+                    if head_node_id is None:
+                        self.flotilla_plan_runner = FlotillaPlanRunner.remote()  # type: ignore
+                    else:
+                        self.flotilla_plan_runner = FlotillaPlanRunner.options(  # type: ignore
+                            scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                                node_id=head_node_id,
+                                soft=False,
+                            ),
+                        ).remote()
 
                 plan_id = distributed_plan.id()
                 ray.get(
