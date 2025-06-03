@@ -39,7 +39,6 @@ function SuspendedQueryPage() {
         return (<></>);
     }
 
-    const diagram = queryInfo[id].mermaid_plan.replace("```mermaid", "").replace("```", "");
 
     return (
         <div className="space-y-4">
@@ -73,7 +72,7 @@ function SuspendedQueryPage() {
                     <CardTitle>Query Plan</CardTitle>
                 </CardHeader>
                 <CardContent className="justify-center flex">
-                    <Mermaid chart={diagram} />
+                    <div>Coming Soon</div>
                 </CardContent>
             </Card>
         </div>
