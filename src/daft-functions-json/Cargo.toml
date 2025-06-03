@@ -8,7 +8,6 @@ jaq-std = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 typetag = {workspace = true}
-itertools.workspace = true
 
 [features]
 python = [

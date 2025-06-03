@@ -2338,7 +2338,6 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "itertools 0.11.0",
  "jaq-core",
  "jaq-json",
  "jaq-std",
