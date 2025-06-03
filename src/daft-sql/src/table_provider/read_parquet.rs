@@ -92,7 +92,7 @@ impl SQLTableFunction for ReadParquetFunction {
 
         let runtime = common_runtime::get_io_runtime(true);
 
-        let result = runtime.block_on(builder.finish())??;
+        let result = runtime.block_within_async_context(builder.finish())??;
         Ok(result)
     }
 }
