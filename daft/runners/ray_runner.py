@@ -20,15 +20,15 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan, RayPartitionRef
+from daft.daft import DistributedPhysicalPlan
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
+from daft.runners.flotilla import FlotillaPlanRunner
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
-from daft.utils import SyncFromAsyncIterator
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Iterator
@@ -1020,6 +1020,17 @@ SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
 
 
+def get_head_node_id() -> str | None:
+    for node in ray.nodes():
+        if (
+            "Resources" in node
+            and "node:__internal_head__" in node["Resources"]
+            and node["Resources"]["node:__internal_head__"] == 1
+        ):
+            return node["NodeID"]
+    return None
+
+
 @ray.remote(num_cpus=1)
 class SchedulerActor(Scheduler):
     def __init__(self, *n: Any, **kw: Any) -> None:
@@ -1252,6 +1263,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 use_ray_tqdm=False,
             )
 
+        self.flotilla_plan_runner: FlotillaPlanRunner | None = None
+
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return PartitionSetCache()
 
@@ -1367,38 +1380,36 @@ class RayRunner(Runner[ray.ObjectRef]):
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
         elif daft_execution_config.flotilla:
             try:
-                distributed_planner = DistributedPhysicalPlan.from_logical_plan_builder(
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
                     builder._builder, daft_execution_config
                 )
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
-                self._execute_plan(builder, daft_execution_config, results_buffer_size)
+                yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
-                # If plan building succeeds, execute it
-                from functools import partial
+                if self.flotilla_plan_runner is None:
+                    head_node_id = get_head_node_id()
+                    if head_node_id is None:
+                        self.flotilla_plan_runner = FlotillaPlanRunner.remote()  # type: ignore
+                    else:
+                        self.flotilla_plan_runner = FlotillaPlanRunner.options(  # type: ignore
+                            scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                                node_id=head_node_id,
+                                soft=False,
+                            ),
+                        ).remote()
 
-                psets = {
-                    k: [
-                        RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0)
-                        for v in v.values()
-                    ]
-                    for k, v in self._part_set_cache.get_all_partition_sets().items()
-                }
-                # SyncFromAsyncIterator is used to convert an async iterator to a sync iterator.
-                # This is because the distributed planner returns an async iterator.
-                # Note that the async iterator is created lazily upon first iteration, this is because the `run_plan`
-                # method needs to capture the current python event loop.
-                sync_iter = SyncFromAsyncIterator(partial(distributed_planner.run_plan, psets))
-                for obj, size_bytes, num_rows in sync_iter:
-                    metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
-                        [PartitionMetadata(num_rows, size_bytes)]
+                plan_id = distributed_plan.id()
+                ray.get(
+                    self.flotilla_plan_runner.run_plan.remote(  # type: ignore
+                        distributed_plan, self._part_set_cache.get_all_partition_sets()
                     )
-                    materialized_result = RayMaterializedResult(
-                        partition=obj,
-                        metadatas=metadata_accessor,
-                        metadata_idx=0,
-                    )
+                )
+                while True:
+                    materialized_result = ray.get(self.flotilla_plan_runner.get_next_partition.remote(plan_id))  # type: ignore
+                    if materialized_result is None:
+                        break
                     yield materialized_result
         else:
             yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)

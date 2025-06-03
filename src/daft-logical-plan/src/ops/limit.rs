@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Limit {
     pub plan_id: Option<usize>,
     // Upstream node.
