@@ -1375,18 +1375,19 @@ class RayRunner(Runner[ray.ObjectRef]):
             except Exception as e:
                 logger.error("Failed to build distributed plan, falling back to regular execution. Error: %s", str(e))
                 # Fallback to regular execution
-                self._execute_plan(builder, daft_execution_config, results_buffer_size)
+                yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
                 if self.flotilla_scheduler is None:
                     self.flotilla_scheduler = FlotillaScheduler.remote()  # type: ignore
 
+                plan_id = distributed_plan.id()
                 ray.get(
                     self.flotilla_scheduler.run_plan.remote(  # type: ignore
                         distributed_plan, self._part_set_cache.get_all_partition_sets()
                     )
                 )
                 while True:
-                    next_partition = ray.get(self.flotilla_scheduler.get_next_partition.remote())  # type: ignore
+                    next_partition = ray.get(self.flotilla_scheduler.get_next_partition.remote(plan_id))  # type: ignore
                     if next_partition is None:
                         break
                     obj, num_rows, size_bytes = next_partition
