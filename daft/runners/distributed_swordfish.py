@@ -55,20 +55,19 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         config: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
-    ) -> AsyncGenerator[MicroPartition, None]:
+    ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
         """Run a plan on swordfish and yield partitions."""
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
+        metas = []
         async for partition in self.native_executor.run_async(plan, psets_mp, config, None):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
+            metas.append(PartitionMetadata.from_table(mp))
             yield mp
-
-    def get_metadatas(self, *partitions: MicroPartition) -> list[PartitionMetadata]:
-        """Get the metadata for a list of partitions."""
-        return [PartitionMetadata.from_table(partition) for partition in partitions]
+        yield metas
 
 
 @dataclass
@@ -87,8 +86,10 @@ class RaySwordfishTaskHandle:
         async for result in self.result_handle:
             results.append(result)
 
-        metadatas = self.actor_handle.get_metadatas.options(num_returns=len(results)).remote(*results)
-        metadatas = await metadatas
+        metadatas_ref = results.pop()
+        metadatas = await metadatas_ref
+        assert len(results) == len(metadatas)
+
         res = [
             RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
             for result, metadata in zip(results, metadatas)
