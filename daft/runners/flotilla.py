@@ -172,7 +172,7 @@ def get_head_node_id() -> str:
         soft=False,
     ),
 )
-class FlotillaScheduler:
+class FlotillaPlanRunner:
     def __init__(self) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[tuple[ray.ObjectRef, int, int]]] = {}
@@ -192,7 +192,7 @@ class FlotillaScheduler:
 
     async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
         if plan_id not in self.curr_result_gens:
-            raise ValueError(f"Plan {plan_id} not found in FlotillaScheduler")
+            raise ValueError(f"Plan {plan_id} not found in FlotillaPlanRunner")
 
         next_result = await self.curr_result_gens[plan_id].__anext__()
         if next_result is None:

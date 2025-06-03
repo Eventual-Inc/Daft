@@ -25,7 +25,7 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
-from daft.runners.distributed_swordfish import FlotillaScheduler
+from daft.runners.flotilla import FlotillaPlanRunner
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -1252,7 +1252,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 use_ray_tqdm=False,
             )
 
-        self.flotilla_scheduler: FlotillaScheduler | None = None
+        self.flotilla_plan_runner: FlotillaPlanRunner | None = None
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return PartitionSetCache()
@@ -1377,17 +1377,17 @@ class RayRunner(Runner[ray.ObjectRef]):
                 # Fallback to regular execution
                 yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
-                if self.flotilla_scheduler is None:
-                    self.flotilla_scheduler = FlotillaScheduler.remote()  # type: ignore
+                if self.flotilla_plan_runner is None:
+                    self.flotilla_plan_runner = FlotillaPlanRunner.remote()  # type: ignore
 
                 plan_id = distributed_plan.id()
                 ray.get(
-                    self.flotilla_scheduler.run_plan.remote(  # type: ignore
+                    self.flotilla_plan_runner.run_plan.remote(  # type: ignore
                         distributed_plan, self._part_set_cache.get_all_partition_sets()
                     )
                 )
                 while True:
-                    materialized_result = ray.get(self.flotilla_scheduler.get_next_partition.remote(plan_id))  # type: ignore
+                    materialized_result = ray.get(self.flotilla_plan_runner.get_next_partition.remote(plan_id))  # type: ignore
                     if materialized_result is None:
                         break
                     yield materialized_result

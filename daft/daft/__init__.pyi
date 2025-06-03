@@ -9,7 +9,7 @@ from daft.execution import physical_plan
 from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.io.sink import WriteResultType
-from daft.runners.distributed_swordfish import RaySwordfishActorHandle
+from daft.runners.flotilla import RaySwordfishActorHandle
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
