@@ -14,7 +14,7 @@ pip install daft[unity]
 
 ## Connecting to the Unity Catalog
 
-Daft includes an abstraction for the Unity Catalog. For more information, see also [Unity Catalog Documentation](https://www.getdaft.io/projects/docs/en/stable/integrations/unity_catalog/).
+Daft includes an abstraction for the Unity Catalog. For more information, see also [Unity Catalog Documentation](https://docs.unitycatalog.io/integrations/unity-catalog-daft/).
 
 === "🐍 Python"
 
@@ -37,7 +37,7 @@ Daft includes an abstraction for the Unity Catalog. For more information, see al
     print(unity.list_tables("my_catalog_name.my_schema_name"))
     ```
 
-## Loading a Daft Dataframe from a Delta Lake table in Unity Catalog
+## Loading a Dataframe from a Delta Lake table in Unity Catalog
 
 === "🐍 Python"
 

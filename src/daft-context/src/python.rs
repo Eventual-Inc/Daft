@@ -48,10 +48,6 @@ impl PyDaftContext {
                 let pyobj = native.pyobj.as_ref();
                 Ok(pyobj.clone_ref(py))
             }
-            Runner::Py(py_runner) => {
-                let pyobj = py_runner.pyobj.as_ref();
-                Ok(pyobj.clone_ref(py))
-            }
         }
     }
     #[getter(_daft_execution_config)]
@@ -108,10 +104,10 @@ impl From<DaftContext> for PyDaftContext {
 }
 
 #[pyfunction]
-pub fn get_runner_config_from_env() -> PyRunnerConfig {
-    PyRunnerConfig {
-        _inner: super::get_runner_config_from_env(),
-    }
+pub fn get_runner_config_from_env() -> PyResult<PyRunnerConfig> {
+    Ok(PyRunnerConfig {
+        _inner: super::get_runner_config_from_env()?,
+    })
 }
 
 #[pyfunction]
@@ -150,14 +146,5 @@ pub fn set_runner_ray(
 #[pyfunction(signature = (num_threads = None))]
 pub fn set_runner_native(num_threads: Option<usize>) -> PyResult<PyDaftContext> {
     let ctx = super::set_runner_native(num_threads)?;
-    Ok(ctx.into())
-}
-
-#[pyfunction(signature = (use_thread_pool = None, num_threads = None))]
-pub fn set_runner_py(
-    use_thread_pool: Option<bool>,
-    num_threads: Option<usize>,
-) -> PyResult<PyDaftContext> {
-    let ctx = super::set_runner_py(use_thread_pool, num_threads)?;
     Ok(ctx.into())
 }

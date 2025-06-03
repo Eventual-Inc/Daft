@@ -46,7 +46,7 @@ impl LimitNode {
 
     async fn execution_loop(
         input: RunningPipelineNode,
-        result_tx: Sender<PipelineOutput>,
+        result_tx: Sender<PipelineOutput<SwordfishTask>>,
         mut remaining_limit: usize,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         node_id: usize,

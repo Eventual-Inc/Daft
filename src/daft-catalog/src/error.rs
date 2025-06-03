@@ -1,3 +1,4 @@
+use common_error::DaftError;
 use snafu::Snafu;
 
 use crate::Identifier;
@@ -33,6 +34,9 @@ pub enum CatalogError {
 
     #[snafu(display("{message}"))]
     Unsupported { message: String },
+
+    #[snafu(display("{error}"))]
+    DaftError { error: DaftError },
 
     #[cfg(feature = "python")]
     #[snafu(display("Python error: {}", source))]
@@ -87,9 +91,18 @@ impl CatalogError {
     }
 }
 
-impl From<CatalogError> for common_error::DaftError {
+impl From<CatalogError> for DaftError {
     fn from(err: CatalogError) -> Self {
-        common_error::DaftError::CatalogError(err.to_string())
+        match err {
+            CatalogError::DaftError { error } => error,
+            _ => DaftError::CatalogError(err.to_string()),
+        }
+    }
+}
+
+impl From<DaftError> for CatalogError {
+    fn from(value: DaftError) -> Self {
+        CatalogError::DaftError { error: value }
     }
 }
 

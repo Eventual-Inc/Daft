@@ -1539,7 +1539,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-io-config",
  "common-py-serde",
- "log",
  "pyo3",
  "serde",
 ]
@@ -2021,8 +2020,10 @@ dependencies = [
  "daft-distributed",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-binary",
  "daft-functions-json",
  "daft-functions-list",
+ "daft-functions-serde",
  "daft-functions-temporal",
  "daft-functions-tokenize",
  "daft-functions-utf8",
@@ -2073,8 +2074,12 @@ name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "daft-context",
  "daft-core",
+ "daft-dsl",
  "daft-logical-plan",
+ "daft-micropartition",
+ "indexmap 2.8.0",
  "pyo3",
  "snafu",
  "sqlparser",
@@ -2111,6 +2116,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-io",
  "daft-logical-plan",
@@ -2137,8 +2143,12 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-error",
+ "daft-core",
+ "daft-logical-plan",
+ "daft-micropartition",
  "daft-py-runners",
  "log",
  "pyo3",
@@ -2303,14 +2313,12 @@ dependencies = [
  "daft-dsl",
  "daft-hash",
  "daft-io",
- "flate2",
  "futures",
  "num-traits",
- "paste",
  "pyo3",
  "serde",
- "simdutf8",
  "snafu",
+ "tiktoken-rs",
  "tokio",
  "typetag",
  "uuid 1.16.0",
@@ -2318,8 +2326,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-functions-json"
+name = "daft-functions-binary"
 version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "common-macros",
+ "daft-core",
+ "daft-dsl",
+ "flate2",
+ "serde",
+ "simdutf8",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-json"
+version = "0.0.0"
 dependencies = [
  "common-error",
  "daft-core",
@@ -2343,6 +2366,18 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "indexmap 2.8.0",
+ "serde",
+ "typetag",
+]
+
+[[package]]
+name = "daft-functions-serde"
+version = "0.0.0"
+dependencies = [
+ "arrow2",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
  "serde",
  "typetag",
 ]
@@ -2588,6 +2623,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-binary",
  "daft-functions-list",
  "daft-functions-utf8",
  "daft-schema",
@@ -2890,9 +2926,9 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-list",
+ "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-logical-plan",
- "daft-micropartition",
  "daft-scan",
  "daft-session",
  "itertools 0.11.0",

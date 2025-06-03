@@ -19,7 +19,7 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     modules::{
         SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
-        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleWindow,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -34,7 +34,6 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModulePython>();
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
-    functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {

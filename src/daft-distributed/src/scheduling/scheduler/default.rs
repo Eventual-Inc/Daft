@@ -126,7 +126,7 @@ mod tests {
             create_schedulable_task, create_spread_task, create_worker_affinity_task,
             setup_scheduler, setup_workers,
         },
-        task::tests::{MockTask, MockTaskBuilder},
+        tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
     };
     #[test]

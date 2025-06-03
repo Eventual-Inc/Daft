@@ -2,7 +2,6 @@
     deprecated,
     reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
 )]
-pub mod binary;
 pub mod coalesce;
 pub mod distance;
 pub mod float;
@@ -12,7 +11,6 @@ pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
-pub mod temporal;
 pub mod to_struct;
 pub mod uri;
 

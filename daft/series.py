@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
+from daft.daft import CountMode, ImageFormat, ImageMode, PyExpr, PyRecordBatch, PySeries, series_lit
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -785,8 +785,10 @@ class Series:
         args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
 
         f = native.get_function_from_registry(func_name)
-
-        expr = f(*args, **{name: lit(v)._expr for name, v in kwargs.items() if v is not None}).alias(name)
+        expr = f(
+            *args,
+            **{name: lit(v)._expr if not isinstance(v, PyExpr) else v for name, v in kwargs.items() if v is not None},
+        ).alias(name)
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(0)
@@ -956,9 +958,10 @@ class SeriesStringNamespace(SeriesNamespace):
         whole_words: bool = False,
         case_sensitive: bool = True,
     ) -> Series:
+        pattern_expr = series_lit(patterns._series)
         return self._eval_expressions(
             "count_matches",
-            patterns=patterns,
+            patterns=pattern_expr,
             whole_words=whole_words,
             case_sensitive=case_sensitive,
         )
@@ -966,72 +969,64 @@ class SeriesStringNamespace(SeriesNamespace):
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:
-        return Series._from_pyseries(self._series.dt_date())
+        return self._eval_expressions("date")
 
     def day(self) -> Series:
-        return Series._from_pyseries(self._series.dt_day())
+        return self._eval_expressions("day")
 
     def hour(self) -> Series:
-        return Series._from_pyseries(self._series.dt_hour())
+        return self._eval_expressions("hour")
 
     def minute(self) -> Series:
-        return Series._from_pyseries(self._series.dt_minute())
+        return self._eval_expressions("minute")
 
     def second(self) -> Series:
-        return Series._from_pyseries(self._series.dt_second())
+        return self._eval_expressions("second")
 
     def millisecond(self) -> Series:
-        return Series._from_pyseries(self._series.dt_millisecond())
+        return self._eval_expressions("millisecond")
 
     def microsecond(self) -> Series:
-        return Series._from_pyseries(self._series.dt_microsecond())
+        return self._eval_expressions("microsecond")
 
     def nanosecond(self) -> Series:
-        return Series._from_pyseries(self._series.dt_nanosecond())
+        return self._eval_expressions("nanosecond")
 
     def unix_date(self) -> Series:
-        return Series._from_pyseries(self._series.dt_unix_date())
+        return self._eval_expressions("unix_date")
 
     def time(self) -> Series:
-        return Series._from_pyseries(self._series.dt_time())
+        return self._eval_expressions("time")
 
     def month(self) -> Series:
-        return Series._from_pyseries(self._series.dt_month())
+        return self._eval_expressions("month")
 
     def quarter(self) -> Series:
-        return Series._from_pyseries(self._series.dt_quarter())
+        return self._eval_expressions("quarter")
 
     def year(self) -> Series:
-        return Series._from_pyseries(self._series.dt_year())
+        return self._eval_expressions("year")
 
     def day_of_week(self) -> Series:
-        return Series._from_pyseries(self._series.dt_day_of_week())
+        return self._eval_expressions("day_of_week")
 
     def day_of_month(self) -> Series:
-        return Series._from_pyseries(self._series.dt_day_of_month())
+        return self._eval_expressions("day_of_month")
 
     def day_of_year(self) -> Series:
-        return Series._from_pyseries(self._series.dt_day_of_year())
+        return self._eval_expressions("day_of_year")
 
     def week_of_year(self) -> Series:
-        return Series._from_pyseries(self._series.dt_week_of_year())
+        return self._eval_expressions("week_of_year")
 
     def truncate(self, interval: str, relative_to: Series | None = None) -> Series:
-        if relative_to is not None and not isinstance(relative_to, Series):
-            raise ValueError(f"expected another Series but got {type(relative_to)}")
-        if relative_to is None:
-            relative_to = Series.from_arrow(pa.array([None]))
-        return Series._from_pyseries(self._series.dt_truncate(interval, relative_to._series))
+        return self._eval_expressions("truncate", relative_to, interval=interval)
 
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Series:
-        if time_unit is None:
-            time_unit = TimeUnit.ms()
-        if isinstance(time_unit, str):
-            time_unit = TimeUnit.from_str(time_unit)
-        return Series._from_pyseries(self._series.dt_to_unix_epoch(time_unit._timeunit))
+        return self._eval_expressions("to_unix_epoch", time_unit=time_unit)
 
     def strftime(self, fmt: str | None = None) -> Series:
-        return Series._from_pyseries(self._series.dt_strftime(fmt))
+        return self._eval_expressions("strftime", format=fmt)
 
     def total_seconds(self) -> Series:
         return self._eval_expressions("total_seconds")
@@ -1091,7 +1086,8 @@ class SeriesListNamespace(SeriesNamespace):
         return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
+        desc_expr = series_lit(desc._series) if isinstance(desc, Series) else desc
+        return self._eval_expressions("list_sort", desc=desc_expr, nulls_first=nulls_first)
 
 
 class SeriesMapNamespace(SeriesNamespace):

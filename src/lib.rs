@@ -155,9 +155,12 @@ pub mod pylib {
         functions_registry.register::<daft_functions::float::FloatFunctions>();
         functions_registry.register::<daft_functions::uri::UriFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
+        functions_registry.register::<daft_functions_binary::BinaryFunctions>();
+        functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_list::ListFunctions>();
         functions_registry.register::<daft_functions_utf8::Utf8Functions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
+        functions_registry.register::<daft_functions_serde::SerdeFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
         functions_registry.register::<daft_functions::HashFunctions>();
         functions_registry.register::<daft_functions::StructFunctions>();
@@ -167,6 +170,7 @@ pub mod pylib {
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
+        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
 
         Ok(())
     }

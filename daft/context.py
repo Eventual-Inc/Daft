@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
 from daft.daft import get_context as _get_context
 from daft.daft import set_runner_native as _set_runner_native
-from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
@@ -89,31 +88,6 @@ def set_runner_ray(
         noop_if_initialized=noop_if_initialized,
         max_task_backlog=max_task_backlog,
         force_client_mode=force_client_mode,
-    )
-
-    return DaftContext._from_native(py_ctx)
-
-
-def set_runner_py(use_thread_pool: bool | None = None, num_threads: int | None = None) -> DaftContext:
-    """Configure Daft to execute dataframes in the local Python interpreter.
-
-    Args:
-        use_thread_pool: If True, uses a thread pool for parallel execution.
-            If False, runs single-threaded. If None, uses system default.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for local Python.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=py
-
-    Deprecated:
-        This execution mode is deprecated. Use set_runner_native() instead for
-        improved local performance with native multi-threading.
-    """
-    py_ctx = _set_runner_py(
-        use_thread_pool=use_thread_pool,
-        num_threads=num_threads,
     )
 
     return DaftContext._from_native(py_ctx)
@@ -204,7 +178,6 @@ def set_execution_config(
     high_cardinality_aggregation_threshold: float | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
-    enable_native_executor: bool | None = None,
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
@@ -216,7 +189,7 @@ def set_execution_config(
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
     These configuration values
-    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.select)).
+    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.select)).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -251,7 +224,6 @@ def set_execution_config(
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
-        enable_native_executor: Enables the native executor, Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
@@ -284,7 +256,6 @@ def set_execution_config(
             high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
-            enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
             flight_shuffle_dirs=flight_shuffle_dirs,

@@ -109,7 +109,7 @@ A few methods do have some notable differences compared to PySpark.
 
 ### explain
 
-The `df.explain()` method will output non-Spark compatible `explain` and instead will be the same as calling `explain` on a Daft dataframe.
+The `df.explain()` method will output non-Spark compatible `explain` and instead will be the same as calling `explain` on a DataFrame.
 
 ### show
 

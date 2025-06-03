@@ -23,12 +23,12 @@ pip install -U "daft[hudi]"
 
 ## Reading a Table
 
-To read from an Apache Hudi table, use the [`daft.read_hudi()`][daft.read_hudi] function. The following is an example snippet of loading an example table:
+To read from an Apache Hudi table, use the [`daft.read_hudi()`][daft.read_hudi] function. The following is an example snippet of loading an example table into Daft:
 
 === "🐍 Python"
 
     ```python
-    # Read Apache Hudi table into a Daft DataFrame.
+    # Read Apache Hudi table
     import daft
 
     df = daft.read_hudi("some-table-uri")

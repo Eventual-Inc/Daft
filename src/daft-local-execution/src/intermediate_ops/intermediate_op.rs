@@ -160,7 +160,7 @@ impl IntermediateNode {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
         for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            runtime_handle.spawn(
+            runtime_handle.spawn_local(
                 Self::run_worker(
                     self.intermediate_op.clone(),
                     input_receiver,
@@ -254,7 +254,7 @@ impl PipelineNode for IntermediateNode {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             self.name(),
         );
@@ -265,7 +265,7 @@ impl PipelineNode for IntermediateNode {
             maintain_order,
             runtime_handle.memory_manager(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {
                     if counting_sender.send(morsel).await.is_err() {

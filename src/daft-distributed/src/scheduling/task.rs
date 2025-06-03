@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::worker::WorkerId;
-use crate::utils::channel::OneshotSender;
+use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
@@ -148,7 +148,9 @@ impl Task for SwordfishTask {
 
 pub(crate) trait TaskResultHandle: Send + Sync {
     #[allow(dead_code)]
-    fn get_result(&mut self) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static;
+    fn get_result(
+        &mut self,
+    ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static;
     fn cancel_callback(&mut self) -> DaftResult<()>;
 }
 
@@ -156,7 +158,7 @@ pub(crate) struct TaskResultHandleAwaiter<H: TaskResultHandle> {
     task_id: TaskId,
     worker_id: WorkerId,
     handle: H,
-    result_sender: OneshotSender<DaftResult<PartitionRef>>,
+    result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
@@ -165,7 +167,7 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
         task_id: TaskId,
         worker_id: WorkerId,
         handle: H,
-        result_sender: OneshotSender<DaftResult<PartitionRef>>,
+        result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -251,7 +253,7 @@ pub(super) mod tests {
         priority: u32,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
-        task_result: PartitionRef,
+        task_result: Vec<MaterializedOutput>,
         cancel_notifier: Option<OneshotSender<()>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
@@ -268,7 +270,7 @@ pub(super) mod tests {
         task_id: TaskId,
         priority: u32,
         scheduling_strategy: SchedulingStrategy,
-        task_result: PartitionRef,
+        task_result: Vec<MaterializedOutput>,
         resource_request: TaskResourceRequest,
         cancel_notifier: Option<OneshotSender<()>>,
         sleep_duration: Option<Duration>,
@@ -289,7 +291,7 @@ pub(super) mod tests {
                 priority: 0,
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: partition_ref,
+                task_result: vec![MaterializedOutput::new(partition_ref, "".into())],
                 cancel_notifier: None,
                 sleep_duration: None,
                 failure: None,
@@ -369,7 +371,7 @@ pub(super) mod tests {
 
     /// A mock implementation of the SwordfishTaskResultHandle trait for testing
     pub struct MockTaskResultHandle {
-        result: PartitionRef,
+        result: Vec<MaterializedOutput>,
         sleep_duration: Option<Duration>,
         cancel_notifier: Option<OneshotSender<()>>,
         failure: Option<MockTaskFailure>,
@@ -389,7 +391,7 @@ pub(super) mod tests {
     impl TaskResultHandle for MockTaskResultHandle {
         fn get_result(
             &mut self,
-        ) -> impl Future<Output = DaftResult<PartitionRef>> + Send + 'static {
+        ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static {
             let sleep_duration = self.sleep_duration.clone();
             let failure = self.failure.clone();
             let result = self.result.clone();

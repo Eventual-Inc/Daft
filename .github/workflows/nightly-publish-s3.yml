@@ -30,22 +30,18 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
-      use_old_name: ${{ matrix.use_old_name }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos, windows]
         arch: [x86_64, aarch64]
         lts: [false, true]
-        use_old_name: [false, true]
 
         exclude:
         - os: windows
           arch: aarch64
         - lts: true
           arch: aarch64
-        - lts: true
-          use_old_name: false
 
   publish:
     name: Publish wheels to S3
@@ -122,7 +118,7 @@ jobs:
       fail-fast: false
       matrix:
         runner-name: [ubuntu-latest, ubuntu-24.04-arm]
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -193,7 +189,7 @@ jobs:
       fail-fast: false
       matrix:
         runner-name: [ubuntu-latest, ubuntu-24.04-arm]
-        daft-runner: [py, ray, native]
+        daft-runner: [ray, native]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
