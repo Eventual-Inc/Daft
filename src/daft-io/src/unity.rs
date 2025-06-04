@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
 use common_file_formats::FileFormat;
-use common_io_config::unity::UnityCatalog;
+use common_io_config::{IOConfig, ObfuscatedString, UnityConfig};
 use futures::stream::BoxStream;
 use itertools::Itertools;
+use pyo3::{intern, prelude::*};
 use snafu::ResultExt;
 
 use crate::{
@@ -26,26 +27,53 @@ fn invalid_unity_path(path: &str) -> crate::Error {
 }
 
 pub struct UnitySource {
-    catalog: Arc<UnityCatalog>,
-    /// map of volume name to source and storage location
-    cached_sources: tokio::sync::RwLock<HashMap<String, ClientWithLocation>>,
+    /// A `daft.unity_catalog.UnityCatalog` instance
+    unity_catalog: PyObject,
+    /// map of volume name to io client and storage location
+    cached_sources: tokio::sync::RwLock<HashMap<String, Arc<ClientAndLocation>>>,
 }
 
-#[derive(Clone)]
-struct ClientWithLocation {
-    io_client: Arc<IOClient>,
+struct ClientAndLocation {
+    io_client: IOClient,
     storage_location: String,
 }
 
 impl UnitySource {
-    pub fn get_client(catalog: Arc<UnityCatalog>) -> Arc<Self> {
-        Arc::new(Self {
-            catalog,
-            cached_sources: tokio::sync::RwLock::new(HashMap::new()),
+    pub async fn get_client(config: &UnityConfig) -> super::Result<Arc<Self>> {
+        let Some(endpoint) = &config.endpoint else {
+            return Err(super::Error::UnableToCreateClient {
+                store: SourceType::Unity,
+                source: Box::new(DaftError::ValueError(
+                    "UnityConfig.endpoint must be provided to create a UnitySource".to_string(),
+                )),
+            });
+        };
+
+        let unity_catalog = Python::with_gil(|py| {
+            Ok::<_, PyErr>(
+                py.import(intern!(py, "daft.unity_catalog"))?
+                    .getattr(intern!(py, "UnityCatalog"))?
+                    .call1((
+                        endpoint,
+                        config.token.as_ref().map(ObfuscatedString::as_string),
+                    ))?
+                    .unbind(),
+            )
         })
+        .map_err(|e| super::Error::UnableToCreateClient {
+            store: SourceType::Unity,
+            source: Box::new(e),
+        })?;
+
+        let cached_sources = tokio::sync::RwLock::new(HashMap::new());
+
+        Ok(Arc::new(Self {
+            unity_catalog,
+            cached_sources,
+        }))
     }
 
-    async fn get_or_create_io_client(&self, name: &str) -> super::Result<ClientWithLocation> {
+    async fn get_or_create_io_client(&self, name: &str) -> super::Result<Arc<ClientAndLocation>> {
         {
             if let Some(client) = self.cached_sources.read().await.get(name) {
                 return Ok(client.clone());
@@ -57,21 +85,38 @@ impl UnitySource {
             return Ok(client.clone());
         }
 
-        let volume = self
-            .catalog
-            .load_volume(name)
-            .map_err(|e| crate::Error::Generic {
-                store: SourceType::Unity,
-                source: Box::new(e),
-            })?;
+        let (io_config, storage_location) = Python::with_gil(|py| {
+            let volume = self
+                .unity_catalog
+                .bind(py)
+                .call_method1(intern!(py, "load_volume"), (name,))?;
 
-        let io_config = volume.io_config.unwrap_or_default();
-        let io_client = Arc::new(IOClient::new(io_config)?);
+            let py_io_config = volume.getattr(intern!(py, "io_config"))?;
+            let io_config = if py_io_config.is_none() {
+                IOConfig::default()
+            } else {
+                py_io_config
+                    .extract::<common_io_config::python::IOConfig>()?
+                    .config
+            };
 
-        let client = ClientWithLocation {
+            let storage_location = volume
+                .getattr(intern!(py, "volume_info"))?
+                .getattr(intern!(py, "storage_location"))?
+                .extract::<String>()?;
+
+            Ok::<_, PyErr>((io_config, storage_location))
+        })
+        .map_err(|e| super::Error::UnableToLoadCredentials {
+            store: SourceType::Unity,
+            source: Box::new(e),
+        })?;
+
+        let io_client = IOClient::new(Arc::new(io_config))?;
+        let client = Arc::new(ClientAndLocation {
             io_client,
-            storage_location: volume.storage_location,
-        };
+            storage_location,
+        });
 
         w_handle.insert(name.to_string(), client.clone());
         Ok(client)
@@ -104,13 +149,10 @@ impl UnitySource {
 
         let combined_name = format!("{catalog_name}.{schema_name}.{volume_name}");
 
-        let ClientWithLocation {
-            io_client,
-            storage_location,
-        } = self.get_or_create_io_client(&combined_name).await?;
+        let client = self.get_or_create_io_client(&combined_name).await?;
 
-        let source_path = format!("{}/{}", storage_location, volume_path);
-        let source = io_client.get_source(&source_path).await?;
+        let source_path = format!("{}/{}", client.storage_location, volume_path);
+        let source = client.io_client.get_source(&source_path).await?;
 
         Ok((source, source_path))
     }

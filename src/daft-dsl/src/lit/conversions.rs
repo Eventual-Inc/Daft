@@ -196,26 +196,6 @@ where
     }
 }
 
-impl FromLiteral for common_io_config::unity::UnityCatalog {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        #[cfg(feature = "python")]
-        {
-            if let LiteralValue::Python(py_value) = lit {
-                Python::with_gil(|py| Self::try_new(&py_value.0, py))
-            } else {
-                Err(DaftError::ValueError(
-                    "Non-python literal to UnityCatalog not supported.".to_string(),
-                ))
-            }
-        }
-
-        #[cfg(not(feature = "python"))]
-        {
-            unimplemented!("UnityCatalog can only be created when the Python feature is enabled")
-        }
-    }
-}
-
 impl_strict_fromliteral!(String, Utf8);
 impl_strict_fromliteral!(bool, Boolean);
 impl_int_fromliteral!(i8);

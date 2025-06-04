@@ -71,6 +71,7 @@ impl ConnectSession {
             mut azure,
             mut gcs,
             mut http,
+            unity,
         } = get_context().io_config();
 
         self.s3_config_helper(&mut s3)?;
@@ -83,6 +84,7 @@ impl ConnectSession {
             azure,
             gcs,
             http,
+            unity,
         })
     }
 

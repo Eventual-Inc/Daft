@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import urlparse
 
 import unitycatalog
 
-from daft.io import AzureConfig, IOConfig, S3Config
+from daft.io import AzureConfig, IOConfig, S3Config, UnityConfig
 
 if TYPE_CHECKING:
     from unitycatalog.types import (
@@ -79,9 +79,6 @@ class UnityCatalog:
             base_url=endpoint.rstrip("/") + "/api/2.1/unity-catalog/",
             default_headers={"Authorization": f"Bearer {token}"},
         )
-
-    def __reduce__(self) -> tuple[Callable[..., Any], tuple[Any, ...]]:
-        return (UnityCatalog, (self._endpoint, self._token))
 
     def _paginate_to_completion(
         self,
@@ -223,3 +220,6 @@ class UnityCatalog:
         io_config = _io_config_from_temp_creds(temp_volume_credentials, volume_info.storage_location)
 
         return UnityCatalogVolume(volume_info=volume_info, io_config=io_config)
+
+    def to_io_config(self) -> IOConfig:
+        return IOConfig(unity=UnityConfig(endpoint=self._endpoint, token=self._token))

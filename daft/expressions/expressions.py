@@ -45,7 +45,6 @@ from daft.series import Series, item_to_series
 if TYPE_CHECKING:
     from daft.io import IOConfig
     from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
-    from daft.unity_catalog import UnityCatalog
     from daft.window import Window
 
     EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
@@ -1894,7 +1893,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
-        unity_catalog: UnityCatalog | None = None,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
@@ -1904,8 +1902,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 the error but fallback to a Null value. Defaults to "raise".
             io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
                 with `max_connections` that is passed in as a kwarg.
-            unity_catalog: Unity Catalog to use when downloading URLs with the `dbfs:` scheme. If not provided, attempts to use the current
-                catalog in the global session.
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
@@ -1921,19 +1917,19 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         """
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-        max_connections_expr = Expression._to_expression(max_connections)._expr
-        on_error_expr = Expression._to_expression(on_error)._expr
-        multi_thread_expr = Expression._to_expression(multi_thread)._expr
-        io_config_expr = Expression._to_expression(io_config)._expr
-
-        if unity_catalog is None:
+        if io_config.unity.endpoint is None:
             from daft.catalog.__unity import UnityCatalog
             from daft.session import current_catalog
 
             catalog = current_catalog()
             if isinstance(catalog, UnityCatalog):
                 unity_catalog = catalog._inner
-        unity_catalog_expr = Expression._to_expression(unity_catalog)._expr
+                io_config = io_config.replace(unity=unity_catalog.to_io_config().unity)
+
+        max_connections_expr = Expression._to_expression(max_connections)._expr
+        on_error_expr = Expression._to_expression(on_error)._expr
+        multi_thread_expr = Expression._to_expression(multi_thread)._expr
+        io_config_expr = Expression._to_expression(io_config)._expr
 
         f = native.get_function_from_registry("url_download")
 
@@ -1944,7 +1940,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 on_error=on_error_expr,
                 max_connections=max_connections_expr,
                 io_config=io_config_expr,
-                unity_catalog=unity_catalog_expr,
             )
         )
 

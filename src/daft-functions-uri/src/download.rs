@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use common_error::{ensure, DaftError, DaftResult};
-use common_io_config::unity::UnityCatalog;
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{FunctionArgs, ScalarUDF},
     ExprRef,
 };
-use daft_io::{get_io_client_with_unity, Error, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
@@ -35,8 +34,6 @@ pub struct UrlDownloadArgs<T> {
     pub max_connections: Option<usize>,
     #[arg(optional)]
     pub on_error: Option<String>,
-    #[arg(optional)]
-    pub unity_catalog: Option<UnityCatalog>,
 }
 
 #[typetag::serde]
@@ -51,7 +48,6 @@ impl ScalarUDF for UrlDownload {
             io_config,
             max_connections,
             on_error,
-            unity_catalog,
         } = inputs.try_into()?;
 
         let max_connections = max_connections.unwrap_or(32);
@@ -78,7 +74,6 @@ impl ScalarUDF for UrlDownload {
             raise_error_on_failure,
             multi_thread,
             Arc::new(io_config),
-            unity_catalog,
             Some(io_stats),
         )?;
         Ok(result.into_series())
@@ -102,7 +97,6 @@ fn url_download(
     raise_error_on_failure: bool,
     multi_thread: bool,
     config: Arc<IOConfig>,
-    unity_catalog: Option<UnityCatalog>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<BinaryArray> {
     let name = array.name();
@@ -116,7 +110,7 @@ fn url_download(
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-    let io_client = get_io_client_with_unity(multi_thread, config, unity_catalog.map(Arc::new))?;
+    let io_client = get_io_client(multi_thread, config)?;
 
     let owned_array = array.clone();
 

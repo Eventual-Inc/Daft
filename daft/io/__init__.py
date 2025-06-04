@@ -7,6 +7,7 @@ from daft.daft import (
     HTTPConfig,
     S3Config,
     S3Credentials,
+    UnityConfig,
 )
 from daft.io._csv import read_csv
 from daft.io._deltalake import read_deltalake
@@ -35,6 +36,7 @@ __all__ = [
     "IOConfig",
     "S3Config",
     "S3Credentials",
+    "UnityConfig",
     "_range",
     "from_glob_path",
     "read_csv",
