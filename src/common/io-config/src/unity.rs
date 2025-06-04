@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
@@ -11,8 +11,25 @@ use crate::IOConfig;
 #[derive(Debug)]
 pub struct UnityCatalog(PyObject);
 
+#[cfg(feature = "python")]
+impl PartialEq for UnityCatalog {
+    fn eq(&self, other: &Self) -> bool {
+        Python::with_gil(|py| self.0.bind(py).is(&other.0))
+    }
+}
+
+#[cfg(feature = "python")]
+impl Eq for UnityCatalog {}
+
+#[cfg(feature = "python")]
+impl Hash for UnityCatalog {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Python::with_gil(|py| self.0.bind(py).hash().unwrap().hash(state));
+    }
+}
+
 #[cfg(not(feature = "python"))]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct UnityCatalog;
 
 #[derive(Clone)]

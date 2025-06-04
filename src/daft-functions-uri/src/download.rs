@@ -116,7 +116,7 @@ fn url_download(
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-    let io_client = get_io_client_with_unity(multi_thread, config, unity_catalog)?;
+    let io_client = get_io_client_with_unity(multi_thread, config, unity_catalog.map(Arc::new))?;
 
     let owned_array = array.clone();
 

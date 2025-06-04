@@ -200,12 +200,12 @@ impl IOClient {
 
     pub fn new_with_unity(
         config: Arc<IOConfig>,
-        unity_catalog: Option<UnityCatalog>,
+        unity_catalog: Option<Arc<UnityCatalog>>,
     ) -> Result<Self> {
         Ok(Self {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
-            unity_catalog: unity_catalog.map(Arc::new),
+            unity_catalog,
         })
     }
 
@@ -409,7 +409,7 @@ impl std::fmt::Display for SourceType {
             Self::AzureBlob => write!(f, "AzureBlob"),
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
-            Self::Unity => write!(f, "dbfs"),
+            Self::Unity => write!(f, "UnityCatalog"),
         }
     }
 }
@@ -457,7 +457,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }
-type CacheKey = (bool, Arc<IOConfig>);
+type CacheKey = (bool, Arc<IOConfig>, Option<Arc<UnityCatalog>>);
 
 static CLIENT_CACHE: LazyLock<std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>>> =
     LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
@@ -469,10 +469,10 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
 pub fn get_io_client_with_unity(
     multi_thread: bool,
     config: Arc<IOConfig>,
-    unity_catalog: Option<UnityCatalog>,
+    unity_catalog: Option<Arc<UnityCatalog>>,
 ) -> DaftResult<Arc<IOClient>> {
     let read_handle = CLIENT_CACHE.read().unwrap();
-    let key = (multi_thread, config.clone());
+    let key = (multi_thread, config.clone(), unity_catalog.clone());
     if let Some(client) = read_handle.get(&key) {
         Ok(client.clone())
     } else {
