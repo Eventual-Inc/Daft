@@ -2410,7 +2410,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "bytes",
  "common-error",
- "common-io-config",
  "common-runtime",
  "daft-core",
  "daft-dsl",
