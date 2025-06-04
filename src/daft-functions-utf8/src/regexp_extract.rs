@@ -22,7 +22,10 @@ impl ScalarUDF for RegexpExtract {
     fn aliases(&self) -> &'static [&'static str] {
         &["regexp_extract"]
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         ensure!(
             inputs.len() == 2 || inputs.len() == 3,
             ComputeError: "Expected 2 or 3 input args, got {}",
@@ -46,7 +49,7 @@ impl ScalarUDF for RegexpExtract {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

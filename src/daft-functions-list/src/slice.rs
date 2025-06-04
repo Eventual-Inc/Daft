@@ -19,13 +19,16 @@ impl ScalarUDF for ListSlice {
     fn name(&self) -> &'static str {
         "list_slice"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let start = inputs.required((1, "start"))?;
         let end = inputs.required((2, "end"))?;
         input.list_slice(start, end)
     }
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

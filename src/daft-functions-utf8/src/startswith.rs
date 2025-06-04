@@ -20,7 +20,10 @@ impl ScalarUDF for StartsWith {
         "starts_with"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
             s.with_utf8_array(|arr| {
                 pattern.with_utf8_array(|pattern_arr| {
@@ -34,7 +37,7 @@ impl ScalarUDF for StartsWith {
             })
         })
     }
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

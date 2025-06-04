@@ -27,7 +27,10 @@ impl ScalarUDF for Left {
         "left"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "n", |s, nchars| {
             s.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {
@@ -46,7 +49,7 @@ impl ScalarUDF for Left {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

@@ -698,7 +698,7 @@ impl RecordBatch {
                     .collect::<DaftResult<FunctionArgs<Series>>>()?;
 
 
-                func.udf.evaluate(args)
+                func.udf.call_with_args(args)
             }
             Expr::Literal(lit_value) => Ok(lit_value.to_series()),
             Expr::IfElse {

@@ -16,7 +16,7 @@ pub struct Abs;
 
 #[typetag::serde]
 impl ScalarUDF for Abs {
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         input.abs()
     }
@@ -25,7 +25,7 @@ impl ScalarUDF for Abs {
         "abs"
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

@@ -20,7 +20,10 @@ impl ScalarUDF for ListFill {
         "list_fill"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         match inputs.as_slice() {
             [num, elem] => {
@@ -35,7 +38,7 @@ impl ScalarUDF for ListFill {
         }
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -92,14 +95,15 @@ mod tests {
         ]);
 
         let fill = ListFill {};
-        let DaftError::SchemaMismatch(e) =
-            fill.to_field(&[col0_null.clone()], &schema).unwrap_err()
+        let DaftError::SchemaMismatch(e) = fill
+            .get_return_type(&[col0_null.clone()], &schema)
+            .unwrap_err()
         else {
             panic!("Expected SchemaMismatch error");
         };
         assert_eq!(e, "Expected 2 input args, got 1");
         let DaftError::TypeError(e) = fill
-            .to_field(&[col0_null.clone(), col1_str.clone()], &schema)
+            .get_return_type(&[col0_null.clone(), col1_str.clone()], &schema)
             .unwrap_err()
         else {
             panic!("Expected TypeError error");
@@ -110,12 +114,12 @@ mod tests {
         );
 
         let list_of_null = fill
-            .to_field(&[col0_num.clone(), col1_null.clone()], &schema)
+            .get_return_type(&[col0_num.clone(), col1_null.clone()], &schema)
             .unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Null)));
         assert_eq!(list_of_null, expected);
         let list_of_str = fill
-            .to_field(&[col0_num.clone(), col1_str.clone()], &schema)
+            .get_return_type(&[col0_num.clone(), col1_str.clone()], &schema)
             .unwrap();
         let expected = Field::new("c1", DataType::List(Box::new(DataType::Utf8)));
         assert_eq!(list_of_str, expected);
@@ -130,7 +134,7 @@ mod tests {
         )
         .into_series();
 
-        let error = fill.evaluate_from_series(&[num.clone()]).unwrap_err();
+        let error = fill.call(&[num.clone()]).unwrap_err();
         assert_eq!(
             error.to_string(),
             "DaftError::ValueError Expected 2 input args, got 1"
@@ -148,8 +152,7 @@ mod tests {
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
         let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            fill.evaluate_from_series(&[num.clone(), str.clone()])
-                .unwrap()
+            fill.call(&[num.clone(), str.clone()]).unwrap()
         }));
         assert!(error.is_err());
     }
@@ -164,7 +167,7 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
-        let result = fill.evaluate_from_series(&[num.clone(), str.clone()])?;
+        let result = fill.call(&[num.clone(), str.clone()])?;
         // the expected result should be a list of strings: [[None], [], ["world", "world", "world"]]
         let flat_child = Utf8Array::from_iter(
             "s2",

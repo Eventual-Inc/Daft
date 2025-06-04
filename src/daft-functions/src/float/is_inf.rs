@@ -1,11 +1,11 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
     with_match_float_and_null_daft_types,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -15,11 +15,12 @@ pub struct IsInf;
 
 #[typetag::serde]
 impl ScalarUDF for IsInf {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         use daft_core::{array::ops::DaftIsInf, series::IntoSeries};
-
-        ensure!(inputs.len() == 1, ComputeError: "Expected 1 input, got {}", inputs.len());
-        let data = inputs.required(("input", 0))?;
+        let UnaryArg { input: data } = inputs.try_into()?;
 
         with_match_float_and_null_daft_types!(data.data_type(), |$T| {
             Ok(DaftIsInf::is_inf(data.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
@@ -29,23 +30,19 @@ impl ScalarUDF for IsInf {
     fn name(&self) -> &'static str {
         "is_inf"
     }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [data] => match data.to_field(schema) {
-                Ok(data_field) => match &data_field.dtype {
-                    DataType::Null | DataType::Float32 | DataType::Float64 => {
-                        Ok(Field::new(data_field.name, DataType::Boolean))
-                    }
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expects input to is_inf to be float, but received {data_field}",
-                    ))),
-                },
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
+    fn get_return_type_from_args(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let UnaryArg { input: data } = inputs.try_into()?;
+        let data = data.to_field(schema)?;
+        match &data.dtype {
+            DataType::Null | DataType::Float32 | DataType::Float64 => {
+                Ok(Field::new(data.name, DataType::Boolean))
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "Expects input to is_inf to be float, but received {data}",
             ))),
         }
     }

@@ -22,7 +22,10 @@ impl ScalarUDF for Find {
         "find"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "substr", |s, substr| {
             s.with_utf8_array(|arr| {
                 substr.with_utf8_array(|substr_arr| {
@@ -32,7 +35,7 @@ impl ScalarUDF for Find {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

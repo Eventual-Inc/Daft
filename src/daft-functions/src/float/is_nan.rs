@@ -6,7 +6,7 @@ use daft_core::{
     with_match_float_and_null_daft_types,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF, UnaryArg},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,10 @@ pub struct IsNan;
 
 #[typetag::serde]
 impl ScalarUDF for IsNan {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ComputeError: "Expected 1 input, got {}", inputs.len());
 
         let data = inputs.required(("input", 0))?;
@@ -29,24 +32,20 @@ impl ScalarUDF for IsNan {
     fn name(&self) -> &'static str {
         "is_nan"
     }
-
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [data] => match data.to_field(schema) {
-                Ok(data_field) => match &data_field.dtype {
-                    // DataType::Float16 |
-                    DataType::Null | DataType::Float32 | DataType::Float64 => {
-                        Ok(Field::new(data_field.name, DataType::Boolean))
-                    }
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expects input to is_nan to be float, but received {data_field}",
-                    ))),
-                },
-                Err(e) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
+    fn get_return_type_from_args(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let UnaryArg { input } = inputs.try_into()?;
+        let data_field = input.to_field(schema)?;
+        match &data_field.dtype {
+            // DataType::Float16 |
+            DataType::Null | DataType::Float32 | DataType::Float64 => {
+                Ok(Field::new(data_field.name, DataType::Boolean))
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "Expects input to is_nan to be float, but received {data_field}",
             ))),
         }
     }

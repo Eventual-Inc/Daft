@@ -30,7 +30,8 @@ impl ScalarFunction {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf.function_args_to_field(self.inputs.clone(), schema)
+        self.udf
+            .get_return_type_from_args(self.inputs.clone(), schema)
     }
 }
 
@@ -83,8 +84,10 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
         &[]
     }
 
-    #[deprecated = "use evaluate instead"]
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
+    /// If possible use `call_with_args` instead.
+    /// unlike `call_with_args`, `call` does not do type checking on the arguments, and may not work as expected if the function is expecting named only arguments.
+    /// `call` may be removed in the future.
+    fn call(&self, inputs: &[Series]) -> DaftResult<Series> {
         let inputs = FunctionArgs::try_new(
             inputs
                 .iter()
@@ -92,13 +95,13 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
                 .collect(),
         )?;
 
-        self.evaluate(inputs)
+        self.call_with_args(inputs)
     }
     /// This is where the actual logic of the function is implemented.
     /// A simple example would be a string function such as `to_uppercase` that simply takes in a utf8 array and uppercases all values
     /// ```rs, no_run
     /// impl ScalarUDF for MyToUppercase {
-    ///     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
+    ///     fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
     ///         let s = inputs.required(0)?;
     ///
     ///         let arr = s
@@ -112,9 +115,9 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///     }
     /// }
     /// ```
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
+    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
 
-    /// `function_args_to_field` is used during planning to ensure that args and datatypes are compatible.
+    /// `get_return_type_from_args` is used during planning to ensure that args and datatypes are compatible.
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
     /// ```rs, no_run
     /// impl ScalarUDF for MyToUppercase {
@@ -132,27 +135,23 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///     }
     /// }
     /// ```
-    #[allow(deprecated)]
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
-    ) -> DaftResult<Field> {
-        // for backwards compatibility we add a default implementation.
-        // TODO: move all existing implementations of `to_field` over to `function_args_to_field`
-        // Once that is done, we can name it back to `to_field`.
-        self.to_field(inputs.into_inner().as_slice(), schema)
-    }
+    ) -> DaftResult<Field>;
 
-    #[deprecated = "use `function_args_to_field` instead"]
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+    /// Use `get_return_type_from_args` whenever possible instead of `get_return_type`.
+    /// `get_return_type` acts as a helper when you don't care about constructing named/unnamed arguments and is mostly only needed for testing purposes.
+    /// this may be removed in the future.
+    fn get_return_type(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         let inputs = inputs
             .iter()
             .map(|e| FunctionArg::unnamed(e.clone()))
             .collect::<Vec<_>>();
 
         let inputs = FunctionArgs::new_unchecked(inputs);
-        self.function_args_to_field(inputs, schema)
+        self.get_return_type_from_args(inputs, schema)
     }
 
     fn docstring(&self) -> &'static str {

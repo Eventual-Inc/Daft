@@ -20,7 +20,10 @@ impl ScalarUDF for RStrip {
         "rstrip"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, |s| {
             s.with_utf8_array(|arr| {
                 arr.unary_broadcasted_op(|val| val.trim_end().into())
@@ -29,7 +32,7 @@ impl ScalarUDF for RStrip {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

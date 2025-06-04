@@ -17,7 +17,10 @@ impl ScalarUDF for ListSort {
         "list_sort"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
 
         let desc = inputs
@@ -33,7 +36,7 @@ impl ScalarUDF for ListSort {
         data.list_sort(&desc, &nulls_first)
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

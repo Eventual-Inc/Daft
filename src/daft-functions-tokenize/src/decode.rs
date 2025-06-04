@@ -30,7 +30,10 @@ struct DecodeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for TokenizeDecodeFunction {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         let DecodeArgs {
             input,
             _varargs,
@@ -53,7 +56,7 @@ impl ScalarUDF for TokenizeDecodeFunction {
         "tokenize_decode"
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

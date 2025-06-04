@@ -19,7 +19,10 @@ impl ScalarUDF for CountMatches {
     fn name(&self) -> &'static str {
         "count_matches"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let patterns = inputs.required((1, "patterns"))?;
 
@@ -42,7 +45,7 @@ impl ScalarUDF for CountMatches {
         })
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

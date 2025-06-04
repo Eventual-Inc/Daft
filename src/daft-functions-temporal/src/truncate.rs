@@ -20,7 +20,10 @@ impl ScalarUDF for Truncate {
         "truncate"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         let Args {
             input,
             relative_to,
@@ -31,7 +34,7 @@ impl ScalarUDF for Truncate {
         input.dt_truncate(&interval, &relative_to)
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

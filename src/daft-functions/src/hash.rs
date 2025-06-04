@@ -20,7 +20,10 @@ impl ScalarUDF for HashFunction {
         "hash"
     }
 
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call_with_args(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+    ) -> DaftResult<Series> {
         let Args { input, seed } = inputs.try_into()?;
         if let Some(seed) = seed {
             match seed.len() {
@@ -64,7 +67,7 @@ impl ScalarUDF for HashFunction {
         }
     }
 
-    fn function_args_to_field(
+    fn get_return_type_from_args(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,

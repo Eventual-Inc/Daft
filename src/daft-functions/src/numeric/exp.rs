@@ -16,7 +16,7 @@ macro_rules! exp {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;
                 $impl(input)
             }
@@ -25,7 +25,7 @@ macro_rules! exp {
                 stringify!($name)
             }
 
-            fn function_args_to_field(
+            fn get_return_type_from_args(
                 &self,
                 inputs: FunctionArgs<ExprRef>,
                 schema: &Schema,
