@@ -60,10 +60,37 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
 
 See also [Delta Lake](delta_lake.md) for more information about how to work with the Delta Lake tables provided by the Unity Catalog.
 
+## Downloading files in Unity Catalog volumes
+
+Daft supports downloading from Unity Catalog volumes using [`Expression.url.download()`][daft.expressions.Expression.url.download]. File paths that start with `dbfs:/` will be downloaded using either the provided `unity_catalog` parameter, or the current catalog in the global session.
+
+=== "🐍 Python"
+
+    ```python
+    df = daft.from_pydict({
+        "files": [
+            "dbfs:/Volumes/my_catalog/my_schema_name/my_volume_name/file1.txt",
+            "dbfs:/Volumes/my_catalog/my_schema_name/my_volume_name/file2.txt"
+        ]
+    })
+
+    # explicitly specify the unity catalog
+    data_df = df.select(df["files"].url.download(unity_catalog=unity))
+    data_df.show()
+
+    # use the global session
+    from daft.catalog import Catalog
+    import daft.session
+
+    catalog = Catalog.from_unity(unity)
+    daft.session.attach(catalog)
+
+    data_df = df.select(df["files"].url.download())
+    data_df.show()
+    ```
+
 ## Roadmap
 
-1. Volumes integration for reading objects from volumes (e.g. images and documents)
-
-2. Unity Iceberg integration for reading tables using the Iceberg interface instead of the Delta Lake interface
+1. Unity Iceberg integration for reading tables using the Iceberg interface instead of the Delta Lake interface
 
 Please make issues on the [Daft repository](https://github.com/Eventual-Inc/Daft) if you have any use-cases that Daft does not currently cover! For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).

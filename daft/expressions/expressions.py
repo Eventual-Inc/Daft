@@ -1904,6 +1904,8 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 the error but fallback to a Null value. Defaults to "raise".
             io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
                 with `max_connections` that is passed in as a kwarg.
+            unity_catalog: Unity Catalog to use when downloading URLs with the `dbfs:` scheme. If not provided, attempts to use the current
+                catalog in the global session.
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occurred during download
