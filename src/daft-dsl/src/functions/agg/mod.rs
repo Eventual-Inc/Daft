@@ -29,9 +29,24 @@ impl ScalarUDF for MergeMeanFunction {
         &self,
         inputs: super::function_args::FunctionArgs<Series>,
     ) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
+        let Args { input: sum, counts } = inputs.try_into()?;
 
-        self.call(&inputs)
+        if !matches!(counts.data_type(), DataType::UInt64) {
+            return Err(DaftError::SchemaMismatch(format!(
+                "Expected Counts to be type UInt64, got {}",
+                counts.data_type()
+            )));
+        }
+        match sum.data_type() {
+            DataType::Decimal128(p, s) => {
+                let new_type = DataType::Decimal128(*p, std::cmp::min(*p, s + Self::EXTRA_SCALE));
+                let sum_array = sum.cast(&new_type)?;
+                let sum_array = sum_array.decimal128()?;
+                let count_array = counts.u64()?;
+                Ok(sum_array.merge_mean(count_array)?.into_series())
+            }
+            _ => sum / counts,
+        }
     }
 
     fn get_return_type_from_args(
