@@ -16,8 +16,7 @@ use tokio::{
     task::JoinSet,
 };
 
-static NUM_CPUS: LazyLock<usize> =
-    LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
+static NUM_CPUS: LazyLock<usize> = LazyLock::new(|| 1);
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
 static COMPUTE_RUNTIME_NUM_WORKER_THREADS: OnceLock<usize> = OnceLock::new();
 
