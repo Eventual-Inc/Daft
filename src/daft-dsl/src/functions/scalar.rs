@@ -87,7 +87,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     /// A simple example would be a string function such as `to_uppercase` that simply takes in a utf8 array and uppercases all values
     /// ```rs, no_run
     /// impl ScalarUDF for MyToUppercase {
-    ///     fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
+    ///     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
     ///         let s = inputs.required(0)?;
     ///
     ///         let arr = s
