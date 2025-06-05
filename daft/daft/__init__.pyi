@@ -1747,8 +1747,12 @@ class NativeExecutor:
     ) -> RelationshipInformation: ...
 
 class RelationshipInformation:
-    ids: list[int]
+    ids: list[RelationshipNode]
     plan_id: str
+
+class RelationshipNode:
+    id: int
+    parent_id: int | None
 
 class PyDaftExecutionConfig:
     @staticmethod

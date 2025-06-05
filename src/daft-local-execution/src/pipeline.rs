@@ -136,8 +136,15 @@ pub fn viz_pipeline_mermaid(
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct RelationshipNode {
+    pub id: usize,
+    pub parent_id: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct RelationshipInformation {
-    pub ids: Vec<usize>,
+    pub ids: Vec<RelationshipNode>,
     pub plan_id: Arc<str>,
 }
 /// Performs a depth first pre-order traversal of the pipeline tree.
@@ -155,19 +162,27 @@ pub struct RelationshipInformation {
 /// The result would be [1, 2, 5, 6, 3, 7, 4, 8, 9, 10]
 /// as we visit each node in pre-order traversal.
 pub fn get_pipeline_relationship_mapping(root: &dyn PipelineNode) -> RelationshipInformation {
-    let mut ids = Vec::new();
+    let mut nodes = Vec::new();
 
-    fn get_pipeline_relationship_mapping(root: &dyn PipelineNode, ids: &mut Vec<usize>) {
-        ids.push(root.node_id());
+    fn traverse(
+        node: &dyn PipelineNode,
+        parent_id: Option<usize>,
+        nodes: &mut Vec<RelationshipNode>,
+    ) {
+        let current_id = node.node_id();
+        nodes.push(RelationshipNode {
+            id: current_id,
+            parent_id,
+        });
 
-        for child in root.children() {
-            get_pipeline_relationship_mapping(child, ids);
+        for child in node.children() {
+            traverse(child, Some(current_id), nodes);
         }
     }
-    get_pipeline_relationship_mapping(root, &mut ids);
 
+    traverse(root, None, &mut nodes);
     RelationshipInformation {
-        ids,
+        ids: nodes,
         plan_id: root.plan_id(),
     }
 }
