@@ -118,8 +118,14 @@ impl Runtime {
     /// For example, URL download is an async function, but it is called from a synchronous function in a tokio runtime,
     /// i.e. calling the Expression Evaluator from the Native Executor.
     ///
+    /// Caution:
+    /// If the tokio runtimes of the synchronous function and the asynchronous function are same, that can potentially cause
+    /// a deadlock, so the caller needs to be careful to avoid nested calls that can cause this situation.
+    ///
+    /// Also, the calling runtime thread will not do any other work until this call returns, since it is blocked.
+    ///
     /// In the future, we should refactor the code to be fully async, but for now, this is a workaround.
-    pub fn block_on<F>(&self, future: F) -> DaftResult<F::Output>
+    pub fn block_within_async_context<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,

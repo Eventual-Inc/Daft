@@ -631,6 +631,25 @@ class GCSConfig:
         """Replaces values if provided, returning a new GCSConfig."""
         ...
 
+class UnityConfig:
+    """I/O configuration for Unity Catalog volumes."""
+
+    endpoint: str | None
+    token: str | None
+
+    def __init__(
+        self,
+        endpoint: str | None,
+        token: str | None,
+    ): ...
+    def replace(
+        self,
+        endpoint: str | None,
+        token: str | None,
+    ) -> UnityConfig:
+        """Replaces values if provided, returning a new UnityConfig."""
+        ...
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -638,6 +657,7 @@ class IOConfig:
     azure: AzureConfig
     gcs: GCSConfig
     http: HTTPConfig
+    unity: UnityConfig
 
     def __init__(
         self,
@@ -645,6 +665,7 @@ class IOConfig:
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
+        unity: UnityConfig | None = None,
     ): ...
     def replace(
         self,
@@ -652,6 +673,7 @@ class IOConfig:
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
+        unity: UnityConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...

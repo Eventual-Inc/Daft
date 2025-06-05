@@ -255,7 +255,7 @@ pub fn url_upload(
             .await
         };
 
-        let mut results = runtime_handle.block_on(uploads)??;
+        let mut results = runtime_handle.block_within_async_context(uploads)??;
         results.sort_by_key(|k| k.0);
 
         Ok(results.into_iter().map(|(_, path)| path).collect())

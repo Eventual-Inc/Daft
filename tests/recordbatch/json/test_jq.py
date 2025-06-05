@@ -23,7 +23,7 @@ from daft.recordbatch import MicroPartition
         pytest.param(["[1, 2, 3]", "[4, 5, 6]", "[7, 8, 9]", None], ".[1]", ["2", "5", "8", None], id="array"),
         # Test with nested arrays
         pytest.param(
-            ["[[1, 2, 3]]", "[[4, 5, 6]]", "[[7, 8, 9]]", None], ".[0].[1]", ["2", "5", "8", None], id="nested_array"
+            ["[[1, 2, 3]]", "[[4, 5, 6]]", "[[7, 8, 9]]", None], ".[0][1]", ["2", "5", "8", None], id="nested_array"
         ),
         # Test length
         pytest.param(['"1"', "[1, 2]", '{"a": 3, "b": 4, "c": 5}'], "length", ["1", "2", "3"], id="length"),
@@ -37,7 +37,7 @@ from daft.recordbatch import MicroPartition
         # Test map
         pytest.param(["[0, 1, 2, 3]"], "map(.*2) | [.[] | select(. < 5)]", ["[0,2,4]"], id="map"),
         # Test iteration
-        pytest.param(["[1, 2, 3]", "[4, 5, 6]", "[7, 8, 9]"], ".[]", ["1\n2\n3", "4\n5\n6", "7\n8\n9"], id="iteration"),
+        pytest.param(["[1, 2, 3]", "[4, 5, 6]", "[7, 8, 9]"], ".[]", ["[1,2,3]", "[4,5,6]", "[7,8,9]"], id="iteration"),
     ],
 )
 def test_json_query_ok(data, query, expected):
@@ -63,13 +63,13 @@ def test_json_query_null_results(data, query, expected):
 
 def test_json_query_invalid_query():
     mp = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
-    with pytest.raises(ValueError, match="Error parsing json query"):
+    with pytest.raises(ValueError, match="Error parsing jq filter"):
         mp.eval_expression_list([col("col").json.query("")])
 
 
 def test_json_query_invalid_filter():
     mp = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
-    with pytest.raises(ValueError, match="Error compiling json query"):
+    with pytest.raises(ValueError, match="Error compiling jq filter"):
         mp.eval_expression_list([col("col").json.query("a")])
 
 
@@ -81,5 +81,5 @@ def test_json_query_invalid_json():
 
 def test_json_query_failed_query():
     mp = MicroPartition.from_pydict({"col": ["[1, 2, 3]"]})
-    with pytest.raises(ValueError, match="Error running json query"):
+    with pytest.raises(ValueError, match="Error running jq filter"):
         mp.eval_expression_list([col("col").json.query('split(",")')])

@@ -1203,7 +1203,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let runtime_handle = get_io_runtime(true);
 
-        runtime_handle.block_on(async move {
+        runtime_handle.block_within_async_context(async move {
             let metadata = read_parquet_metadata(&file, io_client, None, None).await?;
             let serialized = bincode::serialize(&metadata).unwrap();
             let deserialized = bincode::deserialize::<FileMetaData>(&serialized).unwrap();
@@ -1230,7 +1230,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into()).unwrap());
         let runtime_handle = get_io_runtime(true);
         let file_metadata = runtime_handle
-            .block_on({
+            .block_within_async_context({
                 let parquet = parquet.clone();
                 let io_client = io_client.clone();
                 async move { read_parquet_metadata(&parquet, io_client, None, None).await }
