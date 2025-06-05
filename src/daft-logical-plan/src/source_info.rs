@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::partitioning::ClusteringSpecRef;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SourceInfo {
     InMemory(InMemoryInfo),
     Physical(PhysicalScanInfo),
@@ -65,7 +65,7 @@ impl Hash for InMemoryInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PlaceHolderInfo {
     pub source_schema: SchemaRef,
     pub clustering_spec: ClusteringSpecRef,

@@ -9,6 +9,7 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
@@ -22,13 +23,13 @@ use crate::{
 
 mod stage_builder;
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct StageID(usize);
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct ChannelID(usize);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct DataChannel {
     schema: SchemaRef,
@@ -36,14 +37,14 @@ struct DataChannel {
     stats: Option<ApproxStats>,
     // ordering: Option<ExprRef>,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct InputChannel {
     from_stage: StageID,
     channel_id: ChannelID,
     data_channel: DataChannel,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct OutputChannel {
     to_stages: Vec<StageID>,
@@ -63,7 +64,7 @@ struct OutputChannel {
 // - We must be able to do re-planning based on new statistics.
 // - We must allow for potential concurrent execution of stages.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct Stage {
     id: StageID,
@@ -122,7 +123,7 @@ impl RunningStage {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum StageType {
     MapPipeline {
         plan: LogicalPlanRef,
@@ -160,7 +161,7 @@ impl StageType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StagePlan {
     stages: HashMap<StageID, Stage>,
     root_stage: StageID,

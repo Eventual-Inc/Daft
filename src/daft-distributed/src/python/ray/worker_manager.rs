@@ -20,8 +20,8 @@ pub(crate) struct RayWorkerManager {
 impl RayWorkerManager {
     pub fn try_new() -> DaftResult<Self> {
         let (ray_workers, task_locals) = Python::with_gil(|py| {
-            let distributed_swordfish_module = py.import("daft.runners.distributed_swordfish")?;
-            let ray_workers = distributed_swordfish_module
+            let flotilla_module = py.import("daft.runners.flotilla")?;
+            let ray_workers = flotilla_module
                 .call_method0("start_ray_workers")?
                 .extract::<Vec<RaySwordfishWorker>>()?;
             let ray_worker_hashmap = ray_workers
