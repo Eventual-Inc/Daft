@@ -5,7 +5,7 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
+    ops::{Limit as LogicalLimit, Shard, Sort as LogicalSort, Source, TopN as LogicalTopN},
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -71,66 +71,18 @@ impl PushDownShard {
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan = if external_info
-                                    .scan_state
-                                    .get_scan_op()
-                                    .0
-                                    .can_absorb_limit()
-                                {
-                                    new_source
-                                } else {
-                                    plan.with_new_children(&[new_source]).into()
-                                };
-                                Ok(Transformed::yes(out_plan))
+                                Ok(Transformed::yes(new_source))
                             }
                             SourceInfo::PlaceHolder(..) => {
                                 panic!("PlaceHolderInfo should not exist for optimization!");
                             }
                         }
                     }
-                    // Fold Limit together.
-                    //
-                    // Limit-Limit -> Limit
-                    LogicalPlan::Limit(LogicalLimit {
-                        input,
-                        limit: child_limit,
-                        eager: child_eagar,
-                        ..
-                    }) => {
-                        let new_limit = limit.min(*child_limit as usize);
-                        let new_eager = eager | child_eagar;
-
-                        let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
-                            input.clone(),
-                            new_limit as i64,
-                            new_eager,
-                        )));
-                        // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
-                        let optimized = self
-                            .try_optimize_node(new_plan.clone())?
-                            .or(Transformed::yes(new_plan))
-                            .data;
-                        Ok(Transformed::yes(optimized))
-                    }
-                    // Combine Limit with Sort into TopN
-                    //
-                    // Limit-Sort -> TopN
-                    LogicalPlan::Sort(LogicalSort {
-                        input,
-                        sort_by,
-                        descending,
-                        nulls_first,
-                        ..
-                    }) => {
-                        let new_plan = Arc::new(LogicalPlan::TopN(LogicalTopN::try_new(
-                            input.clone(),
-                            sort_by.clone(),
-                            descending.clone(),
-                            nulls_first.clone(),
-                            limit as i64,
-                        )?));
-
-                        Ok(Transformed::yes(new_plan))
+                    // Shards cannot be folded together.
+                    LogicalPlan::Shard(_) => {
+                        Err(DaftError::ValueError(
+                            "Shards cannot be folded together".to_string(),
+                        ))
                     }
                     _ => Ok(Transformed::no(plan)),
                 }
@@ -139,220 +91,3 @@ impl PushDownShard {
         }
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use std::sync::Arc;
-
-//     use common_error::DaftResult;
-//     use common_scan_info::Pushdowns;
-//     use daft_core::prelude::*;
-//     use daft_dsl::unresolved_col;
-//     #[cfg(feature = "python")]
-//     use pyo3::Python;
-//     use rstest::rstest;
-
-//     use crate::{
-//         optimization::{
-//             optimizer::{RuleBatch, RuleExecutionStrategy},
-//             rules::PushDownLimit,
-//             test::assert_optimized_plan_with_rules_eq,
-//         },
-//         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
-//         LogicalPlan, LogicalPlanBuilder,
-//     };
-
-//     /// Helper that creates an optimizer with the PushDownLimit rule registered, optimizes
-//     /// the provided plan with said optimizer, and compares the optimized plan with
-//     /// the provided expected plan.
-//     fn assert_optimized_plan_eq(
-//         plan: Arc<LogicalPlan>,
-//         expected: Arc<LogicalPlan>,
-//     ) -> DaftResult<()> {
-//         assert_optimized_plan_with_rules_eq(
-//             plan,
-//             expected,
-//             vec![RuleBatch::new(
-//                 vec![Box::new(PushDownLimit::new())],
-//                 RuleExecutionStrategy::Once,
-//             )],
-//         )
-//     }
-
-//     /// Tests that Limit pushes into external Source.
-//     ///
-//     /// Limit-Source -> Source[with_limit]
-//     #[test]
-//     fn limit_pushes_into_external_source() -> DaftResult<()> {
-//         let limit = 5;
-//         let scan_op = dummy_scan_operator(vec![
-//             Field::new("a", DataType::Int64),
-//             Field::new("b", DataType::Utf8),
-//         ]);
-//         let plan = dummy_scan_node(scan_op.clone())
-//             .limit(limit, false)?
-//             .build();
-//         let expected = dummy_scan_node_with_pushdowns(
-//             scan_op,
-//             Pushdowns::default().with_limit(Some(limit as usize)),
-//         )
-//         .limit(limit, false)?
-//         .build();
-//         assert_optimized_plan_eq(plan, expected)?;
-//         Ok(())
-//     }
-
-//     /// Tests that Limit does not push into scan with existing smaller limit.
-//     ///
-//     /// Limit-Source[existing_limit] -> Source[existing_limit]
-//     #[test]
-//     fn limit_does_not_push_into_scan_if_smaller_limit() -> DaftResult<()> {
-//         let limit = 5;
-//         let existing_limit = 3;
-//         let scan_op = dummy_scan_operator(vec![
-//             Field::new("a", DataType::Int64),
-//             Field::new("b", DataType::Utf8),
-//         ]);
-//         let plan = dummy_scan_node_with_pushdowns(
-//             scan_op.clone(),
-//             Pushdowns::default().with_limit(Some(existing_limit)),
-//         )
-//         .limit(limit, false)?
-//         .build();
-//         let expected = dummy_scan_node_with_pushdowns(
-//             scan_op,
-//             Pushdowns::default().with_limit(Some(existing_limit)),
-//         )
-//         .limit(limit, false)?
-//         .build();
-//         assert_optimized_plan_eq(plan, expected)?;
-//         Ok(())
-//     }
-
-//     /// Tests that Limit does push into scan with existing larger limit.
-//     ///
-//     /// Limit-Source[existing_limit] -> Source[new_limit]
-//     #[test]
-//     fn limit_does_push_into_scan_if_larger_limit() -> DaftResult<()> {
-//         let limit = 5;
-//         let existing_limit = 10;
-//         let scan_op = dummy_scan_operator(vec![
-//             Field::new("a", DataType::Int64),
-//             Field::new("b", DataType::Utf8),
-//         ]);
-//         let plan = dummy_scan_node_with_pushdowns(
-//             scan_op.clone(),
-//             Pushdowns::default().with_limit(Some(existing_limit)),
-//         )
-//         .limit(limit, false)?
-//         .build();
-//         let expected = dummy_scan_node_with_pushdowns(
-//             scan_op,
-//             Pushdowns::default().with_limit(Some(limit as usize)),
-//         )
-//         .limit(limit, false)?
-//         .build();
-//         assert_optimized_plan_eq(plan, expected)?;
-//         Ok(())
-//     }
-
-//     /// Tests that multiple adjacent Limits fold into the smallest limit.
-//     ///
-//     /// Limit[x]-Limit[y] -> Limit[min(x,y)]
-//     #[rstest]
-//     fn limit_folds_with_smaller_limit(
-//         #[values(false, true)] smaller_first: bool,
-//     ) -> DaftResult<()> {
-//         let smaller_limit = 5;
-//         let limit = 10;
-//         let scan_op = dummy_scan_operator(vec![
-//             Field::new("a", DataType::Int64),
-//             Field::new("b", DataType::Utf8),
-//         ]);
-//         let plan = dummy_scan_node(scan_op.clone())
-//             .limit(if smaller_first { smaller_limit } else { limit }, false)?
-//             .limit(if smaller_first { limit } else { smaller_limit }, false)?
-//             .build();
-//         let expected = dummy_scan_node_with_pushdowns(
-//             scan_op,
-//             Pushdowns::default().with_limit(Some(smaller_limit as usize)),
-//         )
-//         .limit(smaller_limit, false)?
-//         .build();
-//         assert_optimized_plan_eq(plan, expected)?;
-//         Ok(())
-//     }
-
-//     /// Tests that Limit does not push into in-memory Source.
-//     #[test]
-//     #[cfg(feature = "python")]
-//     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
-//         let py_obj = Python::with_gil(|py| py.None());
-//         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)]).into();
-//         let plan = LogicalPlanBuilder::in_memory_scan(
-//             "foo",
-//             common_partitioning::PartitionCacheEntry::Python(Arc::new(py_obj)),
-//             schema,
-//             Default::default(),
-//             5,
-//             3,
-//         )?
-//         .limit(5, false)?
-//         .build();
-//         assert_optimized_plan_eq(plan.clone(), plan)?;
-//         Ok(())
-//     }
-
-//     /// Tests that Limit commutes with Repartition.
-//     ///
-//     /// Limit-Repartition-Source -> Repartition-Source[with_limit]
-//     #[test]
-//     fn limit_commutes_with_repartition() -> DaftResult<()> {
-//         let limit = 5;
-//         let num_partitions = 1;
-//         let partition_by = vec![unresolved_col("a")];
-//         let scan_op = dummy_scan_operator(vec![
-//             Field::new("a", DataType::Int64),
-//             Field::new("b", DataType::Utf8),
-//         ]);
-//         let plan = dummy_scan_node(scan_op.clone())
-//             .hash_repartition(Some(num_partitions), partition_by.clone())?
-//             .limit(limit, false)?
-//             .build();
-//         let expected = dummy_scan_node_with_pushdowns(
-//             scan_op,
-//             Pushdowns::default().with_limit(Some(limit as usize)),
-//         )
-//         .limit(limit, false)?
-//         .hash_repartition(Some(num_partitions), partition_by)?
-//         .build();
-//         assert_optimized_plan_eq(plan, expected)?;
-//         Ok(())
-//     }
-
-//     /// Tests that Limit commutes with Projections.
-//     ///
-//     /// Limit-Project-Source -> Project-Source[with_limit]
-//     #[test]
-//     fn limit_commutes_with_projection() -> DaftResult<()> {
-//         let limit = 5;
-//         let proj = vec![unresolved_col("a")];
-//         let scan_op = dummy_scan_operator(vec![
-//             Field::new("a", DataType::Int64),
-//             Field::new("b", DataType::Utf8),
-//         ]);
-//         let plan = dummy_scan_node(scan_op.clone())
-//             .select(proj.clone())?
-//             .limit(limit, false)?
-//             .build();
-//         let expected = dummy_scan_node_with_pushdowns(
-//             scan_op,
-//             Pushdowns::default().with_limit(Some(limit as usize)),
-//         )
-//         .limit(limit, false)?
-//         .select(proj)?
-//         .build();
-//         assert_optimized_plan_eq(plan, expected)?;
-//         Ok(())
-//     }
-// }

@@ -281,6 +281,10 @@ pub mod pylib {
             self.can_absorb_select
         }
 
+        fn can_absorb_shard(&self) -> bool {
+            false
+        }
+
         fn multiline_display(&self) -> Vec<String> {
             let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
             lines

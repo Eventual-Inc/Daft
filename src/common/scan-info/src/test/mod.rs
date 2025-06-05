@@ -80,6 +80,10 @@ impl ScanTaskLike for DummyScanTask {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
+
+    fn get_file_path(&self) -> Option<String> {
+        None
+    }
 }
 
 impl DisplayAs for DummyScanTask {

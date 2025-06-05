@@ -80,4 +80,14 @@ impl PhysicalScanInfo {
             pushdowns,
         }
     }
+
+    #[must_use]
+    pub fn with_scan_state(&self, scan_state: ScanState) -> Self {
+        Self {
+            scan_state,
+            source_schema: self.source_schema.clone(),
+            partitioning_keys: self.partitioning_keys.clone(),
+            pushdowns: self.pushdowns.clone(),
+        }
+    }
 }
