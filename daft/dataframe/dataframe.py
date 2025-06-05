@@ -1924,6 +1924,28 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def shard(self, strategy: Literal["file"], world_size: int, rank: int) -> "DataFrame":
+        """Shards the leaf scan node of the dataframe using the given sharding strategy.
+
+        Currently if there are multiple leaf scan nodes, this will not work.
+
+        Only "file" strategy is supported for now for file-based sharding.
+
+        Args:
+            strategy (Literal["file"]): sharding strategy.
+            world_size (int): number of shards.
+            rank (int): rank of the shard.
+        """
+        if strategy != "file":
+            raise ValueError("Only file-based sharding is supported")
+        if world_size <= 0:
+            raise ValueError("World size for sharding must be greater than zero")
+        if rank >= world_size:
+            raise ValueError("Rank must be less than the world size for sharding")
+        builder = self._builder.shard(strategy, world_size, rank)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def count_rows(self) -> int:
         """Executes the Dataframe to count the number of rows.
 

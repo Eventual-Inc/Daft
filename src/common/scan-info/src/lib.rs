@@ -8,6 +8,7 @@ mod pushdowns;
 pub mod python;
 mod scan_operator;
 mod scan_task;
+mod sharder;
 pub mod test;
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -20,6 +21,7 @@ pub use pushdowns::Pushdowns;
 pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
+pub use sharder::{Sharder, ShardingStrategy};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScanState {

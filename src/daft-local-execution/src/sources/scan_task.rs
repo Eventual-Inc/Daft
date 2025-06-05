@@ -438,6 +438,7 @@ async fn stream_scan_task(
             chunk_size,
             ..
         }) => {
+            println!("we have a parquet file stream!");
             let inference_options =
                 ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 

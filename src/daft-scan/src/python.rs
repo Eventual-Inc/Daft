@@ -603,7 +603,7 @@ pub mod pylib {
             Arc::new(FileFormatConfig::Parquet(default::Default::default())),
             Arc::new(schema),
             Arc::new(Default::default()),
-            Pushdowns::new(None, None, columns.map(Arc::new), None),
+            Pushdowns::new(None, None, columns.map(Arc::new), None, None),
             None,
         );
         Ok(st.estimate_in_memory_size_bytes(None).unwrap())

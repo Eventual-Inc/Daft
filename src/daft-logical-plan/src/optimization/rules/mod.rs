@@ -13,6 +13,7 @@ mod push_down_filter;
 mod push_down_join_predicate;
 mod push_down_limit;
 mod push_down_projection;
+mod push_down_shard;
 mod reorder_joins;
 mod rule;
 mod simplify_expressions;

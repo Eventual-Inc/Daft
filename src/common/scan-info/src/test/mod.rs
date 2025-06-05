@@ -127,6 +127,10 @@ impl ScanOperator for DummyScanOperator {
         false
     }
 
+    fn can_absorb_shard(&self) -> bool {
+        false
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         vec!["DummyScanOperator".to_string()]
     }

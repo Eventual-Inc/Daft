@@ -184,6 +184,10 @@ class LogicalPlanBuilder:
         builder = self._builder.limit(num_rows, eager)
         return LogicalPlanBuilder(builder)
 
+    def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder:
+        builder = self._builder.shard(strategy, world_size, rank)
+        return LogicalPlanBuilder(builder)
+
     def explode(self, explode_expressions: list[Expression]) -> LogicalPlanBuilder:
         explode_pyexprs = [expr._expr for expr in explode_expressions]
         builder = self._builder.explode(explode_pyexprs)

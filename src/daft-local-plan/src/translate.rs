@@ -49,6 +49,11 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 )),
             }
         }
+        LogicalPlan::Shard(_) => {
+            return Err(DaftError::InternalError(
+                "Sharding should have been folded into a source".to_string(),
+            ));
+        }
         LogicalPlan::Filter(filter) => {
             let input = translate(&filter.input)?;
             let predicate = BoundExpr::try_new(filter.predicate.clone(), input.schema())?;
