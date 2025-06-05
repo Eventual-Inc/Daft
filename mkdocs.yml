@@ -20,25 +20,26 @@ nav:
   - Quickstart: quickstart.md
   - Core Concepts: core_concepts.md
   - I/O:
-    - Overview: io.md
-    - Amazon Web Services: integrations/aws.md
-    - Apache Hudi: integrations/hudi.md
-    - Apache Iceberg: integrations/iceberg.md
-    - Delta Lake: integrations/delta_lake.md
-    - Hugging Face Datasets: integrations/huggingface.md
-    # - LanceDB: integrations/lance.md (wip)
-    - Microsoft Azure: integrations/azure.md
-    - SQL: integrations/sql.md
+    - Overview: io/index.md
+    - Amazon Web Services: io/aws.md
+    - Apache Hudi: io/hudi.md
+    - Apache Iceberg: io/iceberg.md
+    - Delta Lake: io/delta_lake.md
+    - Hugging Face Datasets: io/huggingface.md
+    # - LanceDB: io/lance.md (wip)
+    - Microsoft Azure: io/azure.md
+    - SQL: io/sql.md
   # - Configuration: config.md
   - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs:
-    - Overview: catalogs.md
-    - AWS Glue: integrations/glue.md
-    - S3 Tables: integrations/s3tables.md
-    - Unity Catalog: integrations/unity_catalog.md
+    - Overview: catalogs/index.md
+    - AWS Glue: catalogs/glue.md
+    - S3 Tables: catalogs/s3tables.md
+    - Unity Catalog: catalogs/unity_catalog.md
   - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
+  - Integrations: integrations.md
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
@@ -193,6 +194,9 @@ markdown_extensions:
 - pymdownx.emoji:
     emoji_index: !!python/name:material.extensions.emoji.twemoji
     emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    options:
+      custom_icons:
+      - overrides/.icons
 - pymdownx.highlight:
     linenums: true
 
@@ -206,6 +210,18 @@ plugins:
 - minify:
     minify_html: true
     minify_css: true
+- redirects:
+    redirect_maps:
+      'integrations/aws.md': 'io/aws.md'
+      'integrations/hudi.md': 'io/hudi.md'
+      'integrations/iceberg.md': 'io/iceberg.md'
+      'integrations/delta_lake.md': 'io/delta_lake.md'
+      'integrations/huggingface.md': 'io/huggingface.md'
+      'integrations/azure.md': 'io/azure.md'
+      'integrations/sql.md': 'io/sql.md'
+      'integrations/glue.md': 'catalogs/glue.md'
+      'integrations/s3tables.md': 'catalogs/s3tables.md'
+      'integrations/unity_catalog.md': 'catalogs/unity_catalog.md'
 - mkdocstrings:
     handlers:
       python:

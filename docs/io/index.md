@@ -64,7 +64,7 @@ See also [Iceberg](integrations/iceberg.md) for detailed integration.
 | [`read_lance`][daft.io.read_lance]                    | Read a Lance dataset into a DataFrame |
 | [`write_lance`][daft.dataframe.DataFrame.write_lance] | Write a DataFrame to a Lance dataset  |
 
-<!-- See also [Lance](integrations/lance.md) for detailed integration. -->
+<!-- See also [Lance](io/lance.md) for detailed integration. -->
 
 ## Parquet
 
