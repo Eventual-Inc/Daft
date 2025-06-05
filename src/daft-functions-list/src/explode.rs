@@ -22,19 +22,12 @@ impl ScalarUDF for Explode {
     fn aliases(&self) -> &'static [&'static str] {
         &["unnest"]
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         input.explode()
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 1,
             SchemaMismatch: "Expected 1 input arg, got {}",

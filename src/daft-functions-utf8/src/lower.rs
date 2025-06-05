@@ -20,10 +20,7 @@ impl ScalarUDF for Lower {
         "lower"
     }
 
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, |s| {
             s.with_utf8_array(|arr| {
                 Ok(arr
@@ -33,11 +30,7 @@ impl ScalarUDF for Lower {
         })
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         unary_utf8_to_field(inputs, schema, self.name(), DataType::Utf8)
     }
 

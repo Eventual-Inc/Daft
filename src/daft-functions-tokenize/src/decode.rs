@@ -30,10 +30,7 @@ struct DecodeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for TokenizeDecodeFunction {
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let DecodeArgs {
             input,
             _varargs,
@@ -41,7 +38,7 @@ impl ScalarUDF for TokenizeDecodeFunction {
             io_config,
             pattern,
             special_tokens,
-        } = inputs.try_into()?;
+        } = args.try_into()?;
 
         tokenize_decode_series(
             &input,
@@ -56,12 +53,8 @@ impl ScalarUDF for TokenizeDecodeFunction {
         "tokenize_decode"
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
+    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let input = args.required((0, "input"))?.to_field(schema)?;
         ensure!(
             matches!(&input.dtype, DataType::List(inner) if inner.is_integer()),
             TypeError: "Expects input to tokenize_encode to be utf8, but received {input}",

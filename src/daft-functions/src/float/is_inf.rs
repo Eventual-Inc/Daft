@@ -15,10 +15,7 @@ pub struct IsInf;
 
 #[typetag::serde]
 impl ScalarUDF for IsInf {
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         use daft_core::{array::ops::DaftIsInf, series::IntoSeries};
         let UnaryArg { input: data } = inputs.try_into()?;
 
@@ -30,11 +27,7 @@ impl ScalarUDF for IsInf {
     fn name(&self) -> &'static str {
         "is_inf"
     }
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input: data } = inputs.try_into()?;
         let data = data.to_field(schema)?;
         match &data.dtype {

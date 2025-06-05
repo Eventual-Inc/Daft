@@ -17,7 +17,7 @@ macro_rules! log {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;
 
                 input.$name()
@@ -27,7 +27,7 @@ macro_rules! log {
                 stringify!($name)
             }
 
-            fn get_return_type_from_args(
+            fn get_return_type(
                 &self,
                 inputs: FunctionArgs<ExprRef>,
                 schema: &Schema,
@@ -85,20 +85,13 @@ impl ScalarUDF for Log {
     fn name(&self) -> &'static str {
         "log"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let LogArgs { input, base } = inputs.try_into()?;
 
         input.log(base)
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let LogArgs { input, base: _ } = inputs.try_into()?;
         let field = input.to_field(schema)?;
         let dtype = match field.dtype {

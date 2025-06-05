@@ -25,10 +25,7 @@ impl ScalarUDF for Repeat {
         "repeat"
     }
 
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let s = inputs.required((0, "input"))?;
         let n = inputs.required((1, "n"))?;
 
@@ -48,11 +45,7 @@ impl ScalarUDF for Repeat {
         })
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 2,
             TypeError: "Expected 2 input args, got {}", inputs.len()

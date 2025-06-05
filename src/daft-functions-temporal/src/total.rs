@@ -22,7 +22,7 @@ macro_rules! impl_total {
                 stringify!([ < $name:snake:lower > ])
             }
 
-            fn call_with_args(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
                 ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
                 let s = inputs.required((0, "input"))?;
                 match s.data_type() {
@@ -33,7 +33,7 @@ macro_rules! impl_total {
                 }
             }
 
-            fn get_return_type_from_args(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+            fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
                 ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
                 let input = inputs.required((0, "input"))?.to_field(schema)?;
                 ensure!(input.dtype.is_duration(), "expected duration");

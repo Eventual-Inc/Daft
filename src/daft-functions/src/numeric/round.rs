@@ -22,10 +22,7 @@ struct RoundArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Round {
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let RoundArgs { input, decimals } = inputs.try_into()?;
 
         let decimals = decimals.unwrap_or(0);
@@ -37,11 +34,7 @@ impl ScalarUDF for Round {
         "round"
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let RoundArgs { input, .. } = inputs.try_into()?;
 
         let field = input.to_field(schema)?;

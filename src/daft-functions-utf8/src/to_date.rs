@@ -21,10 +21,7 @@ impl ScalarUDF for ToDate {
     fn name(&self) -> &'static str {
         "to_date"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, ValueError: "Expected 2 input args, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "format"))?;
@@ -33,11 +30,7 @@ impl ScalarUDF for ToDate {
         input.with_utf8_array(|arr| Ok(to_date_impl(arr, pattern)?.into_series()))
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         binary_utf8_to_field(
             inputs,
             schema,

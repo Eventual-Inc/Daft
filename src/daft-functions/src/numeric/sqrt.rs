@@ -16,7 +16,7 @@ pub struct Sqrt;
 
 #[typetag::serde]
 impl ScalarUDF for Sqrt {
-    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         let casted_dtype = input.to_floating_data_type()?;
@@ -34,11 +34,7 @@ impl ScalarUDF for Sqrt {
         "sqrt"
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         to_field_floating(&input, schema)
     }

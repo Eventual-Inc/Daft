@@ -25,7 +25,7 @@ struct ClipArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Clip {
-    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let ClipArgs { input, min, max } = inputs.try_into()?;
 
         let input_dtype = input.data_type();
@@ -63,11 +63,7 @@ impl ScalarUDF for Clip {
         "clip"
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let ClipArgs { input, min, max } = inputs.try_into()?;
 
         let input_field = input.to_field(schema)?;

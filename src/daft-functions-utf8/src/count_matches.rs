@@ -19,10 +19,7 @@ impl ScalarUDF for CountMatches {
     fn name(&self) -> &'static str {
         "count_matches"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let patterns = inputs.required((1, "patterns"))?;
 
@@ -45,11 +42,7 @@ impl ScalarUDF for CountMatches {
         })
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let input = inputs.required((0, "input"))?.to_field(schema)?;
         let patterns = inputs.required((1, "patterns"))?.to_field(schema)?;
         ensure!(patterns.dtype.is_string(), ValueError: "expected list for 'patterns', got {}", patterns.dtype);

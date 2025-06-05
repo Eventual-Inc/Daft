@@ -11,10 +11,7 @@ impl ScalarUDF for ToStructFunction {
     fn name(&self) -> &'static str {
         "struct"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         if inputs.is_empty() {
             return Err(DaftError::ValueError(
@@ -26,11 +23,7 @@ impl ScalarUDF for ToStructFunction {
 
         Ok(StructArray::new(field, inputs, None).into_series())
     }
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let inputs = inputs.into_inner();
         if inputs.is_empty() {
             return Err(DaftError::ValueError(

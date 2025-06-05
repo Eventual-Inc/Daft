@@ -30,8 +30,7 @@ impl ScalarFunction {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf
-            .get_return_type_from_args(self.inputs.clone(), schema)
+        self.udf.get_return_type(self.inputs.clone(), schema)
     }
 }
 
@@ -84,19 +83,6 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
         &[]
     }
 
-    /// If possible use `call_with_args` instead.
-    /// unlike `call_with_args`, `call` does not do type checking on the arguments, and may not work as expected if the function is expecting named only arguments.
-    /// `call` may be removed in the future.
-    fn call(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let inputs = FunctionArgs::try_new(
-            inputs
-                .iter()
-                .map(|s| FunctionArg::unnamed(s.clone()))
-                .collect(),
-        )?;
-
-        self.call_with_args(inputs)
-    }
     /// This is where the actual logic of the function is implemented.
     /// A simple example would be a string function such as `to_uppercase` that simply takes in a utf8 array and uppercases all values
     /// ```rs, no_run
@@ -115,7 +101,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///     }
     /// }
     /// ```
-    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
+    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
 
     /// `get_return_type_from_args` is used during planning to ensure that args and datatypes are compatible.
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
@@ -135,24 +121,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///     }
     /// }
     /// ```
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field>;
-
-    /// Use `get_return_type_from_args` whenever possible instead of `get_return_type`.
-    /// `get_return_type` acts as a helper when you don't care about constructing named/unnamed arguments and is mostly only needed for testing purposes.
-    /// this may be removed in the future.
-    fn get_return_type(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        let inputs = inputs
-            .iter()
-            .map(|e| FunctionArg::unnamed(e.clone()))
-            .collect::<Vec<_>>();
-
-        let inputs = FunctionArgs::new_unchecked(inputs);
-        self.get_return_type_from_args(inputs, schema)
-    }
+    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
 
     fn docstring(&self) -> &'static str {
         "No documentation available"

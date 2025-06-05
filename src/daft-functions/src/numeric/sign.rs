@@ -16,7 +16,7 @@ pub struct Sign;
 
 #[typetag::serde]
 impl ScalarUDF for Sign {
-    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         match input.data_type() {
@@ -40,11 +40,7 @@ impl ScalarUDF for Sign {
         stringify!(sign)
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         to_field_numeric(self, &input, schema)
     }
@@ -63,7 +59,7 @@ pub struct Negative;
 
 #[typetag::serde]
 impl ScalarUDF for Negative {
-    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         match input.data_type() {
@@ -108,11 +104,7 @@ impl ScalarUDF for Negative {
         stringify!(negative)
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         to_field_numeric(self, &input, schema)
     }

@@ -14,21 +14,14 @@ impl ScalarUDF for ImageCrop {
     fn name(&self) -> &'static str {
         "image_crop"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, "expected 2 inputs");
 
         let input = inputs.required((0, "input"))?;
         let bbox = inputs.required((1, "bbox"))?;
         crate::series::crop(input, bbox)
     }
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(inputs.len() == 2, "image_crop requires 2 arguments");
 
         let input = inputs.required((0, "input"))?.to_field(schema)?;

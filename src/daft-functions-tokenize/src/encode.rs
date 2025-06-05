@@ -40,10 +40,7 @@ impl ScalarUDF for TokenizeEncodeFunction {
     fn name(&self) -> &'static str {
         "tokenize_encode"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let EncodeArgs {
             input,
             _varargs: _,
@@ -52,7 +49,7 @@ impl ScalarUDF for TokenizeEncodeFunction {
             pattern,
             special_tokens,
             use_special_tokens,
-        } = inputs.try_into()?;
+        } = args.try_into()?;
 
         // if special tokens are passed in, enable using special tokens
         let use_special_tokens = use_special_tokens.unwrap_or_else(|| special_tokens.is_some());
@@ -65,12 +62,8 @@ impl ScalarUDF for TokenizeEncodeFunction {
             use_special_tokens,
         )
     }
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        let input = inputs.required((0, "input"))?.to_field(schema)?;
+    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let input = args.required((0, "input"))?.to_field(schema)?;
         ensure!(
             input.dtype.is_string(),
             TypeError: "Expects input to tokenize_encode to be utf8, but received {input}",

@@ -19,10 +19,7 @@ impl ScalarUDF for RPad {
     fn name(&self) -> &'static str {
         "rpad"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 3, SchemaMismatch: "Expected 3 inputs, but received {}", inputs.len());
         let data = inputs.required((0, "input"))?;
         let length = inputs.required((1, "length"))?;
@@ -31,11 +28,7 @@ impl ScalarUDF for RPad {
         series_pad(data, length, pad, PadPlacement::Right)
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(inputs.len() == 3, SchemaMismatch: "Expected 3 inputs, but received {}", inputs.len());
         let data = inputs.required((0, "input"))?.to_field(schema)?;
         let length = inputs.required((1, "length"))?.to_field(schema)?;

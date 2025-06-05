@@ -18,10 +18,7 @@ impl ScalarUDF for NotNan {
     fn name(&self) -> &'static str {
         "not_nan"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input: data } = inputs.try_into()?;
 
         with_match_float_and_null_daft_types!(data.data_type(), |$T| {
@@ -29,11 +26,7 @@ impl ScalarUDF for NotNan {
         })
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         let data_field = input.to_field(schema)?;
         match &data_field.dtype {

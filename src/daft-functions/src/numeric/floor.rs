@@ -16,7 +16,7 @@ pub struct Floor;
 
 #[typetag::serde]
 impl ScalarUDF for Floor {
-    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         input.floor()
     }
@@ -25,11 +25,7 @@ impl ScalarUDF for Floor {
         "floor"
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         to_field_numeric(self, &input, schema)
     }

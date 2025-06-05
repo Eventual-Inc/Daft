@@ -26,21 +26,14 @@ impl ScalarUDF for ListCount {
     fn name(&self) -> &'static str {
         "list_count"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let ListCountArgs { input, mode } = inputs.try_into()?;
         let mode = mode.unwrap_or(CountMode::Valid);
 
         Ok(input.list_count(mode)?.into_series())
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let ListCountArgs { input, .. } = inputs.try_into()?;
 
         let input_field = input.to_field(schema)?;

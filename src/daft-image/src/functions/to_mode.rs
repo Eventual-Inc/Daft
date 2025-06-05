@@ -17,10 +17,7 @@ struct ImageToModeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for ImageToMode {
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let ImageToModeArgs { input, mode } = inputs.try_into()?;
 
         crate::series::to_mode(&input, mode)
@@ -30,11 +27,7 @@ impl ScalarUDF for ImageToMode {
         "to_mode"
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let ImageToModeArgs { input, mode } = inputs.try_into()?;
 
         let field = input.to_field(schema)?;

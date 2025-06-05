@@ -25,10 +25,7 @@ impl ScalarUDF for MergeMeanFunction {
         "merge_mean"
     }
 
-    fn call_with_args(
-        &self,
-        inputs: super::function_args::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: super::function_args::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input: sum, counts } = inputs.try_into()?;
 
         if !matches!(counts.data_type(), DataType::UInt64) {
@@ -49,11 +46,7 @@ impl ScalarUDF for MergeMeanFunction {
         }
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let Args { input: sum, counts } = inputs.try_into()?;
         let count_field = counts.to_field(schema)?;
         if !matches!(count_field.dtype, DataType::UInt64) {

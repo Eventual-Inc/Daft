@@ -19,10 +19,7 @@ impl ScalarUDF for ListChunk {
     fn name(&self) -> &'static str {
         "list_chunk"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, SchemaMismatch: "Expected 2 input args, got {}", inputs.len());
 
         let input = inputs.required((0, "input"))?;
@@ -33,11 +30,7 @@ impl ScalarUDF for ListChunk {
 
         input.list_chunk(size as _)
     }
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(inputs.len() == 2, SchemaMismatch: "Expected 2 input args, got {}", inputs.len());
         let input_field = inputs.required((0, "input"))?.to_field(schema)?;
 

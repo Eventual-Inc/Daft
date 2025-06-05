@@ -29,11 +29,7 @@ impl ScalarUDF for JsonQuery {
         "Extracts a JSON object from a JSON string using a JSONPath expression."
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let JsonQueryArgs {
             input,
             query: _query,
@@ -43,7 +39,7 @@ impl ScalarUDF for JsonQuery {
         Ok(Field::new(input.name, DataType::Utf8))
     }
 
-    fn call_with_args(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let JsonQueryArgs { input, query } = inputs.try_into()?;
         jq::query_series(&input, &query)
     }

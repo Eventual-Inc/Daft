@@ -13,10 +13,7 @@ impl ScalarUDF for CosineDistanceFunction {
     fn name(&self) -> &'static str {
         "cosine_distance"
     }
-    fn call_with_args(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-    ) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args {
             input: source,
             query,
@@ -49,11 +46,7 @@ impl ScalarUDF for CosineDistanceFunction {
         Ok(output.into_series())
     }
 
-    fn get_return_type_from_args(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let Args {
             input: source,
             query,
