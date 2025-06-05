@@ -21,7 +21,6 @@ pub struct BinaryConcatArgs<T> {
     other: T,
 }
 
-#[typetag::serde]
 impl ScalarUDF for BinaryConcat {
     fn name(&self) -> &'static str {
         "binary_concat"

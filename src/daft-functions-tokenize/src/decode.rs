@@ -28,7 +28,6 @@ struct DecodeArgs<T> {
     pub special_tokens: Option<String>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for TokenizeDecodeFunction {
     fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let DecodeArgs {

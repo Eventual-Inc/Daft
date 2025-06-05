@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Coalesce;
 
-#[typetag::serde]
 impl ScalarUDF for Coalesce {
     fn name(&self) -> &'static str {
         "coalesce"

@@ -10,7 +10,6 @@ struct Args<T> {
     format: Option<String>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for ToString {
     fn name(&self) -> &'static str {
         "strftime"

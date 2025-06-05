@@ -28,7 +28,6 @@ struct Args<T> {
     time_unit: Option<WrappedTimeUnit>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for UnixTimestamp {
     fn name(&self) -> &'static str {
         "to_unix_epoch"

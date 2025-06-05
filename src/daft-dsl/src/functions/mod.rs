@@ -14,12 +14,13 @@ use std::{
     collections::HashMap,
     fmt::{Display, Formatter, Result, Write},
     hash::Hash,
-    sync::{Arc, LazyLock, RwLock},
+    sync::{Arc, LazyLock},
 };
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
+use parking_lot::RwLock;
 use python::PythonUDF;
 use scalar::DynamicScalarFunction;
 pub use scalar::{ScalarFunction, ScalarFunctionFactory, ScalarUDF};

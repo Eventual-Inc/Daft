@@ -14,7 +14,6 @@ use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, Utf8ArrayUtils};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Contains;
 
-#[typetag::serde]
 impl ScalarUDF for Contains {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", contains_impl)

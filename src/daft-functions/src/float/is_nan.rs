@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IsNan;
 
-#[typetag::serde]
 impl ScalarUDF for IsNan {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ComputeError: "Expected 1 input, got {}", inputs.len());
@@ -29,6 +28,7 @@ impl ScalarUDF for IsNan {
     fn name(&self) -> &'static str {
         "is_nan"
     }
+
     fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         let data_field = input.to_field(schema)?;

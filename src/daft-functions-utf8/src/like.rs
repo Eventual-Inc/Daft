@@ -16,7 +16,6 @@ use crate::utils::{
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Like;
 
-#[typetag::serde]
 impl ScalarUDF for Like {
     fn name(&self) -> &'static str {
         "like"

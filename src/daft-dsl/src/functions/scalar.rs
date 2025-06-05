@@ -3,34 +3,135 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use super::function_args::{FunctionArg, FunctionArgs};
-use crate::{Expr, ExprRef};
+use crate::{functions::FUNCTION_REGISTRY, Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarFunction {
-    pub udf: Arc<dyn ScalarUDF>,
+    /// we just store the function name, It will be resolved to a concrete function during planning
+    /// On the first invocation of `to_field`, the function will be resolved using the `FUNCTION_REGISTRY`.
+    pub function_name: Arc<str>,
     pub inputs: FunctionArgs<ExprRef>,
+
+    /// `to_field` can be called many times during optimization
+    /// for that reason, we want to cache the result to avoid redundant computations
+    /// We also don't cache it using the schema as a key because
+    /// each instance of `ScalarFunction` is always bound to a specific schema/plan.
+    /// So there should never a scenario that a `ScalarFunction` instance is calling `to_field` with different schemas
+    #[serde(skip)]
+    pub field_cache: Arc<RwLock<Option<Field>>>,
+
+    #[serde(skip)]
+    /// the concrete function is resolved during `to_field`.
+    /// We cache this to avoid hitting the `FUNCTION_REGISTRY` multiple times.
+    pub maybe_function: Arc<RwLock<Option<Arc<dyn ScalarUDF>>>>,
 }
 
 impl ScalarFunction {
-    // TODO(cory): use FunctionArgs instead of `Vec<ExprRef>`
+    // TODO(cory): remove this and replace with `new_with_args`
     pub fn new<UDF: ScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
+        let func_name = udf.name();
+
         let inputs = inputs.into_iter().map(FunctionArg::unnamed).collect();
         Self {
-            udf: Arc::new(udf),
+            function_name: Arc::from(func_name),
             inputs: FunctionArgs::new_unchecked(inputs),
+            field_cache: Arc::new(RwLock::new(None)),
+            maybe_function: Arc::new(RwLock::new(None)),
         }
     }
+
+    pub fn new_with_args<UDF: ScalarUDF + 'static>(udf: UDF, args: FunctionArgs<ExprRef>) -> Self {
+        let func_name = udf.name();
+
+        Self {
+            function_name: Arc::from(func_name),
+            inputs: args,
+            field_cache: Arc::new(RwLock::new(None)),
+            maybe_function: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub fn new_from_name<S: AsRef<str>>(name: S, args: FunctionArgs<ExprRef>) -> Self {
+        let func_name = name.as_ref();
+
+        Self {
+            function_name: Arc::from(func_name),
+            inputs: args,
+            field_cache: Arc::new(RwLock::new(None)),
+            maybe_function: Arc::new(RwLock::new(None)),
+        }
+    }
+
     pub fn name(&self) -> &str {
-        self.udf.name()
+        self.function_name.as_ref()
+    }
+
+    pub fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        let function = self.get_function();
+        function.call(args)
+    }
+
+    fn get_function(&self) -> Arc<dyn ScalarUDF> {
+        let cache = self.maybe_function.read();
+        if let Some(func) = cache.as_ref() {
+            return func.clone();
+        }
+
+        panic!(
+            "Function {} was not resolved during planning",
+            self.function_name
+        );
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf.get_return_type(self.inputs.clone(), schema)
+        // Check field cache
+        let cache = self.field_cache.read();
+        if let Some(field) = cache.as_ref() {
+            return Ok(field.clone());
+        }
+        drop(cache);
+
+        let func = {
+            let cache = self.maybe_function.read();
+            if let Some(func) = cache.as_ref() {
+                func.clone()
+            } else {
+                drop(cache);
+
+                let f = FUNCTION_REGISTRY.read().get(self.function_name.as_ref());
+                let Some(f) = f else {
+                    return Err(DaftError::ValueError(format!(
+                        "Function {} not found",
+                        self.function_name
+                    )));
+                };
+
+                let func = f.get_function(&self.inputs, schema)?;
+                let mut cache = self.maybe_function.write();
+
+                *cache = Some(func.clone());
+
+                func
+            }
+        };
+
+        // Get the return type
+        let result = func.get_return_type(self.inputs.clone(), schema);
+
+        // Cache the field
+        if let Ok(field) = &result {
+            let mut cache = self.field_cache.write();
+
+            *cache = Some(field.clone());
+        }
+
+        result
     }
 }
 
@@ -69,13 +170,12 @@ pub trait ScalarFunctionFactory: Send + Sync {
     ///
     fn get_function(
         &self,
-        args: FunctionArgs<ExprRef>,
+        args: &FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Arc<dyn ScalarUDF>>;
 }
 
 /// This is a concrete implementation of a ScalarFunction.
-#[typetag::serde(tag = "type")]
 pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     /// The name of the function.
     fn name(&self) -> &'static str;
@@ -190,7 +290,11 @@ impl ScalarFunctionFactory for DynamicScalarFunction {
     }
 
     /// All typing for implementation variants is done during evaluation, hence dynamic.
-    fn get_function(&self, _: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Arc<dyn ScalarUDF>> {
+    fn get_function(
+        &self,
+        _: &FunctionArgs<ExprRef>,
+        _: &Schema,
+    ) -> DaftResult<Arc<dyn ScalarUDF>> {
         Ok(self.0.clone())
     }
 }

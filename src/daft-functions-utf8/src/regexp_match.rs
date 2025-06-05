@@ -14,7 +14,6 @@ use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, Utf8ArrayUtils};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpMatch;
 
-#[typetag::serde]
 impl ScalarUDF for RegexpMatch {
     fn name(&self) -> &'static str {
         "regexp_match"

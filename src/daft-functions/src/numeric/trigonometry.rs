@@ -16,7 +16,6 @@ macro_rules! trigonometry {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
-        #[typetag::serde]
         impl ScalarUDF for $variant {
             fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;
@@ -132,7 +131,6 @@ struct Atan2Args<T> {
     y: T,
 }
 
-#[typetag::serde]
 impl ScalarUDF for Atan2 {
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let Atan2Args { x, y } = inputs.try_into()?;

@@ -23,7 +23,6 @@ struct ClipArgs<T> {
     max: Option<T>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for Clip {
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let ClipArgs { input, min, max } = inputs.try_into()?;

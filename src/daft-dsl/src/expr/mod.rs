@@ -1409,8 +1409,10 @@ impl Expr {
                     .collect();
 
                 Self::ScalarFunction(crate::functions::ScalarFunction {
-                    udf: sf.udf.clone(),
+                    function_name: sf.function_name.clone(),
                     inputs: FunctionArgs::new_unchecked(new_children),
+                    field_cache: sf.field_cache.clone(),
+                    maybe_function: sf.maybe_function.clone(),
                 })
             }
         }
@@ -1927,8 +1929,10 @@ impl FromStr for Operator {
 }
 
 // Check if one set of columns is a reordering of the other
+#[allow(clippy::mutable_key_type)]
 pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
     // sort a and b by name
+
     let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
     let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
     a_set == b_set
@@ -2044,7 +2048,11 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         },
 
         // String contains
-        Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "contains" => 0.1,
+        Expr::ScalarFunction(ScalarFunction { function_name, .. })
+            if function_name.as_ref() == "contains" =>
+        {
+            0.1
+        }
 
         // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
         Expr::ScalarFunction(_)

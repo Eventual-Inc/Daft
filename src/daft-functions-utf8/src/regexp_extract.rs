@@ -14,7 +14,6 @@ use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpExtract;
 
-#[typetag::serde]
 impl ScalarUDF for RegexpExtract {
     fn name(&self) -> &'static str {
         "extract"

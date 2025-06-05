@@ -28,7 +28,6 @@ struct Args<T> {
     codec: Codec,
 }
 
-#[typetag::serde]
 impl ScalarUDF for BinaryDecode {
     fn name(&self) -> &'static str {
         "decode"
@@ -83,7 +82,6 @@ impl ScalarUDF for BinaryDecode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryTryDecode;
 
-#[typetag::serde]
 impl ScalarUDF for BinaryTryDecode {
     fn name(&self) -> &'static str {
         "try_decode"

@@ -31,7 +31,7 @@ macro_rules! impl_temporal {
             #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
             pub struct $name;
 
-            #[typetag::serde]
+
             impl ScalarUDF for $name {
 
                 fn name(&self) -> &'static str {

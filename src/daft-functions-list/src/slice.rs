@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListSlice;
 
-#[typetag::serde]
 impl ScalarUDF for ListSlice {
     fn name(&self) -> &'static str {
         "list_slice"

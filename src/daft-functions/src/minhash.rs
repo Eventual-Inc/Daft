@@ -20,7 +20,6 @@ struct Args<T> {
     hash_function: Option<String>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for MinHashFunction {
     fn name(&self) -> &'static str {
         "minhash"

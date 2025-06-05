@@ -14,7 +14,6 @@ struct Args<T> {
     seed: Option<T>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for HashFunction {
     fn name(&self) -> &'static str {
         "hash"

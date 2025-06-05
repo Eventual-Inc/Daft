@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ImageResize;
 
-#[typetag::serde]
 impl ScalarUDF for ImageResize {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;

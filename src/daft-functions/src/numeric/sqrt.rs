@@ -14,7 +14,6 @@ use super::to_field_floating;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Sqrt;
 
-#[typetag::serde]
 impl ScalarUDF for Sqrt {
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;

@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListChunk;
 
-#[typetag::serde]
 impl ScalarUDF for ListChunk {
     fn name(&self) -> &'static str {
         "list_chunk"

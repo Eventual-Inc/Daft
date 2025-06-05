@@ -15,7 +15,6 @@ use crate::kernels::BinaryArrayExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryLength;
 
-#[typetag::serde]
 impl ScalarUDF for BinaryLength {
     fn name(&self) -> &'static str {
         "binary_length"

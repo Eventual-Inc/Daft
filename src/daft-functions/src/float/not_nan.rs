@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct NotNan;
 
-#[typetag::serde]
 impl ScalarUDF for NotNan {
     fn name(&self) -> &'static str {
         "not_nan"

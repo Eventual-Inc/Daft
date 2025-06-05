@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
     prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +14,6 @@ use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpReplace;
 
-#[typetag::serde]
 impl ScalarUDF for RegexpReplace {
     fn name(&self) -> &'static str {
         "regexp_replace"
@@ -40,7 +37,6 @@ impl ScalarUDF for RegexpReplace {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Replace;
 
-#[typetag::serde]
 impl ScalarUDF for Replace {
     fn name(&self) -> &'static str {
         "replace"
@@ -63,17 +59,10 @@ impl ScalarUDF for Replace {
 
 #[must_use]
 pub fn replace(input: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: bool) -> ExprRef {
-    ScalarFunction {
-        udf: if regex {
-            Arc::new(RegexpReplace) as _
-        } else {
-            Arc::new(Replace) as _
-        },
-        inputs: FunctionArgs::new_unchecked(vec![
-            FunctionArg::unnamed(input),
-            FunctionArg::unnamed(pattern),
-            FunctionArg::unnamed(replacement),
-        ]),
+    if regex {
+        ScalarFunction::new(RegexpReplace, vec![input, pattern, replacement])
+    } else {
+        ScalarFunction::new(Replace, vec![input, pattern, replacement])
     }
     .into()
 }

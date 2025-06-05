@@ -14,7 +14,6 @@ struct Args<T> {
     interval: String,
 }
 
-#[typetag::serde]
 impl ScalarUDF for Truncate {
     fn name(&self) -> &'static str {
         "truncate"

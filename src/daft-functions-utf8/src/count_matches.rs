@@ -14,7 +14,6 @@ pub struct CountMatches;
 const WHOLE_WORDS_DEFAULT_VALUE: bool = false;
 const CASE_SENSITIVE_DEFAULT_VALUE: bool = true;
 
-#[typetag::serde]
 impl ScalarUDF for CountMatches {
     fn name(&self) -> &'static str {
         "count_matches"

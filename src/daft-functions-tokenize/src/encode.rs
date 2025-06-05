@@ -35,7 +35,6 @@ struct EncodeArgs<T> {
     pub use_special_tokens: Option<bool>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for TokenizeEncodeFunction {
     fn name(&self) -> &'static str {
         "tokenize_encode"

@@ -21,7 +21,6 @@ struct ListCountArgs<T> {
     mode: Option<CountMode>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for ListCount {
     fn name(&self) -> &'static str {
         "list_count"

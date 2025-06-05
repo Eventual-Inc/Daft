@@ -67,7 +67,7 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
     functions.add_fn("concat", SQLConcat);
-    for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
+    for (name, function_factory) in FUNCTION_REGISTRY.read().entries() {
         // Note:
         //  FunctionModule came from SQLModule, but SQLModule still remains.
         //  We must add all functions from the registry to the SQLModule, but
@@ -78,7 +78,7 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
         //  by calling get_function with empty arguments and only adding the ok's.
         let args = FunctionArgs::empty();
         let schema = Schema::empty();
-        if let Ok(function) = function_factory.get_function(args, &schema) {
+        if let Ok(function) = function_factory.get_function(&args, &schema) {
             functions.add_fn(name, function);
         }
     }
@@ -91,10 +91,10 @@ impl SQLFunction for Arc<dyn ScalarUDF> {
             .iter()
             .map(|input| planner.plan_function_arg(input))
             .collect::<SQLPlannerResult<Vec<_>>>()?;
-        Ok(ScalarFunction {
-            udf: self.clone(),
-            inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
-        }
+        Ok(ScalarFunction::new_from_name(
+            self.name(),
+            daft_dsl::functions::FunctionArgs::try_new(inputs)?,
+        )
         .into())
     }
     fn docstrings(&self, _alias: &str) -> String {

@@ -14,7 +14,6 @@ use crate::pad::{series_pad, PadPlacement};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RPad;
 
-#[typetag::serde]
 impl ScalarUDF for RPad {
     fn name(&self) -> &'static str {
         "rpad"

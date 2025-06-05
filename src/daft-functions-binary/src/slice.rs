@@ -24,7 +24,6 @@ struct BinarySliceArgs<T> {
     length: Option<T>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for BinarySlice {
     fn name(&self) -> &'static str {
         "binary_slice"

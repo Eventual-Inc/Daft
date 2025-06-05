@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListSum;
 
-#[typetag::serde]
 impl ScalarUDF for ListSum {
     fn name(&self) -> &'static str {
         "list_sum"

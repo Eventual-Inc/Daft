@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ImageCrop;
 
-#[typetag::serde]
 impl ScalarUDF for ImageCrop {
     fn name(&self) -> &'static str {
         "image_crop"

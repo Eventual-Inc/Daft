@@ -12,7 +12,6 @@ pub struct DeserializeArgs<T> {
     dtype: DataType,
 }
 
-#[typetag::serde]
 impl ScalarUDF for Deserialize {
     fn name(&self) -> &'static str {
         "deserialize"
@@ -39,7 +38,6 @@ impl ScalarUDF for Deserialize {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TryDeserialize;
 
-#[typetag::serde]
 impl ScalarUDF for TryDeserialize {
     fn name(&self) -> &'static str {
         "try_deserialize"

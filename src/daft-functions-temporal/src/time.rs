@@ -5,7 +5,6 @@ use daft_dsl::functions::{prelude::*, UnaryArg};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Time;
 
-#[typetag::serde]
 impl ScalarUDF for Time {
     fn name(&self) -> &'static str {
         "time"

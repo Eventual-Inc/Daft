@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ToDatetime;
 
-#[typetag::serde]
 impl ScalarUDF for ToDatetime {
     fn name(&self) -> &'static str {
         "to_datetime"

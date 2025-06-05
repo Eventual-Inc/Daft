@@ -1,3 +1,7 @@
+#![allow(
+    clippy::mutable_key_type,
+    reason = "ScalarFunction has inner mutability that is not included in the hashing"
+)]
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
@@ -191,6 +195,7 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
 /// Used for resolving and validating expressions.
 /// Specifically, makes sure the expression does not contain aggregations or actor pool UDFs
 /// where they are not allowed, and resolves struct accessors and wildcards.
+
 #[derive(Default, TypedBuilder)]
 pub struct ExprResolver<'a> {
     #[builder(default)]

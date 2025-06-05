@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListDistinct;
 
-#[typetag::serde]
 impl ScalarUDF for ListDistinct {
     fn name(&self) -> &'static str {
         "list_distinct"

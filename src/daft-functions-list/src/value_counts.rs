@@ -11,7 +11,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListValueCounts;
 
-#[typetag::serde]
 impl ScalarUDF for ListValueCounts {
     fn name(&self) -> &'static str {
         "list_value_counts"

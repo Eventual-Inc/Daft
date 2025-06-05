@@ -19,7 +19,6 @@ struct JqArgs<T> {
     filter: String,
 }
 
-#[typetag::serde]
 impl ScalarUDF for Jq {
     fn name(&self) -> &'static str {
         "jq"

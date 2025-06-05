@@ -14,7 +14,6 @@ use crate::utils::{unary_utf8_evaluate, unary_utf8_to_field, Utf8ArrayUtils};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RStrip;
 
-#[typetag::serde]
 impl ScalarUDF for RStrip {
     fn name(&self) -> &'static str {
         "rstrip"

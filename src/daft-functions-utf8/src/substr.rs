@@ -29,7 +29,6 @@ struct SubstrArgs<T> {
     length: Option<T>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for Substr {
     fn name(&self) -> &'static str {
         "substr"

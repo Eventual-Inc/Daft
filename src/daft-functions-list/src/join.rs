@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListJoin;
 
-#[typetag::serde]
 impl ScalarUDF for ListJoin {
     fn name(&self) -> &'static str {
         "list_join"

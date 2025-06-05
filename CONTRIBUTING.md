@@ -154,7 +154,7 @@ use daft_dsl::functions::prelude::*;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct MyToUpperCase;
 
-#[typetag::serde]
+
 impl ScalarUDF for MyToUpperCase {
 
     // Start by giving the function a name.

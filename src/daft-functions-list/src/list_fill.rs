@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListFill;
 
-#[typetag::serde]
 impl ScalarUDF for ListFill {
     fn name(&self) -> &'static str {
         "list_fill"

@@ -36,7 +36,6 @@ pub struct UrlDownloadArgs<T> {
     pub on_error: Option<String>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for UrlDownload {
     fn name(&self) -> &'static str {
         "url_download"

@@ -19,7 +19,6 @@ struct ImageEncodeArgs<T> {
     image_format: ImageFormat,
 }
 
-#[typetag::serde]
 impl ScalarUDF for ImageEncode {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let ImageEncodeArgs {

@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListMax;
 
-#[typetag::serde]
 impl ScalarUDF for ListMax {
     fn name(&self) -> &'static str {
         "list_max"

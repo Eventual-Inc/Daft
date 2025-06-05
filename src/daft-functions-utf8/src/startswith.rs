@@ -14,7 +14,6 @@ use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, Utf8ArrayUtils};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StartsWith;
 
-#[typetag::serde]
 impl ScalarUDF for StartsWith {
     fn name(&self) -> &'static str {
         "starts_with"

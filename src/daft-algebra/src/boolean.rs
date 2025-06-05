@@ -140,6 +140,10 @@ fn apply_de_morgans(expr: ExprRef) -> Transformed<ExprRef> {
 /// Examples:
 /// - (x > 0) AND (y > 0) would filter out nulls if either x or y are null, since if one side of an AND is null, the whole expression is null.
 /// - (x > 0) OR (y > 0) would filter out nulls if both x and y are null, but not necessarily if only one is null, since (null OR true) is true and not null.
+#[allow(
+    clippy::mutable_key_type,
+    reason = "ScalarFunction has inner mutability that is not included in the hashing"
+)]
 pub fn predicate_removes_nulls(
     expr: ExprRef,
     schema: &SchemaRef,

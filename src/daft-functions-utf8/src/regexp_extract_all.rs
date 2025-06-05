@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpExtractAll;
 
-#[typetag::serde]
 impl ScalarUDF for RegexpExtractAll {
     fn name(&self) -> &'static str {
         "extract_all"

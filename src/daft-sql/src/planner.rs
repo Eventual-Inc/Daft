@@ -485,6 +485,10 @@ impl SQLPlanner<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::mutable_key_type,
+        reason = "ScalarFunction has inner mutability that is not included in the hashing"
+    )]
     fn plan_aggregate_query(
         &mut self,
         projections: Vec<Arc<Expr>>,

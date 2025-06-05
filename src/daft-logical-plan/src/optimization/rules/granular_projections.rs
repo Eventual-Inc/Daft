@@ -1,8 +1,11 @@
-use std::{any::TypeId, collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    resolved_col, Expr,
+};
 use daft_functions_uri::download::UrlDownload;
 use itertools::Itertools;
 
@@ -43,7 +46,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFunction(ScalarFunction { function_name, .. }) if function_name.as_ref() == UrlDownload{}.name()
         )
     }
 
@@ -318,7 +321,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<BinaryDecode>()
+            Expr::ScalarFunction(ScalarFunction { function_name, .. }) if function_name.as_ref() == BinaryDecode{}.name()
         ));
 
         // Check that the top level project has a single child, which is a project
@@ -339,7 +342,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFunction(ScalarFunction { function_name, .. }) if function_name.as_ref() == UrlDownload{}.name()
         ));
 
         // Check that the bottom level project has a single child, which is a source node
@@ -406,7 +409,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<BinaryConcat>()
+            Expr::ScalarFunction(ScalarFunction { function_name, .. }) if function_name.as_ref() == BinaryConcat{}.name()
         ));
 
         // Check that the top level project has a single child, which is a project
@@ -427,7 +430,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFunction(ScalarFunction { function_name, .. }) if function_name.as_ref() == UrlDownload{}.name()
         ));
 
         // Check that the middle level project has a single child, which is a project
@@ -448,7 +451,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<Capitalize>()
+            Expr::ScalarFunction(ScalarFunction { function_name, .. }) if function_name.as_ref() == Capitalize{}.name()
         ));
 
         // Check that the bottom level project has a single child, which is a source node

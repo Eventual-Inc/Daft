@@ -14,7 +14,6 @@ use super::to_field_numeric;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Ceil;
 
-#[typetag::serde]
 impl ScalarUDF for Ceil {
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;

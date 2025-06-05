@@ -19,7 +19,6 @@ use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Repeat;
 
-#[typetag::serde]
 impl ScalarUDF for Repeat {
     fn name(&self) -> &'static str {
         "repeat"

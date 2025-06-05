@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Explode;
 
-#[typetag::serde]
 impl ScalarUDF for Explode {
     fn name(&self) -> &'static str {
         "explode"

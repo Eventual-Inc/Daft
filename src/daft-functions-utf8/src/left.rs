@@ -21,7 +21,6 @@ use crate::utils::{
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Left;
 
-#[typetag::serde]
 impl ScalarUDF for Left {
     fn name(&self) -> &'static str {
         "left"

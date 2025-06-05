@@ -14,7 +14,6 @@ macro_rules! exp {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
-        #[typetag::serde]
         impl ScalarUDF for $variant {
             fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;

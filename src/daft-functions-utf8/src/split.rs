@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -8,7 +6,7 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{FunctionArg, FunctionArgs, ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -23,7 +21,6 @@ pub struct Split;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpSplit;
 
-#[typetag::serde]
 impl ScalarUDF for Split {
     fn name(&self) -> &'static str {
         "split"
@@ -47,7 +44,7 @@ impl ScalarUDF for Split {
         "Splits a string into substrings based on a delimiter."
     }
 }
-#[typetag::serde]
+
 impl ScalarUDF for RegexpSplit {
     fn name(&self) -> &'static str {
         "regexp_split"
@@ -74,16 +71,10 @@ impl ScalarUDF for RegexpSplit {
 
 #[must_use]
 pub fn split(input: ExprRef, pattern: ExprRef, regex: bool) -> ExprRef {
-    ScalarFunction {
-        udf: if regex {
-            Arc::new(RegexpSplit) as _
-        } else {
-            Arc::new(Split)
-        },
-        inputs: FunctionArgs::new_unchecked(vec![
-            FunctionArg::unnamed(input),
-            FunctionArg::unnamed(pattern),
-        ]),
+    if regex {
+        ScalarFunction::new(RegexpSplit, vec![input, pattern])
+    } else {
+        ScalarFunction::new(Split, vec![input, pattern])
     }
     .into()
 }

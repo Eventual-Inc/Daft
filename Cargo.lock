@@ -2289,6 +2289,7 @@ dependencies = [
  "indexmap 2.9.0",
  "itertools 0.11.0",
  "num-traits",
+ "parking_lot 0.12.4",
  "pyo3",
  "rstest",
  "serde",

@@ -28,7 +28,10 @@ impl SimplifyNullFilteredJoin {
         Self {}
     }
 }
-
+#[allow(
+    clippy::mutable_key_type,
+    reason = "ScalarFunction has inner mutability that is not included in the hashing"
+)]
 impl OptimizerRule for SimplifyNullFilteredJoin {
     fn try_optimize(&self, plan: LogicalPlanRef) -> DaftResult<Transformed<LogicalPlanRef>> {
         plan.transform(|node| {

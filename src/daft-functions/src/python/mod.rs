@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
-use daft_core::prelude::Schema;
 use daft_dsl::{
-    functions::{
-        FunctionArg, FunctionArgs, ScalarFunction, ScalarFunctionFactory, FUNCTION_REGISTRY,
-    },
+    functions::{FunctionArg, FunctionArgs, ScalarFunction},
     python::PyExpr,
     ExprRef,
 };
@@ -15,7 +12,7 @@ use pyo3::{
 
 #[pyo3::pyclass]
 pub struct PyScalarFunction {
-    pub inner: Arc<dyn ScalarFunctionFactory>,
+    pub inner: Arc<str>,
 }
 
 use pyo3::prelude::*;
@@ -50,11 +47,10 @@ impl PyScalarFunction {
         // resolution in the planner. For now, we'll necessarily get the single dynamic function
         // out of the DynamicScalarFunctionFactory which replicates the behavior of
         // today and covers name resolution in the DSL.
-        let schema = Schema::empty();
-        let inputs = FunctionArgs::try_new(inputs)?;
-        let udf = self.inner.get_function(inputs.clone(), &schema)?;
 
-        let expr: ExprRef = ScalarFunction { udf, inputs }.into();
+        let inputs = FunctionArgs::try_new(inputs)?;
+
+        let expr: ExprRef = ScalarFunction::new_from_name(self.inner.clone(), inputs).into();
         Ok(expr.into())
     }
 }
@@ -62,12 +58,10 @@ impl PyScalarFunction {
 /// Lookup a scalar function factory by name.
 #[pyo3::pyfunction]
 pub fn get_function_from_registry(name: &str) -> PyResult<PyScalarFunction> {
-    Ok(FUNCTION_REGISTRY
-        .read()
-        .unwrap()
-        .get(name)
-        .map(|inner| PyScalarFunction { inner })
-        .expect("Function was missing an implementation"))
+    // Defer validation until planning
+    Ok(PyScalarFunction {
+        inner: Arc::from(name.to_string()),
+    })
 }
 
 pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {

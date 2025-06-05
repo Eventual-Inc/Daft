@@ -14,7 +14,6 @@ use crate::utils::{unary_utf8_evaluate, unary_utf8_to_field};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct LengthBytes;
 
-#[typetag::serde]
 impl ScalarUDF for LengthBytes {
     fn name(&self) -> &'static str {
         "length_bytes"

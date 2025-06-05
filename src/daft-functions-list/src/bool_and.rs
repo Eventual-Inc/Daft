@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListBoolAnd;
 
-#[typetag::serde]
 impl ScalarUDF for ListBoolAnd {
     fn name(&self) -> &'static str {
         "list_bool_and"

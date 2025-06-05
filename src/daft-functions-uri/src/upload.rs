@@ -30,7 +30,6 @@ struct UrlUploadArgs<T> {
     io_config: Option<IOConfig>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for UrlUpload {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let UrlUploadArgs {

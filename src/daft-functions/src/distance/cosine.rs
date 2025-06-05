@@ -8,7 +8,7 @@ struct Args<T> {
     input: T,
     query: T,
 }
-#[typetag::serde]
+
 impl ScalarUDF for CosineDistanceFunction {
     fn name(&self) -> &'static str {
         "cosine_distance"

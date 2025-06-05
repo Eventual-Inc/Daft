@@ -13,7 +13,7 @@ mod json;
 //
 pub type Deserializer = fn(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series>;
 
-/// Supported formsts for the serialize and deserialize functions.
+/// Supported formats for the serialize and deserialize functions.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Format {
     Json,

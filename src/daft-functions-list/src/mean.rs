@@ -15,7 +15,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListMean;
 
-#[typetag::serde]
 impl ScalarUDF for ListMean {
     fn name(&self) -> &'static str {
         "list_mean"

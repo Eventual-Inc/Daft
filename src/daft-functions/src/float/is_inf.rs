@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IsInf;
 
-#[typetag::serde]
 impl ScalarUDF for IsInf {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         use daft_core::{array::ops::DaftIsInf, series::IntoSeries};

@@ -19,7 +19,6 @@ struct Args<T> {
     counts: T,
 }
 
-#[typetag::serde]
 impl ScalarUDF for MergeMeanFunction {
     fn name(&self) -> &'static str {
         "merge_mean"

@@ -16,7 +16,6 @@ use crate::utils::{
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Find;
 
-#[typetag::serde]
 impl ScalarUDF for Find {
     fn name(&self) -> &'static str {
         "find"

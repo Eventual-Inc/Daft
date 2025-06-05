@@ -11,7 +11,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListMin;
 
-#[typetag::serde]
 impl ScalarUDF for ListMin {
     fn name(&self) -> &'static str {
         "list_min"

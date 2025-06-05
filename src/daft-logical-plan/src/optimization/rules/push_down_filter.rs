@@ -34,7 +34,10 @@ impl OptimizerRule for PushDownFilter {
         plan.transform_down(|node| self.try_optimize_node(node))
     }
 }
-
+#[allow(
+    clippy::mutable_key_type,
+    reason = "ScalarFunction has inner mutability that is not included in the hashing"
+)]
 impl PushDownFilter {
     #[allow(clippy::only_used_in_recursion)]
     fn try_optimize_node(

@@ -26,7 +26,6 @@ struct ImageDecodeArgs<T> {
     on_error: Option<T>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for ImageDecode {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let ImageDecodeArgs {

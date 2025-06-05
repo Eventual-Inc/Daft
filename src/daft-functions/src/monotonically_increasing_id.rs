@@ -9,7 +9,6 @@ pub struct MonotonicallyIncreasingId;
 #[derive(FunctionArgs)]
 struct Args {}
 
-#[typetag::serde]
 impl ScalarUDF for MonotonicallyIncreasingId {
     fn name(&self) -> &'static str {
         "monotonically_increasing_id"

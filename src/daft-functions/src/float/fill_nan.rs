@@ -21,7 +21,6 @@ struct Args<T> {
     fill_value: T,
 }
 
-#[typetag::serde]
 impl ScalarUDF for FillNan {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args { input, fill_value } = inputs.try_into()?;

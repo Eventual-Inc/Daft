@@ -16,7 +16,6 @@ use crate::utils::binary_utf8_to_field;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ToDate;
 
-#[typetag::serde]
 impl ScalarUDF for ToDate {
     fn name(&self) -> &'static str {
         "to_date"

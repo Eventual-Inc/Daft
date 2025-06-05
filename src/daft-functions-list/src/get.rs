@@ -14,7 +14,6 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListGet;
 
-#[typetag::serde]
 impl ScalarUDF for ListGet {
     fn name(&self) -> &'static str {
         "list_get"

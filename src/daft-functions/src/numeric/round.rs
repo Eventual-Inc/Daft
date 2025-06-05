@@ -20,7 +20,6 @@ struct RoundArgs<T> {
     decimals: Option<u32>,
 }
 
-#[typetag::serde]
 impl ScalarUDF for Round {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let RoundArgs { input, decimals } = inputs.try_into()?;
