@@ -1505,7 +1505,7 @@ To learn more about each of these constructors, as well as the options that they
 
 ### From Data Catalogs
 
-If you use catalogs such as [Apache Iceberg](integrations/iceberg.md) or [Apache Hudi](integrations/hudi.md), you can check out their dedicated integration pages.
+If you use catalogs such as [Apache Iceberg](io/iceberg.md) or [Apache Hudi](io/hudi.md), you can check out their dedicated integration pages.
 
 ### From File Paths
 
@@ -1555,7 +1555,7 @@ Daft can also read data from a variety of databases, including PostgreSQL, MySQL
     df = daft.read_sql("SELECT * FROM my_table", partition_col="date", uri)
     ```
 
-To learn more, consult the [`SQL Integration Page`](integrations/sql.md) or the API documentation on [`daft.read_sql()`][daft.read_sql].
+To learn more, consult the [`SQL Integration Page`](io/sql.md) or the API documentation on [`daft.read_sql()`][daft.read_sql].
 
 ### Reading a column of URLs
 
@@ -2631,15 +2631,35 @@ Now you're ready to call this function on the `urls` column and store the output
 
 ### Integrations
 
+#### Catalogs
+
 <div class="grid cards" markdown>
 
-- [**Unity Catalog**](integrations/unity_catalog.md)
-- [**Apache Iceberg**](integrations/iceberg.md)
-- [**Delta Lake**](integrations/delta_lake.md)
-- [:material-microsoft-azure: **Microsoft Azure**](integrations/azure.md)
-- [:fontawesome-brands-aws: **Amazon Web Services (AWS)**](integrations/aws.md)
-- [**SQL**](integrations/sql.md)
-- [:simple-huggingface: **Hugging Face Datasets**](integrations/huggingface.md)
+- [**Apache Iceberg**](io/iceberg.md)
+- [**AWS Glue**](catalogs/glue.md)
+- [**AWS S3Tables**](catalogs/s3tables.md)
+- [**Unity Catalog**](catalogs/unity_catalog.md)
+
+</div>
+
+#### Tables
+
+<div class="grid cards" markdown>
+
+- [**Apache Iceberg**](io/iceberg.md)
+- [**Apache Hudi**](io/hudi.md)
+- [**Delta Lake**](io/delta_lake.md)
+- [**Hugging Face Datasets**](io/huggingface.md)
+<!-- - [**LanceDB**](io/lancedb.md) -->
+
+</div>
+
+#### Storage
+
+<div class="grid cards" markdown>
+
+- [**Amazon Web Services (AWS)**](io/aws.md)
+- [**Microsoft Azure**](io/azure.md)
 
 </div>
 

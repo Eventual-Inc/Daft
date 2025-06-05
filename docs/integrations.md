@@ -1,5 +1,7 @@
 # Integrations
 
+Here are all the integrations that Daft currently supports.
+
 ## Catalogs
 
 <div class="grid cards" markdown>
@@ -18,7 +20,7 @@
 - [**Apache Iceberg**](io/iceberg.md)
 - [**Apache Hudi**](io/hudi.md)
 - [**Delta Lake**](io/delta_lake.md)
-- [**Hugging Face Datasets**](integrations/huggingface.md)
+- [**Hugging Face Datasets**](io/huggingface.md)
 <!-- - [**LanceDB**](io/lancedb.md) -->
 
 </div>
@@ -40,3 +42,5 @@
 <!-- - [**Google Cloud Storage**](io/gcs.md) -->
 
 </div>
+
+If there are any integrations missing from this list, feel free to [open an issue on Github](https://github.com/Eventual-Inc/Daft/issues) or contribute your own with our [User-Defined Data Sources & Sinks](https://docs.getdaft.io/en/stable/io/#user-defined).

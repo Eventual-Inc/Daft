@@ -1,6 +1,6 @@
 # I/O
 
-Daft offers a variety of approaches to creating a DataFrame from reading various data sources (in-memory data, files, data catalogs, and integrations) and writing to various data sources. Please see [Daft I/O API docs](./api/io.md) for API details.
+Daft offers a variety of approaches to creating a DataFrame from reading various data sources (in-memory data, files, data catalogs, and integrations) and writing to various data sources. Please see [Daft I/O API docs](../api/io.md) for API details.
 
 ## In-Memory
 
@@ -30,7 +30,7 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 | [`read_deltalake`][daft.io.read_deltalake]                    | Read a Delta Lake table into a DataFrame |
 | [`write_deltalake`][daft.dataframe.DataFrame.write_deltalake] | Write a DataFrame to a Delta Lake table  |
 
-See also [Delta Lake](integrations/delta_lake.md) for detailed integration.
+See also [Delta Lake](delta_lake.md) for detailed integration.
 
 ## Hudi
 
@@ -38,7 +38,7 @@ See also [Delta Lake](integrations/delta_lake.md) for detailed integration.
 |----------------------------------|------------------------------------|
 | [`read_hudi`][daft.io.read_hudi] | Read a Hudi table into a DataFrame |
 
-See also [Apache Hudi](integrations/hudi.md) for detailed integration.
+See also [Apache Hudi](hudi.md) for detailed integration.
 
 ## Iceberg
 
@@ -47,7 +47,7 @@ See also [Apache Hudi](integrations/hudi.md) for detailed integration.
 | [`read_iceberg`][daft.io.read_iceberg]                    | Read an Iceberg table into a DataFrame |
 | [`write_iceberg`][daft.dataframe.DataFrame.write_iceberg] | Write a DataFrame to an Iceberg table  |
 
-See also [Iceberg](integrations/iceberg.md) for detailed integration.
+See also [Iceberg](iceberg.md) for detailed integration.
 
 
 ## JSON

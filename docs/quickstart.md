@@ -75,7 +75,7 @@ Daft supports both local paths as well as paths to object storage such as AWS S3
 
 !!! tip "Note"
 
-    To work with other formats like [Delta Lake](integrations/delta_lake.md) and [Iceberg](integrations/iceberg.md), check out their respective pages.
+    To work with other formats like [Delta Lake](io/delta_lake.md) and [Iceberg](io/iceberg.md), check out their respective pages.
 
 Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet file is partitioned on the column `country`. This will be important later on.
 
@@ -432,17 +432,18 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 
 </div>
 
-**Work with your favorite tools**:
+**Work with your favorite table and catalog formats**:
 
 <div class="grid cards" markdown>
 
-- [**Unity Catalog**](integrations/unity_catalog.md)
-- [**Apache Iceberg**](integrations/iceberg.md)
-- [**Delta Lake**](integrations/delta_lake.md)
-- [:material-microsoft-azure: **Microsoft Azure**](integrations/azure.md)
-- [:fontawesome-brands-aws: **Amazon Web Services (AWS)**](integrations/aws.md)
-- [**SQL**](integrations/sql.md)
-- [:simple-huggingface: **Hugging Face Datasets**](integrations/huggingface.md)
+- [**Apache Hudi**](io/hudi.md)
+- [**Apache Iceberg**](io/iceberg.md)
+- [**AWS Glue**](catalogs/glue.md)
+- [**AWS S3Tables**](catalogs/s3tables.md)
+- [**Delta Lake**](io/delta_lake.md)
+- [**Hugging Face Datasets**](io/huggingface.md)
+- [**Unity Catalog**](catalogs/unity_catalog.md)
+<!-- - [**LanceDB**](io/lancedb.md) -->
 
 </div>
 
