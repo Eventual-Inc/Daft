@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode};
@@ -66,6 +67,40 @@ impl ScanSourceNode {
     }
 }
 
+impl TreeDisplay for ScanSourceNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.name()).unwrap();
+            }
+            _ => {
+                writeln!(display, "DistributedScanSource:").unwrap();
+                writeln!(display, "Node ID = {}", self.node_id).unwrap();
+                writeln!(display, "Num Scan Tasks = {}", self.scan_tasks.len()).unwrap();
+
+                let total_bytes: usize = self
+                    .scan_tasks
+                    .iter()
+                    .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                    .sum();
+                writeln!(display, "Estimated Scan Bytes = {}", total_bytes).unwrap();
+            }
+        }
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![]
+    }
+
+    fn get_name(&self) -> String {
+        "DistributedScanSource".to_string()
+    }
+}
+
 impl DistributedPipelineNode for ScanSourceNode {
     fn name(&self) -> &'static str {
         "ScanSource"
@@ -87,6 +122,10 @@ impl DistributedPipelineNode for ScanSourceNode {
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
 

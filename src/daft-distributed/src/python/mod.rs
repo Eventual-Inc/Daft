@@ -3,6 +3,7 @@ mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
+use common_display::DisplayLevel;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -77,6 +78,75 @@ impl PyDistributedPhysicalPlan {
 
     fn id(&self) -> String {
         self.plan.id().to_string()
+    }
+
+    /// Visualize the distributed pipeline as ASCII text
+    fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+        use crate::pipeline_node::{logical_plan_to_pipeline_node, viz_distributed_pipeline_ascii};
+
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        let root_stage = stage_plan.get_root_stage();
+
+        // For visualization, we can use empty partition sets since we're just showing structure
+        let empty_psets = HashMap::new();
+
+        if let Some(logical_plan) = root_stage.get_logical_plan_for_viz() {
+            let pipeline_node = logical_plan_to_pipeline_node(
+                logical_plan,
+                self.plan.execution_config().clone(),
+                Arc::new(empty_psets),
+            )?;
+            Ok(viz_distributed_pipeline_ascii(
+                pipeline_node.as_ref(),
+                simple,
+            ))
+        } else {
+            Ok(format!(
+                "Distributed pipeline visualization not yet supported for stage type: {}",
+                root_stage.stage_type_name()
+            ))
+        }
+    }
+
+    /// Visualize the distributed pipeline as Mermaid markdown
+    fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
+        use crate::pipeline_node::{
+            logical_plan_to_pipeline_node, viz_distributed_pipeline_mermaid,
+        };
+
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        let root_stage = stage_plan.get_root_stage();
+
+        // For visualization, we can use empty partition sets since we're just showing structure
+        let empty_psets = HashMap::new();
+
+        if let Some(logical_plan) = root_stage.get_logical_plan_for_viz() {
+            let pipeline_node = logical_plan_to_pipeline_node(
+                logical_plan,
+                self.plan.execution_config().clone(),
+                Arc::new(empty_psets),
+            )?;
+
+            let display_level = if simple {
+                DisplayLevel::Compact
+            } else {
+                DisplayLevel::Default
+            };
+
+            Ok(viz_distributed_pipeline_mermaid(
+                pipeline_node.as_ref(),
+                display_level,
+                bottom_up,
+                None, // No subgraph options for now
+            ))
+        } else {
+            Ok(format!(
+                "Distributed pipeline visualization not yet supported for stage type: {}",
+                root_stage.stage_type_name()
+            ))
+        }
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);

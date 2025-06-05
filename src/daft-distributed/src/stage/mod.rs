@@ -91,6 +91,19 @@ impl Stage {
             _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
         }
     }
+
+    /// Get the logical plan for visualization purposes (only for MapPipeline stages)
+    pub fn get_logical_plan_for_viz(&self) -> Option<LogicalPlanRef> {
+        match &self.type_ {
+            StageType::MapPipeline { plan } => Some(plan.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the stage type name for visualization
+    pub fn stage_type_name(&self) -> &str {
+        self.type_.name()
+    }
 }
 
 pub(crate) struct RunningStage {
