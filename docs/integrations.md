@@ -1,6 +1,7 @@
 # Integrations
 
-Here are all the integrations that Daft currently supports.
+Here are all the integrations that Daft currently supports. If there are integrations missing from this list, feel free to [open an issue on Github](https://github.com/Eventual-Inc/Daft/issues) or contribute your own with our [User-Defined Data Sources & Sinks](https://docs.getdaft.io/en/stable/io/#user-defined)!
+
 
 ## Catalogs
 
@@ -42,5 +43,3 @@ Here are all the integrations that Daft currently supports.
 <!-- - [**Google Cloud Storage**](io/gcs.md) -->
 
 </div>
-
-If there are any integrations missing from this list, feel free to [open an issue on Github](https://github.com/Eventual-Inc/Daft/issues) or contribute your own with our [User-Defined Data Sources & Sinks](https://docs.getdaft.io/en/stable/io/#user-defined).

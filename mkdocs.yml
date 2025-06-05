@@ -29,13 +29,12 @@ nav:
     # - LanceDB: io/lance.md (wip)
     - Microsoft Azure: io/azure.md
     - SQL: io/sql.md
-  # - Configuration: config.md
   - SQL: sql_overview.md
   - Sessions: sessions.md
   - Catalogs:
     - Overview: catalogs/index.md
     - AWS Glue: catalogs/glue.md
-    - S3 Tables: catalogs/s3tables.md
+    - AWS S3 Tables: catalogs/s3tables.md
     - Unity Catalog: catalogs/unity_catalog.md
   - Spark Connect: spark_connect.md
   - Distributed Computing: distributed.md
@@ -55,7 +54,7 @@ nav:
   - Migration Guide:
     - Coming from Dask: migration/dask_migration.md
   - Roadmap: roadmap.md
-  - Release Notes ↗: https://github.com/Eventual-Inc/Daft/releases
+  - Release Notes <sup>↗</sup>: https://github.com/Eventual-Inc/Daft/releases
 - Python API:
   - Overview: api/index.md
   - I/O: api/io.md
@@ -176,6 +175,7 @@ extra_javascript:
 - js/docsearch.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
 - js/readthedocs.js
+- js/runllm.js
 
 # Extensions
 markdown_extensions:
