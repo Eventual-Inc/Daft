@@ -14,7 +14,10 @@ use super::{
         SplitGranularProjection, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
-use crate::{optimization::rules::{PushDownShard, ShardScans}, LogicalPlan};
+use crate::{
+    optimization::rules::{PushDownShard, ShardScans},
+    LogicalPlan,
+};
 
 /// Config for optimizer.
 #[derive(Debug)]

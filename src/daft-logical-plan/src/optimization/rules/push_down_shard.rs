@@ -79,11 +79,9 @@ impl PushDownShard {
                         }
                     }
                     // Shards cannot be folded together.
-                    LogicalPlan::Shard(_) => {
-                        Err(DaftError::ValueError(
-                            "Shards cannot be folded together".to_string(),
-                        ))
-                    }
+                    LogicalPlan::Shard(_) => Err(DaftError::ValueError(
+                        "Shards cannot be folded together".to_string(),
+                    )),
                     _ => Ok(Transformed::no(plan)),
                 }
             }
