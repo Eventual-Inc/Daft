@@ -170,7 +170,7 @@ struct ParquetWriter {
     s3_client: Option<Arc<S3LikeSource>>,
     s3part_buffer: Option<Arc<Mutex<S3PartBuffer>>>,
     s3multipart_writer: Option<Arc<Mutex<S3MultipartWriter>>>,
-    upload_thread: Option<JoinHandle<()>>,
+    upload_thread: Option<JoinHandle<DaftResult<()>>>,
 }
 
 const S3_MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024; // 8 MB
@@ -240,7 +240,7 @@ impl ParquetWriter {
             let s3_multipart_writer_handle = self.s3multipart_writer.clone().expect("S3 multipart writer must be initialized");
 
             // Spawn a background thread to handle the multipart upload.
-            let background_thread_handle = std::thread::spawn(move || {
+            let background_thread_handle = std::thread::spawn(move || -> DaftResult<()> {
                 let background_rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -251,15 +251,15 @@ impl ParquetWriter {
                         // Write the part to S3.
                         s3_multipart_writer_handle.lock().unwrap()
                             .write_part(part)
-                            .await
-                            .expect("Failed to write part to S3");
+                            .await?;
                     }
 
                     s3_multipart_writer_handle.lock().unwrap()
                         .shutdown()
-                        .await
-                        .expect("Failed to shut down s3 multipart writer");
-                });
+                        .await?;
+                    
+                    Ok(())
+                })
             });
             self.upload_thread = Some(background_thread_handle);
 
@@ -370,10 +370,11 @@ impl AsyncFileWriter for ParquetWriter {
         let column_writer_handles = self.spawn_column_writer_workers(&record_batches)?;
 
         // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
-
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
+        let (tx_chunk, mut rx_chunk) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
 
         let file_writer_handle = self.file_writer.clone();
+        
+        // Spawn a thread to handle the row group writing since it involves blocking writes.
         let row_writer_thread_handle = spawn_blocking(move || -> DaftResult<()> {
             let mut guard = file_writer_handle.lock().unwrap();
             let mut row_group_writer = guard
@@ -382,7 +383,7 @@ impl AsyncFileWriter for ParquetWriter {
                 .next_row_group()
                 .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-            while let Some(chunk) = rx.blocking_recv() {
+            while let Some(chunk) = rx_chunk.blocking_recv() {
                 chunk
                     .append_to_row_group(&mut row_group_writer)
                     .map_err(|e| DaftError::ParquetError(e.to_string()))?;
@@ -397,13 +398,15 @@ impl AsyncFileWriter for ParquetWriter {
 
         for handle in column_writer_handles {
             let chunk = handle.await??;
-            tx.send(chunk)
+            tx_chunk.send(chunk)
                 .await
                 .map_err(|e| DaftError::ParquetError(e.to_string()))?;
         }
 
-        drop(tx);
-
+        // Important to drop the sender to signal completion to the row writer thread, else 
+        // awaiting for thread to complete will hang.
+        drop(tx_chunk);
+        
         row_writer_thread_handle
             .await
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
@@ -431,19 +434,22 @@ impl AsyncFileWriter for ParquetWriter {
         let part_buffer = self.s3part_buffer.take().expect("S3 part buffer must be initialized for multipart upload.");
         let upload_thread = self.upload_thread.take().expect("Upload thread must be initialized for multipart upload.");
 
-        spawn_blocking(move || {
+        spawn_blocking(move || -> DaftResult<()> {
             // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
             part_buffer
                 .lock()
                 .unwrap()
-                .shutdown()
-                .expect("Failed to shutdown S3 part buffer");
-            upload_thread
-                .join()
-                .expect("Failed to join uploader thread");
+                .shutdown()?;
+            
+            let upload_result = upload_thread.join();
+            if let Err(err) = upload_result {
+                log::error!("Upload thread failed: {:?}", err);
+            }
+            
+            Ok(())
         })
         .await
-        .expect("Failed to finish multipart upload.");
+            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);

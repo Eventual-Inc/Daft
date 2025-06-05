@@ -1485,9 +1485,6 @@ impl S3MultipartWriter {
 
     /// Ensure that the part size is within the valid range for S3 multipart uploads.
     /// This function checks that the part size is at least 5 MiB and at most 5 GiB.
-    ///
-    /// If the part size is invalid, it panics since there's no expected way to recover from
-    /// such a misconfiguration.
     fn validate_part_size(part_size: NonZeroUsize) -> super::Result<()> {
         if part_size.get() > Self::MAXIMUM_PART_SIZE {
             return Err(InvalidArgument {
