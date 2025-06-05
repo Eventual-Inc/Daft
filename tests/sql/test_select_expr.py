@@ -43,6 +43,6 @@ def test_select_expr_functions():
 
 
 def test_select_struct_lit():
-    actual = daft.sql("select {'a': 'hello'} as s")
-    expect = daft.from_pydict({"a": ["hello"]})
+    actual = daft.sql("select {'a': 'hello'}").collect()
+    expect = daft.from_pydict({"literal": [{"a": "hello"}]})
     assert_eq(actual, expect)
