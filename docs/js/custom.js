@@ -4,8 +4,11 @@ function processExternalLinks() {
   var domain = window.location.hostname;
 
   for (var i = 0; i < links.length; i++) {
-    // Check if the link doesn't point to your domain
-    if (links[i].hostname !== domain) {
+    // Check if the link doesn't point to your domain and is not inside a <header>
+    if (
+      links[i].hostname !== domain &&
+      !links[i].closest('header') // Skip if inside a <header>
+    ) {
       links[i].target = "_blank";
       links[i].rel = "noopener noreferrer";
       // Only append the arrow if it's not already there
