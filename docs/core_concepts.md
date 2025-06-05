@@ -2676,11 +2676,11 @@ Now you're ready to call this function on the `urls` column and store the output
 
 <div class="grid cards" markdown>
 
-- [:material-image-edit: **MNIST Digit Classification**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/mnist.ipynb)
-- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/embeddings/daft_tutorial_embeddings_stackexchange.ipynb)
-- [:material-image-search: **Querying Images with UDFs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/image_querying/top_n_red_color.ipynb)
-- [:material-image-sync: **Image Generation on GPUs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
-- [:material-window-closed-variant: **Window Functions in Daft**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions/window_functions.ipynb)
+- [:material-image-edit: **MNIST Digit Classification**](resources/tutorials.md#mnist-digit-classification)
+- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](resources/tutorials.md#running-llms-on-the-red-pajamas-dataset)
+- [:material-image-search: **Querying Images with UDFs**](resources/tutorials.md#querying-images-with-udfs)
+- [:material-image-sync: **Image Generation on GPUs**](resources/tutorials.md#image-generation-on-gpus)
+- [:material-window-closed-variant: **Window Functions in Daft**](resources/tutorials.md#window-functions)
 
 </div>
 
