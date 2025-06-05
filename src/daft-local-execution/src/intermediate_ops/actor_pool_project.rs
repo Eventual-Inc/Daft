@@ -1,8 +1,6 @@
 use std::{sync::Arc, vec};
 
 use common_error::DaftResult;
-#[cfg(feature = "python")]
-use daft_dsl::python::PyExpr;
 use daft_dsl::{
     count_actor_pool_udfs,
     expr::bound_expr::BoundExpr,
@@ -10,12 +8,9 @@ use daft_dsl::{
         get_concurrency, get_resource_request, get_udf_names, try_get_batch_size_from_udf,
     },
 };
-#[cfg(feature = "python")]
-use daft_micropartition::python::PyMicroPartition;
+use daft_local_plan::ActorHandle;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
@@ -23,88 +18,6 @@ use super::intermediate_op::{
     IntermediateOperatorResult,
 };
 use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
-
-struct ActorHandle {
-    #[cfg(feature = "python")]
-    inner: PyObject,
-}
-
-impl ActorHandle {
-    fn try_new(projection: &[BoundExpr]) -> DaftResult<Self> {
-        #[cfg(feature = "python")]
-        {
-            let handle = Python::with_gil(|py| {
-                // create python object
-                Ok::<PyObject, PyErr>(
-                    py.import(pyo3::intern!(py, "daft.execution.actor_pool_udf"))?
-                        .getattr(pyo3::intern!(py, "ActorHandle"))?
-                        .call1((projection
-                            .iter()
-                            .map(|expr| PyExpr::from(expr.as_ref().clone()))
-                            .collect::<Vec<_>>(),))?
-                        .unbind(),
-                )
-            })?;
-
-            Ok(Self { inner: handle })
-        }
-
-        #[cfg(not(feature = "python"))]
-        {
-            Ok(Self {})
-        }
-    }
-
-    fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        #[cfg(feature = "python")]
-        {
-            Python::with_gil(|py| {
-                Ok(self
-                    .inner
-                    .bind(py)
-                    .call_method1(
-                        pyo3::intern!(py, "eval_input"),
-                        (PyMicroPartition::from(input),),
-                    )?
-                    .extract::<PyMicroPartition>()?
-                    .into())
-            })
-        }
-
-        #[cfg(not(feature = "python"))]
-        {
-            panic!("Cannot evaluate a UDF without compiling for Python");
-        }
-    }
-
-    fn teardown(&self) -> DaftResult<()> {
-        #[cfg(feature = "python")]
-        {
-            Python::with_gil(|py| {
-                self.inner
-                    .bind(py)
-                    .call_method0(pyo3::intern!(py, "teardown"))?;
-
-                Ok(())
-            })
-        }
-
-        #[cfg(not(feature = "python"))]
-        {
-            Ok(())
-        }
-    }
-}
-
-impl Drop for ActorHandle {
-    fn drop(&mut self) {
-        let result = self.teardown();
-
-        if let Err(e) = result {
-            log::error!("Error tearing down UDF actor: {}", e);
-        }
-    }
-}
 
 /// Each ActorPoolProjectState holds a handle to a single actor process.
 /// The concurrency of the actor pool is thus tied to the concurrency of the operator
@@ -126,10 +39,14 @@ pub struct ActorPoolProjectOperator {
     concurrency: usize,
     batch_size: Option<usize>,
     memory_request: u64,
+    existing_actor_handle: Option<ActorHandle>,
 }
 
 impl ActorPoolProjectOperator {
-    pub fn try_new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
+    pub fn try_new(
+        projection: Vec<BoundExpr>,
+        existing_actor_handle: Option<ActorHandle>,
+    ) -> DaftResult<Self> {
         let projection_unbound = projection
             .iter()
             .map(|expr| expr.inner().clone())
@@ -154,6 +71,7 @@ impl ActorPoolProjectOperator {
             concurrency,
             batch_size,
             memory_request,
+            existing_actor_handle,
         })
     }
 }
@@ -219,7 +137,10 @@ impl IntermediateOperator for ActorPoolProjectOperator {
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the actor
         Ok(Box::new(ActorPoolProjectState {
-            actor_handle: ActorHandle::try_new(&self.projection)?,
+            actor_handle: self.existing_actor_handle.clone().unwrap_or_else(|| {
+                // Swordfish only supports process actors right now, not Ray actors
+                ActorHandle::try_new(&self.projection, false).unwrap()
+            }),
         }))
     }
 

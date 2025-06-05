@@ -1,6 +1,8 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
+#[cfg(feature = "python")]
+use common_py_serde::{deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::DynTreeNode;
@@ -13,6 +15,9 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
 };
+use daft_micropartition::MicroPartition;
+#[cfg(feature = "python")]
+use pyo3::PyObject;
 use serde::{Deserialize, Serialize};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -216,12 +221,14 @@ impl LocalPhysicalPlan {
     pub(crate) fn actor_pool_project(
         input: LocalPhysicalPlanRef,
         projection: Vec<BoundExpr>,
+        existing_actor_handle: Option<ActorHandle>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::ActorPoolProject(ActorPoolProject {
             input,
             projection,
+            existing_actor_handle,
             schema,
             stats_state,
         })
@@ -686,7 +693,7 @@ impl LocalPhysicalPlan {
                 Self::Filter(Filter {  predicate, schema,..  }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
                 Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
-                Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::ActorPoolProject(ActorPoolProject {  projection, existing_actor_handle, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), existing_actor_handle.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Pivot(Pivot {  group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(new_child.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -789,6 +796,7 @@ pub struct Project {
 pub struct ActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<BoundExpr>,
+    pub existing_actor_handle: Option<ActorHandle>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -1007,4 +1015,113 @@ pub struct WindowOrderByOnly {
     pub stats_state: StatsState,
     pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActorHandle {
+    #[cfg(feature = "python")]
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    inner: Arc<PyObject>,
+}
+
+impl ActorHandle {
+    pub fn try_new(projection: &[BoundExpr], uses_ray: bool) -> DaftResult<Self> {
+        #[cfg(feature = "python")]
+        {
+            use pyo3::Python;
+
+            let handle = Python::with_gil(|py| {
+                use daft_dsl::python::PyExpr;
+                use pyo3::{types::PyAnyMethods, PyErr};
+
+                let module = if uses_ray {
+                    pyo3::intern!(py, "daft.execution.ray_actor_pool_udf")
+                } else {
+                    pyo3::intern!(py, "daft.execution.actor_pool_udf")
+                };
+
+                // create python object
+                Ok::<PyObject, PyErr>(
+                    py.import(module)?
+                        .getattr(pyo3::intern!(py, "ActorHandle"))?
+                        .call1((projection
+                            .iter()
+                            .map(|expr| PyExpr::from(expr.as_ref().clone()))
+                            .collect::<Vec<_>>(),))?
+                        .unbind(),
+                )
+            })?;
+
+            Ok(Self {
+                inner: Arc::new(handle),
+            })
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            Ok(Self {})
+        }
+    }
+
+    pub fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+        #[cfg(feature = "python")]
+        {
+            use pyo3::Python;
+
+            Python::with_gil(|py| {
+                use daft_micropartition::python::PyMicroPartition;
+                use pyo3::types::PyAnyMethods;
+
+                Ok(self
+                    .inner
+                    .bind(py)
+                    .call_method1(
+                        pyo3::intern!(py, "eval_input"),
+                        (PyMicroPartition::from(input),),
+                    )?
+                    .extract::<PyMicroPartition>()?
+                    .into())
+            })
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("Cannot evaluate a UDF without compiling for Python");
+        }
+    }
+
+    pub fn teardown(&self) -> DaftResult<()> {
+        #[cfg(feature = "python")]
+        {
+            use pyo3::Python;
+
+            Python::with_gil(|py| {
+                use pyo3::types::PyAnyMethods;
+
+                self.inner
+                    .bind(py)
+                    .call_method0(pyo3::intern!(py, "teardown"))?;
+
+                Ok(())
+            })
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for ActorHandle {
+    fn drop(&mut self) {
+        let result = self.teardown();
+
+        if let Err(e) = result {
+            log::error!("Error tearing down UDF actor: {}", e);
+        }
+    }
 }

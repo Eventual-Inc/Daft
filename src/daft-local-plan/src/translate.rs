@@ -86,6 +86,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::actor_pool_project(
                 input,
                 projection,
+                None, // Only currently available from Flotilla scheduler
                 actor_pool_project.projected_schema.clone(),
                 actor_pool_project.stats_state.clone(),
             ))

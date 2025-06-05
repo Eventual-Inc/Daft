@@ -265,15 +265,17 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::ActorPoolProject(ActorPoolProject {
             input,
             projection,
+            existing_actor_handle,
             stats_state,
             ..
         }) => {
-            let proj_op =
-                ActorPoolProjectOperator::try_new(projection.clone()).with_context(|_| {
-                    PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    }
-                })?;
+            let proj_op = ActorPoolProjectOperator::try_new(
+                projection.clone(),
+                existing_actor_handle.clone(),
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node], stats_state.clone()).boxed()
         }
