@@ -1,4 +1,4 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{ensure, DaftResult};
 use daft_core::{
     prelude::{Field, Schema},
     series::Series,
@@ -56,16 +56,6 @@ impl ScalarUDF for ListGet {
         // TODO(Kevin): Check if default dtype can be cast into input dtype.
         let exploded_field = input.to_exploded_field()?;
         Ok(exploded_field)
-    }
-
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input, idx, default] => Ok(input.list_get(idx, default)?),
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 3 input args, got {}",
-                inputs.len()
-            ))),
-        }
     }
 }
 

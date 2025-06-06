@@ -9,6 +9,7 @@ from daft.execution import physical_plan
 from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.io.sink import WriteResultType
+from daft.runners.flotilla import RaySwordfishActorHandle
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -630,6 +631,25 @@ class GCSConfig:
         """Replaces values if provided, returning a new GCSConfig."""
         ...
 
+class UnityConfig:
+    """I/O configuration for Unity Catalog volumes."""
+
+    endpoint: str | None
+    token: str | None
+
+    def __init__(
+        self,
+        endpoint: str | None,
+        token: str | None,
+    ): ...
+    def replace(
+        self,
+        endpoint: str | None,
+        token: str | None,
+    ) -> UnityConfig:
+        """Replaces values if provided, returning a new UnityConfig."""
+        ...
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -637,6 +657,7 @@ class IOConfig:
     azure: AzureConfig
     gcs: GCSConfig
     http: HTTPConfig
+    unity: UnityConfig
 
     def __init__(
         self,
@@ -644,6 +665,7 @@ class IOConfig:
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
+        unity: UnityConfig | None = None,
     ): ...
     def replace(
         self,
@@ -651,6 +673,7 @@ class IOConfig:
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
+        unity: UnityConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -1175,32 +1198,6 @@ def udf(
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def get_udf_names(expression: PyExpr) -> list[str]: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
-def hash(expr: PyExpr, seed: Any | None = None) -> PyExpr: ...
-def cosine_distance(expr: PyExpr, other: PyExpr) -> PyExpr: ...
-def tokenize_encode(
-    expr: PyExpr,
-    tokens_path: str,
-    use_special_tokens: bool,
-    io_config: IOConfig | None,
-    pattern: str | None,
-    special_tokens: str | None,
-) -> PyExpr: ...
-def tokenize_decode(
-    expr: PyExpr,
-    tokens_path: str,
-    io_config: IOConfig | None,
-    pattern: str | None,
-    special_tokens: str | None,
-) -> PyExpr: ...
-def minhash(
-    expr: PyExpr,
-    num_hashes: int,
-    ngram_size: int,
-    seed: int = 1,
-    hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
-) -> PyExpr: ...
-def coalesce(exprs: list[PyExpr]) -> PyExpr: ...
-def monotonically_increasing_id() -> PyExpr: ...
 def row_number() -> PyExpr: ...
 def rank() -> PyExpr: ...
 def dense_rank() -> PyExpr: ...
@@ -1222,7 +1219,6 @@ def sql_exec(
 def sql_expr(sql: str) -> PyExpr: ...
 def sql_datatype(sql: str) -> PyDataType: ...
 def list_sql_functions() -> list[SQLFunctionStub]: ...
-def struct(inputs: list[PyExpr]) -> PyExpr: ...
 def connect_start(addr: str = "sc://0.0.0.0:0") -> ConnectionHandle: ...
 
 class ConnectionHandle:
@@ -1711,7 +1707,13 @@ class DistributedPhysicalPlan:
     def from_logical_plan_builder(
         builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
-    def run_plan(self, psets: dict[str, list[RayPartitionRef]]) -> AsyncIterator[tuple[object, int, int]]: ...
+    def id(self) -> str: ...
+
+class DistributedPhysicalPlanRunner:
+    def __init__(self) -> None: ...
+    def run_plan(
+        self, plan: DistributedPhysicalPlan, psets: dict[str, list[RayPartitionRef]]
+    ) -> AsyncIterator[tuple[object, int, int]]: ...
 
 class LocalPhysicalPlan:
     @staticmethod
@@ -1727,7 +1729,16 @@ class RayPartitionRef:
 class RaySwordfishTask:
     def plan(self) -> LocalPhysicalPlan: ...
     def psets(self) -> dict[str, list[RayPartitionRef]]: ...
-    def estimated_memory_cost(self) -> int: ...
+    def config(self) -> PyDaftExecutionConfig: ...
+
+class RaySwordfishWorker:
+    def __init__(
+        self,
+        worker_id: str,
+        actor_handle: RaySwordfishActorHandle,
+        num_cpus: int,
+        total_memory_bytes: int,
+    ) -> None: ...
 
 class NativeExecutor:
     def __init__(self) -> None: ...

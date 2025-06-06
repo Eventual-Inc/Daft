@@ -49,6 +49,12 @@ impl ScanSourceNode {
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
+        if scan_tasks.is_empty() {
+            let empty_scan_task = make_empty_scan_task(&plan, config.clone())?;
+            let _ = result_tx.send(PipelineOutput::Task(empty_scan_task)).await;
+            return Ok(());
+        }
+
         for scan_task in scan_tasks.iter() {
             let task = make_source_tasks(&plan, &pushdowns, scan_task.clone(), config.clone())?;
             if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
@@ -101,6 +107,26 @@ fn make_source_tasks(
                     StatsState::NotMaterialized,
                 );
                 Ok(Transformed::yes(physical_scan))
+            }
+            _ => Ok(Transformed::no(p)),
+        })?
+        .data;
+
+    let psets = HashMap::new();
+    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    Ok(task)
+}
+
+fn make_empty_scan_task(
+    plan: &LocalPhysicalPlanRef,
+    config: Arc<DaftExecutionConfig>,
+) -> DaftResult<SwordfishTask> {
+    let transformed_plan = plan
+        .clone()
+        .transform_up(|p| match p.as_ref() {
+            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
+                let empty_scan = LocalPhysicalPlan::empty_scan(placeholder.schema.clone());
+                Ok(Transformed::yes(empty_scan))
             }
             _ => Ok(Transformed::no(p)),
         })?

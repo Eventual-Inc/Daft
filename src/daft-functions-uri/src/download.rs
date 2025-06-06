@@ -146,7 +146,7 @@ fn url_download(
         stream.try_collect::<Vec<_>>().await
     };
 
-    let mut results = runtime_handle.block_on(fetches)??;
+    let mut results = runtime_handle.block_within_async_context(fetches)??;
 
     results.sort_by_key(|k| k.0);
     let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);

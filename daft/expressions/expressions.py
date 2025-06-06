@@ -34,11 +34,8 @@ from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
-from daft.daft import struct as _struct
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
-from daft.daft import tokenize_decode as _tokenize_decode
-from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
@@ -237,7 +234,8 @@ def struct(*fields: Expression | str) -> Expression:
             pyinputs.append(col(field)._expr)
         else:
             raise TypeError("expected Expression or str as input for struct()")
-    return Expression._from_pyexpr(_struct(pyinputs))
+    f = native.get_function_from_registry("struct")
+    return Expression._from_pyexpr(f(*pyinputs))
 
 
 @ExpressionPublicAPI
@@ -288,7 +286,9 @@ def coalesce(*args: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
+    f = native.get_function_from_registry("coalesce")
+
+    return Expression._from_pyexpr(f(*[arg._expr for arg in args]))
 
 
 class Expression:
@@ -1596,17 +1596,12 @@ class Expression:
             Null values will produce a hash value instead of being propagated as null.
 
         """
-        if seed is None:
-            expr = native.hash(self._expr)
-        else:
-            if not isinstance(seed, Expression):
-                seed = lit(seed)
-            expr = native.hash(self._expr, seed._expr)
-        return Expression._from_pyexpr(expr)
+        return self._eval_expressions("hash", seed=seed)
 
     @ExpressionPublicAPI
     def minhash(
         self,
+        *,
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
@@ -1628,13 +1623,9 @@ class Expression:
             hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
 
         """
-        assert isinstance(num_hashes, int)
-        assert isinstance(ngram_size, int)
-        assert isinstance(seed, int)
-        assert isinstance(hash_function, str)
-        assert hash_function in ["murmurhash3", "xxhash", "sha1"], f"Hash function {hash_function} not found"
-
-        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
+        return self._eval_expressions(
+            "minhash", num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
+        )
 
     @ExpressionPublicAPI
     def encode(self, codec: EncodingCodec) -> Expression:
@@ -1761,6 +1752,42 @@ class Expression:
             assert isinstance(dtype, (DataType, type))
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("try_deserialize", format, dtype._dtype)
+
+    @ExpressionPublicAPI
+    def jq(self, filter: builtins.str) -> Expression:
+        """Applies a [https://jqlang.github.io/jq/manual/](jq) to the expression (string), returning the results as a string.
+
+        Args:
+            file (str): The jq filter.
+
+        Returns:
+            Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
+
+        Warning:
+            This expression uses [https://github.com/01mf02/jaq](jaq) as its filter executor which can differ from the
+            [https://jqlang.org/](jq) command-line tool. Please consult [https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq][jq vs. jaq]
+            for a detailed look into possible differences.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col": ['{"a": 1}', '{"a": 2}', '{"a": 3}']})
+            >>> df.with_column("res", df["col"].jq(".a")).collect()
+            ╭──────────┬──────╮
+            │ col      ┆ res  │
+            │ ---      ┆ ---  │
+            │ Utf8     ┆ Utf8 │
+            ╞══════════╪══════╡
+            │ {"a": 1} ┆ 1    │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ {"a": 2} ┆ 2    │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ {"a": 3} ┆ 3    │
+            ╰──────────┴──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return self._eval_expressions("jq", filter)
 
     @ExpressionPublicAPI
     def name(self) -> builtins.str:
@@ -2025,6 +2052,15 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         """
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
+        if io_config.unity.endpoint is None:
+            from daft.catalog.__unity import UnityCatalog
+            from daft.session import current_catalog
+
+            catalog = current_catalog()
+            if isinstance(catalog, UnityCatalog):
+                unity_catalog = catalog._inner
+                io_config = io_config.replace(unity=unity_catalog.to_io_config().unity)
+
         max_connections_expr = Expression._to_expression(max_connections)._expr
         on_error_expr = Expression._to_expression(on_error)._expr
         multi_thread_expr = Expression._to_expression(multi_thread)._expr
@@ -4444,19 +4480,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
             strings in certain edge cases. This may result in slightly different encodings in these cases.
 
         """
-        # if special tokens are passed in, enable using special tokens
-        if use_special_tokens is None:
-            use_special_tokens = special_tokens is not None
-
-        return Expression._from_pyexpr(
-            _tokenize_encode(
-                self._expr,
-                tokens_path,
-                use_special_tokens,
-                io_config,
-                pattern,
-                special_tokens,
-            )
+        return self._eval_expressions(
+            "tokenize_encode",
+            tokens_path=tokens_path,
+            use_special_tokens=use_special_tokens,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
         )
 
     @ExpressionPublicAPI
@@ -4470,7 +4500,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
     ) -> Expression:
         """Decodes each list of integer tokens into a string using a tokenizer.
 
-        Uses https://github.com/openai/tiktoken for tokenization.
+        Uses [https://github.com/openai/tiktoken](https://github.com/openai/tiktoken) for tokenization.
 
         Supported built-in tokenizers: `cl100k_base`, `o200k_base`, `p50k_base`, `p50k_edit`, `r50k_base`. Also supports
         loading tokens from a file in tiktoken format.
@@ -4484,7 +4514,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: An expression with decoded strings.
         """
-        return Expression._from_pyexpr(_tokenize_decode(self._expr, tokens_path, io_config, pattern, special_tokens))
+        return self._eval_expressions(
+            "tokenize_decode",
+            tokens_path=tokens_path,
+            io_config=io_config,
+            pattern=pattern,
+            special_tokens=special_tokens,
+        )
 
     @ExpressionPublicAPI
     def count_matches(
@@ -5247,10 +5283,15 @@ class ExpressionJsonNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        f = native.get_function_from_registry("json_query")
-        query = Expression._to_expression(jq_query)._expr
+        warnings.warn(
+            "This API is deprecated in daft >=0.5.1 and will be removed in >=0.6.0. Users should use `Expression.jq` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        f = native.get_function_from_registry("jq")
+        filter = Expression._to_expression(jq_query)._expr
 
-        return Expression._from_pyexpr(f(self._expr, query=query))
+        return Expression._from_pyexpr(f(self._expr, filter))
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
@@ -5285,7 +5326,7 @@ class ExpressionEmbeddingNamespace(ExpressionNamespace):
             (Showing first 2 of 2 rows)
 
         """
-        return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
+        return self._eval_expressions("cosine_distance", other)
 
 
 class ExpressionBinaryNamespace(ExpressionNamespace):

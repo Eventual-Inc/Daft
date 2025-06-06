@@ -5,6 +5,7 @@ use daft_core::prelude::*;
 use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
@@ -12,7 +13,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Pivot {
     pub plan_id: Option<usize>,
     pub input: Arc<LogicalPlan>,

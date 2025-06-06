@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_logical_plan::{
     ops::Source, partitioning::ClusteringSpecRef, source_info::PlaceHolderInfo, ClusteringSpec,
     LogicalPlan, LogicalPlanRef, SourceInfo,
@@ -31,7 +31,46 @@ impl StagePlanBuilder {
         StageID(curr)
     }
 
+    fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
+        let mut can_translate = true;
+        let _ = plan.apply(|node| match node.as_ref() {
+            LogicalPlan::Source(_)
+            | LogicalPlan::Project(_)
+            | LogicalPlan::Filter(_)
+            | LogicalPlan::Sink(_)
+            | LogicalPlan::Sample(_)
+            | LogicalPlan::Explode(_)
+            | LogicalPlan::Unpivot(_)
+            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            LogicalPlan::Sort(_)
+            | LogicalPlan::Repartition(_)
+            | LogicalPlan::Distinct(_)
+            | LogicalPlan::Aggregate(_)
+            | LogicalPlan::Window(_)
+            | LogicalPlan::Concat(_)
+            | LogicalPlan::TopN(_)
+            | LogicalPlan::MonotonicallyIncreasingId(_)
+            | LogicalPlan::ActorPoolProject(_)
+            | LogicalPlan::Pivot(_)
+            | LogicalPlan::Join(_) => {
+                can_translate = false;
+                Ok(TreeNodeRecursion::Stop)
+            }
+            LogicalPlan::Intersect(_)
+            | LogicalPlan::Union(_)
+            | LogicalPlan::SubqueryAlias(_) => panic!("Intersect, Union, and SubqueryAlias should be optimized away before planning stages")
+        });
+        can_translate
+    }
+
     fn build_stages_from_plan(&mut self, plan: LogicalPlanRef) -> DaftResult<StageID> {
+        if !Self::can_translate_logical_plan(&plan) {
+            return Err(DaftError::ValueError(format!(
+                "Cannot translate logical plan: {} into stages",
+                plan
+            )));
+        }
+
         // Match on the type of the logical plan node
         match plan.as_ref() {
             // For a HashJoin, create a separate stage

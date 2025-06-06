@@ -13,7 +13,7 @@ use daft_io::{get_io_client, IOConfig};
 use snafu::{prelude::*, Snafu};
 use tiktoken_rs::CoreBPE;
 
-use super::special_tokens::get_special_tokens;
+use crate::special_tokens::get_special_tokens;
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -162,8 +162,9 @@ fn get_file_bpe(
     let runtime = get_io_runtime(false);
 
     let path = path.to_string();
-    let file_bytes = runtime
-        .block_on(async move { client.single_url_get(path, None, None).await?.bytes().await })??;
+    let file_bytes = runtime.block_within_async_context(async move {
+        client.single_url_get(path, None, None).await?.bytes().await
+    })??;
     let file_str = std::str::from_utf8(&file_bytes).with_context(|_| InvalidUtf8SequenceSnafu)?;
 
     let tokens_res = parse_tokens(file_str)?;

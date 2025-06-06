@@ -314,10 +314,7 @@ class Series:
         return Series._from_pyseries(self._series.sort(descending, nulls_first))
 
     def hash(self, seed: Series | None = None) -> Series:
-        if not isinstance(seed, Series) and seed is not None:
-            raise TypeError(f"expected `seed` to be Series, got {type(seed)}")
-
-        return Series._from_pyseries(self._series.hash(seed._series if seed is not None else None))
+        return self._eval_expressions("hash", seed=seed)
 
     def murmur3_32(self) -> Series:
         return Series._from_pyseries(self._series.murmur3_32())

@@ -145,7 +145,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
+    pub fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
         Self::EmptyScan(EmptyScan {
             schema,
             stats_state: StatsState::Materialized(PlanStats::empty().into()),
@@ -635,7 +635,8 @@ impl LocalPhysicalPlan {
     }
 
     pub fn resource_request(&self) -> ResourceRequest {
-        todo!("Implement resource request for local physical plan");
+        // TODO: Implement resource request for local physical plan
+        ResourceRequest::default_cpu()
     }
 
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {

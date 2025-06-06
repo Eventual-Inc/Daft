@@ -153,7 +153,7 @@ pub mod pylib {
             .expect("Failed to acquire write lock on function registry");
         functions_registry.register::<daft_functions::numeric::NumericFunctions>();
         functions_registry.register::<daft_functions::float::FloatFunctions>();
-        functions_registry.register::<daft_functions::uri::UriFunctions>();
+        functions_registry.register::<daft_functions_uri::UriFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
         functions_registry.register::<daft_functions_binary::BinaryFunctions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
@@ -162,6 +162,15 @@ pub mod pylib {
         functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_serde::SerdeFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
+        functions_registry.register::<daft_functions::HashFunctions>();
+        functions_registry.register::<daft_functions::StructFunctions>();
+        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
+        functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
+
+        functions_registry.add_fn(daft_functions::coalesce::Coalesce);
+        functions_registry
+            .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
+        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
 
         Ok(())
     }
