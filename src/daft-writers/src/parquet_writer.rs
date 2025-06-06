@@ -254,7 +254,15 @@ impl ParquetWriter {
             self.s3part_buffer = Some(s3part_buffer.clone());
 
             if self.s3_client.is_none() {
-                let s3_conf = &self.io_config.as_ref().unwrap().s3;
+                let s3_conf = &self
+                    .io_config
+                    .as_ref()
+                    .ok_or_else(|| {
+                        DaftError::InternalError(
+                            "IO config is required for S3 operations".to_string(),
+                        )
+                    })?
+                    .s3;
                 self.s3_client = Some(S3LikeSource::get_client(s3_conf).await?);
             }
 
