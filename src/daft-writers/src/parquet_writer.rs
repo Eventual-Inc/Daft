@@ -107,6 +107,14 @@ pub(crate) fn create_native_parquet_writer(
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(source_type, root_dir.as_ref(), partition_values, file_idx)?;
 
+    // Extract scheme for S3 paths.
+    let scheme = if source_type == SourceType::S3 {
+        let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+        Some(scheme)
+    } else {
+        None
+    };
+
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
     let writer_properties = Arc::new(
@@ -125,6 +133,8 @@ pub(crate) fn create_native_parquet_writer(
 
     Ok(Box::new(ParquetWriter::new(
         filename,
+        source_type,
+        scheme,
         writer_properties,
         arrow_schema,
         parquet_schema,
@@ -183,13 +193,15 @@ fn build_local_file_path(
 
 /// Helper function to build the path to an S3 url.
 fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
-    let (scheme, bucket, key) = daft_io::s3_like::parse_s3_url(&root_dir)?;
+    let (_scheme, bucket, key) = daft_io::s3_like::parse_s3_url(root_dir)?;
     let key = Path::new(&key).join(partition_path).join(filename);
-    Ok(PathBuf::from(format!("{}://{}/{}", scheme, bucket, key.display())))
+    Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
 }
 
 struct ParquetWriter {
     filename: PathBuf,
+    source_type: SourceType,
+    scheme: Option<String>,
     writer_properties: Arc<WriterProperties>,
     arrow_schema: Arc<arrow_schema::Schema>,
     parquet_schema: SchemaDescriptor,
@@ -212,8 +224,11 @@ impl ParquetWriter {
     const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
     const PATH_FIELD_NAME: &str = "path";
 
+    #[allow(clippy::too_many_arguments)]
     fn new(
         filename: PathBuf,
+        source_type: SourceType,
+        scheme: Option<String>,
         writer_properties: Arc<WriterProperties>,
         arrow_schema: Arc<arrow_schema::Schema>,
         parquet_schema: SchemaDescriptor,
@@ -222,6 +237,8 @@ impl ParquetWriter {
     ) -> Self {
         Self {
             filename,
+            source_type,
+            scheme,
             writer_properties,
             arrow_schema,
             parquet_schema,
@@ -236,8 +253,8 @@ impl ParquetWriter {
     }
 
     async fn create_writer(&mut self) -> DaftResult<()> {
-        let output_target = if self.filename.to_string_lossy().starts_with("s3") {
-            let url = self.filename.to_string_lossy().to_string();
+        let output_target = if self.source_type == SourceType::S3 {
+            let filename = self.filename.to_string_lossy().to_string();
             let part_size = NonZeroUsize::new(S3_MULTIPART_PART_SIZE)
                 .expect("S3 multipart part size must be non-zero");
             let (tx, mut rx) = tokio::sync::mpsc::channel(1);
@@ -264,7 +281,11 @@ impl ParquetWriter {
 
             let s3_multipart_writer = Arc::new(tokio::sync::Mutex::new(
                 S3MultipartWriter::create(
-                    url.clone(),
+                    format!(
+                        "{}://{}",
+                        self.scheme.as_deref().unwrap_or("s3"),
+                        filename.clone()
+                    ),
                     part_size,
                     NonZeroUsize::new(S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
                         .expect("S3 multipart concurrent uploads per object must be non-zero."),
