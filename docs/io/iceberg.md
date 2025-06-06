@@ -101,7 +101,7 @@ See also [Iceberg Schemas and Data Types](https://iceberg.apache.org/spec/#schem
 
 ## Reference
 
-Daft has high-level [Session](../sessions.md) and [Catalog](../catalogs.md) APIs
+Daft has high-level [Session](../sessions.md) and [Catalog](../catalogs/index.md) APIs
 to read and write Iceberg tables; however it is the [`daft.read_iceberg`][daft.read_iceberg] and
 [`df.write_iceberg`][daft.DataFrame.write_iceberg] API which is ultimately the entry-point to Iceberg reads and
 writes respectively. This section gives a short reference on those APIs and how

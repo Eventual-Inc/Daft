@@ -170,3 +170,10 @@ code.doc-symbol-method::after {
 .md-version__list--active {
   display: block;
 }
+
+/* don't show version selector in nav on mobile */
+@media (max-width: 768px) {
+  .md-version {
+    display: none !important;
+  }
+}

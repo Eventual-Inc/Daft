@@ -75,7 +75,7 @@ Daft supports both local paths as well as paths to object storage such as AWS S3
 
 !!! tip "Note"
 
-    To work with other formats like [Delta Lake](integrations/delta_lake.md) and [Iceberg](integrations/iceberg.md), check out their respective pages.
+    To work with other formats like [Delta Lake](io/delta_lake.md) and [Iceberg](io/iceberg.md), check out their respective pages.
 
 Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet file is partitioned on the column `country`. This will be important later on.
 
@@ -416,7 +416,7 @@ You can **group** and **aggregate** your data using the [`df.groupby()`][daft.Da
 
 Now that you have a basic sense of Daft’s functionality and features, here are some more resources to help you get the most out of Daft:
 
-**Check out the Core Concepts sections for more details about:**
+**Check out our [Core Concepts](core_concepts.md) for more details about:**
 
 <div class="grid cards" markdown>
 
@@ -427,22 +427,24 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 - [:fontawesome-solid-square-binary: **DataTypes**](core_concepts.md#datatypes)
 - [:simple-quicklook: **SQL**](core_concepts.md#sql)
 - [:material-select-group: **Aggregations and Grouping**](core_concepts.md#aggregations-and-grouping)
+- [:material-window-closed-variant: **Window Functions**](core_concepts.md#window-functions)
 - [:fontawesome-solid-user: **User-Defined Functions (UDFs)**](core_concepts.md#user-defined-functions-udf)
 - [:octicons-image-16: **Multimodal Data**](core_concepts.md#multimodal-data)
 
 </div>
 
-**Work with your favorite tools**:
+**Work with your favorite table and catalog formats**:
 
 <div class="grid cards" markdown>
 
-- [**Unity Catalog**](integrations/unity_catalog.md)
-- [**Apache Iceberg**](integrations/iceberg.md)
-- [**Delta Lake**](integrations/delta_lake.md)
-- [:material-microsoft-azure: **Microsoft Azure**](integrations/azure.md)
-- [:fontawesome-brands-aws: **Amazon Web Services (AWS)**](integrations/aws.md)
-- [**SQL**](integrations/sql.md)
-- [:simple-huggingface: **Hugging Face Datasets**](integrations/huggingface.md)
+- [**Apache Hudi**](io/hudi.md)
+- [**Apache Iceberg**](io/iceberg.md)
+- [**AWS Glue**](catalogs/glue.md)
+- [**AWS S3Tables**](catalogs/s3tables.md)
+- [**Delta Lake**](io/delta_lake.md)
+- [**Hugging Face Datasets**](io/huggingface.md)
+- [**Unity Catalog**](catalogs/unity_catalog.md)
+<!-- - [**LanceDB**](io/lancedb.md) -->
 
 </div>
 
@@ -458,9 +460,10 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 
 <div class="grid cards" markdown>
 
-- [:material-image-edit: **MNIST Digit Classification**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/mnist.ipynb)
-- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/embeddings/daft_tutorial_embeddings_stackexchange.ipynb)
-- [:material-image-search: **Querying Images with UDFs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/image_querying/top_n_red_color.ipynb)
-- [:material-image-sync: **Image Generation on GPUs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
+- [:material-image-edit: **MNIST Digit Classification**](resources/tutorials.md#mnist-digit-classification)
+- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](resources/tutorials.md#running-llms-on-the-red-pajamas-dataset)
+- [:material-image-search: **Querying Images with UDFs**](resources/tutorials.md#querying-images-with-udfs)
+- [:material-image-sync: **Image Generation on GPUs**](resources/tutorials.md#image-generation-on-gpus)
+- [:material-window-closed-variant: **Window Functions in Daft**](resources/tutorials.md#window-functions)
 
 </div>

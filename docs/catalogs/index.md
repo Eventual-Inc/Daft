@@ -6,13 +6,13 @@
 
 Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
 
-Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs to manage catalog objects (tables and namespaces), while also making it easy to leverage Daft's existing `daft.read_` and `df.write_` APIs for open table formats like [Iceberg](integrations/iceberg.md) and [Delta Lake](integrations/delta_lake.md).
+Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs to manage catalog objects (tables and namespaces), while also making it easy to leverage Daft's existing `daft.read_` and `df.write_` APIs for open table formats like [Iceberg](../io/iceberg.md) and [Delta Lake](../io/delta_lake.md).
 
 ## Example
 
 !!! note "Note"
 
-    These examples use the Iceberg Catalog from the [Daft Sessions](sessions.md) tutorial.
+    These examples use the Iceberg Catalog from the [Daft Sessions](../sessions.md) tutorial.
 
 ```python
 import daft
@@ -157,7 +157,7 @@ df = daft.read_table("my_temp_table")
 
 !!! note "Note"
 
-    For complete documentation, please see the [Catalog & Table API docs](api/catalogs_tables.md).
+    For complete documentation, please see the [Catalog & Table API docs](../api/catalogs_tables.md).
 
 * [Catalog][daft.catalog.Catalog] - Interface for creating and accessing both tables and namespaces
 * [Identifier][daft.catalog.Identifier] - Paths to objects e.g. `catalog.namespace.table`
