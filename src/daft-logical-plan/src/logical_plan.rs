@@ -633,7 +633,7 @@ impl LogicalPlan {
         let mut actor_pool_udfs = Vec::new();
         self.apply(|node| {
             if let Self::ActorPoolProject(ActorPoolProject { projection, .. }) = node.as_ref() {
-                actor_pool_udfs.push(projection.iter().map(|expr| expr.clone()).collect());
+                actor_pool_udfs.push(projection.iter().cloned().collect());
             }
             Ok(TreeNodeRecursion::Continue)
         })?;

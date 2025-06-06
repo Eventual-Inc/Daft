@@ -157,7 +157,9 @@ fn append_plan_to_task(
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let transformed_plan = plan
         .transform_up(|p| match p.as_ref() {
-            LocalPhysicalPlan::PlaceholderScan(_) => Ok(Transformed::yes(submittable_task.task().plan())),
+            LocalPhysicalPlan::PlaceholderScan(_) => {
+                Ok(Transformed::yes(submittable_task.task().plan()))
+            }
             _ => Ok(Transformed::no(p)),
         })?
         .data;

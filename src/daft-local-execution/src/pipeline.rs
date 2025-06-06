@@ -12,11 +12,10 @@ use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::join::get_common_join_cols;
 use daft_local_plan::{
-    ActorPoolProject, Concat, CrossJoin, DistributedActorPoolProject, EmptyScan, Explode, Filter,
-    HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
-    PhysicalWrite, Pivot, Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
+    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
+    Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -280,13 +279,15 @@ pub fn physical_plan_to_pipeline(
             IntermediateNode::new(Arc::new(proj_op), vec![child_node], stats_state.clone()).boxed()
         }
         #[cfg(feature = "python")]
-        LocalPhysicalPlan::DistributedActorPoolProject(DistributedActorPoolProject {
-            input,
-            actor_objects,
-            projection,
-            stats_state,
-            ..
-        }) => {
+        LocalPhysicalPlan::DistributedActorPoolProject(
+            daft_local_plan::DistributedActorPoolProject {
+                input,
+                actor_objects,
+                projection,
+                stats_state,
+                ..
+            },
+        ) => {
             let distributed_actor_pool_project_op = DistributedActorPoolProjectOperator::try_new(
                 actor_objects.clone(),
                 projection.clone(),

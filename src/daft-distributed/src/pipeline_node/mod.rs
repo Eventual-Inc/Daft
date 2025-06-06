@@ -13,6 +13,7 @@ use crate::{
     utils::channel::{Receiver, ReceiverStream},
 };
 
+#[cfg(feature = "python")]
 mod actor_udf;
 mod in_memory_source;
 mod intermediate;

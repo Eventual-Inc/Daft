@@ -32,10 +32,6 @@ pub(crate) struct ActorHandle {
 }
 
 impl ActorHandle {
-    fn new(inner: Arc<PyObject>) -> Self {
-        Self { inner }
-    }
-
     fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         #[cfg(feature = "python")]
         {
@@ -62,7 +58,7 @@ impl ActorHandle {
 #[cfg(feature = "python")]
 impl From<daft_dsl::pyobj_serde::PyObjectWrapper> for ActorHandle {
     fn from(value: daft_dsl::pyobj_serde::PyObjectWrapper) -> Self {
-        ActorHandle::new(value.0)
+        ActorHandle { inner: value.0 }
     }
 }
 
@@ -141,6 +137,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("DistributedActorPoolProject:".to_string());
+        #[cfg(feature = "python")]
         res.push(format!(
             "ActorHandles = [{}]",
             self.actor_handles

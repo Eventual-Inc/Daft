@@ -12,8 +12,8 @@ use daft_logical_plan::{
 };
 
 use crate::pipeline_node::{
-    actor_udf::ActorUDF, in_memory_source::InMemorySourceNode, intermediate::IntermediateNode,
-    limit::LimitNode, scan_source::ScanSourceNode, DistributedPipelineNode,
+    in_memory_source::InMemorySourceNode, intermediate::IntermediateNode, limit::LimitNode,
+    scan_source::ScanSourceNode, DistributedPipelineNode,
 };
 
 pub(crate) fn logical_plan_to_pipeline_node(
@@ -112,10 +112,11 @@ pub(crate) fn logical_plan_to_pipeline_node(
                         .into(),
                     ))
                 }
+                #[cfg(feature = "python")]
                 LogicalPlan::ActorPoolProject(project) => {
                     let input_nodes = std::mem::take(&mut self.current_nodes);
                     let input_node = self.create_node(project.input.clone(), input_nodes)?;
-                    let project_node = Box::new(ActorUDF::new(
+                    let project_node = Box::new(crate::pipeline_node::actor_udf::ActorUDF::new(
                         self.get_next_node_id(),
                         self.config.clone(),
                         project.projection.clone(),

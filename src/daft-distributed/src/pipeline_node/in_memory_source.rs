@@ -9,7 +9,10 @@ use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
-    scheduling::{scheduler::SubmittableTask, task::{SchedulingStrategy, SwordfishTask}},
+    scheduling::{
+        scheduler::SubmittableTask,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::StageContext,
     utils::channel::{create_channel, Sender},
 };
