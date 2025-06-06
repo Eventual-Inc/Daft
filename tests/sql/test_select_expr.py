@@ -40,3 +40,9 @@ def test_select_expr_functions():
     actual = daft.sql("SELECT lower('ABC') AS l, upper('xyz') AS u")
     expect = singleton().select(lit("ABC").str.lower().alias("l"), lit("xyz").str.upper().alias("u"))
     assert_eq(actual, expect)
+
+
+def test_select_struct_lit():
+    actual = daft.sql("select {'a': 'hello'}").collect()
+    expect = daft.from_pydict({"literal": [{"a": "hello"}]})
+    assert_eq(actual, expect)
