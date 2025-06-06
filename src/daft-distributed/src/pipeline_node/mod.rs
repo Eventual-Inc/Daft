@@ -5,7 +5,7 @@ use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline
 
 use crate::{
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittedTask},
+        scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
         task::{SwordfishTask, Task},
         worker::WorkerId,
     },
@@ -13,6 +13,7 @@ use crate::{
     utils::channel::{Receiver, ReceiverStream},
 };
 
+mod actor_udf;
 mod in_memory_source;
 mod intermediate;
 mod limit;
@@ -59,7 +60,7 @@ impl MaterializedOutput {
 #[derive(Debug)]
 pub(crate) enum PipelineOutput<T: Task> {
     Materialized(MaterializedOutput),
-    Task(T),
+    Task(SubmittableTask<T>),
     Running(SubmittedTask),
 }
 

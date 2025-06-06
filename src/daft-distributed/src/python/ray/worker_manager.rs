@@ -72,13 +72,6 @@ impl WorkerManager for RayWorkerManager {
             .mark_task_finished(task_id);
     }
 
-    fn total_available_cpus(&self) -> usize {
-        self.ray_workers
-            .values()
-            .map(|w| w.available_num_cpus())
-            .sum()
-    }
-
     fn shutdown(&self) -> DaftResult<()> {
         Python::with_gil(|py| {
             for worker in self.ray_workers.values() {

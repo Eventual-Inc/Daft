@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -11,10 +12,14 @@ from daft.daft import (
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
+    PyExpr,
+    PyMicroPartition,
     RayPartitionRef,
     RaySwordfishTask,
     RaySwordfishWorker,
+    set_compute_runtime_num_worker_threads,
 )
+from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.constants import (
     MAX_SWORDFISH_ACTOR_RESTARTS,
@@ -26,7 +31,7 @@ from daft.runners.partitioning import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator
+    from collections.abc import AsyncIterator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -48,7 +53,8 @@ class RaySwordfishActor:
     It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, num_worker_threads: int) -> None:
+        set_compute_runtime_num_worker_threads(num_worker_threads)
         self.native_executor = NativeExecutor()
 
     async def run_plan(
@@ -56,19 +62,19 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         config: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
-    ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
+    ) -> tuple[MicroPartition, PartitionMetadata]:
         """Run a plan on swordfish and yield partitions."""
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
-        metas = []
+        res = []
         async for partition in self.native_executor.run_async(plan, psets_mp, config, None):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
-            metas.append(PartitionMetadata.from_table(mp))
-            yield mp
-        yield metas
+            res.append(mp)
+        concated = MicroPartition.concat(res)
+        return concated, PartitionMetadata.from_table(concated)
 
 
 @dataclass
@@ -79,22 +85,13 @@ class RaySwordfishTaskHandle:
     """
 
     result_handle: ray.ObjectRef
+    metadata_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     task: asyncio.Task[list[RayPartitionRef]] | None = None
 
     async def _get_result(self) -> list[RayPartitionRef]:
-        results = []
-        async for result in self.result_handle:
-            results.append(result)
-
-        metadatas_ref = results.pop()
-        metadatas = await metadatas_ref
-        assert len(results) == len(metadatas)
-
-        res = [
-            RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
-            for result, metadata in zip(results, metadatas)
-        ]
+        metadata = await self.metadata_handle
+        res = [RayPartitionRef(self.result_handle, metadata.num_rows, metadata.size_bytes)]
         return res
 
     async def get_result(self) -> list[RayPartitionRef]:
@@ -121,9 +118,12 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
-
+        result_handle, metadata_handle = self.actor_handle.run_plan.options(name=task.name(), num_returns=2).remote(
+            task.plan(), task.config(), psets
+        )
         return RaySwordfishTaskHandle(
-            self.actor_handle.run_plan.remote(task.plan(), task.config(), psets),
+            result_handle,
+            metadata_handle,
             self.actor_handle,
         )
 
@@ -146,13 +146,14 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
                     node_id=node["NodeID"],
                     soft=False,
                 ),
-            ).remote()
+            ).remote(num_worker_threads=int(node["Resources"]["CPU"]))
             actor_handle = RaySwordfishActorHandle(actor)
             handles.append(
                 RaySwordfishWorker(
                     node["NodeID"],
                     actor_handle,
                     int(node["Resources"]["CPU"]),
+                    int(node["Resources"].get("GPU", 0)),
                     int(node["Resources"]["memory"]),
                 )
             )
@@ -182,7 +183,10 @@ class FlotillaPlanRunner:
         self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets)
 
     async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
-        from daft.runners.ray_runner import PartitionMetadataAccessor, RayMaterializedResult
+        from daft.runners.ray_runner import (
+            PartitionMetadataAccessor,
+            RayMaterializedResult,
+        )
 
         if plan_id not in self.curr_result_gens:
             raise ValueError(f"Plan {plan_id} not found in FlotillaPlanRunner")
@@ -201,3 +205,64 @@ class FlotillaPlanRunner:
             metadata_idx=0,
         )
         return materialized_result
+
+
+@ray.remote
+class UDFActor:
+    def __init__(self, uninitialized_projection: ExpressionsProjection) -> None:
+        import os
+
+        del os.environ["CUDA_VISIBLE_DEVICES"]
+        self.projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
+
+    def get_node_id(self) -> str:
+        return ray.get_runtime_context().get_node_id()
+
+    def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
+        start_time = time.perf_counter()
+        mp = MicroPartition._from_pymicropartition(input)
+        rb = mp.to_record_batch()
+        print(f"Converted to record batch in {time.perf_counter() - start_time:.2f} seconds")
+        start_time = time.perf_counter()
+        res = rb.eval_expression_list(self.projection)
+        mp = MicroPartition._from_pyrecordbatch(res._recordbatch)
+        print(f"Evaluated expression list in {time.perf_counter() - start_time:.2f} seconds")
+        return mp._micropartition
+
+
+class UDFActorHandle:
+    def __init__(self, node_id: str, actor_ref: ray.ObjectRef) -> None:
+        self.node_id = node_id
+        self.actor = actor_ref
+
+    def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
+        return ray.get(self.actor.eval_input.remote(input))
+
+    def teardown(self) -> None:
+        ray.kill(self.actor)
+
+
+def start_udf_actors(
+    projection: list[PyExpr],
+    num_actors: int,
+    num_gpus_per_actor: float,
+    memory_per_actor: float,
+    num_cpus_per_actor: float,
+) -> list[tuple[str, list[UDFActorHandle]]]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
+    handles: dict[str, list[UDFActorHandle]] = {}
+    actors = [
+        UDFActor.options(
+            scheduling_strategy="SPREAD",
+            num_gpus=num_gpus_per_actor,
+            num_cpus=num_cpus_per_actor,
+            memory=memory_per_actor,
+        ).remote(expr_projection)
+        for _ in range(num_actors)
+    ]
+    node_ids = ray.get([actor.get_node_id.remote() for actor in actors])
+    for actor, node_id in zip(actors, node_ids):
+        handles.setdefault(node_id, []).append(UDFActorHandle(node_id, actor))
+
+    res = [(node_id, handles) for node_id, handles in handles.items()]
+    return res

@@ -268,6 +268,8 @@ impl NativeExecutor {
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
+        let viz = viz_pipeline_ascii(pipeline.as_ref(), false);
+        println!("{}", viz);
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();

@@ -21,13 +21,13 @@ impl TaskResourceRequest {
         Self { resource_request }
     }
 
-    pub fn num_cpus(&self) -> usize {
-        self.resource_request.num_cpus().unwrap_or(1.0) as usize
+    pub fn num_cpus(&self) -> f64 {
+        self.resource_request.num_cpus().unwrap_or(1.0)
     }
 
     #[allow(dead_code)]
-    pub fn num_gpus(&self) -> usize {
-        self.resource_request.num_gpus().unwrap_or(0.0) as usize
+    pub fn num_gpus(&self) -> f64 {
+        self.resource_request.num_gpus().unwrap_or(0.0)
     }
 
     #[allow(dead_code)]
@@ -54,8 +54,12 @@ pub(crate) struct TaskDetails {
 }
 
 impl TaskDetails {
-    pub fn num_cpus(&self) -> usize {
+    pub fn num_cpus(&self) -> f64 {
         self.resource_request.num_cpus()
+    }
+
+    pub fn num_gpus(&self) -> f64 {
+        self.resource_request.num_gpus()
     }
 }
 
@@ -84,6 +88,7 @@ pub(crate) struct SwordfishTask {
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
+    notify_token: Option<CancellationToken>,
 }
 
 #[allow(dead_code)]
@@ -103,6 +108,7 @@ impl SwordfishTask {
             config,
             psets,
             strategy,
+            notify_token: None,
         }
     }
 
@@ -124,6 +130,14 @@ impl SwordfishTask {
 
     pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
         &self.psets
+    }
+
+    pub fn name(&self) -> String {
+        self.plan.name().to_string()
+    }
+
+    pub fn notify_token(&self) -> Option<CancellationToken> {
+        self.notify_token.clone()
     }
 }
 
@@ -188,19 +202,26 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
     }
 
     pub async fn await_result(mut self) {
+        // // println!("[TaskResultHandleAwaiter] [{}] Awaiting result", self.task_id);
         tokio::select! {
             biased;
             () = self.cancel_token.cancelled() => {
+                // // println!("[TaskResultHandleAwaiter] [{}] Cancelled", self.task_id);
                 if let Err(e) = self.handle.cancel_callback() {
+                    // // println!("[TaskResultHandleAwaiter] [{}] Failed to cancel task: {}", self.task_id, e);
                     tracing::debug!("Failed to cancel task: {}", e);
                 }
             }
             result = self.handle.get_result() => {
+                // // println!("[TaskResultHandleAwaiter] [{}] Received result", self.task_id);
                 if self.result_sender.send(result).is_err() {
+                    // // println!("[TaskResultHandleAwaiter] [{}] Error sending result", self.task_id);
                     tracing::debug!("Task result receiver was dropped before task result could be sent");
                 }
+                // // println!("[TaskResultHandleAwaiter] [{}] Sent result", self.task_id);
             }
         }
+        // // println!("[TaskResultHandleAwaiter] [{}] Finished awaiting result", self.task_id);
     }
 }
 

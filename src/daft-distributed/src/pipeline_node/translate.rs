@@ -12,8 +12,8 @@ use daft_logical_plan::{
 };
 
 use crate::pipeline_node::{
-    in_memory_source::InMemorySourceNode, intermediate::IntermediateNode, limit::LimitNode,
-    scan_source::ScanSourceNode, DistributedPipelineNode,
+    actor_udf::ActorUDF, in_memory_source::InMemorySourceNode, intermediate::IntermediateNode,
+    limit::LimitNode, scan_source::ScanSourceNode, DistributedPipelineNode,
 };
 
 pub(crate) fn logical_plan_to_pipeline_node(
@@ -101,6 +101,29 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     ));
 
                     self.current_nodes = vec![limit_node];
+                    // Here we will have to return a placeholder, essentially cutting off the plan
+                    let placeholder =
+                        PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
+                    Ok(Transformed::yes(
+                        LogicalPlan::Source(Source::new(
+                            node.schema(),
+                            SourceInfo::PlaceHolder(placeholder).into(),
+                        ))
+                        .into(),
+                    ))
+                }
+                LogicalPlan::ActorPoolProject(project) => {
+                    let input_nodes = std::mem::take(&mut self.current_nodes);
+                    let input_node = self.create_node(project.input.clone(), input_nodes)?;
+                    let project_node = Box::new(ActorUDF::new(
+                        self.get_next_node_id(),
+                        self.config.clone(),
+                        project.projection.clone(),
+                        project.input.schema(),
+                        input_node,
+                    )?);
+
+                    self.current_nodes = vec![project_node];
                     // Here we will have to return a placeholder, essentially cutting off the plan
                     let placeholder =
                         PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
