@@ -2935,6 +2935,7 @@ dependencies = [
  "daft-micropartition",
  "daft-recordbatch",
  "log",
+ "parking_lot 0.12.3",
  "parquet",
  "pyo3",
  "tokio",

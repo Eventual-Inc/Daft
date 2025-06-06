@@ -1533,7 +1533,7 @@ impl S3MultipartWriter {
             "S3 multipart upload has been assigned an upload_id: {uri}, upload_id: {upload_id}"
         );
 
-        Ok(S3MultipartWriter {
+        Ok(Self {
             uri: uri.into(),
             bucket: bucket.into(),
             key: key.into(),
@@ -1660,7 +1660,7 @@ pub struct S3PartBuffer {
 
 impl S3PartBuffer {
     pub fn new(part_size: NonZeroUsize, tx: Sender<bytes::Bytes>) -> Self {
-        S3PartBuffer {
+        Self {
             buffer: Vec::with_capacity(part_size.get()),
             part_size,
             tx: Some(tx),
@@ -1815,5 +1815,4 @@ mod tests {
 
         Ok(())
     }
-
 }
