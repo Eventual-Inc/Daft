@@ -409,7 +409,7 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
 }
 
 /// Helper to parse S3 URLs, returning (scheme, bucket, key)
-fn parse_url(uri: &str) -> super::Result<(String, String, String)> {
+pub fn parse_s3_url(uri: &str) -> super::Result<(String, String, String)> {
     let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
     let bucket = match parsed.host_str() {
         Some(s) => Ok(s),
@@ -698,7 +698,7 @@ impl S3LikeSource {
         region: &Region,
     ) -> super::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
-        let (_scheme, bucket, key) = parse_url(uri)?;
+        let (_scheme, bucket, key) = parse_s3_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -809,7 +809,7 @@ impl S3LikeSource {
         region: &Region,
     ) -> super::Result<usize> {
         log::debug!("S3 head at {uri} in region: {region}");
-        let (_scheme, bucket, key) = parse_url(uri)?;
+        let (_scheme, bucket, key) = parse_s3_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -1048,7 +1048,7 @@ impl S3LikeSource {
             "S3 put at {uri}, num_bytes: {}, in region: {region}",
             data.len()
         );
-        let (_scheme, bucket, key) = parse_url(uri)?;
+        let (_scheme, bucket, key) = parse_s3_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -1338,7 +1338,7 @@ impl ObjectSource for S3LikeSource {
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
-        let (scheme, bucket, key) = parse_url(path)?;
+        let (scheme, bucket, key) = parse_s3_url(path)?;
 
         if posix {
             // Perform a directory-based list of entries in the next level
@@ -1517,7 +1517,7 @@ impl S3MultipartWriter {
         s3_client: Arc<S3LikeSource>,
     ) -> super::Result<Self> {
         let uri = uri.into();
-        let (_scheme, bucket, key) = parse_url(&uri)?;
+        let (_scheme, bucket, key) = parse_s3_url(&uri)?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.clone() }.into());

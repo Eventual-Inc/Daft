@@ -10,7 +10,7 @@ mod local;
 mod object_io;
 mod object_store_glob;
 mod retry;
-mod s3_like;
+pub mod s3_like;
 mod stats;
 mod stream_utils;
 

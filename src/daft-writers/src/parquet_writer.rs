@@ -183,13 +183,9 @@ fn build_local_file_path(
 
 /// Helper function to build the path to an S3 url.
 fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
-    let root = root_dir.trim_start_matches("s3://");
-    let (bucket, prefix) = root.split_once('/').ok_or_else(|| {
-        DaftError::ValueError("S3 path must contain a bucket and prefix".to_string())
-    })?;
-
-    let key = Path::new(prefix).join(partition_path).join(filename);
-    Ok(PathBuf::from(format!("s3://{}/{}", bucket, key.display())))
+    let (scheme, bucket, key) = daft_io::s3_like::parse_s3_url(&root_dir)?;
+    let key = Path::new(&key).join(partition_path).join(filename);
+    Ok(PathBuf::from(format!("{}://{}/{}", scheme, bucket, key.display())))
 }
 
 struct ParquetWriter {
