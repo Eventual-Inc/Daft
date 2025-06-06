@@ -483,24 +483,18 @@ impl AsyncFileWriter for ParquetWriter {
     }
 
     fn bytes_written(&self) -> usize {
-        let mut guard = self.file_writer.lock();
-
-        assert!(
-            !guard.is_none(),
-            "File writer must be created before bytes_written can be called"
-        );
-
-        guard.as_mut().unwrap().bytes_written()
+        let bytes_written = match self.file_writer.lock().as_ref() {
+            Some(writer) => writer.bytes_written(),
+            None => unreachable!("File writer must be created before bytes_written can be called"),
+        };
+        bytes_written
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        let mut guard = self.file_writer.lock();
-
-        assert!(
-            !guard.is_none(),
-            "File writer must be created before bytes_per_file can be called"
-        );
-
-        vec![guard.as_mut().unwrap().bytes_written()]
+        let bytes_written = match self.file_writer.lock().as_ref() {
+            Some(writer) => writer.bytes_written(),
+            None => unreachable!("File writer must be created before bytes_per_file can be called"),
+        };
+        vec![bytes_written]
     }
 }
