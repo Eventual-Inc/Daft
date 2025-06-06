@@ -482,6 +482,14 @@ impl AsyncFileWriter for ParquetWriter {
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
+        let part_buffer = self
+            .s3part_buffer
+            .take()
+            .expect("S3 part buffer must be initialized for multipart upload.");
+        let upload_thread = self
+            .upload_thread
+            .take()
+            .expect("Upload thread must be initialized for multipart upload.");
 
         let file_writer_handle = self.file_writer.clone();
         spawn_blocking(move || -> DaftResult<()> {
@@ -492,21 +500,6 @@ impl AsyncFileWriter for ParquetWriter {
                 .finish()
                 .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-            Ok(())
-        })
-        .await
-        .map_err(|e| DaftError::ParquetError(e.to_string()))??;
-
-        let part_buffer = self
-            .s3part_buffer
-            .take()
-            .expect("S3 part buffer must be initialized for multipart upload.");
-        let upload_thread = self
-            .upload_thread
-            .take()
-            .expect("Upload thread must be initialized for multipart upload.");
-
-        spawn_blocking(move || -> DaftResult<()> {
             // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
             part_buffer.lock().shutdown()?;
 
