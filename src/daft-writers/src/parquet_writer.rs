@@ -105,34 +105,7 @@ pub(crate) fn create_native_parquet_writer(
 {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
-    let filename = if matches!(source_type, SourceType::File) {
-        let root_dir = Path::new(root_dir.trim_start_matches("file://"));
-        let dir = if let Some(partition_values) = partition_values {
-            let partition_path = record_batch_to_partition_path(partition_values, None)?;
-            root_dir.join(partition_path)
-        } else {
-            root_dir.to_path_buf()
-        };
-        // Create the directories if they don't exist.
-        std::fs::create_dir_all(&dir)?;
-
-        dir.join(format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx))
-    } else {
-        let root = root_dir.trim_start_matches("s3://");
-        let (bucket, prefix) = root.split_once('/').unwrap();
-        let partition_path = if let Some(partition_values) = partition_values {
-            record_batch_to_partition_path(partition_values, None)?
-        } else {
-            PathBuf::new()
-        };
-        let key = Path::new(prefix).join(partition_path).join(format!(
-            "{}-{}.parquet",
-            uuid::Uuid::new_v4(),
-            file_idx
-        ));
-
-        PathBuf::from(format!("s3://{}/{}", bucket, key.display()))
-    };
+    let filename = build_filename(source_type, root_dir.as_ref(), partition_values, file_idx)?;
 
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
@@ -158,6 +131,65 @@ pub(crate) fn create_native_parquet_writer(
         partition_values.cloned(),
         io_config,
     )))
+}
+
+/// Helper function to build the filename for the parquet file.
+fn build_filename(
+    source_type: SourceType,
+    root_dir: &str,
+    partition_values: Option<&RecordBatch>,
+    file_idx: usize,
+) -> DaftResult<PathBuf> {
+    let partition_path = get_partition_path(partition_values)?;
+    let filename = generate_parquet_filename(file_idx);
+
+    match source_type {
+        SourceType::File => build_local_file_path(root_dir, partition_path, filename),
+        SourceType::S3 => build_s3_path(root_dir, partition_path, filename),
+        _ => Err(DaftError::ValueError(format!(
+            "Unsupported source type: {:?}",
+            source_type
+        ))),
+    }
+}
+
+/// Helper function to get the partition path from the record batch.
+fn get_partition_path(partition_values: Option<&RecordBatch>) -> DaftResult<PathBuf> {
+    match partition_values {
+        Some(partition_values) => Ok(record_batch_to_partition_path(partition_values, None)?),
+        None => Ok(PathBuf::new()),
+    }
+}
+
+// Helper function to generate the parquet filename.
+fn generate_parquet_filename(file_idx: usize) -> String {
+    format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx)
+}
+
+/// Helper function to build the path to a local file.
+fn build_local_file_path(
+    root_dir: &str,
+    partition_path: PathBuf,
+    filename: String,
+) -> DaftResult<PathBuf> {
+    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
+    let dir = root_dir.join(partition_path);
+
+    // Create directories if they don't exist.
+    std::fs::create_dir_all(&dir)?;
+
+    Ok(dir.join(filename))
+}
+
+/// Helper function to build the path to an S3 url.
+fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
+    let root = root_dir.trim_start_matches("s3://");
+    let (bucket, prefix) = root.split_once('/').ok_or_else(|| {
+        DaftError::ValueError("S3 path must contain a bucket and prefix".to_string())
+    })?;
+
+    let key = Path::new(prefix).join(partition_path).join(filename);
+    Ok(PathBuf::from(format!("s3://{}/{}", bucket, key.display())))
 }
 
 struct ParquetWriter {
