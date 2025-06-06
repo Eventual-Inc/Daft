@@ -14,6 +14,12 @@ use crate::series::SeriesListExtension;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListFill;
 
+#[derive(FunctionArgs)]
+struct Args<T> {
+    input: T,
+    elem: T,
+}
+
 #[typetag::serde]
 impl ScalarUDF for ListFill {
     fn name(&self) -> &'static str {
@@ -21,39 +27,26 @@ impl ScalarUDF for ListFill {
     }
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inputs = inputs.into_inner();
-        match inputs.as_slice() {
-            [num, elem] => {
-                let num = num.cast(&DataType::Int64)?;
-                let num_array = num.i64()?;
-                elem.list_fill(num_array)
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        let Args { input: num, elem } = inputs.try_into()?;
+
+        let num = num.cast(&DataType::Int64)?;
+        let num_array = num.i64()?;
+        elem.list_fill(num_array)
     }
 
     fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
-        let inputs = inputs.into_inner();
-        match inputs.as_slice() {
-            [n, elem] => {
-                let num_field = n.to_field(schema)?;
-                let elem_field = elem.to_field(schema)?;
-                if !num_field.dtype.is_integer() {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected num field to be of numeric type, received: {}",
-                        num_field.dtype
-                    )));
-                }
-                elem_field.to_list_field()
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            ))),
+        let Args { input: n, elem } = inputs.try_into()?;
+
+        let num_field = n.to_field(schema)?;
+        let elem_field = elem.to_field(schema)?;
+
+        if !num_field.dtype.is_integer() {
+            return Err(DaftError::TypeError(format!(
+                "Expected num field to be of numeric type, received: {}",
+                num_field.dtype
+            )));
         }
+        elem_field.to_list_field()
     }
 }
 
@@ -89,11 +82,14 @@ mod tests {
 
         let fill = ListFill {};
         let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
-        let DaftError::SchemaMismatch(e) = fill.get_return_type(args, &schema).unwrap_err() else {
-            panic!("Expected SchemaMismatch error");
+        let DaftError::TypeError(e) = dbg!(fill.get_return_type(args, &schema).unwrap_err()) else {
+            panic!("Expected TypeError error");
         };
-        assert_eq!(e, "Expected 2 input args, got 1");
-        let args = FunctionArgs::new_unnamed(vec![col0_num.clone(), col1_null.clone()]);
+        assert_eq!(
+            e,
+            "Expected num field to be of numeric type, received: Null"
+        );
+        let args = FunctionArgs::new_unnamed(vec![col0_null.clone(), col1_str.clone()]);
         let DaftError::TypeError(e) = fill.get_return_type(args, &schema).unwrap_err() else {
             panic!("Expected TypeError error");
         };
@@ -128,7 +124,7 @@ mod tests {
         let error = fill.call(args).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "DaftError::ValueError Expected 2 input args, got 1"
+            "DaftError::ValueError Required argument `elem` not found"
         );
     }
 
