@@ -202,26 +202,19 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
     }
 
     pub async fn await_result(mut self) {
-        // // println!("[TaskResultHandleAwaiter] [{}] Awaiting result", self.task_id);
         tokio::select! {
             biased;
             () = self.cancel_token.cancelled() => {
-                // // println!("[TaskResultHandleAwaiter] [{}] Cancelled", self.task_id);
                 if let Err(e) = self.handle.cancel_callback() {
-                    // // println!("[TaskResultHandleAwaiter] [{}] Failed to cancel task: {}", self.task_id, e);
                     tracing::debug!("Failed to cancel task: {}", e);
                 }
             }
             result = self.handle.get_result() => {
-                // // println!("[TaskResultHandleAwaiter] [{}] Received result", self.task_id);
                 if self.result_sender.send(result).is_err() {
-                    // // println!("[TaskResultHandleAwaiter] [{}] Error sending result", self.task_id);
                     tracing::debug!("Task result receiver was dropped before task result could be sent");
                 }
-                // // println!("[TaskResultHandleAwaiter] [{}] Sent result", self.task_id);
             }
         }
-        // // println!("[TaskResultHandleAwaiter] [{}] Finished awaiting result", self.task_id);
     }
 }
 

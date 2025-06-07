@@ -66,7 +66,6 @@ impl<W: Worker> DispatcherActor<W> {
                 result_handle.worker_id().clone(),
             );
             let id = running_tasks.spawn(result_handle.await_result());
-            // // println!("[Dispatcher] Dispatched task: {:?} to worker: {:?} with joinset id: {:?}", task_id, worker_id, id);
             running_tasks_by_id.insert(id, (task_id, worker_id));
         }
         Ok(())
@@ -85,7 +84,6 @@ impl<W: Worker> DispatcherActor<W> {
         let (task_id, worker_id) = running_tasks_by_id
             .remove(&finished_joinset_id)
             .expect("Task should be present in running_tasks_by_id");
-        // // println!("[Dispatcher] Marking task finished: {:?}", task_id);
         worker_manager.mark_task_finished(&task_id, &worker_id);
 
         // Try to get any other finished tasks
@@ -94,7 +92,6 @@ impl<W: Worker> DispatcherActor<W> {
             let (task_id, worker_id) = running_tasks_by_id
                 .remove(&id)
                 .expect("Task should be present in running_tasks_by_id");
-            // // println!("[Dispatcher] Marking task finished: {:?}", task_id);
             worker_manager.mark_task_finished(&task_id, &worker_id);
         }
 
@@ -124,28 +121,20 @@ impl<W: Worker> DispatcherActor<W> {
         let mut running_tasks_by_id = HashMap::new();
 
         while !input_exhausted || !running_tasks.is_empty() {
-            // // println!("[Dispatcher] Dispatcher loop running, len running_tasks: {:?}", running_tasks.len());
             tokio::select! {
                 maybe_tasks = task_rx.recv() => {
                     if let Some(tasks) = maybe_tasks {
-                        // // println!("[Dispatcher] Received new tasks, num tasks: {}", tasks.len());
-
                         Self::dispatch_tasks(
                             tasks,
                             &worker_manager,
                             &mut running_tasks,
                             &mut running_tasks_by_id,
                         )?;
-                        // println!("[Dispatcher] Dispatched tasks");
                     } else if !input_exhausted {
-                        // println!("[Dispatcher] Input exhausted");
-
                         input_exhausted = true;
                     }
                 }
                 Some((id, finished_task_result)) = running_tasks.join_next_with_id() => {
-                    // println!("[Dispatcher] Handling finished task: {:?}", id);
-
                      Self::handle_finished_task(
                         id,
                         finished_task_result,
@@ -154,8 +143,6 @@ impl<W: Worker> DispatcherActor<W> {
                         &worker_manager,
                         &worker_update_sender,
                     ).await?;
-
-                    // println!("[Dispatcher] Handled finished task: {:?}", id);
                 }
             }
         }
@@ -182,12 +169,9 @@ impl<T: Task> DispatcherHandle<T> {
     }
 
     pub async fn dispatch_tasks(&self, tasks: Vec<ScheduledTask<T>>) -> DaftResult<()> {
-        let dispatcher_sender_capacity = self.dispatcher_sender.capacity();
-        // println!("[DispatcherHandle] Sending tasks {} to dispatcher, dispatcher_sender_capacity: {:?}", tasks.len(), dispatcher_sender_capacity);
         self.dispatcher_sender.send(tasks).await.map_err(|_| {
             DaftError::InternalError("Failed to send tasks to dispatcher".to_string())
         })?;
-        // println!("[DispatcherHandle] Sent tasks to dispatcher");
         Ok(())
     }
 

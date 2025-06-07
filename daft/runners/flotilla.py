@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -219,15 +218,9 @@ class UDFActor:
         return ray.get_runtime_context().get_node_id()
 
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:
-        start_time = time.perf_counter()
         mp = MicroPartition._from_pymicropartition(input)
-        rb = mp.to_record_batch()
-        print(f"Converted to record batch in {time.perf_counter() - start_time:.2f} seconds")
-        start_time = time.perf_counter()
-        res = rb.eval_expression_list(self.projection)
-        mp = MicroPartition._from_pyrecordbatch(res._recordbatch)
-        print(f"Evaluated expression list in {time.perf_counter() - start_time:.2f} seconds")
-        return mp._micropartition
+        res = mp.eval_expression_list(self.projection)
+        return res._micropartition
 
 
 class UDFActorHandle:
@@ -252,7 +245,7 @@ def start_udf_actors(
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
     handles: dict[str, list[UDFActorHandle]] = {}
     actors = [
-        UDFActor.options(
+        UDFActor.options(  # type: ignore
             scheduling_strategy="SPREAD",
             num_gpus=num_gpus_per_actor,
             num_cpus=num_cpus_per_actor,

@@ -153,10 +153,6 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         let next_actor_handle_idx = self.counter.fetch_add(1, Ordering::SeqCst);
         let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
-        println!(
-            "next_actor_handle: {:?}, next_actor_handle_idx: {:?}",
-            next_actor_handle, next_actor_handle_idx
-        );
         Ok(Box::new(DistributedActorPoolProjectState {
             actor_handle: next_actor_handle.clone(),
         }))
@@ -168,7 +164,6 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
 
     fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
         if let Some(batch_size) = self.batch_size {
-            println!("Batch size: {:?}", batch_size);
             (batch_size, batch_size)
         } else {
             (0, runtime_handle.default_morsel_size())
