@@ -1,13 +1,13 @@
 use std::{sync::Arc, vec};
 
 use common_error::DaftResult;
+use common_runtime::get_compute_pool_num_threads;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
-    count_actor_pool_udfs,
-    expr::bound_expr::BoundExpr,
+    expr::{bound_expr::BoundExpr, count_udfs},
     functions::python::{
-        get_concurrency, get_resource_request, get_udf_names, try_get_batch_size_from_udf,
+        get_resource_request, get_udf_names, try_get_batch_size_from_udf, try_get_concurrency,
     },
 };
 #[cfg(feature = "python")]
@@ -24,20 +24,20 @@ use super::intermediate_op::{
 };
 use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
 
-struct ActorHandle {
+struct UdfHandle {
     #[cfg(feature = "python")]
     inner: PyObject,
 }
 
-impl ActorHandle {
+impl UdfHandle {
     fn try_new(projection: &[BoundExpr]) -> DaftResult<Self> {
         #[cfg(feature = "python")]
         {
             let handle = Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
-                    py.import(pyo3::intern!(py, "daft.execution.actor_pool_udf"))?
-                        .getattr(pyo3::intern!(py, "ActorHandle"))?
+                    py.import(pyo3::intern!(py, "daft.execution.udf"))?
+                        .getattr(pyo3::intern!(py, "UdfHandle"))?
                         .call1((projection
                             .iter()
                             .map(|expr| PyExpr::from(expr.as_ref().clone()))
@@ -96,7 +96,7 @@ impl ActorHandle {
     }
 }
 
-impl Drop for ActorHandle {
+impl Drop for UdfHandle {
     fn drop(&mut self) {
         let result = self.teardown();
 
@@ -106,43 +106,41 @@ impl Drop for ActorHandle {
     }
 }
 
-/// Each ActorPoolProjectState holds a handle to a single actor process.
-/// The concurrency of the actor pool is thus tied to the concurrency of the operator
+/// Each UdfState holds a handle to a single Python process.
+/// The concurrency of the Python process pool is thus tied to the concurrency of the operator
 /// and the local executor handles task scheduling.
 ///
 /// TODO: Implement a work-stealing dispatcher in the executor to improve pipelining.
-struct ActorPoolProjectState {
-    pub actor_handle: ActorHandle,
+struct UdfState {
+    pub udf_handle: UdfHandle,
 }
 
-impl IntermediateOpState for ActorPoolProjectState {
+impl IntermediateOpState for UdfState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 }
 
-pub struct ActorPoolProjectOperator {
+pub struct UdfOperator {
     projection: Vec<BoundExpr>,
-    concurrency: usize,
+    concurrency: Option<usize>,
     batch_size: Option<usize>,
     memory_request: u64,
 }
 
-impl ActorPoolProjectOperator {
+impl UdfOperator {
     pub fn try_new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
         let projection_unbound = projection
             .iter()
             .map(|expr| expr.inner().clone())
             .collect::<Vec<_>>();
 
-        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection_unbound);
+        // count_udfs counts both actor pool and stateless udfs
+        let num_udfs = count_udfs(&projection_unbound);
 
-        assert_eq!(
-            num_actor_pool_udfs, 1,
-            "Expected only one actor pool udf in an actor pool project"
-        );
+        assert_eq!(num_udfs, 1, "Expected only one udf in an udf projection");
 
-        let concurrency = get_concurrency(&projection_unbound);
+        let concurrency = try_get_concurrency(&projection_unbound);
         let batch_size = try_get_batch_size_from_udf(&projection_unbound)?;
 
         let memory_request = get_resource_request(&projection)
@@ -158,8 +156,8 @@ impl ActorPoolProjectOperator {
     }
 }
 
-impl IntermediateOperator for ActorPoolProjectOperator {
-    #[instrument(skip_all, name = "ActorPoolProjectOperator::execute")]
+impl IntermediateOperator for UdfOperator {
+    #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
@@ -170,12 +168,12 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let actor_pool_project_state = state
+                let udf_state = state
                     .as_any_mut()
-                    .downcast_mut::<ActorPoolProjectState>()
-                    .expect("ActorPoolProjectState");
-                let res = actor_pool_project_state
-                    .actor_handle
+                    .downcast_mut::<UdfState>()
+                    .expect("UdfState");
+                let res = udf_state
+                    .udf_handle
                     .eval_input(input)
                     .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
                 Ok((state, res))
@@ -186,12 +184,12 @@ impl IntermediateOperator for ActorPoolProjectOperator {
     }
 
     fn name(&self) -> &'static str {
-        "ActorPoolProject"
+        "UdfOperator"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("ActorPoolProject:".to_string());
+        res.push("UDF Executor:".to_string());
         res.push(format!(
             "Projection = [{}]",
             self.projection.iter().map(|e| e.to_string()).join(", ")
@@ -203,7 +201,7 @@ impl IntermediateOperator for ActorPoolProjectOperator {
                 .flat_map(|expr| get_udf_names(expr.inner()))
                 .join(", ")
         ));
-        res.push(format!("Concurrency = {}", self.concurrency));
+        res.push(format!("Concurrency = {:?}", self.concurrency));
         if let Some(resource_request) = get_resource_request(&self.projection) {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -217,14 +215,16 @@ impl IntermediateOperator for ActorPoolProjectOperator {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the actor
-        Ok(Box::new(ActorPoolProjectState {
-            actor_handle: ActorHandle::try_new(&self.projection)?,
+        // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the udf
+        Ok(Box::new(UdfState {
+            udf_handle: UdfHandle::try_new(&self.projection)?,
         }))
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.concurrency)
+        Ok(dbg!(self
+            .concurrency
+            .unwrap_or_else(get_compute_pool_num_threads)))
     }
 
     fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {

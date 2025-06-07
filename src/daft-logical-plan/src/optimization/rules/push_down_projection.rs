@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::prelude::*;
 use daft_dsl::{
-    is_actor_pool_udf,
+    is_udf,
     optimization::{get_required_columns, replace_columns_with_expressions, requires_computation},
     resolved_col, Column, Expr, ExprRef, ResolvedColumn,
 };
@@ -277,22 +277,20 @@ impl PushDownProjection {
                             .collect_vec();
 
                         // Construct either a new ActorPoolProject or Project, depending on whether the pruned projection still has actor pool UDFs
-                        let new_plan = if new_actor_pool_projections
-                            .iter()
-                            .any(|e| e.exists(is_actor_pool_udf))
-                        {
-                            LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-                                upstream_actor_pool_projection.input.clone(),
-                                new_actor_pool_projections,
-                            )?)
-                            .arced()
-                        } else {
-                            LogicalPlan::Project(Project::try_new(
-                                upstream_actor_pool_projection.input.clone(),
-                                new_actor_pool_projections,
-                            )?)
-                            .arced()
-                        };
+                        let new_plan =
+                            if new_actor_pool_projections.iter().any(|e| e.exists(is_udf)) {
+                                LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+                                    upstream_actor_pool_projection.input.clone(),
+                                    new_actor_pool_projections,
+                                )?)
+                                .arced()
+                            } else {
+                                LogicalPlan::Project(Project::try_new(
+                                    upstream_actor_pool_projection.input.clone(),
+                                    new_actor_pool_projections,
+                                )?)
+                                .arced()
+                            };
 
                         // Retry optimization now that the node is different.
                         let new_plan = self
@@ -561,7 +559,7 @@ impl PushDownProjection {
         actor_pool_project: &ActorPoolProject,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        // If this ActorPoolPorject prunes columns from its upstream,
+        // If this ActorPoolProject prunes columns from its upstream,
         // then explicitly create a projection to do so.
         let upstream_plan = &actor_pool_project.input;
         let upstream_schema = upstream_plan.schema();
@@ -706,7 +704,8 @@ impl PushDownProjection {
 
 impl OptimizerRule for PushDownProjection {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        plan.transform_down(|node| self.try_optimize_node(node))
+        let out = plan.transform_down(|node| self.try_optimize_node(node))?;
+        Ok(out)
     }
 }
 

@@ -284,7 +284,6 @@ mod tests {
             .optimize()
             .unwrap() // To fill scan node with tasks
             .build();
-        eprintln!("{}", plan.repr_ascii(false));
 
         let pipeline_node = logical_plan_to_pipeline_node(
             plan,
