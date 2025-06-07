@@ -211,6 +211,7 @@ impl ActorUDF {
                         config.clone(),
                         schema.clone(),
                     )?;
+                    println!("task: {:?}", task);
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -222,6 +223,7 @@ impl ActorUDF {
                     }
                 }
                 PipelineOutput::Task(task) => {
+                    println!("task: {:?}", task);
                     // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
                     // I.E. THERE WAS A PREVIOUS ACTOR UDF. IF THERE IS A CASE WHERE THE PREVIOUS ACTOR UDF HAS A SPECIFIC WORKER ID,
                     // AND WE DON'T HAVE ACTOR FOR THIS WORKER ID, IT SHOULD STILL WORK BECAUSE IT'S A RAY ACTOR CALL.
@@ -240,6 +242,7 @@ impl ActorUDF {
                         &worker_id,
                     )?;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
+                    println!("submittable_task: {:?}", submittable_task);
                     running_tasks.spawn(notify_token);
                     if result_tx
                         .send(PipelineOutput::Task(submittable_task))
@@ -363,11 +366,12 @@ fn append_actor_udf_to_task(
         worker_id: worker_id.clone(),
         soft: false,
     };
+    let psets = submittable_task.task().psets().clone();
 
     let task = submittable_task.with_new_task(SwordfishTask::new(
         actor_pool_project_plan,
         config,
-        Default::default(),
+        psets,
         scheduling_strategy,
     ));
     Ok(task)

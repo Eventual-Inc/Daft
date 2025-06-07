@@ -164,10 +164,11 @@ fn append_plan_to_task(
         })?
         .data;
     let scheduling_strategy = submittable_task.task().strategy().clone();
+    let psets = submittable_task.task().psets().clone();
     let task = submittable_task.with_new_task(SwordfishTask::new(
         transformed_plan,
         config,
-        Default::default(),
+        psets,
         scheduling_strategy,
     ));
     Ok(task)
