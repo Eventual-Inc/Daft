@@ -40,6 +40,7 @@ enum UDFActors {
 }
 
 impl UDFActors {
+    // TODO: This is a blocking call, and should be done asynchronously.
     fn initialize_actors(
         projection: &[BoundExpr],
     ) -> DaftResult<Vec<(WorkerId, Vec<PyObjectWrapper>)>> {
@@ -221,6 +222,12 @@ impl ActorUDF {
                     }
                 }
                 PipelineOutput::Task(task) => {
+                    // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
+                    // I.E. THERE WAS A PREVIOUS ACTOR UDF. IF THERE IS A CASE WHERE THE PREVIOUS ACTOR UDF HAS A SPECIFIC WORKER ID,
+                    // AND WE DON'T HAVE ACTOR FOR THIS WORKER ID, IT SHOULD STILL WORK BECAUSE IT'S A RAY ACTOR CALL.
+                    // BUT WE INCUR TRANSFER COSTS FOR THE TASK.
+                    // IN A CASE LIKE THIS WE SHOULD MATERIALIZE THE TASK.
+
                     // Pick actors using round robin
                     let (worker_id, actors) = udf_actors.get_round_robin_actors()?;
 
@@ -246,10 +253,11 @@ impl ActorUDF {
             }
         }
         while let Some(result) = running_tasks.join_next().await {
-            if let Err(e) = result? {
+            if result?.is_err() {
                 break;
             }
         }
+        // Only teardown actors after all tasks are finished.
         udf_actors.teardown();
         Ok(())
     }
@@ -257,7 +265,7 @@ impl ActorUDF {
 
 impl DistributedPipelineNode for ActorUDF {
     fn name(&self) -> &'static str {
-        "Intermediate"
+        "ActorUDF"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {

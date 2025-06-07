@@ -57,6 +57,7 @@ impl ScanSourceNode {
             let _ = result_tx.send(PipelineOutput::Task(empty_scan_task)).await;
             return Ok(());
         }
+        // TODO: This should be a smarter, decision based on scan task statistics as well as cluster statistics.
         let max_sources_per_scan_task = config.max_sources_per_scan_task;
         for scan_tasks_chunk in scan_tasks.chunks(max_sources_per_scan_task) {
             let task =

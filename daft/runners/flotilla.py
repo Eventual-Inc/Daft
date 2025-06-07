@@ -53,6 +53,7 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_worker_threads: int) -> None:
+        # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_worker_threads)
         self.native_executor = NativeExecutor()
 
@@ -89,6 +90,7 @@ class RaySwordfishTaskHandle:
     task: asyncio.Task[list[RayPartitionRef]] | None = None
 
     async def _get_result(self) -> list[RayPartitionRef]:
+        # await the metadata, but not the data, so that the data is not transferred to head node.
         metadata = await self.metadata_handle
         res = [RayPartitionRef(self.result_handle, metadata.num_rows, metadata.size_bytes)]
         return res

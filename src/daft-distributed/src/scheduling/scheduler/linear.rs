@@ -1,10 +1,7 @@
 use std::collections::{BinaryHeap, HashMap};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
-use crate::scheduling::{
-    task::{SchedulingStrategy, Task, TaskDetails},
-    worker::WorkerId,
-};
+use crate::scheduling::{task::Task, worker::WorkerId};
 
 #[allow(dead_code)]
 pub(super) struct LinearScheduler<T: Task> {
@@ -26,48 +23,6 @@ impl<T: Task> LinearScheduler<T> {
             pending_tasks: BinaryHeap::new(),
         }
     }
-
-    // Spread scheduling: Schedule tasks to the worker with the most available slots, to
-    // TODO: Change the approach to instead spread based on tasks of the same 'type', i.e. from the same pipeline node.
-    fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
-        self.worker_snapshots
-            .iter()
-            .filter(|(_, worker)| worker.can_schedule_task(task))
-            .max_by_key(|(_, worker)| {
-                (worker.available_num_cpus() + worker.available_num_gpus()) as usize
-            })
-            .map(|(id, _)| id.clone())
-    }
-
-    // Soft worker affinity scheduling: Schedule task to the worker if it has capacity
-    // Otherwise, fallback to spread scheduling
-    fn try_schedule_worker_affinity_task(
-        &self,
-        task: &T,
-        worker_id: &WorkerId,
-        soft: bool,
-    ) -> Option<WorkerId> {
-        if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.can_schedule_task(task) {
-                return Some(worker.worker_id.clone());
-            }
-        }
-        // Fallback to spread scheduling if soft is true
-        if soft {
-            self.try_schedule_spread_task(task)
-        } else {
-            None
-        }
-    }
-
-    fn try_schedule_task(&self, task: &SchedulableTask<T>) -> Option<WorkerId> {
-        match task.strategy() {
-            SchedulingStrategy::Spread => self.try_schedule_spread_task(&task.task),
-            SchedulingStrategy::WorkerAffinity { worker_id, soft } => {
-                self.try_schedule_worker_affinity_task(&task.task, worker_id, *soft)
-            }
-        }
-    }
 }
 
 impl<T: Task> Scheduler<T> for LinearScheduler<T> {
@@ -84,39 +39,12 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         }
     }
 
-    fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>) {
-        self.pending_tasks.extend(tasks);
+    fn enqueue_tasks(&mut self, _tasks: Vec<SchedulableTask<T>>) {
+        todo!("FLOTILLA_MS1: Implement enqueue_tasks for linear scheduler")
     }
 
     fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>> {
-        // Check if any worker has active tasks
-        let has_active_tasks = self
-            .worker_snapshots
-            .values()
-            .any(|worker| !worker.active_task_details.is_empty());
-
-        // If there are active tasks, don't schedule any new ones
-        if has_active_tasks {
-            return Vec::new();
-        }
-
-        let mut scheduled = Vec::new();
-        let mut unscheduled = Vec::new();
-        while let Some(task) = self.pending_tasks.pop() {
-            if let Some(worker_id) = self.try_schedule_task(&task) {
-                self.worker_snapshots
-                    .get_mut(&worker_id)
-                    .expect("Worker should be present in LinearScheduler")
-                    .active_task_details
-                    .insert(task.task_id().clone(), TaskDetails::from(&task.task));
-                scheduled.push(ScheduledTask { task, worker_id });
-                break;
-            } else {
-                unscheduled.push(task);
-            }
-        }
-        self.pending_tasks.extend(unscheduled);
-        scheduled
+        todo!("FLOTILLA_MS1: Implement get_schedulable_tasks for linear scheduler")
     }
 
     fn num_pending_tasks(&self) -> usize {
