@@ -32,8 +32,10 @@ impl<T: Task> DefaultScheduler<T> {
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
         self.worker_snapshots
             .iter()
-            .filter(|(_, worker)| worker.available_num_cpus() >= task.resource_request().num_cpus())
-            .max_by_key(|(_, worker)| worker.available_num_cpus())
+            .filter(|(_, worker)| worker.can_schedule_task(task))
+            .max_by_key(|(_, worker)| {
+                (worker.available_num_cpus() + worker.available_num_gpus()) as usize
+            })
             .map(|(id, _)| id.clone())
     }
 
@@ -46,7 +48,7 @@ impl<T: Task> DefaultScheduler<T> {
         soft: bool,
     ) -> Option<WorkerId> {
         if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.available_num_cpus() >= task.resource_request().num_cpus() {
+            if worker.can_schedule_task(task) {
                 return Some(worker.worker_id.clone());
             }
         }
@@ -368,7 +370,7 @@ mod tests {
 
         // Update scheduler state to add a new worker with 1 slot available
         let worker_3: WorkerId = Arc::from("worker3");
-        let new_worker = MockWorker::new(worker_3.clone(), 1);
+        let new_worker = MockWorker::new(worker_3.clone(), 1.0, 0.0);
         let new_worker_snapshot = WorkerSnapshot::from(&new_worker);
         scheduler.update_worker_state(&[new_worker_snapshot]);
 

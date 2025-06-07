@@ -9,7 +9,10 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
-    scheduling::task::{SchedulingStrategy, SwordfishTask},
+    scheduling::{
+        scheduler::SubmittableTask,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::StageContext,
     utils::channel::{create_channel, Sender},
 };
@@ -113,7 +116,7 @@ fn make_task_for_materialized_output(
     materialized_output: MaterializedOutput,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
-) -> DaftResult<SwordfishTask> {
+) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let (partition_ref, worker_id) = materialized_output.into_inner();
 
     let info = InMemoryInfo::new(
@@ -141,28 +144,32 @@ fn make_task_for_materialized_output(
         psets,
         SchedulingStrategy::WorkerAffinity {
             worker_id,
-            soft: true,
+            soft: false,
         },
     );
-    Ok(task)
+    Ok(SubmittableTask::new(task))
 }
 
 fn append_plan_to_task(
-    task: SwordfishTask,
+    submittable_task: SubmittableTask<SwordfishTask>,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
-) -> DaftResult<SwordfishTask> {
+) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let transformed_plan = plan
         .transform_up(|p| match p.as_ref() {
-            LocalPhysicalPlan::PlaceholderScan(_) => Ok(Transformed::yes(task.plan())),
+            LocalPhysicalPlan::PlaceholderScan(_) => {
+                Ok(Transformed::yes(submittable_task.task().plan()))
+            }
             _ => Ok(Transformed::no(p)),
         })?
         .data;
-    let task = SwordfishTask::new(
+    let scheduling_strategy = submittable_task.task().strategy().clone();
+    let psets = submittable_task.task().psets().clone();
+    let task = submittable_task.with_new_task(SwordfishTask::new(
         transformed_plan,
         config,
-        Default::default(),
-        SchedulingStrategy::Spread,
-    );
+        psets,
+        scheduling_strategy,
+    ));
     Ok(task)
 }

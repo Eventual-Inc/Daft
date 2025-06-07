@@ -9,7 +9,10 @@ use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
-    scheduling::task::{SchedulingStrategy, SwordfishTask},
+    scheduling::{
+        scheduler::SubmittableTask,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::StageContext,
     utils::channel::{create_channel, Sender},
 };
@@ -94,7 +97,7 @@ fn make_task_for_partition_ref(
     partition_ref: PartitionRef,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
-) -> DaftResult<SwordfishTask> {
+) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let info = InMemoryInfo::new(
         plan.schema().clone(),
         cache_key.clone(),
@@ -122,5 +125,5 @@ fn make_task_for_partition_ref(
         // Need to get that from `ray.experimental.get_object_locations(object_refs)`
         SchedulingStrategy::Spread,
     );
-    Ok(task)
+    Ok(SubmittableTask::new(task))
 }

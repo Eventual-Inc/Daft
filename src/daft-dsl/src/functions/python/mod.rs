@@ -151,23 +151,24 @@ pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
 /// Gets the concurrency from the first UDF encountered in a given slice of expressions
 ///
 /// NOTE: This function panics if no UDF is found or if the first UDF has no concurrency
-pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
+pub fn get_concurrency<'a, E: Into<&'a ExprRef>>(exprs: impl IntoIterator<Item = E>) -> usize {
     let mut projection_concurrency = None;
     for expr in exprs {
         let mut found_actor_pool_udf = false;
-        expr.apply(|e| match e.as_ref() {
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
-                ..
-            } => {
-                found_actor_pool_udf = true;
-                projection_concurrency =
-                    Some(concurrency.expect("Should have concurrency specified"));
-                Ok(common_treenode::TreeNodeRecursion::Stop)
-            }
-            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-        })
-        .unwrap();
+        expr.into()
+            .apply(|e| match e.as_ref() {
+                Expr::Function {
+                    func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
+                    ..
+                } => {
+                    found_actor_pool_udf = true;
+                    projection_concurrency =
+                        Some(concurrency.expect("Should have concurrency specified"));
+                    Ok(common_treenode::TreeNodeRecursion::Stop)
+                }
+                _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+            })
+            .unwrap();
         if found_actor_pool_udf {
             break;
         }

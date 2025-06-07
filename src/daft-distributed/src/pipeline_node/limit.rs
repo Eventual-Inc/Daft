@@ -10,7 +10,7 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
     scheduling::{
-        scheduler::SchedulerHandle,
+        scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask},
     },
     stage::StageContext,
@@ -73,7 +73,7 @@ impl LimitNode {
                         schema.clone(),
                         config.clone(),
                     )?;
-                    let task_result_handle = scheduler_handle.submit_task(task_with_limit).await?;
+                    let task_result_handle = task_with_limit.submit(&scheduler_handle).await?;
                     (PipelineOutput::Running(task_result_handle), true)
                 }
             };
@@ -122,7 +122,7 @@ fn make_task_with_limit(
     node_id: usize,
     schema: SchemaRef,
     config: Arc<DaftExecutionConfig>,
-) -> DaftResult<SwordfishTask> {
+) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let (partition, worker_id) = materialized_output.into_inner();
     let in_memory_info = InMemoryInfo::new(schema, node_id.to_string(), None, 1, 0, 0, None, None);
 
@@ -143,5 +143,5 @@ fn make_task_with_limit(
             soft: true,
         },
     );
-    Ok(task)
+    Ok(SubmittableTask::new(task))
 }

@@ -21,13 +21,13 @@ impl TaskResourceRequest {
         Self { resource_request }
     }
 
-    pub fn num_cpus(&self) -> usize {
-        self.resource_request.num_cpus().unwrap_or(1.0) as usize
+    pub fn num_cpus(&self) -> f64 {
+        self.resource_request.num_cpus().unwrap_or(1.0)
     }
 
     #[allow(dead_code)]
-    pub fn num_gpus(&self) -> usize {
-        self.resource_request.num_gpus().unwrap_or(0.0) as usize
+    pub fn num_gpus(&self) -> f64 {
+        self.resource_request.num_gpus().unwrap_or(0.0)
     }
 
     #[allow(dead_code)]
@@ -54,8 +54,12 @@ pub(crate) struct TaskDetails {
 }
 
 impl TaskDetails {
-    pub fn num_cpus(&self) -> usize {
+    pub fn num_cpus(&self) -> f64 {
         self.resource_request.num_cpus()
+    }
+
+    pub fn num_gpus(&self) -> f64 {
+        self.resource_request.num_gpus()
     }
 }
 
@@ -84,6 +88,7 @@ pub(crate) struct SwordfishTask {
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
+    notify_token: Option<CancellationToken>,
 }
 
 #[allow(dead_code)]
@@ -103,6 +108,7 @@ impl SwordfishTask {
             config,
             psets,
             strategy,
+            notify_token: None,
         }
     }
 
@@ -124,6 +130,14 @@ impl SwordfishTask {
 
     pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
         &self.psets
+    }
+
+    pub fn name(&self) -> String {
+        self.plan.name().to_string()
+    }
+
+    pub fn notify_token(&self) -> Option<CancellationToken> {
+        self.notify_token.clone()
     }
 }
 

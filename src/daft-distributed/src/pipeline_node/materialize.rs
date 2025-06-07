@@ -10,7 +10,7 @@ use crate::{
     },
     utils::{
         channel::{create_channel, Receiver, Sender},
-        joinset::{JoinSet, OrderedJoinSet},
+        joinset::JoinSet,
         stream::JoinableForwardingStream,
     },
 };
@@ -44,7 +44,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                 PipelineOutput::Materialized(partition) => FinalizedTask::Materialized(partition),
                 // If the pipeline output is a task, we need to submit it to the task dispatcher
                 PipelineOutput::Task(task) => {
-                    let submitted_task = scheduler_handle.submit_task(task).await?;
+                    let submitted_task = task.submit(&scheduler_handle).await?;
                     FinalizedTask::Running(submitted_task)
                 }
                 // If the task is already running, we can just send it through the channel
@@ -62,10 +62,9 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
         mut finalized_tasks_receiver: Receiver<DaftResult<FinalizedTask>>,
         tx: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: OrderedJoinSet<DaftResult<Vec<MaterializedOutput>>> =
-            OrderedJoinSet::new();
+        let mut pending_tasks: JoinSet<DaftResult<Vec<MaterializedOutput>>> = JoinSet::new();
         loop {
-            let num_pending = pending_tasks.num_pending();
+            let num_pending = pending_tasks.len();
 
             tokio::select! {
                 biased;
@@ -127,10 +126,9 @@ pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
             + 'static,
         tx: Sender<PipelineOutput<T>>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: OrderedJoinSet<DaftResult<Vec<PipelineOutput<T>>>> =
-            OrderedJoinSet::new();
+        let mut pending_tasks: JoinSet<DaftResult<Vec<PipelineOutput<T>>>> = JoinSet::new();
         loop {
-            let num_pending = pending_tasks.num_pending();
+            let num_pending = pending_tasks.len();
 
             tokio::select! {
                 biased;
@@ -188,7 +186,7 @@ mod tests {
 
     use super::*;
     use crate::scheduling::{
-        scheduler::spawn_default_scheduler_actor,
+        scheduler::{spawn_default_scheduler_actor, SubmittableTask},
         tests::{
             create_mock_partition_ref, setup_workers, MockTask, MockTaskBuilder, MockWorkerManager,
         },
@@ -328,7 +326,9 @@ mod tests {
             .with_task_id("test-task".into())
             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
             .build();
-        let submitted_task = test_context.handle().submit_task(task).await?;
+        let submitted_task = SubmittableTask::new(task)
+            .submit(&test_context.handle())
+            .await?;
 
         // Create input stream with different pipeline output types
         let inputs = vec![
@@ -336,12 +336,12 @@ mod tests {
                 partitions[0].clone(),
                 "".into(),
             ))),
-            Ok(PipelineOutput::Task(
+            Ok(PipelineOutput::Task(SubmittableTask::new(
                 MockTaskBuilder::new(partitions[1].clone())
                     .with_task_id("test-task-2".into())
                     .with_sleep_duration(Duration::from_millis(task2_sleep_ms))
                     .build(),
-            )),
+            ))),
             Ok(PipelineOutput::Running(submitted_task)),
         ];
 
@@ -378,12 +378,12 @@ mod tests {
                     ))),
                     1 => {
                         let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
-                        Ok(PipelineOutput::Task(
+                        Ok(PipelineOutput::Task(SubmittableTask::new(
                             MockTaskBuilder::new(partitions[i].clone())
                                 .with_task_id(format!("test-task-{}", i).into())
                                 .with_sleep_duration(sleep_duration)
                                 .build(),
-                        ))
+                        )))
                     }
                     2 => {
                         let sleep_duration = Duration::from_millis(rng.gen_range(200..500));
@@ -391,7 +391,7 @@ mod tests {
                             .with_task_id(format!("test-running-task-{}", i).into())
                             .with_sleep_duration(sleep_duration)
                             .build();
-                        let submitted_task = handle.submit_task(task).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),
@@ -453,18 +453,18 @@ mod tests {
                         partitions[i].clone(),
                         "".into(),
                     ))),
-                    1 => Ok(PipelineOutput::Task(
+                    1 => Ok(PipelineOutput::Task(SubmittableTask::new(
                         MockTaskBuilder::new(partitions[i].clone())
                             .with_task_id(format!("test-task-{}", i).into())
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build(),
-                    )),
+                    ))),
                     2 => {
                         let task = MockTaskBuilder::new(partitions[i].clone())
                             .with_task_id(format!("test-running-task-{}", i).into())
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build();
-                        let submitted_task = handle.submit_task(task).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),
@@ -511,19 +511,21 @@ mod tests {
             .with_task_id("test-task".into())
             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
             .build();
-        let submitted_task = test_context.handle().submit_task(task).await?;
+        let submitted_task = SubmittableTask::new(task)
+            .submit(&test_context.handle())
+            .await?;
 
         let inputs = vec![
             Ok(PipelineOutput::Materialized(MaterializedOutput::new(
                 partitions[0].clone(),
                 "".into(),
             ))),
-            Ok(PipelineOutput::Task(
+            Ok(PipelineOutput::Task(SubmittableTask::new(
                 MockTaskBuilder::new(partitions[1].clone())
                     .with_task_id("test-task-2".into())
                     .with_sleep_duration(Duration::from_millis(task2_sleep_ms))
                     .build(),
-            )),
+            ))),
             Ok(PipelineOutput::Running(submitted_task)),
         ];
 
@@ -568,12 +570,12 @@ mod tests {
                     ))),
                     1 => {
                         let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
-                        Ok(PipelineOutput::Task(
+                        Ok(PipelineOutput::Task(SubmittableTask::new(
                             MockTaskBuilder::new(partitions[i].clone())
                                 .with_task_id(format!("test-task-{}", i).into())
                                 .with_sleep_duration(sleep_duration)
                                 .build(),
-                        ))
+                        )))
                     }
                     2 => {
                         let sleep_duration = Duration::from_millis(rng.gen_range(200..500));
@@ -581,7 +583,7 @@ mod tests {
                             .with_task_id(format!("test-running-task-{}", i).into())
                             .with_sleep_duration(sleep_duration)
                             .build();
-                        let submitted_task = handle.submit_task(task).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),
@@ -641,18 +643,18 @@ mod tests {
                         partitions[i].clone(),
                         "".into(),
                     ))),
-                    1 => Ok(PipelineOutput::Task(
+                    1 => Ok(PipelineOutput::Task(SubmittableTask::new(
                         MockTaskBuilder::new(partitions[i].clone())
                             .with_task_id(format!("test-task-{}", i).into())
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build(),
-                    )),
+                    ))),
                     2 => {
                         let task = MockTaskBuilder::new(partitions[i].clone())
                             .with_task_id(format!("test-running-task-{}", i).into())
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build();
-                        let submitted_task = handle.submit_task(task).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),
