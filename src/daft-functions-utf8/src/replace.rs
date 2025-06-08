@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::borrow::Borrow;
 
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
@@ -146,7 +147,8 @@ fn replace_impl(
 
     let result = match (regex, pattern.len()) {
         (true, 1) => {
-            let regex = regex::Regex::new(pattern.get(0).unwrap());
+            let regex_val = regex::Regex::new(pattern.get(0).unwrap());
+            let regex = regex_val.as_ref().or_else(|e| Err(e.clone()));
             let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
         }
@@ -166,9 +168,9 @@ fn replace_impl(
     Ok(result)
 }
 
-fn regex_replace<'a>(
+fn regex_replace<'a, R: Borrow<regex::Regex>>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
-    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
+    regex_iter: impl Iterator<Item = Option<Result<R, regex::Error>>>,
     replacement_iter: impl Iterator<Item = Option<&'a str>>,
     name: &str,
 ) -> DaftResult<Utf8Array> {
@@ -176,7 +178,7 @@ fn regex_replace<'a>(
         .zip(regex_iter)
         .zip(replacement_iter)
         .map(|((val, re), replacement)| match (val, re, replacement) {
-            (Some(val), Some(re), Some(replacement)) => Ok(Some(re?.replace_all(val, replacement))),
+            (Some(val), Some(re), Some(replacement)) => Ok(Some(re?.borrow().replace_all(val, replacement))),
             _ => Ok(None),
         })
         .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
