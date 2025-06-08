@@ -9,29 +9,27 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
     pipeline_node::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        PipelineOutput, RunningPipelineNode,
+        MaterializedOutput, PipelineOutput, RunningPipelineNode,
     },
-    scheduling::{
-        scheduler::SchedulerHandle,
-        task::{SwordfishTask, Task},
-    },
+    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
 mod stage_builder;
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct StageID(usize);
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct ChannelID(usize);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct DataChannel {
     schema: SchemaRef,
@@ -39,14 +37,14 @@ struct DataChannel {
     stats: Option<ApproxStats>,
     // ordering: Option<ExprRef>,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct InputChannel {
     from_stage: StageID,
     channel_id: ChannelID,
     data_channel: DataChannel,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct OutputChannel {
     to_stages: Vec<StageID>,
@@ -66,7 +64,7 @@ struct OutputChannel {
 // - We must be able to do re-planning based on new statistics.
 // - We must allow for potential concurrent execution of stages.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct Stage {
     id: StageID,
@@ -85,7 +83,8 @@ impl Stage {
         let mut stage_context = StageContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let mut pipeline_node = logical_plan_to_pipeline_node(plan.clone(), config, psets)?;
+                let mut pipeline_node =
+                    logical_plan_to_pipeline_node(plan.clone(), config, Arc::new(psets))?;
                 let running_node = pipeline_node.start(&mut stage_context);
                 Ok(RunningStage::new(running_node, stage_context.joinset))
             }
@@ -107,24 +106,24 @@ impl RunningStage {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn materialize<T: Task>(
+    pub fn materialize(
         self,
-        scheduler_handle: SchedulerHandle<T>,
-    ) -> impl Stream<Item = DaftResult<PartitionRef>> + Send + Unpin + 'static {
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
         let stream = self.into_stream();
         materialize_all_pipeline_outputs(stream, scheduler_handle)
     }
 
     pub fn into_stream(
         self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput>> + Send + Unpin + 'static {
+    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
+    {
         JoinableForwardingStream::new(self.running_pipeline_node.into_stream(), self.joinset)
     }
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum StageType {
     MapPipeline {
         plan: LogicalPlanRef,
@@ -162,7 +161,7 @@ impl StageType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StagePlan {
     stages: HashMap<StageID, Stage>,
     root_stage: StageID,

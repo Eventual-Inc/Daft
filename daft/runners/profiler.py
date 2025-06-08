@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Generator
 from contextlib import _GeneratorContextManager, contextmanager
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from viztracer import VizTracer
 
 ACTIVE = False

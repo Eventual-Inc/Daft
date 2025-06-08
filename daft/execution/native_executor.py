@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 from daft.daft import (
     LocalPhysicalPlan,
@@ -12,6 +12,8 @@ from daft.dataframe.display import MermaidOptions
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.daft import PyDaftExecutionConfig
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.partitioning import (

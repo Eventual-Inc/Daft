@@ -7,10 +7,15 @@ from urllib.parse import urlparse
 
 import unitycatalog
 
-from daft.io import AzureConfig, IOConfig, S3Config
+from daft.io import AzureConfig, IOConfig, S3Config, UnityConfig
 
 if TYPE_CHECKING:
-    from unitycatalog.types import TableInfo
+    from unitycatalog.types import (
+        GenerateTemporaryTableCredentialResponse,
+        GenerateTemporaryVolumeCredentialResponse,
+        TableInfo,
+        VolumeInfo,
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -18,6 +23,41 @@ class UnityCatalogTable:
     table_info: TableInfo
     table_uri: str
     io_config: IOConfig | None
+
+
+@dataclasses.dataclass(frozen=True)
+class UnityCatalogVolume:
+    volume_info: VolumeInfo
+    io_config: IOConfig | None
+
+
+def _io_config_from_temp_creds(
+    temp_creds: GenerateTemporaryTableCredentialResponse | GenerateTemporaryVolumeCredentialResponse,
+    storage_location: str,
+) -> IOConfig | None:
+    scheme = urlparse(storage_location).scheme
+    if scheme == "s3" or scheme == "s3a":
+        aws_temp_credentials = temp_creds.aws_temp_credentials
+        return (
+            IOConfig(
+                s3=S3Config(
+                    key_id=aws_temp_credentials.access_key_id,
+                    access_key=aws_temp_credentials.secret_access_key,
+                    session_token=aws_temp_credentials.session_token,
+                )
+            )
+            if aws_temp_credentials is not None
+            else None
+        )
+    elif scheme == "gcs" or scheme == "gs":
+        # TO-DO: gather GCS credential vending assets from Unity and construct 'io_config``
+        warnings.warn("GCS credential vending from Unity Catalog is not yet supported.")
+        return None
+    elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
+        return IOConfig(azure=AzureConfig(sas_token=temp_creds.azure_user_delegation_sas.get("sas_token")))
+    else:
+        warnings.warn(f"Credentials for scheme {scheme} are not yet supported.")
+        return None
 
 
 class UnityCatalog:
@@ -33,6 +73,8 @@ class UnityCatalog:
     """
 
     def __init__(self, endpoint: str, token: str | None = None):
+        self._endpoint = endpoint
+        self._token = token
         self._client = unitycatalog.Unitycatalog(
             base_url=endpoint.rstrip("/") + "/api/2.1/unity-catalog/",
             default_headers={"Authorization": f"Bearer {token}"},
@@ -58,7 +100,9 @@ class UnityCatalog:
         return results
 
     def list_catalogs(self) -> list[str]:
-        def _paginated_list_catalogs(client: unitycatalog.Unitycatalog, page_token: str | None):
+        def _paginated_list_catalogs(
+            client: unitycatalog.Unitycatalog, page_token: str | None
+        ) -> tuple[list[str] | None, str | None]:
             response = client.catalogs.list(page_token=page_token)
             next_page_token = response.next_page_token
             if response.catalogs is None:
@@ -68,7 +112,9 @@ class UnityCatalog:
         return self._paginate_to_completion(_paginated_list_catalogs)
 
     def list_schemas(self, catalog_name: str) -> list[str]:
-        def _paginated_list_schemas(client: unitycatalog.Unitycatalog, page_token: str | None):
+        def _paginated_list_schemas(
+            client: unitycatalog.Unitycatalog, page_token: str | None
+        ) -> tuple[list[str] | None, str | None]:
             response = client.schemas.list(catalog_name=catalog_name, page_token=page_token)
             next_page_token = response.next_page_token
             if response.schemas is None:
@@ -77,7 +123,7 @@ class UnityCatalog:
 
         return self._paginate_to_completion(_paginated_list_schemas)
 
-    def list_tables(self, schema_name: str):
+    def list_tables(self, schema_name: str) -> list[str]:
         if schema_name.count(".") != 1:
             raise ValueError(
                 f"Expected fully-qualified schema name with format `catalog_name`.`schema_name`, but received: {schema_name}"
@@ -85,7 +131,9 @@ class UnityCatalog:
 
         catalog_name, schema_name = schema_name.split(".")
 
-        def _paginated_list_tables(client: unitycatalog.Unitycatalog, page_token: str | None):
+        def _paginated_list_tables(
+            client: unitycatalog.Unitycatalog, page_token: str | None
+        ) -> tuple[list[str] | None, str | None]:
             response = client.tables.list(catalog_name=catalog_name, schema_name=schema_name, page_token=page_token)
             next_page_token = response.next_page_token
             if response.tables is None:
@@ -98,8 +146,8 @@ class UnityCatalog:
         self,
         table_name: str,
         new_table_storage_path: str | None = None,
-        operation: Literal["READ" | "READ_WRITE"] = "READ_WRITE",
-        table_type: Literal["EXTERNAL" | "MANAGED"] = "EXTERNAL",
+        operation: Literal["READ", "READ_WRITE"] = "READ_WRITE",
+        table_type: Literal["EXTERNAL", "MANAGED"] = "EXTERNAL",
     ) -> UnityCatalogTable:
         """Loads an existing Unity Catalog table. If the table is not found, and information is provided in the method to create a new table, a new table will be attempted to be registered.
 
@@ -153,34 +201,25 @@ class UnityCatalog:
         # Grab credentials from Unity catalog and place it into the Table
         temp_table_credentials = self._client.temporary_table_credentials.create(operation=operation, table_id=table_id)
 
-        scheme = urlparse(storage_location).scheme
-        if scheme == "s3" or scheme == "s3a":
-            aws_temp_credentials = temp_table_credentials.aws_temp_credentials
-            io_config = (
-                IOConfig(
-                    s3=S3Config(
-                        key_id=aws_temp_credentials.access_key_id,
-                        access_key=aws_temp_credentials.secret_access_key,
-                        session_token=aws_temp_credentials.session_token,
-                    )
-                )
-                if aws_temp_credentials is not None
-                else None
-            )
-        elif scheme == "gcs" or scheme == "gs":
-            # TO-DO: gather GCS credential vending assets from Unity and construct 'io_config``
-            warnings.warn("GCS credential vending from Unity Catalog is not yet supported.")
-            io_config = None
-        elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
-            io_config = IOConfig(
-                azure=AzureConfig(sas_token=temp_table_credentials.azure_user_delegation_sas.get("sas_token"))
-            )
-        else:
-            warnings.warn(f"Credentials for scheme {scheme} are not yet supported.")
-            io_config = None
+        io_config = _io_config_from_temp_creds(temp_table_credentials, storage_location)
 
         return UnityCatalogTable(
             table_info=table_info,
             table_uri=storage_location,
             io_config=io_config,
         )
+
+    def load_volume(
+        self, name: str, operation: Literal["READ_VOLUME", "WRITE_VOLUME"] = "READ_VOLUME"
+    ) -> UnityCatalogVolume:
+        volume_info = self._client.volumes.retrieve(name)
+        temp_volume_credentials = self._client.temporary_volume_credentials.create(
+            operation=operation, volume_id=volume_info.volume_id
+        )
+
+        io_config = _io_config_from_temp_creds(temp_volume_credentials, volume_info.storage_location)
+
+        return UnityCatalogVolume(volume_info=volume_info, io_config=io_config)
+
+    def to_io_config(self) -> IOConfig:
+        return IOConfig(unity=UnityConfig(endpoint=self._endpoint, token=self._token))

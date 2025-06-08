@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -9,10 +10,10 @@ from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
-    import pyiceberg
+    from pyiceberg.table import Table as PyIcebergTable
 
 
-def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> Optional["IOConfig"]:
+def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> Optional[IOConfig]:
     """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py."""
     from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
@@ -53,9 +54,9 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
 
 @PublicAPI
 def read_iceberg(
-    table: Union[str, "pyiceberg.table.Table"],
+    table: Union[str, "PyIcebergTable"],
     snapshot_id: Optional[int] = None,
-    io_config: Optional["IOConfig"] = None,
+    io_config: Optional[IOConfig] = None,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
@@ -83,13 +84,13 @@ def read_iceberg(
         >>> df.show()
 
     """
-    import pyiceberg
+    from pyiceberg.table import StaticTable
 
     from daft.iceberg.iceberg_scan import IcebergScanOperator
 
     # support for read_iceberg('path/to/metadata.json')
     if isinstance(table, str):
-        table = pyiceberg.table.StaticTable.from_metadata(metadata_location=table)
+        table = StaticTable.from_metadata(metadata_location=table)
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config

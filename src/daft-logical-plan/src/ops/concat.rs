@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Concat {
     pub plan_id: Option<usize>,
     // Upstream nodes.

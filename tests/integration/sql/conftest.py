@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import date, datetime, timedelta
-from typing import Generator
 
 import numpy as np
 import pandas as pd

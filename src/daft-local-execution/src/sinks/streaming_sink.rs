@@ -5,7 +5,6 @@ use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -14,11 +13,11 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, TranslationContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, JoinSnafu, OperatorOutput, TaskSet,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 
 pub trait StreamingSinkState: Send + Sync {
@@ -81,6 +80,7 @@ pub struct StreamingSinkNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
+    node_info: NodeInfo,
 }
 
 impl StreamingSinkNode {
@@ -88,14 +88,17 @@ impl StreamingSinkNode {
         op: Arc<dyn StreamingSink>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
+        ctx: &TranslationContext,
     ) -> Self {
         let name = op.name();
+        let node_info = ctx.next_node_info(name);
         Self {
             op,
             name,
             children,
-            runtime_stats: RuntimeStatsContext::new(name),
+            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
             plan_stats,
+            node_info,
         }
     }
 
@@ -248,13 +251,13 @@ impl PipelineNode for StreamingSinkNode {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             self.name(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
                 let mut output_receiver = Self::spawn_workers(
@@ -274,7 +277,7 @@ impl PipelineNode for StreamingSinkNode {
 
                 let mut finished_states = Vec::with_capacity(num_workers);
                 while let Some(result) = task_set.join_next().await {
-                    let state = result.context(JoinSnafu)??;
+                    let state = result??;
                     finished_states.push(state);
                 }
 
@@ -297,5 +300,11 @@ impl PipelineNode for StreamingSinkNode {
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+    fn plan_id(&self) -> Arc<str> {
+        self.node_info.plan_id.clone()
     }
 }

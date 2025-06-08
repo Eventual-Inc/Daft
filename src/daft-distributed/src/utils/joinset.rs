@@ -6,6 +6,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 
+pub(crate) type JoinSetId = tokio::task::Id;
 #[derive(Debug)]
 pub(crate) struct JoinSet<T> {
     inner: tokio::task::JoinSet<T>,
@@ -18,17 +19,8 @@ impl<T: Send + 'static> JoinSet<T> {
         }
     }
 
-    pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) -> tokio::task::Id {
+    pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) -> JoinSetId {
         let handle = self.inner.spawn(task);
-        handle.id()
-    }
-
-    pub fn spawn_on(
-        &mut self,
-        task: impl Future<Output = T> + Send + 'static,
-        handle: &tokio::runtime::Handle,
-    ) -> tokio::task::Id {
-        let handle = self.inner.spawn_on(task, handle);
         handle.id()
     }
 
@@ -52,7 +44,6 @@ impl<T: Send + 'static> JoinSet<T> {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn join_next_with_id(&mut self) -> Option<(tokio::task::Id, DaftResult<T>)> {
         let res = self.inner.join_next_with_id().await;
         match res {
@@ -62,12 +53,19 @@ impl<T: Send + 'static> JoinSet<T> {
         }
     }
 
-    #[allow(dead_code)]
+    pub fn try_join_next_with_id(&mut self) -> Option<(JoinSetId, DaftResult<T>)> {
+        let res = self.inner.try_join_next_with_id();
+        match res {
+            Some(Ok((id, result))) => Some((id, Ok(result))),
+            Some(Err(e)) => Some((e.id(), Err(DaftError::External(e.into())))),
+            None => None,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
