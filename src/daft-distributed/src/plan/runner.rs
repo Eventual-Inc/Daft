@@ -7,6 +7,7 @@ use futures::StreamExt;
 
 use super::{DistributedPhysicalPlan, PlanResult};
 use crate::{
+    pipeline_node::MaterializedOutput,
     scheduling::{
         scheduler::{spawn_default_scheduler_actor, SchedulerHandle},
         task::SwordfishTask,
@@ -34,7 +35,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        sender: Sender<PartitionRef>,
+        sender: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
             return Err(DaftError::ValueError(format!(
@@ -63,19 +64,19 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let stage_plan = plan.stage_plan().clone();
 
         let runtime = get_or_init_runtime();
-        let mut joinset = create_join_set();
-
-        let scheduler_handle =
-            spawn_default_scheduler_actor(self.worker_manager.clone(), &mut joinset);
-
         let (result_sender, result_receiver) = create_channel(1);
-        joinset.spawn_on(
-            async move {
+
+        let joinset = runtime.block_on_current_thread(async move {
+            let mut joinset = create_join_set();
+            let scheduler_handle =
+                spawn_default_scheduler_actor(self.worker_manager.clone(), &mut joinset);
+
+            joinset.spawn(async move {
                 Self::execute_stages(stage_plan, psets, config, scheduler_handle, result_sender)
                     .await
-            },
-            runtime.runtime.handle(),
-        );
+            });
+            joinset
+        });
         Ok(PlanResult::new(joinset, result_receiver))
     }
 }

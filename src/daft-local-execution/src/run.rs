@@ -31,10 +31,13 @@ use {
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid},
+    pipeline::{
+        get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
+        viz_pipeline_mermaid, RelationshipInformation, TranslationContext,
+    },
     progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
-    Error, ExecutionRuntimeContext,
+    ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -217,6 +220,16 @@ impl PyNativeExecutor {
             .executor
             .repr_mermaid(&logical_plan_builder.builder, cfg.config, options))
     }
+
+    pub fn get_relationship_info(
+        &self,
+        logical_plan_builder: &PyLogicalPlanBuilder,
+        cfg: PyDaftExecutionConfig,
+    ) -> PyResult<RelationshipInformation> {
+        Ok(self
+            .executor
+            .get_relationship_info(&logical_plan_builder.builder, cfg.config))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -267,7 +280,8 @@ impl NativeExecutor {
     ) -> DaftResult<ExecutionEngineResult> {
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
-        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
+        let ctx = TranslationContext::new();
+        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
@@ -301,13 +315,9 @@ impl NativeExecutor {
 
                 while let Some(result) = runtime_handle.join_next().await {
                     match result {
-                        Ok(Err(e)) => {
+                        Ok(Err(e)) | Err(e) => {
                             runtime_handle.shutdown().await;
                             return DaftResult::Err(e.into());
-                        }
-                        Err(e) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(Error::JoinError { source: e }.into());
                         }
                         _ => {}
                     }
@@ -365,9 +375,14 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = TranslationContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
@@ -380,9 +395,14 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = TranslationContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         let display_type = if options.simple {
             DisplayLevel::Compact
@@ -395,6 +415,23 @@ impl NativeExecutor {
             options.bottom_up,
             options.subgraph_options,
         )
+    }
+    fn get_relationship_info(
+        &self,
+        logical_plan_builder: &LogicalPlanBuilder,
+        cfg: Arc<DaftExecutionConfig>,
+    ) -> RelationshipInformation {
+        let logical_plan = logical_plan_builder.build();
+        let physical_plan = translate(&logical_plan).unwrap();
+        let ctx = TranslationContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
+        get_pipeline_relationship_mapping(&*pipeline_node)
     }
 }
 

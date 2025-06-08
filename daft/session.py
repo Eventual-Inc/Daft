@@ -106,7 +106,7 @@ class Session:
         """
         py_sess = self._session
         py_config = get_context().daft_planning_config
-        py_object = sql_exec(sql, py_sess, py_config)
+        py_object = sql_exec(sql, py_sess, {}, py_config)
         if py_object is None:
             return None
         elif isinstance(py_object, PyBuilder):
@@ -166,7 +166,7 @@ class Session:
         self._session.attach_table(t, a)
         return t
 
-    def detach_catalog(self, alias: str):
+    def detach_catalog(self, alias: str) -> None:
         """Detaches the catalog from this session or raises if the catalog does not exist.
 
         Args:
@@ -174,7 +174,7 @@ class Session:
         """
         return self._session.detach_catalog(alias)
 
-    def detach_table(self, alias: str):
+    def detach_table(self, alias: str) -> None:
         """Detaches the table from this session or raises if the table does not exist.
 
         Args:
@@ -186,13 +186,13 @@ class Session:
     # create_*
     ###
 
-    def create_namespace(self, identifier: Identifier | str):
+    def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog."""
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace(identifier)
 
-    def create_namespace_if_not_exists(self, identifier: Identifier | str):
+    def create_namespace_if_not_exists(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog if it does not already exist."""
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
@@ -285,7 +285,7 @@ class Session:
     # drop_*
     ###
 
-    def drop_namespace(self, identifier: Identifier | str):
+    def drop_namespace(self, identifier: Identifier | str) -> None:
         """Drop the given namespace in the current catalog.
 
         Args:
@@ -295,7 +295,7 @@ class Session:
             raise ValueError("Cannot drop a namespace without a current catalog")
         return catalog.drop_namespace(identifier)
 
-    def drop_table(self, identifier: Identifier | str):
+    def drop_table(self, identifier: Identifier | str) -> None:
         """Drop the given table in the current catalog.
 
         Args:
@@ -310,7 +310,7 @@ class Session:
     # session state
     ###
 
-    def use(self, identifier: Identifier | str | None = None):
+    def use(self, identifier: Identifier | str | None = None) -> None:
         """Use sets the current catalog and namespace."""
         if identifier is None:
             self.set_catalog(None)
@@ -434,7 +434,7 @@ class Session:
     # read_*
     ###
 
-    def read_table(self, identifier: Identifier | str, **options) -> DataFrame:
+    def read_table(self, identifier: Identifier | str, **options: Any) -> DataFrame:
         """Returns the table as a DataFrame or raises an exception if it does not exist.
 
         Args:
@@ -452,7 +452,7 @@ class Session:
     # set_*
     ###
 
-    def set_catalog(self, identifier: str | None):
+    def set_catalog(self, identifier: str | None) -> None:
         """Set the given catalog as current_catalog or raises an err if it does not exist.
 
         Args:
@@ -463,7 +463,7 @@ class Session:
         """
         self._session.set_catalog(identifier)
 
-    def set_namespace(self, identifier: Identifier | str | None):
+    def set_namespace(self, identifier: Identifier | str | None) -> None:
         """Set the given namespace as current_namespace for table resolution.
 
         Args:
@@ -483,7 +483,7 @@ class Session:
         df: DataFrame,
         mode: Literal["append", "overwrite"] = "append",
         **options: dict[str, Any],
-    ):
+    ) -> None:
         """Writes the DataFrame to the table specified by the identifier.
 
         Args:
@@ -500,11 +500,11 @@ class Session:
     ###
     # functions
     ###
-    def attach_function(self, function: UDF, alias: str | None = None):
+    def attach_function(self, function: UDF, alias: str | None = None) -> None:
         """Attaches a Python function as a UDF in the current session."""
         self._session.attach_function(function, alias)
 
-    def detach_function(self, alias: str):
+    def detach_function(self, alias: str) -> None:
         """Detaches a Python function as a UDF in the current session."""
         self._session.detach_function(alias)
 
@@ -550,12 +550,12 @@ def attach_table(table: object | Table, alias: str | None = None) -> Table:
     return _session().attach_table(table, alias)
 
 
-def detach_catalog(alias: str):
+def detach_catalog(alias: str) -> None:
     """Detaches the catalog from the current session."""
     return _session().detach_catalog(alias)
 
 
-def detach_table(alias: str):
+def detach_table(alias: str) -> None:
     """Detaches the table from the current session."""
     return _session().detach_table(alias)
 
@@ -565,12 +565,12 @@ def detach_table(alias: str):
 ###
 
 
-def create_namespace(identifier: Identifier | str):
+def create_namespace(identifier: Identifier | str) -> None:
     """Creates a namespace in the current session's active catalog."""
     return _session().create_namespace(identifier)
 
 
-def create_namespace_if_not_exists(identifier: Identifier | str):
+def create_namespace_if_not_exists(identifier: Identifier | str) -> None:
     """Creates a namespace in the current session's active catalog if it does not already exist."""
     return _session().create_namespace_if_not_exists(identifier)
 
@@ -595,12 +595,12 @@ def create_temp_table(identifier: str, source: Schema | DataFrame) -> Table:
 ###
 
 
-def drop_namespace(identifier: Identifier | str):
+def drop_namespace(identifier: Identifier | str) -> None:
     """Drops the namespace in the current session's active catalog."""
     return _session().drop_namespace(identifier)
 
 
-def drop_table(identifier: Identifier | str):
+def drop_table(identifier: Identifier | str) -> None:
     """Drops the table in the current session's active catalog."""
     return _session().drop_namespace(identifier)
 
@@ -685,7 +685,7 @@ def list_tables(pattern: str | None = None) -> list[Identifier]:
 ###
 
 
-def read_table(identifier: Identifier | str, **options) -> DataFrame:
+def read_table(identifier: Identifier | str, **options: Any) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
     return _session().read_table(identifier, **options)
 
@@ -699,8 +699,8 @@ def write_table(
     identifier: Identifier | str,
     df: DataFrame,
     mode: Literal["append", "overwrite"] = "append",
-    **options,
-):
+    **options: Any,
+) -> None:
     """Writes the DataFrame to the table specified with the identifier."""
     _session().write_table(identifier, df, mode, **options)
 
@@ -710,17 +710,17 @@ def write_table(
 ###
 
 
-def set_catalog(identifier: str | None):
+def set_catalog(identifier: str | None) -> None:
     """Set the given catalog as current_catalog for the current session or raises an if it does not exist."""
     _session().set_catalog(identifier)
 
 
-def set_namespace(identifier: Identifier | str | None):
+def set_namespace(identifier: Identifier | str | None) -> None:
     """Set the given namespace as current_namespace for the current session."""
     _session().set_namespace(identifier)
 
 
-def set_session(session: Session):
+def set_session(session: Session) -> None:
     """Sets the global context's current session."""
     # Consider registering into the global context.
     # ```
@@ -737,11 +737,11 @@ def set_session(session: Session):
 ###
 
 
-def attach_function(function: UDF, alias: str | None = None):
+def attach_function(function: UDF, alias: str | None = None) -> None:
     """Attaches a Python function as a UDF in the current session."""
     _session().attach_function(function, alias)
 
 
-def detach_function(alias: str):
+def detach_function(alias: str) -> None:
     """Detaches a Python function as a UDF in the current session."""
     _session().detach_function(alias)

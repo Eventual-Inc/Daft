@@ -20,13 +20,11 @@ import logging
 import math
 from abc import abstractmethod
 from collections import deque
+from collections.abc import Generator, Iterable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
-    Generator,
     Generic,
-    Iterable,
-    Iterator,
     TypeVar,
     Union,
 )
@@ -183,7 +181,7 @@ def deltalake_write(
     base_path: str,
     large_dtypes: bool,
     version: int,
-    partition_cols: list[str] | None,
+    partition_cols: ExpressionsProjection | None,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -1814,7 +1812,7 @@ class Materialize(Generic[PartitionT]):
         self.materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
         self.results_buffer_size = results_buffer_size
 
-    def __iter__(self) -> MaterializedPhysicalPlan:
+    def __iter__(self) -> MaterializedPhysicalPlan[PartitionT]:
         num_materialized_yielded = 0
         num_intermediate_yielded = 0
         num_final_yielded = 0

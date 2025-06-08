@@ -12,8 +12,9 @@ import json
 import logging
 import pathlib
 import time
+from collections.abc import Iterator
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Iterator, TextIO
+from typing import TYPE_CHECKING, Any, Callable, TextIO
 
 try:
     import ray
@@ -24,6 +25,8 @@ from daft.execution.execution_step import PartitionTask
 from daft.runners import ray_metrics
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft import ResourceRequest
     from daft.daft import PyDaftExecutionConfig
     from daft.execution.physical_plan import MaterializedPhysicalPlan
@@ -590,7 +593,7 @@ class _RayFunctionWrapper:
         return _RayRunnableFunctionWrapper(f=self.f, runner_tracer=runner_tracer, task=task)
 
     def options(self, *args: Any, **kwargs: Any) -> _RayFunctionWrapper:
-        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))  # type: ignore[no-untyped-call]
+        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
 
 def ray_remote_traced(f: ray.remote_function.RemoteFunction) -> _RayFunctionWrapper:
@@ -617,9 +620,9 @@ class _RayRunnableFunctionWrapper:
     task: PartitionTask[Any]
 
     def options(self, *args: Any, **kwargs: Any) -> _RayRunnableFunctionWrapper:
-        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))  # type: ignore[no-untyped-call]
+        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
-    def remote(self, *args: Any, **kwargs: Any) -> ray.ObjectRef[Any]:
+    def remote(self, *args: Any, **kwargs: Any) -> ray.ObjectRef:
         self.runner_tracer.task_dispatched(self.task.id())
         return self.f.remote(*args, **kwargs)
 

@@ -11,7 +11,7 @@ use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, TranslationContext},
     progress_bar::ProgressBarColor,
     runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeContext,
@@ -36,17 +36,20 @@ pub(crate) struct SourceNode {
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
     io_stats: IOStatsRef,
+    node_info: NodeInfo,
 }
 
 impl SourceNode {
-    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState) -> Self {
-        let runtime_stats = RuntimeStatsContext::new(source.name());
+    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &TranslationContext) -> Self {
+        let info = ctx.next_node_info(source.name());
+        let runtime_stats = RuntimeStatsContext::new(info.clone());
         let io_stats = IOStatsContext::new(source.name());
         Self {
             source,
             runtime_stats,
             plan_stats,
             io_stats,
+            node_info: info,
         }
     }
 
@@ -120,7 +123,7 @@ impl PipelineNode for SourceNode {
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender =
             CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move {
                 let mut has_data = false;
                 let mut source_stream = source.get_data(maintain_order, io_stats).await?;
@@ -142,5 +145,13 @@ impl PipelineNode for SourceNode {
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+
+    fn plan_id(&self) -> Arc<str> {
+        self.node_info.plan_id.clone()
     }
 }

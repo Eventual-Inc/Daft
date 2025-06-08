@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, TranslationContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -82,6 +82,7 @@ pub struct IntermediateNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
+    node_info: NodeInfo,
 }
 
 impl IntermediateNode {
@@ -89,9 +90,12 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
+        ctx: &TranslationContext,
     ) -> Self {
-        let rts = RuntimeStatsContext::new(intermediate_op.name());
-        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats)
+        let info = ctx.next_node_info(intermediate_op.name());
+
+        let rts = RuntimeStatsContext::new(info.clone());
+        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats, info)
     }
 
     pub(crate) fn new_with_runtime_stats(
@@ -99,12 +103,14 @@ impl IntermediateNode {
         children: Vec<Box<dyn PipelineNode>>,
         runtime_stats: Arc<RuntimeStatsContext>,
         plan_stats: StatsState,
+        node_info: NodeInfo,
     ) -> Self {
         Self {
             intermediate_op,
             children,
             runtime_stats,
             plan_stats,
+            node_info,
         }
     }
 
@@ -160,7 +166,7 @@ impl IntermediateNode {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
         for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            runtime_handle.spawn(
+            runtime_handle.spawn_local(
                 Self::run_worker(
                     self.intermediate_op.clone(),
                     input_receiver,
@@ -254,7 +260,7 @@ impl PipelineNode for IntermediateNode {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             self.name(),
         );
@@ -265,7 +271,7 @@ impl PipelineNode for IntermediateNode {
             maintain_order,
             runtime_handle.memory_manager(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {
                     if counting_sender.send(morsel).await.is_err() {
@@ -281,5 +287,12 @@ impl PipelineNode for IntermediateNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+
+    fn plan_id(&self) -> Arc<str> {
+        self.node_info.plan_id.clone()
     }
 }

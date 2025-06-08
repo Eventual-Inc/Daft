@@ -30,6 +30,8 @@ from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from daft.io import IOConfig
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,7 @@ class RecordBatch:
         return RecordBatch.from_pydict(df_as_dict_str)
 
     @staticmethod
-    def from_pydict(data: dict[str, Any]) -> RecordBatch:
+    def from_pydict(data: Mapping[str, Any]) -> RecordBatch:
         series_dict: dict[str, PySeries] = dict()
         for k, v in data.items():
             series = item_to_series(k, v)
@@ -303,7 +305,11 @@ class RecordBatch:
         return RecordBatch._from_pyrecordbatch(self._recordbatch.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def pivot(
-        self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
+        self,
+        group_by: ExpressionsProjection,
+        pivot_column: Expression,
+        values_column: Expression,
+        names: list[str],
     ) -> RecordBatch:
         group_by_pyexprs = [e._expr for e in group_by]
         return RecordBatch._from_pyrecordbatch(
@@ -363,7 +369,10 @@ class RecordBatch:
 
         return RecordBatch._from_pyrecordbatch(
             self._recordbatch.sort_merge_join(
-                right._recordbatch, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted
+                right._recordbatch,
+                left_on=left_exprs,
+                right_on=right_exprs,
+                is_sorted=is_sorted,
             )
         )
 
@@ -377,7 +386,10 @@ class RecordBatch:
         ]
 
     def partition_by_range(
-        self, partition_keys: ExpressionsProjection, boundaries: RecordBatch, descending: list[bool]
+        self,
+        partition_keys: ExpressionsProjection,
+        boundaries: RecordBatch,
+        descending: list[bool],
     ) -> list[RecordBatch]:
         if not isinstance(boundaries, RecordBatch):
             raise TypeError(f"Expected a RecordBatch for `boundaries` in partition_by_range but got {type(boundaries)}")
@@ -448,7 +460,9 @@ class RecordBatch:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._recordbatch.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], RecordBatch], tuple[dict[str, Series]]]:
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[[dict[str, Any]], RecordBatch], tuple[dict[str, Series]]]:
         return RecordBatch.from_pydict, ({column.name(): column for column in self.columns()},)
 
     @classmethod

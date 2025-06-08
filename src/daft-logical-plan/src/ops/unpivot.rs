@@ -4,6 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::ExprRef;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Unpivot {
     pub plan_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
