@@ -148,7 +148,7 @@ fn replace_impl(
     let result = match (regex, pattern.len()) {
         (true, 1) => {
             let regex_val = regex::Regex::new(pattern.get(0).unwrap());
-            let regex = regex_val.as_ref().or_else(|e| Err(e.clone()));
+            let regex = regex_val.as_ref().map_err(|e| e.clone());
             let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
         }
