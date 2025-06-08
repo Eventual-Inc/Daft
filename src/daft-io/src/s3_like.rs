@@ -1,36 +1,31 @@
 use std::{
-    collections::HashMap, num::NonZeroUsize, ops::Range, string::FromUtf8Error, sync::Arc,
-    time::Duration,
+    collections::HashMap, num::NonZeroUsize, ops::Range, pin::Pin, string::FromUtf8Error,
+    sync::Arc, task::Poll, time::Duration,
 };
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use aws_config::{
-    meta::credentials::CredentialsProviderChain, retry::RetryMode, timeout::TimeoutConfig,
-    SdkConfig,
-};
-use aws_credential_types::{
-    cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
-    provider::error::CredentialsError,
-};
+use aws_config::{meta::region::ProvideRegion, timeout::TimeoutConfig, BehaviorVersion};
+use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_s3::{
     self as s3,
+    config::{IdentityCache, ProvideCredentials, SharedCredentialsProvider},
     error::ProvideErrorMetadata,
     operation::{
         complete_multipart_upload::CompleteMultipartUploadError,
         create_multipart_upload::CreateMultipartUploadError, put_object::PutObjectError,
         upload_part::UploadPartError,
     },
-    primitives::ByteStreamError,
+    primitives::{ByteStream, ByteStreamError},
 };
-use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
+use aws_smithy_http_client::hyper_014::HyperClientBuilder;
+use aws_smithy_runtime_api::http::Response;
+use bytes::Bytes;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
-use futures::{stream::BoxStream, FutureExt, StreamExt, TryStreamExt};
-use reqwest::StatusCode;
+use futures::{stream::BoxStream, FutureExt};
 use s3::{
-    client::customize::Response,
     config::{Credentials, Region},
     error::{DisplayErrorContext, SdkError},
     operation::{
@@ -124,6 +119,9 @@ enum Error {
         path: String,
         source: SdkError<HeadObjectError, Response>,
     },
+
+    #[snafu(display("Head for path received empty content length: {}", path))]
+    HeadObjectOutputEmpty { path: String },
 
     #[snafu(display("Unable to list {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToListObjects {
@@ -350,28 +348,32 @@ impl From<Error> for super::Error {
 
 /// Retrieves an S3Config from the environment by leveraging the AWS SDK's credentials chain
 pub async fn s3_config_from_env() -> super::Result<S3Config> {
-    let default_s3_config = S3Config::default();
-    let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
-    let creds = s3_conf
-        .credentials_cache()
-        .provide_cached_credentials()
-        .await
-        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
-    let key_id = Some(creds.access_key_id().to_string());
-    let access_key = Some(creds.secret_access_key().to_string().into());
-    let session_token = creds.session_token().map(|t| t.to_string().into());
-    let region_name = s3_conf.region().map(std::string::ToString::to_string);
-    Ok(S3Config {
-        // Do not perform auto-discovery of endpoint_url. This is possible, but requires quite a bit
-        // of work that our current implementation of `build_s3_conf` does not yet do. See smithy-rs code:
-        // https://github.com/smithy-lang/smithy-rs/blob/94ecd38c2518583042796b2b45c37947237e31dd/aws/rust-runtime/aws-config/src/lib.rs#L824-L849
-        endpoint_url: None,
-        region_name,
-        key_id,
-        session_token,
-        access_key,
-        anonymous,
-        ..default_s3_config
+    let region_provider = aws_config::default_provider::region::default_provider();
+    let region = region_provider.region().await;
+    let region_name = region.map(|r| r.to_string());
+
+    let credentials_provider =
+        aws_config::default_provider::credentials::DefaultCredentialsChain::builder()
+            .region(region_provider)
+            .build()
+            .await;
+    let creds = provide_credentials_with_retry(&credentials_provider).await?;
+
+    Ok(if let Some(creds) = creds {
+        S3Config {
+            key_id: Some(creds.access_key_id().to_string()),
+            access_key: Some(creds.secret_access_key().to_string().into()),
+            session_token: creds.session_token().map(|t| t.to_string().into()),
+            region_name,
+            anonymous: false,
+            ..Default::default()
+        }
+    } else {
+        S3Config {
+            region_name,
+            anonymous: true,
+            ..Default::default()
+        }
     })
 }
 
@@ -397,56 +399,57 @@ fn parse_url(uri: &str) -> super::Result<(String, String, String)> {
     ))
 }
 
-fn handle_https_client_settings(
-    builder: aws_sdk_s3::config::Builder,
-    config: &S3Config,
-) -> super::Result<aws_sdk_s3::config::Builder> {
-    let tls_connector = hyper_tls::native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(!config.verify_ssl)
-        .danger_accept_invalid_hostnames((!config.verify_ssl) || (!config.check_hostname_ssl))
-        .build()
-        .context(UnableToCreateTlsConnectorSnafu {})?;
-    let mut http_connector = hyper::client::HttpConnector::new();
-    http_connector.enforce_http(false);
-    let https_connector = hyper_tls::HttpsConnector::<hyper::client::HttpConnector>::from((
-        http_connector,
-        tls_connector.into(),
-    ));
-    use aws_smithy_client::{http_connector::ConnectorSettings, hyper_ext};
-    let smithy_client = hyper_ext::Adapter::builder()
-        .connector_settings(
-            ConnectorSettings::builder()
-                .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
-                .read_timeout(Duration::from_millis(config.read_timeout_ms))
-                .build(),
-        )
-        .build(https_connector);
-    let builder = builder.http_connector(smithy_client);
-    Ok(builder)
-}
+async fn provide_credentials_with_retry(
+    provider: &impl ProvideCredentials,
+) -> super::Result<Option<Credentials>> {
+    let get_creds = async || {
+        use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
 
-async fn build_s3_conf(
-    config: &S3Config,
-    credentials_cache: Option<SharedCredentialsCache>,
-) -> super::Result<(bool, s3::Config)> {
-    const DEFAULT_REGION: Region = Region::from_static("us-east-1");
-
-    let mut anonymous = config.anonymous;
-
-    let cached_creds = if let Some(credentials_cache) = credentials_cache {
-        let creds = credentials_cache.provide_cached_credentials().await;
-        creds.ok()
-    } else {
-        None
+        match provider.provide_credentials().await {
+            Ok(creds) => Ok(Some(creds)),
+            Err(err @ ProviderTimedOut(..)) => {
+                log::warn!(
+                    "S3 Credentials Provider timed out when retrieving credentials. Retrying. {err}",
+                );
+                Err(RetryError::Transient(err))
+            }
+            Err(err @ CredentialsNotLoaded(..)) => {
+                log::warn!(
+                    "S3 Credentials could not be loaded. Reverting to Anonymous mode. {err}"
+                );
+                Ok(None)
+            }
+            Err(err) => Err(RetryError::Permanent(err)),
+        }
     };
 
-    let provider = if let Some(cached_creds) = cached_creds {
-        let provider = CredentialsProviderChain::first_try("different_region_cache", cached_creds)
-            .or_default_provider()
-            .await;
-        Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider))
+    let backoff = ExponentialBackoff {
+        max_waittime_ms: Some(45_000),
+        ..Default::default()
+    };
+
+    let creds = backoff
+        .retry(get_creds)
+        .await
+        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
+
+    Ok(creds)
+}
+
+async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
+    const DEFAULT_REGION: Region = Region::from_static("us-east-1");
+
+    let region = if let Some(region_name) = &config.region_name {
+        Region::new(region_name.clone())
+    } else {
+        let region_provider = aws_config::default_provider::region::default_provider();
+        region_provider.region().await.unwrap_or(DEFAULT_REGION)
+    };
+
+    let credentials_provider = if config.anonymous {
+        None
     } else if let Some(provider) = &config.credentials_provider {
-        Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider.clone()))
+        Some(SharedCredentialsProvider::new(provider.clone()))
     } else if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
@@ -457,158 +460,135 @@ async fn build_s3_conf(
                 .unwrap(),
             config.session_token.as_ref().map(|s| s.as_string().clone()),
         );
-        Some(aws_credential_types::provider::SharedCredentialsProvider::new(creds))
+        Some(SharedCredentialsProvider::new(creds))
     } else if config.access_key.is_some() || config.key_id.is_some() {
         return Err(super::Error::InvalidArgument {
             msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
         });
     } else {
-        None
-    };
-
-    let conf: SdkConfig = if anonymous {
-        let mut builder = aws_config::SdkConfig::builder();
-        builder.set_credentials_provider(provider);
-        builder.build()
-    } else {
-        let mut loader = aws_config::from_env();
-        if let Some(profile_name) = &config.profile_name {
-            loader = loader.profile_name(profile_name);
-        }
-
         // Set region now to avoid imds
-        if let Some(region) = &config.region_name {
-            loader = loader.region(Region::new(region.to_owned()));
-        }
+        let default_provider =
+            aws_config::default_provider::credentials::DefaultCredentialsChain::builder()
+                .region(region.clone())
+                .build()
+                .await;
 
-        // Set creds now to avoid imds
-        if let Some(provider) = provider {
-            loader = loader.credentials_provider(provider);
-        }
-
-        if let Some(buffer_time) = &config.buffer_time {
-            loader = loader.credentials_cache(
-                CredentialsCache::lazy_builder()
-                    .buffer_time(Duration::from_secs(*buffer_time))
-                    .into_credentials_cache(),
-            );
-        }
-
-        loader.load().await
-    };
-
-    let builder = aws_sdk_s3::config::Builder::from(&conf);
-    let builder = match &config.endpoint_url {
-        None => builder,
-        Some(endpoint) => builder.endpoint_url(endpoint),
-    };
-    let builder = if config.endpoint_url.is_some() && !config.force_virtual_addressing {
-        builder.force_path_style(true)
-    } else {
-        builder.force_path_style(false)
-    };
-
-    let builder = if let Some(region) = &config.region_name {
-        builder.region(Region::new(region.to_owned()))
-    } else {
-        builder
-    };
-
-    ensure!(
-        config.num_tries > 0,
-        InvalidArgumentSnafu {
-            msg: "num_tries must be greater than zero"
-        }
-    );
-    let retry_config = s3::config::retry::RetryConfig::standard()
-        .with_max_attempts(config.num_tries)
-        .with_initial_backoff(Duration::from_millis(config.retry_initial_backoff_ms));
-
-    let retry_config = if let Some(retry_mode) = &config.retry_mode {
-        if retry_mode.trim().eq_ignore_ascii_case("adaptive") {
-            retry_config.with_retry_mode(RetryMode::Adaptive)
-        } else if retry_mode.trim().eq_ignore_ascii_case("standard") {
-            retry_config
+        // test if there are default credentials. If not, use anonymous mode
+        if provide_credentials_with_retry(&default_provider)
+            .await?
+            .is_some()
+        {
+            Some(SharedCredentialsProvider::new(default_provider))
         } else {
-            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {retry_mode}") });
+            None
         }
-    } else {
-        retry_config
     };
 
-    let builder = builder.retry_config(retry_config);
+    let anonymous = credentials_provider.is_none();
 
-    let builder = handle_https_client_settings(builder, config)?;
+    let identity_cache = config.buffer_time.map(|buffer_time| {
+        IdentityCache::lazy()
+            .buffer_time(Duration::from_secs(buffer_time))
+            .build()
+    });
+
+    let retry_config = {
+        ensure!(
+            config.num_tries > 0,
+            InvalidArgumentSnafu {
+                msg: "num_tries must be greater than zero"
+            }
+        );
+
+        let retry_mode = config
+            .retry_mode
+            .as_ref()
+            .map(|mode| mode.trim().to_lowercase());
+
+        let retry_config = match retry_mode.as_deref() {
+            None | Some("standard") => s3::config::retry::RetryConfig::standard(),
+            Some("adaptive") => s3::config::retry::RetryConfig::adaptive(),
+            _ => {
+                return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {}", config.retry_mode.clone().unwrap()) });
+            }
+        };
+
+        retry_config
+            .with_max_attempts(config.num_tries)
+            .with_initial_backoff(Duration::from_millis(config.retry_initial_backoff_ms))
+    };
+
+    let http_client = {
+        let tls_connector = hyper_tls::native_tls::TlsConnector::builder()
+            .danger_accept_invalid_certs(!config.verify_ssl)
+            .danger_accept_invalid_hostnames((!config.verify_ssl) || (!config.check_hostname_ssl))
+            .build()
+            .context(UnableToCreateTlsConnectorSnafu {})?;
+        let mut http_connector = hyper::client::HttpConnector::new();
+        http_connector.enforce_http(false);
+        let https_connector = hyper_tls::HttpsConnector::<hyper::client::HttpConnector>::from((
+            http_connector,
+            tls_connector.into(),
+        ));
+        HyperClientBuilder::new().build(https_connector)
+    };
 
     let sleep_impl = Arc::new(TokioSleep::new());
-    let builder = builder.sleep_impl(sleep_impl);
+
     let timeout_config = TimeoutConfig::builder()
         .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
         .read_timeout(Duration::from_millis(config.read_timeout_ms))
         .build();
-    let builder = builder.timeout_config(timeout_config);
 
-    let builder_copy = builder.clone();
-    let s3_conf = builder.build();
+    let sdk_config = {
+        let mut loader = aws_config::defaults(BehaviorVersion::latest());
 
-    let backoff = ExponentialBackoff {
-        max_waittime_ms: Some(45_000),
-        ..Default::default()
-    };
-
-    let check_creds = async || {
-        use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
-
-        let creds = s3_conf
-            .credentials_cache()
-            .provide_cached_credentials()
-            .await;
-
-        match creds {
-            Ok(_) => Ok(false),
-            Err(err @ ProviderTimedOut(..)) => {
-                log::warn!(
-                    "S3 Credentials Provider timed out when making client for {}! Retrying. {err}",
-                    s3_conf.region().unwrap_or(&DEFAULT_REGION)
-                );
-                Err(RetryError::Transient(err))
-            }
-            Err(err @ CredentialsNotLoaded(..)) => {
-                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                Ok(true)
-            }
-            Err(err) => Err(RetryError::Permanent(err)),
+        macro_rules! maybe_set_loader_value {
+            ($method:ident, $value:expr) => {
+                if let Some($method) = $value {
+                    loader = loader.$method($method);
+                }
+            };
         }
+
+        if let Some(provider) = credentials_provider {
+            loader = loader.credentials_provider(provider);
+        } else {
+            loader = loader.no_credentials();
+        }
+
+        maybe_set_loader_value!(profile_name, &config.profile_name);
+        maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
+        maybe_set_loader_value!(identity_cache, identity_cache);
+
+        loader = loader.region(region);
+        loader = loader.retry_config(retry_config);
+        loader = loader.http_client(http_client);
+        loader = loader.sleep_impl(sleep_impl);
+        loader = loader.timeout_config(timeout_config);
+
+        loader.load().await
     };
 
-    if !config.anonymous {
-        anonymous = backoff
-            .retry(check_creds)
-            .await
-            .with_context(|_| UnableToLoadCredentialsSnafu {})?;
-    }
+    let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
 
-    let s3_conf = if s3_conf.region().is_none() {
-        builder_copy.region(DEFAULT_REGION).build()
-    } else {
-        s3_conf
-    };
+    let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
+    builder = builder.force_path_style(force_path_style);
+
+    let s3_conf = builder.build();
 
     Ok((anonymous, s3_conf))
 }
 
-async fn build_s3_client(
-    config: &S3Config,
-    credentials_cache: Option<SharedCredentialsCache>,
-) -> super::Result<(bool, s3::Client)> {
-    let (anonymous, s3_conf) = build_s3_conf(config, credentials_cache).await?;
+async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
+    let (anonymous, s3_conf) = build_s3_conf(config).await?;
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
 
 async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let (anonymous, client) = build_s3_client(config, None).await?;
+    let (anonymous, client) = build_s3_client(config).await?;
     let mut client_map = HashMap::new();
-    let default_region = client.conf().region().unwrap().clone();
+    let default_region = client.config().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
@@ -644,11 +624,7 @@ impl S3LikeSource {
         let mut new_config = self.s3_config.clone();
         new_config.region_name = Some(region.to_string());
 
-        let creds_cache = w_handle
-            .get(&self.default_region)
-            .map(|current_client| current_client.conf().credentials_cache());
-
-        let (_, new_client) = build_s3_client(&new_config, creds_cache).await?;
+        let (_, new_client) = build_s3_client(&new_config).await?;
 
         if w_handle.get(region).is_none() {
             w_handle.insert(region.clone(), new_client.into());
@@ -693,55 +669,47 @@ impl S3LikeSource {
                 )),
             };
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            #[allow(unused_mut)]
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
-
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
+            let response = request.send().await;
 
             match response {
                 Ok(v) => {
                     let body = v.body;
-                    let owned_string = uri.to_owned();
-                    let stream = body
-                        .map_err(move |e| {
-                            UnableToReadBytesSnafu {
-                                path: owned_string.clone(),
-                            }
-                            .into_error(e)
-                            .into()
-                        })
-                        .boxed();
+                    struct FuturesStreamCompatByteStream {
+                        byte_stream: ByteStream,
+                        uri: String,
+                    }
+                    impl futures::stream::Stream for FuturesStreamCompatByteStream {
+                        type Item = super::Result<Bytes>;
+                        fn poll_next(
+                            mut self: Pin<&mut Self>,
+                            cx: &mut std::task::Context<'_>,
+                        ) -> Poll<Option<Self::Item>> {
+                            Pin::new(&mut self.byte_stream).poll_next(cx).map_err(|e| {
+                                UnableToReadBytesSnafu {
+                                    path: self.uri.clone(),
+                                }
+                                .into_error(e)
+                                .into()
+                            })
+                        }
+                    }
+                    let stream = Box::pin(FuturesStreamCompatByteStream {
+                        byte_stream: body,
+                        uri: uri.to_owned(),
+                    });
                     Ok(GetResult::Stream(
                         stream,
-                        Some(v.content_length as usize),
+                        v.content_length.map(|l| l as usize),
                         Some(permit),
                         None,
                     ))
                 }
 
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
-                    match bad_response.status() {
-                        StatusCode::MOVED_PERMANENTLY => {
+                    let bad_response = err.raw();
+                    match bad_response.status().as_u16() {
+                        // moved permanently
+                        301 => {
                             let headers = bad_response.headers();
                             let new_region =
                                 headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
@@ -795,36 +763,18 @@ impl S3LikeSource {
                 request
             };
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            #[allow(unused_mut)]
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
-
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
+            let response = request.send().await;
 
             match response {
-                Ok(v) => Ok(v.content_length() as usize),
+                Ok(v) => match v.content_length() {
+                    Some(l) => Ok(l as usize),
+                    None => Err(Error::HeadObjectOutputEmpty { path: uri.into() }.into()),
+                },
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
-                    match bad_response.status() {
-                        StatusCode::MOVED_PERMANENTLY => {
+                    let bad_response = err.raw();
+                    match bad_response.status().as_u16() {
+                        // moved permanently
+                        301 => {
                             let headers = bad_response.headers();
                             let new_region =
                                 headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
@@ -892,80 +842,40 @@ impl S3LikeSource {
             request
         };
 
-        let response = if self.anonymous {
-            request
-                .customize_middleware()
-                .await
-                .unwrap()
-                .map_operation::<Error>(|mut o| {
-                    {
-                        let mut properties = o.properties_mut();
-                        #[allow(unused_mut)]
-                        let mut config = properties
-                            .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                            .expect("signing config added by make_operation()");
-
-                        config.signing_requirements = SigningRequirements::Disabled;
-                    }
-                    Ok(o)
-                })
-                .unwrap()
-                .send()
-                .await
-        } else {
-            request.send().await
-        };
+        let response = request.send().await;
         let uri = &format!("{scheme}://{bucket}/{key}");
         match response {
             Ok(v) => {
                 let dirs = v.common_prefixes();
                 let files = v.contents();
+                let files = dirs
+                    .iter()
+                    .map(|d| FileMetadata {
+                        filepath: format!("{scheme}://{bucket}/{}", d.prefix().unwrap_or_default()),
+                        size: None,
+                        filetype: FileType::Directory,
+                    })
+                    .chain(files.iter().map(|f| FileMetadata {
+                        filepath: format!("{scheme}://{bucket}/{}", f.key().unwrap_or_default()),
+                        size: f.size().map(|size| size as u64),
+                        filetype: FileType::File,
+                    }))
+                    .collect();
+
                 let continuation_token = v
                     .next_continuation_token()
                     .map(std::string::ToString::to_string);
-                let mut total_len = 0;
-                if let Some(dirs) = dirs {
-                    total_len += dirs.len();
-                }
-                if let Some(files) = files {
-                    total_len += files.len();
-                }
-                let mut all_files = Vec::with_capacity(total_len);
-                if let Some(dirs) = dirs {
-                    for d in dirs {
-                        let fmeta = FileMetadata {
-                            filepath: format!(
-                                "{scheme}://{bucket}/{}",
-                                d.prefix().unwrap_or_default()
-                            ),
-                            size: None,
-                            filetype: FileType::Directory,
-                        };
-                        all_files.push(fmeta);
-                    }
-                }
-                if let Some(files) = files {
-                    for f in files {
-                        let fmeta = FileMetadata {
-                            filepath: format!(
-                                "{scheme}://{bucket}/{}",
-                                f.key().unwrap_or_default()
-                            ),
-                            size: Some(f.size() as u64),
-                            filetype: FileType::File,
-                        };
-                        all_files.push(fmeta);
-                    }
-                }
+
                 Ok(LSResult {
-                    files: all_files,
+                    files,
                     continuation_token,
                 })
             }
             Err(SdkError::ServiceError(err)) => {
-                let bad_response = err.raw().http();
-                match bad_response.status() {
-                    StatusCode::MOVED_PERMANENTLY => {
+                let bad_response = err.raw();
+                match bad_response.status().as_u16() {
+                    // moved permanently
+                    301 => {
                         let headers = bad_response.headers();
                         let new_region =
                             headers.get(REGION_HEADER).ok_or(Error::MissingHeader {

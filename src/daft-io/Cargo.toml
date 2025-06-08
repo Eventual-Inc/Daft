@@ -2,12 +2,12 @@
 async-recursion = "1.0.4"
 async-stream = "0.3.6"
 async-trait = {workspace = true}
-aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
-aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default-features = false}
-aws-sig-auth = "0.55.3"
-aws-smithy-async = "0.55.3"
-aws-smithy-client = "0.55.3"
+aws-config = "1.6.3"
+aws-credential-types = {version = "1.2.3", features = ["hardcoded-credentials"]}
+aws-sdk-s3 = "1.90.0"
+aws-smithy-async = "1.2.5"
+aws-smithy-http-client = "1.0.3"
+aws-smithy-runtime-api = "1.8.0"
 azure_core = "0.17.0"
 azure_identity = "0.17.0"
 azure_storage = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
@@ -27,7 +27,6 @@ hyper = "0.14.27"
 hyper-tls = "0.5.0"
 itertools = {workspace = true}
 log = {workspace = true}
-openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.10.4"}
@@ -65,6 +64,3 @@ workspace = true
 edition = {workspace = true}
 name = "daft-io"
 version = {workspace = true}
-
-[package.metadata.cargo-machete]
-ignored = ["openssl-sys"]
