@@ -65,11 +65,12 @@ repos:
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
     # Run the formatter.
   - id: ruff-format
+    name: Python code Formatting
 
 - repo: local
   hooks:
   - id: fmt
-    name: fmt
+    name: Rust code Formatting
     description: Format files with cargo fmt.
     entry: cargo fmt
     language: system
@@ -95,7 +96,7 @@ repos:
     args: [--workspace, --all-features, --all-targets]
 
   - id: clippy
-    name: clippy
+    name: Rust code Quality check
     description: Lint rust sources
     entry: cargo clippy
     language: system
