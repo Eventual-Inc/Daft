@@ -65,6 +65,7 @@ pub struct DaftExecutionConfig {
     pub scantask_splitting_level: i32,
     pub native_parquet_writer: bool,
     pub flotilla: bool,
+    pub min_cpu_per_task: f64,
 }
 
 impl Default for DaftExecutionConfig {
@@ -97,6 +98,7 @@ impl Default for DaftExecutionConfig {
             scantask_splitting_level: 1,
             native_parquet_writer: true,
             flotilla: false,
+            min_cpu_per_task: 0.5,
         }
     }
 }
@@ -136,6 +138,13 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.flotilla = true;
+        }
+        let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
+        if let Ok(val) = std::env::var(min_cpu_var) {
+            match val.parse::<f64>() {
+                Ok(parsed) => cfg.min_cpu_per_task = parsed,
+                Err(_) => eprintln!("Invalid {} value: {}, using default {}", min_cpu_var, val, cfg.min_cpu_per_task),
+            }
         }
         cfg
     }

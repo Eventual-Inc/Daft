@@ -1807,6 +1807,7 @@ class PyDaftExecutionConfig:
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
         flotilla: bool | None = None,
+        min_cpu_per_task: float | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1856,6 +1857,8 @@ class PyDaftExecutionConfig:
     def enable_ray_tracing(self) -> bool: ...
     @property
     def flotilla(self) -> bool: ...
+    @property
+    def min_cpu_per_task(self) -> float: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
