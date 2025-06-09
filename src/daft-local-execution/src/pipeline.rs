@@ -415,11 +415,12 @@ pub fn physical_plan_to_pipeline(
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(distributed_actor_pool_project_op),
                 vec![child_node],
                 stats_state.clone(),
+                ctx,
             )
             .boxed()
         }
