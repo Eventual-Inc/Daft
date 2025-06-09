@@ -10,6 +10,7 @@ from .functions import (
     row_number,
     rank,
     dense_rank,
+    format,
 )
 from .llm_generate import llm_generate
 
@@ -20,6 +21,7 @@ __all__ = [
     "columns_min",
     "columns_sum",
     "dense_rank",
+    "format",
     "llm_generate",
     "monotonically_increasing_id",
     "rank",

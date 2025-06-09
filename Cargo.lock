@@ -2218,7 +2218,6 @@ name = "daft-dashboard"
 version = "0.3.0-dev0"
 dependencies = [
  "anyhow",
- "chrono",
  "http-body-util",
  "hyper 1.6.0",
  "hyper-util",
@@ -2584,6 +2583,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid 1.17.0",
 ]
 
 [[package]]
