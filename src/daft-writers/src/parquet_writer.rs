@@ -33,24 +33,166 @@ use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
 type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 
-enum OutputTarget {
-    File(BufWriter<std::fs::File>),
-    S3(Arc<Mutex<S3PartBuffer>>),
+/// We currently support two kinds of storage backends: FileStorageBackend for local file writes,
+/// and S3StorageBackend for writes to S3.
+#[async_trait]
+trait StorageBackend: Send + Sync + 'static {
+    type Writer: Write + Send;
+
+    /// Create the output target (file handle, S3 buffer, etc).
+    async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer>;
+
+    /// Finalize the write operation (close file, await upload to S3, etc).
+    async fn finalize(&mut self) -> DaftResult<()>;
 }
 
-impl Write for OutputTarget {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        match self {
-            Self::File(f) => f.write(buf),
-            Self::S3(part_buffer) => part_buffer.lock().write(buf),
+struct FileStorageBackend {}
+
+impl FileStorageBackend {
+    // Buffer potentially small writes for highly compressed columns.
+    const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024;
+}
+
+#[async_trait]
+impl StorageBackend for FileStorageBackend {
+    type Writer = BufWriter<std::fs::File>;
+
+    async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer> {
+        // Create directories if they don't exist.
+        if let Some(parent) = filename.parent() {
+            std::fs::create_dir_all(parent)?;
         }
+        let file = std::fs::File::create(filename)?;
+        Ok(BufWriter::with_capacity(
+            Self::DEFAULT_WRITE_BUFFER_SIZE,
+            file,
+        ))
+    }
+    async fn finalize(&mut self) -> DaftResult<()> {
+        // Nothing needed for finalizing file storage.
+        Ok(())
+    }
+}
+
+struct S3StorageBackend {
+    scheme: String,
+    io_config: IOConfig,
+    s3_client: Option<Arc<S3LikeSource>>,
+    s3part_buffer: Option<Arc<Mutex<S3PartBuffer>>>,
+    upload_thread: Option<JoinHandle<DaftResult<()>>>,
+}
+
+impl S3StorageBackend {
+    const S3_MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+    const S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT: usize = 100; // 100 uploads per S3 object
+
+    fn new(scheme: String, io_config: IOConfig) -> Self {
+        Self {
+            scheme,
+            io_config,
+            s3_client: None,
+            s3part_buffer: None,
+            upload_thread: None,
+        }
+    }
+}
+
+/// A Send and Sync wrapper around S3PartBuffer.
+pub struct SharedS3PartBuffer {
+    inner: Arc<Mutex<S3PartBuffer>>,
+}
+
+impl Write for SharedS3PartBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.inner.lock().write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        match self {
-            Self::File(f) => f.flush(),
-            Self::S3(part_buffer) => part_buffer.lock().flush(),
+        self.inner.lock().flush()
+    }
+}
+
+#[async_trait]
+impl StorageBackend for S3StorageBackend {
+    type Writer = SharedS3PartBuffer;
+
+    async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer> {
+        let filename = filename.to_string_lossy().to_string();
+        let part_size = NonZeroUsize::new(Self::S3_MULTIPART_PART_SIZE)
+            .expect("S3 multipart part size must be non-zero");
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
+        // Create the S3 part buffer that interfaces with parquet-rs.
+        let s3part_buffer = Arc::new(Mutex::new(S3PartBuffer::new(part_size, tx)));
+        self.s3part_buffer = Some(s3part_buffer.clone());
+
+        // Initialize S3 client if needed.
+        if self.s3_client.is_none() {
+            self.s3_client = Some(S3LikeSource::get_client(&self.io_config.s3).await?);
         }
+
+        // Set up multipart writer.
+        let mut s3_multipart_writer = Arc::new(
+            S3MultipartWriter::create(
+                format!("{}://{}", self.scheme, filename),
+                part_size,
+                NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
+                    .expect("S3 multipart concurrent uploads per object must be non-zero"),
+                self.s3_client
+                    .clone()
+                    .expect("S3 client must be initialized"),
+            )
+            .await
+            .expect("Failed to create S3 multipart writer"),
+        );
+
+        // Spawn background upload thread.
+        let background_thread_handle = std::thread::spawn(move || -> DaftResult<()> {
+            let background_rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create background uploader tokio runtime");
+            let writer = Arc::get_mut(&mut s3_multipart_writer).unwrap();
+
+            background_rt.block_on(async move {
+                while let Some(part) = rx.recv().await {
+                    writer.write_part(part).await?;
+                }
+                writer.shutdown().await?;
+                Ok(())
+            })
+        });
+
+        self.upload_thread = Some(background_thread_handle);
+
+        Ok(SharedS3PartBuffer {
+            inner: s3part_buffer,
+        })
+    }
+
+    async fn finalize(&mut self) -> DaftResult<()> {
+        let part_buffer = self
+            .s3part_buffer
+            .take()
+            .expect("S3 part buffer must be initialized for multipart upload");
+        let upload_thread = self
+            .upload_thread
+            .take()
+            .expect("Upload thread must be initialized for multipart upload");
+
+        tokio::task::spawn_blocking(move || -> DaftResult<()> {
+            // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
+            part_buffer.lock().shutdown()?;
+            let upload_result = upload_thread.join();
+            if let Err(err) = upload_result {
+                log::error!("Upload thread failed: {:?}", err);
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+
+        Ok(())
     }
 }
 
@@ -107,14 +249,6 @@ pub(crate) fn create_native_parquet_writer(
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(source_type, root_dir.as_ref(), partition_values, file_idx)?;
 
-    // Extract scheme for S3 paths.
-    let scheme = if source_type == SourceType::S3 {
-        let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
-        Some(scheme)
-    } else {
-        None
-    };
-
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
     let writer_properties = Arc::new(
@@ -131,16 +265,37 @@ pub(crate) fn create_native_parquet_writer(
         .convert(&arrow_schema)
         .expect("By this point `native_writer_supported` should have been called which would have verified that the schema is convertible");
 
-    Ok(Box::new(ParquetWriter::new(
-        filename,
-        source_type,
-        scheme,
-        writer_properties,
-        arrow_schema,
-        parquet_schema,
-        partition_values.cloned(),
-        io_config,
-    )))
+    match source_type {
+        SourceType::File => {
+            let storage_backend = FileStorageBackend {};
+            Ok(Box::new(ParquetWriter::new(
+                filename,
+                writer_properties,
+                arrow_schema,
+                parquet_schema,
+                partition_values.cloned(),
+                storage_backend,
+            )))
+        }
+        SourceType::S3 => {
+            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+            let io_config = io_config.ok_or_else(|| {
+                DaftError::InternalError("IO config is required for S3 writes".to_string())
+            })?;
+            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            Ok(Box::new(ParquetWriter::new(
+                filename,
+                writer_properties,
+                arrow_schema,
+                parquet_schema,
+                partition_values.cloned(),
+                storage_backend,
+            )))
+        }
+        _ => Err(DaftError::InternalError(format!(
+            "Unsupported source type for the native writer: {source_type}"
+        ))),
+    }
 }
 
 /// Helper function to build the filename for the parquet file.
@@ -184,10 +339,6 @@ fn build_local_file_path(
 ) -> DaftResult<PathBuf> {
     let root_dir = Path::new(root_dir.trim_start_matches("file://"));
     let dir = root_dir.join(partition_path);
-
-    // Create directories if they don't exist.
-    std::fs::create_dir_all(&dir)?;
-
     Ok(dir.join(filename))
 }
 
@@ -198,144 +349,40 @@ fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> D
     Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
 }
 
-struct ParquetWriter {
+struct ParquetWriter<B: StorageBackend> {
     filename: PathBuf,
-    source_type: SourceType,
-    scheme: Option<String>,
     writer_properties: Arc<WriterProperties>,
     arrow_schema: Arc<arrow_schema::Schema>,
     parquet_schema: SchemaDescriptor,
     partition_values: Option<RecordBatch>,
-    file_writer: Arc<Mutex<Option<SerializedFileWriter<OutputTarget>>>>,
-    io_config: Option<IOConfig>,
-    s3_client: Option<Arc<S3LikeSource>>,
-    s3part_buffer: Option<Arc<Mutex<S3PartBuffer>>>,
-    s3multipart_writer: Option<Arc<tokio::sync::Mutex<S3MultipartWriter>>>,
-    upload_thread: Option<JoinHandle<DaftResult<()>>>,
+    storage_backend: B,
+    file_writer: Arc<Mutex<Option<SerializedFileWriter<B::Writer>>>>,
 }
 
-const S3_MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024; // 8 MB
-
-const S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT: usize = 100; // 100 uploads per S3 object
-
-impl ParquetWriter {
-    /// TODO(desmond): This can be tuned.
-    /// Default buffer size for writing to files.
-    const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
+impl<B: StorageBackend> ParquetWriter<B> {
     const PATH_FIELD_NAME: &str = "path";
 
-    #[allow(clippy::too_many_arguments)]
     fn new(
         filename: PathBuf,
-        source_type: SourceType,
-        scheme: Option<String>,
         writer_properties: Arc<WriterProperties>,
         arrow_schema: Arc<arrow_schema::Schema>,
         parquet_schema: SchemaDescriptor,
         partition_values: Option<RecordBatch>,
-        io_config: Option<IOConfig>,
+        storage_backend: B,
     ) -> Self {
         Self {
             filename,
-            source_type,
-            scheme,
             writer_properties,
             arrow_schema,
             parquet_schema,
             partition_values,
+            storage_backend,
             file_writer: Arc::new(Mutex::new(None)),
-            io_config,
-            s3_client: None,
-            s3part_buffer: None,
-            s3multipart_writer: None,
-            upload_thread: None,
         }
     }
 
     async fn create_writer(&mut self) -> DaftResult<()> {
-        let output_target = if self.source_type == SourceType::S3 {
-            let filename = self.filename.to_string_lossy().to_string();
-            let part_size = NonZeroUsize::new(S3_MULTIPART_PART_SIZE)
-                .expect("S3 multipart part size must be non-zero");
-            let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-
-            // Create the S3 part buffer that interfaces with parquet-rs.
-            let s3part_buffer = Arc::new(Mutex::new(S3PartBuffer::new(
-                part_size, // 5MB part size
-                tx,
-            )));
-            self.s3part_buffer = Some(s3part_buffer.clone());
-
-            if self.s3_client.is_none() {
-                let s3_conf = &self
-                    .io_config
-                    .as_ref()
-                    .ok_or_else(|| {
-                        DaftError::InternalError(
-                            "IO config is required for S3 operations".to_string(),
-                        )
-                    })?
-                    .s3;
-                self.s3_client = Some(S3LikeSource::get_client(s3_conf).await?);
-            }
-
-            let s3_multipart_writer = Arc::new(tokio::sync::Mutex::new(
-                S3MultipartWriter::create(
-                    format!(
-                        "{}://{}",
-                        self.scheme.as_deref().unwrap_or("s3"),
-                        filename.clone()
-                    ),
-                    part_size,
-                    NonZeroUsize::new(S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
-                        .expect("S3 multipart concurrent uploads per object must be non-zero."),
-                    self.s3_client
-                        .clone()
-                        .expect("S3 client must be initialized for multipart upload."),
-                )
-                .await
-                .expect("Failed to create S3 multipart writer"),
-            ));
-
-            self.s3multipart_writer = Some(s3_multipart_writer);
-
-            let s3_multipart_writer_handle = self
-                .s3multipart_writer
-                .clone()
-                .expect("S3 multipart writer must be initialized");
-
-            // Spawn a background thread to handle the multipart upload.
-            let background_thread_handle = std::thread::spawn(move || -> DaftResult<()> {
-                let background_rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("Failed to create background uploader tokio runtime");
-
-                background_rt.block_on(async move {
-                    while let Some(part) = rx.recv().await {
-                        // Write the part to S3.
-                        s3_multipart_writer_handle
-                            .lock()
-                            .await
-                            .write_part(part)
-                            .await?;
-                    }
-
-                    s3_multipart_writer_handle.lock().await.shutdown().await?;
-
-                    Ok(())
-                })
-            });
-            self.upload_thread = Some(background_thread_handle);
-
-            OutputTarget::S3(s3part_buffer)
-        } else {
-            let file = std::fs::File::create(&self.filename)?;
-            OutputTarget::File(BufWriter::with_capacity(
-                Self::DEFAULT_WRITE_BUFFER_SIZE,
-                file,
-            ))
-        };
+        let output_target = self.storage_backend.create_writer(&self.filename).await?;
         let writer = SerializedFileWriter::new(
             output_target,
             self.parquet_schema.root_schema_ptr(),
@@ -420,7 +467,7 @@ impl ParquetWriter {
 }
 
 #[async_trait]
-impl AsyncFileWriter for ParquetWriter {
+impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
@@ -483,6 +530,7 @@ impl AsyncFileWriter for ParquetWriter {
     async fn close(&mut self) -> DaftResult<Self::Result> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
 
+        // Our file writer might be backed by an S3 part writer that may block when flushing metadata.
         let file_writer_handle = self.file_writer.clone();
         spawn_blocking(move || -> DaftResult<()> {
             let mut guard = file_writer_handle.lock();
@@ -497,28 +545,11 @@ impl AsyncFileWriter for ParquetWriter {
         .await
         .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
-        let part_buffer = self
-            .s3part_buffer
-            .take()
-            .expect("S3 part buffer must be initialized for multipart upload.");
-        let upload_thread = self
-            .upload_thread
-            .take()
-            .expect("Upload thread must be initialized for multipart upload.");
+        // TODO: We can start encoding the next file while this finalization happens.
 
-        spawn_blocking(move || -> DaftResult<()> {
-            // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
-            part_buffer.lock().shutdown()?;
-
-            let upload_result = upload_thread.join();
-            if let Err(err) = upload_result {
-                log::error!("Upload thread failed: {:?}", err);
-            }
-
-            Ok(())
-        })
-        .await
-        .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+        // Let the storage backend handle its finalization. For our S3 backend, this waits for all
+        // part uploads to complete.
+        self.storage_backend.finalize().await?;
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
@@ -548,10 +579,6 @@ impl AsyncFileWriter for ParquetWriter {
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        let bytes_written = match self.file_writer.lock().as_ref() {
-            Some(writer) => writer.bytes_written(),
-            None => unreachable!("File writer must be created before bytes_per_file can be called"),
-        };
-        vec![bytes_written]
+        vec![self.bytes_written()]
     }
 }
