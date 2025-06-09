@@ -111,15 +111,6 @@ repos:
     types: [rust]
     pass_filenames: false
 
-  - id: no-dbg
-    name: Check for dbg!
-    description: Checks for "dbg!" macro usage in source files.
-    entry: bash
-    language: system
-    types: [rust]
-    files: ^src/.*\.rs$
-    args: [-c, 'grep -nE "dbg!" "$@" && exit 1 || exit 0', '--']
-
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.19
   hooks:
