@@ -1659,6 +1659,41 @@ class Expression:
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("try_deserialize", format, dtype._dtype)
 
+    def jq(self, filter: builtins.str) -> Expression:
+        """Applies a [https://jqlang.github.io/jq/manual/](jq) to the expression (string), returning the results as a string.
+
+        Args:
+            file (str): The jq filter.
+
+        Returns:
+            Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
+
+        Warning:
+            This expression uses [https://github.com/01mf02/jaq](jaq) as its filter executor which can differ from the
+            [https://jqlang.org/](jq) command-line tool. Please consult [https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq][jq vs. jaq]
+            for a detailed look into possible differences.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col": ['{"a": 1}', '{"a": 2}', '{"a": 3}']})
+            >>> df.with_column("res", df["col"].jq(".a")).collect()
+            ╭──────────┬──────╮
+            │ col      ┆ res  │
+            │ ---      ┆ ---  │
+            │ Utf8     ┆ Utf8 │
+            ╞══════════╪══════╡
+            │ {"a": 1} ┆ 1    │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ {"a": 2} ┆ 2    │
+            ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ {"a": 3} ┆ 3    │
+            ╰──────────┴──────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+        """
+        return self._eval_expressions("jq", filter)
+
     def name(self) -> builtins.str:
         return self._expr.name()
 
@@ -5053,10 +5088,15 @@ class ExpressionJsonNamespace(ExpressionNamespace):
             (Showing first 3 of 3 rows)
 
         """
-        f = native.get_function_from_registry("json_query")
-        query = Expression._to_expression(jq_query)._expr
+        warnings.warn(
+            "This API is deprecated in daft >=0.5.1 and will be removed in >=0.6.0. Users should use `Expression.jq` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        f = native.get_function_from_registry("jq")
+        filter = Expression._to_expression(jq_query)._expr
 
-        return Expression._from_pyexpr(f(self._expr, query=query))
+        return Expression._from_pyexpr(f(self._expr, filter))
 
 
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
