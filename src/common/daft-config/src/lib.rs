@@ -57,7 +57,6 @@ pub struct DaftExecutionConfig {
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
-    pub enable_native_executor: bool,
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
@@ -91,7 +90,6 @@ impl Default for DaftExecutionConfig {
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
-            enable_native_executor: false,
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
@@ -114,19 +112,6 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.enable_aqe = true;
-        }
-        let exec_env_var_name = "DAFT_ENABLE_NATIVE_EXECUTOR";
-        if let Ok(val) = std::env::var(exec_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            log::warn!("DAFT_ENABLE_NATIVE_EXECUTOR will be deprecated and removed in the future. Please switch to using DAFT_RUNNER=NATIVE instead.");
-            cfg.enable_native_executor = true;
-        }
-        let daft_runner_var_name = "DAFT_RUNNER";
-        if let Ok(val) = std::env::var(daft_runner_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "native")
-        {
-            cfg.enable_native_executor = true;
         }
         let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";
         if let Ok(val) = std::env::var(ray_tracing_env_var_name)

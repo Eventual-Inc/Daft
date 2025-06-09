@@ -13,7 +13,8 @@ from daft.internal.gpu import cuda_visible_devices
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "native", reason="Native runner does not support GPU tests yet"
+    get_tests_daft_runner_name() == "native" or daft.context.get_context().daft_execution_config.flotilla,
+    reason="Native runner does not support GPU tests yet",
 )
 
 
@@ -45,7 +46,6 @@ def reset_runner_with_gpus(num_gpus, monkeypatch):
 
 @pytest.mark.parametrize("concurrency", [1, 2])
 @pytest.mark.parametrize("num_gpus", [1, 2])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "py", reason="Test is flaky on MacOS PyRunner")
 def test_actor_pool_udf_cuda_env_var(monkeypatch, concurrency, num_gpus):
     with reset_runner_with_gpus(concurrency * num_gpus, monkeypatch):
 
@@ -105,68 +105,3 @@ def test_actor_pool_udf_fractional_gpu(monkeypatch):
 
         unique_visible_devices = set(result["x"])
         assert len(unique_visible_devices) == 1
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
-def test_actor_pool_udf_no_cuda_devices(monkeypatch):
-    monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 0)
-    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
-
-    original_runner = daft.context.get_context()._runner
-
-    try:
-        daft.context.get_context()._runner = None
-
-        @udf(return_dtype=DataType.string(), num_gpus=1)
-        class UdfWithGpus:
-            def __init__(self):
-                pass
-
-            def __call__(self, data):
-                return [str(i) for i in range(len(data))]
-
-        UdfWithGpus = UdfWithGpus.with_concurrency(1)
-
-        df = daft.from_pydict({"x": [1, 2, 3, 4]})
-        df = df.select(UdfWithGpus(df["x"]))
-
-        with pytest.raises(RuntimeError):
-            df.collect()
-    finally:
-        daft.context.get_context()._runner = original_runner
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
-def test_actor_pool_udf_no_cuda_visible_device_envvar(monkeypatch):
-    monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 1)
-    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
-
-    original_runner = daft.context.get_context()._runner
-
-    try:
-        daft.context.get_context()._runner = None
-
-        @udf(return_dtype=DataType.string(), num_gpus=1)
-        class UdfWithGpus:
-            def __init__(self):
-                pass
-
-            def __call__(self, data):
-                return [str(i) for i in range(len(data))]
-
-        UdfWithGpus = UdfWithGpus.with_concurrency(1)
-
-        df = daft.from_pydict({"x": [1, 2, 3, 4]})
-        df = df.select(UdfWithGpus(df["x"]))
-
-        df.collect()
-
-        UdfWithGpus2 = UdfWithGpus.with_concurrency(2)
-
-        df = daft.from_pydict({"x": [1, 2, 3, 4]})
-        df = df.select(UdfWithGpus2(df["x"]))
-
-        with pytest.raises(RuntimeError):
-            df.collect()
-    finally:
-        daft.context.get_context()._runner = original_runner

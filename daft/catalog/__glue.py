@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import boto3
 import botocore
@@ -136,15 +136,7 @@ class GlueCatalog(Catalog):
     def name(self) -> str:
         return self._name
 
-    def create_namespace(self, identifier: Identifier | str) -> None:
-        """Creates a namespace (database) in AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the database to create.
-
-        Returns:
-            None
-        """
+    def _create_namespace(self, identifier: Identifier) -> None:
         try:
             self._client.create_database(
                 DatabaseInput={
@@ -154,50 +146,22 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.AlreadyExistsException:
             raise ValueError(f"Namespace {identifier} already exists")
 
-    def create_table(
+    def _create_table(
         self,
-        identifier: Identifier | str,
-        source: Schema | DataFrame,
+        identifier: Identifier,
+        schema: Schema,
         properties: Properties | None = None,
     ) -> Table:
-        """Creates a table in AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the table to create.
-            source (Schema | DataFrame): The source data for the table.
-            properties (Properties): Additional table properties.
-
-        Returns:
-            Table: The created table.
-        """
         # Table creation implementation will be added later
         raise NotImplementedError("Table creation not yet implemented")
 
-    def drop_namespace(self, identifier: Identifier | str) -> None:
-        """Drops a namespace (database) from AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the database to drop.
-
-        Returns:
-            None
-        """
+    def _drop_namespace(self, identifier: Identifier) -> None:
         try:
             self._client.delete_database(Name=str(identifier))
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Namespace {identifier} not found")
 
-    def drop_table(self, identifier: Identifier | str) -> None:
-        """Drops a table from AWS Glue.
-
-        Args:
-            identifier (Identifier | str): The name of the table to drop.
-
-        Returns:
-            None
-        """
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
+    def _drop_table(self, identifier: Identifier) -> None:
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
         database_name: str = str(identifier[0])
@@ -208,14 +172,7 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
-    def get_table(self, identifier: Identifier | str) -> Table:
-        """Gets a table by its identifier (<database_name>.<table_name>).
-
-        Args:
-            identifier (Identifier | str): the name of the table to get
-        """
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
+    def _get_table(self, identifier: Identifier) -> Table:
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
         database_name: str = str(identifier[0])
@@ -237,30 +194,21 @@ class GlueCatalog(Catalog):
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
-    def has_namespace(self, identifier: Identifier | str) -> bool:
-        """Checks if a namespace (database) exists in AWS Glue.
+    def _has_table(self, identifier: Identifier) -> bool:
+        try:
+            self._get_table(identifier)
+            return True
+        except self._client.exceptions.EntityNotFoundException:
+            return False
 
-        Args:
-            identifier (Identifier | str): The name of the database to check.
-
-        Returns:
-            bool: True if the namespace (database) exists, False otherwise.
-        """
+    def _has_namespace(self, identifier: Identifier) -> bool:
         try:
             self._client.get_database(Name=str(identifier))
             return True
         except self._client.exceptions.EntityNotFoundException:
             return False
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        """Lists namespaces (databases) in AWS Glue.
-
-        Args:
-            pattern (str | None): Pattern is NOT supported by Glue.
-
-        Returns:
-            list[Identifier]: List of namespace identifiers.
-        """
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         if pattern is not None:
             # Glue may add some kind of pattern to get_databases, then we can use their scheme.
             # Rather than making something up now which could later be broken.
@@ -281,7 +229,7 @@ class GlueCatalog(Catalog):
         except ClientError as e:
             raise ValueError("Failed to list namespaces.") from e
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
         if pattern is None:
             raise ValueError("GlueCatalog requires the pattern to contain a namespace.")
 
@@ -298,7 +246,7 @@ class GlueCatalog(Catalog):
             while True:
                 res = self._client.get_tables(**req)
                 for table in res["TableList"]:
-                    tables.append(f'{table["DatabaseName"]}.{table["Name"]}')
+                    tables.append(Identifier(table["DatabaseName"], table["Name"]))
                 if next_token := res.get("NextToken"):
                     req["NextToken"] = next_token
                 else:
@@ -326,6 +274,9 @@ class GlueTable(Table, ABC):
     @property
     def name(self) -> str:
         return self._table["Name"]
+
+    def schema(self) -> Schema:
+        return self.read().schema()
 
     def __repr__(self) -> str:
         import json
@@ -393,10 +344,17 @@ class GlueCsvTable(GlueTable):
             hive_partitioning=self._hive_partitioning,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
         df.write_csv(
             root_dir=self._path,
-            write_mode=mode,
+            write_mode="append",
+            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+        )
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        df.write_csv(
+            root_dir=self._path,
+            write_mode="overwrite",
             partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
         )
 
@@ -451,11 +409,20 @@ class GlueParquetTable(GlueTable):
             schema_hints=None,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
         df.write_parquet(
             root_dir=self._path,
             compression="snappy",
-            write_mode=mode,
+            write_mode="append",
+            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+            io_config=self._io_config,
+        )
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        df.write_parquet(
+            root_dir=self._path,
+            compression="snappy",
+            write_mode="overwrite",
             partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
             io_config=self._io_config,
         )
@@ -510,8 +477,11 @@ class GlueIcebergTable(GlueTable):
             table=self._pyiceberg_table, snapshot_id=options.get("snapshot_id"), io_config=self._io_config
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
-        df.write_iceberg(self._pyiceberg_table, mode=mode)
+    def append(self, df: DataFrame, **options: Any) -> None:
+        df.write_iceberg(self._pyiceberg_table, mode="append")
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        df.write_iceberg(self._pyiceberg_table, mode="overwrite")
 
 
 class GlueDeltaTable(GlueTable):
@@ -570,7 +540,10 @@ class GlueDeltaTable(GlueTable):
             io_config=self._io_config,
         )
 
-    def write(self, df: DataFrame, mode: Literal["append", "overwrite"] = "append", **options: Any) -> None:
+    def append(self, df: DataFrame, **options: Any) -> None:
+        raise NotImplementedError
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
         raise NotImplementedError
 
 

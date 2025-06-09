@@ -4,10 +4,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::Partition;
+use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
 use pyo3::prelude::*;
 use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner};
@@ -35,6 +37,7 @@ impl PythonPartitionRefStream {
                     Some(result) => {
                         let result = result?;
                         let ray_part_ref = result
+                            .partition()
                             .as_any()
                             .downcast_ref::<RayPartitionRef>()
                             .expect("Failed to downcast to RayPartitionRef");
@@ -53,6 +56,7 @@ impl PythonPartitionRefStream {
 }
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan", frozen)]
+#[derive(Serialize, Deserialize)]
 struct PyDistributedPhysicalPlan {
     plan: DistributedPhysicalPlan,
 }
@@ -70,7 +74,12 @@ impl PyDistributedPhysicalPlan {
         )?;
         Ok(Self { plan })
     }
+
+    fn id(&self) -> String {
+        self.plan.id().to_string()
+    }
 }
+impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {

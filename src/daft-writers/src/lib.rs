@@ -34,7 +34,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -87,7 +87,7 @@ pub trait WriterFactory: Send + Sync {
 }
 
 pub fn make_physical_writer_factory(
-    file_info: &OutputFileInfo,
+    file_info: &OutputFileInfo<BoundExpr>,
     file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
@@ -185,8 +185,8 @@ pub fn make_ipc_writer(
 
 #[cfg(feature = "python")]
 pub fn make_catalog_writer_factory(
-    catalog_info: &daft_logical_plan::CatalogType,
-    partition_cols: &Option<Vec<ExprRef>>,
+    catalog_info: &daft_logical_plan::CatalogType<BoundExpr>,
+    partition_cols: &Option<Vec<BoundExpr>>,
     cfg: &DaftExecutionConfig,
 ) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
     use catalog::CatalogWriterFactory;

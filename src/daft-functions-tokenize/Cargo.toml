@@ -1,0 +1,20 @@
+[dependencies]
+arrow2 = {workspace = true}
+base64 = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+serde = {workspace = true}
+snafu = {workspace = true}
+tiktoken-rs = {workspace = true}
+typetag = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-tokenize"
+edition.workspace = true
+version.workspace = true

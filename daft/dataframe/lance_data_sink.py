@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import pathlib
 from itertools import chain
-from types import ModuleType
-from typing import Any, Iterator, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal
 
 import lance
 
 from daft.context import get_context
-from daft.daft import IOConfig
 from daft.datatype import DataType
 from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from types import ModuleType
+
+    from daft.daft import IOConfig
 
 
 class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
@@ -27,10 +33,10 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
     def __init__(
         self,
-        uri: Union[str, pathlib.Path],
+        uri: str | pathlib.Path,
         schema: Schema,
         mode: Literal["create", "append", "overwrite"],
-        io_config: Optional[IOConfig] = None,
+        io_config: IOConfig | None = None,
         **kwargs: Any,
     ) -> None:
         from daft.dependencies import pa
@@ -99,7 +105,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
                 rows_written=rows_written,
             )
 
-    def finalize(self, write_results: List[WriteResult[list[lance.FragmentMetadata]]]) -> MicroPartition:
+    def finalize(self, write_results: list[WriteResult[list[lance.FragmentMetadata]]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
         from daft.dependencies import pa
 

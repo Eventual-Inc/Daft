@@ -361,7 +361,7 @@ mod tests {
     use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{functions::ScalarFunction, lit, resolved_col, unresolved_col, ExprRef};
-    use daft_functions::uri::download::UrlDownload;
+    use daft_functions_uri::download::UrlDownload;
     use rstest::rstest;
 
     use crate::{

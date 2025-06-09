@@ -18,7 +18,7 @@ def test_expression():
         name: str,
         namespace: str | None = None,
         sql_name: str | None = None,
-        args: list[any] = [],
+        args: list[Any] = [],
         kwargs: dict | None = None,
     ):
         fn_name = name

@@ -22,9 +22,13 @@ daft-dashboard = {path = "src/daft-dashboard", default-features = false}
 daft-distributed = {path = "src/daft-distributed", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions"}
+daft-functions-binary = {path = "src/daft-functions-binary", default-features = false}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
 daft-functions-list = {path = "src/daft-functions-list", default-features = false}
+daft-functions-serde = {path = "src/daft-functions-serde", default-features = false}
 daft-functions-temporal = {path = "src/daft-functions-temporal", default-features = false}
+daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
+daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
@@ -74,6 +78,7 @@ python = [
   "daft-dashboard/python",
   "daft-distributed/python",
   "daft-dsl/python",
+  "daft-functions-binary/python",
   "daft-functions-json/python",
   "daft-functions-list/python",
   "daft-functions-utf8/python",
@@ -169,9 +174,13 @@ members = [
   "src/daft-dashboard",
   "src/daft-dsl",
   "src/daft-functions",
+  "src/daft-functions-binary",
   "src/daft-functions-json",
   "src/daft-functions-list",
+  "src/daft-functions-uri",
+  "src/daft-functions-tokenize",
   "src/daft-functions-utf8",
+  "src/daft-functions-temporal",
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
@@ -195,8 +204,7 @@ members = [
   "src/hyperloglog",
   "src/parquet2",
   "src/generated/spark-connect",
-  "src/daft-cli",
-  "src/daft-functions-temporal"
+  "src/daft-cli"
 ]
 
 [workspace.dependencies]
@@ -223,8 +231,12 @@ daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-functions = {path = "src/daft-functions"}
+daft-functions-binary = {path = "src/daft-functions-binary"}
 daft-functions-json = {path = "src/daft-functions-json"}
 daft-functions-list = {path = "src/daft-functions-list"}
+daft-functions-temporal = {path = "src/daft-functions-temporal"}
+daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
+daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
@@ -242,10 +254,9 @@ futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
 itertools = "0.11"
-jaq-core = "1.2.0"
-jaq-interpret = "1.2.0"
-jaq-parse = "1.0.0"
-jaq-std = "1.2.0"
+jaq-core = "2.2.0"
+jaq-json = {version = "1.1.2", features = ["serde_json"]}
+jaq-std = "2.1.1"
 mur3 = "0.1.0"
 num-derive = "0.3.3"
 num-format = "0.4.4"
@@ -263,6 +274,7 @@ regex = "1.10.4"
 rstest = "0.18.2"
 serde_json = "1.0.133"
 sha1 = "0.11.0-pre.4"
+simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}

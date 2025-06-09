@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from typing import Generator, Iterator, TypeVar
+import sys
+from collections.abc import Generator, Iterator
+from typing import TypeVar
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 import pyarrow as pa
 import pytest
@@ -21,7 +28,7 @@ from pyiceberg.table import Table
 
 T = TypeVar("T")
 
-YieldFixture = Generator[T, None, None]
+YieldFixture: TypeAlias = Generator[T, None, None]
 
 local_tables_names = [
     "test_all_types",
@@ -67,9 +74,9 @@ def local_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
         _load_table(cat, name)
 
     catalog_name = "_local_iceberg_catalog"
-    daft.catalog.register_python_catalog(cat, name=catalog_name)
+    daft.attach_catalog(cat, alias=catalog_name)
     yield catalog_name, cat
-    daft.catalog.unregister_catalog(catalog_name=catalog_name)
+    daft.detach_catalog(alias=catalog_name)
 
 
 @pytest.fixture(scope="session")
@@ -83,9 +90,9 @@ def azure_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
     )
 
     catalog_name = "_azure_iceberg_catalog"
-    daft.catalog.register_python_catalog(cat, name=catalog_name)
+    daft.attach_catalog(cat, alias=catalog_name)
     yield catalog_name, cat
-    daft.catalog.unregister_catalog(catalog_name=catalog_name)
+    daft.detach_catalog(alias=catalog_name)
 
 
 @tenacity.retry(
