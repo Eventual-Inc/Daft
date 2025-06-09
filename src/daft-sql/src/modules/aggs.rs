@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
-use daft_dsl::{unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{Expr as SQLExpr, FunctionArg, FunctionArgExpr, Value};
 
 use super::SQLModule;
@@ -78,10 +78,12 @@ impl SQLFunction for AggExpr {
 
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
     Ok(match inputs {
+        // count(null) always returns 0
+        [FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(Value::Null)))] => {
+            lit(0).alias("count")
+        }
         // in SQL, any count(<literal>) is functionally the same as count(*), with the exception of count(null)
-        [FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(v)))]
-            if !matches!(v, Value::Null) =>
-        {
+        [FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(_)))] => {
             match &planner.current_plan {
                 Some(plan) => {
                     let schema = plan.schema();
