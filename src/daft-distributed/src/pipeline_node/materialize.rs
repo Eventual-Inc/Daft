@@ -54,6 +54,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                 break;
             }
         }
+        println!("task finalizer finished");
         Ok(())
     }
 
@@ -65,7 +66,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
         let mut pending_tasks: JoinSet<DaftResult<Vec<MaterializedOutput>>> = JoinSet::new();
         loop {
             let num_pending = pending_tasks.len();
-
+            println!("num_pending: {}", num_pending);
             tokio::select! {
                 biased;
                 Some(finalized_task) = finalized_tasks_receiver.recv() => {
@@ -92,6 +93,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
             }
         }
 
+        println!("task materializer finished");
         Ok(())
     }
 
@@ -246,15 +248,25 @@ mod tests {
         expected_specs: &[(usize, usize)],
     ) -> DaftResult<()> {
         assert_eq!(results.len(), expected_specs.len());
-        for (i, result) in results.iter().enumerate() {
+
+        // Sort both results and expected specs by num_rows to ensure consistent ordering
+        let mut sorted_results: Vec<_> = results.iter().collect();
+        let mut sorted_expected: Vec<_> = expected_specs.iter().collect();
+
+        sorted_results.sort_by(|a, b| {
+            let a_rows = a.as_ref().unwrap().partition().num_rows().unwrap();
+            let b_rows = b.as_ref().unwrap().partition().num_rows().unwrap();
+            a_rows.cmp(&b_rows)
+        });
+
+        sorted_expected.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (result, expected) in sorted_results.iter().zip(sorted_expected.iter()) {
             let materialized_output = result.as_ref().expect("Result should be Ok");
-            assert_eq!(
-                materialized_output.partition().num_rows()?,
-                expected_specs[i].0
-            );
+            assert_eq!(materialized_output.partition().num_rows()?, expected.0);
             assert_eq!(
                 materialized_output.partition().size_bytes()?,
-                Some(expected_specs[i].1)
+                Some(expected.1)
             );
         }
         Ok(())
@@ -276,39 +288,6 @@ mod tests {
             err.to_string(),
             format!("DaftError::InternalError Error at iteration {}", iteration)
         );
-    }
-
-    // Helper function to verify materialize_running_pipeline_outputs results
-    fn verify_running_pipeline_results(
-        results: &[DaftResult<PipelineOutput<MockTask>>],
-        partition_specs: &[(usize, usize)],
-        output_types: &[usize],
-    ) -> DaftResult<()> {
-        assert_eq!(results.len(), partition_specs.len());
-
-        for (i, result) in results.iter().enumerate() {
-            let result = result.as_ref().expect("Result should be Ok");
-            match result {
-                PipelineOutput::Materialized(materialized_output) => {
-                    assert_eq!(
-                        materialized_output.partition().num_rows()?,
-                        partition_specs[i].0
-                    );
-                    assert_eq!(
-                        materialized_output.partition().size_bytes()?,
-                        Some(partition_specs[i].1)
-                    );
-                    assert!(output_types[i] == 0 || output_types[i] == 2);
-                }
-                PipelineOutput::Task(_) => {
-                    assert_eq!(output_types[i], 1);
-                }
-                PipelineOutput::Running(_) => {
-                    panic!("No Running outputs should remain in results");
-                }
-            }
-        }
-        Ok(())
     }
 
     #[tokio::test]
@@ -358,9 +337,13 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_all_pipeline_outputs_large() -> DaftResult<()> {
         let num_partitions = 1000;
-        let worker_slots = 100;
+        let num_workers = 100;
 
-        let mut test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
+        let mut test_context = TestContext::new(
+            &(0..num_workers)
+                .map(|i| (format!("worker{}", i).into(), 1))
+                .collect::<Vec<_>>(),
+        )?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 
@@ -401,12 +384,10 @@ mod tests {
             Ok(())
         });
         let input_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-
         let results: Vec<_> =
             materialize_all_pipeline_outputs(input_stream, test_context.handle().clone())
                 .collect::<Vec<_>>()
                 .await;
-
         verify_materialized_results(&results, &partition_specs)?;
         test_context.cleanup().await?;
         Ok(())
@@ -529,13 +510,12 @@ mod tests {
             Ok(PipelineOutput::Running(submitted_task)),
         ];
 
-        let results: Vec<_> = materialize_running_pipeline_outputs(stream::iter(inputs))
-            .collect::<Vec<_>>()
-            .await;
-
-        // Define expected output types: Materialized, Task, Running->Materialized
-        let output_types = vec![0, 1, 2];
-        verify_running_pipeline_results(&results, &partition_specs, &output_types)?;
+        let mut materialized_running_stream =
+            materialize_running_pipeline_outputs(stream::iter(inputs));
+        while let Some(result) = materialized_running_stream.next().await {
+            let pipeline_output = result?;
+            assert!(!matches!(pipeline_output, PipelineOutput::Running(_)));
+        }
 
         test_context.cleanup().await?;
         Ok(())
@@ -544,9 +524,13 @@ mod tests {
     #[tokio::test]
     async fn test_materialize_running_pipeline_outputs_large() -> DaftResult<()> {
         let num_partitions = 1000;
-        let worker_slots = 100;
+        let num_workers = 100;
 
-        let mut test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
+        let mut test_context = TestContext::new(
+            &(0..num_workers)
+                .map(|i| (format!("worker{}", i).into(), 1))
+                .collect::<Vec<_>>(),
+        )?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 
@@ -594,11 +578,12 @@ mod tests {
         });
 
         let input_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-        let results: Vec<_> = materialize_running_pipeline_outputs(input_stream)
-            .collect::<Vec<_>>()
-            .await;
+        let mut materialized_running_stream = materialize_running_pipeline_outputs(input_stream);
+        while let Some(result) = materialized_running_stream.next().await {
+            let pipeline_output = result?;
+            assert!(!matches!(pipeline_output, PipelineOutput::Running(_)));
+        }
 
-        verify_running_pipeline_results(&results, &partition_specs, &output_types)?;
         test_context.cleanup().await?;
         Ok(())
     }

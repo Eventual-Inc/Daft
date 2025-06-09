@@ -484,15 +484,12 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_actor_multiple_concurrent_tasks_with_cancelled_tasks() -> DaftResult<()>
     {
-        let worker_1: WorkerId = Arc::from("worker1");
-        let worker_2: WorkerId = Arc::from("worker2");
-        let worker_3: WorkerId = Arc::from("worker3");
-
-        let mut test_context = setup_scheduler_actor_test_context(&[
-            (worker_1.clone(), 10),
-            (worker_2.clone(), 10),
-            (worker_3.clone(), 10),
-        ]);
+        let num_workers = 30;
+        let mut test_context = setup_scheduler_actor_test_context(
+            &(0..num_workers)
+                .map(|i| (format!("worker{}", i).into(), 1))
+                .collect::<Vec<_>>(),
+        );
         let num_tasks = 3000;
         let num_concurrent_submitters = 30;
         let num_tasks_per_submitter = num_tasks / num_concurrent_submitters;
