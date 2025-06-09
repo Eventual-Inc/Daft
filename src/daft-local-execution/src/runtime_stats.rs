@@ -16,22 +16,22 @@ use tracing::{instrument::Instrumented, Instrument};
 
 use crate::{
     channel::{Receiver, Sender},
+    pipeline::NodeInfo,
     progress_bar::OperatorProgressBar,
 };
 
-#[derive(Default)]
 pub struct RuntimeStatsContext {
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
-    name: String,
+    node_info: NodeInfo,
     subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
 }
 
 pub trait RuntimeStatsSubscriber: Send + Sync {
-    fn on_rows_received(&self, context: &str, count: u64);
-    fn on_rows_emitted(&self, context: &str, count: u64);
-    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64);
+    fn on_rows_received(&self, context: &NodeInfo, count: u64);
+    fn on_rows_emitted(&self, context: &NodeInfo, count: u64);
+    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64);
 }
 
 pub struct OpenTelemetrySubscriber {
@@ -54,18 +54,34 @@ impl OpenTelemetrySubscriber {
 }
 
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
-    fn on_rows_received(&self, context: &str, count: u64) {
-        self.rows_received
-            .add(count, &[KeyValue::new("context", context.to_string())]);
+    fn on_rows_received(&self, context: &NodeInfo, count: u64) {
+        self.rows_received.add(
+            count,
+            &[
+                KeyValue::new("name", context.name.to_string()),
+                KeyValue::new("id", context.id.to_string()),
+                KeyValue::new("plan_id", context.plan_id.to_string()),
+            ],
+        );
     }
-    fn on_rows_emitted(&self, context: &str, count: u64) {
-        self.rows_emitted
-            .add(count, &[KeyValue::new("context", context.to_string())]);
+    fn on_rows_emitted(&self, context: &NodeInfo, count: u64) {
+        self.rows_emitted.add(
+            count,
+            &[
+                KeyValue::new("name", context.name.to_string()),
+                KeyValue::new("id", context.id.to_string()),
+                KeyValue::new("plan_id", context.plan_id.to_string()),
+            ],
+        );
     }
-    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64) {
+    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64) {
         self.cpu_us.add(
             microseconds,
-            &[KeyValue::new("context", context.to_string())],
+            &[
+                KeyValue::new("name", context.name.to_string()),
+                KeyValue::new("id", context.id.to_string()),
+                KeyValue::new("plan_id", context.plan_id.to_string()),
+            ],
         );
     }
 }
@@ -112,7 +128,7 @@ impl RuntimeStats {
 }
 
 impl RuntimeStatsContext {
-    pub(crate) fn new(name: &str) -> Arc<Self> {
+    pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         if should_enable_opentelemetry() {
             subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
@@ -122,7 +138,7 @@ impl RuntimeStatsContext {
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
-            name: name.to_string(),
+            node_info,
             subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
         })
     }
@@ -132,7 +148,7 @@ impl RuntimeStatsContext {
             std::sync::atomic::Ordering::Relaxed,
         );
         for subscriber in self.subscribers.read().iter() {
-            subscriber.on_cpu_time_elapsed(&self.name, elapsed.as_micros() as u64);
+            subscriber.on_cpu_time_elapsed(&self.node_info, elapsed.as_micros() as u64);
         }
     }
 
@@ -140,7 +156,7 @@ impl RuntimeStatsContext {
         self.rows_received
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
         for subscriber in self.subscribers.read().iter() {
-            subscriber.on_rows_received(&self.name, rows);
+            subscriber.on_rows_received(&self.node_info, rows);
         }
     }
 
@@ -148,7 +164,7 @@ impl RuntimeStatsContext {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
         for subscriber in self.subscribers.read().iter() {
-            subscriber.on_rows_emitted(&self.name, rows);
+            subscriber.on_rows_emitted(&self.node_info, rows);
         }
     }
 

@@ -17,9 +17,9 @@ fn cors() -> String {
         ///
         /// # Note
         /// We only do this for debug builds.
-        const BUN_DEV_PORT: u16 = 3000;
+        const BUN_DEV_PORT: u16 = 3238;
 
-        format!("http://localhost:{}", BUN_DEV_PORT)
+        format!("http://127.0.0.1:{}", BUN_DEV_PORT)
     }
 
     #[cfg(not(debug_assertions))]

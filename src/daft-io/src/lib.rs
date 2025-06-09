@@ -13,6 +13,8 @@ mod retry;
 mod s3_like;
 mod stats;
 mod stream_utils;
+#[cfg(feature = "python")]
+mod unity;
 
 use std::sync::LazyLock;
 
@@ -21,6 +23,8 @@ use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
+#[cfg(feature = "python")]
+use unity::UnitySource;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -230,6 +234,16 @@ impl IOClient {
             SourceType::HF => {
                 HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
             }
+            SourceType::Unity => {
+                #[cfg(feature = "python")]
+                {
+                    UnitySource::get_client(&self.config.unity).await? as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    unimplemented!("Unity Catalog source currently requires Python");
+                }
+            }
         };
 
         if w_handle.get(&source_type).is_none() {
@@ -372,6 +386,7 @@ pub enum SourceType {
     AzureBlob,
     GCS,
     HF,
+    Unity,
 }
 
 impl std::fmt::Display for SourceType {
@@ -383,6 +398,7 @@ impl std::fmt::Display for SourceType {
             Self::AzureBlob => write!(f, "AzureBlob"),
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
+            Self::Unity => write!(f, "UnityCatalog"),
         }
     }
 }
@@ -422,6 +438,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
+        "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
