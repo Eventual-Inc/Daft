@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
 use daft_dsl::{unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
-use sqlparser::ast::{FunctionArg, FunctionArgExpr};
+use sqlparser::ast::{Expr as SQLExpr, FunctionArg, FunctionArgExpr, Value};
 
 use super::SQLModule;
 use crate::{
@@ -78,6 +78,19 @@ impl SQLFunction for AggExpr {
 
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
     Ok(match inputs {
+        [FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(Value::Number(s, _))))]
+            if s.as_str() == "1" =>
+        {
+            match &planner.current_plan {
+                Some(plan) => {
+                    let schema = plan.schema();
+                    unresolved_col(schema[0].name.clone())
+                        .count(daft_core::count_mode::CountMode::All)
+                        .alias("count")
+                }
+                None => unsupported_sql_err!("Wildcard is not supported in this context"),
+            }
+        }
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
             Some(plan) => {
                 let schema = plan.schema();
