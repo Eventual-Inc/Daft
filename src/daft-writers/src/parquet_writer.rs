@@ -491,14 +491,14 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         // Spawn column writers.
         let column_writer_handles = self.spawn_column_writer_workers(&record_batches)?;
 
-        let row_writer_thread_handle = {
+        let row_group_writer_thread_handle = {
             // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
             let (tx_chunk, mut rx_chunk) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
 
             let file_writer_handle = self.file_writer.clone();
 
             // Spawn a thread to handle the row group writing since it involves blocking writes.
-            let row_writer_thread_handle = spawn_blocking(move || -> DaftResult<()> {
+            let row_group_writer_thread_handle = spawn_blocking(move || -> DaftResult<()> {
                 let mut guard = file_writer_handle.lock();
                 let mut row_group_writer = guard
                     .as_mut()
@@ -527,11 +527,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
                     .map_err(|e| DaftError::ParquetError(e.to_string()))?;
             }
 
-            row_writer_thread_handle
+            row_group_writer_thread_handle
             // tx_chunk is dropped here, which signals the row writer thread to finish.
         };
 
-        row_writer_thread_handle
+        row_group_writer_thread_handle
             .await
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
