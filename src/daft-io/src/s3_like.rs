@@ -519,6 +519,7 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
     };
 
     let http_client = {
+        // TODO: change this to use rustls + aws-lc
         let tls_connector = hyper_tls::native_tls::TlsConnector::builder()
             .danger_accept_invalid_certs(!config.verify_ssl)
             .danger_accept_invalid_hostnames((!config.verify_ssl) || (!config.check_hostname_ssl))
