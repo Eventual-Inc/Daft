@@ -39,7 +39,7 @@ type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 trait StorageBackend: Send + Sync + 'static {
     type Writer: Write + Send;
 
-    /// Create the output target (file handle, S3 buffer, etc).
+    /// Create the output buffer (buffered file writer, S3 buffer, etc).
     async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer>;
 
     /// Finalize the write operation (close file, await upload to S3, etc).
@@ -136,7 +136,7 @@ impl StorageBackend for S3StorageBackend {
             .s3_client
             .clone()
             .expect("S3 client must be initialized");
-        let scheme = self.scheme.clone();
+        let uri = format!("{}://{}", self.scheme, filename);
         let background_thread_handle = std::thread::spawn(move || -> DaftResult<()> {
             let background_rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -146,7 +146,7 @@ impl StorageBackend for S3StorageBackend {
             background_rt.block_on(async move {
                 // Set up multipart writer.
                 let mut s3_multipart_writer = S3MultipartWriter::create(
-                    format!("{}://{}", scheme, filename),
+                    uri,
                     part_size,
                     NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
                         .expect("S3 multipart concurrent uploads per object must be non-zero"),
@@ -381,14 +381,14 @@ impl<B: StorageBackend> ParquetWriter<B> {
     }
 
     async fn create_writer(&mut self) -> DaftResult<()> {
-        let output_target = self.storage_backend.create_writer(&self.filename).await?;
-        let writer = SerializedFileWriter::new(
-            output_target,
+        let backend_writer = self.storage_backend.create_writer(&self.filename).await?;
+        let file_writer = SerializedFileWriter::new(
+            backend_writer,
             self.parquet_schema.root_schema_ptr(),
             self.writer_properties.clone(),
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        self.file_writer = Arc::new(Mutex::new(Some(writer)));
+        self.file_writer = Arc::new(Mutex::new(Some(file_writer)));
         Ok(())
     }
 
