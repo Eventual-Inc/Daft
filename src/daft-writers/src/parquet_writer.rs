@@ -131,34 +131,33 @@ impl StorageBackend for S3StorageBackend {
             self.s3_client = Some(S3LikeSource::get_client(&self.io_config.s3).await?);
         }
 
-        // Set up multipart writer.
-        let mut s3_multipart_writer = Arc::new(
-            S3MultipartWriter::create(
-                format!("{}://{}", self.scheme, filename),
-                part_size,
-                NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
-                    .expect("S3 multipart concurrent uploads per object must be non-zero"),
-                self.s3_client
-                    .clone()
-                    .expect("S3 client must be initialized"),
-            )
-            .await
-            .expect("Failed to create S3 multipart writer"),
-        );
-
         // Spawn background upload thread.
+        let s3_client = self
+            .s3_client
+            .clone()
+            .expect("S3 client must be initialized");
+        let scheme = self.scheme.clone();
         let background_thread_handle = std::thread::spawn(move || -> DaftResult<()> {
             let background_rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .expect("Failed to create background uploader tokio runtime");
-            let writer = Arc::get_mut(&mut s3_multipart_writer).unwrap();
 
             background_rt.block_on(async move {
+                // Set up multipart writer.
+                let mut s3_multipart_writer = S3MultipartWriter::create(
+                    format!("{}://{}", scheme, filename),
+                    part_size,
+                    NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
+                        .expect("S3 multipart concurrent uploads per object must be non-zero"),
+                    s3_client,
+                )
+                .await
+                .expect("Failed to create S3 multipart writer");
                 while let Some(part) = rx.recv().await {
-                    writer.write_part(part).await?;
+                    s3_multipart_writer.write_part(part).await?;
                 }
-                writer.shutdown().await?;
+                s3_multipart_writer.shutdown().await?;
                 Ok(())
             })
         });
