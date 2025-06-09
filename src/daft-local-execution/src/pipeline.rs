@@ -508,7 +508,7 @@ pub fn physical_plan_to_pipeline(
             stats_state,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let drop_duplicates_op = DropDuplicatesSink::new(
                 columns
                     .iter()
@@ -523,6 +523,7 @@ pub fn physical_plan_to_pipeline(
                 Arc::new(drop_duplicates_op),
                 child_node,
                 stats_state.clone(),
+                ctx,
             )
             .boxed()
         }
