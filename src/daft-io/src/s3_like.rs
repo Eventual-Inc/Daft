@@ -1737,19 +1737,10 @@ impl Write for S3PartBuffer {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::Write,
-        num::NonZeroUsize,
-        sync::{Arc, Mutex},
-        time::Instant,
-    };
 
-    use common_io_config::{ObfuscatedString, S3Config};
-    use tokio::task::spawn_blocking;
+    use common_io_config::S3Config;
 
-    use crate::{
-        object_io::ObjectSource, s3_like::S3MultipartWriter, Result, S3LikeSource, S3PartBuffer,
-    };
+    use crate::{object_io::ObjectSource, Result, S3LikeSource};
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {
