@@ -1472,15 +1472,15 @@ class DataFrame:
             >>> # Pass a subset of columns to perform distinct on
             >>> # Note that output for z is non-deterministic. Both 8 and 9 are possible.
             >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 9]})
-            >>> df.distinct("x", daft.col("y") + daft.lit(1)).sort("x").show()
+            >>> df.distinct("x", daft.col("y")).sort("x").show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
             │ Int64 ┆ Int64 ┆ Int64 │
             ╞═══════╪═══════╪═══════╡
-            │ 1     ┆ 5     ┆ 7     │
+            │ 1     ┆ 4     ┆ 7     │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2     ┆ 6     ┆ 8     │
+            │ 2     ┆ 5     ┆ 8     │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
