@@ -11,7 +11,9 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::prelude::*;
-use daft_io::{parse_url, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, SourceType};
+use daft_io::{
+    get_io_client, parse_url, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, SourceType,
+};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parking_lot::Mutex;
@@ -126,9 +128,18 @@ impl StorageBackend for S3StorageBackend {
         let s3part_buffer = Arc::new(Mutex::new(S3PartBuffer::new(part_size, tx)));
         self.s3part_buffer = Some(s3part_buffer.clone());
 
-        // Initialize S3 client if needed.
         if self.s3_client.is_none() {
-            self.s3_client = Some(S3LikeSource::get_client(&self.io_config.s3).await?);
+            // Initialize S3 client if needed.
+            let io_config = Arc::new(self.io_config.clone());
+
+            let io_client = get_io_client(true, io_config)?;
+            let s3_client = io_client
+                .get_source(&format!("s3://{}", filename))
+                .await?
+                .as_any_arc()
+                .downcast()
+                .unwrap();
+            self.s3_client = Some(s3_client);
         }
 
         // Spawn background upload thread.
@@ -480,44 +491,45 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         // Spawn column writers.
         let column_writer_handles = self.spawn_column_writer_workers(&record_batches)?;
 
-        // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
-        let (tx_chunk, mut rx_chunk) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
+        let row_writer_thread_handle = {
+            // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
+            let (tx_chunk, mut rx_chunk) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
 
-        let file_writer_handle = self.file_writer.clone();
+            let file_writer_handle = self.file_writer.clone();
 
-        // Spawn a thread to handle the row group writing since it involves blocking writes.
-        let row_writer_thread_handle = spawn_blocking(move || -> DaftResult<()> {
-            let mut guard = file_writer_handle.lock();
-            let mut row_group_writer = guard
-                .as_mut()
-                .expect("File writer should be created by now")
-                .next_row_group()
-                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+            // Spawn a thread to handle the row group writing since it involves blocking writes.
+            let row_writer_thread_handle = spawn_blocking(move || -> DaftResult<()> {
+                let mut guard = file_writer_handle.lock();
+                let mut row_group_writer = guard
+                    .as_mut()
+                    .expect("File writer should be created by now")
+                    .next_row_group()
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-            while let Some(chunk) = rx_chunk.blocking_recv() {
-                chunk
-                    .append_to_row_group(&mut row_group_writer)
+                while let Some(chunk) = rx_chunk.blocking_recv() {
+                    chunk
+                        .append_to_row_group(&mut row_group_writer)
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+                }
+
+                row_group_writer
+                    .close()
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                Ok(())
+            });
+
+            for handle in column_writer_handles {
+                let chunk = handle.await??;
+                tx_chunk
+                    .send(chunk)
+                    .await
                     .map_err(|e| DaftError::ParquetError(e.to_string()))?;
             }
 
-            row_group_writer
-                .close()
-                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-
-            Ok(())
-        });
-
-        for handle in column_writer_handles {
-            let chunk = handle.await??;
-            tx_chunk
-                .send(chunk)
-                .await
-                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        }
-
-        // Important to drop the sender to signal completion to the row writer thread, else
-        // awaiting for thread to complete will hang.
-        drop(tx_chunk);
+            row_writer_thread_handle
+            // tx_chunk is dropped here, which signals the row writer thread to finish.
+        };
 
         row_writer_thread_handle
             .await

@@ -196,7 +196,7 @@ impl IOClient {
         })
     }
 
-    async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
         let (source_type, path) = parse_url(input)?;
 
         {

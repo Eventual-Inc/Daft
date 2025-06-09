@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     borrow::Cow,
     collections::HashMap,
     io::Write,
@@ -1432,6 +1433,10 @@ impl ObjectSource for S3LikeSource {
 
             Ok(lsr)
         }
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 

@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     num::ParseIntError,
     ops::Range,
     string::FromUtf8Error,
@@ -378,6 +379,10 @@ impl ObjectSource for HttpSource {
                 continuation_token: None,
             }),
         }
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 
