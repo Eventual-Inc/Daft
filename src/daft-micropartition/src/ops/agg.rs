@@ -32,4 +32,29 @@ impl MicroPartition {
             _ => unreachable!(),
         }
     }
+
+    pub fn dedup(&self, columns: &[BoundExpr]) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::dedup");
+        let tables = self.concat_or_get(io_stats)?;
+
+        match tables.as_slice() {
+            [] => {
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
+                Ok(Self::new_loaded(
+                    empty_table.schema.clone(),
+                    vec![empty_table].into(),
+                    None,
+                ))
+            }
+            [t] => {
+                let deduped = t.dedup(columns)?;
+                Ok(Self::new_loaded(
+                    deduped.schema.clone(),
+                    vec![deduped].into(),
+                    None,
+                ))
+            }
+            _ => unreachable!(),
+        }
+    }
 }

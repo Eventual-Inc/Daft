@@ -1,5 +1,8 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::ops::IntoGroups, prelude::*};
+use daft_core::{
+    array::ops::{IntoGroups, IntoUniqueIdxs},
+    prelude::*,
+};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     functions::FunctionExpr,
@@ -188,5 +191,29 @@ impl RecordBatch {
         let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
         let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()));
         Self::new_with_broadcast(final_schema, final_columns, final_len)
+    }
+
+    pub fn dedup(&self, columns: &[BoundExpr]) -> DaftResult<Self> {
+        match columns.len() {
+            // If no columns are provided, return an empty table
+            0 => {
+                let empty_table = Self::empty(Some(self.schema.clone()))?;
+                Ok(empty_table)
+            }
+            // If we are deduping based on all columns
+            x if x == self.schema.len() => {
+                let unique_indices = self.make_unique_idxs()?;
+                let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
+                self.take(&indices_as_series)
+            }
+            // If we are deduping based on some columns
+            _ => {
+                let dedup_table = self.eval_expression_list(columns)?;
+
+                let unique_indices = dedup_table.make_unique_idxs()?;
+                let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
+                self.take(&indices_as_series)
+            }
+        }
     }
 }

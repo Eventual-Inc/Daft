@@ -12,9 +12,9 @@ use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::join::get_common_join_cols;
 use daft_local_plan::{
-    ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
-    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    ActorPoolProject, Concat, CrossJoin, DropDuplicates, EmptyScan, Explode, Filter, HashAggregate,
+    HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
+    Pivot, Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
@@ -41,6 +41,7 @@ use crate::{
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
         cross_join_collect::CrossJoinCollectSink,
+        drop_duplicates::DropDuplicatesSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
@@ -365,6 +366,30 @@ pub fn physical_plan_to_pipeline(
                 plan_name: physical_plan.name(),
             })?;
             BlockingSinkNode::new(Arc::new(agg_sink), child_node, stats_state.clone()).boxed()
+        }
+        LocalPhysicalPlan::DropDuplicates(DropDuplicates {
+            input,
+            columns,
+            stats_state,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let drop_duplicates_op = DropDuplicatesSink::new(
+                columns
+                    .iter()
+                    .map(|c| c.clone().into())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+            BlockingSinkNode::new(
+                Arc::new(drop_duplicates_op),
+                child_node,
+                stats_state.clone(),
+            )
+            .boxed()
         }
         LocalPhysicalPlan::Unpivot(Unpivot {
             input,

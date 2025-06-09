@@ -13,7 +13,7 @@ use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{ActorPoolProject, Aggregate, Join, Pivot, Project, Source},
+    ops::{ActorPoolProject, Aggregate, Distinct, Join, Pivot, Project, Source},
     source_info::SourceInfo,
     LogicalPlan, LogicalPlanRef,
 };
@@ -142,7 +142,7 @@ impl PushDownProjection {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
                 let [required_columns] = &plan.required_columns()[..] else {
-                    panic!()
+                    unreachable!()
                 };
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
@@ -531,10 +531,40 @@ impl PushDownProjection {
                     Ok(new_plan)
                 }
             }
-            LogicalPlan::Distinct(_) => {
-                // Cannot push down past a Distinct,
-                // since Distinct implicitly requires all parent columns.
-                Ok(Transformed::no(plan))
+            LogicalPlan::Distinct(distinct) => {
+                let Some(columns) = &distinct.columns else {
+                    // Cannot push down past a Distinct if the distinct is on all columns
+                    return Ok(Transformed::no(plan));
+                };
+
+                let required_cols = &plan.required_columns()[0];
+                if columns.iter().any(|e| required_cols.contains(e.name())) {
+                    // Cannot push down past a Distinct if it uses one of the distinct columns
+                    return Ok(Transformed::no(plan));
+                }
+
+                // Add a new projection underneath the distinct to pass through columns
+                // used by the distinct or current projection node
+                let new_extra_projection = LogicalPlan::Project(Project::try_new(
+                    distinct.input.clone(),
+                    columns
+                        .iter()
+                        .cloned()
+                        .chain(required_cols.iter().map(|e| resolved_col(e.as_str())))
+                        .collect::<Vec<_>>(),
+                )?)
+                .arced();
+                let new_distinct = LogicalPlan::Distinct(Distinct::new(
+                    new_extra_projection,
+                    Some(
+                        columns
+                            .iter()
+                            .map(|e| resolved_col(e.name()))
+                            .collect::<Vec<_>>(),
+                    ),
+                ));
+                let new_plan = plan.with_new_children(&[new_distinct.into()]).arced();
+                Ok(Transformed::yes(new_plan.into()))
             }
             LogicalPlan::Intersect(_) => {
                 // Cannot push down past an Intersect,

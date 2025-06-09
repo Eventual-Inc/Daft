@@ -456,8 +456,13 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(ops::summarize(self)?))
     }
 
-    pub fn distinct(&self) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
+    pub fn distinct(&self, columns: Option<Vec<ExprRef>>) -> DaftResult<Self> {
+        let distinct_resolver = ExprResolver::default();
+        let columns = columns
+            .map(|columns| distinct_resolver.resolve(columns, self.plan.clone()))
+            .transpose()?;
+
+        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone(), columns).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1039,8 +1044,9 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.summarize()?.into())
     }
 
-    pub fn distinct(&self) -> PyResult<Self> {
-        Ok(self.builder.distinct()?.into())
+    #[pyo3(signature = (columns=None))]
+    pub fn distinct(&self, columns: Option<Vec<PyExpr>>) -> PyResult<Self> {
+        Ok(self.builder.distinct(columns.map(pyexprs_to_exprs))?.into())
     }
 
     #[pyo3(signature = (fraction, with_replacement, seed=None))]

@@ -1441,8 +1441,13 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def distinct(self) -> "DataFrame":
+    def distinct(self, *on: ColumnInputType) -> "DataFrame":
         """Computes distinct rows, dropping duplicates.
+
+        Optionally, specify a subset of columns to perform distinct on.
+
+        Args:
+            *on (Union[str, Expression]): columns to perform distinct on. Defaults to all columns.
 
         Returns:
             DataFrame: DataFrame that has only distinct rows.
@@ -1464,16 +1469,36 @@ class DataFrame:
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
+            >>> # Pass a subset of columns to perform distinct on
+            >>> # Note that output for z is non-deterministic. Both 8 and 9 are possible.
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 9]})
+            >>> df.distinct("x", daft.col("y") + daft.lit(1)).sort("x").show()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 1     ┆ 5     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 6     ┆ 8     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
         """
-        ExpressionsProjection.from_schema(self._builder.schema())
-        builder = self._builder.distinct()
+        builder = self._builder.distinct(self.__column_input_to_expression(on))
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def unique(self) -> "DataFrame":
+    def unique(self, *by: ColumnInputType) -> "DataFrame":
         """Computes distinct rows, dropping duplicates.
 
         Alias for [DataFrame.distinct][daft.DataFrame.distinct].
+
+        Args:
+            *by (Union[str, Expression]): columns to perform distinct on. Defaults to all columns.
+
+        Returns:
+            DataFrame: DataFrame that has only distinct rows.
 
         Examples:
             >>> import daft
@@ -1492,11 +1517,40 @@ class DataFrame:
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
+        """
+        return self.distinct(*by)
+
+    @DataframePublicAPI
+    def drop_duplicates(self, *subset: ColumnInputType) -> "DataFrame":
+        """Computes distinct rows, dropping duplicates.
+
+        Alias for [DataFrame.distinct][daft.DataFrame.distinct].
+
+        Args:
+            *subset (Union[str, Expression]): columns to perform distinct on. Defaults to all columns.
 
         Returns:
             DataFrame: DataFrame that has only distinct rows.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
+            >>> distinct_df = df.drop_duplicates()
+            >>> distinct_df = distinct_df.sort("x")
+            >>> distinct_df.show()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
         """
-        return self.distinct()
+        return self.distinct(*subset)
 
     @DataframePublicAPI
     def sample(
