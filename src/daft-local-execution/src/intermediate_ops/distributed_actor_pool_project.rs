@@ -7,10 +7,6 @@ use std::{
 };
 
 use common_error::DaftResult;
-use daft_dsl::{
-    expr::bound_expr::BoundExpr,
-    functions::python::{get_resource_request, try_get_batch_size_from_udf},
-};
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
@@ -58,7 +54,7 @@ impl ActorHandle {
 #[cfg(feature = "python")]
 impl From<daft_dsl::pyobj_serde::PyObjectWrapper> for ActorHandle {
     fn from(value: daft_dsl::pyobj_serde::PyObjectWrapper) -> Self {
-        ActorHandle { inner: value.0 }
+        Self { inner: value.0 }
     }
 }
 
@@ -82,18 +78,9 @@ pub struct DistributedActorPoolProjectOperator {
 impl DistributedActorPoolProjectOperator {
     pub fn try_new(
         actor_handles: Vec<impl Into<ActorHandle>>,
-        projection: Vec<BoundExpr>,
+        batch_size: Option<usize>,
+        memory_request: u64,
     ) -> DaftResult<Self> {
-        let projection_unbound = projection
-            .iter()
-            .map(|expr| expr.inner().clone())
-            .collect::<Vec<_>>();
-        let batch_size = try_get_batch_size_from_udf(&projection_unbound)?;
-
-        let memory_request = get_resource_request(&projection)
-            .and_then(|req| req.memory_bytes())
-            .map(|m| m as u64)
-            .unwrap_or(0);
         Ok(Self {
             actor_handles: actor_handles.into_iter().map(|e| e.into()).collect(),
             batch_size,

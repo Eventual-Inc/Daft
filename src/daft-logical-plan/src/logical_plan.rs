@@ -10,8 +10,7 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::join::JoinSide;
 use daft_dsl::{
-    optimization::get_required_columns, Column, Expr, ExprRef, ResolvedColumn, Subquery,
-    SubqueryPlan,
+    optimization::get_required_columns, Column, Expr, ResolvedColumn, Subquery, SubqueryPlan,
 };
 use daft_schema::{field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
@@ -627,17 +626,6 @@ impl LogicalPlan {
             Self::Window(window) => window.with_plan_id(Some(plan_id)),
             Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
         }
-    }
-
-    pub fn get_actor_pool_udfs(self: &Arc<Self>) -> DaftResult<Vec<Vec<ExprRef>>> {
-        let mut actor_pool_udfs = Vec::new();
-        self.apply(|node| {
-            if let Self::ActorPoolProject(ActorPoolProject { projection, .. }) = node.as_ref() {
-                actor_pool_udfs.push(projection.iter().cloned().collect());
-            }
-            Ok(TreeNodeRecursion::Continue)
-        })?;
-        Ok(actor_pool_udfs)
     }
 }
 

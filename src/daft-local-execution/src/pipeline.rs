@@ -283,14 +283,16 @@ pub fn physical_plan_to_pipeline(
             daft_local_plan::DistributedActorPoolProject {
                 input,
                 actor_objects,
-                projection,
+                batch_size,
+                memory_request,
                 stats_state,
                 ..
             },
         ) => {
             let distributed_actor_pool_project_op = DistributedActorPoolProjectOperator::try_new(
                 actor_objects.clone(),
-                projection.clone(),
+                *batch_size,
+                *memory_request,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),

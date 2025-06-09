@@ -12,8 +12,7 @@ mod scheduler_actor;
 
 use common_error::DaftResult;
 pub(crate) use scheduler_actor::{
-    spawn_default_scheduler_actor, spawn_linear_scheduler_actor, SchedulerHandle, SubmittableTask,
-    SubmittedTask,
+    spawn_default_scheduler_actor, SchedulerHandle, SubmittableTask, SubmittedTask,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -169,7 +168,7 @@ impl WorkerSnapshot {
         self.available_num_cpus() >= task.resource_request().num_cpus()
             && self.available_num_gpus() >= task.resource_request().num_gpus()
             // For now, we only schedule one task at a time per worker
-            && self.active_task_details.len() == 0
+            && self.active_task_details.is_empty()
     }
 }
 

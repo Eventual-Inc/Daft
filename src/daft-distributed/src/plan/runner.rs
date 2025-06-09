@@ -9,7 +9,7 @@ use super::{DistributedPhysicalPlan, PlanResult};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        scheduler::{spawn_default_scheduler_actor, spawn_linear_scheduler_actor, SchedulerHandle},
+        scheduler::{spawn_default_scheduler_actor, SchedulerHandle},
         task::SwordfishTask,
         worker::{Worker, WorkerManager},
     },
@@ -35,7 +35,6 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         sender: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
         if stage_plan.num_stages() != 1 {
@@ -68,21 +67,13 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let (result_sender, result_receiver) = create_channel(1);
 
         let joinset = runtime.block_on_current_thread(async move {
-            let worker_manager = self.worker_manager.clone();
             let mut joinset = create_join_set();
             let scheduler_handle =
-                spawn_default_scheduler_actor(worker_manager.clone(), &mut joinset);
+                spawn_default_scheduler_actor(self.worker_manager.clone(), &mut joinset);
 
             joinset.spawn(async move {
-                Self::execute_stages(
-                    stage_plan,
-                    psets,
-                    config,
-                    scheduler_handle,
-                    worker_manager,
-                    result_sender,
-                )
-                .await
+                Self::execute_stages(stage_plan, psets, config, scheduler_handle, result_sender)
+                    .await
             });
             joinset
         });

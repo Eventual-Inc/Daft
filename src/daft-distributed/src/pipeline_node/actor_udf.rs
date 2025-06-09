@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_dsl::{
     expr::bound_expr::BoundExpr,
-    functions::python::{get_concurrency, get_resource_request},
+    functions::python::{get_concurrency, get_resource_request, try_get_batch_size_from_udf},
     pyobj_serde::PyObjectWrapper,
     python::PyExpr,
     ExprRef,
@@ -155,6 +155,8 @@ pub(crate) struct ActorUDF {
     child: Box<dyn DistributedPipelineNode>,
     schema: SchemaRef,
     projection: Vec<BoundExpr>,
+    batch_size: Option<usize>,
+    memory_request: u64,
 }
 
 impl ActorUDF {
@@ -166,20 +168,30 @@ impl ActorUDF {
         schema: SchemaRef,
         child: Box<dyn DistributedPipelineNode>,
     ) -> DaftResult<Self> {
+        let batch_size = try_get_batch_size_from_udf(&projection)?;
+        let memory_request = get_resource_request(&projection)
+            .and_then(|req| req.memory_bytes())
+            .map(|m| m as u64)
+            .unwrap_or(0);
         let projection = BoundExpr::bind_all(&projection, &schema)?;
         Ok(Self {
             node_id,
             config,
+            child,
             schema,
             projection,
-            child,
+            batch_size,
+            memory_request,
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execution_loop_fused(
         node_id: usize,
         config: Arc<DaftExecutionConfig>,
         projection: Vec<BoundExpr>,
+        batch_size: Option<usize>,
+        memory_request: u64,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         schema: SchemaRef,
@@ -205,13 +217,13 @@ impl ActorUDF {
                     let task = make_actor_udf_task_for_materialized_outputs(
                         vec![materialized_output],
                         worker_id,
-                        projection.clone(),
+                        batch_size,
+                        memory_request,
                         actors,
                         node_id,
                         config.clone(),
                         schema.clone(),
                     )?;
-                    println!("task: {:?}", task);
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -223,7 +235,6 @@ impl ActorUDF {
                     }
                 }
                 PipelineOutput::Task(task) => {
-                    println!("task: {:?}", task);
                     // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
                     // I.E. THERE WAS A PREVIOUS ACTOR UDF. IF THERE IS A CASE WHERE THE PREVIOUS ACTOR UDF HAS A SPECIFIC WORKER ID,
                     // AND WE DON'T HAVE ACTOR FOR THIS WORKER ID, IT SHOULD STILL WORK BECAUSE IT'S A RAY ACTOR CALL.
@@ -236,13 +247,13 @@ impl ActorUDF {
                     let modified_task = append_actor_udf_to_task(
                         task,
                         config.clone(),
-                        projection.clone(),
+                        batch_size,
+                        memory_request,
                         actors,
                         schema.clone(),
                         &worker_id,
                     )?;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
-                    println!("submittable_task: {:?}", submittable_task);
                     running_tasks.spawn(notify_token);
                     if result_tx
                         .send(PipelineOutput::Task(submittable_task))
@@ -283,6 +294,8 @@ impl DistributedPipelineNode for ActorUDF {
             self.node_id,
             self.config.clone(),
             self.projection.clone(),
+            self.batch_size,
+            self.memory_request,
             input_node,
             result_tx,
             self.schema.clone(),
@@ -293,10 +306,12 @@ impl DistributedPipelineNode for ActorUDF {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_actor_udf_task_for_materialized_outputs(
     materialized_outputs: Vec<MaterializedOutput>,
     worker_id: WorkerId,
-    projection: Vec<BoundExpr>,
+    batch_size: Option<usize>,
+    memory_request: u64,
     actors: Vec<PyObjectWrapper>,
     node_id: usize,
     config: Arc<DaftExecutionConfig>,
@@ -326,7 +341,8 @@ fn make_actor_udf_task_for_materialized_outputs(
     let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
         in_memory_source,
         actors.into_iter().map(|e| e.into()).collect(),
-        projection,
+        batch_size,
+        memory_request,
         schema,
         StatsState::NotMaterialized,
     );
@@ -347,7 +363,8 @@ fn make_actor_udf_task_for_materialized_outputs(
 fn append_actor_udf_to_task(
     submittable_task: SubmittableTask<SwordfishTask>,
     config: Arc<DaftExecutionConfig>,
-    projection: Vec<BoundExpr>,
+    batch_size: Option<usize>,
+    memory_request: u64,
     actors: Vec<PyObjectWrapper>,
     schema: SchemaRef,
     worker_id: &WorkerId,
@@ -356,7 +373,8 @@ fn append_actor_udf_to_task(
     let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
         task_plan,
         actors,
-        projection,
+        batch_size,
+        memory_request,
         schema,
         StatsState::NotMaterialized,
     );

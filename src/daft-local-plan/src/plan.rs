@@ -240,14 +240,16 @@ impl LocalPhysicalPlan {
     pub fn distributed_actor_pool_project(
         input: LocalPhysicalPlanRef,
         actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
-        projection: Vec<BoundExpr>,
+        batch_size: Option<usize>,
+        memory_request: u64,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::DistributedActorPoolProject(DistributedActorPoolProject {
             input,
             actor_objects,
-            projection,
+            batch_size,
+            memory_request,
             schema,
             stats_state,
         })
@@ -678,11 +680,13 @@ impl LocalPhysicalPlan {
             }
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject {
-                projection, ..
+                memory_request,
+                ..
             }) => {
-                if let Some(resource_request) = get_resource_request(projection) {
-                    base = base.max(&resource_request);
-                }
+                base = base.max(
+                    &ResourceRequest::default_cpu()
+                        .with_memory_bytes(Some(*memory_request as usize))?,
+                );
                 Ok(TreeNodeRecursion::Continue)
             }
             _ => Ok(TreeNodeRecursion::Continue),
@@ -764,7 +768,7 @@ impl LocalPhysicalPlan {
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite {  lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(new_child.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
-                Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, projection, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -855,7 +859,8 @@ pub struct ActorPoolProject {
 pub struct DistributedActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
-    pub projection: Vec<BoundExpr>,
+    pub batch_size: Option<usize>,
+    pub memory_request: u64,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

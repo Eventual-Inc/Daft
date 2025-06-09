@@ -133,6 +133,7 @@ impl SwordfishTask {
     }
 
     pub fn name(&self) -> String {
+        // TODO: Include all operators of the plan in this, not just the root
         self.plan.name().to_string()
     }
 

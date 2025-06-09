@@ -211,9 +211,6 @@ class FlotillaPlanRunner:
 @ray.remote
 class UDFActor:
     def __init__(self, uninitialized_projection: ExpressionsProjection) -> None:
-        import os
-
-        del os.environ["CUDA_VISIBLE_DEVICES"]
         self.projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
     def get_node_id(self) -> str:

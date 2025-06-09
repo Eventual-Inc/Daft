@@ -122,7 +122,7 @@ impl Worker for RaySwordfishWorker {
     }
 
     fn total_num_gpus(&self) -> f64 {
-        self.num_gpus as f64
+        self.num_gpus
     }
 
     fn active_num_cpus(&self) -> f64 {
