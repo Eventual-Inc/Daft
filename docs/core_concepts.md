@@ -628,7 +628,7 @@ For a full list of available expressions, see [Expressions API Docs](api/express
 
 #### Referring to a column in a DataFrame
 
-Most commonly you will be creating expressions by using the [`daft.col()`][daft.expressions.col] function. The following example will create an expressiom referring to a columned named `A` but with every row incremented by 1.
+Most commonly you will be creating expressions by using the [`daft.col()`][daft.expressions.col] function. The following example will create an expression referring to a column named `A` but with every row incremented by 1.
 
 === "🐍 Python"
     ``` python
