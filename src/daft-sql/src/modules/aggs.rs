@@ -78,8 +78,9 @@ impl SQLFunction for AggExpr {
 
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
     Ok(match inputs {
-        [FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(Value::Number(s, _))))]
-            if s.as_str() == "1" =>
+        // in SQL, any count(<literal>) is functionally the same as count(*), with the exception of count(null)
+        [FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(v)))]
+            if !matches!(v, Value::Null) =>
         {
             match &planner.current_plan {
                 Some(plan) => {
