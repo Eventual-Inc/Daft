@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{any::Any, collections::HashMap, ops::Range, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -214,5 +214,9 @@ impl ObjectSource for UnitySource {
         source
             .ls(&source_path, posix, continuation_token, page_size, io_stats)
             .await
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }

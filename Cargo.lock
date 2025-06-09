@@ -2993,7 +2993,7 @@ dependencies = [
  "daft-micropartition",
  "daft-recordbatch",
  "log",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "parquet",
  "pyo3",
  "tokio",
