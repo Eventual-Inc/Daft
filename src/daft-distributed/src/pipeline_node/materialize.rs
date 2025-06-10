@@ -54,7 +54,6 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                 break;
             }
         }
-        println!("task finalizer finished");
         Ok(())
     }
 
@@ -66,7 +65,6 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
         let mut pending_tasks: JoinSet<DaftResult<Vec<MaterializedOutput>>> = JoinSet::new();
         loop {
             let num_pending = pending_tasks.len();
-            println!("num_pending: {}", num_pending);
             tokio::select! {
                 biased;
                 Some(finalized_task) = finalized_tasks_receiver.recv() => {
@@ -93,7 +91,6 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
             }
         }
 
-        println!("task materializer finished");
         Ok(())
     }
 
