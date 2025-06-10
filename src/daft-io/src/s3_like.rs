@@ -48,9 +48,8 @@ use s3::{
 };
 use snafu::{ensure, IntoError, OptionExt, ResultExt, Snafu};
 use tokio::{
-    spawn,
     sync::{mpsc::Sender, OwnedSemaphorePermit, SemaphorePermit},
-    task::JoinHandle,
+    task::JoinSet,
 };
 use url::{ParseError, Position};
 
@@ -1463,7 +1462,7 @@ pub struct S3MultipartWriter {
     upload_id: Cow<'static, str>,
 
     /// Handles for the parts being uploaded.
-    in_progress_uploads: Vec<JoinHandle<super::Result<CompletedPart>>>,
+    in_progress_uploads: JoinSet<super::Result<CompletedPart>>,
 
     /// Stores the next part number for multipart upload. See [`generate_part_number`] for a
     /// convenience method to generate the next part number.
@@ -1545,7 +1544,7 @@ impl S3MultipartWriter {
             upload_id: upload_id.into(),
             s3_client,
             next_part_number: unsafe { NonZeroI32::new_unchecked(1) },
-            in_progress_uploads: vec![],
+            in_progress_uploads: JoinSet::new(),
             in_flight_upload_permits: Arc::new(tokio::sync::Semaphore::new(
                 max_concurrent_uploads.get(),
             )),
@@ -1619,15 +1618,16 @@ impl S3MultipartWriter {
         };
 
         // Spawn the upload task and add it to the in-progress uploads.
-        self.in_progress_uploads.push(spawn(upload_future));
+        self.in_progress_uploads.spawn(upload_future);
         Ok(())
     }
 
     pub async fn shutdown(&mut self) -> super::Result<()> {
         // Wait for all in-progress uploads to complete.
         let mut completed_parts = vec![];
-        for upload in self.in_progress_uploads.drain(..) {
-            match upload.await {
+
+        while let Some(upload) = self.in_progress_uploads.join_next().await {
+            match upload {
                 Ok(Ok(part)) => completed_parts.push(part),
                 Ok(Err(err)) => return Err(err),
                 Err(err) => return Err(super::Error::JoinError { source: err }),
@@ -1638,6 +1638,10 @@ impl S3MultipartWriter {
             "Finalizing multipart upload with {} parts.",
             completed_parts.len()
         );
+
+        // Ensure that completed parts are sorted by in ascending order by part number - else S3
+        // will reject the completion request.
+        completed_parts.sort_by_key(|part| part.part_number);
 
         // Complete the multipart upload with the completed parts.
         self.s3_client
