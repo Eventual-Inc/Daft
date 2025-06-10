@@ -193,7 +193,7 @@ fn regex_replace<'a, R: Borrow<regex::Regex>>(
             (Some(val), Some(re), Some(replacement)) => {
                 let replacement = regex_replace_posix_groups(replacement);
                 Ok(Some(re?.borrow().replace_all(val, replacement.as_str())))
-            },
+            }
             _ => Ok(None),
         })
         .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
