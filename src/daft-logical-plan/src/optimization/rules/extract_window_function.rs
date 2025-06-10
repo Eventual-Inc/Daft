@@ -26,10 +26,11 @@ impl ExtractWindowFunction {
         Self
     }
 
+    #[allow(clippy::type_complexity)]
     fn extract_window_functions(
         projection: &[ExprRef],
         schema: &Schema,
-    ) -> (Vec<(ExprRef, WindowSpec)>, IndexMap<String, ExprRef>) {
+    ) -> (Vec<(ExprRef, Arc<WindowSpec>)>, IndexMap<String, ExprRef>) {
         let mut result = Vec::new();
         // Track unique window functions by semantic ID
         let mut seen_window_exprs = IndexSet::new();
@@ -239,8 +240,10 @@ mod tests {
         let category_col = resolved_col("category");
         let value_col = resolved_col("value");
 
-        let mut window_spec = WindowSpec::default();
-        window_spec.partition_by = vec![category_col.clone()];
+        let window_spec = Arc::new(WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        });
 
         let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
 
@@ -290,8 +293,10 @@ mod tests {
         let group_col = resolved_col("group");
         let value_col = resolved_col("value");
 
-        let mut window_spec = WindowSpec::default();
-        window_spec.partition_by = vec![category_col.clone(), group_col.clone()];
+        let window_spec = Arc::new(WindowSpec {
+            partition_by: vec![category_col.clone(), group_col.clone()],
+            ..Default::default()
+        });
 
         let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
 
@@ -347,11 +352,15 @@ mod tests {
         let group_col = resolved_col("group");
         let value_col = resolved_col("value");
 
-        let mut window_spec1 = WindowSpec::default();
-        window_spec1.partition_by = vec![category_col.clone()];
+        let window_spec1 = Arc::new(WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        });
 
-        let mut window_spec2 = WindowSpec::default();
-        window_spec2.partition_by = vec![group_col.clone()];
+        let window_spec2 = Arc::new(WindowSpec {
+            partition_by: vec![group_col.clone()],
+            ..Default::default()
+        });
 
         let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
         let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
@@ -431,11 +440,15 @@ mod tests {
         let group_col = resolved_col("group");
         let value_col = resolved_col("value");
 
-        let mut multi_partition_spec = WindowSpec::default();
-        multi_partition_spec.partition_by = vec![category_col.clone(), group_col.clone()];
+        let multi_partition_spec = Arc::new(WindowSpec {
+            partition_by: vec![category_col.clone(), group_col.clone()],
+            ..Default::default()
+        });
 
-        let mut single_partition_spec = WindowSpec::default();
-        single_partition_spec.partition_by = vec![category_col.clone()];
+        let single_partition_spec = Arc::new(WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        });
 
         let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
         let avg_expr: WindowExpr = value_col.clone().mean().try_into().unwrap();
@@ -536,14 +549,20 @@ mod tests {
         let num_col = resolved_col("num");
         let value_col = resolved_col("value");
 
-        let mut letter_window_spec = WindowSpec::default();
-        letter_window_spec.partition_by = vec![letter_col.clone()];
+        let letter_window_spec = Arc::new(WindowSpec {
+            partition_by: vec![letter_col.clone()],
+            ..Default::default()
+        });
 
-        let mut num_window_spec = WindowSpec::default();
-        num_window_spec.partition_by = vec![num_col.clone()];
+        let num_window_spec = Arc::new(WindowSpec {
+            partition_by: vec![num_col.clone()],
+            ..Default::default()
+        });
 
-        let mut combined_window_spec = WindowSpec::default();
-        combined_window_spec.partition_by = vec![letter_col.clone(), num_col.clone()];
+        let combined_window_spec = Arc::new(WindowSpec {
+            partition_by: vec![letter_col.clone(), num_col.clone()],
+            ..Default::default()
+        });
 
         let letter_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
         let num_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
@@ -654,8 +673,10 @@ mod tests {
         let category_col = resolved_col("category");
         let value_col = resolved_col("value");
 
-        let mut window_spec = WindowSpec::default();
-        window_spec.partition_by = vec![category_col.clone()];
+        let window_spec = Arc::new(WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        });
 
         let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
 

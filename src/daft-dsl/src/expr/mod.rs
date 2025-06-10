@@ -238,7 +238,7 @@ pub enum Expr {
 
     // Over represents a window function as it is actually evaluated (since it requires a window spec)
     #[display("{_0} over {_1}")]
-    Over(WindowExpr, window::WindowSpec),
+    Over(WindowExpr, Arc<window::WindowSpec>),
 
     // WindowFunction represents a window function as an expression, this alone cannot be evaluated since
     // it requires a window spec. This variant only exists for constructing window functions in the

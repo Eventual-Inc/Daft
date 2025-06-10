@@ -3,6 +3,7 @@
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::too_long_first_doc_paragraph)]
 #![allow(clippy::manual_div_ceil)]
+#![allow(clippy::manual_repeat_n)]
 //! Unofficial implementation of parquet IO in Rust.
 
 #[macro_use]

@@ -12,6 +12,7 @@ use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
 
+#[allow(clippy::large_enum_variant)]
 enum ClientState {
     // The address of the flight server
     Uninitialized(String),

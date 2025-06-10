@@ -19,7 +19,7 @@ enum ArgCardinality {
 enum ArgType {
     Generic,
     #[allow(unused)]
-    Concrete(Type),
+    Concrete(Box<Type>),
 }
 
 struct ParsedAttribute {
@@ -349,7 +349,7 @@ fn get_arg_types(
             {
                 ArgType::Generic
             } else {
-                ArgType::Concrete(ty.clone())
+                ArgType::Concrete(Box::new(ty.clone()))
             }
         })
         .collect()

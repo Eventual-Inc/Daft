@@ -570,7 +570,7 @@ impl PyExpr {
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
         let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, Arc::new(window_spec.clone()))),
         })
     }
 

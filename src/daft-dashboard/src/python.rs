@@ -61,10 +61,7 @@ pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandl
     }
 }
 
-async fn run(
-    listener: std::net::TcpListener,
-    mut recv: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
+async fn run(listener: std::net::TcpListener, recv: oneshot::Receiver<()>) -> anyhow::Result<()> {
     listener.set_nonblocking(true).map_err(anyhow::Error::new)?;
 
     let listener = tokio::net::TcpListener::from_std(listener).map_err(anyhow::Error::new)?;

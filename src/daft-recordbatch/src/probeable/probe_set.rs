@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::RawEntryMut, HashMap},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -12,6 +9,7 @@ use daft_core::{
         identity_hash_set::{IdentityBuildHasher, IndexHash},
     },
 };
+use hashbrown::{hash_map::RawEntryMut, HashMap};
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 use crate::RecordBatch;

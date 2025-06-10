@@ -92,7 +92,7 @@ impl DateArray {
         let month_arr = arrow2::compute::temporal::month(&input_array)?;
         let quarter_arr = month_arr
             .into_iter()
-            .map(|opt_month| opt_month.map(|month_val| (month_val + 2) / 3))
+            .map(|opt_month| opt_month.map(|month_val| month_val.div_ceil(3)))
             .collect();
         Ok((self.name(), Box::new(quarter_arr)).into())
     }
