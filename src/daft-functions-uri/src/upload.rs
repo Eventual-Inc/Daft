@@ -15,19 +15,19 @@ use serde::Serialize;
 pub struct UrlUpload;
 
 #[derive(FunctionArgs)]
-struct UrlUploadArgs<T> {
-    input: T,
-    location: T,
+pub struct UrlUploadArgs<T> {
+    pub input: T,
+    pub location: T,
     #[arg(optional)]
-    max_connections: Option<usize>,
+    pub max_connections: Option<usize>,
     #[arg(optional)]
-    on_error: Option<String>,
+    pub on_error: Option<String>,
     #[arg(optional)]
-    multi_thread: Option<bool>,
+    pub multi_thread: Option<bool>,
     #[arg(optional)]
-    is_single_folder: Option<bool>,
+    pub is_single_folder: Option<bool>,
     #[arg(optional)]
-    io_config: Option<IOConfig>,
+    pub io_config: Option<IOConfig>,
 }
 
 #[typetag::serde]
