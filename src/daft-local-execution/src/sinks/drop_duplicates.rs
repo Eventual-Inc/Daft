@@ -12,15 +12,23 @@
 //!
 //! Current method works well for high-cardinality inputs
 //! TODO: Better support for low-cardinality by avoiding partitioning
-//! TODO: Store Hash Table as state per partition and reuse across micro-partitions
 
 use std::sync::Arc;
 
+use arrow_row::Rows;
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
+use daft_core::datatypes::DaftPrimitiveType;
+use daft_core::prelude::{AsArrow, DaftArrayType, Int64Array, SeriesLike, UInt64Array};
+use daft_core::series::IntoSeries;
+use daft_core::utils::identity_hash_set::IndexHash;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
+use daft_recordbatch::RecordBatch;
+use daft_core::series::array_impl::ArrayWrapper;
+use hashbrown::{HashSet, hash_set::Entry::{Occupied, Vacant}};
 use itertools::Itertools;
+use log::Record;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -29,49 +37,96 @@ use super::blocking_sink::{
 };
 use crate::ExecutionTaskSpawner;
 
-#[derive(Default)]
-struct SinglePartitionDedupState {
-    partially_deduped: Vec<MicroPartition>,
+struct SingleColState<T: DaftArrayType + AsArrow> {
+    dedup_map: HashSet<T>
 }
 
-enum DropDuplicatesState {
+impl<T> SingleColState<T> where T: DaftArrayType + AsArrow {
+    fn new() -> Self {
+        todo!()
+    }
+
+    fn push_batch(&mut self, batch: &RecordBatch, columns: &[BoundExpr]) -> DaftResult<()> {
+        let distinct_on = batch.eval_expression_list(columns)?;
+        let distinct_on = distinct_on.get_column(0).downcast::<T>().unwrap().as_arrow();
+
+        for (idx, val) in distinct_on.iter().enumerate() {}
+        todo!()
+    }
+}
+
+struct MultiColState {
+    distinct_rows: Rows,
+    dedup_map: HashSet<IndexHash>,
+}
+
+impl MultiColState {}
+
+enum DropDuplicatesState<T> {
     Accumulating {
-        inner_states: Vec<SinglePartitionDedupState>,
+        state: T,
+        partially_deduped: Vec<RecordBatch>,
     },
     Done,
 }
 
 impl DropDuplicatesState {
-    fn new(num_partitions: usize) -> Self {
-        let inner_states = (0..num_partitions)
-            .map(|_| SinglePartitionDedupState::default())
-            .collect::<Vec<_>>();
-        Self::Accumulating { inner_states }
+    fn new() -> Self {
+        Self::Accumulating { dedup_map: HashSet::<Option<i64>>::with_capacity(16384), partially_deduped: vec![] }
     }
 
     fn push(&mut self, input: Arc<MicroPartition>, columns: &[BoundExpr]) -> DaftResult<()> {
+        assert_eq!(columns.len(), 1); // TODO: Support multiple columns
         let Self::Accumulating {
-            ref mut inner_states,
+            ref mut dedup_map,
+            ref mut partially_deduped,
         } = self
         else {
             panic!("DropDuplicatesSink should be in Accumulating state");
         };
 
-        let partitioned = input.partition_by_hash(columns, inner_states.len())?;
-        for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-            // TODO: Deduplicate in parallel?
-            let deduped = p.dedup(columns)?;
-            state.partially_deduped.push(deduped);
+        let batches = input.get_tables()?;
+        // let mut idxs = Vec::with_capacity(input.len() / batches.len());
+        for batch in batches.iter() {
+            let distinct_on = batch.eval_expression_list(columns)?;
+            let distinct_on = distinct_on.get_column(0);
+            let distinct_on = distinct_on.inner.as_any().downcast_ref::<ArrayWrapper<Int64Array>>().unwrap().0.as_arrow();
+
+            let mut idxs = Vec::with_capacity(input.len() / batches.len());
+            // idxs.clear();
+            for (idx, val) in distinct_on.iter().enumerate() {
+                match dedup_map.entry(val.cloned()) {
+                    Vacant(e) => {
+                        e.insert();
+                        idxs.push(idx as u64);
+                    }
+                    Occupied(_) => {}
+                }
+            }
+
+            let idxs_series = UInt64Array::from(("idxs", idxs)).into_series();
+            let batch = batch.take(&idxs_series)?;
+            partially_deduped.push(batch);
         }
+
+        // let deduped = input.dedup(columns)?;
+        // partially_deduped.push(deduped);
+        // let partitioned = input.partition_by_hash(columns, inner_states.len())?;
+        // for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+        //     // TODO: Deduplicate in parallel?
+        //     let deduped = p.dedup(columns)?;
+        //     state.partially_deduped.push(deduped);
+        // }
         Ok(())
     }
 
-    fn finalize(&mut self) -> Vec<SinglePartitionDedupState> {
+    fn finalize(&mut self) -> Vec<RecordBatch> {
         let res = if let Self::Accumulating {
-            ref mut inner_states,
+            ref mut partially_deduped,
+            ..
         } = self
         {
-            std::mem::take(inner_states)
+            std::mem::take(partially_deduped)
         } else {
             panic!("DropDuplicatesSink should be in Accumulating state");
         };
@@ -135,42 +190,33 @@ impl BlockingSink for DropDuplicatesSink {
     ) -> BlockingSinkFinalizeResult {
         let columns = self.columns.clone();
         let num_partitions = self.num_partitions();
+
         spawner
             .spawn(
                 async move {
-                    let mut state_iters = states
+                    let partially_deduped = states
                         .into_iter()
-                        .map(|mut state| {
+                        .flat_map(|mut state| {
                             state
                                 .as_any_mut()
                                 .downcast_mut::<DropDuplicatesState>()
                                 .expect("DropDuplicatesSink should have DropDuplicatesState")
                                 .finalize()
-                                .into_iter()
                         })
                         .collect::<Vec<_>>();
 
-                    let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
-                    for _ in 0..num_partitions {
-                        // Collect the partially deduped micro-partitions (MPs) from all of the sub-states
-                        // for the current partition
-                        let per_partition_micros =
-                            state_iters
-                                .iter_mut()
-                                .flat_map(|state| {
-                                    state.next().expect(
-                                    "DropDuplicatesSink should have SinglePartitionDedupState",
-                                ).partially_deduped
-                                })
-                                .collect::<Vec<_>>();
+                    let concated = RecordBatch::concat(&partially_deduped)?;
+                    let partitioned = concated.partition_by_hash(&columns, num_partitions)?;
 
-                        // Merge the partially deduped MPs
-                        // Do this concurrently across all of the partitions
+                    let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
+                    for partition in partitioned.into_iter() {
                         let columns = columns.clone();
                         per_partition_finalize_tasks.spawn(async move {
-                            MicroPartition::concat(&per_partition_micros)?.dedup(&columns)
+                            partition.dedup(&columns)?;
+                            Ok(partition)
                         });
                     }
+
                     // Join the tasks and collect the deduped partitions
                     let results = per_partition_finalize_tasks
                         .join_all()
@@ -178,8 +224,40 @@ impl BlockingSink for DropDuplicatesSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
 
+                    // let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
+                    // for _ in 0..num_partitions {
+                    //     // Collect the partially deduped micro-partitions (MPs) from all of the sub-states
+                    //     // for the current partition
+                    //     let per_partition_micros =
+                    //         state_iters
+                    //             .iter_mut()
+                    //             .flat_map(|state| {
+                    //                 state.next().expect(
+                    //                 "DropDuplicatesSink should have SinglePartitionDedupState",
+                    //             ).partially_deduped
+                    //             })
+                    //             .collect::<Vec<_>>();
+
+                    //     // Merge the partially deduped MPs
+                    //     // Do this concurrently across all of the partitions
+                    //     let columns = columns.clone();
+                    //     per_partition_finalize_tasks.spawn(async move {
+                    //         MicroPartition::concat(&per_partition_micros)?.dedup(&columns)
+                    //     });
+                    // }
+                    // // Join the tasks and collect the deduped partitions
+                    // let results = per_partition_finalize_tasks
+                    //     .join_all()
+                    //     .await
+                    //     .into_iter()
+                    //     .collect::<DaftResult<Vec<_>>>()?;
+
                     // Concatenate the results and return
-                    let concated = MicroPartition::concat(&results)?;
+                    let concated = MicroPartition::new_loaded(
+                        results[0].schema.clone(),
+                        Arc::new(results),
+                        None,
+                    );
                     Ok(Some(Arc::new(concated)))
                 },
                 Span::current(),

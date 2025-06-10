@@ -200,12 +200,6 @@ impl RecordBatch {
                 let empty_table = Self::empty(Some(self.schema.clone()))?;
                 Ok(empty_table)
             }
-            // If we are deduping based on all columns
-            x if x == self.schema.len() => {
-                let unique_indices = self.make_unique_idxs()?;
-                let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
-                self.take(&indices_as_series)
-            }
             // If we are deduping based on some columns
             _ => {
                 let dedup_table = self.eval_expression_list(columns)?;

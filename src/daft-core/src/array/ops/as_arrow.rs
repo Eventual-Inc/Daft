@@ -16,22 +16,22 @@ use crate::{
 };
 
 pub trait AsArrow {
-    type Output;
+    type PrimitiveOutput: arrow2::types::NativeType;
 
     /// This does not correct for the logical types and will just yield the physical type of the array.
     /// For example, a TimestampArray will yield an arrow Int64Array rather than a arrow Timestamp Array.
     /// To get a corrected arrow type, see `.to_arrow()`.
-    fn as_arrow(&self) -> &Self::Output;
+    fn as_arrow(&self) -> &array::PrimitiveArray<Self::PrimitiveOutput>;
 }
 
 impl<T> AsArrow for DataArray<T>
 where
     T: DaftPrimitiveType,
 {
-    type Output = array::PrimitiveArray<T::Native>;
+    type PrimitiveOutput = T::Native;
 
     // For DataArray<T: DaftNumericType>, retrieve the underlying Arrow2 PrimitiveArray.
-    fn as_arrow(&self) -> &Self::Output {
+    fn as_arrow(&self) -> &array::PrimitiveArray<Self::PrimitiveOutput> {
         self.data().as_any().downcast_ref().unwrap()
     }
 }

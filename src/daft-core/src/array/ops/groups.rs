@@ -1,11 +1,10 @@
 use std::{
-    collections::hash_map::Entry::{Occupied, Vacant},
-    hash::{BuildHasherDefault, Hash},
+    hash::Hash,
 };
 
 use arrow2::array::Array;
 use common_error::DaftResult;
-use fnv::FnvHashMap;
+use hashbrown::{hash_map::Entry::{Occupied, Vacant}, HashMap, HashSet};
 
 use super::{as_arrow::AsArrow, IntoGroups};
 use crate::{
@@ -41,9 +40,8 @@ where
     T: Eq,
 {
     const DEFAULT_SIZE: usize = 256;
-    let mut tbl = FnvHashMap::<T, (u64, Vec<u64>)>::with_capacity_and_hasher(
+    let mut tbl = HashMap::<T, (u64, Vec<u64>)>::with_capacity(
         DEFAULT_SIZE,
-        BuildHasherDefault::default(),
     );
     for (idx, val) in iter.enumerate() {
         let idx = idx as u64;
@@ -73,22 +71,19 @@ where
     T: Hash,
     T: Eq,
 {
-    const DEFAULT_SIZE: usize = 256;
-    let mut tbl =
-        FnvHashMap::<T, u64>::with_capacity_and_hasher(DEFAULT_SIZE, BuildHasherDefault::default());
+    const DEFAULT_SIZE: usize = 16_384;
+    let mut tbl = HashSet::<T>::with_capacity(DEFAULT_SIZE);
+    let mut indices = Vec::with_capacity(DEFAULT_SIZE);
     for (idx, val) in iter.enumerate() {
         let idx = idx as u64;
         let e = tbl.entry(val);
         match e {
-            Vacant(e) => {
-                e.insert(idx);
+            hashbrown::hash_set::Entry::Vacant(e) => {
+                e.insert();
+                indices.push(idx)
             }
-            Occupied(_) => {}
+            hashbrown::hash_set::Entry::Occupied(_) => {}
         }
-    }
-    let mut indices = Vec::with_capacity(tbl.len());
-    for idx in tbl.into_values() {
-        indices.push(idx);
     }
     Ok(indices)
 }
