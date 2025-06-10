@@ -48,7 +48,7 @@ impl<T> SingleColState<T> where T: DaftArrayType + AsArrow {
 
     fn push_batch(&mut self, batch: &RecordBatch, columns: &[BoundExpr]) -> DaftResult<()> {
         let distinct_on = batch.eval_expression_list(columns)?;
-        let distinct_on = distinct_on.get_column(0).downcast::<T>().unwrap().as_arrow();
+        let distinct_on = distinct_on.get_column(0).downcast();
 
         for (idx, val) in distinct_on.iter().enumerate() {}
         todo!()
