@@ -120,6 +120,13 @@ def test_deserialize_json_with_missing_fields(deserialize):
 
 @pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
 def test_serialize_json(series):
+    # sanity check..
+    items = [1, 2, 3]
+    assert series(items).serialize("json") == ["1", "2", "3"]
+
+
+@pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
+def test_serialize_json_struct(series):
     items = [
         {"a": None, "b": 1, "c": 1.1, "d": "ABC"},
         {"a": None, "b": 2, "c": 2.2, "d": "DEF"},
