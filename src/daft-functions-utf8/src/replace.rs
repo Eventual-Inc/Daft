@@ -1,5 +1,7 @@
-use std::sync::{Arc,LazyLock};
-use std::borrow::Borrow;
+use std::{
+    borrow::Borrow,
+    sync::{Arc, LazyLock},
+};
 
 use common_error::{ensure, DaftError, DaftResult};
 use daft_core::{
