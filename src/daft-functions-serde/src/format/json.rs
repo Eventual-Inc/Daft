@@ -1,8 +1,13 @@
 use std::sync::Arc;
 
 use arrow2::{
-    datatypes::ArrowDataType,
-    io::json::read::{self, json_deserializer::Value},
+    array::Utf8Array as ArrowUtf8Array,
+    datatypes::DataType as ArrowDataType,
+    io::json::{
+        read::{self, json_deserializer::Value},
+        write::new_serializer,
+    },
+    offset::Offsets,
 };
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -53,4 +58,35 @@ pub fn try_deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series
 pub fn try_parse_item(item: Option<&str>) -> Value {
     item.and_then(|text| read::json_deserializer::parse(text.as_bytes()).ok())
         .unwrap_or(Value::Null)
+}
+
+/// Serializes each input value as a JSON string.
+pub fn serialize(input: Series) -> DaftResult<Utf8Array> {
+    // setup inputs
+    let name = input.name();
+    let input = input.to_arrow();
+    let validity = input.validity().cloned();
+    // setup outputs
+    let mut values = Vec::<u8>::new();
+    let mut offsets = Offsets::<i64>::new();
+    let mut serializer = new_serializer(input.as_ref(), 0, usize::MAX);
+    // drive the serializer
+    while let Some(bytes) = serializer.next() {
+        offsets.try_push(bytes.len() as i64)?;
+        values.extend(bytes);
+    }
+    // create the daft array
+    let array = ArrowUtf8Array::new(
+        ArrowDataType::LargeUtf8,
+        offsets.into(),
+        values.into(),
+        validity,
+    );
+    let array = Box::new(array);
+    Ok(Utf8Array::from((name, array)))
+}
+
+/// Serializes each input value as a JSON string, inserting null on any failures.
+pub fn try_serialize(_: Series) -> DaftResult<Utf8Array> {
+    todo!("try_serialize will require deeper arrow2 json work, and it is not immediately obvious if useful so punting here.")
 }

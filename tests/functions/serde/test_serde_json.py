@@ -116,3 +116,65 @@ def test_deserialize_json_with_missing_fields(deserialize):
         {"name": None, "age": 25},
         {"name": "Charlie", "age": None},
     ]
+
+
+@pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
+def test_serialize_json(series):
+    items = [
+        {"a": None, "b": 1, "c": 1.1, "d": "ABC"},
+        {"a": None, "b": 2, "c": 2.2, "d": "DEF"},
+        {"a": None, "b": 3, "c": 3.3, "d": "GHI"},
+        {"a": None, "b": 4, "c": 4.4, "d": "JKL"},
+    ]
+    assert series(items).serialize("json") == [
+        '{"a":null,"b":1,"c":1.1,"d":"ABC"}',
+        '{"a":null,"b":2,"c":2.2,"d":"DEF"}',
+        '{"a":null,"b":3,"c":3.3,"d":"GHI"}',
+        '{"a":null,"b":4,"c":4.4,"d":"JKL"}',
+    ]
+
+
+@pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
+def test_serialize_json_with_nulls(series):
+    items = [
+        None,
+        {"a": 1, "b": None, "c": "valid"},
+        {"a": None, "b": 2, "c": None},
+        {"a": 3, "b": 3, "c": "valid"},
+        None,
+    ]
+    assert series(items).serialize("json") == [
+        None,
+        '{"a":1,"b":null,"c":"valid"}',
+        '{"a":null,"b":2,"c":null}',
+        '{"a":3,"b":3,"c":"valid"}',
+        None,
+    ]
+
+
+@pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
+def test_serialize_json_with_collections(series):
+    items = [
+        {"arr": [1, 2, 3], "map": {"a": None, "b": 2}, "struct": {"x": 1, "y": "z"}},
+        {"arr": [4, 5, 6], "map": {"a": 3, "b": None}, "struct": {"x": 2, "y": "w"}},
+        {"arr": None, "map": None, "struct": None},
+    ]
+    assert series(items).serialize("json") == [
+        '{"arr":[1,2,3],"map":{"a":null,"b":2},"struct":{"x":1,"y":"z"}}',
+        '{"arr":[4,5,6],"map":{"a":3,"b":null},"struct":{"x":2,"y":"w"}}',
+        '{"arr":null,"map":null,"struct":null}',
+    ]
+
+
+@pytest.mark.parametrize("series", ["Expression", "SQL"], indirect=True)
+def test_serialize_json_with_nested_collections(series):
+    items = [
+        {"arr": [{"x": 1}, {"x": 2}], "map": {"a": [1, 2], "b": {"c": 3}}},
+        {"arr": [{"x": 3}, {"x": 4}], "map": {"a": [3, 4], "b": {"c": 5}}},
+        {"arr": None, "map": None},
+    ]
+    assert series(items).serialize("json") == [
+        '{"arr":[{"x":1},{"x":2}],"map":{"a":[1,2],"b":{"c":3}}}',
+        '{"arr":[{"x":3},{"x":4}],"map":{"a":[3,4],"b":{"c":5}}}',
+        '{"arr":null,"map":null}',
+    ]
