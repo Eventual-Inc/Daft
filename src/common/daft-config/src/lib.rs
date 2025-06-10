@@ -143,7 +143,10 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(min_cpu_var) {
             match val.parse::<f64>() {
                 Ok(parsed) => cfg.min_cpu_per_task = parsed,
-                Err(_) => eprintln!("Invalid {} value: {}, using default {}", min_cpu_var, val, cfg.min_cpu_per_task),
+                Err(_) => eprintln!(
+                    "Invalid {} value: {}, using default {}",
+                    min_cpu_var, val, cfg.min_cpu_per_task
+                ),
             }
         }
         cfg
