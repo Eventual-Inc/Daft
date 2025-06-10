@@ -30,7 +30,7 @@ from daft.runners.partitioning import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncGenerator, AsyncIterator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -62,19 +62,19 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         config: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
-    ) -> tuple[MicroPartition, PartitionMetadata]:
+    ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
         """Run a plan on swordfish and yield partitions."""
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
-        res = []
+        metas = []
         async for partition in self.native_executor.run_async(plan, psets_mp, config, None):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
-            res.append(mp)
-        concated = MicroPartition.concat(res)
-        return concated, PartitionMetadata.from_table(concated)
+            metas.append(PartitionMetadata.from_table(mp))
+            yield mp
+        yield metas
 
 
 @dataclass
@@ -85,14 +85,21 @@ class RaySwordfishTaskHandle:
     """
 
     result_handle: ray.ObjectRef
-    metadata_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     task: asyncio.Task[list[RayPartitionRef]] | None = None
 
     async def _get_result(self) -> list[RayPartitionRef]:
-        # await the metadata, but not the data, so that the data is not transferred to head node.
-        metadata = await self.metadata_handle
-        res = [RayPartitionRef(self.result_handle, metadata.num_rows, metadata.size_bytes)]
+        await self.result_handle.completed()
+        results = [result for result in self.result_handle]
+        metadatas_ref = results.pop()
+
+        metadatas = await metadatas_ref
+        assert len(results) == len(metadatas)
+
+        res = [
+            RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
+            for result, metadata in zip(results, metadatas)
+        ]
         return res
 
     async def get_result(self) -> list[RayPartitionRef]:
@@ -119,12 +126,9 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
-        result_handle, metadata_handle = self.actor_handle.run_plan.options(name=task.name(), num_returns=2).remote(
-            task.plan(), task.config(), psets
-        )
+        result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(task.plan(), task.config(), psets)
         return RaySwordfishTaskHandle(
             result_handle,
-            metadata_handle,
             self.actor_handle,
         )
 
