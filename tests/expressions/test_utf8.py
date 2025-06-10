@@ -82,6 +82,7 @@ def test_extract(test_expression):
         args=[regex],
     )
 
+
 def test_substr(test_expression):
     test_data = ["daft", "query", "engine"]
     expected = [s[2:] for s in test_data]
@@ -93,6 +94,7 @@ def test_substr(test_expression):
         sql_name="substr",
         args=[2, None],
     )
+
 
 def test_regexp_replace(test_expression):
     test_data = ["123-456", "789-012", "345-678"]
@@ -106,5 +108,5 @@ def test_regexp_replace(test_expression):
         namespace="str",
         sql_name="regexp_replace",
         args=[regex, replace],
-        kwargs={"regex": True}
+        kwargs={"regex": True},
     )
