@@ -1659,8 +1659,19 @@ class Expression:
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("try_deserialize", format, dtype._dtype)
 
+    def serialize(self, format: Literal["json"]) -> Expression:
+        """Serializes the expression as a string using the specified format.
+
+        Args:
+            format (Literal["json"]): The serialization format.
+
+        Returns:
+            Expression: A new expression with the serialized string.
+        """
+        return self._eval_expressions("serialize", format)
+
     def jq(self, filter: builtins.str) -> Expression:
-        """Applies a [https://jqlang.github.io/jq/manual/](jq) to the expression (string), returning the results as a string.
+        """Applies a [https://jqlang.github.io/jq/manual/](jq) filter to the expression (string), returning the results as a string.
 
         Args:
             file (str): The jq filter.
