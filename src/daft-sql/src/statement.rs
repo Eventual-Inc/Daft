@@ -200,7 +200,7 @@ impl SQLPlanner<'_> {
                 )?),
             };
             return Ok(Statement::Use(Use { catalog, namespace }));
-        };
+        }
         unsupported_sql_err!("Expected `USE <catalog>` or USE <catalog>.<namespace>")
     }
 }

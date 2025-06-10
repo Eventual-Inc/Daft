@@ -93,7 +93,7 @@ fn to_field_helper(
         .transpose()?
     {
         ensure!(flag.dtype.is_boolean(), TypeError: "Expected boolean type for {flag_name} argument");
-    };
+    }
     Ok(())
 }
 fn evaluate_helper(args: &FunctionArgs<Series>, arg_name: &'static str) -> DaftResult<bool> {

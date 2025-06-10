@@ -86,7 +86,7 @@ impl ScalarUDF for ImageDecode {
         if let Some(on_error) = on_error {
             let f = on_error.to_field(schema)?;
             ensure!(f.dtype == DataType::Utf8, "on_error must be a string");
-        };
+        }
 
         Ok(Field::new(field.name, DataType::Image(mode)))
     }

@@ -438,7 +438,7 @@ impl SQLPlanner<'_> {
         };
 
         if func.over.is_some() {
-            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
+            let window_spec = Arc::new(self.parse_window_spec(func.over.as_ref().unwrap())?);
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {

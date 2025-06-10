@@ -166,6 +166,7 @@ impl FlightServerConnectionHandle {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub fn start_flight_server(
     shuffle_cache: Arc<ShuffleCache>,
     ip: &str,
