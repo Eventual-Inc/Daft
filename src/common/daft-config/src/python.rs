@@ -101,6 +101,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
         scantask_splitting_level=None,
+        native_parquet_writer=None,
         flotilla=None,
     ))]
     fn with_config_values(
@@ -130,6 +131,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
+        native_parquet_writer: Option<bool>,
         flotilla: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -229,6 +231,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.scantask_splitting_level = scantask_splitting_level;
+        }
+
+        if let Some(native_parquet_writer) = native_parquet_writer {
+            config.native_parquet_writer = native_parquet_writer;
         }
 
         if let Some(flotilla) = flotilla {
