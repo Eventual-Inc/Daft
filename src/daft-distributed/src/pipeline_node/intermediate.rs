@@ -80,19 +80,18 @@ impl IntermediateNode {
 }
 
 impl TreeDisplay for IntermediateNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, _level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
 
-        writeln!(display, "{}", self.node_id).unwrap();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                writeln!(display, "{}", self.plan.multiline_display()).unwrap();
-            }
-        }
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        writeln!(
+            display,
+            "Local Physical Plan: {}",
+            self.plan.single_line_display()
+        )
+        .unwrap();
         display
     }
 
@@ -104,13 +103,13 @@ impl TreeDisplay for IntermediateNode {
     }
 
     fn get_name(&self) -> String {
-        "DistributedIntermediate".to_string()
+        self.name().to_string()
     }
 }
 
 impl DistributedPipelineNode for IntermediateNode {
     fn name(&self) -> &'static str {
-        "Intermediate"
+        "DistributedIntermediateNode"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {

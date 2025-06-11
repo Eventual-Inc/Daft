@@ -67,19 +67,18 @@ impl InMemorySourceNode {
 }
 
 impl TreeDisplay for InMemorySourceNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, _level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
 
-        writeln!(display, "{}", self.node_id).unwrap();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                writeln!(display, "{}", self.plan.multiline_display()).unwrap();
-            }
-        }
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        writeln!(
+            display,
+            "Local Physical Plan: {}",
+            self.plan.single_line_display()
+        )
+        .unwrap();
         display
     }
 
@@ -88,13 +87,13 @@ impl TreeDisplay for InMemorySourceNode {
     }
 
     fn get_name(&self) -> String {
-        "DistributedInMemorySource".to_string()
+        self.name().to_string()
     }
 }
 
 impl DistributedPipelineNode for InMemorySourceNode {
     fn name(&self) -> &'static str {
-        "InMemorySourceNode"
+        "DistributedInMemoryScan"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {

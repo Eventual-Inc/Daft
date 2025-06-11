@@ -7,7 +7,6 @@ use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
@@ -74,26 +73,21 @@ impl ScanSourceNode {
 }
 
 impl TreeDisplay for ScanSourceNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, _level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-        writeln!(display, "{}", self.node_id).unwrap();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let plan = make_source_tasks(
-                    &self.plan,
-                    &self.pushdowns,
-                    self.scan_tasks.clone(),
-                    self.config.clone(),
-                )
-                .unwrap()
-                .plan();
-                writeln!(display, "{}", plan.multiline_display()).unwrap();
-            }
-        }
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+
+        let plan = make_source_tasks(
+            &self.plan,
+            &self.pushdowns,
+            self.scan_tasks.clone(),
+            self.config.clone(),
+        )
+        .unwrap()
+        .plan();
+        writeln!(display, "Local Plan: {}", plan.single_line_display()).unwrap();
         display
     }
 
@@ -102,13 +96,13 @@ impl TreeDisplay for ScanSourceNode {
     }
 
     fn get_name(&self) -> String {
-        "DistributedScanSource".to_string()
+        self.name().to_string()
     }
 }
 
 impl DistributedPipelineNode for ScanSourceNode {
     fn name(&self) -> &'static str {
-        "ScanSource"
+        "DistributedScan"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {

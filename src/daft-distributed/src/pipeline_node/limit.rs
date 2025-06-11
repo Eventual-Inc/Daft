@@ -94,8 +94,9 @@ impl TreeDisplay for LimitNode {
         use std::fmt::Write;
         let mut display = String::new();
 
-        writeln!(display, "{}", self.node_id).unwrap();
-        writeln!(display, "Limit = {}", self.limit).unwrap();
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        writeln!(display, "Limit: {}", self.limit).unwrap();
         display
     }
 
@@ -106,13 +107,13 @@ impl TreeDisplay for LimitNode {
     }
 
     fn get_name(&self) -> String {
-        "DistributedLimit".to_string()
+        self.name().to_string()
     }
 }
 
 impl DistributedPipelineNode for LimitNode {
     fn name(&self) -> &'static str {
-        "Limit"
+        "DistributedLimit"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
