@@ -4,12 +4,13 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
+use daft_scan::python::pylib::PyScanTask;
 use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
 
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, TaskResultHandle},
+        task::{SwordfishTask, SwordfishTaskInput, TaskResultHandle},
         worker::WorkerId,
     },
 };
@@ -154,37 +155,54 @@ impl RaySwordfishTask {
         self.task.name()
     }
 
+    fn plan_id(&self) -> String {
+        self.task.task_id().to_string()
+    }
+
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn psets(&self, py: Python) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
-        let psets = self
-            .task
-            .psets()
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    v.iter()
-                        .map(|v| {
-                            let v = v
-                                .as_any()
-                                .downcast_ref::<RayPartitionRef>()
-                                .expect("Failed to downcast to RayPartitionRef");
-                            RayPartitionRef {
-                                object_ref: v.object_ref.clone_ref(py),
-                                num_rows: v.num_rows,
-                                size_bytes: v.size_bytes,
-                            }
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
-        Ok(psets)
+    fn input(&self) -> PyResult<PyScanTask> {
+        let input = self.task.input().clone();
+        let scan_task = match input {
+            SwordfishTaskInput::ScanTask { scan_task } => scan_task,
+            _ => panic!("Input is not a ScanTask"),
+        };
+        Ok(PyScanTask(scan_task))
     }
+
+    fn input_id(&self) -> usize {
+        self.task.input_id()
+    }
+
+    // fn psets(&self, py: Python) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
+    //     let psets = self
+    //         .task
+    //         .psets()
+    //         .iter()
+    //         .map(|(k, v)| {
+    //             (
+    //                 k.clone(),
+    //                 v.iter()
+    //                     .map(|v| {
+    //                         let v = v
+    //                             .as_any()
+    //                             .downcast_ref::<RayPartitionRef>()
+    //                             .expect("Failed to downcast to RayPartitionRef");
+    //                         RayPartitionRef {
+    //                             object_ref: v.object_ref.clone_ref(py),
+    //                             num_rows: v.num_rows,
+    //                             size_bytes: v.size_bytes,
+    //                         }
+    //                     })
+    //                     .collect(),
+    //             )
+    //         })
+    //         .collect();
+    //     Ok(psets)
+    // }
 
     fn config(&self) -> PyResult<PyDaftExecutionConfig> {
         let config = self.task.config().clone();

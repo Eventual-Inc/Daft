@@ -4,11 +4,12 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_micropartition::{partitioning::PartitionSetRef, MicroPartitionRef};
+use daft_micropartition::{partitioning::PartitionSetRef, MicroPartition, MicroPartitionRef};
+use futures::StreamExt;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::sources::source::SourceStream;
+use crate::channel::{create_channel, Receiver, Sender};
 
 pub struct InMemorySource {
     data: Option<PartitionSetRef<MicroPartitionRef>>,
@@ -40,13 +41,23 @@ impl Source for InMemorySource {
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
-    ) -> DaftResult<SourceStream<'static>> {
-        Ok(self
-            .data
-            .as_ref()
-            .unwrap_or_else(|| panic!("No data in InMemorySource"))
-            .clone()
-            .to_partition_stream())
+        tx: Sender<(usize, Receiver<Arc<MicroPartition>>)>,
+    ) -> DaftResult<()> {
+        let (partition_sender, partition_receiver) = create_channel(1);
+        if tx.send((0, partition_receiver)).await.is_err() {
+            return Ok(());
+        }
+        if let Some(data) = &self.data {
+            let mut stream = data.clone().to_partition_stream();
+
+            // Send the data through the channel
+            while let Some(partition) = stream.next().await {
+                if partition_sender.send(partition?).await.is_err() {
+                    break;
+                }
+            }
+        }
+        Ok(())
     }
     fn name(&self) -> &'static str {
         "InMemorySource"

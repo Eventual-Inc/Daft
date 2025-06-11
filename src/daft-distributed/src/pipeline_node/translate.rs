@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_scan_info::{Pushdowns, ScanState, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
-use daft_local_plan::translate;
+use daft_local_plan::{translate, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{
     ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, InMemoryInfo, LogicalPlan,
     LogicalPlanRef, SourceInfo,
@@ -54,14 +54,14 @@ pub(crate) fn logical_plan_to_pipeline_node(
             }
 
             // Otherwise create a node based on pipeline_input
-            let (logical_plan, inputs) = extract_inputs_from_logical_plan(logical_plan)?;
             let translated = translate(&logical_plan)?;
+            let (local_plan, inputs) = extract_inputs_from_local_plan(translated)?;
             let node = match inputs {
                 PipelineInput::InMemorySource { info } => Box::new(InMemorySourceNode::new(
                     self.get_next_node_id(),
                     self.config.clone(),
                     info,
-                    translated,
+                    local_plan,
                     self.psets.clone(),
                 ))
                     as Box<dyn DistributedPipelineNode>,
@@ -71,7 +71,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
                 } => Box::new(ScanSourceNode::new(
                     self.get_next_node_id(),
                     self.config.clone(),
-                    translated,
+                    local_plan,
                     pushdowns,
                     scan_tasks,
                 )) as Box<dyn DistributedPipelineNode>,
@@ -180,40 +180,24 @@ enum PipelineInput {
     },
 }
 
-fn extract_inputs_from_logical_plan(
-    logical_plan: LogicalPlanRef,
-) -> DaftResult<(LogicalPlanRef, PipelineInput)> {
+fn extract_inputs_from_local_plan(
+    local_plan: LocalPhysicalPlanRef,
+) -> DaftResult<(LocalPhysicalPlanRef, PipelineInput)> {
     let mut pipeline_input = None;
-    let transformed_plan = logical_plan.transform_up(|plan| match plan.as_ref() {
-        LogicalPlan::Source(source) => match source.source_info.as_ref() {
-            SourceInfo::InMemory(info) => {
-                pipeline_input = Some(PipelineInput::InMemorySource { info: info.clone() });
-                Ok(Transformed::new(plan, true, TreeNodeRecursion::Stop))
-            }
-            SourceInfo::Physical(info) => {
-                let pushdowns = info.pushdowns.clone();
-                let scan_tasks = match &info.scan_state {
-                    ScanState::Tasks(tasks) => tasks.clone(),
-                    ScanState::Operator(_) => unreachable!(),
-                };
-                pipeline_input = Some(PipelineInput::ScanTasks {
-                    pushdowns,
-                    scan_tasks,
-                });
-                let placeholder =
-                    PlaceHolderInfo::new(source.output_schema.clone(), Default::default());
-                let placeholder_source = LogicalPlan::Source(Source::new(
-                    source.output_schema.clone(),
-                    Arc::new(SourceInfo::PlaceHolder(placeholder)),
-                ));
-                Ok(Transformed::new(
-                    placeholder_source.into(),
-                    true,
-                    TreeNodeRecursion::Stop,
-                ))
-            }
-            SourceInfo::PlaceHolder(_) => Ok(Transformed::new(plan, true, TreeNodeRecursion::Stop)),
-        },
+    let transformed_plan = local_plan.transform_up(|plan| match plan.as_ref() {
+        LocalPhysicalPlan::PhysicalScan(scan) => {
+            pipeline_input = Some(PipelineInput::ScanTasks {
+                pushdowns: scan.pushdowns.clone(),
+                scan_tasks: scan.scan_tasks.clone(),
+            });
+            let channel_scan =
+                LocalPhysicalPlan::channel_scan(scan.schema.clone(), scan.stats_state.clone());
+            Ok(Transformed::new(
+                channel_scan,
+                true,
+                TreeNodeRecursion::Stop,
+            ))
+        }
         _ => Ok(Transformed::no(plan)),
     })?;
 

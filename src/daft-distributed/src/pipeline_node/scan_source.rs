@@ -3,9 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use common_treenode::{Transformed, TreeNode};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::stats::StatsState;
+use daft_local_plan::LocalPhysicalPlanRef;
+use daft_scan::{ScanTask, ScanTaskRef};
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
@@ -48,20 +47,23 @@ impl ScanSourceNode {
     async fn execution_loop(
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
-        pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        node_id: usize,
     ) -> DaftResult<()> {
-        if scan_tasks.is_empty() {
-            let empty_scan_task = make_empty_scan_task(&plan, config.clone())?;
-            let _ = result_tx.send(PipelineOutput::Task(empty_scan_task)).await;
-            return Ok(());
-        }
-        // TODO: This should be a smarter, decision based on scan task statistics as well as cluster statistics.
-        let max_sources_per_scan_task = config.max_sources_per_scan_task;
-        for scan_tasks_chunk in scan_tasks.chunks(max_sources_per_scan_task) {
-            let task =
-                make_source_tasks(&plan, &pushdowns, scan_tasks_chunk.to_vec(), config.clone())?;
+        for (scan_task_idx, scan_task) in scan_tasks.iter().enumerate() {
+            let scan_task = scan_task
+                .clone()
+                .as_any_arc()
+                .downcast::<ScanTask>()
+                .unwrap();
+            let task = make_source_tasks(
+                plan.clone(),
+                scan_task,
+                scan_task_idx,
+                config.clone(),
+                node_id,
+            )?;
             if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                 break;
             }
@@ -85,9 +87,9 @@ impl DistributedPipelineNode for ScanSourceNode {
         let execution_loop = Self::execution_loop(
             self.plan.clone(),
             self.config.clone(),
-            self.pushdowns.clone(),
             self.scan_tasks.clone(),
             result_tx,
+            self.node_id,
         );
         stage_context.joinset.spawn(execution_loop);
 
@@ -96,48 +98,20 @@ impl DistributedPipelineNode for ScanSourceNode {
 }
 
 fn make_source_tasks(
-    plan: &LocalPhysicalPlanRef,
-    pushdowns: &Pushdowns,
-    scan_tasks: Vec<ScanTaskLikeRef>,
+    plan: LocalPhysicalPlanRef,
+    scan_task: ScanTaskRef,
+    input_id: usize,
     config: Arc<DaftExecutionConfig>,
+    node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    let transformed_plan = plan
-        .clone()
-        .transform_up(|p| match p.as_ref() {
-            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
-                let physical_scan = LocalPhysicalPlan::physical_scan(
-                    scan_tasks.clone().into(),
-                    pushdowns.clone(),
-                    placeholder.schema.clone(),
-                    StatsState::NotMaterialized,
-                );
-                Ok(Transformed::yes(physical_scan))
-            }
-            _ => Ok(Transformed::no(p)),
-        })?
-        .data;
-
-    let psets = HashMap::new();
-    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
-    Ok(SubmittableTask::new(task))
-}
-
-fn make_empty_scan_task(
-    plan: &LocalPhysicalPlanRef,
-    config: Arc<DaftExecutionConfig>,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    let transformed_plan = plan
-        .clone()
-        .transform_up(|p| match p.as_ref() {
-            LocalPhysicalPlan::PlaceholderScan(placeholder) => {
-                let empty_scan = LocalPhysicalPlan::empty_scan(placeholder.schema.clone());
-                Ok(Transformed::yes(empty_scan))
-            }
-            _ => Ok(Transformed::no(p)),
-        })?
-        .data;
-
-    let psets = HashMap::new();
-    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    let task = SwordfishTask::new(
+        node_id.to_string().into(),
+        plan,
+        input_id,
+        scan_task.into(),
+        config,
+        node_id as u32,
+        SchedulingStrategy::Spread,
+    );
     Ok(SubmittableTask::new(task))
 }

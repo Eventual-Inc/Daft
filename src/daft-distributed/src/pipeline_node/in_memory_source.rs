@@ -51,19 +51,21 @@ impl InMemorySourceNode {
         in_memory_info: InMemoryInfo,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        node_id: usize,
     ) -> DaftResult<()> {
-        let partition_refs = psets.get(&in_memory_info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
-        for partition_ref in partition_refs {
-            let task = make_task_for_partition_ref(
-                plan.clone(),
-                partition_ref,
-                in_memory_info.cache_key.clone(),
-                config.clone(),
-            )?;
-            if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
-                break;
-            }
-        }
+        // let partition_refs = psets.get(&in_memory_info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
+        // for partition_ref in partition_refs {
+        //     let task = make_task_for_partition_ref(
+        //         plan.clone(),
+        //         partition_ref,
+        //         in_memory_info.cache_key.clone(),
+        //         config.clone(),
+        //         node_id,
+        //     )?;
+        //     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+        //         break;
+        //     }
+        // }
         Ok(())
     }
 }
@@ -85,6 +87,7 @@ impl DistributedPipelineNode for InMemorySourceNode {
             self.info.clone(),
             self.input_psets.clone(),
             result_tx,
+            self.node_id,
         );
         stage_context.joinset.spawn(execution_loop);
 
@@ -92,38 +95,40 @@ impl DistributedPipelineNode for InMemorySourceNode {
     }
 }
 
-fn make_task_for_partition_ref(
-    plan: LocalPhysicalPlanRef,
-    partition_ref: PartitionRef,
-    cache_key: String,
-    config: Arc<DaftExecutionConfig>,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    let info = InMemoryInfo::new(
-        plan.schema().clone(),
-        cache_key.clone(),
-        None,
-        1,
-        partition_ref.size_bytes()?.expect("make_task_for_partition_ref: Expect that the input partition ref for a in-memory source node has a known size"),
-        partition_ref.num_rows()?,
-        None,
-        None,
-    );
-    let in_memory_source = LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
-    // the first operator of physical_plan has to be a scan
-    let transformed_plan = plan
-        .transform_up(|p| match p.as_ref() {
-            LocalPhysicalPlan::PlaceholderScan(_) => Ok(Transformed::yes(in_memory_source.clone())),
-            _ => Ok(Transformed::no(p)),
-        })?
-        .data;
-    let psets = HashMap::from([(cache_key, vec![partition_ref])]);
-    let task = SwordfishTask::new(
-        transformed_plan,
-        config,
-        psets,
-        // TODO: Replace with WorkerAffinity based on the psets location
-        // Need to get that from `ray.experimental.get_object_locations(object_refs)`
-        SchedulingStrategy::Spread,
-    );
-    Ok(SubmittableTask::new(task))
-}
+// fn make_task_for_partition_ref(
+//     plan: LocalPhysicalPlanRef,
+//     partition_ref: PartitionRef,
+//     cache_key: String,
+//     config: Arc<DaftExecutionConfig>,
+//     node_id: usize,
+// ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+//     let info = InMemoryInfo::new(
+//         plan.schema().clone(),
+//         cache_key.clone(),
+//         None,
+//         1,
+//         partition_ref.size_bytes()?.expect("make_task_for_partition_ref: Expect that the input partition ref for a in-memory source node has a known size"),
+//         partition_ref.num_rows()?,
+//         None,
+//         None,
+//     );
+//     let in_memory_source = LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+//     // the first operator of physical_plan has to be a scan
+//     let transformed_plan = plan
+//         .transform_up(|p| match p.as_ref() {
+//             LocalPhysicalPlan::PlaceholderScan(_) => Ok(Transformed::yes(in_memory_source.clone())),
+//             _ => Ok(Transformed::no(p)),
+//         })?
+//         .data;
+//     let psets = HashMap::from([(cache_key, vec![partition_ref])]);
+//     let task = SwordfishTask::new(
+//         transformed_plan,
+//         config,
+//         psets,
+//         // TODO: Replace with WorkerAffinity based on the psets location
+//         // Need to get that from `ray.experimental.get_object_locations(object_refs)`
+//         SchedulingStrategy::Spread,
+//         node_id,
+//     );
+//     Ok(SubmittableTask::new(task))
+// }

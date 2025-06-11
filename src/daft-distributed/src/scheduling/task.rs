@@ -5,8 +5,8 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use daft_local_plan::LocalPhysicalPlanRef;
+use daft_scan::ScanTaskRef;
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 use super::worker::WorkerId;
 use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
@@ -80,44 +80,62 @@ pub(crate) enum SchedulingStrategy {
     WorkerAffinity { worker_id: WorkerId, soft: bool },
 }
 
+pub(crate) type TaskInputId = usize;
+
+#[derive(Debug, Clone)]
+pub(crate) enum SwordfishTaskInput {
+    InMemory {
+        psets: HashMap<String, Vec<PartitionRef>>,
+    },
+    ScanTask {
+        scan_task: ScanTaskRef,
+    },
+}
+
+impl From<ScanTaskRef> for SwordfishTaskInput {
+    fn from(scan_task: ScanTaskRef) -> Self {
+        Self::ScanTask { scan_task }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SwordfishTask {
-    id: TaskId,
+    task_id: TaskId,
     plan: LocalPhysicalPlanRef,
+    input_id: TaskInputId,
+    input: SwordfishTaskInput,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
+    priority: TaskPriority,
     strategy: SchedulingStrategy,
-    notify_token: Option<CancellationToken>,
 }
 
 #[allow(dead_code)]
 impl SwordfishTask {
     pub fn new(
+        task_id: TaskId,
         plan: LocalPhysicalPlanRef,
+        input_id: TaskInputId,
+        input: SwordfishTaskInput,
         config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
+        priority: TaskPriority,
         strategy: SchedulingStrategy,
     ) -> Self {
-        let task_id = Uuid::new_v4().to_string();
         let resource_request = TaskResourceRequest::new(plan.resource_request());
         Self {
-            id: Arc::from(task_id),
+            task_id,
             plan,
+            input_id,
+            input,
             resource_request,
             config,
-            psets,
+            priority,
             strategy,
-            notify_token: None,
         }
     }
 
-    pub fn id(&self) -> &TaskId {
-        &self.id
-    }
-
-    pub fn strategy(&self) -> &SchedulingStrategy {
-        &self.strategy
+    pub fn task_id(&self) -> &TaskId {
+        &self.task_id
     }
 
     pub fn plan(&self) -> LocalPhysicalPlanRef {
@@ -128,23 +146,23 @@ impl SwordfishTask {
         &self.config
     }
 
-    pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
-        &self.psets
+    pub fn input(&self) -> &SwordfishTaskInput {
+        &self.input
+    }
+
+    pub fn input_id(&self) -> usize {
+        self.input_id
     }
 
     pub fn name(&self) -> String {
         // TODO: Include all operators of the plan in this, not just the root
         self.plan.name().to_string()
     }
-
-    pub fn notify_token(&self) -> Option<CancellationToken> {
-        self.notify_token.clone()
-    }
 }
 
 impl Task for SwordfishTask {
     fn task_id(&self) -> &TaskId {
-        &self.id
+        &self.task_id
     }
 
     fn resource_request(&self) -> &TaskResourceRequest {
@@ -156,8 +174,7 @@ impl Task for SwordfishTask {
     }
 
     fn priority(&self) -> TaskPriority {
-        // Default priority for now, could be enhanced later
-        0
+        self.priority
     }
 }
 
@@ -225,6 +242,7 @@ pub(super) mod tests {
 
     use common_error::DaftError;
     use common_partitioning::Partition;
+    use uuid::Uuid;
 
     use super::*;
     use crate::utils::channel::OneshotSender;

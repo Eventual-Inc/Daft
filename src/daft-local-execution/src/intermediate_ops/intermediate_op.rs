@@ -18,7 +18,7 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu, TaskSet,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -157,25 +157,23 @@ impl IntermediateNode {
     }
 
     pub fn spawn_workers(
-        &self,
+        intermediate_op: Arc<dyn IntermediateOperator>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        runtime_handle: &mut ExecutionRuntimeContext,
+        task_set: &mut TaskSet<DaftResult<()>>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
+        runtime_stats: Arc<RuntimeStatsContext>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
         for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            runtime_handle.spawn_local(
-                Self::run_worker(
-                    self.intermediate_op.clone(),
-                    input_receiver,
-                    output_sender,
-                    self.runtime_stats.clone(),
-                    memory_manager.clone(),
-                ),
-                self.intermediate_op.name(),
-            );
+            task_set.spawn(Self::run_worker(
+                intermediate_op.clone(),
+                input_receiver,
+                output_sender,
+                runtime_stats.clone(),
+                memory_manager.clone(),
+            ));
         }
         output_receiver
     }
@@ -228,8 +226,8 @@ impl PipelineNode for IntermediateNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let mut child_result_receivers = Vec::with_capacity(self.children.len());
+    ) -> crate::Result<Receiver<(usize, Receiver<Arc<MicroPartition>>)>> {
+        let mut child_receivers = Vec::with_capacity(self.children.len());
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Magenta,
@@ -237,50 +235,81 @@ impl PipelineNode for IntermediateNode {
             self.runtime_stats.clone(),
         );
         for child in &self.children {
-            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(CountingReceiver::new(
-                child_result_receiver,
-                self.runtime_stats.clone(),
-                progress_bar.clone(),
-            ));
+            let child_rx = child.start(maintain_order, runtime_handle)?;
+            child_receivers.push(child_rx);
         }
         let op = self.intermediate_op.clone();
         let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name(),
         })?;
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
         let dispatch_spawner = self
             .intermediate_op
             .dispatch_spawner(runtime_handle, maintain_order);
-        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            child_result_receivers,
-            num_workers,
-            &mut runtime_handle.handle(),
-        );
-        runtime_handle.spawn_local(
-            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
-        );
-
-        let mut output_receiver = self.spawn_workers(
-            spawned_dispatch_result.worker_receivers,
-            runtime_handle,
-            maintain_order,
-            runtime_handle.memory_manager(),
-        );
+        let runtime_stats = self.runtime_stats.clone();
+        let progress_bar = progress_bar.clone();
+        let memory_manager = runtime_handle.memory_manager().clone();
+        let op = self.intermediate_op.clone();
         runtime_handle.spawn_local(
             async move {
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
-                        return Ok(());
+                loop {
+                    let mut next_round = Vec::with_capacity(child_receivers.len());
+                    let mut morsel_id = None;
+                    for child_rx in child_receivers.iter() {
+                        if let Some((id, rx)) = child_rx.recv().await {
+                            if morsel_id.is_none() {
+                                morsel_id = Some(id);
+                            } else {
+                                assert_eq!(morsel_id.unwrap(), id);
+                            }
+                            next_round.push(CountingReceiver::new(
+                                rx,
+                                runtime_stats.clone(),
+                                progress_bar.clone(),
+                            ));
+                        }
+                    }
+                    if next_round.is_empty() {
+                        break;
+                    }
+                    assert!(next_round.len() == child_receivers.len());
+
+                    let (round_tx, round_rx) = create_channel(0);
+                    if destination_sender
+                        .send((morsel_id.unwrap(), round_rx))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                    let counting_sender =
+                        CountingSender::new(round_tx, runtime_stats.clone(), progress_bar.clone());
+                    let mut task_set = TaskSet::new();
+                    let spawned_dispatch_result =
+                        dispatch_spawner.spawn_dispatch(next_round, num_workers, &mut task_set);
+
+                    let mut output_receiver = Self::spawn_workers(
+                        op.clone(),
+                        spawned_dispatch_result.worker_receivers,
+                        &mut task_set,
+                        maintain_order,
+                        memory_manager.clone(),
+                        runtime_stats.clone(),
+                    );
+                    while let Some(morsel) = output_receiver.recv().await {
+                        if counting_sender.send(morsel).await.is_err() {
+                            return Ok(());
+                        }
+                    }
+                    while let Some(res) = task_set.join_next().await {
+                        res??;
                     }
                 }
+
                 Ok(())
             },
-            op.name(),
+            self.name(),
         );
         Ok(destination_receiver)
     }

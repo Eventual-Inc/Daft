@@ -66,15 +66,16 @@ impl LimitNode {
                 }
                 Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
                 Ordering::Greater => {
-                    let task_with_limit = make_task_with_limit(
-                        materialized_output,
-                        remaining_limit,
-                        node_id,
-                        schema.clone(),
-                        config.clone(),
-                    )?;
-                    let task_result_handle = task_with_limit.submit(&scheduler_handle).await?;
-                    (PipelineOutput::Running(task_result_handle), true)
+                    todo!()
+                    // let task_with_limit = make_task_with_limit(
+                    //     materialized_output,
+                    //     remaining_limit,
+                    //     node_id,
+                    //     schema.clone(),
+                    //     config.clone(),
+                    // )?;
+                    // let task_result_handle = task_with_limit.submit(&scheduler_handle).await?;
+                    // (PipelineOutput::Running(task_result_handle), true)
                 }
             };
             if result_tx.send(to_send).await.is_err() {
@@ -116,32 +117,33 @@ impl DistributedPipelineNode for LimitNode {
     }
 }
 
-fn make_task_with_limit(
-    materialized_output: MaterializedOutput,
-    limit: usize,
-    node_id: usize,
-    schema: SchemaRef,
-    config: Arc<DaftExecutionConfig>,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    let (partition, worker_id) = materialized_output.into_inner();
-    let in_memory_info = InMemoryInfo::new(schema, node_id.to_string(), None, 1, 0, 0, None, None);
+// fn make_task_with_limit(
+//     materialized_output: MaterializedOutput,
+//     limit: usize,
+//     node_id: usize,
+//     schema: SchemaRef,
+//     config: Arc<DaftExecutionConfig>,
+// ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+//     let (partition, worker_id) = materialized_output.into_inner();
+//     let in_memory_info = InMemoryInfo::new(schema, node_id.to_string(), None, 1, 0, 0, None, None);
 
-    let in_memory_source =
-        LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
+//     let in_memory_source =
+//         LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
 
-    let limit_plan =
-        LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
+//     let limit_plan =
+//         LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
 
-    let mpset = HashMap::from([(node_id.to_string(), vec![partition])]);
+//     let mpset = HashMap::from([(node_id.to_string(), vec![partition])]);
 
-    let task = SwordfishTask::new(
-        limit_plan,
-        config,
-        mpset,
-        SchedulingStrategy::WorkerAffinity {
-            worker_id,
-            soft: true,
-        },
-    );
-    Ok(SubmittableTask::new(task))
-}
+//     let task = SwordfishTask::new(
+//         limit_plan,
+//         config,
+//         mpset,
+//         SchedulingStrategy::WorkerAffinity {
+//             worker_id,
+//             soft: true,
+//         },
+//         node_id,
+//     );
+//     Ok(SubmittableTask::new(task))
+// }

@@ -8,7 +8,7 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
     runtime_stats::CountingReceiver,
-    RuntimeHandle, SpawnedTask,
+    TaskSet,
 };
 
 /// The `DispatchSpawner` trait is implemented by types that can spawn a task that reads from
@@ -26,13 +26,12 @@ pub(crate) trait DispatchSpawner {
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut RuntimeHandle,
+        task_set: &mut TaskSet<DaftResult<()>>,
     ) -> SpawnedDispatchResult;
 }
 
 pub(crate) struct SpawnedDispatchResult {
     pub(crate) worker_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-    pub(crate) spawned_dispatch_task: SpawnedTask<DaftResult<()>>,
 }
 
 /// A dispatcher that distributes morsels to workers in a round-robin fashion.
@@ -107,13 +106,13 @@ impl DispatchSpawner for RoundRobinDispatcher {
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut RuntimeHandle,
+        task_set: &mut TaskSet<DaftResult<()>>,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
         let morsel_size_lower_bound = self.morsel_size_lower_bound;
         let morsel_size_upper_bound = self.morsel_size_upper_bound;
-        let task = runtime_handle.spawn(async move {
+        task_set.spawn(async move {
             Self::dispatch_inner(
                 worker_senders,
                 input_receivers,
@@ -123,10 +122,7 @@ impl DispatchSpawner for RoundRobinDispatcher {
             .await
         });
 
-        SpawnedDispatchResult {
-            worker_receivers,
-            spawned_dispatch_task: task,
-        }
+        SpawnedDispatchResult { worker_receivers }
     }
 }
 
@@ -195,14 +191,14 @@ impl DispatchSpawner for UnorderedDispatcher {
         &self,
         receiver: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut RuntimeHandle,
+        task_set: &mut TaskSet<DaftResult<()>>,
     ) -> SpawnedDispatchResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
         let morsel_size_lower_bound = self.morsel_size_lower_bound;
         let morsel_size_upper_bound = self.morsel_size_upper_bound;
 
-        let dispatch_task = runtime_handle.spawn(async move {
+        task_set.spawn(async move {
             Self::dispatch_inner(
                 worker_sender,
                 receiver,
@@ -212,10 +208,7 @@ impl DispatchSpawner for UnorderedDispatcher {
             .await
         });
 
-        SpawnedDispatchResult {
-            worker_receivers,
-            spawned_dispatch_task: dispatch_task,
-        }
+        SpawnedDispatchResult { worker_receivers }
     }
 }
 
@@ -255,18 +248,15 @@ impl DispatchSpawner for PartitionedDispatcher {
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut RuntimeHandle,
+        task_set: &mut TaskSet<DaftResult<()>>,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
         let partition_by = self.partition_by.clone();
-        let dispatch_task = runtime_handle.spawn(async move {
+        task_set.spawn(async move {
             Self::dispatch_inner(worker_senders, input_receivers, partition_by).await
         });
 
-        SpawnedDispatchResult {
-            worker_receivers,
-            spawned_dispatch_task: dispatch_task,
-        }
+        SpawnedDispatchResult { worker_receivers }
     }
 }

@@ -23,6 +23,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
+    ChannelScan(ChannelScan),
     EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
@@ -82,6 +83,7 @@ impl LocalPhysicalPlan {
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
+            | Self::ChannelScan(ChannelScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
@@ -139,6 +141,14 @@ impl LocalPhysicalPlan {
         Self::PhysicalScan(PhysicalScan {
             scan_tasks,
             pushdowns,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub fn channel_scan(schema: SchemaRef, stats_state: StatsState) -> LocalPhysicalPlanRef {
+        Self::ChannelScan(ChannelScan {
             schema,
             stats_state,
         })
@@ -626,6 +636,7 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(PhysicalScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
             | Self::EmptyScan(EmptyScan { schema, .. })
+            | Self::ChannelScan(ChannelScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
@@ -699,6 +710,7 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(_)
             | Self::PlaceholderScan(_)
             | Self::EmptyScan(_)
+            | Self::ChannelScan(_)
             | Self::InMemoryScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
@@ -740,8 +752,7 @@ impl LocalPhysicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
             [new_child] => match self {
-                Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"),
+                Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::EmptyScan(_) | Self::ChannelScan(_) | Self::InMemoryScan(_) => panic!("LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, ChannelScan, and InMemoryScan do not have children"),
                 Self::Filter(Filter {  predicate, schema,..  }) => Self::filter(new_child.clone(), predicate.clone(), StatsState::NotMaterialized),
                 Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -822,6 +833,12 @@ pub struct InMemoryScan {
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChannelScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

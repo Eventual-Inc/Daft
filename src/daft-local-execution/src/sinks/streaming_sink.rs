@@ -220,7 +220,7 @@ impl PipelineNode for StreamingSinkNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<(usize, Receiver<Arc<MicroPartition>>)>> {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Cyan,
@@ -230,67 +230,100 @@ impl PipelineNode for StreamingSinkNode {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(CountingReceiver::new(
-                child_result_receiver,
-                self.runtime_stats.clone(),
-                progress_bar.clone(),
-            ));
+            child_result_receivers.push(child_result_receiver);
         }
 
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(runtime_handle, maintain_order);
-        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            child_result_receivers,
-            num_workers,
-            &mut runtime_handle.handle(),
-        );
-        runtime_handle.spawn_local(
-            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
-        );
+        let handle = runtime_handle.handle().clone();
+        let memory_manager = runtime_handle.memory_manager().clone();
+        let progress_bar_clone = progress_bar.clone();
 
-        let memory_manager = runtime_handle.memory_manager();
         runtime_handle.spawn_local(
             async move {
-                let mut task_set = TaskSet::new();
-                let mut output_receiver = Self::spawn_workers(
-                    op.clone(),
-                    spawned_dispatch_result.worker_receivers,
-                    &mut task_set,
-                    runtime_stats.clone(),
-                    maintain_order,
-                    memory_manager.clone(),
-                );
-
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
+                loop {
+                    let mut next_round = Vec::with_capacity(child_result_receivers.len());
+                    let mut morsel_id = None;
+                    for child_rx in child_result_receivers.iter() {
+                        if let Some((id, rx)) = child_rx.recv().await {
+                            if morsel_id.is_none() {
+                                morsel_id = Some(id);
+                            } else {
+                                assert_eq!(morsel_id.unwrap(), id);
+                            }
+                            next_round.push(CountingReceiver::new(
+                                rx,
+                                runtime_stats.clone(),
+                                progress_bar_clone.clone(),
+                            ));
+                        }
+                    }
+                    if next_round.is_empty() {
                         break;
                     }
-                }
+                    assert!(next_round.len() == child_result_receivers.len());
 
-                let mut finished_states = Vec::with_capacity(num_workers);
-                while let Some(result) = task_set.join_next().await {
-                    let state = result??;
-                    finished_states.push(state);
-                }
+                    let (round_tx, round_rx) = create_channel(0);
+                    if destination_sender
+                        .send((morsel_id.unwrap(), round_rx))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                    let counting_sender = CountingSender::new(
+                        round_tx,
+                        runtime_stats.clone(),
+                        progress_bar_clone.clone(),
+                    );
 
-                let compute_runtime = get_compute_runtime();
-                let spawner = ExecutionTaskSpawner::new(
-                    compute_runtime,
-                    memory_manager,
-                    runtime_stats.clone(),
-                    info_span!("StreamingSink::Finalize"),
-                );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                    let mut dispatch_task_set = TaskSet::new();
+                    let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
+                        next_round,
+                        num_workers,
+                        &mut dispatch_task_set,
+                    );
+                    let mut worker_task_set = TaskSet::new();
+                    let mut output_receiver = Self::spawn_workers(
+                        op.clone(),
+                        spawned_dispatch_result.worker_receivers,
+                        &mut worker_task_set,
+                        runtime_stats.clone(),
+                        maintain_order,
+                        memory_manager.clone(),
+                    );
+
+                    while let Some(morsel) = output_receiver.recv().await {
+                        if counting_sender.send(morsel).await.is_err() {
+                            break;
+                        }
+                    }
+
+                    let mut finished_states = Vec::with_capacity(num_workers);
+                    while let Some(result) = worker_task_set.join_next().await {
+                        let state = result??;
+                        finished_states.push(state);
+                    }
+                    while let Some(result) = dispatch_task_set.join_next().await {
+                        result??;
+                    }
+
+                    let compute_runtime = get_compute_runtime();
+                    let spawner = ExecutionTaskSpawner::new(
+                        compute_runtime,
+                        memory_manager.clone(),
+                        runtime_stats.clone(),
+                        info_span!("StreamingSink::Finalize"),
+                    );
+                    let finalized_result = op.finalize(finished_states, &spawner).await??;
+                    if let Some(res) = finalized_result {
+                        let _ = counting_sender.send(res).await;
+                    }
                 }
                 Ok(())
             },

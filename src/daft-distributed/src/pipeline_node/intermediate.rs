@@ -11,7 +11,7 @@ use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, Running
 use crate::{
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask},
+        task::{SchedulingStrategy, SwordfishTask, Task},
     },
     stage::StageContext,
     utils::channel::{create_channel, Sender},
@@ -49,7 +49,7 @@ impl IntermediateNode {
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let mut task_or_partition_ref_stream = input.materialize_running();
-
+        let mut input_id_counter = 0;
         while let Some(pipeline_result) = task_or_partition_ref_stream.next().await {
             let pipeline_output = pipeline_result?;
             match pipeline_output {
@@ -57,20 +57,28 @@ impl IntermediateNode {
                     unreachable!("All running tasks should be materialized before this point")
                 }
                 PipelineOutput::Materialized(materialized_output) => {
-                    // make new task for this partition ref
-                    let task = make_task_for_materialized_output(
-                        plan.clone(),
-                        materialized_output,
-                        node_id.to_string(),
-                        config.clone(),
-                    )?;
-                    if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
-                        break;
-                    }
+                    todo!()
+                    // // make new task for this partition ref
+                    // let task = make_task_for_materialized_output(
+                    //     plan.clone(),
+                    //     materialized_output,
+                    //     node_id.to_string(),
+                    //     config.clone(),
+                    //     node_id,
+                    // )?;
+                    // if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                    //     break;
+                    // }
                 }
                 PipelineOutput::Task(task) => {
                     // append plan to this task
-                    let task = append_plan_to_task(task, config.clone(), plan.clone())?;
+                    let task = append_plan_to_task(
+                        task,
+                        config.clone(),
+                        plan.clone(),
+                        node_id,
+                        input_id_counter,
+                    )?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }
@@ -111,49 +119,53 @@ impl DistributedPipelineNode for IntermediateNode {
     }
 }
 
-fn make_task_for_materialized_output(
-    plan: LocalPhysicalPlanRef,
-    materialized_output: MaterializedOutput,
-    cache_key: String,
-    config: Arc<DaftExecutionConfig>,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    let (partition_ref, worker_id) = materialized_output.into_inner();
+// fn make_task_for_materialized_output(
+//     plan: LocalPhysicalPlanRef,
+//     materialized_output: MaterializedOutput,
+//     cache_key: String,
+//     config: Arc<DaftExecutionConfig>,
+//     node_id: usize,
+// ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+//     let (partition_ref, worker_id) = materialized_output.into_inner();
 
-    let info = InMemoryInfo::new(
-        plan.schema().clone(),
-        cache_key.clone(),
-        None,
-        1,
-        partition_ref.size_bytes()?.expect("make_task_for_materialized_output: Expect that the input partition ref for an intermediate node has a known size"),
-        partition_ref.num_rows()?,
-        None,
-        None,
-    );
-    let in_memory_source = LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
-    // the first operator of physical_plan has to be a scan
-    let transformed_plan = plan
-        .transform_up(|p| match p.as_ref() {
-            LocalPhysicalPlan::PlaceholderScan(_) => Ok(Transformed::yes(in_memory_source.clone())),
-            _ => Ok(Transformed::no(p)),
-        })?
-        .data;
-    let psets = HashMap::from([(cache_key, vec![partition_ref])]);
-    let task = SwordfishTask::new(
-        transformed_plan,
-        config,
-        psets,
-        SchedulingStrategy::WorkerAffinity {
-            worker_id,
-            soft: false,
-        },
-    );
-    Ok(SubmittableTask::new(task))
-}
+//     let info = InMemoryInfo::new(
+//         plan.schema().clone(),
+//         cache_key.clone(),
+//         None,
+//         1,
+//         partition_ref.size_bytes()?.expect("make_task_for_materialized_output: Expect that the input partition ref for an intermediate node has a known size"),
+//         partition_ref.num_rows()?,
+//         None,
+//         None,
+//     );
+//     let in_memory_source = LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+//     // the first operator of physical_plan has to be a scan
+//     let transformed_plan = plan
+//         .transform_up(|p| match p.as_ref() {
+//             LocalPhysicalPlan::PlaceholderScan(_) => Ok(Transformed::yes(in_memory_source.clone())),
+//             _ => Ok(Transformed::no(p)),
+//         })?
+//         .data;
+//     let psets = HashMap::from([(cache_key, vec![partition_ref])]);
+//     let task = SwordfishTask::new(
+//         transformed_plan,
+//         config,
+//         psets,
+//         SchedulingStrategy::WorkerAffinity {
+//             worker_id,
+//             soft: false,
+//         },
+//         node_id,
+//     );
+//     Ok(SubmittableTask::new(task))
+// }
 
 fn append_plan_to_task(
     submittable_task: SubmittableTask<SwordfishTask>,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
+    node_id: usize,
+    input_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let transformed_plan = plan
         .transform_up(|p| match p.as_ref() {
@@ -163,12 +175,15 @@ fn append_plan_to_task(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
+    let input = submittable_task.task().input().clone();
     let scheduling_strategy = submittable_task.task().strategy().clone();
-    let psets = submittable_task.task().psets().clone();
     let task = submittable_task.with_new_task(SwordfishTask::new(
+        node_id.to_string().into(),
         transformed_plan,
+        input_id,
+        input,
         config,
-        psets,
+        node_id as u32,
         scheduling_strategy,
     ));
     Ok(task)

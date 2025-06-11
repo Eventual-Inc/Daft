@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
+    InProgressSwordfishPlan,
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
@@ -16,7 +17,7 @@ from daft.daft import (
     RayPartitionRef,
     RaySwordfishTask,
     RaySwordfishWorker,
-    set_compute_runtime_num_worker_threads,
+    ScanTask,
 )
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
@@ -30,7 +31,7 @@ from daft.runners.partitioning import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator
+    from collections.abc import AsyncIterator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -47,34 +48,56 @@ logger = logging.getLogger(__name__)
     max_task_retries=MAX_SWORDFISH_ACTOR_TASK_RETRIES,
 )
 class RaySwordfishActor:
-    """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
-
-    It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
-    """
-
-    def __init__(self, num_worker_threads: int) -> None:
-        # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
-        set_compute_runtime_num_worker_threads(num_worker_threads)
+    def __init__(self) -> None:
         self.native_executor = NativeExecutor()
+        self.in_progress_plans: dict[str, InProgressSwordfishPlan] = {}
 
-    async def run_plan(
+    async def start_plan(
         self,
+        plan_id: str,
         plan: LocalPhysicalPlan,
         config: PyDaftExecutionConfig,
-        psets: dict[str, list[ray.ObjectRef]],
-    ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
-        """Run a plan on swordfish and yield partitions."""
-        psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
-        psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+    ) -> None:
+        in_progress_plan = self.native_executor.run_distributed(plan, config)
+        self.in_progress_plans[plan_id] = in_progress_plan
 
-        metas = []
-        async for partition in self.native_executor.run_async(plan, psets_mp, config, None):
-            if partition is None:
-                break
-            mp = MicroPartition._from_pymicropartition(partition)
-            metas.append(PartitionMetadata.from_table(mp))
-            yield mp
-        yield metas
+    async def put_input(
+        self,
+        plan_id: str,
+        input_id: int,
+        inputs: ScanTask,
+    ) -> None:
+        in_progress_plan = self.in_progress_plans[plan_id]
+        await in_progress_plan.put_input(input_id, inputs)
+
+    async def get_result(
+        self,
+        plan_id: str,
+        input_id: int,
+    ) -> MicroPartition:
+        in_progress_plan = self.in_progress_plans[plan_id]
+        py_mp = await in_progress_plan.get_result(input_id)
+        return MicroPartition._from_pymicropartition(py_mp)
+
+    async def execute(
+        self,
+        plan_id: str,
+        plan: LocalPhysicalPlan,
+        input_id: int,
+        input: ScanTask,
+        config: PyDaftExecutionConfig,
+    ) -> tuple[MicroPartition, PartitionMetadata]:
+        if plan_id not in self.in_progress_plans:
+            await self.start_plan(plan_id, plan, config)
+
+        await self.put_input(plan_id, input_id, input)
+        del input
+
+        result = await self.get_result(plan_id, input_id)
+        return result, PartitionMetadata.from_table(result)
+
+    async def mark_plan_complete(self, plan_id: str) -> None:
+        self.in_progress_plans.pop(plan_id)
 
 
 @dataclass
@@ -85,22 +108,15 @@ class RaySwordfishTaskHandle:
     """
 
     result_handle: ray.ObjectRef
+    metadata_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     task: asyncio.Task[list[RayPartitionRef]] | None = None
 
     async def _get_result(self) -> list[RayPartitionRef]:
-        await self.result_handle.completed()
-        results = [result for result in self.result_handle]
-        metadatas_ref = results.pop()
-
-        metadatas = await metadatas_ref
-        assert len(results) == len(metadatas)
-
-        res = [
-            RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
-            for result, metadata in zip(results, metadatas)
+        metadata = await self.metadata_handle
+        return [
+            RayPartitionRef(self.result_handle, metadata.num_rows, metadata.size_bytes)
         ]
-        return res
 
     async def get_result(self) -> list[RayPartitionRef]:
         self.task = asyncio.create_task(self._get_result())
@@ -125,12 +141,24 @@ class RaySwordfishActorHandle:
         self.actor_handle = actor_handle
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
-        psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
-        result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(task.plan(), task.config(), psets)
+        result_handle, metadata_handle = self.actor_handle.execute.options(
+            name=task.name(),
+            num_returns=2,
+        ).remote(
+            plan_id=task.plan_id(),
+            plan=task.plan(),
+            input=task.input(),
+            input_id=task.input_id(),
+            config=task.config(),
+        )
         return RaySwordfishTaskHandle(
             result_handle,
+            metadata_handle,
             self.actor_handle,
         )
+
+    def mark_plan_complete(self, plan_id: str) -> None:
+        self.actor_handle.mark_plan_complete.remote(plan_id)
 
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)
@@ -151,7 +179,7 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
                     node_id=node["NodeID"],
                     soft=False,
                 ),
-            ).remote(num_worker_threads=int(node["Resources"]["CPU"]))
+            ).remote()
             actor_handle = RaySwordfishActorHandle(actor)
             handles.append(
                 RaySwordfishWorker(
@@ -172,7 +200,9 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
 class FlotillaPlanRunner:
     def __init__(self) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
-        self.curr_result_gens: dict[str, AsyncIterator[tuple[ray.ObjectRef, int, int]]] = {}
+        self.curr_result_gens: dict[
+            str, AsyncIterator[tuple[ray.ObjectRef, int, int]]
+        ] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
 
     def run_plan(
@@ -181,7 +211,12 @@ class FlotillaPlanRunner:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> None:
         psets = {
-            k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
+            k: [
+                RayPartitionRef(
+                    v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0
+                )
+                for v in v.values()
+            ]
             for k, v in partition_sets.items()
         }
         self.curr_plans[plan.id()] = plan
@@ -203,7 +238,9 @@ class FlotillaPlanRunner:
             return None
 
         obj, num_rows, size_bytes = next_result
-        metadata_accessor = PartitionMetadataAccessor.from_metadata_list([PartitionMetadata(num_rows, size_bytes)])
+        metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
+            [PartitionMetadata(num_rows, size_bytes)]
+        )
         materialized_result = RayMaterializedResult(
             partition=obj,
             metadatas=metadata_accessor,
@@ -215,7 +252,9 @@ class FlotillaPlanRunner:
 @ray.remote
 class UDFActor:
     def __init__(self, uninitialized_projection: ExpressionsProjection) -> None:
-        self.projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
+        self.projection = ExpressionsProjection(
+            [e._initialize_udfs() for e in uninitialized_projection]
+        )
 
     def get_node_id(self) -> str:
         return ray.get_runtime_context().get_node_id()
@@ -245,7 +284,9 @@ def start_udf_actors(
     memory_per_actor: float,
     num_cpus_per_actor: float,
 ) -> list[tuple[str, list[UDFActorHandle]]]:
-    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
+    expr_projection = ExpressionsProjection(
+        [Expression._from_pyexpr(expr) for expr in projection]
+    )
     handles: dict[str, list[UDFActorHandle]] = {}
     actors = [
         UDFActor.options(  # type: ignore

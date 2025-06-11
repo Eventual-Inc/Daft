@@ -200,39 +200,41 @@ impl ActorUDF {
 
         let mut materialized_output_stream = input.materialize_running();
         let mut running_tasks = JoinSet::new();
+        let mut input_id_counter = 0;
         while let Some(pipeline_output) = materialized_output_stream.next().await {
             let pipeline_output = pipeline_output?;
             match pipeline_output {
                 PipelineOutput::Materialized(materialized_output) => {
-                    let actors =
-                        udf_actors.get_actors_for_worker(&materialized_output.worker_id)?;
+                    todo!()
+                    // let actors =
+                    //     udf_actors.get_actors_for_worker(&materialized_output.worker_id)?;
 
-                    // If no actors for this worker, pick actors using round robin
-                    let (worker_id, actors) = if actors.is_empty() {
-                        udf_actors.get_round_robin_actors()?
-                    } else {
-                        (materialized_output.worker_id.clone(), actors)
-                    };
+                    // // If no actors for this worker, pick actors using round robin
+                    // let (worker_id, actors) = if actors.is_empty() {
+                    //     udf_actors.get_round_robin_actors()?
+                    // } else {
+                    //     (materialized_output.worker_id.clone(), actors)
+                    // };
 
-                    let task = make_actor_udf_task_for_materialized_outputs(
-                        vec![materialized_output],
-                        worker_id,
-                        batch_size,
-                        memory_request,
-                        actors,
-                        node_id,
-                        config.clone(),
-                        schema.clone(),
-                    )?;
-                    let (submittable_task, notify_token) = task.with_notify_token();
-                    running_tasks.spawn(notify_token);
-                    if result_tx
-                        .send(PipelineOutput::Task(submittable_task))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
+                    // let task = make_actor_udf_task_for_materialized_outputs(
+                    //     vec![materialized_output],
+                    //     worker_id,
+                    //     batch_size,
+                    //     memory_request,
+                    //     actors,
+                    //     node_id,
+                    //     config.clone(),
+                    //     schema.clone(),
+                    // )?;
+                    // let (submittable_task, notify_token) = task.with_notify_token();
+                    // running_tasks.spawn(notify_token);
+                    // if result_tx
+                    //     .send(PipelineOutput::Task(submittable_task))
+                    //     .await
+                    //     .is_err()
+                    // {
+                    //     break;
+                    // }
                 }
                 PipelineOutput::Task(task) => {
                     // TODO: THIS IS NOT GOING TO WORK IF THE TASK HAS AN EXISTING SCHEDULING STRATEGY.
@@ -252,7 +254,10 @@ impl ActorUDF {
                         actors,
                         schema.clone(),
                         &worker_id,
+                        node_id,
+                        input_id_counter,
                     )?;
+                    input_id_counter += 1;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -306,59 +311,60 @@ impl DistributedPipelineNode for ActorUDF {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn make_actor_udf_task_for_materialized_outputs(
-    materialized_outputs: Vec<MaterializedOutput>,
-    worker_id: WorkerId,
-    batch_size: Option<usize>,
-    memory_request: u64,
-    actors: Vec<PyObjectWrapper>,
-    node_id: usize,
-    config: Arc<DaftExecutionConfig>,
-    schema: SchemaRef,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    // Extract all partitions from materialized outputs
-    let mut partitions = Vec::new();
-    for materialized_output in materialized_outputs {
-        let (partition, _) = materialized_output.into_inner();
-        partitions.push(partition);
-    }
+// #[allow(clippy::too_many_arguments)]
+// fn make_actor_udf_task_for_materialized_outputs(
+//     materialized_outputs: Vec<MaterializedOutput>,
+//     worker_id: WorkerId,
+//     batch_size: Option<usize>,
+//     memory_request: u64,
+//     actors: Vec<PyObjectWrapper>,
+//     node_id: usize,
+//     config: Arc<DaftExecutionConfig>,
+//     schema: SchemaRef,
+// ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+//     // Extract all partitions from materialized outputs
+//     let mut partitions = Vec::new();
+//     for materialized_output in materialized_outputs {
+//         let (partition, _) = materialized_output.into_inner();
+//         partitions.push(partition);
+//     }
 
-    let in_memory_info = InMemoryInfo::new(
-        schema.clone(),
-        node_id.to_string(),
-        None,
-        partitions.len(),
-        0,
-        0,
-        None,
-        None,
-    );
+//     let in_memory_info = InMemoryInfo::new(
+//         schema.clone(),
+//         node_id.to_string(),
+//         None,
+//         partitions.len(),
+//         0,
+//         0,
+//         None,
+//         None,
+//     );
 
-    let in_memory_source =
-        LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
+//     let in_memory_source =
+//         LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
 
-    let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
-        in_memory_source,
-        actors.into_iter().map(|e| e.into()).collect(),
-        batch_size,
-        memory_request,
-        schema,
-        StatsState::NotMaterialized,
-    );
+//     let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
+//         in_memory_source,
+//         actors.into_iter().map(|e| e.into()).collect(),
+//         batch_size,
+//         memory_request,
+//         schema,
+//         StatsState::NotMaterialized,
+//     );
 
-    let task = SubmittableTask::new(SwordfishTask::new(
-        actor_pool_project_plan,
-        config,
-        HashMap::from([(node_id.to_string(), partitions)]),
-        SchedulingStrategy::WorkerAffinity {
-            worker_id,
-            soft: false,
-        },
-    ));
+//     let task = SubmittableTask::new(SwordfishTask::new(
+//         actor_pool_project_plan,
+//         config,
+//         HashMap::from([(node_id.to_string(), partitions)]),
+//         SchedulingStrategy::WorkerAffinity {
+//             worker_id,
+//             soft: false,
+//         },
+//         node_id,
+//     ));
 
-    Ok(task)
-}
+//     Ok(task)
+// }
 
 fn append_actor_udf_to_task(
     submittable_task: SubmittableTask<SwordfishTask>,
@@ -368,6 +374,8 @@ fn append_actor_udf_to_task(
     actors: Vec<PyObjectWrapper>,
     schema: SchemaRef,
     worker_id: &WorkerId,
+    node_id: usize,
+    input_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let task_plan = submittable_task.task().plan();
     let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
@@ -384,12 +392,14 @@ fn append_actor_udf_to_task(
         worker_id: worker_id.clone(),
         soft: false,
     };
-    let psets = submittable_task.task().psets().clone();
-
+    let input = submittable_task.task().input().clone();
     let task = submittable_task.with_new_task(SwordfishTask::new(
+        node_id.to_string().into(),
         actor_pool_project_plan,
+        input_id,
+        input,
         config,
-        psets,
+        node_id as u32,
         scheduling_strategy,
     ));
     Ok(task)

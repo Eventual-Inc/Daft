@@ -2257,6 +2257,7 @@ dependencies = [
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-scan",
  "daft-schema",
  "futures",
  "pyo3",

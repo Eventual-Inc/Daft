@@ -8,7 +8,7 @@ use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::sources::source::SourceStream;
+use crate::channel::{create_channel, Receiver, Sender};
 
 pub struct EmptyScanSource {
     schema: SchemaRef,
@@ -30,9 +30,17 @@ impl Source for EmptyScanSource {
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
-    ) -> DaftResult<SourceStream<'static>> {
+        tx: Sender<(usize, Receiver<Arc<MicroPartition>>)>,
+    ) -> DaftResult<()> {
+        let (empty_sender, empty_receiver) = create_channel(0);
+        if tx.send((0, empty_receiver)).await.is_err() {
+            return Ok(());
+        }
         let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
-        Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
+        if empty_sender.send(empty).await.is_err() {
+            return Ok(());
+        }
+        Ok(())
     }
     fn name(&self) -> &'static str {
         "EmptyScan"
