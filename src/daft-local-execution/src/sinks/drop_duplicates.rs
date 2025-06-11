@@ -13,22 +13,26 @@
 //! Current method works well for high-cardinality inputs
 //! TODO: Better support for low-cardinality by avoiding partitioning
 
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 
 use arrow_row::Rows;
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
-use daft_core::datatypes::DaftPrimitiveType;
-use daft_core::prelude::{AsArrow, DaftArrayType, Int64Array, SeriesLike, UInt64Array};
-use daft_core::series::IntoSeries;
-use daft_core::utils::identity_hash_set::IndexHash;
+use daft_core::{
+    array::DataArray,
+    datatypes::DaftPrimitiveType,
+    prelude::{AsArrow, DaftArrayType, DaftNumericType, Int64Array, UInt64Array},
+    series::{array_impl::ArrayWrapper, IntoSeries},
+    utils::identity_hash_set::IndexHash,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_core::series::array_impl::ArrayWrapper;
-use hashbrown::{HashSet, hash_set::Entry::{Occupied, Vacant}};
+use hashbrown::{
+    hash_set::Entry::{Occupied, Vacant},
+    HashSet,
+};
 use itertools::Itertools;
-use log::Record;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -37,21 +41,38 @@ use super::blocking_sink::{
 };
 use crate::ExecutionTaskSpawner;
 
-struct SingleColState<T: DaftArrayType + AsArrow> {
-    dedup_map: HashSet<T>
+struct SingleColState<T: DaftPrimitiveType + AsArrow> {
+    dedup_map: HashSet<T::Native>,
 }
 
-impl<T> SingleColState<T> where T: DaftArrayType + AsArrow {
+impl<T> SingleColState<T>
+where
+    T: DaftPrimitiveType + AsArrow,
+    T::Native: Eq + Hash,
+{
     fn new() -> Self {
-        todo!()
+        Self {
+            dedup_map: HashSet::with_capacity(16384),
+        }
     }
 
     fn push_batch(&mut self, batch: &RecordBatch, columns: &[BoundExpr]) -> DaftResult<()> {
         let distinct_on = batch.eval_expression_list(columns)?;
-        let distinct_on = distinct_on.get_column(0).downcast();
+        let distinct_on = distinct_on
+            .get_column(0)
+            .downcast::<DataArray<T>>()?
+            .as_arrow();
 
-        for (idx, val) in distinct_on.iter().enumerate() {}
-        todo!()
+        for (idx, val) in distinct_on.values_iter().enumerate() {
+            match self.dedup_map.entry(*val) {
+                Vacant(e) => {
+                    e.insert();
+                    idxs.push(idx as u64);
+                }
+                Occupied(_) => {}
+            }
+        }
+        Ok(())
     }
 }
 
@@ -72,13 +93,16 @@ enum DropDuplicatesState<T> {
 
 impl DropDuplicatesState {
     fn new() -> Self {
-        Self::Accumulating { dedup_map: HashSet::<Option<i64>>::with_capacity(16384), partially_deduped: vec![] }
+        Self::Accumulating {
+            state: SingleColState::new(),
+            partially_deduped: vec![],
+        }
     }
 
     fn push(&mut self, input: Arc<MicroPartition>, columns: &[BoundExpr]) -> DaftResult<()> {
         assert_eq!(columns.len(), 1); // TODO: Support multiple columns
         let Self::Accumulating {
-            ref mut dedup_map,
+            ref mut state,
             ref mut partially_deduped,
         } = self
         else {
@@ -90,7 +114,13 @@ impl DropDuplicatesState {
         for batch in batches.iter() {
             let distinct_on = batch.eval_expression_list(columns)?;
             let distinct_on = distinct_on.get_column(0);
-            let distinct_on = distinct_on.inner.as_any().downcast_ref::<ArrayWrapper<Int64Array>>().unwrap().0.as_arrow();
+            let distinct_on = distinct_on
+                .inner
+                .as_any()
+                .downcast_ref::<ArrayWrapper<Int64Array>>()
+                .unwrap()
+                .0
+                .as_arrow();
 
             let mut idxs = Vec::with_capacity(input.len() / batches.len());
             // idxs.clear();
@@ -283,6 +313,6 @@ impl BlockingSink for DropDuplicatesSink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(DropDuplicatesState::new(self.num_partitions())))
+        Ok(Box::new(DropDuplicatesState::new()))
     }
 }
