@@ -94,3 +94,19 @@ def test_substr(test_expression):
         sql_name="substr",
         args=[2, None],
     )
+
+
+def test_regexp_replace(test_expression):
+    test_data = ["123-456", "789-012", "345-678"]
+    regex = r"^(\d+)-(\d+)$"
+    replace = "\\2"
+    expected = ["456", "012", "678"]
+    test_expression(
+        data=test_data,
+        expected=expected,
+        name="replace",
+        namespace="str",
+        sql_name="regexp_replace",
+        args=[regex, replace],
+        kwargs={"regex": True},
+    )
