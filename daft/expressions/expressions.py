@@ -1963,14 +1963,19 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         """
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-        if io_config.unity.endpoint is None:
-            from daft.catalog.__unity import UnityCatalog
-            from daft.session import current_catalog
 
-            catalog = current_catalog()
-            if isinstance(catalog, UnityCatalog):
-                unity_catalog = catalog._inner
-                io_config = io_config.replace(unity=unity_catalog.to_io_config().unity)
+        if io_config.unity.endpoint is None:
+            try:
+                from daft.catalog.__unity import UnityCatalog
+            except ImportError:
+                pass
+            else:
+                from daft.session import current_catalog
+
+                catalog = current_catalog()
+                if isinstance(catalog, UnityCatalog):
+                    unity_catalog = catalog._inner
+                    io_config = io_config.replace(unity=unity_catalog.to_io_config().unity)
 
         max_connections_expr = Expression._to_expression(max_connections)._expr
         on_error_expr = Expression._to_expression(on_error)._expr

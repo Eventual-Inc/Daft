@@ -22,11 +22,11 @@ def test_read_volume(make_df, local_unity_catalog, repartition_nparts, with_mors
         {
             "id": [1, 2, 3, 4, 5],
             "files": [
-                "dbfs:/Volumes/unity/default/txt_files/a.txt",
-                "dbfs:/Volumes/unity/default/json_files/c.json",
-                "dbfs:/Volumes/unity/default/json_files/d.json",
-                "dbfs:/Volumes/unity/default/json_files/dir1/e.json",
-                "dbfs:/Volumes/unity/default/txt_files/b.txt",
+                "vol+dbfs:/Volumes/unity/default/txt_files/a.txt",
+                "vol+dbfs:/Volumes/unity/default/json_files/c.json",
+                "vol+dbfs:/Volumes/unity/default/json_files/d.json",
+                "vol+dbfs:/Volumes/unity/default/json_files/dir1/e.json",
+                "vol+dbfs:/Volumes/unity/default/txt_files/b.txt",
             ],
         },
         repartition=repartition_nparts,

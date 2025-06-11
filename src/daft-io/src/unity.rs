@@ -20,7 +20,7 @@ fn invalid_unity_path(path: &str) -> crate::Error {
     crate::Error::NotFound {
         path: path.to_string(),
         source: Box::new(DaftError::ValueError(format!(
-            "Expected Unity Catalog volume path to be in the form `dbfs:/Volumes/catalog/schema/volume/path`, instead found: {}",
+            "Expected Unity Catalog volume path to be in the form `vol+dbfs:/Volumes/catalog/schema/volume/path`, instead found: {}",
             path
         ))),
     }
@@ -130,8 +130,8 @@ impl UnitySource {
 
         debug_assert_eq!(
             url.scheme().to_lowercase(),
-            "dbfs",
-            "UnitySource should only be used for paths with scheme `dbfs`."
+            "vol+dbfs",
+            "UnitySource should only be used for paths with scheme `vol+dbfs`."
         );
 
         let mut segments = url
