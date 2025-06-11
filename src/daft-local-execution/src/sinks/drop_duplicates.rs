@@ -15,14 +15,16 @@
 
 use std::{hash::Hash, sync::Arc};
 
+use arrow_row::RowConverter;
+use arrow2::{array::PrimitiveArray};
 use arrow_row::Rows;
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::{
     array::DataArray,
-    datatypes::DaftPrimitiveType,
-    prelude::{AsArrow, DaftArrayType, DaftNumericType, Int64Array, UInt64Array},
-    series::{array_impl::ArrayWrapper, IntoSeries},
+    datatypes::{DaftFloatType, DaftPrimitiveType, NumericNative},
+    prelude::{AsArrow, DaftArrayType, DaftDataType, DaftNumericType, Int64Array, UInt64Array},
+    series::{array_impl::ArrayWrapper, IntoSeries, Series},
     utils::identity_hash_set::IndexHash,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -33,6 +35,7 @@ use hashbrown::{
     HashSet,
 };
 use itertools::Itertools;
+use log::Record;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -41,30 +44,35 @@ use super::blocking_sink::{
 };
 use crate::ExecutionTaskSpawner;
 
-struct SingleColState<T: DaftPrimitiveType + AsArrow> {
-    dedup_map: HashSet<T::Native>,
+trait DuplicateOnState {
+    fn push_batch(&mut self, distinct_on: &RecordBatch) -> DaftResult<Vec<u64>>;
 }
 
-impl<T> SingleColState<T>
-where
-    T: DaftPrimitiveType + AsArrow,
-    T::Native: Eq + Hash,
-{
-    fn new() -> Self {
+struct PrimitiveColState<T> {
+    dedup_map: HashSet<Option<T>>,
+}
+
+impl<T> PrimitiveColState<T>
+where T: NumericNative + Hash + Eq {
+    fn new(columns: &[BoundExpr]) -> Self {
         Self {
-            dedup_map: HashSet::with_capacity(16384),
+            dedup_map: HashSet::with_capacity(16_384),  // 16KB
         }
     }
+}
 
-    fn push_batch(&mut self, batch: &RecordBatch, columns: &[BoundExpr]) -> DaftResult<()> {
-        let distinct_on = batch.eval_expression_list(columns)?;
-        let distinct_on = distinct_on
-            .get_column(0)
-            .downcast::<DataArray<T>>()?
-            .as_arrow();
+impl<T> DuplicateOnState for PrimitiveColState<T>
+where T: NumericNative + Hash + Eq {
+    fn push_batch(&mut self, distinct_arrow: &PrimitiveArray<T>) -> DaftResult<Vec<u64>> {
+        // let distinct_physical = distinct_col
+        //     .as_physical()?;
+        // let distinct_arrow = distinct_physical
+        //     .downcast::<DataArray<T>>()?
+        //     .as_arrow();
 
-        for (idx, val) in distinct_on.values_iter().enumerate() {
-            match self.dedup_map.entry(*val) {
+        let mut idxs = Vec::with_capacity(distinct_arrow.len());
+        for (idx, val) in distinct_arrow.iter().enumerate() {
+            match self.dedup_map.entry(val.cloned()) {
                 Vacant(e) => {
                     e.insert();
                     idxs.push(idx as u64);
@@ -72,29 +80,50 @@ where
                 Occupied(_) => {}
             }
         }
-        Ok(())
+        Ok(idxs)
     }
 }
 
 struct MultiColState {
+    converter: RowConverter,
     distinct_rows: Rows,
     dedup_map: HashSet<IndexHash>,
 }
 
-impl MultiColState {}
+impl MultiColState {
+    fn new(columns: &[BoundExpr]) -> Self {
+        let converter = RowConverter::new(columns.iter().map(|e| e.data_type()).collect()).unwrap();
 
-enum DropDuplicatesState<T> {
+        Self {
+            converter,
+            distinct_rows: converter.empty_rows(16_384, 16_384 * 8),
+            dedup_map: HashSet::with_capacity(16_384),  // 16KB
+        }
+    }
+}
+
+impl DuplicateOnState for MultiColState {
+    fn push_batch(&mut self, distinct_on: &RecordBatch) -> DaftResult<Vec<u64>> {
+        todo!()
+    }
+}
+
+enum DropDuplicatesState {
     Accumulating {
-        state: T,
+        state: Box<dyn DuplicateOnState>,
         partially_deduped: Vec<RecordBatch>,
     },
     Done,
 }
 
 impl DropDuplicatesState {
-    fn new() -> Self {
+    fn new(columns: &[BoundExpr]) -> Self {
         Self::Accumulating {
-            state: SingleColState::new(),
+            state: if columns.len() > 1 {
+                Box::new(MultiColState::new(columns))
+            } else {
+                Box::new(PrimitiveColState::new(columns))
+            },
             partially_deduped: vec![],
         }
     }
@@ -125,13 +154,13 @@ impl DropDuplicatesState {
             let mut idxs = Vec::with_capacity(input.len() / batches.len());
             // idxs.clear();
             for (idx, val) in distinct_on.iter().enumerate() {
-                match dedup_map.entry(val.cloned()) {
-                    Vacant(e) => {
-                        e.insert();
-                        idxs.push(idx as u64);
-                    }
-                    Occupied(_) => {}
-                }
+                // match dedup_map.entry(val.cloned()) {
+                //     Vacant(e) => {
+                //         e.insert();
+                //         idxs.push(idx as u64);
+                //     }
+                //     Occupied(_) => {}
+                // }
             }
 
             let idxs_series = UInt64Array::from(("idxs", idxs)).into_series();

@@ -2556,6 +2556,7 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-row",
+ "arrow2",
  "async-trait",
  "common-daft-config",
  "common-display",
@@ -2589,6 +2590,7 @@ dependencies = [
  "kanal",
  "log",
  "num-format",
+ "num-traits",
  "opentelemetry",
  "parking_lot 0.12.4",
  "pin-project",
