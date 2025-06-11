@@ -9,14 +9,14 @@ use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
-    scheduling::task::{SchedulingStrategy, SwordfishTask},
-    stage::StageContext,
-    utils::channel::{create_channel, Sender},
+    plan::PlanID, scheduling::task::{SchedulingStrategy, SwordfishTask}, stage::{StageContext, StageID}, utils::channel::{create_channel, Sender}
 };
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct InMemorySourceNode {
+    plan_id: PlanID,
+    stage_id: StageID,
     node_id: usize,
     config: Arc<DaftExecutionConfig>,
     info: InMemoryInfo,
@@ -27,6 +27,8 @@ pub(crate) struct InMemorySourceNode {
 impl InMemorySourceNode {
     #[allow(dead_code)]
     pub fn new(
+        plan_id: PlanID,
+        stage_id: StageID,
         node_id: usize,
         config: Arc<DaftExecutionConfig>,
         info: InMemoryInfo,
@@ -34,6 +36,8 @@ impl InMemorySourceNode {
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> Self {
         Self {
+            plan_id,
+            stage_id,
             node_id,
             config,
             info,

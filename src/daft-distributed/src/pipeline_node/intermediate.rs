@@ -9,13 +9,16 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
+    plan::PlanID,
     scheduling::task::{SchedulingStrategy, SwordfishTask},
-    stage::StageContext,
+    stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
 
 #[allow(dead_code)]
 pub(crate) struct IntermediateNode {
+    plan_id: PlanID,
+    stage_id: StageID,
     node_id: usize,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
@@ -25,12 +28,16 @@ pub(crate) struct IntermediateNode {
 impl IntermediateNode {
     #[allow(dead_code)]
     pub fn new(
+        plan_id: PlanID,
+        stage_id: StageID,
         node_id: usize,
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
         children: Vec<Box<dyn DistributedPipelineNode>>,
     ) -> Self {
         Self {
+            plan_id,
+            stage_id,
             node_id,
             config,
             plan,

@@ -83,7 +83,7 @@ impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {
-    runner: PlanRunner<RaySwordfishWorker>,
+    runner: Arc<PlanRunner<RaySwordfishWorker>>,
 }
 
 #[pymethods]
@@ -92,7 +92,7 @@ impl PyDistributedPhysicalPlanRunner {
     fn new() -> PyResult<Self> {
         let worker_manager = RayWorkerManager::try_new()?;
         Ok(Self {
-            runner: PlanRunner::new(Arc::new(worker_manager)),
+            runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
     }
 

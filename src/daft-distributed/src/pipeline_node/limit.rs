@@ -9,16 +9,16 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
-    scheduling::{
+    plan::PlanID, scheduling::{
         scheduler::SchedulerHandle,
         task::{SchedulingStrategy, SwordfishTask},
-    },
-    stage::StageContext,
-    utils::channel::{create_channel, Sender},
+    }, stage::{StageContext, StageID}, utils::channel::{create_channel, Sender}
 };
 
 #[allow(dead_code)]
 pub(crate) struct LimitNode {
+    plan_id: PlanID,
+    stage_id: StageID,
     node_id: usize,
     limit: usize,
     schema: SchemaRef,
@@ -29,6 +29,8 @@ pub(crate) struct LimitNode {
 impl LimitNode {
     #[allow(dead_code)]
     pub fn new(
+        plan_id: PlanID,
+        stage_id: StageID,
         node_id: usize,
         limit: usize,
         schema: SchemaRef,
@@ -36,6 +38,8 @@ impl LimitNode {
         child: Box<dyn DistributedPipelineNode>,
     ) -> Self {
         Self {
+            plan_id,
+            stage_id,
             node_id,
             limit,
             schema,
