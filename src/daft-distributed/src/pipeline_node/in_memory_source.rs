@@ -73,12 +73,15 @@ impl TreeDisplay for InMemorySourceNode {
 
         writeln!(display, "{}", self.name()).unwrap();
         writeln!(display, "Node ID: {}", self.node_id).unwrap();
-        writeln!(
-            display,
-            "Local Physical Plan: {}",
-            self.plan.single_line_display()
+        let plan = make_task_for_partition_ref(
+            self.plan.clone(),
+            vec![],
+            self.info.cache_key.clone(),
+            self.config.clone(),
         )
-        .unwrap();
+        .unwrap()
+        .plan();
+        writeln!(display, "Local Plan: {}", plan.single_line_display()).unwrap();
         display
     }
 
