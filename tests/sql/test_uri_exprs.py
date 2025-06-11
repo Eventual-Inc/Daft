@@ -96,3 +96,70 @@ def test_url_upload():
         # Verify files were created
         assert os.path.exists(os.path.join(tmp_dir, "test1.txt"))
         assert os.path.exists(os.path.join(tmp_dir, "test2.txt"))
+
+
+def test_url_parse():
+    df = daft.from_pydict(
+        {
+            "urls": [
+                "https://user:pass@example.com:8080/path?query=value#fragment",
+                "http://localhost/api",
+                "ftp://files.example.com/file.txt",
+            ]
+        }
+    )
+
+    # Test SQL url_parse function
+    actual = (
+        daft.sql(
+            """
+        SELECT url_parse(urls) as parsed FROM df
+        """
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    expected = df.select(col("urls").url.parse().alias("parsed")).collect().to_pydict()
+
+    assert actual == expected
+
+    # Test extracting individual components from parsed URL
+    actual_components = (
+        daft.sql(
+            """
+        SELECT
+            parsed.scheme as scheme,
+            parsed.host as host,
+            parsed.port as port,
+            parsed.path as path,
+            parsed.query as query,
+            parsed.fragment as fragment,
+            parsed.username as username,
+            parsed.password as password
+        FROM (
+            SELECT url_parse(urls) as parsed FROM df
+        )
+        """
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    expected_components = (
+        df.select(col("urls").url.parse().alias("parsed"))
+        .select(
+            col("parsed").struct.get("scheme").alias("scheme"),
+            col("parsed").struct.get("host").alias("host"),
+            col("parsed").struct.get("port").alias("port"),
+            col("parsed").struct.get("path").alias("path"),
+            col("parsed").struct.get("query").alias("query"),
+            col("parsed").struct.get("fragment").alias("fragment"),
+            col("parsed").struct.get("username").alias("username"),
+            col("parsed").struct.get("password").alias("password"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual_components == expected_components

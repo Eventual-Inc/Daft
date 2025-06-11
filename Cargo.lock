@@ -2409,6 +2409,7 @@ dependencies = [
  "serde",
  "tokio",
  "typetag",
+ "url",
  "uuid 1.17.0",
 ]
 
