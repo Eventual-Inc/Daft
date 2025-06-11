@@ -1806,6 +1806,7 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        native_parquet_writer: bool | None = None,
         flotilla: bool | None = None,
         min_cpu_per_task: float | None = None,
     ) -> PyDaftExecutionConfig: ...
