@@ -8,7 +8,9 @@ use std::{
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_runtime::{get_compute_runtime, get_io_runtime, RuntimeTask};
+use common_runtime::{
+    get_compute_pool_num_threads, get_compute_runtime, get_io_runtime, RuntimeTask,
+};
 use daft_core::prelude::*;
 use daft_io::{
     get_io_client, parse_url, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, SourceType,
@@ -28,10 +30,11 @@ use parquet::{
     },
     schema::types::SchemaDescriptor,
 };
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
-type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
+type ParquetColumnWriterHandle = RuntimeTask<DaftResult<(ArrowColumnChunk, OwnedSemaphorePermit)>>;
 
 /// We currently support two kinds of storage backends: FileStorageBackend for local file writes,
 /// and S3StorageBackend for writes to S3.
@@ -434,11 +437,12 @@ impl<B: StorageBackend> ParquetWriter<B> {
         Ok(leaf_columns)
     }
 
-    /// Helper function that spawns 1 worker thread per leaf column, dispatches the relevant arrow leaf columns to each
+    /// Helper function that spawns 1 worker task per leaf column, dispatches the relevant arrow leaf columns to each
     /// worker, then returns the handles to the workers.
     fn spawn_column_writer_workers(
         &self,
         record_batches: &[RecordBatch],
+        backpressure_semaphore: Arc<tokio::sync::Semaphore>,
     ) -> DaftResult<Vec<ParquetColumnWriterHandle>> {
         // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
         let column_writers = get_column_writers(
@@ -453,21 +457,30 @@ impl<B: StorageBackend> ParquetWriter<B> {
             self.extract_leaf_columns_from_record_batches(record_batches, column_writers.len())?;
 
         let compute_runtime = get_compute_runtime();
-
         // Spawn one worker per leaf column writer.
         Ok(column_writers
             .into_iter()
             .zip(leaf_columns.into_iter())
             .map(|(mut writer, leaf_column)| {
+                let backpressure_semaphore = backpressure_semaphore.clone();
                 compute_runtime.spawn(async move {
+                    // Acquire a permit to limit concurrency for backpressure.
+                    let permit = backpressure_semaphore
+                        .acquire_owned()
+                        .await
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
                     for chunk in leaf_column {
                         writer
                             .write(&chunk)
                             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
                     }
-                    writer
+
+                    let chunk = writer
                         .close()
-                        .map_err(|e| DaftError::ParquetError(e.to_string()))
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                    Ok((chunk, permit))
                 })
             })
             .collect())
@@ -487,7 +500,10 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         let record_batches = data.get_tables()?;
 
         // Spawn column writers.
-        let column_writer_handles = self.spawn_column_writer_workers(&record_batches)?;
+        let backpressure_semaphore =
+            Arc::new(tokio::sync::Semaphore::new(get_compute_pool_num_threads()));
+        let column_writer_handles =
+            self.spawn_column_writer_workers(&record_batches, backpressure_semaphore)?;
 
         let row_group_writer_thread_handle = {
             // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
@@ -517,11 +533,13 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
                 });
 
             for handle in column_writer_handles {
-                let chunk = handle.await??;
+                let (chunk, _permit) = handle.await??;
                 tx_chunk
                     .send(chunk)
                     .await
                     .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                // The permit is dropped here, which releases the backpressure semaphore.
             }
 
             row_group_writer_thread_handle
