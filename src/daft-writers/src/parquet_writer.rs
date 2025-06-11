@@ -9,7 +9,7 @@ use std::{
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_runtime::{get_compute_runtime, RuntimeTask};
+use common_runtime::{get_compute_runtime, get_io_runtime, RuntimeTask};
 use daft_core::prelude::*;
 use daft_io::{
     get_io_client, parse_url, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, SourceType,
@@ -29,7 +29,6 @@ use parquet::{
     },
     schema::types::SchemaDescriptor,
 };
-use tokio::task::spawn_blocking;
 
 use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
@@ -190,17 +189,20 @@ impl StorageBackend for S3StorageBackend {
             .take()
             .expect("Upload thread must be initialized for multipart upload");
 
-        tokio::task::spawn_blocking(move || -> DaftResult<()> {
-            // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
-            part_buffer.lock().shutdown()?;
-            let upload_result = upload_thread.join();
-            if let Err(err) = upload_result {
-                log::error!("Upload thread failed: {:?}", err);
-            }
-            Ok(())
-        })
-        .await
-        .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+        let io_runtime = get_io_runtime(true);
+
+        io_runtime
+            .spawn_blocking(move || -> DaftResult<()> {
+                // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
+                part_buffer.lock().shutdown()?;
+                let upload_result = upload_thread.join();
+                if let Err(err) = upload_result {
+                    log::error!("Upload thread failed: {:?}", err);
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
         Ok(())
     }
@@ -496,10 +498,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             let (tx_chunk, mut rx_chunk) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
 
             let mut file_writer = self.file_writer.take().unwrap();
+            let io_runtime = get_io_runtime(true);
 
             // Spawn a thread to handle the row group writing since it involves blocking writes.
             let row_group_writer_thread_handle =
-                spawn_blocking(move || -> DaftResult<SerializedFileWriter<_>> {
+                io_runtime.spawn_blocking(move || -> DaftResult<SerializedFileWriter<_>> {
                     let mut row_group_writer = file_writer
                         .next_row_group()
                         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
@@ -542,16 +545,20 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
 
         // Our file writer might be backed by an S3 part writer that may block when flushing metadata.
+        let io_runtime = get_io_runtime(true);
         let mut file_writer = self.file_writer.take().unwrap();
-        spawn_blocking(move || -> DaftResult<()> {
-            file_writer
-                .finish()
-                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        self.file_writer = Some(
+            io_runtime
+                .spawn_blocking(move || -> DaftResult<SerializedFileWriter<_>> {
+                    file_writer
+                        .finish()
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-            Ok(())
-        })
-        .await
-        .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+                    Ok(file_writer)
+                })
+                .await
+                .map_err(|e| DaftError::ParquetError(e.to_string()))??,
+        );
 
         // TODO: We can start encoding the next file while this finalization happens.
 
