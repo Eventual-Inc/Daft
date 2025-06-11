@@ -137,6 +137,7 @@ impl PyNativeExecutor {
                     &psets,
                     cfg.config,
                     results_buffer_size,
+                    None,
                 )
                 .map(|res| res.into_iter())
         })?;
@@ -152,7 +153,7 @@ impl PyNativeExecutor {
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, context=None))]
     pub fn run_async<'a>(
         &self,
         py: Python<'a>,
@@ -160,7 +161,9 @@ impl PyNativeExecutor {
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
+        context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
+        dbg!(&context);
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
@@ -183,6 +186,7 @@ impl PyNativeExecutor {
                 &psets,
                 cfg.config,
                 results_buffer_size,
+                context,
             )
         })?;
         let stream = Box::pin(res.into_stream().map(|part| {
@@ -277,6 +281,7 @@ impl NativeExecutor {
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
+        run_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         refresh_chrome_trace();
         let cancel = self.cancel.clone();

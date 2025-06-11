@@ -59,6 +59,17 @@ pub(crate) struct TaskContext {
     task_id: TaskID,
 }
 
+impl From<TaskContext> for HashMap<String, String> {
+    fn from(value: TaskContext) -> Self {
+        let mut hmap = HashMap::with_capacity(4);
+        hmap.insert("plan_id".to_string(), value.plan_id.to_string());
+        hmap.insert("stage_id".to_string(), value.stage_id.to_string());
+        hmap.insert("node_id".to_string(), value.node_id.to_string());
+        hmap.insert("task_id".to_string(), value.task_id.to_string());
+        hmap
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct TaskDetails {
     #[allow(dead_code)]
@@ -147,6 +158,10 @@ impl SwordfishTask {
 
     pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
         &self.psets
+    }
+    
+    pub fn task_context(&self) -> &TaskContext {
+        &self.task_context
     }
 }
 

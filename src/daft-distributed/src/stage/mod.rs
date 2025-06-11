@@ -27,6 +27,12 @@ mod stage_builder;
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct StageID(usize);
 
+impl std::fmt::Display for StageID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl StageID {
     pub fn new(id: usize) -> Self {
         StageID(id)
