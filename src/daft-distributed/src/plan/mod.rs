@@ -47,10 +47,6 @@ impl DistributedPhysicalPlan {
         &self.id
     }
 
-    pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
-        &self.stage_plan.execution_config()
-    }
-
     pub fn stage_plan(&self) -> &StagePlan {
         &self.stage_plan
     }

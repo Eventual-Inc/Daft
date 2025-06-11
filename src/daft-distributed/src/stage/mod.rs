@@ -136,6 +136,7 @@ impl Stage {
     }
 
     /// Get the stage type name for visualization
+    #[allow(dead_code)]
     pub fn stage_type_name(&self) -> &str {
         self.type_.name()
     }
@@ -198,6 +199,7 @@ enum StageType {
 }
 
 impl StageType {
+    #[allow(dead_code)]
     fn name(&self) -> &str {
         match self {
             Self::MapPipeline { .. } => "MapPipeline",

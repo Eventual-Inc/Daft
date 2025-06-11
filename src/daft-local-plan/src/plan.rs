@@ -773,12 +773,6 @@ pub struct InMemoryScan {
     pub stats_state: StatsState,
 }
 
-impl InMemoryScan {
-    pub fn multiline_display(&self) -> String {
-        format!("InMemoryScan: {:?}", self.info)
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
@@ -787,22 +781,10 @@ pub struct PhysicalScan {
     pub stats_state: StatsState,
 }
 
-impl PhysicalScan {
-    pub fn multiline_display(&self) -> String {
-        format!("PhysicalScan: {:?}", self.scan_tasks)
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-}
-
-impl PlaceholderScan {
-    pub fn multiline_display(&self) -> String {
-        format!("PlaceholderScan: {:?}", self.schema)
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -811,24 +793,12 @@ pub struct EmptyScan {
     pub stats_state: StatsState,
 }
 
-impl EmptyScan {
-    pub fn multiline_display(&self) -> String {
-        format!("EmptyScan: {:?}", self.schema)
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-}
-
-impl Project {
-    pub fn multiline_display(&self) -> String {
-        format!("Project: {:?}", self.projection)
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

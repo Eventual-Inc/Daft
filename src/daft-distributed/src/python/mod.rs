@@ -3,7 +3,6 @@ mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_display::DisplayLevel;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;

@@ -101,9 +101,7 @@ impl TreeDisplay for LimitNode {
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        // TODO: Fix trait upcasting when available in stable Rust
-        // For now, return empty to avoid compilation issues
-        vec![]
+        vec![self.child.as_tree_display()]
     }
 
     fn get_name(&self) -> String {

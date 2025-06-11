@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::StreamExt;
