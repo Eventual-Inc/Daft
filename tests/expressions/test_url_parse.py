@@ -22,7 +22,7 @@ class TestUrlParse:
         assert len(result) == 4  # 4 URLs in the test data
         schema = result.schema()
         assert len(schema) == 1
-        field = schema["urls"]
+        field = schema["urls"]  # Column is auto-aliased to 'url'
         assert field.name == "urls"
         assert field.dtype.is_struct()
 
@@ -203,8 +203,8 @@ class TestUrlParse:
 
         df = daft.from_pydict({"urls": urls})
 
-        # Parse URLs and expand all fields
-        result = df.select(col("urls").url.parse().alias("url")).select(col("url").struct.get("*")).collect()
+        # Parse URLs and expand all fields (column is auto-aliased to 'url')
+        result = df.select(col("urls").url.parse()).select(col("urls").struct.get("*")).collect()
 
         data = result.to_pydict()
 

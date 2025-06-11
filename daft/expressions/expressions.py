@@ -2063,13 +2063,15 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             >>> df = daft.from_pydict(
             ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
             ... )
-            >>> df.select(daft.col("urls").url.parse()).collect()  # doctest: +SKIP
+            >>> # Parse URLs and expand all components
+            >>> df.select(daft.col("urls").url.parse()).select(daft.col("urls").struct.get("*")).collect()  # doctest: +SKIP
 
         Note:
             Invalid URLs will result in null values for all components.
+            The parsed result is automatically aliased to 'url' to enable easy struct field expansion.
         """
         f = native.get_function_from_registry("url_parse")
-        return Expression._from_pyexpr(f(self._expr))
+        return Expression._from_pyexpr(f(self._expr)).alias("urls")
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):
