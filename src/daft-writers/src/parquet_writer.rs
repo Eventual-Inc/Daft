@@ -39,7 +39,7 @@ type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
 /// and S3StorageBackend for writes to S3.
 #[async_trait]
 trait StorageBackend: Send + Sync + 'static {
-    type Writer: Write + Send;
+    type Writer: Write + Send + Sync;
 
     /// Create the output buffer (buffered file writer, S3 buffer, etc).
     async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer>;
@@ -366,7 +366,7 @@ struct ParquetWriter<B: StorageBackend> {
     parquet_schema: SchemaDescriptor,
     partition_values: Option<RecordBatch>,
     storage_backend: B,
-    file_writer: Arc<Mutex<Option<SerializedFileWriter<B::Writer>>>>,
+    file_writer: Option<SerializedFileWriter<B::Writer>>,
 }
 
 impl<B: StorageBackend> ParquetWriter<B> {
@@ -387,7 +387,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             parquet_schema,
             partition_values,
             storage_backend,
-            file_writer: Arc::new(Mutex::new(None)),
+            file_writer: None,
         }
     }
 
@@ -399,7 +399,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             self.writer_properties.clone(),
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        self.file_writer = Arc::new(Mutex::new(Some(file_writer)));
+        self.file_writer = Some(file_writer);
         Ok(())
     }
 
@@ -482,7 +482,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
-        if self.file_writer.lock().is_none() {
+        if self.file_writer.is_none() {
             self.create_writer().await?;
         }
         let starting_bytes_written = self.bytes_written();
@@ -495,29 +495,27 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
             let (tx_chunk, mut rx_chunk) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
 
-            let file_writer_handle = self.file_writer.clone();
+            let mut file_writer = self.file_writer.take().unwrap();
 
             // Spawn a thread to handle the row group writing since it involves blocking writes.
-            let row_group_writer_thread_handle = spawn_blocking(move || -> DaftResult<()> {
-                let mut guard = file_writer_handle.lock();
-                let mut row_group_writer = guard
-                    .as_mut()
-                    .expect("File writer should be created by now")
-                    .next_row_group()
-                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-
-                while let Some(chunk) = rx_chunk.blocking_recv() {
-                    chunk
-                        .append_to_row_group(&mut row_group_writer)
+            let row_group_writer_thread_handle =
+                spawn_blocking(move || -> DaftResult<SerializedFileWriter<_>> {
+                    let mut row_group_writer = file_writer
+                        .next_row_group()
                         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-                }
 
-                row_group_writer
-                    .close()
-                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+                    while let Some(chunk) = rx_chunk.blocking_recv() {
+                        chunk
+                            .append_to_row_group(&mut row_group_writer)
+                            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+                    }
 
-                Ok(())
-            });
+                    row_group_writer
+                        .close()
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                    Ok(file_writer)
+                });
 
             for handle in column_writer_handles {
                 let chunk = handle.await??;
@@ -531,9 +529,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             // tx_chunk is dropped here, which signals the row writer thread to finish.
         };
 
-        row_group_writer_thread_handle
+        let file_writer = row_group_writer_thread_handle
             .await
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+
+        self.file_writer.replace(file_writer);
 
         Ok(self.bytes_written() - starting_bytes_written)
     }
@@ -542,12 +542,9 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
 
         // Our file writer might be backed by an S3 part writer that may block when flushing metadata.
-        let file_writer_handle = self.file_writer.clone();
+        let mut file_writer = self.file_writer.take().unwrap();
         spawn_blocking(move || -> DaftResult<()> {
-            let mut guard = file_writer_handle.lock();
-            let _metadata = guard
-                .as_mut()
-                .expect("File writer should be created by now")
+            file_writer
                 .finish()
                 .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
@@ -582,11 +579,10 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     }
 
     fn bytes_written(&self) -> usize {
-        let bytes_written = match self.file_writer.lock().as_ref() {
-            Some(writer) => writer.bytes_written(),
+        match &self.file_writer {
             None => unreachable!("File writer must be created before bytes_written can be called"),
-        };
-        bytes_written
+            Some(writer) => writer.bytes_written(),
+        }
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
