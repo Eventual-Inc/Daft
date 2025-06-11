@@ -3,7 +3,6 @@ use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::Arc,
-    thread::JoinHandle,
 };
 
 use async_trait::async_trait;
@@ -80,7 +79,7 @@ struct S3StorageBackend {
     io_config: IOConfig,
     s3_client: Option<Arc<S3LikeSource>>,
     s3part_buffer: Option<Arc<Mutex<S3PartBuffer>>>,
-    upload_thread: Option<JoinHandle<DaftResult<()>>>,
+    upload_task: Option<RuntimeTask<DaftResult<()>>>,
 }
 
 impl S3StorageBackend {
@@ -93,7 +92,7 @@ impl S3StorageBackend {
             io_config,
             s3_client: None,
             s3part_buffer: None,
-            upload_thread: None,
+            upload_task: None,
         }
     }
 }
@@ -147,32 +146,28 @@ impl StorageBackend for S3StorageBackend {
             .clone()
             .expect("S3 client must be initialized");
         let uri = format!("{}://{}", self.scheme, filename);
-        let background_thread_handle = std::thread::spawn(move || -> DaftResult<()> {
-            let background_rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create background uploader tokio runtime");
 
-            background_rt.block_on(async move {
-                // Set up multipart writer.
-                let mut s3_multipart_writer = S3MultipartWriter::create(
-                    uri,
-                    part_size,
-                    NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
-                        .expect("S3 multipart concurrent uploads per object must be non-zero"),
-                    s3_client,
-                )
-                .await
-                .expect("Failed to create S3 multipart writer");
-                while let Some(part) = rx.recv().await {
-                    s3_multipart_writer.write_part(part).await?;
-                }
-                s3_multipart_writer.shutdown().await?;
-                Ok(())
-            })
+        let io_runtime = get_io_runtime(true);
+
+        let mut s3_multipart_writer = S3MultipartWriter::create(
+            uri,
+            part_size,
+            NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
+                .expect("S3 multipart concurrent uploads per object must be non-zero"),
+            s3_client,
+        )
+        .await
+        .expect("Failed to create S3 multipart writer");
+
+        let background_task = io_runtime.spawn(async move {
+            while let Some(part) = rx.recv().await {
+                s3_multipart_writer.write_part(part).await?;
+            }
+            s3_multipart_writer.shutdown().await?;
+            Ok(())
         });
 
-        self.upload_thread = Some(background_thread_handle);
+        self.upload_task = Some(background_task);
 
         Ok(SharedS3PartBuffer {
             inner: s3part_buffer,
@@ -184,8 +179,8 @@ impl StorageBackend for S3StorageBackend {
             .s3part_buffer
             .take()
             .expect("S3 part buffer must be initialized for multipart upload");
-        let upload_thread = self
-            .upload_thread
+        let upload_task = self
+            .upload_task
             .take()
             .expect("Upload thread must be initialized for multipart upload");
 
@@ -195,12 +190,13 @@ impl StorageBackend for S3StorageBackend {
             .spawn_blocking(move || -> DaftResult<()> {
                 // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
                 part_buffer.lock().shutdown()?;
-                let upload_result = upload_thread.join();
-                if let Err(err) = upload_result {
-                    log::error!("Upload thread failed: {:?}", err);
-                }
                 Ok(())
             })
+            .await
+            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+
+        // Wait for the upload task to complete.
+        upload_task
             .await
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
 
