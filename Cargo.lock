@@ -2992,7 +2992,6 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
- "log",
  "parking_lot 0.12.4",
  "parquet",
  "pyo3",
