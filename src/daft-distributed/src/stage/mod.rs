@@ -33,9 +33,10 @@ impl std::fmt::Display for StageID {
     }
 }
 
+#[allow(dead_code)]
 impl StageID {
     pub fn new(id: usize) -> Self {
-        StageID(id)
+        Self(id)
     }
 }
 

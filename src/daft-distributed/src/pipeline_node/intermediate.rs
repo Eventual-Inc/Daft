@@ -28,6 +28,7 @@ pub(crate) struct IntermediateNode {
 
 impl IntermediateNode {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -190,9 +191,9 @@ fn append_plan_to_task(
         })?
         .data;
     let task = SwordfishTask::new(
-        plan_id.clone(),
-        stage_id.clone(),
-        node_id.clone(),
+        plan_id,
+        stage_id,
+        node_id,
         transformed_plan,
         config,
         Default::default(),

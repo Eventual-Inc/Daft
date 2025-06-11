@@ -32,6 +32,7 @@ pub(crate) struct LimitNode {
 
 impl LimitNode {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -52,6 +53,7 @@ impl LimitNode {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execution_loop(
         plan_id: PlanID,
         stage_id: StageID,
@@ -60,7 +62,6 @@ impl LimitNode {
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         mut remaining_limit: usize,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-
         schema: SchemaRef,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<()> {

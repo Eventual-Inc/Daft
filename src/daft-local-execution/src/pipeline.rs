@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -80,9 +80,9 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
 
 /// Single use context for translating a physical plan to a Pipeline.
 /// It generates a plan_id, and node ids for each plan.
-pub struct TranslationContext {
+pub struct RuntimeContext {
     index_counter: std::cell::RefCell<usize>,
-    plan_id: String,
+    context: HashMap<String, String>,
 }
 
 /// Contains information about the node such as name, id, and the plan_id
@@ -90,14 +90,23 @@ pub struct TranslationContext {
 pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: usize,
-    pub plan_id: Arc<str>,
+    pub context: HashMap<String, String>,
 }
 
-impl TranslationContext {
+impl RuntimeContext {
     pub fn new() -> Self {
+        Self::new_with_context(HashMap::new())
+    }
+
+    pub fn new_with_context(mut context: HashMap<String, String>) -> Self {
+        if !context.contains_key("plan_id") {
+            let plan_id = uuid::Uuid::new_v4().to_string();
+            context.insert("plan_id".to_string(), plan_id);
+        }
+
         Self {
             index_counter: std::cell::RefCell::new(0),
-            plan_id: uuid::Uuid::new_v4().to_string(),
+            context,
         }
     }
 
@@ -108,15 +117,11 @@ impl TranslationContext {
         index
     }
 
-    pub fn plan_id(&self) -> &str {
-        &self.plan_id
-    }
-
     pub fn next_node_info(&self, name: &str) -> NodeInfo {
         NodeInfo {
             name: Arc::from(name.to_string()),
             id: self.next_id(),
-            plan_id: Arc::from(self.plan_id().to_string()),
+            context: self.context.clone(),
         }
     }
 }
@@ -202,7 +207,7 @@ pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
-    ctx: &TranslationContext,
+    ctx: &RuntimeContext,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
 

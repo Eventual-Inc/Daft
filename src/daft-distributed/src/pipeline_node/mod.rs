@@ -23,7 +23,6 @@ mod translate;
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = usize;
 
-
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
 /// Right now, the only metadata is the worker id that has it so we can try

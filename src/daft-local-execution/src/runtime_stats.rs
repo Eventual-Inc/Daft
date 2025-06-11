@@ -55,34 +55,38 @@ impl OpenTelemetrySubscriber {
 
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     fn on_rows_received(&self, context: &NodeInfo, count: u64) {
-        self.rows_received.add(
-            count,
-            &[
-                KeyValue::new("name", context.name.to_string()),
-                KeyValue::new("id", context.id.to_string()),
-                KeyValue::new("plan_id", context.plan_id.to_string()),
-            ],
-        );
+        let mut attributes = vec![
+            KeyValue::new("name", context.name.to_string()),
+            KeyValue::new("id", context.id.to_string()),
+        ];
+
+        for (k, v) in &context.context {
+            attributes.push(KeyValue::new(k.clone(), v.clone()));
+        }
+
+        self.rows_received.add(count, &attributes);
     }
     fn on_rows_emitted(&self, context: &NodeInfo, count: u64) {
-        self.rows_emitted.add(
-            count,
-            &[
-                KeyValue::new("name", context.name.to_string()),
-                KeyValue::new("id", context.id.to_string()),
-                KeyValue::new("plan_id", context.plan_id.to_string()),
-            ],
-        );
+        let mut attributes = vec![
+            KeyValue::new("name", context.name.to_string()),
+            KeyValue::new("id", context.id.to_string()),
+        ];
+
+        for (k, v) in &context.context {
+            attributes.push(KeyValue::new(k.clone(), v.clone()));
+        }
+        self.rows_emitted.add(count, &attributes);
     }
     fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64) {
-        self.cpu_us.add(
-            microseconds,
-            &[
-                KeyValue::new("name", context.name.to_string()),
-                KeyValue::new("id", context.id.to_string()),
-                KeyValue::new("plan_id", context.plan_id.to_string()),
-            ],
-        );
+        let mut attributes = vec![
+            KeyValue::new("name", context.name.to_string()),
+            KeyValue::new("id", context.id.to_string()),
+        ];
+
+        for (k, v) in &context.context {
+            attributes.push(KeyValue::new(k.clone(), v.clone()));
+        }
+        self.cpu_us.add(microseconds, &attributes);
     }
 }
 

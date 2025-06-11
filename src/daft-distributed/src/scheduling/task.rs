@@ -52,6 +52,7 @@ pub(crate) trait Task: Send + Sync + Debug + 'static {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct TaskContext {
     plan_id: PlanID,
     stage_id: StageID,
@@ -61,7 +62,7 @@ pub(crate) struct TaskContext {
 
 impl From<TaskContext> for HashMap<String, String> {
     fn from(value: TaskContext) -> Self {
-        let mut hmap = HashMap::with_capacity(4);
+        let mut hmap = Self::with_capacity(4);
         hmap.insert("plan_id".to_string(), value.plan_id.to_string());
         hmap.insert("stage_id".to_string(), value.stage_id.to_string());
         hmap.insert("node_id".to_string(), value.node_id.to_string());
@@ -159,7 +160,7 @@ impl SwordfishTask {
     pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
         &self.psets
     }
-    
+
     pub fn task_context(&self) -> &TaskContext {
         &self.task_context
     }

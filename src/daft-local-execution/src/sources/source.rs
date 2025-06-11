@@ -11,7 +11,7 @@ use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, PipelineNode, TranslationContext},
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeContext,
@@ -40,7 +40,7 @@ pub(crate) struct SourceNode {
 }
 
 impl SourceNode {
-    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &TranslationContext) -> Self {
+    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
         let info = ctx.next_node_info(source.name());
         let runtime_stats = RuntimeStatsContext::new(info.clone());
         let io_stats = IOStatsContext::new(source.name());
@@ -152,6 +152,6 @@ impl PipelineNode for SourceNode {
     }
 
     fn plan_id(&self) -> Arc<str> {
-        self.node_info.plan_id.clone()
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }
