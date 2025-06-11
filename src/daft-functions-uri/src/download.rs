@@ -23,8 +23,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlDownload;
 
-#[derive(FunctionArgs)]
-pub struct UrlDownloadArgs<T> {
+#[derive(FunctionArgs, Clone)]
+pub struct UrlDownloadArgs<T: Clone> {
     pub input: T,
     #[arg(optional)]
     pub multi_thread: Option<bool>,
