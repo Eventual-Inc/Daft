@@ -185,6 +185,7 @@ def set_execution_config(
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
     flotilla: bool | None = None,
+    min_cpu_per_task: float | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 

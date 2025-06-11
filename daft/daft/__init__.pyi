@@ -1762,6 +1762,19 @@ class NativeExecutor:
     def repr_mermaid(
         self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
     ) -> str: ...
+    def get_relationship_info(
+        self,
+        logical_plan_builder: LogicalPlanBuilder,
+        daft_execution_config: PyDaftExecutionConfig,
+    ) -> RelationshipInformation: ...
+
+class RelationshipInformation:
+    ids: list[RelationshipNode]
+    plan_id: str
+
+class RelationshipNode:
+    id: int
+    parent_id: int | None
 
 class PyDaftExecutionConfig:
     @staticmethod
@@ -1794,6 +1807,7 @@ class PyDaftExecutionConfig:
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
         flotilla: bool | None = None,
+        min_cpu_per_task: float | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1843,6 +1857,8 @@ class PyDaftExecutionConfig:
     def enable_ray_tracing(self) -> bool: ...
     @property
     def flotilla(self) -> bool: ...
+    @property
+    def min_cpu_per_task(self) -> float: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

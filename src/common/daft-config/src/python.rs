@@ -102,6 +102,7 @@ impl PyDaftExecutionConfig {
         enable_ray_tracing=None,
         scantask_splitting_level=None,
         flotilla=None,
+        min_cpu_per_task=None,
     ))]
     fn with_config_values(
         &self,
@@ -131,6 +132,7 @@ impl PyDaftExecutionConfig {
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
         flotilla: Option<bool>,
+        min_cpu_per_task: Option<f64>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -233,6 +235,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(flotilla) = flotilla {
             config.flotilla = flotilla;
+        }
+
+        if let Some(min_cpu_per_task) = min_cpu_per_task {
+            config.min_cpu_per_task = min_cpu_per_task;
         }
 
         Ok(Self {
@@ -354,6 +360,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flotilla(&self) -> PyResult<bool> {
         Ok(self.config.flotilla)
+    }
+
+    #[getter]
+    fn min_cpu_per_task(&self) -> PyResult<f64> {
+        Ok(self.config.min_cpu_per_task)
     }
 }
 
