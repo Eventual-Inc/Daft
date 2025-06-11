@@ -1,7 +1,10 @@
 use std::{
+    collections::VecDeque,
+    future::Future,
     io::{BufWriter, Write},
     num::NonZeroUsize,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Arc,
 };
 
@@ -30,11 +33,10 @@ use parquet::{
     },
     schema::types::SchemaDescriptor,
 };
-use tokio::sync::OwnedSemaphorePermit;
 
 use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
 
-type ParquetColumnWriterHandle = RuntimeTask<DaftResult<(ArrowColumnChunk, OwnedSemaphorePermit)>>;
+type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
 /// We currently support two kinds of storage backends: FileStorageBackend for local file writes,
 /// and S3StorageBackend for writes to S3.
@@ -437,13 +439,13 @@ impl<B: StorageBackend> ParquetWriter<B> {
         Ok(leaf_columns)
     }
 
-    /// Helper function that spawns 1 worker task per leaf column, dispatches the relevant arrow leaf columns to each
-    /// worker, then returns the handles to the workers.
-    fn spawn_column_writer_workers(
+    /// Helper function to create (but not spawn) futures, where each future encodes one arrow leaf
+    /// column. The futures are returned in the same order in which they're supposed to appear in
+    /// the parquet file.
+    fn build_column_writer_futures(
         &self,
         record_batches: &[RecordBatch],
-        backpressure_semaphore: Arc<tokio::sync::Semaphore>,
-    ) -> DaftResult<Vec<ParquetColumnWriterHandle>> {
+    ) -> DaftResult<VecDeque<Pin<Box<ColumnWriterFuture>>>> {
         // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
         let column_writers = get_column_writers(
             &self.parquet_schema,
@@ -455,35 +457,29 @@ impl<B: StorageBackend> ParquetWriter<B> {
         // Flatten record batches into per-leaf-column Arrow data chunks.
         let leaf_columns =
             self.extract_leaf_columns_from_record_batches(record_batches, column_writers.len())?;
-
-        let compute_runtime = get_compute_runtime();
-        // Spawn one worker per leaf column writer.
-        Ok(column_writers
+        let compute_futures: VecDeque<_> = column_writers
             .into_iter()
             .zip(leaf_columns.into_iter())
-            .map(|(mut writer, leaf_column)| {
-                let backpressure_semaphore = backpressure_semaphore.clone();
-                compute_runtime.spawn(async move {
-                    // Acquire a permit to limit concurrency for backpressure.
-                    let permit = backpressure_semaphore
-                        .acquire_owned()
-                        .await
-                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-
-                    for chunk in leaf_column {
-                        writer
+            .map(|(mut column_writer, leaf_columns)| {
+                let boxed = Box::pin(async move {
+                    for chunk in leaf_columns {
+                        column_writer
                             .write(&chunk)
                             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
                     }
 
-                    let chunk = writer
+                    let chunk = column_writer
                         .close()
                         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-                    Ok((chunk, permit))
-                })
+                    Ok(chunk)
+                });
+
+                boxed as Pin<Box<dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send>>
             })
-            .collect())
+            .collect();
+
+        Ok(compute_futures)
     }
 }
 
@@ -498,12 +494,6 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         }
         let starting_bytes_written = self.bytes_written();
         let record_batches = data.get_tables()?;
-
-        // Spawn column writers.
-        let backpressure_semaphore =
-            Arc::new(tokio::sync::Semaphore::new(get_compute_pool_num_threads()));
-        let column_writer_handles =
-            self.spawn_column_writer_workers(&record_batches, backpressure_semaphore)?;
 
         let row_group_writer_thread_handle = {
             // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
@@ -532,14 +522,35 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
                     Ok(file_writer)
                 });
 
-            for handle in column_writer_handles {
-                let (chunk, _permit) = handle.await??;
+            let mut pending_column_writers = self.build_column_writer_futures(&record_batches)?;
+
+            // Spawn up to NUM_CPU workers to handle the column writes.
+            let initial_spawn_count =
+                get_compute_pool_num_threads().min(pending_column_writers.len());
+            let mut spawned_column_writers: VecDeque<_> =
+                VecDeque::with_capacity(initial_spawn_count);
+
+            let compute_runtime = get_compute_runtime();
+
+            for _ in 0..initial_spawn_count {
+                if let Some(future) = pending_column_writers.pop_front() {
+                    spawned_column_writers.push_back(compute_runtime.spawn(future));
+                } else {
+                    break; // No more futures to spawn
+                }
+            }
+
+            while let Some(first_spawned_writer) = spawned_column_writers.pop_front() {
+                let chunk = first_spawned_writer.await??;
                 tx_chunk
                     .send(chunk)
                     .await
                     .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-                // The permit is dropped here, which releases the backpressure semaphore.
+                // Spawn a new task for the next column writer, if more columns are available.
+                if let Some(next_pending_future) = pending_column_writers.pop_front() {
+                    spawned_column_writers.push_back(compute_runtime.spawn(next_pending_future));
+                }
             }
 
             row_group_writer_thread_handle
