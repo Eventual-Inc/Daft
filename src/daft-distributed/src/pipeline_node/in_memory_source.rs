@@ -92,16 +92,19 @@ impl InMemorySourceNode {
             })?
             .data;
         let psets = HashMap::from([(self.info.cache_key.clone(), vec![partition_ref])]);
+        let context = HashMap::from([
+            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("stage_id".to_string(), format!("{}", self.stage_id)),
+            ("node_id".to_string(), format!("{}", self.node_id)),
+        ]);
         let task = SwordfishTask::new(
-            self.plan_id.clone(),
-            self.stage_id.clone(),
-            self.node_id,
             transformed_plan,
             self.config.clone(),
             psets,
             // TODO: Replace with WorkerAffinity based on the psets location
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
+            context,
         );
         Ok(task)
     }

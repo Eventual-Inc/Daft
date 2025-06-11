@@ -9,12 +9,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::worker::WorkerId;
-use crate::{
-    pipeline_node::{MaterializedOutput, NodeID},
-    plan::PlanID,
-    stage::StageID,
-    utils::channel::OneshotSender,
-};
+use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
@@ -46,29 +41,9 @@ pub(crate) type TaskPriority = u32;
 #[allow(dead_code)]
 pub(crate) trait Task: Send + Sync + Debug + 'static {
     fn priority(&self) -> TaskPriority;
-    fn task_id(&self) -> &TaskID;
+    fn task_id(&self) -> &str;
     fn resource_request(&self) -> &TaskResourceRequest;
     fn strategy(&self) -> &SchedulingStrategy;
-}
-
-#[derive(Debug, Clone)]
-#[allow(clippy::struct_field_names)]
-pub(crate) struct TaskContext {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
-    task_id: TaskID,
-}
-
-impl From<TaskContext> for HashMap<String, String> {
-    fn from(value: TaskContext) -> Self {
-        let mut hmap = Self::with_capacity(4);
-        hmap.insert("plan_id".to_string(), value.plan_id.to_string());
-        hmap.insert("stage_id".to_string(), value.stage_id.to_string());
-        hmap.insert("node_id".to_string(), value.node_id.to_string());
-        hmap.insert("task_id".to_string(), value.task_id.to_string());
-        hmap
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +62,7 @@ impl TaskDetails {
 impl<T: Task> From<&T> for TaskDetails {
     fn from(task: &T) -> Self {
         Self {
-            id: task.task_id().clone(),
+            id: Arc::from(task.task_id()),
             resource_request: task.resource_request().clone(),
         }
     }
@@ -103,46 +78,38 @@ pub(crate) enum SchedulingStrategy {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SwordfishTask {
-    task_context: TaskContext,
     plan: LocalPhysicalPlanRef,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
+    context: HashMap<String, String>,
 }
 
 #[allow(dead_code)]
 impl SwordfishTask {
     pub fn new(
-        plan_id: PlanID,
-        stage_id: StageID,
-        node_id: NodeID,
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
         psets: HashMap<String, Vec<PartitionRef>>,
         strategy: SchedulingStrategy,
+        mut context: HashMap<String, String>,
     ) -> Self {
         let task_id = Uuid::new_v4().to_string();
         let resource_request = TaskResourceRequest::new(plan.resource_request());
-        let task_context = TaskContext {
-            plan_id,
-            stage_id,
-            node_id,
-            task_id: Arc::from(task_id),
-        };
-
+        context.insert("task_id".to_string(), task_id);
         Self {
-            task_context,
             plan,
             resource_request,
             config,
             psets,
             strategy,
+            context,
         }
     }
 
-    pub fn id(&self) -> &TaskID {
-        &self.task_context.task_id
+    pub fn id(&self) -> &str {
+        self.context.get("task_id").unwrap()
     }
 
     pub fn strategy(&self) -> &SchedulingStrategy {
@@ -161,13 +128,13 @@ impl SwordfishTask {
         &self.psets
     }
 
-    pub fn task_context(&self) -> &TaskContext {
-        &self.task_context
+    pub fn context(&self) -> &HashMap<String, String> {
+        &self.context
     }
 }
 
 impl Task for SwordfishTask {
-    fn task_id(&self) -> &TaskID {
+    fn task_id(&self) -> &str {
         self.id()
     }
 
@@ -395,7 +362,7 @@ pub(super) mod tests {
             self.priority
         }
 
-        fn task_id(&self) -> &TaskID {
+        fn task_id(&self) -> &str {
             &self.task_id
         }
 

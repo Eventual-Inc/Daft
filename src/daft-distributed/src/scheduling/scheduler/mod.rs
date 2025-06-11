@@ -54,7 +54,7 @@ impl<T: Task> SchedulableTask<T> {
     }
 
     #[allow(dead_code)]
-    pub fn task_id(&self) -> &TaskID {
+    pub fn task_id(&self) -> &str {
         self.task.task_id()
     }
 

@@ -85,6 +85,7 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
         }
         self.rows_emitted.add(count, &attributes);
     }
+
     fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64) {
         let mut attributes = vec![
             KeyValue::new("name", context.name.to_string()),

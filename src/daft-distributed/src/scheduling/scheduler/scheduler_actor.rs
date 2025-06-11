@@ -170,7 +170,7 @@ impl<T: Task> SchedulerHandle<T> {
         let (result_tx, result_rx) = create_oneshot_channel();
         let cancel_token = CancellationToken::new();
 
-        let task_id = task.task_id().clone();
+        let task_id = Arc::from(task.task_id().to_string());
         let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token.clone());
         let submitted_task = SubmittedTask::new(task_id, result_rx, Some(cancel_token));
 

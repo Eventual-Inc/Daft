@@ -89,14 +89,17 @@ impl ScanSourceNode {
             .data;
 
         let psets = HashMap::new();
+        let context = HashMap::from([
+            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("stage_id".to_string(), format!("{}", self.stage_id)),
+            ("node_id".to_string(), format!("{}", self.node_id)),
+        ]);
         let task = SwordfishTask::new(
-            self.plan_id.clone(),
-            self.stage_id.clone(),
-            self.node_id,
             transformed_plan,
             self.config.clone(),
             psets,
             SchedulingStrategy::Spread,
+            context,
         );
         Ok(task)
     }
@@ -112,16 +115,19 @@ impl ScanSourceNode {
                 _ => Ok(Transformed::no(p)),
             })?
             .data;
+        let context = HashMap::from([
+            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("stage_id".to_string(), format!("{}", self.stage_id)),
+            ("node_id".to_string(), format!("{}", self.node_id)),
+        ]);
 
         let psets = HashMap::new();
         let task = SwordfishTask::new(
-            self.plan_id.clone(),
-            self.stage_id.clone(),
-            self.node_id,
             transformed_plan,
             self.config.clone(),
             psets,
             SchedulingStrategy::Spread,
+            context,
         );
         Ok(task)
     }

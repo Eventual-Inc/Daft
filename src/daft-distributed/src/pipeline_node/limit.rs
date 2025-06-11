@@ -151,11 +151,12 @@ fn make_task_with_limit(
         LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
 
     let mpset = HashMap::from([(node_id.to_string(), vec![partition])]);
-
+    let context = HashMap::from([
+        ("plan_id".to_string(), plan_id.to_string()),
+        ("stage_id".to_string(), format!("{stage_id}")),
+        ("node_id".to_string(), format!("{node_id}")),
+    ]);
     let task = SwordfishTask::new(
-        plan_id,
-        stage_id,
-        node_id,
         limit_plan,
         config,
         mpset,
@@ -163,6 +164,7 @@ fn make_task_with_limit(
             worker_id,
             soft: true,
         },
+        context,
     );
     Ok(task)
 }

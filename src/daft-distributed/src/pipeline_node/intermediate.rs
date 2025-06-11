@@ -161,10 +161,12 @@ fn make_task_for_materialized_output(
         })?
         .data;
     let psets = HashMap::from([(cache_key, vec![partition_ref])]);
+    let context = HashMap::from([
+        ("plan_id".to_string(), plan_id.to_string()),
+        ("stage_id".to_string(), format!("{}", stage_id)),
+        ("node_id".to_string(), format!("{}", node_id)),
+    ]);
     let task = SwordfishTask::new(
-        plan_id,
-        stage_id,
-        node_id,
         transformed_plan,
         config,
         psets,
@@ -172,6 +174,7 @@ fn make_task_for_materialized_output(
             worker_id,
             soft: true,
         },
+        context,
     );
     Ok(task)
 }
@@ -190,14 +193,17 @@ fn append_plan_to_task(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
+    let context = HashMap::from([
+        ("plan_id".to_string(), plan_id.to_string()),
+        ("stage_id".to_string(), format!("{stage_id}")),
+        ("node_id".to_string(), format!("{node_id}")),
+    ]);
     let task = SwordfishTask::new(
-        plan_id,
-        stage_id,
-        node_id,
         transformed_plan,
         config,
         Default::default(),
         SchedulingStrategy::Spread,
+        context,
     );
     Ok(task)
 }
