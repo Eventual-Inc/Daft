@@ -90,20 +90,12 @@ impl LimitNode {
 }
 
 impl TreeDisplay for LimitNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
+    fn display_as(&self, _level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
 
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                writeln!(display, "DistributedLimit:").unwrap();
-                writeln!(display, "Node ID = {}", self.node_id).unwrap();
-                writeln!(display, "Limit = {}", self.limit).unwrap();
-            }
-        }
+        writeln!(display, "{}", self.node_id).unwrap();
+        writeln!(display, "Limit = {}", self.limit).unwrap();
         display
     }
 

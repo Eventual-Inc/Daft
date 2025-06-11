@@ -727,6 +727,46 @@ impl LocalPhysicalPlan {
             _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
         }
     }
+
+    pub fn multiline_display(&self) -> String {
+        match self {
+            Self::ActorPoolProject(app) => app.multiline_display(),
+            Self::PhysicalScan(ps) => ps.multiline_display(),
+            Self::EmptyScan(es) => es.multiline_display(),
+            Self::InMemoryScan(ims) => ims.multiline_display(),
+            Self::PlaceholderScan(ps) => ps.multiline_display(),
+            Self::PhysicalWrite(pw) => pw.multiline_display(),
+            Self::Project(p) => p.multiline_display(),
+            Self::ActorPoolProject(ap) => ap.multiline_display(),
+            Self::Filter(f) => f.multiline_display(),
+            Self::Limit(l) => l.multiline_display(),
+            Self::Explode(e) => e.multiline_display(),
+            Self::Unpivot(u) => u.multiline_display(),
+            Self::Sort(s) => s.multiline_display(),
+            Self::TopN(tn) => tn.multiline_display(),
+            Self::Sample(s) => s.multiline_display(),
+            Self::MonotonicallyIncreasingId(miid) => miid.multiline_display(),
+            Self::UnGroupedAggregate(uag) => uag.multiline_display(),
+            Self::HashAggregate(hag) => hag.multiline_display(),
+            Self::Pivot(p) => p.multiline_display(),
+            Self::Concat(c) => c.multiline_display(),
+            Self::HashJoin(hj) => hj.multiline_display(),
+            Self::CrossJoin(cj) => cj.multiline_display(),
+            Self::WindowPartitionOnly(wpo) => wpo.multiline_display(),
+            Self::WindowPartitionAndOrderBy(wpo) => wpo.multiline_display(),
+            Self::WindowPartitionAndDynamicFrame(wpo) => wpo.multiline_display(),
+            Self::WindowOrderByOnly(wpo) => wpo.multiline_display(),
+            Self::WindowPartitionAndOrderBy(wpo) => wpo.multiline_display(),
+            Self::WindowPartitionAndDynamicFrame(wpo) => wpo.multiline_display(),
+            Self::PhysicalWrite(pw) => pw.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(cw) => cw.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::LanceWrite(lw) => lw.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::DataSink(ds) => ds.multiline_display(),
+        }
+    }
 }
 
 impl DynTreeNode for LocalPhysicalPlan {
@@ -757,6 +797,12 @@ pub struct InMemoryScan {
     pub stats_state: StatsState,
 }
 
+impl InMemoryScan {
+    pub fn multiline_display(&self) -> String {
+        format!("InMemoryScan: {:?}", self.info)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
@@ -765,16 +811,34 @@ pub struct PhysicalScan {
     pub stats_state: StatsState,
 }
 
+impl PhysicalScan {
+    pub fn multiline_display(&self) -> String {
+        format!("PhysicalScan: {:?}", self.scan_tasks)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
 
+impl PlaceholderScan {
+    pub fn multiline_display(&self) -> String {
+        format!("PlaceholderScan: {:?}", self.schema)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl EmptyScan {
+    pub fn multiline_display(&self) -> String {
+        format!("EmptyScan: {:?}", self.schema)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -785,12 +849,24 @@ pub struct Project {
     pub stats_state: StatsState,
 }
 
+impl Project {
+    pub fn multiline_display(&self) -> String {
+        format!("Project: {:?}", self.projection)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl ActorPoolProject {
+    pub fn multiline_display(&self) -> String {
+        format!("ActorPoolProject: {:?}", self.projection)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -801,12 +877,24 @@ pub struct Filter {
     pub stats_state: StatsState,
 }
 
+impl Filter {
+    pub fn multiline_display(&self) -> String {
+        format!("Filter: {:?}", self.predicate)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
     pub num_rows: i64,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl Limit {
+    pub fn multiline_display(&self) -> String {
+        format!("Limit: {:?}", self.num_rows)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -817,6 +905,12 @@ pub struct Explode {
     pub stats_state: StatsState,
 }
 
+impl Explode {
+    pub fn multiline_display(&self) -> String {
+        format!("Explode: {:?}", self.to_explode)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
@@ -825,6 +919,12 @@ pub struct Sort {
     pub nulls_first: Vec<bool>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl Sort {
+    pub fn multiline_display(&self) -> String {
+        format!("Sort: {:?}", self.sort_by)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -838,6 +938,12 @@ pub struct TopN {
     pub stats_state: StatsState,
 }
 
+impl TopN {
+    pub fn multiline_display(&self) -> String {
+        format!("TopN: {:?}", self.sort_by)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
@@ -848,6 +954,12 @@ pub struct Sample {
     pub stats_state: StatsState,
 }
 
+impl Sample {
+    pub fn multiline_display(&self) -> String {
+        format!("Sample: {:?}", self.fraction)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
@@ -856,12 +968,24 @@ pub struct MonotonicallyIncreasingId {
     pub stats_state: StatsState,
 }
 
+impl MonotonicallyIncreasingId {
+    pub fn multiline_display(&self) -> String {
+        format!("MonotonicallyIncreasingId: {:?}", self.column_name)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<BoundAggExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl UnGroupedAggregate {
+    pub fn multiline_display(&self) -> String {
+        format!("UnGroupedAggregate: {:?}", self.aggregations)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -873,6 +997,12 @@ pub struct HashAggregate {
     pub stats_state: StatsState,
 }
 
+impl HashAggregate {
+    pub fn multiline_display(&self) -> String {
+        format!("HashAggregate: {:?}", self.aggregations)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Unpivot {
     pub input: LocalPhysicalPlanRef,
@@ -882,6 +1012,12 @@ pub struct Unpivot {
     pub value_name: String,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl Unpivot {
+    pub fn multiline_display(&self) -> String {
+        format!("Unpivot: {:?}", self.ids)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -896,6 +1032,12 @@ pub struct Pivot {
     pub stats_state: StatsState,
 }
 
+impl Pivot {
+    pub fn multiline_display(&self) -> String {
+        format!("Pivot: {:?}", self.group_by)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
@@ -908,12 +1050,24 @@ pub struct HashJoin {
     pub stats_state: StatsState,
 }
 
+impl HashJoin {
+    pub fn multiline_display(&self) -> String {
+        format!("HashJoin: {:?}", self.left_on)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+impl CrossJoin {
+    pub fn multiline_display(&self) -> String {
+        format!("CrossJoin: {:?}", self.schema)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -924,6 +1078,12 @@ pub struct Concat {
     pub stats_state: StatsState,
 }
 
+impl Concat {
+    pub fn multiline_display(&self) -> String {
+        format!("Concat: {:?}", self.schema)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalWrite {
     pub input: LocalPhysicalPlanRef,
@@ -931,6 +1091,12 @@ pub struct PhysicalWrite {
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo<BoundExpr>,
     pub stats_state: StatsState,
+}
+
+impl PhysicalWrite {
+    pub fn multiline_display(&self) -> String {
+        format!("PhysicalWrite: {:?}", self.file_info)
+    }
 }
 
 #[cfg(feature = "python")]
@@ -944,6 +1110,13 @@ pub struct CatalogWrite {
 }
 
 #[cfg(feature = "python")]
+impl CatalogWrite {
+    pub fn multiline_display(&self) -> String {
+        format!("CatalogWrite: {:?}", self.catalog_type)
+    }
+}
+
+#[cfg(feature = "python")]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LanceWrite {
     pub input: LocalPhysicalPlanRef,
@@ -954,12 +1127,26 @@ pub struct LanceWrite {
 }
 
 #[cfg(feature = "python")]
+impl LanceWrite {
+    pub fn multiline_display(&self) -> String {
+        format!("LanceWrite: {:?}", self.lance_info)
+    }
+}
+
+#[cfg(feature = "python")]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DataSink {
     pub input: LocalPhysicalPlanRef,
     pub data_sink_info: daft_logical_plan::DataSinkInfo,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+#[cfg(feature = "python")]
+impl DataSink {
+    pub fn multiline_display(&self) -> String {
+        format!("DataSink: {:?}", self.data_sink_info)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -972,6 +1159,12 @@ pub struct WindowPartitionOnly {
     pub aliases: Vec<String>,
 }
 
+impl WindowPartitionOnly {
+    pub fn multiline_display(&self) -> String {
+        format!("WindowPartitionOnly: {:?}", self.partition_by)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowPartitionAndOrderBy {
     pub input: LocalPhysicalPlanRef,
@@ -982,6 +1175,12 @@ pub struct WindowPartitionAndOrderBy {
     pub stats_state: StatsState,
     pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
+}
+
+impl WindowPartitionAndOrderBy {
+    pub fn multiline_display(&self) -> String {
+        format!("WindowPartitionAndOrderBy: {:?}", self.partition_by)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -998,6 +1197,12 @@ pub struct WindowPartitionAndDynamicFrame {
     pub aliases: Vec<String>,
 }
 
+impl WindowPartitionAndDynamicFrame {
+    pub fn multiline_display(&self) -> String {
+        format!("WindowPartitionAndDynamicFrame: {:?}", self.partition_by)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowOrderByOnly {
     pub input: LocalPhysicalPlanRef,
@@ -1007,4 +1212,10 @@ pub struct WindowOrderByOnly {
     pub stats_state: StatsState,
     pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
+}
+
+impl WindowOrderByOnly {
+    pub fn multiline_display(&self) -> String {
+        format!("WindowOrderByOnly: {:?}", self.order_by)
+    }
 }

@@ -84,15 +84,13 @@ impl TreeDisplay for IntermediateNode {
         use std::fmt::Write;
         let mut display = String::new();
 
+        writeln!(display, "{}", self.node_id).unwrap();
         match level {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.name()).unwrap();
             }
             _ => {
-                writeln!(display, "DistributedIntermediate:").unwrap();
-                writeln!(display, "Node ID = {}", self.node_id).unwrap();
-                writeln!(display, "Local Plan = {}", self.plan.name()).unwrap();
-                writeln!(display, "Num children = {}", self.children.len()).unwrap();
+                writeln!(display, "{}", self.plan.multiline_display()).unwrap();
             }
         }
         display

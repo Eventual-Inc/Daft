@@ -54,7 +54,7 @@ impl InMemorySourceNode {
         for partition_ref in partition_refs {
             let task = make_task_for_partition_ref(
                 plan.clone(),
-                partition_ref,
+                vec![partition_ref],
                 in_memory_info.cache_key.clone(),
                 config.clone(),
             )?;
@@ -71,17 +71,13 @@ impl TreeDisplay for InMemorySourceNode {
         use std::fmt::Write;
         let mut display = String::new();
 
+        writeln!(display, "{}", self.node_id).unwrap();
         match level {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.name()).unwrap();
             }
             _ => {
-                writeln!(display, "DistributedInMemorySource:").unwrap();
-                writeln!(display, "Node ID = {}", self.node_id).unwrap();
-                writeln!(display, "Cache Key = {}", self.info.cache_key).unwrap();
-                writeln!(display, "Size bytes = {}", self.info.size_bytes).unwrap();
-                writeln!(display, "Num partitions = {}", self.info.num_partitions).unwrap();
-                writeln!(display, "Num rows = {}", self.info.num_rows).unwrap();
+                writeln!(display, "{}", self.plan.multiline_display()).unwrap();
             }
         }
         display
@@ -126,17 +122,28 @@ impl DistributedPipelineNode for InMemorySourceNode {
 
 fn make_task_for_partition_ref(
     plan: LocalPhysicalPlanRef,
-    partition_ref: PartitionRef,
+    partition_refs: Vec<PartitionRef>,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
 ) -> DaftResult<SwordfishTask> {
+    let num_rows = partition_refs
+        .iter()
+        .map(|p| p.num_rows().unwrap_or(0))
+        .sum::<usize>();
+    let size_bytes = partition_refs
+        .iter()
+        .map(|p| {
+            let size = p.size_bytes()?;
+            Ok(size.unwrap_or(0))
+        })
+        .sum::<DaftResult<usize>>()?;
     let info = InMemoryInfo::new(
         plan.schema().clone(),
         cache_key.clone(),
         None,
-        1,
-        partition_ref.size_bytes()?.expect("make_task_for_partition_ref: Expect that the input partition ref for a in-memory source node has a known size"),
-        partition_ref.num_rows()?,
+        partition_refs.len(),
+        size_bytes,
+        num_rows,
         None,
         None,
     );
@@ -148,7 +155,7 @@ fn make_task_for_partition_ref(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
-    let psets = HashMap::from([(cache_key, vec![partition_ref])]);
+    let psets = HashMap::from([(cache_key, partition_refs)]);
     let task = SwordfishTask::new(
         transformed_plan,
         config,

@@ -7,6 +7,7 @@ use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
@@ -57,7 +58,12 @@ impl ScanSourceNode {
         }
 
         for scan_task in scan_tasks.iter() {
-            let task = make_source_tasks(&plan, &pushdowns, scan_task.clone(), config.clone())?;
+            let task = make_source_tasks(
+                &plan,
+                &pushdowns,
+                vec![scan_task.clone()].into(),
+                config.clone(),
+            )?;
             if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                 break;
             }
@@ -71,22 +77,21 @@ impl TreeDisplay for ScanSourceNode {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-
+        writeln!(display, "{}", self.node_id).unwrap();
         match level {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.name()).unwrap();
             }
             _ => {
-                writeln!(display, "DistributedScanSource:").unwrap();
-                writeln!(display, "Node ID = {}", self.node_id).unwrap();
-                writeln!(display, "Num Scan Tasks = {}", self.scan_tasks.len()).unwrap();
-
-                let total_bytes: usize = self
-                    .scan_tasks
-                    .iter()
-                    .map(|st| st.size_bytes_on_disk().unwrap_or(0))
-                    .sum();
-                writeln!(display, "Estimated Scan Bytes = {}", total_bytes).unwrap();
+                let plan = make_source_tasks(
+                    &self.plan,
+                    &self.pushdowns,
+                    self.scan_tasks.clone(),
+                    self.config.clone(),
+                )
+                .unwrap()
+                .plan();
+                writeln!(display, "{}", plan.multiline_display()).unwrap();
             }
         }
         display
@@ -132,7 +137,7 @@ impl DistributedPipelineNode for ScanSourceNode {
 fn make_source_tasks(
     plan: &LocalPhysicalPlanRef,
     pushdowns: &Pushdowns,
-    scan_task: ScanTaskLikeRef,
+    scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     config: Arc<DaftExecutionConfig>,
 ) -> DaftResult<SwordfishTask> {
     let transformed_plan = plan
@@ -140,7 +145,7 @@ fn make_source_tasks(
         .transform_up(|p| match p.as_ref() {
             LocalPhysicalPlan::PlaceholderScan(placeholder) => {
                 let physical_scan = LocalPhysicalPlan::physical_scan(
-                    vec![scan_task.clone()].into(),
+                    scan_tasks.clone(),
                     pushdowns.clone(),
                     placeholder.schema.clone(),
                     StatsState::NotMaterialized,
