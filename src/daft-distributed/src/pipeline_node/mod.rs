@@ -4,12 +4,13 @@ use futures::{Stream, StreamExt};
 use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};
 
 use crate::{
+    plan::PlanID,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittedTask},
         task::{SwordfishTask, Task},
         worker::WorkerId,
     },
-    stage::StageContext,
+    stage::{StageContext, StageID},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -64,16 +65,18 @@ pub(crate) enum PipelineOutput<T: Task> {
     Running(SubmittedTask),
 }
 
+#[allow(dead_code)]
 pub(crate) trait DistributedPipelineNode: Send + Sync {
-    #[allow(dead_code)]
     fn name(&self) -> &'static str;
-    #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
-    #[allow(dead_code)]
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
+    fn plan_id(&self) -> &PlanID;
+    fn stage_id(&self) -> &StageID;
+    fn node_id(&self) -> &NodeID;
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct RunningPipelineNode {
     result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
 }

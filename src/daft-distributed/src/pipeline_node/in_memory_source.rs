@@ -96,6 +96,7 @@ impl InMemorySourceNode {
             ("plan_id".to_string(), self.plan_id.to_string()),
             ("stage_id".to_string(), format!("{}", self.stage_id)),
             ("node_id".to_string(), format!("{}", self.node_id)),
+            ("node_name".to_string(), self.name().to_string()),
         ]);
         let task = SwordfishTask::new(
             transformed_plan,
@@ -125,5 +126,16 @@ impl DistributedPipelineNode for InMemorySourceNode {
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
+    }
+    fn plan_id(&self) -> &PlanID {
+        &self.plan_id
+    }
+
+    fn stage_id(&self) -> &StageID {
+        &self.stage_id
+    }
+
+    fn node_id(&self) -> &NodeID {
+        &self.node_id
     }
 }

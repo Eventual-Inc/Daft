@@ -98,6 +98,7 @@ impl SwordfishTask {
         let task_id = Uuid::new_v4().to_string();
         let resource_request = TaskResourceRequest::new(plan.resource_request());
         context.insert("task_id".to_string(), task_id);
+
         Self {
             plan,
             resource_request,

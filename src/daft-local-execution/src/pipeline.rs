@@ -86,7 +86,7 @@ pub struct RuntimeContext {
 }
 
 /// Contains information about the node such as name, id, and the plan_id
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: usize,

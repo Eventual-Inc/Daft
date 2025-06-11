@@ -47,7 +47,6 @@ pub(crate) fn logical_plan_to_pipeline_node(
 
         fn create_node(
             &mut self,
-
             logical_plan: LogicalPlanRef,
             current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
         ) -> DaftResult<Box<dyn DistributedPipelineNode>> {

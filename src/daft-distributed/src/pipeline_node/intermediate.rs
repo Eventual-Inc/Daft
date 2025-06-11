@@ -48,13 +48,12 @@ impl IntermediateNode {
     }
 
     async fn execution_loop(
-        plan_id: PlanID,
-        stage_id: StageID,
         node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        context: HashMap<String, String>,
     ) -> DaftResult<()> {
         let mut task_or_partition_ref_stream = input.materialize_running();
 
@@ -67,13 +66,11 @@ impl IntermediateNode {
                 PipelineOutput::Materialized(materialized_output) => {
                     // make new task for this partition ref
                     let task = make_task_for_materialized_output(
-                        plan_id.clone(),
-                        stage_id.clone(),
-                        node_id,
                         plan.clone(),
                         materialized_output,
                         node_id.to_string(),
                         config.clone(),
+                        context.clone(),
                     )?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
@@ -81,14 +78,8 @@ impl IntermediateNode {
                 }
                 PipelineOutput::Task(task) => {
                     // append plan to this task
-                    let task = append_plan_to_task(
-                        plan_id.clone(),
-                        stage_id.clone(),
-                        node_id,
-                        task,
-                        config.clone(),
-                        plan.clone(),
-                    )?;
+                    let task =
+                        append_plan_to_task(task, config.clone(), plan.clone(), context.clone())?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }
@@ -109,6 +100,24 @@ impl DistributedPipelineNode for IntermediateNode {
     }
 
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+        let context = {
+            let input = self
+                .children
+                .first()
+                .expect("IntermediateNode::start: IntermediateNode must have at least 1 child");
+            let child_name = input.name();
+            let child_id = input.node_id();
+
+            HashMap::from([
+                ("plan_id".to_string(), self.plan_id.to_string()),
+                ("stage_id".to_string(), format!("{}", self.stage_id)),
+                ("node_id".to_string(), format!("{}", self.node_id)),
+                ("node_name".to_string(), self.name().to_string()),
+                ("child_id".to_string(), format!("{}", child_id)),
+                ("child_name".to_string(), child_name.to_string()),
+            ])
+        };
+
         let input_node = self
             .children
             .first_mut()
@@ -117,28 +126,36 @@ impl DistributedPipelineNode for IntermediateNode {
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
-            self.plan_id.clone(),
-            self.stage_id.clone(),
             self.node_id,
             self.config.clone(),
             self.plan.clone(),
             input_node,
             result_tx,
+            context,
         );
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }
+    fn plan_id(&self) -> &PlanID {
+        &self.plan_id
+    }
+
+    fn stage_id(&self) -> &StageID {
+        &self.stage_id
+    }
+
+    fn node_id(&self) -> &NodeID {
+        &self.node_id
+    }
 }
 
 fn make_task_for_materialized_output(
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
     plan: LocalPhysicalPlanRef,
     materialized_output: MaterializedOutput,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
+    context: HashMap<String, String>,
 ) -> DaftResult<SwordfishTask> {
     let (partition_ref, worker_id) = materialized_output.into_inner();
 
@@ -161,11 +178,7 @@ fn make_task_for_materialized_output(
         })?
         .data;
     let psets = HashMap::from([(cache_key, vec![partition_ref])]);
-    let context = HashMap::from([
-        ("plan_id".to_string(), plan_id.to_string()),
-        ("stage_id".to_string(), format!("{}", stage_id)),
-        ("node_id".to_string(), format!("{}", node_id)),
-    ]);
+
     let task = SwordfishTask::new(
         transformed_plan,
         config,
@@ -180,12 +193,10 @@ fn make_task_for_materialized_output(
 }
 
 fn append_plan_to_task(
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
     task: SwordfishTask,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
+    context: HashMap<String, String>,
 ) -> DaftResult<SwordfishTask> {
     let transformed_plan = plan
         .transform_up(|p| match p.as_ref() {
@@ -193,11 +204,7 @@ fn append_plan_to_task(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
-    let context = HashMap::from([
-        ("plan_id".to_string(), plan_id.to_string()),
-        ("stage_id".to_string(), format!("{stage_id}")),
-        ("node_id".to_string(), format!("{node_id}")),
-    ]);
+
     let task = SwordfishTask::new(
         transformed_plan,
         config,
