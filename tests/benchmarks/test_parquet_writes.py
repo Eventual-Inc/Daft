@@ -13,6 +13,7 @@ import pytest
 
 import daft
 from daft.context import set_execution_config
+from daft.functions import monotonically_increasing_id
 
 
 class ColumnType(Enum):
@@ -272,6 +273,7 @@ def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_di
     config = TEST_CONFIGS[config_name]
     input_file = test_data_dir / f"{config_name}-{config.num_rows:_}.parquet"
     df = daft.read_parquet(str(input_file))
+    df = df.with_column("id", monotonically_increasing_id())
     df.collect()
 
     def benchmark_write():
@@ -287,5 +289,7 @@ def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_di
     benchmark_group = f"write_{config_name}-{target}"
     result_file = benchmark_with_memray(benchmark_write, benchmark_group)
 
-    # Verify the file was created.
+    # Verify the file was written correctly.
     assert result_file.exists()
+    results_df = daft.read_parquet(str(result_file))
+    assert results_df.sort("id").to_arrow() == df.sort("id").to_arrow()
