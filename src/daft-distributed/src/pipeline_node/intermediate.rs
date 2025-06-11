@@ -9,6 +9,7 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
+    pipeline_node::NodeID,
     plan::PlanID,
     scheduling::task::{SchedulingStrategy, SwordfishTask},
     stage::{StageContext, StageID},
@@ -19,7 +20,7 @@ use crate::{
 pub(crate) struct IntermediateNode {
     plan_id: PlanID,
     stage_id: StageID,
-    node_id: usize,
+    node_id: NodeID,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
     children: Vec<Box<dyn DistributedPipelineNode>>,
@@ -30,7 +31,7 @@ impl IntermediateNode {
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
-        node_id: usize,
+        node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
         children: Vec<Box<dyn DistributedPipelineNode>>,
@@ -46,7 +47,9 @@ impl IntermediateNode {
     }
 
     async fn execution_loop(
-        node_id: usize,
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
         input: RunningPipelineNode,
@@ -63,6 +66,9 @@ impl IntermediateNode {
                 PipelineOutput::Materialized(materialized_output) => {
                     // make new task for this partition ref
                     let task = make_task_for_materialized_output(
+                        plan_id.clone(),
+                        stage_id.clone(),
+                        node_id,
                         plan.clone(),
                         materialized_output,
                         node_id.to_string(),
@@ -74,7 +80,14 @@ impl IntermediateNode {
                 }
                 PipelineOutput::Task(task) => {
                     // append plan to this task
-                    let task = append_plan_to_task(task, config.clone(), plan.clone())?;
+                    let task = append_plan_to_task(
+                        plan_id.clone(),
+                        stage_id.clone(),
+                        node_id,
+                        task,
+                        config.clone(),
+                        plan.clone(),
+                    )?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }
@@ -103,6 +116,8 @@ impl DistributedPipelineNode for IntermediateNode {
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
+            self.plan_id.clone(),
+            self.stage_id.clone(),
             self.node_id,
             self.config.clone(),
             self.plan.clone(),
@@ -116,6 +131,9 @@ impl DistributedPipelineNode for IntermediateNode {
 }
 
 fn make_task_for_materialized_output(
+    plan_id: PlanID,
+    stage_id: StageID,
+    node_id: NodeID,
     plan: LocalPhysicalPlanRef,
     materialized_output: MaterializedOutput,
     cache_key: String,
@@ -143,6 +161,9 @@ fn make_task_for_materialized_output(
         .data;
     let psets = HashMap::from([(cache_key, vec![partition_ref])]);
     let task = SwordfishTask::new(
+        plan_id,
+        stage_id,
+        node_id,
         transformed_plan,
         config,
         psets,
@@ -155,6 +176,9 @@ fn make_task_for_materialized_output(
 }
 
 fn append_plan_to_task(
+    plan_id: PlanID,
+    stage_id: StageID,
+    node_id: NodeID,
     task: SwordfishTask,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
@@ -166,6 +190,9 @@ fn append_plan_to_task(
         })?
         .data;
     let task = SwordfishTask::new(
+        plan_id.clone(),
+        stage_id.clone(),
+        node_id.clone(),
         transformed_plan,
         config,
         Default::default(),

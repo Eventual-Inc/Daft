@@ -9,17 +9,21 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
-    plan::PlanID, scheduling::{
+    pipeline_node::NodeID,
+    plan::PlanID,
+    scheduling::{
         scheduler::SchedulerHandle,
         task::{SchedulingStrategy, SwordfishTask},
-    }, stage::{StageContext, StageID}, utils::channel::{create_channel, Sender}
+    },
+    stage::{StageContext, StageID},
+    utils::channel::{create_channel, Sender},
 };
 
 #[allow(dead_code)]
 pub(crate) struct LimitNode {
     plan_id: PlanID,
     stage_id: StageID,
-    node_id: usize,
+    node_id: NodeID,
     limit: usize,
     schema: SchemaRef,
     config: Arc<DaftExecutionConfig>,
@@ -31,7 +35,7 @@ impl LimitNode {
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
-        node_id: usize,
+        node_id: NodeID,
         limit: usize,
         schema: SchemaRef,
         config: Arc<DaftExecutionConfig>,
@@ -49,11 +53,14 @@ impl LimitNode {
     }
 
     async fn execution_loop(
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         mut remaining_limit: usize,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        node_id: usize,
+
         schema: SchemaRef,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<()> {
@@ -71,9 +78,11 @@ impl LimitNode {
                 Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
                 Ordering::Greater => {
                     let task_with_limit = make_task_with_limit(
+                        plan_id.clone(),
+                        stage_id.clone(),
+                        node_id,
                         materialized_output,
                         remaining_limit,
-                        node_id,
                         schema.clone(),
                         config.clone(),
                     )?;
@@ -106,11 +115,13 @@ impl DistributedPipelineNode for LimitNode {
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
+            self.plan_id.clone(),
+            self.stage_id.clone(),
+            self.node_id,
             input_node,
             result_tx,
             self.limit,
             stage_context.scheduler_handle.clone(),
-            self.node_id,
             self.schema.clone(),
             self.config.clone(),
         );
@@ -121,9 +132,11 @@ impl DistributedPipelineNode for LimitNode {
 }
 
 fn make_task_with_limit(
+    plan_id: PlanID,
+    stage_id: StageID,
+    node_id: NodeID,
     materialized_output: MaterializedOutput,
     limit: usize,
-    node_id: usize,
     schema: SchemaRef,
     config: Arc<DaftExecutionConfig>,
 ) -> DaftResult<SwordfishTask> {
@@ -139,6 +152,9 @@ fn make_task_with_limit(
     let mpset = HashMap::from([(node_id.to_string(), vec![partition])]);
 
     let task = SwordfishTask::new(
+        plan_id,
+        stage_id,
+        node_id,
         limit_plan,
         config,
         mpset,

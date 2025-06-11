@@ -17,7 +17,7 @@ use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
         dispatcher::{DispatcherActor, DispatcherHandle},
-        task::{Task, TaskId},
+        task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
     utils::{
@@ -192,7 +192,7 @@ impl<T: Task> SchedulerHandle<T> {
 
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
-    _task_id: TaskId,
+    _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
     finished: bool,
@@ -200,7 +200,7 @@ pub(crate) struct SubmittedTask {
 
 impl SubmittedTask {
     fn new(
-        task_id: TaskId,
+        task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
@@ -213,7 +213,7 @@ impl SubmittedTask {
     }
 
     #[allow(dead_code)]
-    pub fn id(&self) -> &TaskId {
+    pub fn id(&self) -> &TaskID {
         &self._task_id
     }
 }

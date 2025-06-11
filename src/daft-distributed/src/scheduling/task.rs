@@ -9,7 +9,12 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::worker::WorkerId;
-use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
+use crate::{
+    pipeline_node::{MaterializedOutput, NodeID},
+    plan::PlanID,
+    stage::StageID,
+    utils::channel::OneshotSender,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
@@ -36,20 +41,28 @@ impl TaskResourceRequest {
     }
 }
 
-pub(crate) type TaskId = Arc<str>;
+pub(crate) type TaskID = Arc<str>;
 pub(crate) type TaskPriority = u32;
 #[allow(dead_code)]
 pub(crate) trait Task: Send + Sync + Debug + 'static {
     fn priority(&self) -> TaskPriority;
-    fn task_id(&self) -> &TaskId;
+    fn task_id(&self) -> &TaskID;
     fn resource_request(&self) -> &TaskResourceRequest;
     fn strategy(&self) -> &SchedulingStrategy;
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct TaskContext {
+    plan_id: PlanID,
+    stage_id: StageID,
+    node_id: NodeID,
+    task_id: TaskID,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct TaskDetails {
     #[allow(dead_code)]
-    pub id: TaskId,
+    pub id: TaskID,
     pub resource_request: TaskResourceRequest,
 }
 
@@ -78,7 +91,7 @@ pub(crate) enum SchedulingStrategy {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SwordfishTask {
-    id: TaskId,
+    task_context: TaskContext,
     plan: LocalPhysicalPlanRef,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
@@ -89,6 +102,9 @@ pub(crate) struct SwordfishTask {
 #[allow(dead_code)]
 impl SwordfishTask {
     pub fn new(
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
         psets: HashMap<String, Vec<PartitionRef>>,
@@ -96,8 +112,15 @@ impl SwordfishTask {
     ) -> Self {
         let task_id = Uuid::new_v4().to_string();
         let resource_request = TaskResourceRequest::new(plan.resource_request());
+        let task_context = TaskContext {
+            plan_id,
+            stage_id,
+            node_id,
+            task_id: Arc::from(task_id),
+        };
+
         Self {
-            id: Arc::from(task_id),
+            task_context,
             plan,
             resource_request,
             config,
@@ -106,8 +129,8 @@ impl SwordfishTask {
         }
     }
 
-    pub fn id(&self) -> &TaskId {
-        &self.id
+    pub fn id(&self) -> &TaskID {
+        &self.task_context.task_id
     }
 
     pub fn strategy(&self) -> &SchedulingStrategy {
@@ -128,8 +151,8 @@ impl SwordfishTask {
 }
 
 impl Task for SwordfishTask {
-    fn task_id(&self) -> &TaskId {
-        &self.id
+    fn task_id(&self) -> &TaskID {
+        self.id()
     }
 
     fn resource_request(&self) -> &TaskResourceRequest {
@@ -155,7 +178,7 @@ pub(crate) trait TaskResultHandle: Send + Sync {
 }
 
 pub(crate) struct TaskResultHandleAwaiter<H: TaskResultHandle> {
-    task_id: TaskId,
+    task_id: TaskID,
     worker_id: WorkerId,
     handle: H,
     result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
@@ -164,7 +187,7 @@ pub(crate) struct TaskResultHandleAwaiter<H: TaskResultHandle> {
 
 impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
     pub fn new(
-        task_id: TaskId,
+        task_id: TaskID,
         worker_id: WorkerId,
         handle: H,
         result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
@@ -179,7 +202,7 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
         }
     }
 
-    pub fn task_id(&self) -> &TaskId {
+    pub fn task_id(&self) -> &TaskID {
         &self.task_id
     }
 
@@ -249,7 +272,7 @@ pub(super) mod tests {
 
     #[derive(Debug)]
     pub struct MockTask {
-        task_id: TaskId,
+        task_id: TaskID,
         priority: u32,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
@@ -267,7 +290,7 @@ pub(super) mod tests {
 
     /// A builder pattern implementation for creating MockTask instances
     pub struct MockTaskBuilder {
-        task_id: TaskId,
+        task_id: TaskID,
         priority: u32,
         scheduling_strategy: SchedulingStrategy,
         task_result: Vec<MaterializedOutput>,
@@ -314,7 +337,7 @@ pub(super) mod tests {
         }
 
         /// Set a custom task ID (defaults to a UUID if not specified)
-        pub fn with_task_id(mut self, task_id: TaskId) -> Self {
+        pub fn with_task_id(mut self, task_id: TaskID) -> Self {
             self.task_id = task_id;
             self
         }
@@ -356,7 +379,7 @@ pub(super) mod tests {
             self.priority
         }
 
-        fn task_id(&self) -> &TaskId {
+        fn task_id(&self) -> &TaskID {
             &self.task_id
         }
 

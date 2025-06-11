@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, RaySwordfishTask};
 use crate::scheduling::{
     scheduler::SchedulableTask,
-    task::{SwordfishTask, Task, TaskDetails, TaskId, TaskResultHandleAwaiter},
+    task::{SwordfishTask, Task, TaskDetails, TaskID, TaskResultHandleAwaiter},
     worker::{Worker, WorkerId},
 };
 
@@ -21,7 +21,7 @@ pub(crate) struct RaySwordfishWorker {
     num_cpus: usize,
     #[allow(dead_code)]
     total_memory_bytes: usize,
-    active_task_details: Arc<Mutex<HashMap<TaskId, TaskDetails>>>,
+    active_task_details: Arc<Mutex<HashMap<TaskID, TaskDetails>>>,
 }
 
 #[pymethods]
@@ -45,7 +45,7 @@ impl RaySwordfishWorker {
 
 #[allow(dead_code)]
 impl RaySwordfishWorker {
-    pub fn mark_task_finished(&self, task_id: &TaskId) {
+    pub fn mark_task_finished(&self, task_id: &TaskID) {
         self.active_task_details
             .lock()
             .expect("Active task ids should be present")
@@ -129,7 +129,7 @@ impl Worker for RaySwordfishWorker {
         self.total_num_cpus() - self.active_num_cpus()
     }
 
-    fn active_task_details(&self) -> HashMap<TaskId, TaskDetails> {
+    fn active_task_details(&self) -> HashMap<TaskID, TaskDetails> {
         self.active_task_details
             .lock()
             .expect("Active task details should be present")
