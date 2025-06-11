@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pyspark.sql import Row
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
 from pyspark.sql.types import LongType, StringType, StructField, StructType
@@ -411,3 +412,11 @@ def test_explain(spark_session, capsys):
 
 """
     assert actual.out == expected
+
+
+def test_when_otherwise(spark_session):
+    df = spark_session.createDataFrame([(1), (None), (10)], ["a"])
+
+    result = df.select(F.when(col("a").isNull(), True).otherwise(False)).collect()
+
+    assert result == [Row(a=True), Row(a=False), Row(a=True)]

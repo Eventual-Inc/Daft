@@ -1,4 +1,6 @@
-use daft_dsl::{binary_op, Operator};
+use std::sync::Arc;
+
+use daft_dsl::{binary_op, null_lit, Operator};
 use daft_functions::{coalesce::Coalesce, float::IsNan};
 use daft_sql::sql_expr;
 use spark_connect::Expression;
@@ -46,7 +48,7 @@ impl FunctionModule for CoreFunctions {
         parent.add_todo_fn("rand");
         parent.add_todo_fn("randn");
         parent.add_todo_fn("spark_partition_id");
-        parent.add_todo_fn("when");
+        parent.add_fn("when", WhenFunction);
         parent.add_todo_fn("bitwise_not");
         parent.add_todo_fn("bitwiseNOT");
         parent.add_fn("expr", SqlExpr);
@@ -59,6 +61,26 @@ impl FunctionModule for CoreFunctions {
         parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
         parent.add_fn("not", UnaryFunction(|arg| arg.not()));
         parent.add_fn("and", BinaryFunction(|arg1, arg2| arg1.and(arg2)));
+    }
+}
+
+pub struct WhenFunction;
+impl SparkFunction for WhenFunction {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
+        let args = args
+            .iter()
+            .map(analyze_expr)
+            .collect::<ConnectResult<Vec<_>>>()?;
+
+        let predicate = args[0].clone();
+        let if_false = args[1].clone();
+        let if_true = args.get(2).cloned().unwrap_or_else(null_lit);
+
+        Ok(Arc::new(daft_dsl::Expr::IfElse {
+            if_true,
+            if_false,
+            predicate,
+        }))
     }
 }
 
