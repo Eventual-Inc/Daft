@@ -1,3 +1,9 @@
+use common_display::{
+    ascii::fmt_tree_gitstyle,
+    mermaid::{MermaidDisplayVisitor, SubgraphOptions},
+    tree::TreeDisplay,
+    DisplayLevel,
+};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use futures::{Stream, StreamExt};
@@ -63,13 +69,41 @@ pub(crate) enum PipelineOutput<T: Task> {
     Running(SubmittedTask),
 }
 
-pub(crate) trait DistributedPipelineNode: Send + Sync {
+pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
     #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
     #[allow(dead_code)]
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay;
+}
+
+/// Visualize a distributed pipeline as Mermaid markdown
+pub fn viz_distributed_pipeline_mermaid(
+    root: &dyn DistributedPipelineNode,
+    display_type: DisplayLevel,
+    bottom_up: bool,
+    subgraph_options: Option<SubgraphOptions>,
+) -> String {
+    let mut output = String::new();
+    let mut visitor =
+        MermaidDisplayVisitor::new(&mut output, display_type, bottom_up, subgraph_options);
+    visitor.fmt(root.as_tree_display()).unwrap();
+    output
+}
+
+/// Visualize a distributed pipeline as ASCII text
+pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple: bool) -> String {
+    let mut s = String::new();
+    let level = if simple {
+        DisplayLevel::Compact
+    } else {
+        DisplayLevel::Default
+    };
+    fmt_tree_gitstyle(root.as_tree_display(), 0, &mut s, level).unwrap();
+    s
 }
 
 #[allow(dead_code)]

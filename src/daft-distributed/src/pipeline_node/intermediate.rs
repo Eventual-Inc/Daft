@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -78,6 +79,37 @@ impl IntermediateNode {
     }
 }
 
+impl TreeDisplay for IntermediateNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.name()).unwrap();
+            }
+            _ => {
+                writeln!(display, "DistributedIntermediate:").unwrap();
+                writeln!(display, "Node ID = {}", self.node_id).unwrap();
+                writeln!(display, "Local Plan = {}", self.plan.name()).unwrap();
+                writeln!(display, "Num children = {}", self.children.len()).unwrap();
+            }
+        }
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children
+            .iter()
+            .map(|child| child.as_tree_display())
+            .collect()
+    }
+
+    fn get_name(&self) -> String {
+        "DistributedIntermediate".to_string()
+    }
+}
+
 impl DistributedPipelineNode for IntermediateNode {
     fn name(&self) -> &'static str {
         "Intermediate"
@@ -105,6 +137,10 @@ impl DistributedPipelineNode for IntermediateNode {
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
 

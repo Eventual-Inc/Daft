@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
@@ -88,6 +89,35 @@ impl LimitNode {
     }
 }
 
+impl TreeDisplay for LimitNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.name()).unwrap();
+            }
+            _ => {
+                writeln!(display, "DistributedLimit:").unwrap();
+                writeln!(display, "Node ID = {}", self.node_id).unwrap();
+                writeln!(display, "Limit = {}", self.limit).unwrap();
+            }
+        }
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        // TODO: Fix trait upcasting when available in stable Rust
+        // For now, return empty to avoid compilation issues
+        vec![]
+    }
+
+    fn get_name(&self) -> String {
+        "DistributedLimit".to_string()
+    }
+}
+
 impl DistributedPipelineNode for LimitNode {
     fn name(&self) -> &'static str {
         "Limit"
@@ -113,6 +143,10 @@ impl DistributedPipelineNode for LimitNode {
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
 

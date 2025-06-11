@@ -3,6 +3,7 @@ mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
+use common_display::DisplayLevel;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -77,6 +78,20 @@ impl PyDistributedPhysicalPlan {
 
     fn id(&self) -> String {
         self.plan.id().to_string()
+    }
+
+    /// Visualize the distributed pipeline as ASCII text
+    fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        Ok(stage_plan.repr_ascii(simple)?)
+    }
+
+    /// Visualize the distributed pipeline as Mermaid markdown
+    fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        Ok(stage_plan.repr_mermaid(simple, bottom_up)?)
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);

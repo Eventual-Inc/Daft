@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode};
@@ -65,6 +66,36 @@ impl InMemorySourceNode {
     }
 }
 
+impl TreeDisplay for InMemorySourceNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.name()).unwrap();
+            }
+            _ => {
+                writeln!(display, "DistributedInMemorySource:").unwrap();
+                writeln!(display, "Node ID = {}", self.node_id).unwrap();
+                writeln!(display, "Cache Key = {}", self.info.cache_key).unwrap();
+                writeln!(display, "Size bytes = {}", self.info.size_bytes).unwrap();
+                writeln!(display, "Num partitions = {}", self.info.num_partitions).unwrap();
+                writeln!(display, "Num rows = {}", self.info.num_rows).unwrap();
+            }
+        }
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![]
+    }
+
+    fn get_name(&self) -> String {
+        "DistributedInMemorySource".to_string()
+    }
+}
+
 impl DistributedPipelineNode for InMemorySourceNode {
     fn name(&self) -> &'static str {
         "InMemorySourceNode"
@@ -86,6 +117,10 @@ impl DistributedPipelineNode for InMemorySourceNode {
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
 
