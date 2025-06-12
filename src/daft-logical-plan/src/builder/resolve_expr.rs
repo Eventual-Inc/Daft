@@ -152,12 +152,6 @@ fn col_resolves_to_plan(column: &UnresolvedColumn, plan: &LogicalPlanRef) -> Daf
 }
 
 fn replace_element_with_column_ref(expr: ExprRef, replacement: ExprRef) -> DaftResult<ExprRef> {
-    // let replacement = Expr::Column(Column::Unresolved(UnresolvedColumn {
-    //     name: Arc::from(replacement_field.name.to_string()),
-    //     plan_ref: PlanRef::Unqualified,
-    //     plan_schema: Some(Arc::new(Schema::new(vec![replacement_field]))),
-    // }))
-    // .arced();
     expr.transform(|e| {
         if matches!(
             e.as_ref(),
