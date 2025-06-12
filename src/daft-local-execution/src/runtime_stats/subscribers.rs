@@ -1,5 +1,5 @@
-pub(crate) mod opentelemetry;
 pub(crate) mod dashboard;
+pub(crate) mod opentelemetry;
 
 use crate::pipeline::NodeInfo;
 

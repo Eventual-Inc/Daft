@@ -1,5 +1,7 @@
 use std::env;
 
+use common_runtime::get_io_runtime;
+
 use crate::{pipeline::NodeInfo, runtime_stats::subscribers::RuntimeStatsSubscriber};
 
 pub struct DashboardSubscriber {
@@ -50,20 +52,21 @@ impl DashboardSubscriber {
         payload.insert("id".to_string(), context.id.to_string());
         payload.insert("value".to_string(), value.to_string());
 
-        if let Some(run_id) = env::var("DAFT_DASHBOARD_RUN_ID").ok() {
+        if let Ok(run_id) = env::var("DAFT_DASHBOARD_RUN_ID") {
             payload.insert("run_id".to_string(), run_id);
         }
+        let runtime = get_io_runtime(true);
 
         let client = self.client.clone();
-        tokio::spawn(async move {
+        if let Err(e) = runtime.block_within_async_context(async move {
             let req = client.post(url);
-            let req = if let Some(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN").ok() {
+            let req = if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
                 req.bearer_auth(auth_token)
             } else {
                 req
             };
-
             let res = req.json(&payload).send().await;
+
             if let Err(e) = res {
                 #[cfg(debug_assertions)]
                 {
@@ -72,7 +75,9 @@ impl DashboardSubscriber {
 
                 log::error!("Failed to send metric to dashboard: {}", e);
             }
-        });
+        }) {
+            log::error!("Failed to send metric to dashboard: {}", e);
+        };
     }
 }
 
