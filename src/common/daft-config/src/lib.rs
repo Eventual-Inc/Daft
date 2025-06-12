@@ -97,7 +97,7 @@ impl Default for DaftExecutionConfig {
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
             native_parquet_writer: true,
-            native_remote_writer: true,
+            native_remote_writer: false,
             flotilla: false,
         }
     }
@@ -135,9 +135,9 @@ impl DaftExecutionConfig {
         }
         let native_remote_writer_env_var_name = "DAFT_NATIVE_REMOTE_WRITER";
         if let Ok(val) = std::env::var(native_remote_writer_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "0" | "false")
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
-            cfg.native_remote_writer = false;
+            cfg.native_remote_writer = true;
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
         if let Ok(val) = std::env::var(flotilla_env_var_name)
