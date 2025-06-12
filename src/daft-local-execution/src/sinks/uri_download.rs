@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::{
     prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef, UInt64Array},
     series::IntoSeries,
@@ -23,6 +22,8 @@ use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
+
+const SCALE_FACTOR: usize = 8;
 
 struct UriDownloadSinkState {
     in_flight_uploads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
@@ -72,7 +73,7 @@ impl UriDownloadSinkState {
             io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
             submitted_downloads: 0,
 
-            max_in_flight: max_connections * 4,
+            max_in_flight: max_connections * SCALE_FACTOR,
             uri_col: input,
             raise_error_on_failure,
             output_column,
@@ -328,7 +329,7 @@ impl StreamingSink for UriDownloadSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
+        1
     }
 
     fn dispatch_spawner(
@@ -336,6 +337,6 @@ impl StreamingSink for UriDownloadSink {
         _runtime_handle: &ExecutionRuntimeContext,
         _maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(0, 128))
+        Arc::new(UnorderedDispatcher::new(0, 32 * SCALE_FACTOR))
     }
 }
