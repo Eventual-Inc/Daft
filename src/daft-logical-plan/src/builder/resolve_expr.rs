@@ -174,7 +174,7 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
         expr.transform_down(|e| {
             let expr_ref = e.as_ref();
             if let Expr::ScalarFunction(sf) = expr_ref {
-                // the `list` type should be the first element
+                // the `list` type should always be the first element
                 let inputs = sf.inputs.clone();
                 let list_col = inputs
                     .first()
