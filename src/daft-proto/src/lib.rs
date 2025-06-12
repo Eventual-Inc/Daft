@@ -3,6 +3,7 @@
 //
 
 mod client;
+mod ir;
 
 //
 // protobuf sources

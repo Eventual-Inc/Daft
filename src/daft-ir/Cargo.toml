@@ -1,0 +1,13 @@
+[dependencies]
+daft-dsl = { path = "../daft-dsl" }
+daft-functions = { path = "../daft-functions" }
+daft-logical-plan = { path = "../daft-logical-plan" }
+daft-schema = { path = "../daft-schema" }
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-ir"
+edition.workspace = true
+version.workspace = true

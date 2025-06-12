@@ -33,6 +33,7 @@ daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = fals
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
+daft-ir = {path = "src/daft-ir", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-local-plan = {path = "src/daft-local-plan", default-features = false}
@@ -186,6 +187,7 @@ members = [
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
+  "src/daft-ir",
   "src/daft-json",
   "src/daft-local-execution",
   "src/daft-local-plan",
@@ -242,6 +244,8 @@ daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
 daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
+daft-io = {path = "src/daft-io"}
+daft-ir = {path = "src/daft-ir"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}

@@ -2022,6 +2022,7 @@ dependencies = [
  "daft-hash",
  "daft-image",
  "daft-io",
+ "daft-ir",
  "daft-json",
  "daft-local-execution",
  "daft-local-plan",
@@ -2508,6 +2509,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-ir"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-dsl",
+ "daft-functions",
+ "daft-logical-plan",
+ "daft-schema",
+]
+
+[[package]]
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2753,6 +2764,8 @@ dependencies = [
 name = "daft-proto"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
+ "daft-ir",
  "prost 0.13.5",
  "pyo3",
  "tokio",
