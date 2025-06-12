@@ -258,12 +258,8 @@ impl StreamingSink for UriDownloadSink {
                         .downcast_mut::<UriDownloadSinkState>()
                         .expect("UriDownload sink should have UriDownloadSinkState");
 
-                    eprintln!("Input Size: {}", input.len());
                     url_state.start_download(input)?;
                     let output = url_state.poll_finished().await?;
-                    eprintln!("Output Size: {}", output.len());
-                    eprintln!("In Flight: {}", url_state.get_in_flight());
-                    eprintln!("Max In Flight: {}", url_state.max_in_flight);
 
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
