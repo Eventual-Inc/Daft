@@ -317,7 +317,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pipeline_node.name(), "ScanSource");
+        assert_eq!(pipeline_node.name(), "DistributedScanSource");
         assert_eq!(pipeline_node.children().len(), 0);
     }
 
@@ -343,11 +343,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pipeline_node.name(), "Limit");
+        assert_eq!(pipeline_node.name(), "DistributedLimit");
 
         let children = pipeline_node.children();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "ScanSource");
+        assert_eq!(children[0].name(), "DistributedScanSource");
         assert_eq!(children[0].children().len(), 0);
 
         Ok(())
@@ -377,7 +377,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pipeline_node.name(), "ScanSource");
+        assert_eq!(pipeline_node.name(), "DistributedScanSource");
         assert_eq!(pipeline_node.children().len(), 0);
 
         Ok(())
@@ -411,15 +411,15 @@ mod tests {
         .unwrap();
 
         // Intermediate <- Limit <- Source
-        assert_eq!(pipeline_node.name(), "Intermediate");
+        assert_eq!(pipeline_node.name(), "DistributedIntermediateNode");
 
         let children = pipeline_node.children();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "Limit");
+        assert_eq!(children[0].name(), "DistributedLimit");
 
         let children = children[0].children();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "ScanSource");
+        assert_eq!(children[0].name(), "DistributedScanSource");
         assert_eq!(children[0].children().len(), 0);
 
         Ok(())
