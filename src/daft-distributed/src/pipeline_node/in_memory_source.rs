@@ -11,7 +11,10 @@ use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
     pipeline_node::NodeID,
     plan::PlanID,
-    scheduling::task::{SchedulingStrategy, SwordfishTask},
+    scheduling::{
+        scheduler::SubmittableTask,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
@@ -58,7 +61,11 @@ impl InMemorySourceNode {
 
         for partition_ref in partition_refs {
             let task = self.make_task_for_partition_ref(partition_ref)?;
-            if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+            if result_tx
+                .send(PipelineOutput::Task(SubmittableTask::new(task)))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -106,6 +113,7 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             context,
+            self.node_id,
         );
         Ok(task)
     }
@@ -120,7 +128,7 @@ impl DistributedPipelineNode for InMemorySourceNode {
         vec![]
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.clone().execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);

@@ -6,7 +6,7 @@ use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline
 use crate::{
     plan::PlanID,
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittedTask},
+        scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
         task::{SwordfishTask, Task},
         worker::WorkerId,
     },
@@ -14,6 +14,8 @@ use crate::{
     utils::channel::{Receiver, ReceiverStream},
 };
 
+#[cfg(feature = "python")]
+mod actor_udf;
 mod in_memory_source;
 mod intermediate;
 mod limit;
@@ -61,7 +63,7 @@ impl MaterializedOutput {
 #[derive(Debug)]
 pub(crate) enum PipelineOutput<T: Task> {
     Materialized(MaterializedOutput),
-    Task(T),
+    Task(SubmittableTask<T>),
     Running(SubmittedTask),
 }
 
@@ -69,7 +71,7 @@ pub(crate) enum PipelineOutput<T: Task> {
 pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn name(&self) -> &'static str;
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
+    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode;
     fn plan_id(&self) -> &PlanID;
     fn stage_id(&self) -> &StageID;
     fn node_id(&self) -> &NodeID;
