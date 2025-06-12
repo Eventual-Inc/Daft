@@ -58,7 +58,7 @@ fn intersect_or_except_plan(
     let on = JoinPredicate::try_new(on_expr)?;
 
     let join = logical_plan::Join::try_new(lhs, rhs, on, join_type, None);
-    join.map(|j| Distinct::new(j.into()).into())
+    join.map(|j| Distinct::new(j.into(), None).into())
 }
 
 fn check_structurally_equal(
@@ -338,7 +338,7 @@ impl Union {
                 let concat = LogicalPlan::Concat(Concat::try_new(lhs, rhs)?);
                 match self.quantifier {
                     SetQuantifier::All => Ok(concat),
-                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced(), None).into()),
                 }
             }
             UnionStrategy::ByName => {
@@ -374,7 +374,7 @@ impl Union {
 
                 match self.quantifier {
                     SetQuantifier::All => Ok(concat),
-                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced(), None).into()),
                 }
             }
         }

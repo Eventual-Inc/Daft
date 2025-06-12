@@ -1,3 +1,4 @@
+
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_io::IOStatsContext;
@@ -28,6 +29,21 @@ impl MicroPartition {
                     vec![agged].into(),
                     None,
                 ))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn dedup(&self, columns: &[BoundExpr]) -> DaftResult<RecordBatch> {
+        let io_stats = IOStatsContext::new("MicroPartition::dedup");
+        let tables = self.concat_or_get(io_stats)?;
+
+        match tables.as_slice() {
+            [] => {
+                RecordBatch::empty(Some(self.schema.clone()))
+            }
+            [t] => {
+                t.dedup(columns)
             }
             _ => unreachable!(),
         }

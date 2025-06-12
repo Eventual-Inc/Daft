@@ -367,8 +367,8 @@ impl DurationArray {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
             dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
-            dtype if dtype.is_numeric() => self.physical.cast(dtype),
             DataType::Int64 => Ok(self.physical.clone().into_series()),
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => Err(DaftError::TypeError(format!(

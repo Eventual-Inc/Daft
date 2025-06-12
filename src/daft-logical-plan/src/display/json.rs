@@ -205,7 +205,7 @@ mod tests {
             )?
             .limit(1000, false)?
             .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 

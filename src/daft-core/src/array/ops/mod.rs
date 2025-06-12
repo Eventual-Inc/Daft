@@ -166,6 +166,10 @@ pub trait IntoGroups {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
 }
 
+pub trait IntoUniqueIdxs {
+    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
+}
+
 pub trait DaftCountAggable {
     type Output;
     fn count(&self, mode: CountMode) -> Self::Output;

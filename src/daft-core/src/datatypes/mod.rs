@@ -358,10 +358,13 @@ where
 {
 }
 
+/// Trait to express types that can be represented as compiler primitives
+/// and ideally vectorize-able
 pub trait DaftPrimitiveType: Send + Sync + DaftArrowBackedType + 'static {
     type Native: NumericNative;
 }
 
+/// All numeric types (integers and floats) are primitive types
 impl<T: DaftNumericType> DaftPrimitiveType for T {
     type Native = T::Native;
 }

@@ -1,4 +1,4 @@
-mod array_impl;
+pub mod array_impl;
 mod from;
 mod ops;
 mod serdes;
