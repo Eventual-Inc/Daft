@@ -17,7 +17,7 @@ use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
         dispatcher::{DispatcherActor, DispatcherHandle},
-        task::{Task, TaskId},
+        task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
     utils::{
@@ -170,7 +170,7 @@ impl<T: Task> SchedulerHandle<T> {
         let (result_tx, result_rx) = create_oneshot_channel();
         let cancel_token = CancellationToken::new();
 
-        let task_id = task.task_id().clone();
+        let task_id = Arc::from(task.task_id().to_string());
         let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token.clone());
         let submitted_task = SubmittedTask::new(task_id, result_rx, Some(cancel_token));
 
@@ -192,7 +192,7 @@ impl<T: Task> SchedulerHandle<T> {
 
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
-    _task_id: TaskId,
+    _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
     finished: bool,
@@ -200,7 +200,7 @@ pub(crate) struct SubmittedTask {
 
 impl SubmittedTask {
     fn new(
-        task_id: TaskId,
+        task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
     ) -> Self {
@@ -213,7 +213,7 @@ impl SubmittedTask {
     }
 
     #[allow(dead_code)]
-    pub fn id(&self) -> &TaskId {
+    pub fn id(&self) -> &TaskID {
         &self._task_id
     }
 }

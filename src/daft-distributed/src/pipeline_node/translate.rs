@@ -11,18 +11,26 @@ use daft_logical_plan::{
     LogicalPlanRef, SourceInfo,
 };
 
-use crate::pipeline_node::{
-    in_memory_source::InMemorySourceNode, intermediate::IntermediateNode, limit::LimitNode,
-    scan_source::ScanSourceNode, DistributedPipelineNode,
+use crate::{
+    pipeline_node::{
+        in_memory_source::InMemorySourceNode, intermediate::IntermediateNode, limit::LimitNode,
+        scan_source::ScanSourceNode, DistributedPipelineNode,
+    },
+    plan::PlanID,
+    stage::StageID,
 };
 
 pub(crate) fn logical_plan_to_pipeline_node(
+    plan_id: PlanID,
+    stage_id: StageID,
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 ) -> DaftResult<Box<dyn DistributedPipelineNode>> {
     #[allow(dead_code)]
     struct PipelineNodeBoundarySplitter {
+        plan_id: PlanID,
+        stage_id: StageID,
         root: LogicalPlanRef,
         current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
         config: Arc<DaftExecutionConfig>,
@@ -46,6 +54,8 @@ pub(crate) fn logical_plan_to_pipeline_node(
             if !current_nodes.is_empty() {
                 let translated = translate(&logical_plan)?;
                 return Ok(Box::new(IntermediateNode::new(
+                    self.plan_id.clone(),
+                    self.stage_id.clone(),
                     self.get_next_node_id(),
                     self.config.clone(),
                     translated,
@@ -58,6 +68,8 @@ pub(crate) fn logical_plan_to_pipeline_node(
             let translated = translate(&logical_plan)?;
             let node = match inputs {
                 PipelineInput::InMemorySource { info } => Box::new(InMemorySourceNode::new(
+                    self.plan_id.clone(),
+                    self.stage_id.clone(),
                     self.get_next_node_id(),
                     self.config.clone(),
                     info,
@@ -69,6 +81,8 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     pushdowns,
                     scan_tasks,
                 } => Box::new(ScanSourceNode::new(
+                    self.plan_id.clone(),
+                    self.stage_id.clone(),
                     self.get_next_node_id(),
                     self.config.clone(),
                     translated,
@@ -93,6 +107,8 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     let current_nodes = std::mem::take(&mut self.current_nodes);
                     let input_node = self.create_node(node.clone(), current_nodes)?;
                     let limit_node = Box::new(LimitNode::new(
+                        self.plan_id.clone(),
+                        self.stage_id.clone(),
                         self.get_next_node_id(),
                         limit.limit as usize,
                         node.schema(),
@@ -118,6 +134,8 @@ pub(crate) fn logical_plan_to_pipeline_node(
     }
 
     let mut splitter = PipelineNodeBoundarySplitter {
+        plan_id,
+        stage_id,
         root: plan.clone(),
         current_nodes: vec![],
         config,
@@ -261,8 +279,11 @@ mod tests {
             Field::new("value", DataType::Int64),
         ];
         let plan = dummy_in_memory_scan(fields).unwrap().build();
-
+        let plan_id = Arc::from("foo");
+        let stage_id = StageID::new(0);
         let pipeline_node = logical_plan_to_pipeline_node(
+            plan_id,
+            stage_id,
             plan,
             Arc::new(DaftExecutionConfig::default()),
             Arc::new(HashMap::new()),
@@ -285,8 +306,11 @@ mod tests {
             .unwrap() // To fill scan node with tasks
             .build();
         eprintln!("{}", plan.repr_ascii(false));
-
+        let plan_id = Arc::from("foo");
+        let stage_id = StageID::new(0);
         let pipeline_node = logical_plan_to_pipeline_node(
+            plan_id,
+            stage_id,
             plan,
             Arc::new(DaftExecutionConfig::default()),
             Arc::new(HashMap::new()),
@@ -308,8 +332,11 @@ mod tests {
             .limit(20, false)?
             .optimize()? // To fill scan node with tasks
             .build();
-
+        let plan_id = Arc::from("foo");
+        let stage_id = StageID::new(0);
         let pipeline_node = logical_plan_to_pipeline_node(
+            plan_id,
+            stage_id,
             plan,
             Arc::new(DaftExecutionConfig::default()),
             Arc::new(HashMap::new()),
@@ -339,8 +366,11 @@ mod tests {
                 .alias("group_value")])?
             .optimize()? // To fill scan node with tasks
             .build();
-
+        let plan_id = Arc::from("foo");
+        let stage_id = StageID::new(0);
         let pipeline_node = logical_plan_to_pipeline_node(
+            plan_id,
+            stage_id,
             plan,
             Arc::new(DaftExecutionConfig::default()),
             Arc::new(HashMap::new()),
@@ -369,8 +399,11 @@ mod tests {
             .limit(20, false)?
             .select(vec![resolved_col("group_value")])?
             .build();
-
+        let plan_id = Arc::from("foo");
+        let stage_id = StageID::new(0);
         let pipeline_node = logical_plan_to_pipeline_node(
+            plan_id,
+            stage_id,
             plan,
             Arc::new(DaftExecutionConfig::default()),
             Arc::new(HashMap::new()),

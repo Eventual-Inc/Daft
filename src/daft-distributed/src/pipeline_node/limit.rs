@@ -9,17 +9,21 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
+    pipeline_node::NodeID,
+    plan::PlanID,
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SchedulingStrategy, SwordfishTask},
     },
-    stage::StageContext,
+    stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
 
 #[allow(dead_code)]
 pub(crate) struct LimitNode {
-    node_id: usize,
+    plan_id: PlanID,
+    stage_id: StageID,
+    node_id: NodeID,
     limit: usize,
     schema: SchemaRef,
     config: Arc<DaftExecutionConfig>,
@@ -28,14 +32,19 @@ pub(crate) struct LimitNode {
 
 impl LimitNode {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        node_id: usize,
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
         limit: usize,
         schema: SchemaRef,
         config: Arc<DaftExecutionConfig>,
         child: Box<dyn DistributedPipelineNode>,
     ) -> Self {
         Self {
+            plan_id,
+            stage_id,
             node_id,
             limit,
             schema,
@@ -44,14 +53,16 @@ impl LimitNode {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execution_loop(
+        node_id: NodeID,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         mut remaining_limit: usize,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        node_id: usize,
         schema: SchemaRef,
         config: Arc<DaftExecutionConfig>,
+        context: HashMap<String, String>,
     ) -> DaftResult<()> {
         let mut materialized_result_stream = input.materialize(scheduler_handle.clone());
 
@@ -67,11 +78,12 @@ impl LimitNode {
                 Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
                 Ordering::Greater => {
                     let task_with_limit = make_task_with_limit(
+                        node_id,
                         materialized_output,
                         remaining_limit,
-                        node_id,
                         schema.clone(),
                         config.clone(),
+                        context.clone(),
                     )?;
                     let task_result_handle = scheduler_handle.submit_task(task_with_limit).await?;
                     (PipelineOutput::Running(task_result_handle), true)
@@ -98,30 +110,56 @@ impl DistributedPipelineNode for LimitNode {
     }
 
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+        // let child_id = self.child..node_id();
+        let child_name = self.child.name();
+        let child_id = self.child.node_id();
+
+        let context = HashMap::from([
+            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("stage_id".to_string(), format!("{}", self.stage_id)),
+            ("node_id".to_string(), format!("{}", self.node_id)),
+            ("node_name".to_string(), self.name().to_string()),
+            ("child_id".to_string(), format!("{}", child_id)),
+            ("child_name".to_string(), child_name.to_string()),
+        ]);
+
         let input_node = self.child.start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = Self::execution_loop(
+            self.node_id,
             input_node,
             result_tx,
             self.limit,
             stage_context.scheduler_handle.clone(),
-            self.node_id,
             self.schema.clone(),
             self.config.clone(),
+            context,
         );
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }
+    fn plan_id(&self) -> &PlanID {
+        &self.plan_id
+    }
+
+    fn stage_id(&self) -> &StageID {
+        &self.stage_id
+    }
+
+    fn node_id(&self) -> &NodeID {
+        &self.node_id
+    }
 }
 
 fn make_task_with_limit(
+    node_id: NodeID,
     materialized_output: MaterializedOutput,
     limit: usize,
-    node_id: usize,
     schema: SchemaRef,
     config: Arc<DaftExecutionConfig>,
+    context: HashMap<String, String>,
 ) -> DaftResult<SwordfishTask> {
     let (partition, worker_id) = materialized_output.into_inner();
     let in_memory_info = InMemoryInfo::new(schema, node_id.to_string(), None, 1, 0, 0, None, None);
@@ -142,6 +180,7 @@ fn make_task_with_limit(
             worker_id,
             soft: true,
         },
+        context,
     );
     Ok(task)
 }

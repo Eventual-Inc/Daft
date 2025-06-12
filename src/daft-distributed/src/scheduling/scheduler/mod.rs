@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskId},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskID},
     worker::{Worker, WorkerId},
 };
 use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
@@ -54,7 +54,7 @@ impl<T: Task> SchedulableTask<T> {
     }
 
     #[allow(dead_code)]
-    pub fn task_id(&self) -> &TaskId {
+    pub fn task_id(&self) -> &str {
         self.task.task_id()
     }
 
@@ -112,7 +112,7 @@ impl<T: Task> ScheduledTask<T> {
 pub(super) struct WorkerSnapshot {
     worker_id: WorkerId,
     total_num_cpus: usize,
-    active_task_details: HashMap<TaskId, TaskDetails>,
+    active_task_details: HashMap<TaskID, TaskDetails>,
 }
 
 #[allow(dead_code)]
@@ -120,7 +120,7 @@ impl WorkerSnapshot {
     pub fn new(
         worker_id: WorkerId,
         total_num_cpus: usize,
-        active_task_details: HashMap<TaskId, TaskDetails>,
+        active_task_details: HashMap<TaskID, TaskDetails>,
     ) -> Self {
         Self {
             worker_id,
