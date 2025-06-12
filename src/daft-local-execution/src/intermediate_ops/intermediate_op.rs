@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -82,6 +82,7 @@ pub struct IntermediateNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
+    node_info: NodeInfo,
 }
 
 impl IntermediateNode {
@@ -89,9 +90,12 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
+        ctx: &RuntimeContext,
     ) -> Self {
-        let rts = RuntimeStatsContext::new(intermediate_op.name());
-        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats)
+        let info = ctx.next_node_info(intermediate_op.name());
+
+        let rts = RuntimeStatsContext::new(info.clone());
+        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats, info)
     }
 
     pub(crate) fn new_with_runtime_stats(
@@ -99,12 +103,14 @@ impl IntermediateNode {
         children: Vec<Box<dyn PipelineNode>>,
         runtime_stats: Arc<RuntimeStatsContext>,
         plan_stats: StatsState,
+        node_info: NodeInfo,
     ) -> Self {
         Self {
             intermediate_op,
             children,
             runtime_stats,
             plan_stats,
+            node_info,
         }
     }
 
@@ -281,5 +287,12 @@ impl PipelineNode for IntermediateNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+
+    fn plan_id(&self) -> Arc<str> {
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

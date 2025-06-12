@@ -8,6 +8,7 @@ mod config;
 mod gcs;
 mod http;
 mod s3;
+mod unity;
 
 use std::{
     fmt::{Debug, Display},
@@ -23,6 +24,7 @@ pub use crate::{
     gcs::GCSConfig,
     http::HTTPConfig,
     s3::{S3Config, S3Credentials},
+    unity::UnityConfig,
 };
 
 #[derive(Clone)]

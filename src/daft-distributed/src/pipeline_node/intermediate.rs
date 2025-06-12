@@ -10,14 +10,18 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
 use crate::{
+    pipeline_node::NodeID,
+    plan::PlanID,
     scheduling::task::{SchedulingStrategy, SwordfishTask},
-    stage::StageContext,
+    stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
 
 #[allow(dead_code)]
 pub(crate) struct IntermediateNode {
-    node_id: usize,
+    plan_id: PlanID,
+    stage_id: StageID,
+    node_id: NodeID,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
     children: Vec<Box<dyn DistributedPipelineNode>>,
@@ -25,13 +29,18 @@ pub(crate) struct IntermediateNode {
 
 impl IntermediateNode {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        node_id: usize,
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
         children: Vec<Box<dyn DistributedPipelineNode>>,
     ) -> Self {
         Self {
+            plan_id,
+            stage_id,
             node_id,
             config,
             plan,
@@ -40,11 +49,12 @@ impl IntermediateNode {
     }
 
     async fn execution_loop(
-        node_id: usize,
+        node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
         plan: LocalPhysicalPlanRef,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        context: HashMap<String, String>,
     ) -> DaftResult<()> {
         let mut task_or_partition_ref_stream = input.materialize_running();
 
@@ -61,6 +71,7 @@ impl IntermediateNode {
                         materialized_output,
                         node_id.to_string(),
                         config.clone(),
+                        context.clone(),
                     )?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
@@ -68,7 +79,8 @@ impl IntermediateNode {
                 }
                 PipelineOutput::Task(task) => {
                     // append plan to this task
-                    let task = append_plan_to_task(task, config.clone(), plan.clone())?;
+                    let task =
+                        append_plan_to_task(task, config.clone(), plan.clone(), context.clone())?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }
@@ -117,6 +129,24 @@ impl DistributedPipelineNode for IntermediateNode {
     }
 
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+        let context = {
+            let input = self
+                .children
+                .first()
+                .expect("IntermediateNode::start: IntermediateNode must have at least 1 child");
+            let child_name = input.name();
+            let child_id = input.node_id();
+
+            HashMap::from([
+                ("plan_id".to_string(), self.plan_id.to_string()),
+                ("stage_id".to_string(), format!("{}", self.stage_id)),
+                ("node_id".to_string(), format!("{}", self.node_id)),
+                ("node_name".to_string(), self.name().to_string()),
+                ("child_id".to_string(), format!("{}", child_id)),
+                ("child_name".to_string(), child_name.to_string()),
+            ])
+        };
+
         let input_node = self
             .children
             .first_mut()
@@ -130,10 +160,22 @@ impl DistributedPipelineNode for IntermediateNode {
             self.plan.clone(),
             input_node,
             result_tx,
+            context,
         );
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
+    }
+    fn plan_id(&self) -> &PlanID {
+        &self.plan_id
+    }
+
+    fn stage_id(&self) -> &StageID {
+        &self.stage_id
+    }
+
+    fn node_id(&self) -> &NodeID {
+        &self.node_id
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
@@ -146,6 +188,7 @@ fn make_task_for_materialized_output(
     materialized_output: MaterializedOutput,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
+    context: HashMap<String, String>,
 ) -> DaftResult<SwordfishTask> {
     let (partition_ref, worker_id) = materialized_output.into_inner();
 
@@ -168,6 +211,7 @@ fn make_task_for_materialized_output(
         })?
         .data;
     let psets = HashMap::from([(cache_key, vec![partition_ref])]);
+
     let task = SwordfishTask::new(
         transformed_plan,
         config,
@@ -176,6 +220,7 @@ fn make_task_for_materialized_output(
             worker_id,
             soft: true,
         },
+        context,
     );
     Ok(task)
 }
@@ -184,6 +229,7 @@ fn append_plan_to_task(
     task: SwordfishTask,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
+    context: HashMap<String, String>,
 ) -> DaftResult<SwordfishTask> {
     let transformed_plan = plan
         .transform_up(|p| match p.as_ref() {
@@ -191,11 +237,13 @@ fn append_plan_to_task(
             _ => Ok(Transformed::no(p)),
         })?
         .data;
+
     let task = SwordfishTask::new(
         transformed_plan,
         config,
         Default::default(),
         SchedulingStrategy::Spread,
+        context,
     );
     Ok(task)
 }

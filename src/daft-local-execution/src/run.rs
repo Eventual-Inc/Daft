@@ -31,7 +31,10 @@ use {
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid},
+    pipeline::{
+        get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
+        viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
+    },
     progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
     ExecutionRuntimeContext,
@@ -134,6 +137,7 @@ impl PyNativeExecutor {
                     &psets,
                     cfg.config,
                     results_buffer_size,
+                    None,
                 )
                 .map(|res| res.into_iter())
         })?;
@@ -149,7 +153,7 @@ impl PyNativeExecutor {
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, context=None))]
     pub fn run_async<'a>(
         &self,
         py: Python<'a>,
@@ -157,6 +161,7 @@ impl PyNativeExecutor {
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
+        context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
@@ -180,6 +185,7 @@ impl PyNativeExecutor {
                 &psets,
                 cfg.config,
                 results_buffer_size,
+                context,
             )
         })?;
         let stream = Box::pin(res.into_stream().map(|part| {
@@ -216,6 +222,16 @@ impl PyNativeExecutor {
         Ok(self
             .executor
             .repr_mermaid(&logical_plan_builder.builder, cfg.config, options))
+    }
+
+    pub fn get_relationship_info(
+        &self,
+        logical_plan_builder: &PyLogicalPlanBuilder,
+        cfg: PyDaftExecutionConfig,
+    ) -> PyResult<RelationshipInformation> {
+        Ok(self
+            .executor
+            .get_relationship_info(&logical_plan_builder.builder, cfg.config))
     }
 }
 
@@ -264,10 +280,12 @@ impl NativeExecutor {
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
+        additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         refresh_chrome_trace();
         let cancel = self.cancel.clone();
-        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
+        let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
+        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
@@ -361,9 +379,14 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
@@ -376,9 +399,14 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         let display_type = if options.simple {
             DisplayLevel::Compact
@@ -391,6 +419,23 @@ impl NativeExecutor {
             options.bottom_up,
             options.subgraph_options,
         )
+    }
+    fn get_relationship_info(
+        &self,
+        logical_plan_builder: &LogicalPlanBuilder,
+        cfg: Arc<DaftExecutionConfig>,
+    ) -> RelationshipInformation {
+        let logical_plan = logical_plan_builder.build();
+        let physical_plan = translate(&logical_plan).unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
+        get_pipeline_relationship_mapping(&*pipeline_node)
     }
 }
 

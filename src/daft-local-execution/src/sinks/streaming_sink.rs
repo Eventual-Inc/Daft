@@ -13,7 +13,7 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -80,6 +80,7 @@ pub struct StreamingSinkNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
+    node_info: NodeInfo,
 }
 
 impl StreamingSinkNode {
@@ -87,14 +88,17 @@ impl StreamingSinkNode {
         op: Arc<dyn StreamingSink>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
+        ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name();
+        let node_info = ctx.next_node_info(name);
         Self {
             op,
             name,
             children,
-            runtime_stats: RuntimeStatsContext::new(name),
+            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
             plan_stats,
+            node_info,
         }
     }
 
@@ -296,5 +300,11 @@ impl PipelineNode for StreamingSinkNode {
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+    fn plan_id(&self) -> Arc<str> {
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

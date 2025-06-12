@@ -4,7 +4,6 @@ mod response;
 
 use std::{io::Cursor, net::Ipv4Addr, sync::Arc};
 
-use chrono::{DateTime, Utc};
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
     body::{Bytes, Incoming},
@@ -51,12 +50,12 @@ impl<T, E: Into<anyhow::Error>> ResultExt<T, E> for Result<T, E> {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct QueryInformation {
     id: StrRef,
-    mermaid_plan: StrRef,
     unoptimized_plan: Option<StrRef>,
     optimized_plan: Option<StrRef>,
-    plan_time_start: DateTime<Utc>,
-    plan_time_end: DateTime<Utc>,
-    logs: StrRef,
+    plan_time_start: StrRef,
+    plan_time_end: StrRef,
+    logs: Option<StrRef>,
+    run_id: Option<StrRef>,
 }
 
 #[derive(Clone, Debug)]
@@ -87,6 +86,7 @@ async fn deserialize<T: for<'de> Deserialize<'de>>(req: Req) -> ServerResult<Req
     let bytes = body.collect().await.with_internal_error()?.to_bytes();
     let mut cursor = Cursor::new(bytes);
     let body = serde_json::from_reader(&mut cursor).with_status_code(StatusCode::BAD_REQUEST)?;
+
     Ok(Request::from_parts(parts, body))
 }
 
@@ -105,6 +105,7 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
         }
         (&Method::GET, ["api", "queries"]) => {
             let query_informations = state.queries();
+
             response::with_body(StatusCode::OK, query_informations.as_slice())
         }
         (_, ["api", ..]) => response::empty(StatusCode::NOT_FOUND),

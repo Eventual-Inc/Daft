@@ -19,17 +19,25 @@ use crate::{
         runtime::get_or_init_runtime,
     },
 };
+pub type PlanID = Arc<str>;
 
+#[derive(Clone)]
 pub(crate) struct PlanRunner<W: Worker<Task = SwordfishTask>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+    plan_id: PlanID,
 }
 
 impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
     pub fn new(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
-        Self { worker_manager }
+        let plan_id = uuid::Uuid::new_v4().to_string();
+        Self {
+            worker_manager,
+            plan_id: Arc::from(plan_id),
+        }
     }
 
     async fn execute_stages(
+        &self,
         stage_plan: StagePlan,
         psets: HashMap<String, Vec<PartitionRef>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
@@ -44,6 +52,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
         let stage = stage_plan.get_root_stage();
         let running_stage = stage.run_stage(
+            self.plan_id.clone(),
             psets,
             stage_plan.execution_config().clone(),
             scheduler_handle.clone(),
@@ -58,7 +67,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
     }
 
     pub fn run_plan(
-        &self,
+        self: &Arc<Self>,
         plan: &DistributedPhysicalPlan,
         psets: HashMap<String, Vec<PartitionRef>>,
     ) -> DaftResult<PlanResult> {
@@ -67,13 +76,16 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);
 
+        let this = self.clone();
+
         let joinset = runtime.block_on_current_thread(async move {
             let mut joinset = create_join_set();
             let scheduler_handle =
                 spawn_default_scheduler_actor(self.worker_manager.clone(), &mut joinset);
 
             joinset.spawn(async move {
-                Self::execute_stages(stage_plan, psets, scheduler_handle, result_sender).await
+                this.execute_stages(stage_plan, psets, scheduler_handle, result_sender)
+                    .await
             });
             joinset
         });

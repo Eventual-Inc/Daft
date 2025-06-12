@@ -83,21 +83,21 @@ impl PyDistributedPhysicalPlan {
     fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
         let stage_plan = self.plan.stage_plan();
-        Ok(stage_plan.repr_ascii(simple)?)
+        Ok(stage_plan.repr_ascii(self.plan.id().into(), simple)?)
     }
 
     /// Visualize the distributed pipeline as Mermaid markdown
     fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
         let stage_plan = self.plan.stage_plan();
-        Ok(stage_plan.repr_mermaid(simple, bottom_up)?)
+        Ok(stage_plan.repr_mermaid(self.plan.id().into(), simple, bottom_up)?)
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {
-    runner: PlanRunner<RaySwordfishWorker>,
+    runner: Arc<PlanRunner<RaySwordfishWorker>>,
 }
 
 #[pymethods]
@@ -106,7 +106,7 @@ impl PyDistributedPhysicalPlanRunner {
     fn new() -> PyResult<Self> {
         let worker_manager = RayWorkerManager::try_new()?;
         Ok(Self {
-            runner: PlanRunner::new(Arc::new(worker_manager)),
+            runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
     }
 

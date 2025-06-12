@@ -10,12 +10,13 @@ use futures::{Stream, StreamExt};
 use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};
 
 use crate::{
+    plan::PlanID,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittedTask},
         task::{SwordfishTask, Task},
         worker::WorkerId,
     },
-    stage::StageContext,
+    stage::{StageContext, StageID},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -27,6 +28,7 @@ mod scan_source;
 mod translate;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
+pub(crate) type NodeID = usize;
 
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
@@ -69,14 +71,14 @@ pub(crate) enum PipelineOutput<T: Task> {
     Running(SubmittedTask),
 }
 
-pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
-    #[allow(dead_code)]
+#[allow(dead_code)]
+pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn name(&self) -> &'static str;
-    #[allow(dead_code)]
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
-    #[allow(dead_code)]
     fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode;
-
+    fn plan_id(&self) -> &PlanID;
+    fn stage_id(&self) -> &StageID;
+    fn node_id(&self) -> &NodeID;
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
 
@@ -107,6 +109,7 @@ pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct RunningPipelineNode {
     result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
 }

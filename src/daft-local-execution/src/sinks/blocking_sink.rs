@@ -10,7 +10,7 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -63,6 +63,7 @@ pub struct BlockingSinkNode {
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
+    node_info: NodeInfo,
 }
 
 impl BlockingSinkNode {
@@ -70,14 +71,18 @@ impl BlockingSinkNode {
         op: Arc<dyn BlockingSink>,
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
+        ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name();
+        let node_info = ctx.next_node_info(name);
+
         Self {
             op,
             name,
             child,
-            runtime_stats: RuntimeStatsContext::new(name),
+            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
             plan_stats,
+            node_info,
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -241,5 +246,11 @@ impl PipelineNode for BlockingSinkNode {
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+    fn plan_id(&self) -> Arc<str> {
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

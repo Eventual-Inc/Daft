@@ -19,6 +19,7 @@ use crate::{
         viz_distributed_pipeline_ascii, viz_distributed_pipeline_mermaid, MaterializedOutput,
         PipelineOutput, RunningPipelineNode,
     },
+    plan::PlanID,
     scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
@@ -26,7 +27,20 @@ use crate::{
 mod stage_builder;
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
-struct StageID(usize);
+pub struct StageID(usize);
+
+impl std::fmt::Display for StageID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[allow(dead_code)]
+impl StageID {
+    pub fn new(id: usize) -> Self {
+        Self(id)
+    }
+}
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct ChannelID(usize);
@@ -78,6 +92,7 @@ pub(crate) struct Stage {
 impl Stage {
     pub(crate) fn run_stage(
         &self,
+        plan_id: PlanID,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
@@ -85,8 +100,13 @@ impl Stage {
         let mut stage_context = StageContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let mut pipeline_node =
-                    logical_plan_to_pipeline_node(plan.clone(), config, Arc::new(psets))?;
+                let mut pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Arc::new(psets),
+                )?;
                 let running_node = pipeline_node.start(&mut stage_context);
                 Ok(RunningStage::new(running_node, stage_context.joinset))
             }
@@ -97,14 +117,20 @@ impl Stage {
     /// Get the logical plan for visualization purposes (only for MapPipeline stages)
     pub fn repr_mermaid(
         &self,
+        plan_id: PlanID,
         simple: bool,
         bottom_up: bool,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<String> {
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let pipeline_node =
-                    logical_plan_to_pipeline_node(plan.clone(), config, Default::default())?;
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Default::default(),
+                )?;
                 let display_level = if simple {
                     DisplayLevel::Compact
                 } else {
@@ -121,11 +147,21 @@ impl Stage {
         }
     }
 
-    pub fn repr_ascii(&self, simple: bool, config: Arc<DaftExecutionConfig>) -> DaftResult<String> {
+    pub fn repr_ascii(
+        &self,
+        plan_id: PlanID,
+        simple: bool,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<String> {
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let pipeline_node =
-                    logical_plan_to_pipeline_node(plan.clone(), config, Default::default())?;
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Default::default(),
+                )?;
                 Ok(viz_distributed_pipeline_ascii(
                     pipeline_node.as_ref(),
                     simple,
@@ -233,16 +269,21 @@ impl StagePlan {
         })
     }
 
-    pub fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> DaftResult<String> {
+    pub fn repr_mermaid(
+        &self,
+        plan_id: PlanID,
+        simple: bool,
+        bottom_up: bool,
+    ) -> DaftResult<String> {
         let root_stage = self.get_root_stage();
         let config = self.config.clone();
-        root_stage.repr_mermaid(simple, bottom_up, config)
+        root_stage.repr_mermaid(plan_id, simple, bottom_up, config)
     }
 
-    pub fn repr_ascii(&self, simple: bool) -> DaftResult<String> {
+    pub fn repr_ascii(&self, plan_id: PlanID, simple: bool) -> DaftResult<String> {
         let root_stage = self.get_root_stage();
         let config = self.config.clone();
-        root_stage.repr_ascii(simple, config)
+        root_stage.repr_ascii(plan_id, simple, config)
     }
 
     pub(crate) fn num_stages(&self) -> usize {

@@ -19,7 +19,7 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::PlanRunner;
+pub(crate) use runner::{PlanID, PlanRunner};
 
 static PLAN_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
