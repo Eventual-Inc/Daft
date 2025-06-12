@@ -23,7 +23,8 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-const SCALE_FACTOR: usize = 8;
+const INPUT_SCALE_FACTOR: usize = 16;
+const OUTPUT_SCALE_FACTOR: usize = 4;
 
 struct UriDownloadSinkState {
     in_flight_uploads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
@@ -73,7 +74,7 @@ impl UriDownloadSinkState {
             io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
             submitted_downloads: 0,
 
-            max_in_flight: max_connections * SCALE_FACTOR,
+            max_in_flight: max_connections * INPUT_SCALE_FACTOR,
             uri_col: input,
             raise_error_on_failure,
             output_column,
@@ -163,7 +164,10 @@ impl UriDownloadSinkState {
 
     async fn poll_finished(&mut self) -> DaftResult<RecordBatch> {
         let exp_capacity = if self.in_flight_uploads.len() > self.max_in_flight {
-            self.in_flight_uploads.len() - self.max_in_flight
+            std::cmp::min(
+                self.in_flight_uploads.len() - self.max_in_flight,
+                32 * OUTPUT_SCALE_FACTOR,
+            )
         } else {
             0
         };
@@ -172,7 +176,9 @@ impl UriDownloadSinkState {
         let mut completed_contents = Vec::with_capacity(exp_capacity);
 
         // Wait for downloads to complete until we are under the active limit
-        while self.in_flight_uploads.len() > self.max_in_flight {
+        while self.in_flight_uploads.len() > self.max_in_flight
+            && completed_downloads.len() < exp_capacity
+        {
             let Some(result) = self.in_flight_uploads.join_next().await else {
                 unreachable!("There should always be at least one upload in flight");
             };
@@ -337,6 +343,6 @@ impl StreamingSink for UriDownloadSink {
         _runtime_handle: &ExecutionRuntimeContext,
         _maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::new(0, 32 * SCALE_FACTOR))
+        Arc::new(UnorderedDispatcher::new(0, 32 * INPUT_SCALE_FACTOR))
     }
 }
