@@ -9,11 +9,11 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, RaySwordfishTask};
 use crate::scheduling::{
     scheduler::SchedulableTask,
-    task::{SwordfishTask, Task, TaskDetails, TaskId, TaskResultHandleAwaiter},
+    task::{SwordfishTask, Task, TaskDetails, TaskID, TaskResultHandleAwaiter},
     worker::{Worker, WorkerId},
 };
 
-type ActiveTaskDetails = Arc<Mutex<HashMap<TaskId, TaskDetails>>>;
+type ActiveTaskDetails = Arc<Mutex<HashMap<TaskID, TaskDetails>>>;
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishWorker")]
 #[derive(Debug, Clone)]
@@ -50,7 +50,7 @@ impl RaySwordfishWorker {
 
 #[allow(dead_code)]
 impl RaySwordfishWorker {
-    pub fn mark_task_finished(&self, task_id: &TaskId) {
+    pub fn mark_task_finished(&self, task_id: &TaskID) {
         self.active_task_details
             .lock()
             .expect("Active task ids should be present")
@@ -66,7 +66,7 @@ impl RaySwordfishWorker {
         let mut task_handles = Vec::with_capacity(tasks.len());
         for task in tasks {
             let (task, result_tx, cancel_token) = task.into_inner();
-            let task_id = task.task_id().clone();
+            let task_id: Arc<str> = Arc::from(task.task_id().to_string());
             let task_details = TaskDetails::from(&task);
 
             let ray_swordfish_task = RaySwordfishTask::new(task);
@@ -80,7 +80,7 @@ impl RaySwordfishWorker {
             self.active_task_details
                 .lock()
                 .expect("Active task details should be present")
-                .insert(task_id.clone(), task_details);
+                .insert(Arc::from(task_id.to_string()), task_details);
 
             let task_locals = task_locals.clone_ref(py);
             let ray_task_result_handle = RayTaskResultHandle::new(
@@ -143,7 +143,7 @@ impl Worker for RaySwordfishWorker {
             .sum()
     }
 
-    fn active_task_details(&self) -> HashMap<TaskId, TaskDetails> {
+    fn active_task_details(&self) -> HashMap<TaskID, TaskDetails> {
         self.active_task_details
             .lock()
             .expect("Active task details should be present")

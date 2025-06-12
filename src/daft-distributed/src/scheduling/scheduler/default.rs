@@ -1,4 +1,7 @@
-use std::collections::{BinaryHeap, HashMap};
+use std::{
+    collections::{BinaryHeap, HashMap},
+    sync::Arc,
+};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
@@ -88,7 +91,10 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
                     .get_mut(&worker_id)
                     .expect("Worker should be present in DefaultScheduler")
                     .active_task_details
-                    .insert(task.task_id().clone(), TaskDetails::from(&task.task));
+                    .insert(
+                        Arc::from(task.task_id().to_string()),
+                        TaskDetails::from(&task.task),
+                    );
                 scheduled.push(ScheduledTask { task, worker_id });
             } else {
                 unscheduled.push(task);

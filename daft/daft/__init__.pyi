@@ -1731,6 +1731,7 @@ class RaySwordfishTask:
     def plan(self) -> LocalPhysicalPlan: ...
     def psets(self) -> dict[str, list[RayPartitionRef]]: ...
     def config(self) -> PyDaftExecutionConfig: ...
+    def context(self) -> dict[str, str]: ...
 
 class RaySwordfishWorker:
     def __init__(
@@ -1757,6 +1758,7 @@ class NativeExecutor:
         psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
+        context: dict[str, str] | None,
     ) -> AsyncIterator[PyMicroPartition]: ...
     def repr_ascii(
         self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool
@@ -1808,7 +1810,9 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        native_parquet_writer: bool | None = None,
         flotilla: bool | None = None,
+        min_cpu_per_task: float | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1858,6 +1862,8 @@ class PyDaftExecutionConfig:
     def enable_ray_tracing(self) -> bool: ...
     @property
     def flotilla(self) -> bool: ...
+    @property
+    def min_cpu_per_task(self) -> float: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

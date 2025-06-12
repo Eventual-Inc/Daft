@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 
 use super::{
     scheduler::{ScheduledTask, WorkerSnapshot},
-    task::{Task, TaskId},
+    task::{Task, TaskID},
     worker::{Worker, WorkerId, WorkerManager},
 };
 use crate::utils::{
@@ -47,7 +47,7 @@ impl<W: Worker> DispatcherActor<W> {
         scheduled_tasks: Vec<ScheduledTask<W::Task>>,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         running_tasks: &mut JoinSet<()>,
-        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskId, WorkerId)>,
+        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskID, WorkerId)>,
     ) -> DaftResult<()> {
         let mut worker_to_tasks = HashMap::new();
 
@@ -74,7 +74,7 @@ impl<W: Worker> DispatcherActor<W> {
     async fn handle_finished_task(
         finished_joinset_id: JoinSetId,
         finished_task_result: DaftResult<()>,
-        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskId, WorkerId)>,
+        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskID, WorkerId)>,
         running_tasks: &mut JoinSet<()>,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,

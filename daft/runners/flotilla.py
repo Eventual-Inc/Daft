@@ -62,13 +62,14 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         config: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
+        context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
         """Run a plan on swordfish and yield partitions."""
         psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
         psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
         metas = []
-        async for partition in self.native_executor.run_async(plan, psets_mp, config, None):
+        async for partition in self.native_executor.run_async(plan, psets_mp, config, None, context):
             if partition is None:
                 break
             mp = MicroPartition._from_pymicropartition(partition)
@@ -126,7 +127,9 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
-        result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(task.plan(), task.config(), psets)
+        result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
+            task.plan(), task.config(), psets, task.context()
+        )
         return RaySwordfishTaskHandle(
             result_handle,
             self.actor_handle,

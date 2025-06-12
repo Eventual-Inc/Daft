@@ -150,6 +150,10 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
+    fn context(&self) -> HashMap<String, String> {
+        self.task.context().clone()
+    }
+
     fn name(&self) -> String {
         self.task.name()
     }

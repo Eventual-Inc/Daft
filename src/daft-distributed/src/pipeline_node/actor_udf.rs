@@ -15,14 +15,17 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 
-use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
+use super::{
+    DistributedPipelineNode, MaterializedOutput, NodeID, PipelineOutput, RunningPipelineNode,
+};
 use crate::{
+    plan::PlanID,
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask},
         worker::WorkerId,
     },
-    stage::StageContext,
+    stage::{StageContext, StageID},
     utils::{
         channel::{create_channel, Sender},
         joinset::JoinSet,
@@ -149,10 +152,13 @@ impl UDFActors {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub(crate) struct ActorUDF {
-    node_id: usize,
+    plan_id: PlanID,
+    stage_id: StageID,
+    node_id: NodeID,
     config: Arc<DaftExecutionConfig>,
-    child: Box<dyn DistributedPipelineNode>,
+    child: Arc<dyn DistributedPipelineNode>,
     schema: SchemaRef,
     projection: Vec<BoundExpr>,
     batch_size: Option<usize>,
@@ -162,11 +168,13 @@ pub(crate) struct ActorUDF {
 impl ActorUDF {
     #[allow(dead_code)]
     pub fn new(
-        node_id: usize,
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
         projection: Vec<ExprRef>,
         schema: SchemaRef,
-        child: Box<dyn DistributedPipelineNode>,
+        child: Arc<dyn DistributedPipelineNode>,
     ) -> DaftResult<Self> {
         let batch_size = try_get_batch_size_from_udf(&projection)?;
         let memory_request = get_resource_request(&projection)
@@ -175,6 +183,8 @@ impl ActorUDF {
             .unwrap_or(0);
         let projection = BoundExpr::bind_all(&projection, &schema)?;
         Ok(Self {
+            plan_id,
+            stage_id,
             node_id,
             config,
             child,
@@ -187,16 +197,11 @@ impl ActorUDF {
 
     #[allow(clippy::too_many_arguments)]
     async fn execution_loop_fused(
-        node_id: usize,
-        config: Arc<DaftExecutionConfig>,
-        projection: Vec<BoundExpr>,
-        batch_size: Option<usize>,
-        memory_request: u64,
+        self,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
-        schema: SchemaRef,
     ) -> DaftResult<()> {
-        let mut udf_actors = UDFActors::Uninitialized(projection.clone());
+        let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
 
         let mut materialized_output_stream = input.materialize_running();
         let mut running_tasks = JoinSet::new();
@@ -214,15 +219,10 @@ impl ActorUDF {
                         (materialized_output.worker_id.clone(), actors)
                     };
 
-                    let task = make_actor_udf_task_for_materialized_outputs(
+                    let task = self.make_actor_udf_task_for_materialized_outputs(
                         vec![materialized_output],
                         worker_id,
-                        batch_size,
-                        memory_request,
                         actors,
-                        node_id,
-                        config.clone(),
-                        schema.clone(),
                     )?;
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
@@ -244,16 +244,7 @@ impl ActorUDF {
                     // Pick actors using round robin
                     let (worker_id, actors) = udf_actors.get_round_robin_actors()?;
 
-                    let modified_task = append_actor_udf_to_task(
-                        task,
-                        config.clone(),
-                        batch_size,
-                        memory_request,
-                        actors,
-                        schema.clone(),
-                        &worker_id,
-                        node_id,
-                    )?;
+                    let modified_task = self.append_actor_udf_to_task(worker_id, task, actors)?;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -276,6 +267,104 @@ impl ActorUDF {
         udf_actors.teardown();
         Ok(())
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_actor_udf_task_for_materialized_outputs(
+        &self,
+        materialized_outputs: Vec<MaterializedOutput>,
+        worker_id: WorkerId,
+        actors: Vec<PyObjectWrapper>,
+    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+        // Extract all partitions from materialized outputs
+        let mut partitions = Vec::new();
+        for materialized_output in materialized_outputs {
+            let (partition, _) = materialized_output.into_inner();
+            partitions.push(partition);
+        }
+
+        let in_memory_info = InMemoryInfo::new(
+            self.schema.clone(),
+            self.node_id.to_string(),
+            None,
+            partitions.len(),
+            0,
+            0,
+            None,
+            None,
+        );
+
+        let in_memory_source =
+            LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
+
+        let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
+            in_memory_source,
+            actors.into_iter().map(|e| e.into()).collect(),
+            self.batch_size,
+            self.memory_request,
+            self.schema.clone(),
+            StatsState::NotMaterialized,
+        );
+        let context = HashMap::from([
+            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("stage_id".to_string(), format!("{}", self.stage_id)),
+            ("node_id".to_string(), format!("{}", self.node_id)),
+            ("node_name".to_string(), self.name().to_string()),
+        ]);
+        let task = SubmittableTask::new(SwordfishTask::new(
+            actor_pool_project_plan,
+            self.config.clone(),
+            HashMap::from([(self.node_id.to_string(), partitions)]),
+            SchedulingStrategy::WorkerAffinity {
+                worker_id,
+                soft: false,
+            },
+            context,
+            self.node_id,
+        ));
+
+        Ok(task)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn append_actor_udf_to_task(
+        &self,
+        worker_id: WorkerId,
+        submittable_task: SubmittableTask<SwordfishTask>,
+        actors: Vec<PyObjectWrapper>,
+    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
+        let task_plan = submittable_task.task().plan();
+        let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
+            task_plan,
+            actors,
+            self.batch_size,
+            self.memory_request,
+            self.schema.clone(),
+            StatsState::NotMaterialized,
+        );
+
+        // Set scheduling strategy based on whether we have a valid worker ID
+        let scheduling_strategy = SchedulingStrategy::WorkerAffinity {
+            worker_id,
+            soft: false,
+        };
+        let psets = submittable_task.task().psets().clone();
+
+        let context = HashMap::from([
+            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("stage_id".to_string(), format!("{}", self.stage_id)),
+            ("node_id".to_string(), format!("{}", self.node_id)),
+            ("node_name".to_string(), self.name().to_string()),
+        ]);
+        let task = submittable_task.with_new_task(SwordfishTask::new(
+            actor_pool_project_plan,
+            self.config.clone(),
+            psets,
+            scheduling_strategy,
+            context,
+            self.node_id,
+        ));
+        Ok(task)
+    }
 }
 
 impl DistributedPipelineNode for ActorUDF {
@@ -287,115 +376,23 @@ impl DistributedPipelineNode for ActorUDF {
         vec![self.child.as_ref()]
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
         let input_node = self.child.start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = Self::execution_loop_fused(
-            self.node_id,
-            self.config.clone(),
-            self.projection.clone(),
-            self.batch_size,
-            self.memory_request,
-            input_node,
-            result_tx,
-            self.schema.clone(),
-        );
+        let execution_loop = self.clone().execution_loop_fused(input_node, result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }
-}
 
-#[allow(clippy::too_many_arguments)]
-fn make_actor_udf_task_for_materialized_outputs(
-    materialized_outputs: Vec<MaterializedOutput>,
-    worker_id: WorkerId,
-    batch_size: Option<usize>,
-    memory_request: u64,
-    actors: Vec<PyObjectWrapper>,
-    node_id: usize,
-    config: Arc<DaftExecutionConfig>,
-    schema: SchemaRef,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    // Extract all partitions from materialized outputs
-    let mut partitions = Vec::new();
-    for materialized_output in materialized_outputs {
-        let (partition, _) = materialized_output.into_inner();
-        partitions.push(partition);
+    fn plan_id(&self) -> &PlanID {
+        &self.plan_id
     }
-
-    let in_memory_info = InMemoryInfo::new(
-        schema.clone(),
-        node_id.to_string(),
-        None,
-        partitions.len(),
-        0,
-        0,
-        None,
-        None,
-    );
-
-    let in_memory_source =
-        LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
-
-    let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
-        in_memory_source,
-        actors.into_iter().map(|e| e.into()).collect(),
-        batch_size,
-        memory_request,
-        schema,
-        StatsState::NotMaterialized,
-    );
-
-    let task = SubmittableTask::new(SwordfishTask::new(
-        actor_pool_project_plan,
-        config,
-        HashMap::from([(node_id.to_string(), partitions)]),
-        SchedulingStrategy::WorkerAffinity {
-            worker_id,
-            soft: false,
-        },
-        node_id,
-    ));
-
-    Ok(task)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn append_actor_udf_to_task(
-    submittable_task: SubmittableTask<SwordfishTask>,
-    config: Arc<DaftExecutionConfig>,
-    batch_size: Option<usize>,
-    memory_request: u64,
-    actors: Vec<PyObjectWrapper>,
-    schema: SchemaRef,
-    worker_id: &WorkerId,
-    node_id: usize,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
-    let task_plan = submittable_task.task().plan();
-    let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
-        task_plan,
-        actors,
-        batch_size,
-        memory_request,
-        schema,
-        StatsState::NotMaterialized,
-    );
-
-    // Set scheduling strategy based on whether we have a valid worker ID
-    let scheduling_strategy = SchedulingStrategy::WorkerAffinity {
-        worker_id: worker_id.clone(),
-        soft: false,
-    };
-    let psets = submittable_task.task().psets().clone();
-
-    let task = submittable_task.with_new_task(SwordfishTask::new(
-        actor_pool_project_plan,
-        config,
-        psets,
-        scheduling_strategy,
-        node_id,
-    ));
-    Ok(task)
+    fn stage_id(&self) -> &StageID {
+        &self.stage_id
+    }
+    fn node_id(&self) -> &NodeID {
+        &self.node_id
+    }
 }
