@@ -301,7 +301,6 @@ impl PipelineNode for StreamingSinkNode {
                 );
                 loop {
                     let finalized_result = op.finalize(finished_states, &spawner).await??;
-
                     match finalized_result {
                         StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
                             finished_states = states;

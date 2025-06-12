@@ -24,8 +24,8 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
-const INPUT_SCALE_FACTOR: usize = 16;
-const OUTPUT_SCALE_FACTOR: usize = 4;
+const INPUT_SCALE_FACTOR: usize = 64;
+const OUTPUT_SCALE_FACTOR: usize = 2;
 
 struct UriDownloadSinkState {
     in_flight_downloads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
@@ -87,6 +87,10 @@ impl UriDownloadSinkState {
     }
 
     fn start_download(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+        if input.is_empty() {
+            return Ok(());
+        }
+
         let raise_error_on_failure = self.raise_error_on_failure;
 
         for input in input.get_tables()?.iter() {
@@ -163,12 +167,14 @@ impl UriDownloadSinkState {
         Ok(original_rows.with_column(self.output_column.as_str(), contents))
     }
 
-    async fn poll_finished(&mut self) -> DaftResult<RecordBatch> {
+    async fn poll_finished(&mut self, finished: bool) -> DaftResult<RecordBatch> {
         let exp_capacity = if self.in_flight_downloads.len() > self.max_in_flight {
             std::cmp::min(
                 self.in_flight_downloads.len() - self.max_in_flight,
                 32 * OUTPUT_SCALE_FACTOR,
             )
+        } else if finished {
+            32
         } else {
             0
         };
@@ -177,20 +183,11 @@ impl UriDownloadSinkState {
         let mut completed_contents = Vec::with_capacity(exp_capacity);
 
         // Wait for downloads to complete until we are under the active limit
-        while self.in_flight_downloads.len() > self.max_in_flight
-            && completed_idxs.len() < exp_capacity
-        {
+        while completed_idxs.len() < exp_capacity {
             let Some(result) = self.in_flight_downloads.join_next().await else {
                 unreachable!("There should always be at least one upload in flight");
             };
 
-            let (idx, contents) = result.unwrap().unwrap();
-            completed_idxs.push(idx as u64);
-            completed_contents.push(contents);
-        }
-
-        // If any additional uploads are completed, pop them off the join set
-        while let Some(result) = self.in_flight_downloads.try_join_next() {
             let (idx, contents) = result.unwrap().unwrap();
             completed_idxs.push(idx as u64);
             completed_contents.push(contents);
@@ -245,7 +242,7 @@ impl StreamingSink for UriDownloadSink {
                         .expect("UriDownload sink should have UriDownloadSinkState");
 
                     url_state.start_download(input)?;
-                    let output = url_state.poll_finished().await?;
+                    let output = url_state.poll_finished(false).await?;
 
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
@@ -286,7 +283,7 @@ impl StreamingSink for UriDownloadSink {
                         .downcast_mut::<UriDownloadSinkState>()
                         .expect("UriDownload sink should have UriDownloadSinkState");
 
-                    let output = state.poll_finished().await?;
+                    let output = state.poll_finished(true).await?;
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
                         schema,
