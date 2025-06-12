@@ -103,12 +103,6 @@ async fn http_server_application(req: Req, state: DashboardState) -> ServerResul
             state.add_query(req.into_body());
             response::empty(StatusCode::OK)
         }
-        (&Method::POST, _) => {
-            let _req = deserialize::<serde_json::Value>(req).await?;
-            println!("Received metric");
-
-            response::empty(StatusCode::NOT_FOUND)
-        }
         (&Method::GET, ["api", "queries"]) => {
             let query_informations = state.queries();
 
