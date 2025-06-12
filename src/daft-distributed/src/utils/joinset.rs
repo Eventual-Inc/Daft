@@ -19,7 +19,14 @@ impl<T: Send + 'static> JoinSet<T> {
         }
     }
 
-    pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) -> JoinSetId {
+    pub fn spawn<F>(&mut self, task: F) -> JoinSetId
+    where
+        F: Future<Output = T>,
+        F: Send + 'static,
+        T: Send,
+        // Bounds from impl:
+        T: 'static,
+    {
         let handle = self.inner.spawn(task);
         handle.id()
     }

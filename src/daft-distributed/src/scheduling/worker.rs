@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use super::{
     scheduler::SchedulableTask,
-    task::{Task, TaskDetails, TaskId, TaskResultHandle, TaskResultHandleAwaiter},
+    task::{Task, TaskDetails, TaskID, TaskResultHandle, TaskResultHandleAwaiter},
 };
 
 pub(crate) type WorkerId = Arc<str>;
@@ -15,7 +15,7 @@ pub(crate) trait Worker: Send + Sync + Debug + 'static {
     type TaskResultHandle: TaskResultHandle;
 
     fn id(&self) -> &WorkerId;
-    fn active_task_details(&self) -> HashMap<TaskId, TaskDetails>;
+    fn active_task_details(&self) -> HashMap<TaskID, TaskDetails>;
     fn total_num_cpus(&self) -> usize;
     fn active_num_cpus(&self) -> usize;
     fn available_num_cpus(&self) -> usize;
@@ -34,7 +34,7 @@ pub(crate) trait WorkerManager: Send + Sync {
     ) -> DaftResult<
         Vec<TaskResultHandleAwaiter<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>,
     >;
-    fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId);
+    fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId);
     fn workers(&self) -> &HashMap<WorkerId, Self::Worker>;
     fn total_available_cpus(&self) -> usize;
     #[allow(dead_code)]
@@ -90,7 +90,7 @@ pub(super) mod tests {
                     }
 
                     result.push(TaskResultHandleAwaiter::new(
-                        task.task_id().clone(),
+                        Arc::from(task.task_id().to_string()),
                         worker_id.clone(),
                         MockTaskResultHandle::new(task),
                         result_tx,
@@ -102,7 +102,7 @@ pub(super) mod tests {
             Ok(result)
         }
 
-        fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId) {
+        fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId) {
             if let Some(worker) = self.workers.get(worker_id) {
                 worker.mark_task_finished(task_id);
             }
@@ -134,7 +134,7 @@ pub(super) mod tests {
     pub struct MockWorker {
         worker_id: WorkerId,
         total_num_cpus: usize,
-        active_task_details: Arc<Mutex<HashMap<TaskId, TaskDetails>>>,
+        active_task_details: Arc<Mutex<HashMap<TaskID, TaskDetails>>>,
         is_shutdown: Arc<AtomicBool>,
     }
 
@@ -148,15 +148,15 @@ pub(super) mod tests {
             }
         }
 
-        pub fn mark_task_finished(&self, task_id: &TaskId) {
+        pub fn mark_task_finished(&self, task_id: &TaskID) {
             self.active_task_details.lock().unwrap().remove(task_id);
         }
 
         pub fn add_active_task(&self, task: &impl Task) {
-            self.active_task_details
-                .lock()
-                .unwrap()
-                .insert(task.task_id().clone(), TaskDetails::from(task));
+            self.active_task_details.lock().unwrap().insert(
+                Arc::from(task.task_id().to_string()),
+                TaskDetails::from(task),
+            );
         }
 
         pub fn shutdown(&self) {
@@ -190,7 +190,7 @@ pub(super) mod tests {
             self.total_num_cpus() - self.active_num_cpus()
         }
 
-        fn active_task_details(&self) -> HashMap<TaskId, TaskDetails> {
+        fn active_task_details(&self) -> HashMap<TaskID, TaskDetails> {
             self.active_task_details
                 .lock()
                 .expect("Active task ids should be present")
