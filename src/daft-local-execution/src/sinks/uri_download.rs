@@ -315,6 +315,6 @@ impl StreamingSink for UriDownloadSink {
         _runtime_handle: &ExecutionRuntimeContext,
         _maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::unbounded())
+        Arc::new(UnorderedDispatcher::new(0, 128))
     }
 }
