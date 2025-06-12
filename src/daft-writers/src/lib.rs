@@ -21,6 +21,8 @@ mod lance;
 #[cfg(feature = "python")]
 mod pyarrow;
 #[cfg(feature = "python")]
+pub mod python;
+#[cfg(feature = "python")]
 mod sink;
 
 use std::{
@@ -44,6 +46,8 @@ use ipc::IPCWriterFactory;
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
+#[cfg(feature = "python")]
+pub use python::register_modules;
 #[cfg(feature = "python")]
 pub use sink::make_data_sink_writer_factory;
 
