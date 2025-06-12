@@ -38,7 +38,7 @@ use crate::{
         scalar::scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction, FUNCTION_REGISTRY,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -1775,6 +1775,44 @@ impl Expr {
             _ => None,
         }
     }
+    /// return true if the expr contains both a `.element()` and the inner expr is of a list type
+    pub fn has_element(&self) -> bool {
+        match self {
+            Self::Column(column) => match column {
+                Column::Unresolved(UnresolvedColumn { name, .. }) => name.as_ref() == "",
+                Column::Resolved(_) => false,
+                Column::Bound(_) => false,
+            },
+            Self::Alias(expr, _) => expr.has_element(),
+            Self::Agg(_) => false,
+            Self::BinaryOp { left, right, .. } => left.has_element() || right.has_element(),
+            Self::Cast(expr, _) => expr.has_element(),
+            Self::Function { inputs, .. } => inputs.iter().any(|input| input.has_element()),
+            Self::Over(..) => false,
+            Self::WindowFunction(_) => false,
+            Self::Not(expr) => expr.has_element(),
+            Self::IsNull(expr) => expr.has_element(),
+            Self::NotNull(expr) => expr.has_element(),
+            Self::FillNull(expr, expr1) => expr.has_element() || expr1.has_element(),
+            Self::IsIn(expr, exprs) => {
+                expr.has_element() || exprs.iter().any(|expr| expr.has_element())
+            }
+            Self::Between(expr, expr1, expr2) => {
+                expr.has_element() || expr1.has_element() || expr2.has_element()
+            }
+            Self::List(exprs) => exprs.iter().any(|expr| expr.has_element()),
+            Self::Literal(_) => false,
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => if_true.has_element() || if_false.has_element() || predicate.has_element(),
+            Self::ScalarFunction(sf) => sf.inputs.iter().any(|input| input.inner().has_element()),
+            Self::Subquery(_) => false,
+            Self::InSubquery(expr, _) => expr.has_element(),
+            Self::Exists(_) => false,
+        }
+    }
 
     pub fn has_compute(&self) -> bool {
         match self {
@@ -1834,6 +1872,17 @@ impl Expr {
                 _ => Ok(Transformed::no(e)),
             })?
             .data)
+    }
+
+    pub fn explode(self: Arc<Self>) -> DaftResult<ExprRef> {
+        let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
+        let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
+
+        Ok(Self::ScalarFunction(ScalarFunction {
+            udf: f,
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
+        })
+        .arced())
     }
 }
 
