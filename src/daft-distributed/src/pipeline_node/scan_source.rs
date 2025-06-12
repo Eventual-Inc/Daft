@@ -12,7 +12,10 @@ use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
     pipeline_node::NodeID,
     plan::PlanID,
-    scheduling::task::{SchedulingStrategy, SwordfishTask},
+    scheduling::{
+        scheduler::SubmittableTask,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
@@ -57,13 +60,19 @@ impl ScanSourceNode {
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
             let empty_scan_task = self.make_empty_scan_task()?;
-            let _ = result_tx.send(PipelineOutput::Task(empty_scan_task)).await;
+            let _ = result_tx
+                .send(PipelineOutput::Task(SubmittableTask::new(empty_scan_task)))
+                .await;
             return Ok(());
         }
 
         for scan_task in self.scan_tasks.iter() {
             let task = self.make_source_tasks(vec![scan_task.clone()].into())?;
-            if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+            if result_tx
+                .send(PipelineOutput::Task(SubmittableTask::new(task)))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -105,6 +114,7 @@ impl ScanSourceNode {
             psets,
             SchedulingStrategy::Spread,
             context,
+            self.node_id,
         );
         Ok(task)
     }
@@ -134,6 +144,7 @@ impl ScanSourceNode {
             psets,
             SchedulingStrategy::Spread,
             context,
+            self.node_id,
         );
         Ok(task)
     }
@@ -148,7 +159,7 @@ impl DistributedPipelineNode for ScanSourceNode {
         vec![]
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.clone().execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
