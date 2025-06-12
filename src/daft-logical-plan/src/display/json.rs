@@ -43,6 +43,12 @@ where
             LogicalPlan::ActorPoolProject(project) => json!({
                 "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
+            LogicalPlan::UrlDownload(url_download) => json!({
+                "input": url_download.input.to_string(),
+            }),
+            LogicalPlan::UrlUpload(url_upload) => json!({
+                "input": url_upload.input.to_string(),
+            }),
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],
             }),

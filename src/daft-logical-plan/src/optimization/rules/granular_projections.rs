@@ -2,12 +2,15 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{functions::ScalarFunction, resolved_col, Expr};
-use daft_functions_uri::download::UrlDownload;
+use daft_dsl::{functions::ScalarFunction, resolved_col, Expr, ExprRef};
+use daft_functions_uri::{download::UrlDownload, UrlDownloadArgs};
 use itertools::Itertools;
 
 use super::OptimizerRule;
-use crate::{ops::Project, LogicalPlan};
+use crate::{
+    ops::{Project, UrlDownload as UrlDownloadOp},
+    LogicalPlan,
+};
 
 /// This rule will split projections into multiple projections such that expressions that
 /// need their own granular morsel sizing will be isolated. Right now, those would be
@@ -89,7 +92,7 @@ impl SplitGranularProjection {
                                 // TODO: Remove with ordinals
                                 let child_name = format!("id-{}", uuid::Uuid::new_v4());
                                 let child = child.alias(child_name.clone());
-                                split_exprs.push(child);
+                                split_exprs.push(either::Either::Left(child));
 
                                 children.push(resolved_col(child_name));
                             }
@@ -110,14 +113,19 @@ impl SplitGranularProjection {
                     let mut changed = false;
 
                     for (idx, child) in e.children().iter().enumerate() {
-                        if Self::requires_granular_morsel_sizing(child) {
+                        if let Expr::ScalarFunction(ScalarFunction { udf, inputs }) = child.as_ref()
+                            && udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+                        {
                             changed = true;
+
                             // Split and save child expression
                             // Child may not have an alias, so we need to generate a new one
                             // TODO: Remove with ordinals
                             let child_name = format!("id-{}", uuid::Uuid::new_v4());
-                            let child = child.alias(child_name.clone());
-                            split_exprs.push(child);
+
+                            let args: UrlDownloadArgs<ExprRef> = inputs.clone().try_into()?;
+                            split_exprs.push(either::Either::Right((child_name.clone(), args)));
+
                             new_children[idx] = resolved_col(child_name);
                         }
                     }
@@ -134,7 +142,7 @@ impl SplitGranularProjection {
             })?;
 
             // Push the top level expression that was changed
-            split_exprs.push(res.data);
+            split_exprs.push(either::Either::Left(res.data));
             all_split_exprs.push(split_exprs);
         }
 
@@ -169,11 +177,29 @@ impl SplitGranularProjection {
 
             for split in &all_split_exprs {
                 let expr = split.get(i).cloned().unwrap_or_else(|| {
-                    let passthrough_name = split.last().unwrap().name();
-                    resolved_col(passthrough_name)
+                    let passthrough = split.last().unwrap();
+                    let passthrough_name = match passthrough {
+                        either::Either::Left(expr) => expr.name(),
+                        either::Either::Right((name, _)) => name.as_str(),
+                    };
+                    either::Either::Left(resolved_col(passthrough_name))
                 });
-                out_names.insert(expr.name().to_string());
-                out_exprs.push(expr);
+
+                match expr {
+                    either::Either::Left(expr) => {
+                        out_names.insert(expr.name().to_string());
+                        out_exprs.push(expr);
+                    }
+                    either::Either::Right((name, args)) => {
+                        out_names.insert(name.clone());
+                        out_exprs.push(resolved_col(name.clone()));
+                        // eprintln!("args: {:?}, name: {}", args, name);
+                        last_child = Arc::new(LogicalPlan::UrlDownload(UrlDownloadOp::new(
+                            last_child, args, name,
+                        )));
+                        // eprintln!("last_child schema: {}", last_child.schema());
+                    }
+                }
             }
 
             for name in &input_cols {

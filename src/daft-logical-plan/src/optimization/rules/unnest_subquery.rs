@@ -526,7 +526,9 @@ fn pull_up_correlated_cols(
         | LogicalPlan::SubqueryAlias(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
-        LogicalPlan::ActorPoolProject(..)
+        LogicalPlan::UrlDownload(..)
+        | LogicalPlan::UrlUpload(..)
+        | LogicalPlan::ActorPoolProject(..)
         | LogicalPlan::Limit(..)
         | LogicalPlan::TopN(..)
         | LogicalPlan::Sample(..)

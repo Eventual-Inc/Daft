@@ -9,12 +9,12 @@ use daft_dsl::{
 };
 use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlUpload;
 
-#[derive(FunctionArgs)]
+#[derive(Clone, FunctionArgs, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UrlUploadArgs<T> {
     pub input: T,
     pub location: T,

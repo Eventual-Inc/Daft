@@ -26,6 +26,8 @@ pub enum LogicalPlan {
     Source(Source),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
+    UrlDownload(UrlDownload),
+    UrlUpload(UrlUpload),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -89,6 +91,8 @@ impl LogicalPlan {
             Self::ActorPoolProject(ActorPoolProject {
                 projected_schema, ..
             }) => projected_schema.clone(),
+            Self::UrlDownload(UrlDownload { output_schema, .. }) => output_schema.clone(),
+            Self::UrlUpload(UrlUpload { output_schema, .. }) => output_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Explode(Explode {
@@ -133,6 +137,18 @@ impl LogicalPlan {
             Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
                 let res = projection.iter().flat_map(get_required_columns).collect();
                 vec![res]
+            }
+            Self::UrlDownload(url_download) => {
+                vec![get_required_columns(url_download.input_column())
+                    .iter()
+                    .cloned()
+                    .collect()]
+            }
+            Self::UrlUpload(url_upload) => {
+                vec![get_required_columns(url_upload.input_column())
+                    .iter()
+                    .cloned()
+                    .collect()]
             }
             Self::Filter(filter) => {
                 vec![get_required_columns(&filter.predicate)
@@ -258,6 +274,8 @@ impl LogicalPlan {
             Self::Source(..) => "Source",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
+            Self::UrlDownload(..) => "UrlDownload",
+            Self::UrlUpload(..) => "UrlUpload",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
@@ -285,6 +303,8 @@ impl LogicalPlan {
             Self::Source(Source { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::UrlDownload(UrlDownload { stats_state, .. })
+            | Self::UrlUpload(UrlUpload { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -324,6 +344,8 @@ impl LogicalPlan {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
+            Self::UrlDownload(plan) => Self::UrlDownload(plan.with_materialized_stats()),
+            Self::UrlUpload(plan) => Self::UrlUpload(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
@@ -359,6 +381,8 @@ impl LogicalPlan {
             Self::Source(source) => source.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::ActorPoolProject(projection) => projection.multiline_display(),
+            Self::UrlDownload(url_download) => url_download.multiline_display(),
+            Self::UrlUpload(url_upload) => url_upload.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
@@ -388,6 +412,8 @@ impl LogicalPlan {
             Self::Source(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
+            Self::UrlDownload(UrlDownload { input, .. }) => vec![input],
+            Self::UrlUpload(UrlUpload { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
@@ -420,6 +446,8 @@ impl LogicalPlan {
                     input.clone(), projection.clone(),
                 ).unwrap()),
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
+                Self::UrlDownload(UrlDownload { args, output_column, .. }) => Self::UrlDownload(UrlDownload::new(input.clone(), args.clone(), output_column.clone())),
+                Self::UrlUpload(UrlUpload { args, output_column, .. }) => Self::UrlUpload(UrlUpload::new(input.clone(), args.clone(), output_column.clone())),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
@@ -571,6 +599,8 @@ impl LogicalPlan {
             Self::Source(Source { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
             | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
+            | Self::UrlDownload(UrlDownload { plan_id, .. })
+            | Self::UrlUpload(UrlUpload { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
@@ -599,6 +629,12 @@ impl LogicalPlan {
             Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
             Self::ActorPoolProject(project) => {
                 Self::ActorPoolProject(project.clone().with_plan_id(plan_id))
+            }
+            Self::UrlDownload(url_download) => {
+                Self::UrlDownload(url_download.clone().with_plan_id(plan_id))
+            }
+            Self::UrlUpload(url_upload) => {
+                Self::UrlUpload(url_upload.clone().with_plan_id(plan_id))
             }
             Self::Filter(filter) => Self::Filter(filter.clone().with_plan_id(plan_id)),
             Self::Limit(limit) => Self::Limit(limit.clone().with_plan_id(plan_id)),
@@ -730,3 +766,5 @@ impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);
+impl_from_data_struct_for_logical_plan!(UrlDownload);
+impl_from_data_struct_for_logical_plan!(UrlUpload);

@@ -354,6 +354,12 @@ fn physical_plan_to_partition_tasks(
             Ok(py_iter.into())
         }
 
+        PhysicalPlan::UrlDownload(_) | PhysicalPlan::UrlUpload(_) => {
+            unreachable!(
+                "UrlDownload and UrlUpload nodes shouldn't be available in the physical plan"
+            )
+        }
+
         PhysicalPlan::ActorPoolProject(
             app @ ActorPoolProject {
                 input, projection, ..

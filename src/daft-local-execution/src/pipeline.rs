@@ -14,8 +14,9 @@ use daft_dsl::join::get_common_join_cols;
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot, UrlDownload, UrlUpload,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -50,6 +51,8 @@ use crate::{
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
         top_n::TopNSink,
+        uri_download::UriDownloadSink,
+        uri_upload::UriUploadSink,
         window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
         window_partition_and_order_by::WindowPartitionAndOrderBySink,
@@ -389,6 +392,43 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::UrlDownload(UrlDownload {
+            input,
+            args,
+            output_column,
+            stats_state,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+
+            let url_download_op =
+                UriDownloadSink::new(args.clone(), output_column.clone(), input.schema().clone());
+            StreamingSinkNode::new(
+                Arc::new(url_download_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::UrlUpload(UrlUpload {
+            input,
+            args,
+            output_column,
+            stats_state,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+
+            let url_upload_op = UriUploadSink::new(args.clone(), output_column.clone());
+            StreamingSinkNode::new(
+                Arc::new(url_upload_op),
                 vec![child_node],
                 stats_state.clone(),
                 ctx,

@@ -545,7 +545,7 @@ impl PushDownProjection {
                 // Cannot push down past a Pivot/MonotonicallyIncreasingId because it changes the schema.
                 Ok(Transformed::no(plan))
             }
-            LogicalPlan::Window(_) => {
+            LogicalPlan::Window(_) | LogicalPlan::UrlDownload(_) | LogicalPlan::UrlUpload(_) => {
                 // Cannot push down past a Window because it changes the window calculation results
                 Ok(Transformed::no(plan))
             }
@@ -561,7 +561,7 @@ impl PushDownProjection {
         actor_pool_project: &ActorPoolProject,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        // If this ActorPoolPorject prunes columns from its upstream,
+        // If this ActorPoolProject prunes columns from its upstream,
         // then explicitly create a projection to do so.
         let upstream_plan = &actor_pool_project.input;
         let upstream_schema = upstream_plan.schema();

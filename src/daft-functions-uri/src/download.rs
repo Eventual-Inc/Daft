@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Container for the keyword arguments of `url_download`
 /// ex:
@@ -20,11 +20,11 @@ use serde::Serialize;
 /// url_download(input, on_error='null')
 /// url_download(input, max_connections=32, on_error='raise')
 /// ```
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlDownload;
 
-#[derive(FunctionArgs, Clone)]
-pub struct UrlDownloadArgs<T: Clone> {
+#[derive(FunctionArgs, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct UrlDownloadArgs<T> {
     pub input: T,
     #[arg(optional)]
     pub multi_thread: Option<bool>,

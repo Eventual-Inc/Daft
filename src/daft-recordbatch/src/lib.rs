@@ -515,7 +515,8 @@ impl RecordBatch {
         let mut new_columns = self.columns.as_ref().clone();
         new_columns.push(series);
 
-        Self::new_unchecked(new_schema, new_columns, self.num_rows)
+        Self::new_with_size(new_schema, new_columns, self.num_rows)
+            .expect("Failed to create new RecordBatch with column")
     }
 
     fn eval_agg_expression(

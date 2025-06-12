@@ -13,6 +13,8 @@ impl TreeDisplay for PhysicalPlan {
             Self::PreviousStageScan(scan) => scan.display_as(level),
             Self::Project(p) => p.display_as(level),
             Self::ActorPoolProject(p) => p.display_as(level),
+            Self::UrlDownload(p) => p.display_as(level),
+            Self::UrlUpload(p) => p.display_as(level),
             Self::Filter(f) => f.display_as(level),
             Self::Limit(limit) => limit.display_as(level),
             Self::Explode(explode) => explode.display_as(level),

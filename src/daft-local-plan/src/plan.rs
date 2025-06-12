@@ -9,6 +9,7 @@ use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     WindowExpr, WindowFrame,
 };
+use daft_functions_uri::{UrlDownloadArgs, UrlUploadArgs};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
@@ -24,6 +25,8 @@ pub enum LocalPhysicalPlan {
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
+    UrlDownload(UrlDownload),
+    UrlUpload(UrlUpload),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -82,6 +85,8 @@ impl LocalPhysicalPlan {
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::UrlDownload(UrlDownload { stats_state, .. })
+            | Self::UrlUpload(UrlUpload { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -222,6 +227,40 @@ impl LocalPhysicalPlan {
         Self::ActorPoolProject(ActorPoolProject {
             input,
             projection,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub(crate) fn url_download(
+        input: LocalPhysicalPlanRef,
+        args: UrlDownloadArgs<BoundExpr>,
+        output_column: String,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::UrlDownload(UrlDownload {
+            input,
+            args,
+            output_column,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub(crate) fn url_upload(
+        input: LocalPhysicalPlanRef,
+        args: UrlUploadArgs<BoundExpr>,
+        output_column: String,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::UrlUpload(UrlUpload {
+            input,
+            args,
+            output_column,
             schema,
             stats_state,
         })
@@ -603,6 +642,8 @@ impl LocalPhysicalPlan {
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
             | Self::ActorPoolProject(ActorPoolProject { schema, .. })
+            | Self::UrlDownload(UrlDownload { schema, .. })
+            | Self::UrlUpload(UrlUpload { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Pivot(Pivot { schema, .. })
@@ -649,6 +690,8 @@ impl LocalPhysicalPlan {
             | Self::Limit(Limit { input, .. })
             | Self::Project(Project { input, .. })
             | Self::ActorPoolProject(ActorPoolProject { input, .. })
+            | Self::UrlDownload(UrlDownload { input, .. })
+            | Self::UrlUpload(UrlUpload { input, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { input, .. })
             | Self::HashAggregate(HashAggregate { input, .. })
             | Self::Pivot(Pivot { input, .. })
@@ -687,6 +730,8 @@ impl LocalPhysicalPlan {
                 Self::Limit(Limit {  num_rows, .. }) => Self::limit(new_child.clone(), *num_rows, StatsState::NotMaterialized),
                 Self::Project(Project {  projection, schema, .. }) => Self::project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UrlDownload(UrlDownload {  args, output_column, schema, .. }) => Self::url_download(new_child.clone(), args.clone(), output_column.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::UrlUpload(UrlUpload {  args, output_column, schema, .. }) => Self::url_upload(new_child.clone(), args.clone(), output_column.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Pivot(Pivot {  group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(new_child.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
@@ -789,6 +834,24 @@ pub struct Project {
 pub struct ActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<BoundExpr>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UrlDownload {
+    pub input: LocalPhysicalPlanRef,
+    pub args: UrlDownloadArgs<BoundExpr>,
+    pub output_column: String,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UrlUpload {
+    pub input: LocalPhysicalPlanRef,
+    pub args: UrlUploadArgs<BoundExpr>,
+    pub output_column: String,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

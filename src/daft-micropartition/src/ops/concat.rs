@@ -27,7 +27,7 @@ impl MicroPartition {
             let tab = tab.deref().borrow();
             if &tab.schema != first_schema {
                 return Err(DaftError::SchemaMismatch(format!(
-                    "MicroPartition concat requires all schemas to match, {} vs {}",
+                    "MicroPartition concat requires all schemas to match, \n{} vs \n{}",
                     first_schema, tab.schema
                 )));
             }

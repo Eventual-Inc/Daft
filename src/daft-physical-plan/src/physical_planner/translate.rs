@@ -31,7 +31,8 @@ use daft_logical_plan::{
         MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
         Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        Unpivot as LogicalUnpivot,
+        Unpivot as LogicalUnpivot, UrlDownload as LogicalUrlDownload,
+        UrlUpload as LogicalUrlUpload,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -124,6 +125,32 @@ pub(super) fn translate_single_logical_node(
                 input_physical,
                 projection.clone(),
             )?)
+            .arced())
+        }
+        LogicalPlan::UrlDownload(LogicalUrlDownload {
+            args,
+            output_column,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(PhysicalPlan::UrlDownload(UrlDownload::new(
+                input_physical,
+                args.clone(),
+                output_column.clone(),
+            ))
+            .arced())
+        }
+        LogicalPlan::UrlUpload(LogicalUrlUpload {
+            args,
+            output_column,
+            ..
+        }) => {
+            let input_physical = physical_children.pop().expect("requires 1 input");
+            Ok(PhysicalPlan::UrlUpload(UrlUpload::new(
+                input_physical,
+                args.clone(),
+                output_column.clone(),
+            ))
             .arced())
         }
         LogicalPlan::Filter(LogicalFilter {

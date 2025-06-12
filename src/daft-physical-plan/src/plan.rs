@@ -22,6 +22,8 @@ pub enum PhysicalPlan {
     PreviousStageScan(PreviousStageScan),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
+    UrlDownload(UrlDownload),
+    UrlUpload(UrlUpload),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -77,6 +79,8 @@ impl PhysicalPlan {
             Self::ActorPoolProject(ActorPoolProject {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
+            Self::UrlDownload(UrlDownload { input, .. }) => input.clustering_spec(),
+            Self::UrlUpload(UrlUpload { input, .. }) => input.clustering_spec(),
             Self::Filter(Filter { input, .. }) => input.clustering_spec(),
             Self::Limit(Limit { input, .. }) => input.clustering_spec(),
             Self::Explode(Explode {
@@ -279,7 +283,9 @@ impl PhysicalPlan {
             }
             Self::Project(Project { input, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
-            | Self::ActorPoolProject(ActorPoolProject { input, .. }) => {
+            | Self::ActorPoolProject(ActorPoolProject { input, .. })
+            | Self::UrlDownload(UrlDownload { input, .. })
+            | Self::UrlUpload(UrlUpload { input, .. }) => {
                 // TODO(sammy), we need the schema to estimate the new size per row
                 input.approximate_stats()
             }
@@ -393,6 +399,8 @@ impl PhysicalPlan {
             Self::TabularScan(..) | Self::EmptyScan(..) | Self::PreviousStageScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
+            Self::UrlDownload(UrlDownload { input, .. }) => vec![input],
+            Self::UrlUpload(UrlUpload { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
@@ -444,6 +452,9 @@ impl PhysicalPlan {
                 ).unwrap()),
 
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
+                Self::UrlDownload(UrlDownload { args, output_column, .. }) => Self::UrlDownload(UrlDownload::new(input.clone(), args.clone(), output_column.clone())),
+                Self::UrlUpload(UrlUpload { args, output_column, .. }) => Self::UrlUpload(UrlUpload::new(input.clone(), args.clone(), output_column.clone())),
+
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
                 Self::TopN(TopN { sort_by, descending, nulls_first, limit, num_partitions, .. }) => Self::TopN(TopN::new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *num_partitions)),
@@ -499,6 +510,8 @@ impl PhysicalPlan {
             Self::PreviousStageScan(..) => "PreviousStageScan",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
+            Self::UrlDownload(..) => "UrlDownload",
+            Self::UrlUpload(..) => "UrlUpload",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::TopN(..) => "TopN",
@@ -538,6 +551,8 @@ impl PhysicalPlan {
             Self::PreviousStageScan(previous_stage_scan) => previous_stage_scan.multiline_display(),
             Self::Project(project) => project.multiline_display(),
             Self::ActorPoolProject(ap_project) => ap_project.multiline_display(),
+            Self::UrlDownload(url_download) => url_download.multiline_display(),
+            Self::UrlUpload(url_upload) => url_upload.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::TopN(top_n) => top_n.multiline_display(),

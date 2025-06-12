@@ -11,6 +11,7 @@ use daft_dsl::{
     join::normalize_join_keys,
     WindowExpr,
 };
+use daft_functions_uri::{UrlDownloadArgs, UrlUploadArgs};
 use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
 
@@ -88,6 +89,43 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 projection,
                 actor_pool_project.projected_schema.clone(),
                 actor_pool_project.stats_state.clone(),
+            ))
+        }
+        LogicalPlan::UrlDownload(url_download) => {
+            let input = translate(&url_download.input)?;
+            let args = UrlDownloadArgs {
+                input: BoundExpr::try_new(url_download.args.input.clone(), input.schema())?,
+                multi_thread: url_download.args.multi_thread,
+                io_config: url_download.args.io_config.clone(),
+                max_connections: url_download.args.max_connections,
+                on_error: url_download.args.on_error.clone(),
+            };
+            // url_download.args.clone().bind(&input.schema())?;
+            Ok(LocalPhysicalPlan::url_download(
+                input,
+                args,
+                url_download.output_column.clone(),
+                url_download.output_schema.clone(),
+                url_download.stats_state.clone(),
+            ))
+        }
+        LogicalPlan::UrlUpload(url_upload) => {
+            let input = translate(&url_upload.input)?;
+            let args = UrlUploadArgs {
+                input: BoundExpr::try_new(url_upload.args.input.clone(), input.schema())?,
+                multi_thread: url_upload.args.multi_thread,
+                io_config: url_upload.args.io_config.clone(),
+                max_connections: url_upload.args.max_connections,
+                on_error: url_upload.args.on_error.clone(),
+                location: BoundExpr::try_new(url_upload.args.location.clone(), input.schema())?,
+                is_single_folder: url_upload.args.is_single_folder,
+            };
+            Ok(LocalPhysicalPlan::url_upload(
+                input,
+                args,
+                url_upload.output_column.clone(),
+                url_upload.output_schema.clone(),
+                url_upload.stats_state.clone(),
             ))
         }
         LogicalPlan::Sample(sample) => {

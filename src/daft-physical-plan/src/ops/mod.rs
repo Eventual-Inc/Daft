@@ -31,6 +31,8 @@ mod sort;
 mod sort_merge_join;
 mod top_n;
 mod unpivot;
+mod url_download;
+mod url_upload;
 
 pub use actor_pool_project::ActorPoolProject;
 pub use agg::Aggregate;
@@ -65,6 +67,8 @@ pub use sort::Sort;
 pub use sort_merge_join::SortMergeJoin;
 pub use top_n::TopN;
 pub use unpivot::Unpivot;
+pub use url_download::UrlDownload;
+pub use url_upload::UrlUpload;
 
 #[macro_export]
 /// Implement the `common_display::tree::TreeDisplay` trait for the given struct

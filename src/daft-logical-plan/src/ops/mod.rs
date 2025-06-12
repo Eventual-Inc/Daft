@@ -18,6 +18,8 @@ mod source;
 mod summarize;
 mod top_n;
 mod unpivot;
+mod url_download;
+mod url_upload;
 mod window;
 
 pub use actor_pool_project::ActorPoolProject;
@@ -40,4 +42,6 @@ pub use source::Source;
 pub use summarize::summarize;
 pub use top_n::TopN;
 pub use unpivot::Unpivot;
+pub use url_download::UrlDownload;
+pub use url_upload::UrlUpload;
 pub use window::Window;
