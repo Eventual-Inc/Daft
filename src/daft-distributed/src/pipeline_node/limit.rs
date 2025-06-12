@@ -142,6 +142,7 @@ fn make_task_with_limit(
             worker_id,
             soft: true,
         },
+        node_id,
     );
     Ok(SubmittableTask::new(task))
 }

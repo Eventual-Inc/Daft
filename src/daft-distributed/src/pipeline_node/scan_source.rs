@@ -51,17 +51,23 @@ impl ScanSourceNode {
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        node_id: usize,
     ) -> DaftResult<()> {
         if scan_tasks.is_empty() {
-            let empty_scan_task = make_empty_scan_task(&plan, config.clone())?;
+            let empty_scan_task = make_empty_scan_task(&plan, config.clone(), node_id)?;
             let _ = result_tx.send(PipelineOutput::Task(empty_scan_task)).await;
             return Ok(());
         }
         // TODO: This should be a smarter, decision based on scan task statistics as well as cluster statistics.
         let max_sources_per_scan_task = config.max_sources_per_scan_task;
         for scan_tasks_chunk in scan_tasks.chunks(max_sources_per_scan_task) {
-            let task =
-                make_source_tasks(&plan, &pushdowns, scan_tasks_chunk.to_vec(), config.clone())?;
+            let task = make_source_tasks(
+                &plan,
+                &pushdowns,
+                scan_tasks_chunk.to_vec(),
+                config.clone(),
+                node_id,
+            )?;
             if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                 break;
             }
@@ -88,6 +94,7 @@ impl DistributedPipelineNode for ScanSourceNode {
             self.pushdowns.clone(),
             self.scan_tasks.clone(),
             result_tx,
+            self.node_id,
         );
         stage_context.joinset.spawn(execution_loop);
 
@@ -100,6 +107,7 @@ fn make_source_tasks(
     pushdowns: &Pushdowns,
     scan_tasks: Vec<ScanTaskLikeRef>,
     config: Arc<DaftExecutionConfig>,
+    node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let transformed_plan = plan
         .clone()
@@ -118,13 +126,20 @@ fn make_source_tasks(
         .data;
 
     let psets = HashMap::new();
-    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    let task = SwordfishTask::new(
+        transformed_plan,
+        config,
+        psets,
+        SchedulingStrategy::Spread,
+        node_id,
+    );
     Ok(SubmittableTask::new(task))
 }
 
 fn make_empty_scan_task(
     plan: &LocalPhysicalPlanRef,
     config: Arc<DaftExecutionConfig>,
+    node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let transformed_plan = plan
         .clone()
@@ -138,6 +153,12 @@ fn make_empty_scan_task(
         .data;
 
     let psets = HashMap::new();
-    let task = SwordfishTask::new(transformed_plan, config, psets, SchedulingStrategy::Spread);
+    let task = SwordfishTask::new(
+        transformed_plan,
+        config,
+        psets,
+        SchedulingStrategy::Spread,
+        node_id,
+    );
     Ok(SubmittableTask::new(task))
 }

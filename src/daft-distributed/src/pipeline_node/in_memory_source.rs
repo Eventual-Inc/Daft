@@ -51,6 +51,7 @@ impl InMemorySourceNode {
         in_memory_info: InMemoryInfo,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        node_id: usize,
     ) -> DaftResult<()> {
         let partition_refs = psets.get(&in_memory_info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
         for partition_ref in partition_refs {
@@ -59,6 +60,7 @@ impl InMemorySourceNode {
                 partition_ref,
                 in_memory_info.cache_key.clone(),
                 config.clone(),
+                node_id,
             )?;
             if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                 break;
@@ -85,6 +87,7 @@ impl DistributedPipelineNode for InMemorySourceNode {
             self.info.clone(),
             self.input_psets.clone(),
             result_tx,
+            self.node_id,
         );
         stage_context.joinset.spawn(execution_loop);
 
@@ -97,6 +100,7 @@ fn make_task_for_partition_ref(
     partition_ref: PartitionRef,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
+    node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let info = InMemoryInfo::new(
         plan.schema().clone(),
@@ -124,6 +128,7 @@ fn make_task_for_partition_ref(
         // TODO: Replace with WorkerAffinity based on the psets location
         // Need to get that from `ray.experimental.get_object_locations(object_refs)`
         SchedulingStrategy::Spread,
+        node_id,
     );
     Ok(SubmittableTask::new(task))
 }

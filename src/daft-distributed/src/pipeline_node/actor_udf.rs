@@ -252,6 +252,7 @@ impl ActorUDF {
                         actors,
                         schema.clone(),
                         &worker_id,
+                        node_id,
                     )?;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
                     running_tasks.spawn(notify_token);
@@ -355,11 +356,13 @@ fn make_actor_udf_task_for_materialized_outputs(
             worker_id,
             soft: false,
         },
+        node_id,
     ));
 
     Ok(task)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn append_actor_udf_to_task(
     submittable_task: SubmittableTask<SwordfishTask>,
     config: Arc<DaftExecutionConfig>,
@@ -368,6 +371,7 @@ fn append_actor_udf_to_task(
     actors: Vec<PyObjectWrapper>,
     schema: SchemaRef,
     worker_id: &WorkerId,
+    node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let task_plan = submittable_task.task().plan();
     let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
@@ -391,6 +395,7 @@ fn append_actor_udf_to_task(
         config,
         psets,
         scheduling_strategy,
+        node_id,
     ));
     Ok(task)
 }

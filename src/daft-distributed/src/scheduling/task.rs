@@ -37,7 +37,7 @@ impl TaskResourceRequest {
 }
 
 pub(crate) type TaskId = Arc<str>;
-pub(crate) type TaskPriority = u32;
+pub(crate) type TaskPriority = usize;
 #[allow(dead_code)]
 pub(crate) trait Task: Send + Sync + Debug + 'static {
     fn priority(&self) -> TaskPriority;
@@ -89,6 +89,7 @@ pub(crate) struct SwordfishTask {
     psets: HashMap<String, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
     notify_token: Option<CancellationToken>,
+    task_priority: TaskPriority,
 }
 
 #[allow(dead_code)]
@@ -98,6 +99,7 @@ impl SwordfishTask {
         config: Arc<DaftExecutionConfig>,
         psets: HashMap<String, Vec<PartitionRef>>,
         strategy: SchedulingStrategy,
+        task_priority: TaskPriority,
     ) -> Self {
         let task_id = Uuid::new_v4().to_string();
         let resource_request = TaskResourceRequest::new(plan.resource_request());
@@ -109,6 +111,7 @@ impl SwordfishTask {
             psets,
             strategy,
             notify_token: None,
+            task_priority,
         }
     }
 
@@ -140,6 +143,10 @@ impl SwordfishTask {
     pub fn notify_token(&self) -> Option<CancellationToken> {
         self.notify_token.clone()
     }
+
+    pub fn task_priority(&self) -> TaskPriority {
+        self.task_priority
+    }
 }
 
 impl Task for SwordfishTask {
@@ -156,8 +163,7 @@ impl Task for SwordfishTask {
     }
 
     fn priority(&self) -> TaskPriority {
-        // Default priority for now, could be enhanced later
-        0
+        self.task_priority
     }
 }
 
@@ -265,7 +271,7 @@ pub(super) mod tests {
     #[derive(Debug)]
     pub struct MockTask {
         task_id: TaskId,
-        priority: u32,
+        priority: TaskPriority,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
         task_result: Vec<MaterializedOutput>,
@@ -283,7 +289,7 @@ pub(super) mod tests {
     /// A builder pattern implementation for creating MockTask instances
     pub struct MockTaskBuilder {
         task_id: TaskId,
-        priority: u32,
+        priority: TaskPriority,
         scheduling_strategy: SchedulingStrategy,
         task_result: Vec<MaterializedOutput>,
         resource_request: TaskResourceRequest,
@@ -313,7 +319,7 @@ pub(super) mod tests {
             }
         }
 
-        pub fn with_priority(mut self, priority: u32) -> Self {
+        pub fn with_priority(mut self, priority: TaskPriority) -> Self {
             self.priority = priority;
             self
         }
@@ -367,7 +373,7 @@ pub(super) mod tests {
     }
 
     impl Task for MockTask {
-        fn priority(&self) -> u32 {
+        fn priority(&self) -> TaskPriority {
             self.priority
         }
 

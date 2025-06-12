@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskId},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskId, TaskPriority},
     worker::{Worker, WorkerId},
 };
 use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
@@ -50,8 +50,7 @@ impl<T: Task> SchedulableTask<T> {
         self.task.strategy()
     }
 
-    #[allow(dead_code)]
-    pub fn priority(&self) -> u32 {
+    pub fn priority(&self) -> TaskPriority {
         self.task.priority()
     }
 

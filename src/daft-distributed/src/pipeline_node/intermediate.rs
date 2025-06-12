@@ -63,6 +63,7 @@ impl IntermediateNode {
                         materialized_output,
                         node_id.to_string(),
                         config.clone(),
+                        node_id,
                     )?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
@@ -70,7 +71,7 @@ impl IntermediateNode {
                 }
                 PipelineOutput::Task(task) => {
                     // append plan to this task
-                    let task = append_plan_to_task(task, config.clone(), plan.clone())?;
+                    let task = append_plan_to_task(task, config.clone(), plan.clone(), node_id)?;
                     if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                         break;
                     }
@@ -116,6 +117,7 @@ fn make_task_for_materialized_output(
     materialized_output: MaterializedOutput,
     cache_key: String,
     config: Arc<DaftExecutionConfig>,
+    node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let (partition_ref, worker_id) = materialized_output.into_inner();
 
@@ -146,6 +148,7 @@ fn make_task_for_materialized_output(
             worker_id,
             soft: false,
         },
+        node_id,
     );
     Ok(SubmittableTask::new(task))
 }
@@ -154,6 +157,7 @@ fn append_plan_to_task(
     submittable_task: SubmittableTask<SwordfishTask>,
     config: Arc<DaftExecutionConfig>,
     plan: LocalPhysicalPlanRef,
+    node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let transformed_plan = plan
         .transform_up(|p| match p.as_ref() {
@@ -170,6 +174,7 @@ fn append_plan_to_task(
         config,
         psets,
         scheduling_strategy,
+        node_id,
     ));
     Ok(task)
 }
