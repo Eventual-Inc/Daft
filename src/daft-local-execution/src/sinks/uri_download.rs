@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::{
-    prelude::{AsArrow, BinaryArray, SchemaRef, UInt64Array},
+    prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef, UInt64Array},
     series::IntoSeries,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -30,6 +30,7 @@ struct UriDownloadSinkState {
     io_client: Arc<IOClient>,
     submitted_downloads: usize,
 
+    input_schema: SchemaRef,
     max_in_flight: usize,
     uri_col: BoundExpr,
     raise_error_on_failure: bool,
@@ -65,7 +66,8 @@ impl UriDownloadSinkState {
 
         Self {
             in_flight_uploads: JoinSet::new(),
-            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema))),
+            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
+            input_schema,
 
             io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
             submitted_downloads: 0,
@@ -75,6 +77,10 @@ impl UriDownloadSinkState {
             raise_error_on_failure,
             output_column,
         }
+    }
+
+    pub fn get_in_flight(&self) -> usize {
+        self.in_flight_uploads.len()
     }
 
     fn download(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
@@ -116,6 +122,13 @@ impl UriDownloadSinkState {
         completed_downloads: Vec<u64>,
         completed_contents: Vec<Option<Bytes>>,
     ) -> DaftResult<RecordBatch> {
+        if completed_downloads.is_empty() {
+            let mut schema = self.input_schema.as_ref().clone();
+            schema.append(Field::new(self.output_column.as_str(), DataType::Binary));
+
+            return RecordBatch::empty(Some(Arc::new(schema)));
+        }
+
         let idxs = UInt64Array::from(("idxs", completed_downloads)).into_series();
         let original_rows = &self.all_inputs.take(&idxs)?.get_tables()?[0];
 
@@ -240,9 +253,17 @@ impl StreamingSink for UriDownloadSink {
                     let output = url_state.poll_finished().await?;
 
                     let schema = output.schema.clone();
-                    let output = MicroPartition::new_loaded(schema, Arc::new(vec![output]), None);
+                    let output = Arc::new(MicroPartition::new_loaded(
+                        schema,
+                        Arc::new(vec![output]),
+                        None,
+                    ));
 
-                    Ok((state, StreamingSinkOutput::HasMoreOutput(Arc::new(output))))
+                    if url_state.get_in_flight() <= url_state.max_in_flight {
+                        Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
+                    } else {
+                        Ok((state, StreamingSinkOutput::HasMoreOutput(output)))
+                    }
                 },
                 Span::current(),
             )
