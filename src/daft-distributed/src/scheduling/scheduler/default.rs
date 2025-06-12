@@ -1,4 +1,7 @@
-use std::collections::{BinaryHeap, HashMap};
+use std::{
+    collections::{BinaryHeap, HashMap},
+    sync::Arc,
+};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
@@ -32,8 +35,10 @@ impl<T: Task> DefaultScheduler<T> {
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
         self.worker_snapshots
             .iter()
-            .filter(|(_, worker)| worker.available_num_cpus() >= task.resource_request().num_cpus())
-            .max_by_key(|(_, worker)| worker.available_num_cpus())
+            .filter(|(_, worker)| worker.can_schedule_task(task))
+            .max_by_key(|(_, worker)| {
+                (worker.available_num_cpus() + worker.available_num_gpus()) as usize
+            })
             .map(|(id, _)| id.clone())
     }
 
@@ -46,7 +51,7 @@ impl<T: Task> DefaultScheduler<T> {
         soft: bool,
     ) -> Option<WorkerId> {
         if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.available_num_cpus() >= task.resource_request().num_cpus() {
+            if worker.can_schedule_task(task) {
                 return Some(worker.worker_id.clone());
             }
         }
@@ -86,7 +91,10 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
                     .get_mut(&worker_id)
                     .expect("Worker should be present in DefaultScheduler")
                     .active_task_details
-                    .insert(task.task_id().clone(), TaskDetails::from(&task.task));
+                    .insert(
+                        Arc::from(task.task_id().to_string()),
+                        TaskDetails::from(&task.task),
+                    );
                 scheduled.push(ScheduledTask { task, worker_id });
             } else {
                 unscheduled.push(task);
@@ -129,6 +137,7 @@ mod tests {
         tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
     };
+
     #[test]
     fn test_default_scheduler_spread_scheduling_homogeneous_workers() {
         let worker_1: WorkerId = Arc::from("worker1");
@@ -197,7 +206,7 @@ mod tests {
         scheduler.enqueue_tasks(initial_tasks);
         let result = scheduler.get_schedulable_tasks();
 
-        // All tasks should be scheduled because there is enough capacity
+        // All tasks should be scheduled because there are 3 workers available (1 task per worker)
         assert_eq!(result.len(), 3);
         assert_eq!(scheduler.num_pending_tasks(), 0);
 
@@ -209,10 +218,10 @@ mod tests {
                 .or_insert(0) += 1;
         }
 
-        // Verify distribution - worker3 should have 2 tasks (most slots), worker2 should have 1 task, worker1 should have 0 tasks
-        assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 2);
+        // Verify distribution - each worker should have exactly 1 task (1 task per worker limit)
+        assert_eq!(*worker_task_counts.get(&worker_1).unwrap(), 1);
         assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
-        assert!(worker_task_counts.get(&worker_1).is_none());
+        assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 1);
     }
 
     #[test]
@@ -247,27 +256,6 @@ mod tests {
             {
                 assert_eq!(scheduled_task.worker_id, *worker_id);
             }
-        }
-
-        // Create tasks again, now the worker snapshots are:
-        // worker1: 0 slots available
-        // worker2: 0 slots available
-        // worker3: 2 slots available
-        // Regardless of which worker the task is affinity to, it should go to worker 3
-        let tasks = vec![
-            create_worker_affinity_task(&worker_1, true),
-            create_worker_affinity_task(&worker_2, true),
-            create_worker_affinity_task(&worker_3, true),
-        ];
-
-        scheduler.enqueue_tasks(tasks);
-        let result = scheduler.get_schedulable_tasks();
-
-        // Only 2 tasks should be scheduled, because worker 3 has 2 slots available
-        assert_eq!(result.len(), 2);
-        assert_eq!(scheduler.num_pending_tasks(), 1);
-        for scheduled_task in &result {
-            assert_eq!(scheduled_task.worker_id, worker_3);
         }
     }
 
@@ -310,26 +298,17 @@ mod tests {
 
         // Create tasks again
         let tasks = vec![
-            create_worker_affinity_task(&worker_1, false), // should not be scheduled
-            create_worker_affinity_task(&worker_2, false),
-            create_worker_affinity_task(&worker_3, false),
+            create_worker_affinity_task(&worker_1, false), // should not be scheduled (worker busy)
+            create_worker_affinity_task(&worker_2, false), // should not be scheduled (worker busy)
+            create_worker_affinity_task(&worker_3, false), // should not be scheduled (worker busy)
         ];
 
         scheduler.enqueue_tasks(tasks);
         let scheduled_tasks = scheduler.get_schedulable_tasks();
 
-        // worker 1 should not be available, worker 2 should have 1 slot available, worker 3 should have 2 slots available
-        assert_eq!(scheduled_tasks.len(), 2);
-        assert_eq!(scheduler.num_pending_tasks(), 1);
-        for scheduled_task in &scheduled_tasks {
-            if let SchedulingStrategy::WorkerAffinity { worker_id, .. } =
-                &scheduled_task.task.strategy()
-            {
-                assert_eq!(scheduled_task.worker_id, *worker_id);
-            } else {
-                panic!("Task should have worker affinity strategy");
-            }
-        }
+        // No tasks should be scheduled because all workers are already busy (1 task per worker limit)
+        assert_eq!(scheduled_tasks.len(), 0);
+        assert_eq!(scheduler.num_pending_tasks(), 3);
     }
 
     #[test]
@@ -368,7 +347,7 @@ mod tests {
 
         // Update scheduler state to add a new worker with 1 slot available
         let worker_3: WorkerId = Arc::from("worker3");
-        let new_worker = MockWorker::new(worker_3.clone(), 1);
+        let new_worker = MockWorker::new(worker_3.clone(), 1.0, 0.0);
         let new_worker_snapshot = WorkerSnapshot::from(&new_worker);
         scheduler.update_worker_state(&[new_worker_snapshot]);
 
@@ -519,5 +498,45 @@ mod tests {
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);
+    }
+
+    #[test]
+    fn test_scheduling_with_more_tasks_than_workers() {
+        let worker_1: WorkerId = Arc::from("worker1");
+        let worker_2: WorkerId = Arc::from("worker2");
+
+        let workers = setup_workers(&[
+            (worker_1.clone(), 1), // 1 slot available
+            (worker_2.clone(), 1), // 1 slot available
+        ]);
+
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
+
+        // Create 5 tasks with Spread strategy - more than available workers
+        let tasks = vec![
+            create_spread_task(),
+            create_spread_task(),
+            create_spread_task(),
+            create_spread_task(),
+            create_spread_task(),
+        ];
+
+        scheduler.enqueue_tasks(tasks);
+        let result = scheduler.get_schedulable_tasks();
+
+        // Only 2 tasks should be scheduled (1 per worker)
+        assert_eq!(result.len(), 2);
+        assert_eq!(scheduler.num_pending_tasks(), 3);
+
+        // Count tasks per worker - each should have exactly 1
+        let mut worker_task_counts: HashMap<&WorkerId, usize> = HashMap::new();
+        for scheduled_task in &result {
+            *worker_task_counts
+                .entry(&scheduled_task.worker_id)
+                .or_insert(0) += 1;
+        }
+
+        assert_eq!(*worker_task_counts.get(&worker_1).unwrap(), 1);
+        assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
     }
 }

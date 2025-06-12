@@ -57,6 +57,11 @@ impl SparkFunctions {
         self.map.insert(name.to_string(), Arc::new(func));
     }
 
+    pub fn add_todo_fn(&mut self, name: &'static str) {
+        self.map
+            .insert(name.to_string(), Arc::new(TodoFunction(name)));
+    }
+
     /// Get a function by name from the [SparkFunctions] instance.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&Arc<dyn SparkFunction>> {
@@ -112,11 +117,10 @@ impl SparkFunction for BinaryFunction {
     }
 }
 
-#[allow(non_camel_case_types)]
-struct TODO_FUNCTION;
+struct TodoFunction(&'static str);
 
-impl SparkFunction for TODO_FUNCTION {
+impl SparkFunction for TodoFunction {
     fn to_expr(&self, _args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
-        invalid_argument_err!("Function not implemented")
+        invalid_argument_err!("Function '{}' not implemented", self.0)
     }
 }

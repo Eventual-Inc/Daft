@@ -17,6 +17,7 @@ use crate::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
         MaterializedOutput, PipelineOutput, RunningPipelineNode,
     },
+    plan::PlanID,
     scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
@@ -24,7 +25,20 @@ use crate::{
 mod stage_builder;
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
-struct StageID(usize);
+pub struct StageID(usize);
+
+impl std::fmt::Display for StageID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[allow(dead_code)]
+impl StageID {
+    pub fn new(id: usize) -> Self {
+        Self(id)
+    }
+}
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct ChannelID(usize);
@@ -76,6 +90,7 @@ pub(crate) struct Stage {
 impl Stage {
     pub(crate) fn run_stage(
         &self,
+        plan_id: PlanID,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
@@ -83,10 +98,15 @@ impl Stage {
         let mut stage_context = StageContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let mut pipeline_node =
-                    logical_plan_to_pipeline_node(plan.clone(), config, Arc::new(psets))?;
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Arc::new(psets),
+                )?;
                 let running_node = pipeline_node.start(&mut stage_context);
-                Ok(RunningStage::new(running_node, stage_context.joinset))
+                Ok(RunningStage::new(running_node, stage_context))
             }
             _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
         }
@@ -95,14 +115,14 @@ impl Stage {
 
 pub(crate) struct RunningStage {
     running_pipeline_node: RunningPipelineNode,
-    joinset: JoinSet<DaftResult<()>>,
+    stage_context: StageContext,
 }
 
 impl RunningStage {
-    fn new(running_pipeline_node: RunningPipelineNode, joinset: JoinSet<DaftResult<()>>) -> Self {
+    fn new(running_pipeline_node: RunningPipelineNode, stage_context: StageContext) -> Self {
         Self {
             running_pipeline_node,
-            joinset,
+            stage_context,
         }
     }
 
@@ -118,7 +138,10 @@ impl RunningStage {
         self,
     ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
     {
-        JoinableForwardingStream::new(self.running_pipeline_node.into_stream(), self.joinset)
+        JoinableForwardingStream::new(
+            self.running_pipeline_node.into_stream(),
+            self.stage_context.joinset,
+        )
     }
 }
 

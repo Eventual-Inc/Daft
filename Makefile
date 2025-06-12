@@ -23,7 +23,7 @@ endif
 
 .venv:  ## Set up virtual environment
 ifeq (, $(shell which uv))
-	python3 -m venv $(VENV)
+	$(PYTHON_VERSION) -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 else
 	uv venv $(VENV) -p $(PYTHON_VERSION)
@@ -86,3 +86,4 @@ docs-serve: .venv ## Build Daft documentation in development server
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
+	rm -rf ./target
