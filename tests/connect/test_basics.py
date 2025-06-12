@@ -414,6 +414,12 @@ def test_explain(spark_session, capsys):
     assert actual.out == expected
 
 
+def test_when(spark_session):
+    df = spark_session.createDataFrame([(1), (None), (10)], ["a"])
+    result = df.select(F.when(col("a").isNull(), True)).collect()
+    assert result == [Row(a=None), Row(a=True), Row(a=None)]
+
+
 def test_when_otherwise(spark_session):
     df = spark_session.createDataFrame([(1), (None), (10)], ["a"])
 

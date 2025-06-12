@@ -8,7 +8,7 @@ use spark_connect::Expression;
 use super::{BinaryFunction, FunctionModule, SparkFunction, UnaryFunction};
 use crate::{
     error::{ConnectError, ConnectResult},
-    invalid_argument_err,
+    invalid_argument_err, not_yet_implemented,
     spark_analyzer::expr_analyzer::analyze_expr,
 };
 
@@ -73,14 +73,25 @@ impl SparkFunction for WhenFunction {
             .collect::<ConnectResult<Vec<_>>>()?;
 
         let predicate = args[0].clone();
-        let if_false = args[1].clone();
-        let if_true = args.get(2).cloned().unwrap_or_else(null_lit);
+
+        let (if_true, if_false) = match args.len() {
+            // when(predicate, then)
+            2 => (args[1].clone(), null_lit()),
+            // when(predicate, then).otherwise(fallback)
+            3 => (args[2].clone(), args[1].clone()),
+
+            // when(predicate, then)($.when(<predicate>, <then>)*)
+            _ => {
+                not_yet_implemented!("multiple .when conditions not yet supported")
+            }
+        };
 
         Ok(Arc::new(daft_dsl::Expr::IfElse {
             if_true,
             if_false,
             predicate,
-        }))
+        })
+        .alias(args[0].name()))
     }
 }
 
