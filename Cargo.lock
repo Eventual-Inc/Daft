@@ -2982,6 +2982,7 @@ dependencies = [
  "arrow-schema",
  "arrow2",
  "async-trait",
+ "bytes",
  "common-daft-config",
  "common-error",
  "common-file-formats",
