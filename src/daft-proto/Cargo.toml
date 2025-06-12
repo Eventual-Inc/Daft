@@ -1,0 +1,27 @@
+[[bin]]
+name = "echo"
+path = "src/server.rs"
+
+[build-dependencies]
+tonic-build = {workspace = true}
+walkdir = "2.5.0"
+
+[dependencies]
+prost = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+tokio = {workspace = true, features = ["macros"]}
+tonic = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3"
+]
+
+[lib]
+name = "daft_proto"
+path = "src/lib.rs"
+
+[package]
+edition = {workspace = true}
+name = "daft-proto"
+version = {workspace = true}
