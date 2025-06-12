@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::{get_io_runtime, RuntimeRef};
+// use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
     prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef, UInt64Array},
     series::IntoSeries,
@@ -33,8 +33,7 @@ struct UriDownloadSinkState {
     all_inputs: Arc<MicroPartition>,
     io_client: Arc<IOClient>,
     submitted_downloads: usize,
-    io_runtime_handle: RuntimeRef,
-
+    // io_runtime_handle: RuntimeRef,
     input_schema: SchemaRef,
     max_in_flight: usize,
     uri_col: BoundExpr,
@@ -73,8 +72,7 @@ impl UriDownloadSinkState {
             in_flight_downloads: JoinSet::new(),
             all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
             input_schema,
-            io_runtime_handle: get_io_runtime(true),
-
+            // io_runtime_handle: get_io_runtime(true),
             io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
             submitted_downloads: 0,
 
@@ -106,7 +104,7 @@ impl UriDownloadSinkState {
                 let uri_val = uri_val.map(ToString::to_string);
                 let io_client = self.io_client.clone();
 
-                let handle = self.io_runtime_handle.spawn(async move {
+                self.in_flight_downloads.spawn(async move {
                     let contents = io_client
                         .single_url_download(
                             submitted_downloads,
@@ -115,11 +113,23 @@ impl UriDownloadSinkState {
                             None,
                         )
                         .await?;
-
                     Ok((submitted_downloads, contents))
                 });
 
-                self.in_flight_downloads.spawn(async move { handle.await? });
+                // let handle = self.io_runtime_handle.spawn(async move {
+                //     let contents = io_client
+                //         .single_url_download(
+                //             submitted_downloads,
+                //             uri_val,
+                //             raise_error_on_failure,
+                //             None,
+                //         )
+                //         .await?;
+
+                //     Ok((submitted_downloads, contents))
+                // });
+
+                // self.in_flight_downloads.spawn(async move { handle.await? });
 
                 self.submitted_downloads += 1;
             }
@@ -190,7 +200,7 @@ impl UriDownloadSinkState {
         // Wait for downloads to complete until we are under the active limit
         while completed_idxs.len() < exp_capacity {
             let Some(result) = self.in_flight_downloads.join_next().await else {
-                unreachable!("There should always be at least one upload in flight");
+                unreachable!("There should always be at least one download in flight");
             };
 
             let (idx, contents) = result.unwrap().unwrap();

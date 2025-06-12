@@ -426,7 +426,8 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
 
-            let url_upload_op = UriUploadSink::new(args.clone(), output_column.clone());
+            let url_upload_op =
+                UriUploadSink::new(args.clone(), output_column.clone(), input.schema().clone());
             StreamingSinkNode::new(
                 Arc::new(url_upload_op),
                 vec![child_node],

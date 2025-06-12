@@ -3,12 +3,14 @@ use std::{any::TypeId, collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{functions::ScalarFunction, resolved_col, Expr, ExprRef};
-use daft_functions_uri::{download::UrlDownload, UrlDownloadArgs};
+use daft_functions_uri::{
+    download::UrlDownload, upload::UrlUpload, UrlDownloadArgs, UrlUploadArgs,
+};
 use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Project, UrlDownload as UrlDownloadOp},
+    ops::{Project, UrlDownload as UrlDownloadOp, UrlUpload as UrlUploadOp},
     LogicalPlan,
 };
 
@@ -46,7 +48,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>() || udf.as_ref().type_id() == TypeId::of::<UrlUpload>()
         )
     }
 
@@ -124,7 +126,28 @@ impl SplitGranularProjection {
                             let child_name = format!("id-{}", uuid::Uuid::new_v4());
 
                             let args: UrlDownloadArgs<ExprRef> = inputs.clone().try_into()?;
-                            split_exprs.push(either::Either::Right((child_name.clone(), args)));
+                            split_exprs.push(either::Either::Right((
+                                child_name.clone(),
+                                either::Either::Left(args),
+                            )));
+
+                            new_children[idx] = resolved_col(child_name);
+                        } else if let Expr::ScalarFunction(ScalarFunction { udf, inputs }) =
+                            child.as_ref()
+                            && udf.as_ref().type_id() == TypeId::of::<UrlUpload>()
+                        {
+                            changed = true;
+
+                            // Split and save child expression
+                            // Child may not have an alias, so we need to generate a new one
+                            // TODO: Remove with ordinals
+                            let child_name = format!("id-{}", uuid::Uuid::new_v4());
+
+                            let args: UrlUploadArgs<ExprRef> = inputs.clone().try_into()?;
+                            split_exprs.push(either::Either::Right((
+                                child_name.clone(),
+                                either::Either::Right(args),
+                            )));
 
                             new_children[idx] = resolved_col(child_name);
                         }
@@ -194,9 +217,18 @@ impl SplitGranularProjection {
                         out_names.insert(name.clone());
                         out_exprs.push(resolved_col(name.clone()));
                         // eprintln!("args: {:?}, name: {}", args, name);
-                        last_child = Arc::new(LogicalPlan::UrlDownload(UrlDownloadOp::new(
-                            last_child, args, name,
-                        )));
+                        match args {
+                            either::Either::Left(args) => {
+                                last_child = Arc::new(LogicalPlan::UrlDownload(
+                                    UrlDownloadOp::new(last_child, args, name),
+                                ));
+                            }
+                            either::Either::Right(args) => {
+                                last_child = Arc::new(LogicalPlan::UrlUpload(UrlUploadOp::new(
+                                    last_child, args, name,
+                                )));
+                            }
+                        }
                         // eprintln!("last_child schema: {}", last_child.schema());
                     }
                 }

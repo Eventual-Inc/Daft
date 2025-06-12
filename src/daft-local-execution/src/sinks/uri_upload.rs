@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::{
-    prelude::{AsArrow, UInt64Array, Utf8Array},
+    prelude::{AsArrow, DataType, Field, SchemaRef, UInt64Array, Utf8Array},
     series::IntoSeries,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -31,7 +30,8 @@ struct UriUploadSinkState {
     io_client: Arc<IOClient>,
     submitted_uploads: usize,
 
-    max_in_flight: usize,
+    input_schema: SchemaRef,
+    // max_in_flight: usize,
     data_col: BoundExpr,
     location_col: BoundExpr,
     _is_single_folder: bool,
@@ -40,20 +40,21 @@ struct UriUploadSinkState {
 }
 
 impl UriUploadSinkState {
-    fn new(args: UrlUploadArgs<BoundExpr>, output_column: String) -> Self {
+    fn new(args: UrlUploadArgs<BoundExpr>, output_column: String, input_schema: SchemaRef) -> Self {
         let UrlUploadArgs {
             input,
             on_error,
             io_config,
             multi_thread,
-            max_connections,
+            // max_connections,
             location,
             is_single_folder,
+            ..
         } = args;
 
         let multi_thread = multi_thread.unwrap_or(true);
         let io_config = io_config.unwrap_or_default();
-        let max_connections = max_connections.unwrap_or(32);
+        // let max_connections = max_connections.unwrap_or(32);
         let _is_single_folder = is_single_folder.unwrap_or(false);
 
         let on_error = on_error.unwrap_or_else(|| "raise".to_string());
@@ -70,8 +71,9 @@ impl UriUploadSinkState {
             all_inputs: Arc::new(MicroPartition::empty(None)),
             io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
             submitted_uploads: 0,
+            input_schema,
 
-            max_in_flight: max_connections * 4,
+            // max_in_flight: max_connections * 4,
             data_col: input,
             location_col: location,
             _is_single_folder,
@@ -127,6 +129,13 @@ impl UriUploadSinkState {
         completed_uploads: Vec<u64>,
         completed_urls: Vec<Option<String>>,
     ) -> DaftResult<RecordBatch> {
+        if completed_uploads.is_empty() {
+            let mut schema = self.input_schema.as_ref().clone();
+            schema.append(Field::new(self.output_column.as_str(), DataType::Utf8));
+
+            return RecordBatch::empty(Some(Arc::new(schema)));
+        }
+
         let idxs = UInt64Array::from(("idxs", completed_uploads)).into_series();
         let original_rows = &self.all_inputs.take(&idxs)?.get_tables()?[0];
 
@@ -154,35 +163,31 @@ impl UriUploadSinkState {
         Ok(original_rows.with_column(self.output_column.as_str(), contents))
     }
 
-    async fn poll_finished(&mut self) -> DaftResult<RecordBatch> {
-        let exp_capacity = if self.in_flight_uploads.len() > self.max_in_flight {
-            self.in_flight_uploads.len() - self.max_in_flight
-        } else {
-            0
-        };
+    async fn poll_finished(&mut self, finished: bool) -> DaftResult<RecordBatch> {
+        let exp_capacity = if finished { 32 } else { 0 };
 
-        let mut completed_uploads = Vec::with_capacity(exp_capacity);
+        let mut completed_idxs = Vec::with_capacity(exp_capacity);
         let mut completed_urls = Vec::with_capacity(exp_capacity);
 
         // Wait for uploads to complete until we are under the active limit
-        while self.in_flight_uploads.len() > self.max_in_flight {
+        while completed_idxs.len() < exp_capacity {
             let Some(result) = self.in_flight_uploads.join_next().await else {
                 unreachable!("There should always be at least one upload in flight");
             };
 
             let (idx, contents) = result.unwrap().unwrap();
-            completed_uploads.push(idx as u64);
+            completed_idxs.push(idx as u64);
             completed_urls.push(contents);
         }
 
         // If any additional uploads are completed, pop them off the join set
         while let Some(result) = self.in_flight_uploads.try_join_next() {
             let (idx, contents) = result.unwrap().unwrap();
-            completed_uploads.push(idx as u64);
+            completed_idxs.push(idx as u64);
             completed_urls.push(contents);
         }
 
-        self.build_output(completed_uploads, completed_urls)
+        self.build_output(completed_idxs, completed_urls)
     }
 }
 
@@ -195,13 +200,19 @@ impl StreamingSinkState for UriUploadSinkState {
 pub struct UriUploadSink {
     args: UrlUploadArgs<BoundExpr>,
     output_column: String,
+    input_schema: SchemaRef,
 }
 
 impl UriUploadSink {
-    pub fn new(args: UrlUploadArgs<BoundExpr>, output_column: String) -> Self {
+    pub fn new(
+        args: UrlUploadArgs<BoundExpr>,
+        output_column: String,
+        input_schema: SchemaRef,
+    ) -> Self {
         Self {
             args,
             output_column,
+            input_schema,
         }
     }
 }
@@ -223,7 +234,7 @@ impl StreamingSink for UriUploadSink {
                         .expect("UriUpload sink should have UriUploadSinkState");
 
                     url_state.upload(input)?;
-                    let output = url_state.poll_finished().await?;
+                    let output = url_state.poll_finished(false).await?;
 
                     let schema = output.schema.clone();
                     let output = MicroPartition::new_loaded(schema, Arc::new(vec![output]), None);
@@ -259,7 +270,7 @@ impl StreamingSink for UriUploadSink {
                         .downcast_mut::<UriUploadSinkState>()
                         .expect("UriUpload sink should have UriUploadSinkState");
 
-                    let output = state.poll_finished().await?;
+                    let output = state.poll_finished(true).await?;
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
                         schema,
@@ -292,18 +303,23 @@ impl StreamingSink for UriUploadSink {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!("UriUpload")]
+        vec![
+            "URL Upload".to_string(),
+            format!("Input DataColumn: {}", self.args.input),
+            format!("Output DataColumn: {}", self.output_column),
+        ]
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
         Box::new(UriUploadSinkState::new(
             self.args.clone(),
             self.output_column.clone(),
+            self.input_schema.clone(),
         ))
     }
 
     fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
+        1
     }
 
     fn dispatch_spawner(
