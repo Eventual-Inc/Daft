@@ -76,8 +76,11 @@ impl LimitNode {
                 }
                 Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
                 Ordering::Greater => {
-                    let task_with_limit =
-                        self.make_task_with_limit(materialized_output, context.clone())?;
+                    let task_with_limit = self.make_task_with_limit(
+                        materialized_output,
+                        context.clone(),
+                        remaining_limit,
+                    )?;
                     let task_result_handle = task_with_limit.submit(&scheduler_handle).await?;
                     (PipelineOutput::Running(task_result_handle), true)
                 }
@@ -96,6 +99,7 @@ impl LimitNode {
         &self,
         materialized_output: MaterializedOutput,
         context: HashMap<String, String>,
+        limit: usize,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
         let (partition, worker_id) = materialized_output.into_inner();
         let in_memory_info = InMemoryInfo::new(
@@ -112,11 +116,8 @@ impl LimitNode {
         let in_memory_source =
             LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
 
-        let limit_plan = LocalPhysicalPlan::limit(
-            in_memory_source,
-            self.limit as i64,
-            StatsState::NotMaterialized,
-        );
+        let limit_plan =
+            LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
 
         let mpset = HashMap::from([(self.node_id.to_string(), vec![partition])]);
 

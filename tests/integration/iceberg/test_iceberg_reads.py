@@ -49,6 +49,26 @@ WORKING_SHOW_COLLECT = [
     # "test_evolve_partitioning",
 ]
 
+SORT_KEYS = {
+    "test_limit": [],
+    "test_null_nan": [],
+    "test_null_nan_rewritten": [],
+    "test_partitioned_by_bucket": ["number"],
+    "test_partitioned_by_days": ["number"],
+    "test_partitioned_by_hours": ["number"],
+    "test_partitioned_by_identity": ["number"],
+    "test_partitioned_by_months": ["number"],
+    "test_partitioned_by_truncate": ["number"],
+    "test_partitioned_by_years": ["number"],
+    "test_positional_mor_deletes": ["number"],
+    "test_positional_mor_double_deletes": ["number"],
+    "test_table_version": [],
+    "test_uuid_and_fixed_unpartitioned": ["fixed_col"],
+    "test_add_new_column": ["idx"],
+    "test_new_column_with_no_data": [],
+    "test_table_rename": [],
+}
+
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("table_name", WORKING_SHOW_COLLECT)
@@ -59,15 +79,17 @@ def test_daft_iceberg_table_show(table_name, local_iceberg_catalog):
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("table_name", WORKING_SHOW_COLLECT)
-def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
+@pytest.mark.parametrize(
+    "table_name, sort_key", [(table_name, SORT_KEYS[table_name]) for table_name in WORKING_SHOW_COLLECT]
+)
+def test_daft_iceberg_table_collect_correct(table_name, sort_key, local_iceberg_catalog):
     catalog_name, pyiceberg_catalog = local_iceberg_catalog
     tab = pyiceberg_catalog.load_table(f"default.{table_name}")
     df = daft.read_table(f"{catalog_name}.default.{table_name}")
     df.collect()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=sort_key)
 
 
 @pytest.mark.integration()
@@ -103,7 +125,7 @@ def test_daft_iceberg_table_read_partition_column_identity(local_iceberg_catalog
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[["ts", "number"]]
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["ts", "number"])
 
 
 @pytest.mark.integration()
@@ -116,7 +138,7 @@ def test_daft_iceberg_table_read_partition_column_identity_filter(local_iceberg_
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[iceberg_pandas["number"] > 0][["ts"]]
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["ts"])
 
 
 @pytest.mark.skip(
@@ -161,7 +183,7 @@ def test_daft_iceberg_table_read_partition_column_transformed(local_iceberg_cata
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[["number"]]
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["number"])
 
 
 @pytest.mark.integration()
