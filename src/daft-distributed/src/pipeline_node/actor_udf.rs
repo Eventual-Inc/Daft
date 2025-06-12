@@ -58,15 +58,16 @@ impl UDFActors {
         };
 
         let actors = Python::with_gil(|py| {
-            let flotilla_module = py.import("daft.runners.flotilla")?;
+            let ray_actor_pool_udf_module =
+                py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
             let py_exprs = projection
                 .iter()
                 .map(|e| PyExpr {
                     expr: e.inner().clone(),
                 })
                 .collect::<Vec<_>>();
-            let actors = flotilla_module.call_method1(
-                "start_udf_actors",
+            let actors = ray_actor_pool_udf_module.call_method1(
+                pyo3::intern!(py, "start_udf_actors"),
                 (
                     py_exprs,
                     num_actors,
