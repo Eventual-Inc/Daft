@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
     prelude::{AsArrow, BinaryArray, DataType, Field, SchemaRef, UInt64Array},
     series::IntoSeries,
@@ -32,6 +33,7 @@ struct UriDownloadSinkState {
     all_inputs: Arc<MicroPartition>,
     io_client: Arc<IOClient>,
     submitted_downloads: usize,
+    io_runtime_handle: RuntimeRef,
 
     input_schema: SchemaRef,
     max_in_flight: usize,
@@ -71,6 +73,7 @@ impl UriDownloadSinkState {
             in_flight_downloads: JoinSet::new(),
             all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
             input_schema,
+            io_runtime_handle: get_io_runtime(true),
 
             io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
             submitted_downloads: 0,
@@ -103,7 +106,7 @@ impl UriDownloadSinkState {
                 let uri_val = uri_val.map(ToString::to_string);
                 let io_client = self.io_client.clone();
 
-                self.in_flight_downloads.spawn(async move {
+                let handle = self.io_runtime_handle.spawn(async move {
                     let contents = io_client
                         .single_url_download(
                             submitted_downloads,
@@ -115,6 +118,8 @@ impl UriDownloadSinkState {
 
                     Ok((submitted_downloads, contents))
                 });
+
+                self.in_flight_downloads.spawn(async move { handle.await? });
 
                 self.submitted_downloads += 1;
             }
