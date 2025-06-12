@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -99,9 +100,37 @@ impl IntermediateNode {
     }
 }
 
+impl TreeDisplay for IntermediateNode {
+    fn display_as(&self, _level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        writeln!(
+            display,
+            "Local Physical Plan: {}",
+            self.plan.single_line_display()
+        )
+        .unwrap();
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children
+            .iter()
+            .map(|child| child.as_tree_display())
+            .collect()
+    }
+
+    fn get_name(&self) -> String {
+        self.name().to_string()
+    }
+}
+
 impl DistributedPipelineNode for IntermediateNode {
     fn name(&self) -> &'static str {
-        "Intermediate"
+        "DistributedIntermediateNode"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
@@ -156,6 +185,10 @@ impl DistributedPipelineNode for IntermediateNode {
 
     fn node_id(&self) -> &NodeID {
         &self.node_id
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{cmp::max, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 #[cfg(feature = "python")]
@@ -786,6 +786,22 @@ impl LocalPhysicalPlan {
                 _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
             },
             _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
+        }
+    }
+
+    pub fn single_line_display(&self) -> String {
+        let children = self.children();
+        if children.is_empty() {
+            self.name().to_string()
+        } else if children.len() == 1 {
+            format!("{}->{}", children[0].single_line_display(), self.name())
+        } else {
+            // For multiple children, show them in parentheses
+            let child_names: Vec<String> = children
+                .iter()
+                .map(|child| child.single_line_display())
+                .collect();
+            format!("({})->{}", child_names.join(", "), self.name())
         }
     }
 }

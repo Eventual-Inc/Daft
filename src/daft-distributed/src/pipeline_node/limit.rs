@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
@@ -136,9 +137,29 @@ impl LimitNode {
     }
 }
 
+impl TreeDisplay for LimitNode {
+    fn display_as(&self, _level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        writeln!(display, "Limit: {}", self.limit).unwrap();
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.child.as_tree_display()]
+    }
+
+    fn get_name(&self) -> String {
+        self.name().to_string()
+    }
+}
+
 impl DistributedPipelineNode for LimitNode {
     fn name(&self) -> &'static str {
-        "Limit"
+        "DistributedLimit"
     }
 
     fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
@@ -182,5 +203,9 @@ impl DistributedPipelineNode for LimitNode {
 
     fn node_id(&self) -> &NodeID {
         &self.node_id
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
     }
 }

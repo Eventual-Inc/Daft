@@ -16,7 +16,8 @@ use futures::StreamExt;
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 
 use super::{
-    DistributedPipelineNode, MaterializedOutput, NodeID, PipelineOutput, RunningPipelineNode,
+    DisplayLevel, DistributedPipelineNode, MaterializedOutput, NodeID, PipelineOutput,
+    RunningPipelineNode, TreeDisplay,
 };
 use crate::{
     plan::PlanID,
@@ -395,5 +396,32 @@ impl DistributedPipelineNode for ActorUDF {
     }
     fn node_id(&self) -> &NodeID {
         &self.node_id
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
+    }
+}
+
+impl TreeDisplay for ActorUDF {
+    fn display_as(&self, _level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        let plan = self
+            .make_actor_udf_task_for_materialized_outputs(vec![], WorkerId::default(), vec![])
+            .unwrap();
+        writeln!(display, "{}", plan.task().plan().single_line_display()).unwrap();
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![self.child.as_tree_display()]
+    }
+
+    fn get_name(&self) -> String {
+        self.name().to_string()
     }
 }
