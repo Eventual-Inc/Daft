@@ -26,7 +26,6 @@ pub trait StreamingSinkState: Send + Sync {
 
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
     HasMoreOutput {
         next_input: Arc<MicroPartition>,
         output: Arc<MicroPartition>,
@@ -34,10 +33,18 @@ pub enum StreamingSinkOutput {
     Finished(Option<Arc<MicroPartition>>),
 }
 
+pub enum StreamingSinkFinalizeOutput {
+    HasMoreOutput {
+        states: Vec<Box<dyn StreamingSinkState>>,
+        output: Option<Arc<MicroPartition>>,
+    },
+    Finished(Option<Arc<MicroPartition>>),
+}
+
 pub(crate) type StreamingSinkExecuteResult =
     OperatorOutput<DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>>;
 pub(crate) type StreamingSinkFinalizeResult =
-    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+    OperatorOutput<DaftResult<StreamingSinkFinalizeOutput>>;
 pub trait StreamingSink: Send + Sync {
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
@@ -292,9 +299,23 @@ impl PipelineNode for StreamingSinkNode {
                     runtime_stats.clone(),
                     info_span!("StreamingSink::Finalize"),
                 );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                loop {
+                    let finalized_result = op.finalize(finished_states, &spawner).await??;
+
+                    match finalized_result {
+                        StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                            finished_states = states;
+                            if let Some(output) = output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                        }
+                        StreamingSinkFinalizeOutput::Finished(output) => {
+                            if let Some(output) = output {
+                                let _ = counting_sender.send(output).await;
+                            }
+                            break;
+                        }
+                    }
                 }
                 Ok(())
             },

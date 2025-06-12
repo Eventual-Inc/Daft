@@ -18,6 +18,7 @@ use super::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    sinks::streaming_sink::StreamingSinkFinalizeOutput,
     state_bridge::BroadcastStateBridgeRef,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
@@ -161,7 +162,7 @@ impl AntiSemiProbeSink {
     async fn finalize_anti_semi(
         mut states: Vec<Box<dyn StreamingSinkState>>,
         is_semi: bool,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+    ) -> DaftResult<StreamingSinkFinalizeOutput> {
         let mut states_iter = states.iter_mut();
         let first_state = states_iter
             .next()
@@ -215,10 +216,13 @@ impl AntiSemiProbeSink {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let build_side_table = RecordBatch::concat(&leftovers)?;
-        Ok(Some(Arc::new(MicroPartition::new_loaded(
-            build_side_table.schema.clone(),
-            Arc::new(vec![build_side_table]),
-            None,
+
+        Ok(StreamingSinkFinalizeOutput::Finished(Some(Arc::new(
+            MicroPartition::new_loaded(
+                build_side_table.schema.clone(),
+                Arc::new(vec![build_side_table]),
+                None,
+            ),
         ))))
     }
 }
@@ -315,7 +319,7 @@ impl StreamingSink for AntiSemiProbeSink {
                 )
                 .into()
         } else {
-            Ok(None).into()
+            Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
         }
     }
 

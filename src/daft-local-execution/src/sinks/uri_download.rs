@@ -20,6 +20,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    sinks::streaming_sink::StreamingSinkFinalizeOutput,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -197,21 +198,6 @@ impl UriDownloadSinkState {
 
         self.build_output(completed_idxs, completed_contents)
     }
-
-    async fn finish_all(&mut self) -> DaftResult<RecordBatch> {
-        let in_flight_uploads = std::mem::take(&mut self.in_flight_downloads);
-
-        let results = in_flight_uploads
-            .join_all()
-            .await
-            .into_iter()
-            .map(|x| x.unwrap())
-            .collect::<Vec<_>>();
-        let completed_downloads = results.iter().map(|x| x.0 as u64).collect::<Vec<_>>();
-        let completed_contents = results.iter().map(|x| x.1.clone()).collect::<Vec<_>>();
-
-        self.build_output(completed_downloads, completed_contents)
-    }
 }
 
 impl StreamingSinkState for UriDownloadSinkState {
@@ -292,28 +278,36 @@ impl StreamingSink for UriDownloadSink {
         spawner
             .spawn(
                 async move {
-                    let results = states
-                        .iter_mut()
-                        .map(|state| {
-                            state
-                                .as_any_mut()
-                                .downcast_mut::<UriDownloadSinkState>()
-                                .expect("UriDownload sink should have UriDownloadSinkState")
-                                .finish_all()
-                        })
-                        .collect::<Vec<_>>();
+                    assert!(states.len() == 1);
+                    let state = states
+                        .get_mut(0)
+                        .unwrap()
+                        .as_any_mut()
+                        .downcast_mut::<UriDownloadSinkState>()
+                        .expect("UriDownload sink should have UriDownloadSinkState");
 
-                    let results = futures::future::join_all(results)
-                        .await
-                        .into_iter()
-                        .map(|res| res.unwrap())
-                        .collect::<Vec<_>>();
-
-                    Ok(Some(Arc::new(MicroPartition::new_loaded(
-                        results[0].schema.clone(),
-                        Arc::new(results),
+                    let output = state.poll_finished().await?;
+                    let schema = output.schema.clone();
+                    let output = Arc::new(MicroPartition::new_loaded(
+                        schema,
+                        Arc::new(vec![output]),
                         None,
-                    ))))
+                    ));
+
+                    if state.get_in_flight() > 0 {
+                        Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
+                            states,
+                            output: Some(output),
+                        })
+                    } else {
+                        Ok(StreamingSinkFinalizeOutput::Finished(
+                            if !output.is_empty() {
+                                Some(output)
+                            } else {
+                                None
+                            },
+                        ))
+                    }
                 },
                 Span::current(),
             )

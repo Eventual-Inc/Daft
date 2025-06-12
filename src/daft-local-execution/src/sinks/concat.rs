@@ -10,6 +10,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    sinks::streaming_sink::StreamingSinkFinalizeOutput,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -49,7 +50,7 @@ impl StreamingSink for ConcatSink {
         _states: Vec<Box<dyn StreamingSinkState>>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
