@@ -1775,7 +1775,7 @@ impl Expr {
             _ => None,
         }
     }
-    /// return true if the expr contains both a `.element()` and the inner expr is of a list type
+    /// return true if the expr contains an `.element()` AKA `col("")`
     pub fn has_element(&self) -> bool {
         match self {
             Self::Column(column) => match column {
