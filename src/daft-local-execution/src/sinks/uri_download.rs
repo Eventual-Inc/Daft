@@ -27,7 +27,7 @@ const INPUT_SCALE_FACTOR: usize = 16;
 const OUTPUT_SCALE_FACTOR: usize = 4;
 
 struct UriDownloadSinkState {
-    in_flight_uploads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
+    in_flight_downloads: JoinSet<DaftResult<(usize, Option<Bytes>)>>,
     all_inputs: Arc<MicroPartition>,
     io_client: Arc<IOClient>,
     submitted_downloads: usize,
@@ -67,7 +67,7 @@ impl UriDownloadSinkState {
         };
 
         Self {
-            in_flight_uploads: JoinSet::new(),
+            in_flight_downloads: JoinSet::new(),
             all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
             input_schema,
 
@@ -82,10 +82,10 @@ impl UriDownloadSinkState {
     }
 
     pub fn get_in_flight(&self) -> usize {
-        self.in_flight_uploads.len()
+        self.in_flight_downloads.len()
     }
 
-    fn download(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn start_download(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
         let raise_error_on_failure = self.raise_error_on_failure;
 
         for input in input.get_tables()?.iter() {
@@ -98,7 +98,7 @@ impl UriDownloadSinkState {
                 let uri_val = uri_val.map(ToString::to_string);
                 let io_client = self.io_client.clone();
 
-                self.in_flight_uploads.spawn(async move {
+                self.in_flight_downloads.spawn(async move {
                     let contents = io_client
                         .single_url_download(
                             submitted_downloads,
@@ -163,43 +163,43 @@ impl UriDownloadSinkState {
     }
 
     async fn poll_finished(&mut self) -> DaftResult<RecordBatch> {
-        let exp_capacity = if self.in_flight_uploads.len() > self.max_in_flight {
+        let exp_capacity = if self.in_flight_downloads.len() > self.max_in_flight {
             std::cmp::min(
-                self.in_flight_uploads.len() - self.max_in_flight,
+                self.in_flight_downloads.len() - self.max_in_flight,
                 32 * OUTPUT_SCALE_FACTOR,
             )
         } else {
             0
         };
 
-        let mut completed_downloads = Vec::with_capacity(exp_capacity);
+        let mut completed_idxs = Vec::with_capacity(exp_capacity);
         let mut completed_contents = Vec::with_capacity(exp_capacity);
 
         // Wait for downloads to complete until we are under the active limit
-        while self.in_flight_uploads.len() > self.max_in_flight
-            && completed_downloads.len() < exp_capacity
+        while self.in_flight_downloads.len() > self.max_in_flight
+            && completed_idxs.len() < exp_capacity
         {
-            let Some(result) = self.in_flight_uploads.join_next().await else {
+            let Some(result) = self.in_flight_downloads.join_next().await else {
                 unreachable!("There should always be at least one upload in flight");
             };
 
             let (idx, contents) = result.unwrap().unwrap();
-            completed_downloads.push(idx as u64);
+            completed_idxs.push(idx as u64);
             completed_contents.push(contents);
         }
 
         // If any additional uploads are completed, pop them off the join set
-        while let Some(result) = self.in_flight_uploads.try_join_next() {
+        while let Some(result) = self.in_flight_downloads.try_join_next() {
             let (idx, contents) = result.unwrap().unwrap();
-            completed_downloads.push(idx as u64);
+            completed_idxs.push(idx as u64);
             completed_contents.push(contents);
         }
 
-        self.build_output(completed_downloads, completed_contents)
+        self.build_output(completed_idxs, completed_contents)
     }
 
     async fn finish_all(&mut self) -> DaftResult<RecordBatch> {
-        let in_flight_uploads = std::mem::take(&mut self.in_flight_uploads);
+        let in_flight_uploads = std::mem::take(&mut self.in_flight_downloads);
 
         let results = in_flight_uploads
             .join_all()
@@ -248,6 +248,8 @@ impl StreamingSink for UriDownloadSink {
         mut state: Box<dyn StreamingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
+        let input_schema = self.input_schema.clone();
+
         spawner
             .spawn(
                 async move {
@@ -257,7 +259,7 @@ impl StreamingSink for UriDownloadSink {
                         .expect("UriDownload sink should have UriDownloadSinkState");
 
                     eprintln!("Input Size: {}", input.len());
-                    url_state.download(input)?;
+                    url_state.start_download(input)?;
                     let output = url_state.poll_finished().await?;
                     eprintln!("Output Size: {}", output.len());
                     eprintln!("In Flight: {}", url_state.get_in_flight());
@@ -273,7 +275,11 @@ impl StreamingSink for UriDownloadSink {
                     if url_state.get_in_flight() <= url_state.max_in_flight {
                         Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
                     } else {
-                        Ok((state, StreamingSinkOutput::HasMoreOutput(output)))
+                        let next_input = Arc::new(MicroPartition::empty(Some(input_schema)));
+                        Ok((
+                            state,
+                            StreamingSinkOutput::HasMoreOutput { next_input, output },
+                        ))
                     }
                 },
                 Span::current(),

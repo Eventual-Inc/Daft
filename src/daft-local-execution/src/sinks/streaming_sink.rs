@@ -27,7 +27,10 @@ pub trait StreamingSinkState: Send + Sync {
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput {
+        next_input: Arc<MicroPartition>,
+        output: Arc<MicroPartition>,
+    },
     Finished(Option<Arc<MicroPartition>>),
 }
 
@@ -118,7 +121,7 @@ impl StreamingSinkNode {
         let compute_runtime = get_compute_runtime();
         let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
         let mut state = op.make_state();
-        while let Some(morsel) = input_receiver.recv().await {
+        while let Some(mut morsel) = input_receiver.recv().await {
             loop {
                 let result = op.execute(morsel.clone(), state, &spawner).await??;
                 state = result.0;
@@ -131,10 +134,11 @@ impl StreamingSinkNode {
                         }
                         break;
                     }
-                    StreamingSinkOutput::HasMoreOutput(mp) => {
-                        if output_sender.send(mp).await.is_err() {
+                    StreamingSinkOutput::HasMoreOutput { next_input, output } => {
+                        if output_sender.send(output).await.is_err() {
                             return Ok(state);
                         }
+                        morsel = next_input;
                     }
                     StreamingSinkOutput::Finished(mp) => {
                         if let Some(mp) = mp {
