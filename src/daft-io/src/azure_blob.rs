@@ -1,8 +1,10 @@
 use std::{ops::Range, sync::Arc};
 
 use async_trait::async_trait;
-use azure_core::{auth::TokenCredential, new_http_client};
-use azure_identity::{ClientSecretCredential, DefaultAzureCredential, TokenCredentialOptions};
+use azure_core::auth::TokenCredential;
+use azure_identity::{
+    ClientSecretCredential, DefaultAzureCredentialBuilder, TokenCredentialOptions,
+};
 use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
     blob::operations::GetBlobResponse,
@@ -193,7 +195,7 @@ impl AzureBlobSource {
         let storage_credentials = if config.anonymous {
             StorageCredentials::anonymous()
         } else if let Some(access_key) = access_key {
-            StorageCredentials::access_key(&storage_account, access_key.as_string())
+            StorageCredentials::access_key(&storage_account, access_key.as_string().clone())
         } else if let Some(sas_token) = sas_token {
             StorageCredentials::sas_token(sas_token)
                 .map_err(|e| Error::AzureGeneric { source: e })?
@@ -203,22 +205,28 @@ impl AzureBlobSource {
             && let Some(client_id) = &config.client_id
             && let Some(client_secret) = &config.client_secret
         {
+            let options = TokenCredentialOptions::default();
+
             StorageCredentials::token_credential(Arc::new(ClientSecretCredential::new(
-                new_http_client(),
+                options.http_client(),
+                options
+                    .authority_host()
+                    .expect("default authority host should be valid"),
                 tenant_id.clone(),
                 client_id.clone(),
                 client_secret.as_string().clone(),
-                TokenCredentialOptions::default(),
             )))
         } else {
-            let default_creds = Arc::new(DefaultAzureCredential::default());
+            let default_creds = DefaultAzureCredentialBuilder::new()
+                .build()
+                .with_context(|_| AzureGenericSnafu {})?;
 
             if default_creds
-                .get_token(AZURE_STORAGE_RESOURCE)
+                .get_token(std::slice::from_ref(&AZURE_STORAGE_RESOURCE))
                 .await
                 .is_ok()
             {
-                StorageCredentials::token_credential(default_creds)
+                StorageCredentials::token_credential(Arc::new(default_creds))
             } else {
                 log::warn!("Azure credentials resolution failed. Defaulting to anonymous mode.");
                 StorageCredentials::anonymous()
@@ -231,7 +239,10 @@ impl AzureBlobSource {
         };
         let blob_client = if let Some(endpoint_url) = endpoint_url {
             ClientBuilder::with_location(
-                CloudLocation::Custom { uri: endpoint_url },
+                CloudLocation::Custom {
+                    uri: endpoint_url,
+                    account: storage_account,
+                },
                 storage_credentials,
             )
             .blob_service_client()
@@ -239,6 +250,7 @@ impl AzureBlobSource {
             ClientBuilder::with_location(
                 CloudLocation::Custom {
                     uri: format!("https://{storage_account}.blob.fabric.microsoft.com"),
+                    account: storage_account,
                 },
                 storage_credentials,
             )

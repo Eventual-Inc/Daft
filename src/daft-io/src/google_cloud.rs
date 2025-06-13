@@ -114,12 +114,10 @@ impl From<Error> for super::Error {
                     store: super::SourceType::GCS,
                     source: err,
                 },
-                err @ GError::HttpMiddleware(_) | err @ GError::InvalidRangeHeader(_) => {
-                    Self::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    }
-                }
+                err => Self::UnableToOpenFile {
+                    path,
+                    source: err.into(),
+                },
             },
             NotFound { ref path } => Self::NotFound {
                 path: path.into(),
@@ -274,6 +272,7 @@ impl GCSClientWrapper {
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
             versions: None,
+            match_glob: None,
         };
         let ls_response = client
             .list_objects(&req)
