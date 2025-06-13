@@ -1881,6 +1881,37 @@ class Expression:
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
 
+    def url_space(self) -> Expression:
+        """Parses URLs in a string column and extracts URL components.
+
+        Returns:
+            Expression: a Struct expression containing the parsed URL components:
+                - scheme (str): The URL scheme (e.g., "https", "http")
+                - username (str): The username, if present
+                - password (str): The password, if present
+                - host (str): The hostname or IP address
+                - port (int): The port number, if specified
+                - path (str): The path component
+                - query (str): The query string, if present
+                - fragment (str): The fragment/anchor, if present
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
+            ... )
+            >>> # Parse URLs and expand all components
+            >>> df.select(daft.col("urls").url.url_space()).select(
+            ...     daft.col("urls").struct.get("*")
+            ... ).collect()  # doctest: +SKIP
+
+        Note:
+            Invalid URLs will result in null values for all components.
+            The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
+        """
+        f = native.get_function_from_registry("url_space")
+        return Expression._from_pyexpr(f(self._expr)).alias("urls")
+
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
@@ -2043,35 +2074,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 io_config=io_config_expr,
             )
         )
-
-    def parse(self) -> Expression:
-        """Parses URLs in a string column and extracts URL components.
-
-        Returns:
-            Expression: a Struct expression containing the parsed URL components:
-                - scheme (str): The URL scheme (e.g., "https", "http")
-                - username (str): The username, if present
-                - password (str): The password, if present
-                - host (str): The hostname or IP address
-                - port (int): The port number, if specified
-                - path (str): The path component
-                - query (str): The query string, if present
-                - fragment (str): The fragment/anchor, if present
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict(
-            ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
-            ... )
-            >>> # Parse URLs and expand all components
-            >>> df.select(daft.col("urls").url.parse()).select(daft.col("urls").struct.get("*")).collect()  # doctest: +SKIP
-
-        Note:
-            Invalid URLs will result in null values for all components.
-            The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
-        """
-        f = native.get_function_from_registry("url_parse")
-        return Expression._from_pyexpr(f(self._expr)).alias("urls")
 
 
 class ExpressionFloatNamespace(ExpressionNamespace):
