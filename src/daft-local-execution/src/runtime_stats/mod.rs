@@ -6,12 +6,17 @@ use std::{
     pin::Pin,
     sync::{atomic::AtomicU64, Arc},
     task::{Context, Poll},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
+use common_runtime::get_io_runtime;
 use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
+use tokio::{
+    sync::watch,
+    time::{interval, Interval},
+};
 use tracing::{instrument::Instrumented, Instrument};
 
 use crate::{
@@ -23,50 +28,121 @@ use crate::{
         RuntimeStatsSubscriber,
     },
 };
+#[derive(Debug, Clone)]
+enum RuntimeStatsEvent {
+    CpuTime {
+        elapsed: Duration,
+        node_info: NodeInfo,
+    },
+    RowsReceived {
+        rows: u64,
+        node_info: NodeInfo,
+    },
+    RowsEmitted {
+        rows: u64,
+        node_info: NodeInfo,
+    },
+}
 
 #[derive(Debug)]
 pub struct RuntimeStatsEventHandler {
-    subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
+    subscribers: Arc<parking_lot::RwLock<Vec<Arc<dyn RuntimeStatsSubscriber>>>>,
+    event_tx: watch::Sender<Option<RuntimeStatsEvent>>,
+    handle: tokio::task::JoinHandle<()>,
 }
 
 impl RuntimeStatsEventHandler {
     pub fn new() -> Self {
-        let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
+        let mut subscribers: Vec<Arc<dyn RuntimeStatsSubscriber>> = Vec::new();
 
         if should_enable_opentelemetry() {
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
+            subscribers.push(Arc::new(OpenTelemetrySubscriber::new()));
         }
 
         if DashboardSubscriber::is_enabled() {
-            subscribers.push(Box::new(DashboardSubscriber::new()));
+            subscribers.push(Arc::new(DashboardSubscriber::new()));
         }
 
+        let (event_tx, event_rx) = watch::channel(None);
+
+        let subscribers = Arc::new(parking_lot::RwLock::new(subscribers));
+
+        // Spawn background task to update subscribers at intervals
+        let subscribers_for_task = subscribers.clone();
+        let rt = get_io_runtime(true);
+
+        let handle = rt.runtime.spawn(async move {
+            let mut interval = interval(Duration::from_secs(1));
+            let mut rx = event_rx;
+
+            loop {
+                println!("Tick");
+                interval.tick().await;
+                if rx.changed().await.is_ok() {
+                    if let Some(event) = rx.borrow_and_update().clone() {
+                        let subscribers = subscribers_for_task.read();
+                        match event {
+                            RuntimeStatsEvent::CpuTime { elapsed, node_info } => {
+                                let node_info = Arc::new(node_info);
+                                for subscriber in subscribers.iter() {
+                                    subscriber
+                                        .clone()
+                                        .on_cpu_time_elapsed(&node_info, elapsed.as_micros() as _)
+                                        .await;
+                                }
+                            }
+                            RuntimeStatsEvent::RowsReceived { rows, node_info } => {
+                                let node_info = Arc::new(node_info);
+
+                                for subscriber in subscribers.iter() {
+                                    subscriber.on_rows_received(&node_info, rows).await;
+                                }
+                            }
+                            RuntimeStatsEvent::RowsEmitted { rows, node_info } => {
+                                let node_info = Arc::new(node_info);
+
+                                for subscriber in subscribers.iter() {
+                                    subscriber.on_rows_emitted(&node_info, rows).await;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         Self {
-            subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
+            subscribers,
+            event_tx,
+            handle,
         }
     }
+
     pub(crate) fn record_elapsed_cpu_time(
         &self,
         elapsed: std::time::Duration,
         rt: &RuntimeStatsContext,
     ) {
         rt.record_elapsed_cpu_time(elapsed);
-        for subscriber in self.subscribers.read().iter() {
-            subscriber.on_cpu_time_elapsed(&rt.node_info, elapsed.as_micros() as _);
-        }
+        let _ = self.event_tx.send(Some(RuntimeStatsEvent::CpuTime {
+            elapsed,
+            node_info: rt.node_info.clone(),
+        }));
     }
     pub(crate) fn mark_rows_received(&self, rows: u64, rt: &RuntimeStatsContext) {
         rt.mark_rows_received(rows);
-        for subscriber in self.subscribers.read().iter() {
-            subscriber.on_rows_received(&rt.node_info, rows);
-        }
+        let _ = self.event_tx.send(Some(RuntimeStatsEvent::RowsReceived {
+            rows,
+            node_info: rt.node_info.clone(),
+        }));
     }
 
     pub(crate) fn mark_rows_emitted(&self, rows: u64, rt: &RuntimeStatsContext) {
         rt.mark_rows_emitted(rows);
-        for subscriber in self.subscribers.read().iter() {
-            subscriber.on_rows_emitted(&rt.node_info, rows);
-        }
+        let _ = self.event_tx.send(Some(RuntimeStatsEvent::RowsEmitted {
+            rows,
+            node_info: rt.node_info.clone(),
+        }));
     }
 }
 

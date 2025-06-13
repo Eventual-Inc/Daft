@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use opentelemetry::{global, metrics::Counter, KeyValue};
 
 use crate::{pipeline::NodeInfo, runtime_stats::subscribers::RuntimeStatsSubscriber};
@@ -21,14 +24,14 @@ impl OpenTelemetrySubscriber {
         }
     }
 }
-
+#[async_trait]
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn on_rows_received(&self, context: &NodeInfo, count: u64) {
+    async fn on_rows_received(&self, context: &Arc<NodeInfo>, count: u64) {
         let mut attributes = vec![
             KeyValue::new("name", context.name.to_string()),
             KeyValue::new("id", context.id.to_string()),
@@ -40,7 +43,7 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
 
         self.rows_received.add(count, &attributes);
     }
-    fn on_rows_emitted(&self, context: &NodeInfo, count: u64) {
+    async fn on_rows_emitted(&self, context: &Arc<NodeInfo>, count: u64) {
         let mut attributes = vec![
             KeyValue::new("name", context.name.to_string()),
             KeyValue::new("id", context.id.to_string()),
@@ -52,7 +55,7 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
         self.rows_emitted.add(count, &attributes);
     }
 
-    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64) {
+    async fn on_cpu_time_elapsed(&self, context: &Arc<NodeInfo>, microseconds: u64) {
         let mut attributes = vec![
             KeyValue::new("name", context.name.to_string()),
             KeyValue::new("id", context.id.to_string()),

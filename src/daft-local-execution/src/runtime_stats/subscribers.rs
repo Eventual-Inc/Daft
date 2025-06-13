@@ -1,13 +1,17 @@
 pub(crate) mod dashboard;
 pub(crate) mod opentelemetry;
 
-use crate::pipeline::NodeInfo;
+use std::sync::Arc;
 
+use async_trait::async_trait;
+
+use crate::pipeline::NodeInfo;
+#[async_trait]
 pub trait RuntimeStatsSubscriber: Send + Sync + std::fmt::Debug {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any;
 
-    fn on_rows_received(&self, context: &NodeInfo, count: u64);
-    fn on_rows_emitted(&self, context: &NodeInfo, count: u64);
-    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64);
+    async fn on_rows_received(&self, context: &Arc<NodeInfo>, count: u64);
+    async fn on_rows_emitted(&self, context: &Arc<NodeInfo>, count: u64);
+    async fn on_cpu_time_elapsed(&self, context: &Arc<NodeInfo>, microseconds: u64);
 }
