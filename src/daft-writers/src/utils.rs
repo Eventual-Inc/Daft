@@ -7,7 +7,7 @@ use daft_recordbatch::RecordBatch;
 /// The default value used by Hive for null partition values.
 const DEFAULT_PARTITION_VALUE: &str = "__HIVE_DEFAULT_PARTITION__";
 
-/// Helper function to build the filename for the parquet file.
+/// Helper function to build the filename for the output file.
 pub(crate) fn build_filename(
     source_type: SourceType,
     root_dir: &str,
