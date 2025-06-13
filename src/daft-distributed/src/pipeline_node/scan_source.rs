@@ -66,8 +66,9 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        for scan_task in self.scan_tasks.iter() {
-            let task = self.make_source_tasks(vec![scan_task.clone()].into())?;
+        let max_sources_per_scan_task = self.config.max_sources_per_scan_task;
+        for scan_tasks in self.scan_tasks.chunks(max_sources_per_scan_task) {
+            let task = self.make_source_tasks(scan_tasks.to_vec().into())?;
             if result_tx
                 .send(PipelineOutput::Task(SubmittableTask::new(task)))
                 .await
