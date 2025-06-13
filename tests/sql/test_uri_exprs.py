@@ -109,36 +109,34 @@ def test_url_parse():
         }
     )
 
-    # Test SQL url_parse function
     actual = (
         daft.sql(
             """
-        SELECT url_parse(urls) as parsed FROM df
+        SELECT url_parse(urls) FROM df
         """
         )
         .collect()
         .to_pydict()
     )
 
-    expected = df.select(col("urls").url.parse().alias("parsed")).collect().to_pydict()
+    expected = df.select(col("urls").url.parse()).collect().to_pydict()
 
     assert actual == expected
 
-    # Test extracting individual components from parsed URL
     actual_components = (
         daft.sql(
             """
         SELECT
-            parsed.scheme as scheme,
-            parsed.host as host,
-            parsed.port as port,
-            parsed.path as path,
-            parsed.query as query,
-            parsed.fragment as fragment,
-            parsed.username as username,
-            parsed.password as password
+            urls.scheme as scheme,
+            urls.host as host,
+            urls.port as port,
+            urls.path as path,
+            urls.query as query,
+            urls.fragment as fragment,
+            urls.username as username,
+            urls.password as password
         FROM (
-            SELECT url_parse(urls) as parsed FROM df
+            SELECT url_parse(urls) FROM df
         )
         """
         )
@@ -147,16 +145,16 @@ def test_url_parse():
     )
 
     expected_components = (
-        df.select(col("urls").url.parse().alias("parsed"))
+        df.select(col("urls").url.parse())
         .select(
-            col("parsed").struct.get("scheme").alias("scheme"),
-            col("parsed").struct.get("host").alias("host"),
-            col("parsed").struct.get("port").alias("port"),
-            col("parsed").struct.get("path").alias("path"),
-            col("parsed").struct.get("query").alias("query"),
-            col("parsed").struct.get("fragment").alias("fragment"),
-            col("parsed").struct.get("username").alias("username"),
-            col("parsed").struct.get("password").alias("password"),
+            col("urls").struct.get("scheme").alias("scheme"),
+            col("urls").struct.get("host").alias("host"),
+            col("urls").struct.get("port").alias("port"),
+            col("urls").struct.get("path").alias("path"),
+            col("urls").struct.get("query").alias("query"),
+            col("urls").struct.get("fragment").alias("fragment"),
+            col("urls").struct.get("username").alias("username"),
+            col("urls").struct.get("password").alias("password"),
         )
         .collect()
         .to_pydict()
