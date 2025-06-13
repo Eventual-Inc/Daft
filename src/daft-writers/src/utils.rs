@@ -81,7 +81,7 @@ fn record_batch_to_partition_path(
     Ok(partition_path)
 }
 
-// Helper function to generate the parquet filename.
+// Helper function to generate a filename.
 fn generate_filename(file_idx: usize, suffix: &str) -> String {
     format!("{}-{}.{}", uuid::Uuid::new_v4(), file_idx, suffix)
 }
