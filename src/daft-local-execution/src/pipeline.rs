@@ -31,6 +31,7 @@ use crate::{
     channel::Receiver,
     intermediate_ops::{
         actor_pool_project::ActorPoolProjectOperator, cross_join::CrossJoinOperator,
+        distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
         project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
@@ -394,6 +395,34 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DistributedActorPoolProject(
+            daft_local_plan::DistributedActorPoolProject {
+                input,
+                actor_objects,
+                batch_size,
+                memory_request,
+                stats_state,
+                ..
+            },
+        ) => {
+            let distributed_actor_pool_project_op = DistributedActorPoolProjectOperator::try_new(
+                actor_objects.clone(),
+                *batch_size,
+                *memory_request,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            IntermediateNode::new(
+                Arc::new(distributed_actor_pool_project_op),
                 vec![child_node],
                 stats_state.clone(),
                 ctx,

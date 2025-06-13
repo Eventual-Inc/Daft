@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::StreamExt;
@@ -41,7 +40,6 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         &self,
         stage_plan: StagePlan,
         psets: HashMap<String, Vec<PartitionRef>>,
-        config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         sender: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
@@ -56,7 +54,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let running_stage = stage.run_stage(
             self.plan_id.clone(),
             psets,
-            config,
+            stage_plan.execution_config().clone(),
             scheduler_handle.clone(),
         )?;
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
@@ -73,7 +71,6 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         plan: &DistributedPhysicalPlan,
         psets: HashMap<String, Vec<PartitionRef>>,
     ) -> DaftResult<PlanResult> {
-        let config = plan.execution_config().clone();
         let stage_plan = plan.stage_plan().clone();
 
         let runtime = get_or_init_runtime();
@@ -87,7 +84,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
                 spawn_default_scheduler_actor(self.worker_manager.clone(), &mut joinset);
 
             joinset.spawn(async move {
-                this.execute_stages(stage_plan, psets, config, scheduler_handle, result_sender)
+                this.execute_stages(stage_plan, psets, scheduler_handle, result_sender)
                     .await
             });
             joinset
