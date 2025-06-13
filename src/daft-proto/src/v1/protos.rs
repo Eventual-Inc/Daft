@@ -2,8 +2,8 @@
 // !! PLEASE ENSURE THE MODULE STRUCTURE FOLLOWS PROTO DIR !!
 //
 
-pub mod echo {
-    tonic::include_proto!("echo");
+pub mod tron {
+    tonic::include_proto!("tron");
 }
 
 pub mod schema {
