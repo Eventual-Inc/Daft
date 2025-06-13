@@ -22,7 +22,7 @@ use daft_dsl::{
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
-use tracing::info_span;
+use tracing::instrument;
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
@@ -828,12 +828,9 @@ impl LogicalPlanBuilder {
     ///
     /// **Important**: Do not call this method from the main thread as there is a `block_on` call deep within this method
     /// Calling will result in a runtime panic
+    #[instrument]
     pub fn optimize(&self) -> DaftResult<Self> {
         // TODO: remove the `block_on` to make this method safe to call from the main thread
-        println!("OHOH: Optimizing logical plan");
-
-        let span = info_span!("Optimizing logical plan");
-        let _guard = span.enter();
 
         let cfg = self.config.clone();
 

@@ -34,22 +34,11 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     .y
 });
 
-fn should_enable_chrome_trace() -> bool {
-    let chrome_trace_var_name = "DAFT_DEV_ENABLE_CHROME_TRACE";
-    if let Ok(val) = std::env::var(chrome_trace_var_name)
-        && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-    {
-        true
-    } else {
-        false
-    }
-}
-
 #[cfg(feature = "python")]
 pub mod pylib {
     use std::sync::LazyLock;
 
-    use common_tracing::{init_opentelemetry_providers, init_tracing};
+    use common_tracing::init_tracing;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);
@@ -103,15 +92,14 @@ pub mod pylib {
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
-        init_tracing(crate::should_enable_chrome_trace());
-        init_opentelemetry_providers();
+        init_tracing();
 
         common_daft_config::register_modules(m)?;
         common_system_info::register_modules(m)?;
         common_resource_request::register_modules(m)?;
         common_file_formats::python::register_modules(m)?;
         common_scan_info::register_modules(m)?;
-        common_tracing::register_modules(m)?;
+        common_tracing::python::register_modules(m)?;
         daft_catalog::register_modules(m)?;
         daft_connect::register_modules(m)?;
         daft_context::register_modules(m)?;

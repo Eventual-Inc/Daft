@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
-use common_tracing::{finish_chrome_trace, flush_opentelemetry_providers, start_chrome_trace};
+use common_tracing::{flush_tracing, start_tracing};
 use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -19,7 +19,7 @@ use daft_micropartition::{
 use futures::{stream::BoxStream, Stream, StreamExt};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{info_span, Span};
+use tracing::{info_span, Instrument};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -115,8 +115,6 @@ impl PyNativeExecutor {
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<Bound<'a, PyAny>> {
-        let span = info_span!("Running top level native executor");
-        let _guard = span.enter();
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
@@ -153,7 +151,6 @@ impl PyNativeExecutor {
             })
         }));
         let part_iter = LocalPartitionIterator { iter };
-        flush_opentelemetry_providers();
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
@@ -286,7 +283,6 @@ impl NativeExecutor {
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
-        start_chrome_trace();
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
@@ -297,14 +293,7 @@ impl NativeExecutor {
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
-        let span = Span::current();
-        // span.record("ohoh:query", "boys");
-        // let child_span = info_span!(parent: &span, "query, boys");
         let handle = std::thread::spawn(move || {
-            // let task_span = child_span.entered();
-            // println!("task_span: {:?}", task_span);
-            // let _span = Span::current();
-            let _guard = span.enter();
             let runtime = rt.unwrap_or_else(|| {
                 Arc::new(
                     tokio::runtime::Builder::new_current_thread()
@@ -337,28 +326,11 @@ impl NativeExecutor {
                         _ => {}
                     }
                 }
-                if enable_explain_analyze {
-                    let curr_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_millis();
-                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                    let mut file = File::create(file_name)?;
-                    writeln!(
-                        file,
-                        "```mermaid\n{}\n```",
-                        viz_pipeline_mermaid(
-                            pipeline.as_ref(),
-                            DisplayLevel::Verbose,
-                            true,
-                            Default::default()
-                        )
-                    )?;
-                }
-                finish_chrome_trace();
                 Ok(())
-            };
+            }
+            .instrument(info_span!("Swordfish"));
 
+            start_tracing();
             let local_set = tokio::task::LocalSet::new();
             let result = local_set.block_on(&runtime, async {
                 tokio::select! {
@@ -374,8 +346,25 @@ impl NativeExecutor {
                     result = execution_task => result,
                 }
             });
-            // task_span.exit();
-            flush_opentelemetry_providers();
+            if enable_explain_analyze {
+                let curr_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis();
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                let mut file = File::create(file_name)?;
+                writeln!(
+                    file,
+                    "```mermaid\n{}\n```",
+                    viz_pipeline_mermaid(
+                        pipeline.as_ref(),
+                        DisplayLevel::Verbose,
+                        true,
+                        Default::default()
+                    )
+                )?;
+            }
+            flush_tracing();
             result
         });
 

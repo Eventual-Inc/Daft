@@ -69,6 +69,7 @@ python = [
   "common-file-formats/python",
   "common-scan-info/python",
   "common-system-info/python",
+  "common-tracing/python",
   "daft-catalog/python",
   "daft-cli/python",
   "daft-connect/python",
