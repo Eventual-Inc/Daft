@@ -114,6 +114,16 @@ def lit(value: object) -> Expression:
     return Expression._from_pyexpr(lit_value)
 
 
+def element() -> Expression:
+    """Creates an expression referring to an elementwise list operation.
+
+    This is used to create an expression that operates on each element of a list column.
+
+    If used outside of a list column, it will raise an error.
+    """
+    return col("")
+
+
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
@@ -4414,6 +4424,12 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
 class ExpressionListNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.list` attribute."""
+
+    def flatmap(self, expr: Expression) -> Expression:
+        return self._eval_expressions("list_flatmap", expr)
+
+    def map(self, expr: Expression) -> Expression:
+        return self._eval_expressions("list_map", expr)
 
     def join(self, delimiter: str | Expression) -> Expression:
         """Joins every element of a list using the specified string delimiter.
