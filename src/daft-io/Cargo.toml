@@ -7,7 +7,7 @@ aws-credential-types = {version = "1.2.3", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "1.90.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
 aws-smithy-http-client = "1.0.3"
 aws-smithy-runtime-api = "1.8.0"
-azure_core = {version = "0.21.0", features = ["enable_reqwest_rustls"], default-features = false}
+azure_core = {version = "0.21.0", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
 azure_identity = {version = "0.21.0", features = ["enable_reqwest_rustls"], default-features = false}
 azure_storage = {version = "0.21.0", features = ["enable_reqwest_rustls"], default-features = false}
 azure_storage_blobs = {version = "0.21.0", features = ["enable_reqwest_rustls"], default-features = false}
