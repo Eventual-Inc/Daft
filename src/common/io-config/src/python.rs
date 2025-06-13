@@ -146,6 +146,10 @@ pub struct IOConfig {
 /// Args:
 ///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
 ///     bearer_token (str, optional): Bearer token to use for authentication. This will be used as the value for the `Authorization` header. such as "Authorization: Bearer xxx"
+///     retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an HTTP retry, defaults to 1000ms
+///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to HTTP in milliseconds, defaults to 30 seconds
+///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from HTTP in milliseconds, defaults to 30 seconds
+///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
 ///
 /// Examples:
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
