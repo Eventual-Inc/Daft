@@ -15,7 +15,6 @@ mod ir {
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
 #[rustfmt::skip]
 mod proto {
-    pub use crate::v1::protos::schema::data_type::Variant as DataTypeVariant;
     pub use crate::v1::protos::schema::data_type::*;
     pub use crate::v1::protos::schema::*;
 }
@@ -54,7 +53,7 @@ impl FromToProto for ir::DataType {
     where
         Self: Sized,
     {
-        let variant = message.variant.ok_or_else(|| {
+        let variant = message.data_type_variant.ok_or_else(|| {
             ProtoError::FromProtoError("Expected variant to be non-null".to_string())
         })?;
         Ok(match variant {
@@ -234,7 +233,7 @@ impl FromToProto for ir::DataType {
                 }
                 .into(),
             ),
-            ir::DataType::Extension(name, data_type, metadata) => {
+            ir::DataType::Extension(..) => {
                 to_proto_err!("The extension type is not supported.")
             }
             ir::DataType::Embedding(data_type, size) => proto::DataTypeVariant::Embedding(
@@ -295,7 +294,7 @@ impl FromToProto for ir::DataType {
             ir::DataType::Python => proto::DataTypeVariant::Python(true),
         };
         Ok(Self::Message {
-            variant: Some(variant),
+            data_type_variant: Some(variant),
         })
     }
 }

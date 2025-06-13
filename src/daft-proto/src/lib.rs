@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use thiserror::Error;
 
 /// Export the v1 protos and conversion.
@@ -44,6 +46,18 @@ where
     let message = message.to_owned();
     let proto = P::from_proto(*message)?;
     Ok(Box::new(proto))
+}
+
+/// Helper for dealing with recursive deps and boxes which become arc types in daft.
+pub(crate) fn from_proto_arc<P, M>(message: Option<Box<M>>) -> ProtoResult<Arc<P>>
+where
+    P: FromToProto<Message = M>,
+    M: prost::Message + Default + ToOwned + Clone,
+{
+    let message = message.expect("expected non-null!");
+    let message = message.to_owned();
+    let proto = P::from_proto(*message)?;
+    Ok(Arc::new(proto))
 }
 
 /// This macro creates a FromProtoError.

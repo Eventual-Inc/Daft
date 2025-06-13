@@ -1,4 +1,5 @@
 pub mod client;
+pub mod rex;
 pub mod schema;
 
 #[allow(

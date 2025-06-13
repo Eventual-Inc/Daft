@@ -7,7 +7,7 @@ message Schema {
 }
 
 message DataType {
-  oneof variant {
+  oneof data_type_variant {
     bool null = 1;
     bool boolean = 2;
     bool int8 = 3;

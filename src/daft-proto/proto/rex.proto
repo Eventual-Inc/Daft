@@ -1,0 +1,298 @@
+syntax = "proto3";
+
+package rex;
+
+import "schema.proto";
+
+message Expr {
+  oneof expr_variant {
+    Column column = 1;
+    Alias alias = 2;
+    AggExpr agg = 3;
+    BinaryOp binary_op = 4;
+    Cast cast = 5;
+    Function function = 6;
+    Over over = 7;
+    WindowFunction window_function = 8;
+    Not not = 9;
+    IsNull is_null = 10;
+    NotNull not_null = 11;
+    FillNull fill_null = 12;
+    IsIn is_in = 13;
+    Between between = 14;
+    List list = 15;
+    Literal literal = 16;
+    IfElse if_else = 17;
+    ScalarFunction scalar_function = 18;
+    Subquery subquery = 19;
+    InSubquery in_subquery = 20;
+    Exists exists = 21;
+  }
+}
+
+message Literal {
+  oneof literal_variant {
+    bool null = 1;
+    bool boolean = 2;
+    string utf8 = 3;
+    bytes binary = 4;
+    FixedSizeBinary fixed_size_binary = 5;
+    int32 int8 = 6;
+    uint32 uint8 = 7;
+    int32 int16 = 8;
+    uint32 uint16 = 9;
+    int32 int32 = 10;
+    uint32 uint32 = 11;
+    int64 int64 = 12;
+    uint64 uint64 = 13;
+    Timestamp timestamp = 14;
+    int32 date = 15;
+    Time time = 16;
+    Duration duration = 17;
+    Interval interval = 18;
+    double float64 = 19;
+    Decimal decimal = 20;
+    Series series = 21;
+    Struct struct = 22;
+  }
+
+  message FixedSizeBinary {
+    bytes value = 1;
+    uint64 size = 2;
+  }
+
+  message Timestamp {
+    int64 value = 1;
+    schema.TimeUnit unit = 2;
+    optional string timezone = 3;
+  }
+
+  message Time {
+    int64 value = 1;
+    schema.TimeUnit unit = 2;
+  }
+
+  message Duration {
+    int64 value = 1;
+    schema.TimeUnit unit = 2;
+  }
+
+  message Interval {
+    int32 months = 1;
+    int32 days = 2;
+    int64 nanoseconds = 3;
+  }
+
+  message Decimal {
+    string value = 1;
+  }
+
+  message Series {
+    string name = 1;
+    schema.DataType dtype = 2;
+    bytes data = 3;
+  }
+
+  message Struct {
+    repeated Field fields = 1;
+    message Field {
+        string name = 1;
+        Literal value = 2;
+    }
+  }
+}
+
+// Column in the rust IR is complex and very messy.
+// You can simplify to just the optional qualifier, but I don't
+// know why there's an alias :sweat-smile: it all seems
+// quite hacky .. pain!
+message Column {
+  string name = 1;
+  optional uint64 qualifier = 2;
+  optional string alias = 3; // alias wtf?
+}
+
+message Alias {
+  Expr expr = 1;
+  string name = 2;
+}
+
+message BinaryOp {
+  Operator op = 1;
+  Expr lhs = 2;
+  Expr rhs = 3;
+}
+
+message Cast {
+  Expr expr = 1;
+  schema.DataType dtype = 2;
+}
+
+message Not {
+  Expr expr = 1;
+}
+
+message IsNull {
+  Expr expr = 1;
+}
+
+message NotNull {
+  Expr expr = 1;
+}
+
+message FillNull {
+  Expr expr = 1;
+  Expr fill_value = 2;
+}
+
+message IsIn {
+  Expr expr = 1;
+  repeated Expr items = 2;
+}
+
+message Between {
+  Expr expr = 1;
+  Expr lower = 2;
+  Expr upper = 3;
+}
+
+message List {
+  repeated Expr items = 1;
+}
+
+message IfElse {
+  Expr if_true = 1;
+  Expr if_false = 2;
+  Expr predicate = 3;
+}
+
+// Function expressions
+message Function {
+  FunctionExpr func = 1;
+  repeated Expr inputs = 2;
+}
+
+message FunctionExpr {
+  oneof function_type {
+    StructExpr struct = 1;
+    // Add other function types as needed
+  }
+}
+
+message StructExpr {
+  oneof struct_type {
+    string get = 1;
+    // Add other struct types as needed
+  }
+}
+
+message ScalarFunction {
+  string name = 1;
+  repeated Expr args = 2;
+}
+
+// Window expressions
+message Over {
+  WindowExpr expr = 1;
+  WindowSpec spec = 2;
+}
+
+message WindowFunction {
+  WindowExpr expr = 1;
+}
+
+message WindowExpr {
+  oneof window_type {
+    AggExpr agg = 1;
+    bool row_number = 2;
+    bool rank = 3;
+    bool dense_rank = 4;
+    Offset offset = 5;
+  }
+}
+
+message Offset {
+  Expr input = 1;
+  int32 offset = 2;
+  optional Expr default = 3;
+}
+
+message WindowSpec {
+  repeated Expr partition_by = 1;
+  repeated SortOrder order_by = 2;
+  optional WindowFrame frame = 3;
+}
+
+message SortOrder {
+  Expr expr = 1;
+  bool ascending = 2;
+  bool nulls_first = 3;
+}
+
+message WindowFrame {
+  FrameType type = 1;
+  optional Expr start = 2;
+  optional Expr end = 3;
+}
+
+enum FrameType {
+  FRAME_TYPE_UNSPECIFIED = 0;
+  FRAME_TYPE_ROWS = 1;
+  FRAME_TYPE_RANGE = 2;
+  FRAME_TYPE_GROUPS = 3;
+}
+
+// Subquery expressions
+message Subquery {
+  LogicalPlan plan = 1;
+}
+
+message InSubquery {
+  Expr expr = 1;
+  LogicalPlan plan = 2;
+}
+
+message Exists {
+  LogicalPlan plan = 1;
+}
+
+// Aggregation expressions
+message AggExpr {
+  string name = 1;
+  repeated Expr args = 2;
+  bool distinct = 3;
+}
+
+// Enums with prefixed variants
+enum Operator {
+  OPERATOR_UNSPECIFIED = 0;
+  OPERATOR_EQ = 1;
+  OPERATOR_EQ_NULL_SAFE = 2;
+  OPERATOR_NOT_EQ = 3;
+  OPERATOR_LT = 4;
+  OPERATOR_LT_EQ = 5;
+  OPERATOR_GT = 6;
+  OPERATOR_GT_EQ = 7;
+  OPERATOR_PLUS = 8;
+  OPERATOR_MINUS = 9;
+  OPERATOR_MULTIPLY = 10;
+  OPERATOR_TRUE_DIVIDE = 11;
+  OPERATOR_FLOOR_DIVIDE = 12;
+  OPERATOR_MODULUS = 13;
+  OPERATOR_AND = 14;
+  OPERATOR_OR = 15;
+  OPERATOR_XOR = 16;
+  OPERATOR_SHIFT_LEFT = 17;
+  OPERATOR_SHIFT_RIGHT = 18;
+}
+
+enum JoinSide {
+  JOIN_SIDE_UNSPECIFIED = 0;
+  JOIN_SIDE_LEFT = 1;
+  JOIN_SIDE_RIGHT = 2;
+}
+
+// !! PLACEHOLDER !!
+message LogicalPlan {
+  string plan_type = 1;
+}

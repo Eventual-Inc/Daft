@@ -1,10 +1,7 @@
 mod conversions;
 mod deserializer;
 use std::{
-    fmt::{Display, Formatter, Result},
-    hash::{Hash, Hasher},
-    io::{self, Write},
-    sync::Arc,
+    fmt::{Display, Formatter, Result}, hash::{Hash, Hasher}, io::{self, Write}, ops::Index, sync::Arc
 };
 
 use common_error::{ensure, DaftError, DaftResult};
@@ -592,6 +589,23 @@ impl LiteralValue {
                 ty
             ))),
         }
+    }
+
+    // =================
+    //  Factory Methods
+    // =================
+
+    pub fn new_struct<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (String, Self)>,
+    {
+        // A "struct" literal is a strange concept, and only makes
+        // sense that it predates the struct expression. The literals
+        // tell us the type, so need to give before construction.
+        let iter_with_types = iter.into_iter().map(|(name, lit)|
+            (Field::new(name, lit.get_type()), lit)
+        );
+        Self::Struct(IndexMap::from_iter(iter_with_types))
     }
 }
 

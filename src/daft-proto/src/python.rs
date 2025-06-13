@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, env, str::FromStr, sync::{Arc, Mutex, OnceLock}};
+use std::{env, str::FromStr, sync::{Arc, Mutex, OnceLock}};
 
 use daft_ir::rel::PyLogicalPlanBuilder;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
