@@ -168,7 +168,11 @@ impl UriUploadSinkState {
     }
 
     async fn poll_finished(&mut self, finished: bool) -> DaftResult<RecordBatch> {
-        let exp_capacity = if finished { 32 } else { 0 };
+        let exp_capacity = if finished {
+            std::cmp::min(self.in_flight_uploads.len(), 32)
+        } else {
+            0
+        };
 
         let mut completed_idxs = Vec::with_capacity(exp_capacity);
         let mut completed_urls = Vec::with_capacity(exp_capacity);
