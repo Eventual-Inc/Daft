@@ -2768,6 +2768,7 @@ dependencies = [
  "daft-ir",
  "prost 0.13.5",
  "pyo3",
+ "thiserror 1.0.69",
  "tokio",
  "tonic",
  "tonic-build",

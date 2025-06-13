@@ -4,7 +4,7 @@ use tonic::{
     IntoRequest, Response,
 };
 
-use crate::echo::{echo_client::EchoClient, EchoRequest, EchoResponse};
+use crate::protos::echo::{echo_client::EchoClient, EchoRequest, EchoResponse};
 
 /// Simple client error type
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -13,7 +13,7 @@ type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 type Result<T, E = Error> = ::std::result::Result<T, E>;
 
 /// Rust client for the Echo service.
-pub(crate) struct EchoServiceClient {
+pub struct EchoServiceClient {
     client: EchoClient<Channel>,
     rt: Runtime,
 }

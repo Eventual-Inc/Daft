@@ -2,9 +2,11 @@ syntax = "proto3";
 
 package echo;
 
+import "schema.proto";
+
 // EchoRequest is the request for echo.
 message EchoRequest {
-  string message = 1;
+  schema.Schema schema = 1;
 }
 
 // EchoResponse is the response for echo.
@@ -12,7 +14,7 @@ message EchoResponse {
   string message = 1;
 }
 
-// Echo is the echo service.
+// Some basic service
 service Echo {
   rpc Echo(EchoRequest) returns (EchoResponse) {}
 }

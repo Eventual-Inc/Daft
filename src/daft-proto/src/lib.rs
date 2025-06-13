@@ -2,8 +2,7 @@
 // rust sources
 //
 
-mod client;
-mod ir;
+pub mod v1;
 
 //
 // protobuf sources
@@ -16,13 +15,7 @@ mod ir;
     clippy::all,
     clippy::pedantic
 )]
-pub mod echo {
-    tonic::include_proto!("echo");
-}
-
-//
-// python sources
-//
+pub mod protos;
 
 #[cfg(feature = "python")]
 pub mod python;

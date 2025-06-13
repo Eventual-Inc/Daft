@@ -11,6 +11,7 @@ common-error = {path = "../common/error", default-features = false}
 daft-ir = {path = "../daft-ir", default-features = false}
 prost = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+thiserror = {workspace = true}
 tokio = {workspace = true, features = ["macros"]}
 tonic = {workspace = true}
 

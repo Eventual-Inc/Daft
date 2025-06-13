@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package daft.v1.ir.schema;
+package schema;
 
 message Schema {
   repeated Field fields = 1;
