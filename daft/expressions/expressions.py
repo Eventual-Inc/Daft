@@ -2068,7 +2068,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
         Note:
             Invalid URLs will result in null values for all components.
-            The parsed result is automatically aliased to 'url' to enable easy struct field expansion.
+            The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
         """
         f = native.get_function_from_registry("url_parse")
         return Expression._from_pyexpr(f(self._expr)).alias("urls")
