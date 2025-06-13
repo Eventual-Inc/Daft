@@ -1,17 +1,15 @@
-use daft_proto::protos::{echo::{
+use daft_ir::schema::Schema;
+use daft_proto::{v1::protos::echo::{
     echo_server::{Echo, EchoServer},
     EchoRequest, EchoResponse,
 }, FromToProto};
 use tonic::{transport::Server, Request, Response, Status};
-
-use daft_ir::schema::Schema;
 
 struct EchoService;
 
 #[tonic::async_trait]
 impl Echo for EchoService {
     async fn echo(&self, request: Request<EchoRequest>) -> Result<Response<EchoResponse>, Status> {
-
         let req = request.into_inner();
         let schema = Schema::from_proto(req.schema.unwrap()).expect("failed to parse schema");
 
@@ -19,7 +17,9 @@ impl Echo for EchoService {
         println!("------------------");
         println!("{:?}", &schema);
 
-        let res = EchoResponse { message: "schema was logged.".to_string() };
+        let res = EchoResponse {
+            message: "schema was logged.".to_string(),
+        };
         Ok(Response::new(res))
     }
 }

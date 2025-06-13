@@ -4,7 +4,7 @@ use daft_ir::rel::PyLogicalPlanBuilder;
 use pyo3::prelude::*;
 use tonic::transport::Endpoint;
 
-use crate::{protos::{echo::EchoRequest, FromToProto}, v1::client::EchoServiceClient};
+use crate::{v1::{client::EchoServiceClient, protos::echo::EchoRequest}, FromToProto};
 
 #[pyclass]
 pub struct PyEchoClient(EchoServiceClient);

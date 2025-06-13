@@ -4,7 +4,7 @@ use tonic::{
     IntoRequest, Response,
 };
 
-use crate::protos::echo::{echo_client::EchoClient, EchoRequest, EchoResponse};
+use crate::v1::protos::echo::{echo_client::EchoClient, EchoRequest, EchoResponse};
 
 /// Simple client error type
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;

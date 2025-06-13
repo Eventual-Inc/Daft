@@ -26,12 +26,6 @@ if TYPE_CHECKING:
 
 R = TypeVar("R")
 
-class PyEchoClient:
-
-    @staticmethod
-    def connect(endpoint: str) -> PyEchoClient: ...
-
-    def describe(self, logical_plan_builder: LogicalPlanBuilder) -> str: ...
 
 class ImageMode(Enum):
     """Supported image modes for Daft's image type.

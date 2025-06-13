@@ -1,8 +1,7 @@
 use daft_ir::schema::DataType;
 
 use crate::{
-    protos::{from_proto, from_proto_box, FromToProto, ProtoResult},
-    to_proto_err,
+    from_proto, from_proto_box, from_proto_err, to_proto_err, FromToProto, ProtoError, ProtoResult,
 };
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
@@ -16,9 +15,9 @@ mod ir {
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
 #[rustfmt::skip]
 mod proto {
-    pub use crate::protos::schema::data_type::Variant as DataTypeVariant;
-    pub use crate::protos::schema::data_type::*;
-    pub use crate::protos::schema::*;
+    pub use crate::v1::protos::schema::data_type::Variant as DataTypeVariant;
+    pub use crate::v1::protos::schema::data_type::*;
+    pub use crate::v1::protos::schema::*;
 }
 
 /// Conversion logic for daft's Schema.
@@ -56,7 +55,7 @@ impl FromToProto for ir::DataType {
         Self: Sized,
     {
         let variant = message.variant.ok_or_else(|| {
-            crate::protos::ProtoError::FromProtoError("Expected variant to be non-null".to_string())
+            ProtoError::FromProtoError("Expected variant to be non-null".to_string())
         })?;
         Ok(match variant {
             proto::DataTypeVariant::Null(_) => ir::DataType::Null,
@@ -119,9 +118,7 @@ impl FromToProto for ir::DataType {
                 }
             }
             proto::DataTypeVariant::Extension(_) => {
-                return Err(crate::protos::ProtoError::FromProtoError(
-                    "The extension type is not supported.".to_string(),
-                ))
+                from_proto_err!("The extension type is not supported.")
             }
             proto::DataTypeVariant::Embedding(embedding) => {
                 let element_type = from_proto_box(embedding.element_type)?;
