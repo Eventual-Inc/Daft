@@ -237,6 +237,7 @@ impl StreamingSink for UriUploadSink {
                         .downcast_mut::<UriUploadSinkState>()
                         .expect("UriUpload sink should have UriUploadSinkState");
 
+                    println!("uploading");
                     url_state.upload(input)?;
                     let output = url_state.poll_finished(false).await?;
 
@@ -274,6 +275,7 @@ impl StreamingSink for UriUploadSink {
                         .downcast_mut::<UriUploadSinkState>()
                         .expect("UriUpload sink should have UriUploadSinkState");
 
+                    println!("finalizing");
                     let output = state.poll_finished(true).await?;
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
