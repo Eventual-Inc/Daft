@@ -2,6 +2,7 @@ use opentelemetry::{global, metrics::Counter, KeyValue};
 
 use crate::{pipeline::NodeInfo, runtime_stats::subscribers::RuntimeStatsSubscriber};
 
+#[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
     rows_received: Counter<u64>,
     rows_emitted: Counter<u64>,

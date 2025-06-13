@@ -73,7 +73,7 @@ impl OperatorProgressBar {
             return false;
         }
 
-        let prev = self.last_update.load(Ordering::Acquire);
+        {{let prev = self.last_update.load(Ordering::Acquire);
         let elapsed = (now - self.start_time).as_nanos() as u64;
         let diff = elapsed.saturating_sub(prev);
 
@@ -86,7 +86,7 @@ impl OperatorProgressBar {
         let remainder = diff % Self::UPDATE_INTERVAL;
         self.last_update
             .store(elapsed - remainder, Ordering::Release);
-        true
+        true}}
     }
 
     pub fn render(&self) {

@@ -3,7 +3,7 @@ pub(crate) mod opentelemetry;
 
 use crate::pipeline::NodeInfo;
 
-pub trait RuntimeStatsSubscriber: Send + Sync {
+pub trait RuntimeStatsSubscriber: Send + Sync + std::fmt::Debug {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any;
 
