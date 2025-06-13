@@ -1,10 +1,4 @@
-use std::{
-    collections::VecDeque,
-    future::Future,
-    path::{Path, PathBuf},
-    pin::Pin,
-    sync::Arc,
-};
+use std::{collections::VecDeque, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
@@ -29,7 +23,7 @@ use parquet::{
 
 use crate::{
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
-    utils::record_batch_to_partition_path,
+    utils::build_filename,
     AsyncFileWriter,
 };
 
@@ -86,7 +80,13 @@ pub(crate) fn create_native_parquet_writer(
 {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
-    let filename = build_filename(source_type, root_dir.as_ref(), partition_values, file_idx)?;
+    let filename = build_filename(
+        source_type,
+        root_dir.as_ref(),
+        partition_values,
+        file_idx,
+        "parquet",
+    )?;
 
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
@@ -135,57 +135,6 @@ pub(crate) fn create_native_parquet_writer(
             "Unsupported source type for the native writer: {source_type}"
         ))),
     }
-}
-
-/// Helper function to build the filename for the parquet file.
-fn build_filename(
-    source_type: SourceType,
-    root_dir: &str,
-    partition_values: Option<&RecordBatch>,
-    file_idx: usize,
-) -> DaftResult<PathBuf> {
-    let partition_path = get_partition_path(partition_values)?;
-    let filename = generate_parquet_filename(file_idx);
-
-    match source_type {
-        SourceType::File => build_local_file_path(root_dir, partition_path, filename),
-        SourceType::S3 => build_s3_path(root_dir, partition_path, filename),
-        _ => Err(DaftError::ValueError(format!(
-            "Unsupported source type: {:?}",
-            source_type
-        ))),
-    }
-}
-
-/// Helper function to get the partition path from the record batch.
-fn get_partition_path(partition_values: Option<&RecordBatch>) -> DaftResult<PathBuf> {
-    match partition_values {
-        Some(partition_values) => Ok(record_batch_to_partition_path(partition_values, None)?),
-        None => Ok(PathBuf::new()),
-    }
-}
-
-// Helper function to generate the parquet filename.
-fn generate_parquet_filename(file_idx: usize) -> String {
-    format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx)
-}
-
-/// Helper function to build the path to a local file.
-fn build_local_file_path(
-    root_dir: &str,
-    partition_path: PathBuf,
-    filename: String,
-) -> DaftResult<PathBuf> {
-    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
-    let dir = root_dir.join(partition_path);
-    Ok(dir.join(filename))
-}
-
-/// Helper function to build the path to an S3 url.
-fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
-    let (_scheme, bucket, key) = daft_io::s3_like::parse_s3_url(root_dir)?;
-    let key = Path::new(&key).join(partition_path).join(filename);
-    Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
 }
 
 struct ParquetWriter<B: StorageBackend> {
