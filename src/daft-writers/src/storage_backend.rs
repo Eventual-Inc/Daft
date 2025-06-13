@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_runtime::{get_io_runtime, RuntimeTask};
 use daft_io::{get_io_client, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer};
 use parking_lot::Mutex;
@@ -140,8 +140,7 @@ impl StorageBackend for S3StorageBackend {
             while let Some(part) = rx.recv().await {
                 s3_multipart_writer.write_part(part).await?;
             }
-            s3_multipart_writer.shutdown().await?;
-            Ok(())
+            s3_multipart_writer.shutdown().await.map_err(|e| e.into())
         });
 
         self.upload_task = Some(background_task);
@@ -169,14 +168,9 @@ impl StorageBackend for S3StorageBackend {
                 part_buffer.lock().shutdown()?;
                 Ok(())
             })
-            .await
-            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+            .await??;
 
         // Wait for the upload task to complete.
-        upload_task
-            .await
-            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
-
-        Ok(())
+        upload_task.await?
     }
 }
