@@ -237,7 +237,7 @@ impl StreamingSink for UriUploadSink {
                         .downcast_mut::<UriUploadSinkState>()
                         .expect("UriUpload sink should have UriUploadSinkState");
 
-                    println!("uploading");
+                    // println!("uploading");
                     url_state.upload(input)?;
                     let output = url_state.poll_finished(false).await?;
 
