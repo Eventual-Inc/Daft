@@ -68,7 +68,7 @@ impl UriUploadSinkState {
 
         Self {
             in_flight_uploads: JoinSet::new(),
-            all_inputs: Arc::new(MicroPartition::empty(None)),
+            all_inputs: Arc::new(MicroPartition::empty(Some(input_schema.clone()))),
             io_client: get_io_client(multi_thread, Arc::new(io_config)).unwrap(),
             submitted_uploads: 0,
             input_schema,
