@@ -30,6 +30,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -279,8 +280,27 @@ class DataFrame:
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             if get_context().get_or_create_runner().name != "native":
-                physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-                print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+                # Check if flotilla is enabled for distributed execution
+                daft_execution_config = get_context().daft_execution_config
+                if daft_execution_config.flotilla:
+                    try:
+                        from daft.daft import DistributedPhysicalPlan
+
+                        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                            builder._builder, daft_execution_config
+                        )
+                        if format == "ascii":
+                            print_to_file(distributed_plan.repr_ascii(simple))
+                        elif format == "mermaid":
+                            print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
+                    except Exception:
+                        physical_plan_scheduler = builder.to_physical_plan_scheduler(
+                            get_context().daft_execution_config
+                        )
+                        print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
+                else:
+                    physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+                    print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
             else:
                 native_executor = NativeExecutor()
                 print_to_file(
