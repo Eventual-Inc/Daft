@@ -152,6 +152,9 @@ pub fn init_tracing(enable_chrome_trace: bool) {
     );
 
     let (chrome_layer, guard) = ChromeLayerBuilder::new()
+        // The initial writer to the chrome trace is a no-op sink, so we don't write anything
+        // only on calls to start_chrome_trace() do we write traces.
+        .writer(std::io::sink())
         .trace_style(tracing_chrome::TraceStyle::Threaded)
         .name_fn(Box::new(|event_or_span| {
             match event_or_span {
@@ -170,9 +173,10 @@ pub fn init_tracing(enable_chrome_trace: bool) {
     *mg = Some(guard);
 }
 
-pub fn refresh_chrome_trace() -> bool {
+pub fn start_chrome_trace() -> bool {
     let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
     if let Some(fg) = mg.as_mut() {
+        // start_new(None) will let tracing-chrome choose the file and file name.
         fg.start_new(None);
         true
     } else {
@@ -238,5 +242,18 @@ impl Otel {
 
     pub fn flush(&self) {
         flush_opentelemetry_providers();
+    }
+}
+
+pub fn finish_chrome_trace() -> bool {
+    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
+    if let Some(fg) = mg.as_mut() {
+        // start_new(Some(Box::new(std::io::sink()))) will flush the current trace, and start a new one with a dummy writer.
+        // The flush method doesn't actually close the file. The only way to do it is to drop the guard or call 'start_new'.
+        // But we can't drop the guard because it's a static and we may have multiple traces per process, so we need to call start_new.
+        fg.start_new(Some(Box::new(std::io::sink())));
+        true
+    } else {
+        false
     }
 }
