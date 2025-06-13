@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_core::{
     prelude::{AsArrow, DataType, Field, SchemaRef, UInt64Array, Utf8Array},
     series::IntoSeries,
@@ -29,6 +30,7 @@ struct UriUploadSinkState {
     all_inputs: Arc<MicroPartition>,
     io_client: Arc<IOClient>,
     submitted_uploads: usize,
+    io_runtime_handle: RuntimeRef,
 
     input_schema: SchemaRef,
     // max_in_flight: usize,
@@ -73,6 +75,7 @@ impl UriUploadSinkState {
             submitted_uploads: 0,
             input_schema,
 
+            io_runtime_handle: get_io_runtime(true),
             // max_in_flight: max_connections * 4,
             data_col: input,
             location_col: location,
@@ -106,7 +109,21 @@ impl UriUploadSinkState {
                 };
                 let io_client = self.io_client.clone();
 
-                self.in_flight_uploads.spawn(async move {
+                // self.in_flight_uploads.spawn(async move {
+                //     let url = io_client
+                //         .single_url_upload(
+                //             submitted_uploads,
+                //             location_val,
+                //             data_val,
+                //             raise_error_on_failure,
+                //             None,
+                //         )
+                //         .await?;
+
+                //     Ok((submitted_uploads, url))
+                // });
+
+                let handle = self.io_runtime_handle.spawn(async move {
                     let url = io_client
                         .single_url_upload(
                             submitted_uploads,
@@ -120,6 +137,7 @@ impl UriUploadSinkState {
                     Ok((submitted_uploads, url))
                 });
 
+                self.in_flight_uploads.spawn(async move { handle.await? });
                 self.submitted_uploads += 1;
             }
         }
@@ -241,7 +259,6 @@ impl StreamingSink for UriUploadSink {
                         .downcast_mut::<UriUploadSinkState>()
                         .expect("UriUpload sink should have UriUploadSinkState");
 
-                    // println!("uploading");
                     url_state.upload(input)?;
                     let output = url_state.poll_finished(false).await?;
 
@@ -275,7 +292,6 @@ impl StreamingSink for UriUploadSink {
                         .downcast_mut::<UriUploadSinkState>()
                         .expect("UriUpload sink should have UriUploadSinkState");
 
-                    println!("finalizing");
                     let output = state.poll_finished(true).await?;
                     let schema = output.schema.clone();
                     let output = Arc::new(MicroPartition::new_loaded(
