@@ -159,7 +159,7 @@ impl UriUploadSinkState {
                 valid.push(false);
             }
         }
-        let contents = Utf8Array::from(("contents", data.as_slice()))
+        let contents = Utf8Array::from((self.output_column.as_str(), data.as_slice()))
             .with_validity_slice(valid.as_slice())
             .unwrap()
             .into_series();
