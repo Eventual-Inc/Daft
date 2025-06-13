@@ -2491,6 +2491,7 @@ name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
+ "common-display",
  "common-error",
  "common-partitioning",
  "common-py-serde",
@@ -3234,6 +3235,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "parking_lot 0.12.4",
  "parquet",
  "pyo3",
  "tokio",

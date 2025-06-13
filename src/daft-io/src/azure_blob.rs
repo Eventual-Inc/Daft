@@ -1,4 +1,4 @@
-use std::{ops::Range, sync::Arc};
+use std::{any::Any, ops::Range, sync::Arc};
 
 use async_trait::async_trait;
 use azure_core::auth::TokenCredential;
@@ -686,5 +686,9 @@ impl ObjectSource for AzureBlobSource {
             files,
             continuation_token: None,
         })
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }

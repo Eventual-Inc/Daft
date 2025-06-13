@@ -1,4 +1,4 @@
-use std::{ops::Range, sync::Arc, time::Duration};
+use std::{any::Any, ops::Range, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_io_config::GCSConfig;
@@ -576,5 +576,9 @@ impl ObjectSource for GCSSource {
         self.client
             .ls(path, posix, continuation_token, page_size, io_stats)
             .await
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }

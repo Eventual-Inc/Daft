@@ -1671,7 +1671,7 @@ class Expression:
         return self._eval_expressions("serialize", format)
 
     def jq(self, filter: builtins.str) -> Expression:
-        """Applies a [https://jqlang.github.io/jq/manual/](jq) filter to the expression (string), returning the results as a string.
+        """Applies a [jq](https://jqlang.github.io/jq/manual/) filter to the expression (string), returning the results as a string.
 
         Args:
             file (str): The jq filter.
@@ -1680,8 +1680,8 @@ class Expression:
             Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
 
         Warning:
-            This expression uses [https://github.com/01mf02/jaq](jaq) as its filter executor which can differ from the
-            [https://jqlang.org/](jq) command-line tool. Please consult [https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq][jq vs. jaq]
+            This expression uses [jaq](https://github.com/01mf02/jaq) as its filter executor which can differ from the
+            [jq](https://jqlang.org/) command-line tool. Please consult [jq vs. jaq](https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq)
             for a detailed look into possible differences.
 
         Examples:

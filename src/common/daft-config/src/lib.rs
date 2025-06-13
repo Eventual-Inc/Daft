@@ -64,6 +64,7 @@ pub struct DaftExecutionConfig {
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
     pub native_parquet_writer: bool,
+    pub native_remote_writer: bool,
     pub flotilla: bool,
     pub min_cpu_per_task: f64,
 }
@@ -97,6 +98,7 @@ impl Default for DaftExecutionConfig {
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
             native_parquet_writer: true,
+            native_remote_writer: false,
             flotilla: false,
             min_cpu_per_task: 0.5,
         }
@@ -132,6 +134,12 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "0" | "false")
         {
             cfg.native_parquet_writer = false;
+        }
+        let native_remote_writer_env_var_name = "DAFT_NATIVE_REMOTE_WRITER";
+        if let Ok(val) = std::env::var(native_remote_writer_env_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.native_remote_writer = true;
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
         if let Ok(val) = std::env::var(flotilla_env_var_name)

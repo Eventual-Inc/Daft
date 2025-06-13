@@ -78,6 +78,20 @@ impl PyDistributedPhysicalPlan {
     fn id(&self) -> String {
         self.plan.id().to_string()
     }
+
+    /// Visualize the distributed pipeline as ASCII text
+    fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        Ok(stage_plan.repr_ascii(self.plan.id().into(), simple)?)
+    }
+
+    /// Visualize the distributed pipeline as Mermaid markdown
+    fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        Ok(stage_plan.repr_mermaid(self.plan.id().into(), simple, bottom_up)?)
+    }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 

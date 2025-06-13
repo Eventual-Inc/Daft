@@ -30,12 +30,14 @@ impl PhysicalWriterFactory {
         output_file_info: OutputFileInfo<BoundExpr>,
         file_schema: SchemaRef,
         native_enabled: bool,
+        native_remote_enabled: bool,
     ) -> DaftResult<Self> {
         let writer_type = if native_enabled
             && native_parquet_writer_supported(
                 output_file_info.file_format,
                 &output_file_info.root_dir,
                 &file_schema,
+                native_remote_enabled,
             )? {
             WriterType::Native
         } else {
@@ -66,6 +68,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 &self.schema,
                 self.output_file_info.file_format,
                 partition_values,
+                self.output_file_info.io_config.clone(),
             ),
             WriterType::Pyarrow => create_pyarrow_file_writer(
                 &self.output_file_info.root_dir,
@@ -113,11 +116,12 @@ fn create_native_writer(
     schema: &SchemaRef,
     file_format: FileFormat,
     partition_values: Option<&RecordBatch>,
+    io_config: Option<daft_io::IOConfig>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     match file_format {
         FileFormat::Parquet => {
-            create_native_parquet_writer(root_dir, schema, file_idx, partition_values)
+            create_native_parquet_writer(root_dir, schema, file_idx, partition_values, io_config)
         }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),
