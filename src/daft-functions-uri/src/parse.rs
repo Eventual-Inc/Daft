@@ -43,7 +43,6 @@ impl ScalarUDF for UrlParse {
             )));
         }
 
-        // Define the struct fields for parsed URL components
         let struct_fields = vec![
             Field::new("scheme", DataType::Utf8),
             Field::new("username", DataType::Utf8),
@@ -63,7 +62,6 @@ fn url_parse(array: &Utf8Array) -> DaftResult<StructArray> {
     let name = array.name();
     let len = array.len();
 
-    // Initialize vectors for each component
     let mut schemes = Vec::with_capacity(len);
     let mut usernames = Vec::with_capacity(len);
     let mut passwords = Vec::with_capacity(len);
@@ -76,7 +74,6 @@ fn url_parse(array: &Utf8Array) -> DaftResult<StructArray> {
     for i in 0..len {
         match array.get(i) {
             None => {
-                // Handle null input
                 schemes.push(None);
                 usernames.push(None);
                 passwords.push(None);
@@ -86,39 +83,35 @@ fn url_parse(array: &Utf8Array) -> DaftResult<StructArray> {
                 queries.push(None);
                 fragments.push(None);
             }
-            Some(url_str) => {
-                match Url::parse(url_str) {
-                    Ok(url) => {
-                        schemes.push(Some(url.scheme().to_string()));
-                        usernames.push(if url.username().is_empty() {
-                            None
-                        } else {
-                            Some(url.username().to_string())
-                        });
-                        passwords.push(url.password().map(|s| s.to_string()));
-                        hosts.push(url.host_str().map(|s| s.to_string()));
-                        ports.push(url.port());
-                        paths.push(Some(url.path().to_string()));
-                        queries.push(url.query().map(|s| s.to_string()));
-                        fragments.push(url.fragment().map(|s| s.to_string()));
-                    }
-                    Err(_) => {
-                        // Handle parse error by setting all fields to null
-                        schemes.push(None);
-                        usernames.push(None);
-                        passwords.push(None);
-                        hosts.push(None);
-                        ports.push(None);
-                        paths.push(None);
-                        queries.push(None);
-                        fragments.push(None);
-                    }
+            Some(url_str) => match Url::parse(url_str) {
+                Ok(url) => {
+                    schemes.push(Some(url.scheme().to_string()));
+                    usernames.push(if url.username().is_empty() {
+                        None
+                    } else {
+                        Some(url.username().to_string())
+                    });
+                    passwords.push(url.password().map(|s| s.to_string()));
+                    hosts.push(url.host_str().map(|s| s.to_string()));
+                    ports.push(url.port());
+                    paths.push(Some(url.path().to_string()));
+                    queries.push(url.query().map(|s| s.to_string()));
+                    fragments.push(url.fragment().map(|s| s.to_string()));
                 }
-            }
+                Err(_) => {
+                    schemes.push(None);
+                    usernames.push(None);
+                    passwords.push(None);
+                    hosts.push(None);
+                    ports.push(None);
+                    paths.push(None);
+                    queries.push(None);
+                    fragments.push(None);
+                }
+            },
         }
     }
 
-    // Create arrays for each field
     let scheme_array = Utf8Array::from_iter("scheme", schemes.into_iter());
     let username_array = Utf8Array::from_iter("username", usernames.into_iter());
     let password_array = Utf8Array::from_iter("password", passwords.into_iter());
@@ -129,7 +122,6 @@ fn url_parse(array: &Utf8Array) -> DaftResult<StructArray> {
     let query_array = Utf8Array::from_iter("query", queries.into_iter());
     let fragment_array = Utf8Array::from_iter("fragment", fragments.into_iter());
 
-    // Create the struct array
     let struct_array = StructArray::new(
         Field::new(
             name,
