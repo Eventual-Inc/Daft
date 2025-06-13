@@ -204,6 +204,8 @@ impl HttpSource {
         let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
             .pool_idle_timeout(Duration::from_secs(60))
             .pool_max_idle_per_host(70)
+            .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+            .read_timeout(Duration::from_millis(config.read_timeout_ms))
             .default_headers(default_headers)
             .build()
             .context(UnableToCreateClientSnafu)?;

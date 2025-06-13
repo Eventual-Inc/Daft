@@ -1074,10 +1074,25 @@ impl From<IOConfig> for config::IOConfig {
 impl HTTPConfig {
     #[new]
     #[must_use]
-    #[pyo3(signature = (bearer_token=None))]
-    pub fn new(bearer_token: Option<String>) -> Self {
+    #[pyo3(signature = (bearer_token=None, retry_initial_backoff_ms=None, connect_timeout_ms=None, read_timeout_ms=None, num_tries=None))]
+    pub fn new(
+        bearer_token: Option<String>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        num_tries: Option<u32>,
+    ) -> Self {
+        let def = crate::HTTPConfig::default();
         Self {
-            config: crate::HTTPConfig::new(bearer_token),
+            config: crate::HTTPConfig {
+                bearer_token: bearer_token.map(Into::into).or(def.bearer_token),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(def.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
+                num_tries: num_tries.unwrap_or(def.num_tries),
+                ..def
+            },
         }
     }
 
