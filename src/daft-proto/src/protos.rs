@@ -27,12 +27,24 @@ pub trait FromToProto {
 }
 
 /// This enables calling like `let p: P = from_proto(m)` dealing with prost's optionals.
-pub(crate) fn from_proto<P, M>(message: impl Into<Option<M>>) -> ProtoResult<P> 
+pub(crate) fn from_proto<P, M>(message: Option<M>) -> ProtoResult<P> 
 where
     P: FromToProto<Message = M>,
-    M: prost::Message + Default
+    M: prost::Message + Default,
 {
-    P::from_proto(message.into().expect("expected non-null!"))
+    P::from_proto(message.expect("expected non-null!"))
+}
+
+/// Helper for dealing with recursive deps and boxes which become boxed types themselves.
+pub(crate) fn from_proto_box<P, M>(message: Option<Box<M>>) -> ProtoResult<Box<P>>
+where
+    P: FromToProto<Message = M>,
+    M: prost::Message + Default + ToOwned + Clone,
+{
+    let message = message.expect("expected non-null!");
+    let message = message.to_owned();
+    let proto = P::from_proto(*message)?;
+    Ok(Box::new(proto))
 }
 
 /// This macro creates a FromProtoError.

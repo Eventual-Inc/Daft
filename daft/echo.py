@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from daft.dataframe import DataFrame
 from daft.daft import PyEchoClient
+
 
 class EchoClient:
 
@@ -16,6 +16,6 @@ class EchoClient:
         return EchoClient(client)
 
     
-    def describe(self, df: DataFrame) -> str:
+    def describe(self, df) -> str:
         builder = df._builder._builder
         return self._client.describe(builder)

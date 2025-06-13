@@ -1,7 +1,7 @@
 use daft_ir::schema::DataType;
 
 use crate::{
-    protos::{from_proto, FromToProto, ProtoResult},
+    protos::{from_proto, from_proto_box, FromToProto, ProtoResult},
     to_proto_err,
 };
 
@@ -72,8 +72,7 @@ impl FromToProto for ir::DataType {
             proto::DataTypeVariant::Float32(_) => ir::DataType::Float32,
             proto::DataTypeVariant::Float64(_) => ir::DataType::Float64,
             proto::DataTypeVariant::Decimal128(decimal128) => {
-                todo!();
-                // ir::DataType::Decimal128(decimal128.precision as i32, decimal128.scale as i32)
+                ir::DataType::Decimal128(decimal128.precision as usize, decimal128.scale as usize)
             }
             proto::DataTypeVariant::Timestamp(timestamp) => {
                 let time_unit = ir::TimeUnit::from_proto(timestamp.unit)?;
@@ -95,14 +94,13 @@ impl FromToProto for ir::DataType {
             }
             proto::DataTypeVariant::Utf8(_) => ir::DataType::Utf8,
             proto::DataTypeVariant::FixedSizeList(fixed_size_list) => {
-                todo!()
-                // let element_type = from_proto(fixed_size_list.element_type)?.into();
-                // ir::DataType::FixedSizeList(element_type, fixed_size_list.size as usize)
+                let element_type = from_proto_box(fixed_size_list.element_type)?;
+                let size: usize = fixed_size_list.size as usize;
+                ir::DataType::FixedSizeList(element_type, size)
             }
             proto::DataTypeVariant::List(list) => {
-                todo!()
-                // let element_type: Box<ir::DataType> = from_proto(list.element_type.unwrap())?.into();
-                // ir::DataType::List(element_type)
+                let element_type = from_proto_box(list.element_type)?;
+                ir::DataType::List(element_type)
             }
             proto::DataTypeVariant::Struct(struct_) => {
                 let fields = struct_
@@ -113,11 +111,12 @@ impl FromToProto for ir::DataType {
                 ir::DataType::Struct(fields)
             }
             proto::DataTypeVariant::Map(map) => {
-                todo!()
-                // ir::DataType::Map {
-                //     key: from_proto(map.key_type)?.into(),
-                //     value: from_proto(map.value_type)?.into(),
-                // }
+                let key_type = from_proto_box(map.key_type)?;
+                let val_type = from_proto_box(map.value_type)?;
+                ir::DataType::Map {
+                    key: key_type,
+                    value: val_type,
+                }
             }
             proto::DataTypeVariant::Extension(_) => {
                 return Err(crate::protos::ProtoError::FromProtoError(
@@ -125,9 +124,9 @@ impl FromToProto for ir::DataType {
                 ))
             }
             proto::DataTypeVariant::Embedding(embedding) => {
-                todo!()
-                // let element_type: Box<ir::DataType> = from_proto(embedding.element_type)?.into();
-                // ir::DataType::Embedding(element_type, embedding.size as i32)
+                let element_type = from_proto_box(embedding.element_type)?;
+                let size = embedding.size as usize;
+                ir::DataType::Embedding(element_type, size)
             }
             proto::DataTypeVariant::Image(image) => {
                 let mode = image.mode.map(ir::ImageMode::from_proto).transpose()?;
@@ -142,28 +141,24 @@ impl FromToProto for ir::DataType {
                 )
             }
             proto::DataTypeVariant::Tensor(tensor) => {
-                todo!()
-                // let element_type = from_proto(tensor.element_type)?.into();
-                // ir::DataType::Tensor(element_type)
+                let element_type = from_proto_box(tensor.element_type)?;
+                ir::DataType::Tensor(element_type)
             }
             proto::DataTypeVariant::FixedShapeTensor(fixed_shape_tensor) => {
-                todo!()
-                // let element_type = from_proto(fixed_shape_tensor.element_type)?.into();
-                // ir::DataType::FixedShapeTensor(element_type, fixed_shape_tensor.shape)
+                let element_type = from_proto_box(fixed_shape_tensor.element_type)?;
+                ir::DataType::FixedShapeTensor(element_type, fixed_shape_tensor.shape)
             }
             proto::DataTypeVariant::SparseTensor(sparse_tensor) => {
-                todo!()
-                // let element_type = from_proto(sparse_tensor.element_type)?.into();
-                // ir::DataType::SparseTensor(element_type, sparse_tensor.indices_offset)
+                let element_type = from_proto_box(sparse_tensor.element_type)?;
+                ir::DataType::SparseTensor(element_type, sparse_tensor.indices_offset)
             }
             proto::DataTypeVariant::FixedShapeSparseTensor(fixed_shape_sparse_tensor) => {
-                todo!()
-                // let element_type = from_proto(fixed_shape_sparse_tensor.element_type)?.into();
-                // ir::DataType::FixedShapeSparseTensor(
-                //     element_type,
-                //     fixed_shape_sparse_tensor.shape,
-                //     fixed_shape_sparse_tensor.indices_offset,
-                // )
+                let element_type = from_proto_box(fixed_shape_sparse_tensor.element_type)?;
+                ir::DataType::FixedShapeSparseTensor(
+                    element_type,
+                    fixed_shape_sparse_tensor.shape,
+                    fixed_shape_sparse_tensor.indices_offset,
+                )
             }
             proto::DataTypeVariant::Unknown(_) => ir::DataType::Unknown,
             #[cfg(feature = "python")]
