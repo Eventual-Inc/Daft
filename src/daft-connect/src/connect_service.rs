@@ -245,7 +245,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         request: Request<ExecutePlanRequest>,
     ) -> Result<Response<Self::ExecutePlanStream>, Status> {
-        self.execute_plan_impl(request).await
+        Box::pin(self.execute_plan_impl(request)).await
     }
 
     #[tracing::instrument(skip_all)]

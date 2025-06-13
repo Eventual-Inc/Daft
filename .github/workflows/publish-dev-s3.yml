@@ -52,9 +52,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu]
+        # os: [ubuntu]
+        # arch: [x86_64, aarch64]
+        # lts: [false]
+
+        # for testing. remove before merge
+        os: [ubuntu, macos, windows]
         arch: [x86_64, aarch64]
         lts: [false]
+
+        exclude:
+        - os: windows
+          arch: aarch64
 
   publish:
     name: Publish wheels to S3
