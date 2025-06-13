@@ -1910,7 +1910,7 @@ class Expression:
             The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
         """
         f = native.get_function_from_registry("url_space")
-        return Expression._from_pyexpr(f(self._expr)).alias("urls")
+        return Expression._from_pyexpr(f(self._expr))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
