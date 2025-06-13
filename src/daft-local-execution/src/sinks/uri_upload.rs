@@ -244,13 +244,9 @@ impl StreamingSink for UriUploadSink {
                     let schema = output.schema.clone();
                     let output = MicroPartition::new_loaded(schema, Arc::new(vec![output]), None);
 
-                    let next_input = Arc::new(MicroPartition::empty(None));
                     Ok((
                         state,
-                        StreamingSinkOutput::HasMoreOutput {
-                            next_input,
-                            output: Arc::new(output),
-                        },
+                        StreamingSinkOutput::NeedMoreInput(Some(Arc::new(output))),
                     ))
                 },
                 Span::current(),
