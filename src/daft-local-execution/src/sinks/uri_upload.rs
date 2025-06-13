@@ -83,6 +83,10 @@ impl UriUploadSinkState {
     }
 
     fn upload(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+        if input.is_empty() {
+            return Ok(());
+        }
+
         let raise_error_on_failure = self.raise_error_on_failure;
 
         for input in input.get_tables()?.iter() {
