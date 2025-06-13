@@ -103,6 +103,7 @@ mkdocs-material[imaging]
 mkdocstrings-python
 ruff
 mkdocs-minify-plugin
+mkdocs-redirects
 
 # Daft connect testing
 pyspark==3.5.3
