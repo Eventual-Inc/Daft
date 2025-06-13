@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState};
+use daft_recordbatch::{get_columns_by_name, GrowableRecordBatch, ProbeState};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
@@ -40,7 +40,7 @@ impl IntermediateOpState for InnerHashJoinProbeState {
 }
 
 struct InnerHashJoinParams {
-    probe_on: Vec<ExprRef>,
+    probe_on: Vec<BoundExpr>,
     common_join_keys: Vec<String>,
     left_non_join_columns: Vec<String>,
     right_non_join_columns: Vec<String>,
@@ -57,7 +57,7 @@ impl InnerHashJoinProbeOperator {
     const DEFAULT_GROWABLE_SIZE: usize = 20;
 
     pub fn new(
-        probe_on: Vec<ExprRef>,
+        probe_on: Vec<BoundExpr>,
         left_schema: &SchemaRef,
         right_schema: &SchemaRef,
         build_on_left: bool,
@@ -92,7 +92,7 @@ impl InnerHashJoinProbeOperator {
     fn probe_inner(
         input: &Arc<MicroPartition>,
         probe_state: &Arc<ProbeState>,
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         common_join_keys: &[String],
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
@@ -111,11 +111,6 @@ impl InnerHashJoinProbeOperator {
 
         let input_tables = input.get_tables()?;
 
-        let probe_on = probe_on
-            .iter()
-            .map(|expr| BoundExpr::try_new(expr.clone(), &input.schema()))
-            .collect::<DaftResult<Vec<_>>>()?;
-
         let mut probe_side_growable = GrowableRecordBatch::new(
             &input_tables.iter().collect::<Vec<_>>(),
             false,
@@ -127,7 +122,7 @@ impl InnerHashJoinProbeOperator {
             let _loop = info_span!("InnerHashJoinOperator::eval_and_probe").entered();
             for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                 // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(&probe_on)?;
+                let join_keys = table.eval_expression_list(probe_on)?;
                 let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
                 for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
@@ -154,9 +149,9 @@ impl InnerHashJoinProbeOperator {
             (probe_side_table, build_side_table)
         };
 
-        let join_keys_table = left_table.get_columns(common_join_keys)?;
-        let left_non_join_columns = left_table.get_columns(left_non_join_columns)?;
-        let right_non_join_columns = right_table.get_columns(right_non_join_columns)?;
+        let join_keys_table = get_columns_by_name(&left_table, common_join_keys)?;
+        let left_non_join_columns = get_columns_by_name(&left_table, left_non_join_columns)?;
+        let right_non_join_columns = get_columns_by_name(&right_table, right_non_join_columns)?;
         let final_table = join_keys_table
             .union(&left_non_join_columns)?
             .union(&right_non_join_columns)?;

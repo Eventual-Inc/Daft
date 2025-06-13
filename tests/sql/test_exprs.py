@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 
 import pytest
@@ -67,10 +69,10 @@ def test_hash_exprs():
 
     assert actual == expected
 
-    with pytest.raises(Exception, match="Invalid arguments for minhash"):
+    with pytest.raises(Exception, match="Required argument `input` not found"):
         daft.sql("SELECT minhash() as hash_a FROM df").collect()
 
-    with pytest.raises(Exception, match="num_hashes is required"):
+    with pytest.raises(Exception, match="Required argument `num_hashes` not found"):
         daft.sql("SELECT minhash(a) as hash_a FROM df").collect()
 
 
@@ -310,3 +312,27 @@ def test_round(precision, value, expected):
     expected = {"literal": [expected]}
 
     assert actual == expected
+
+
+# just another sanity check to make sure args & kwargs are working properly
+@pytest.mark.parametrize(
+    "query, should_work",
+    [
+        ("round(3.14159, decimals:=3)", True),
+        ("round(input:=3.14159, decimals:=3)", True),
+        ("round(input:=3.14159, 3)", False),
+        ("round(3.111)", True),
+        ("round(3.1111, 2)", True),
+        ("round(decimals:=2, input:=3.14)", True),
+        ("round(decimals:=2, 3.14)", False),
+    ],
+)
+def test_round_arg_handling(query, should_work):
+    query = f"select {query}"
+    try:
+        daft.sql(query).to_pydict()
+        if not should_work:
+            pytest.fail()
+    except Exception:
+        if should_work:
+            pytest.fail()

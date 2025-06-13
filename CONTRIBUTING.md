@@ -43,8 +43,7 @@ To set up your development environment:
 
 If you wish to enable, or work on the daft-dashboard functionality, it does have an additional dependency of [bun.sh](https://bun.sh/).
 
-You simply need to install bun,  and everything else should work out of the box!
-
+You simply need to install bun, and everything else should work out of the box!
 
 ### Developing with Ray
 
@@ -64,52 +63,52 @@ The debugging feature uses a special VSCode launch configuration to start the Py
 #### Preparation
 
 - **CodeLLDB Extension for Visual Studio Code**:
-This extension is useful for debugging Rust code invoked from Python.
+  This extension is useful for debugging Rust code invoked from Python.
 
 - **Setting Up the Virtual Environment Interpreter**
-(Ctrl+Shift+P -> Python: Select Interpreter -> .venv)
+  (Ctrl+Shift+P -> Python: Select Interpreter -> .venv)
 
 - **Debug Settings in launch.json**
-This file is usually found in the `.vscode` folder of your project root. See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the launch.json file.
-    <details><summary><code><b>launch.json</b></code></summary>
+  This file is usually found in the `.vscode` folder of your project root. See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the launch.json file.
+  <details><summary><code><b>launch.json</b></code></summary>
 
-    ```json
-    {
-        "configurations": [
-            {
-                "name": "Debug Rust/Python",
-                "type": "debugpy",
-                "request": "launch",
-                "program": "${workspaceFolder}/tools/attach_debugger.py",
-                "args": [
-                    "${file}"
-                ],
-                "console": "internalConsole",
-                "serverReadyAction": {
-                    "pattern": "pID = ([0-9]+)",
-                    "action": "startDebugging",
-                    "name": "Rust LLDB"
-                }
-            },
-            {
-                "name": "Rust LLDB",
-                "pid": "0",
-                "type": "lldb",
-                "request": "attach",
-                "program": "${command:python.interpreterPath}",
-                "stopOnEntry": false,
-                "sourceLanguages": [
-                    "rust"
-                ],
-                "presentation": {
-                    "hidden": true
-                }
-            }
-        ]
-    }
-    ```
+      ```json
+      {
+          "configurations": [
+              {
+                  "name": "Debug Rust/Python",
+                  "type": "debugpy",
+                  "request": "launch",
+                  "program": "${workspaceFolder}/tools/attach_debugger.py",
+                  "args": [
+                      "${file}"
+                  ],
+                  "console": "internalConsole",
+                  "serverReadyAction": {
+                      "pattern": "pID = ([0-9]+)",
+                      "action": "startDebugging",
+                      "name": "Rust LLDB"
+                  }
+              },
+              {
+                  "name": "Rust LLDB",
+                  "pid": "0",
+                  "type": "lldb",
+                  "request": "attach",
+                  "program": "${command:python.interpreterPath}",
+                  "stopOnEntry": false,
+                  "sourceLanguages": [
+                      "rust"
+                  ],
+                  "presentation": {
+                      "hidden": true
+                  }
+              }
+          ]
+      }
+      ```
 
-    </details>
+      </details>
 
 #### Running the debugger
 
@@ -123,7 +122,8 @@ At this point, your debugger should stop on breakpoints in any .rs file located 
 
 > **Note**:
 > On some systems, the LLDB debugger will not attach unless [ptrace protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope) is disabled.
-To disable, run the following command:
+> To disable, run the following command:
+>
 > ```shell
 > echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
 > ```
@@ -136,3 +136,170 @@ Benchmark tests are located in `tests/benchmarks`. If you would like to run benc
 2. `pytest tests/benchmarks/[test_file.py] -k [test_name] -m benchmark`: Run a specific benchmark in a file
 
 More information about writing and using benchmarks can be found on the [pytest-benchmark docs](https://pytest-benchmark.readthedocs.io/en/latest/).
+
+### Adding new expressions
+
+Since new expressions are a very common feature request, we wanted to make it easy for new contributors to add these. Adding a new expression requires implementation in Rust and exposing it to Python.
+
+#### Step 1: Implement the function in Rust
+
+Add your function to the appropriate crate (`daft-functions-json`, `daft-functions-utf8`, etc.).
+For more advanced use cases, see existing implementations in [daft-functions-utf8](src/daft-functions-utf8/src/lib.rs)
+
+```rs
+// This prelude defines all required ScalarUDF dependencies.
+use daft_dsl::functions::prelude::*;
+
+// We need these for the trait.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+struct MyToUpperCase;
+
+#[typetag::serde]
+impl ScalarUDF for MyToUpperCase {
+
+    // Start by giving the function a name.
+    // This will be the name used in SQL when calling the function.
+    fn name(&self) -> &'static str {
+        "to_uppercase"
+    }
+
+    // Then we add an implementation for it.
+    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        let s = inputs.required(0)?;
+        // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
+        let arr = s
+            .utf8()
+            .expect("type should have been validated already during `function_args_to_field`")
+            .into_iter()
+            .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
+            .collect::<Utf8Array>();
+        Ok(arr.into_series())
+    }
+
+    // We also need a `function_args_to_field` which is used during planning to ensure that the args and datatypes are compatible.
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
+        /// grab the first positional value from `inputs`
+        let input = inputs.required(0)?.to_field(schema)?;
+        // make sure the input is a string datatype
+        ensure!(input.dtype.is_string(), "expected string");
+        Ok(input)
+    }
+
+    // Finally, we want a brief docstring for the function. This is used when generating the sql documentation.
+    fn docstring(&self) -> &'static str {
+        "Converts a string to uppercase."
+    }
+}
+```
+
+#### Step 2: Register the function
+
+Okay, now that we have the actual function implementation available, we're not quite done yet. We also need to register this to our `FUNCTION_REGISTRY` which is a global registry of all expressions/functions.
+
+Whatever crate/module you are in, there should be a `daft_dsl::functions::FunctionModule` implementation that registers all of the functions. So all you need to do is add your new struct into there.
+
+for the `utf8` functions, it's defined here `src/daft-functions-utf8/src/lib.rs`
+
+```rs
+impl daft_dsl::functions::FunctionModule for Utf8Functions {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        // ...
+        parent.add_fn(MyToUpperCase); // add this line here
+    }
+}
+```
+
+#### Step 3: Add python bindings
+
+Create expression method in `daft/expressions/expressions.py`
+
+```py
+# the method name should usually match that of which you defined in your `ScalarUDF` implementation
+def to_uppercase(self) -> Expression:
+    # make sure to add a docstring with a runnable `doctest` example
+    """Convert UTF-8 string to all upper.
+    Returns:
+        Expression: a String expression which is `self` uppercased
+
+    Examples:
+        >>> import daft
+        >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+        >>> df = df.select(df["x"].to_uppercase())
+        >>> df.show()
+        ╭──────╮
+        │ x    │
+        │ ---  │
+        │ Utf8 │
+        ╞══════╡
+        │ FOO  │
+        ├╌╌╌╌╌╌┤
+        │ BAR  │
+        ├╌╌╌╌╌╌┤
+        │ BAZ  │
+        ╰──────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    # Get the function frou our global `FUNCTION_REGISTRY`
+    f = native.get_function_from_registry("to_uppercase")
+    return Expression._from_pyexpr(f(self._expr))
+
+```
+
+For functions with additional arguments, you will need to convert those all to expressions before calling the function_registry function.
+
+```py
+def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
+    pattern_expr = Expression._to_expression(pattern)
+    idx = Expression._to_expression(index)
+    f = native.get_function_from_registry("extract_all")
+    # Pass scalar values as kwargs
+    return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, index=idx._expr))
+```
+
+Add Series method in `daft/series.py`:
+
+For series, It just delegates out to the expression implementation, so we can just call the helper method `_eval_expressions`
+
+```py
+  def to_uppercase(self) -> Series:
+    return self._eval_expressions("upper")
+```
+
+and for functions with additional arguments:
+
+```py
+def extract_all(self, pattern: Series, index: int = 0) -> Series:
+  # Pass scalar values as kwargs
+  return self._eval_expressions("extract_all", pattern, index=index)
+```
+
+#### Step 4: Write tests
+
+For testing, you can add a new file, or update an existing one in `tests/expressions/`
+
+We have a fixture `test_expression` that will do most of the heavy lifting and ensure that the apis are consistent across expr, series, and sql.
+
+here's an example of testing the `extract` function using the `test_expression` fixture
+
+```py
+def test_extract(test_expression):
+    test_data =["123-456", "789-012", "345-678"]
+    regex = r"(\d)(\d*)"
+    expected = ["123", "789", "345"]
+    test_expression(
+        data=test_data,
+        expected=expected,
+        name="extract",
+        namespace="str",
+        sql_name="regexp_extract", # if this is not provided, it will be the same as `name`
+        args=[regex],
+        kwargs={}
+    )
+```

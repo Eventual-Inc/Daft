@@ -1,18 +1,11 @@
-use std::{
-    mem,
-    sync::{atomic::AtomicBool, Arc, Mutex},
-};
+use std::sync::{atomic::AtomicBool, Mutex};
 
 use pyo3::{
     pyclass, pymethods,
     types::{PyModule, PyModuleMethods},
     Bound, PyResult,
 };
-use tracing::{
-    info_span,
-    span::{Entered, EnteredSpan},
-    Span,
-};
+use tracing::{info_span, span::EnteredSpan};
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::{layer::SubscriberExt, prelude::*};
 static TRACING_INIT: AtomicBool = AtomicBool::new(false);

@@ -10,14 +10,15 @@ from daft.context import get_context
 from daft.daft import (
     DatabaseSourceConfig,
     FileFormatConfig,
-    Pushdowns,
+    PyPartitionField,
+    PyPushdowns,
     PyRecordBatch,
     ScanTask,
     StorageConfig,
 )
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
@@ -75,7 +76,7 @@ class SQLScanOperator(ScanOperator):
     def display_name(self) -> str:
         return f"SQLScanOperator(sql={self.sql}, conn={self.conn})"
 
-    def partitioning_keys(self) -> list[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return []
 
     def multiline_display(self) -> list[str]:
@@ -84,7 +85,7 @@ class SQLScanOperator(ScanOperator):
             f"Schema = {self._schema}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         total_rows, total_size, num_scan_tasks = self._get_size_estimates()
         if num_scan_tasks == 0:
             return iter(())
@@ -239,12 +240,14 @@ class SQLScanOperator(ScanOperator):
         range_size = (max_val - min_val) / num_scan_tasks
         return [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
 
-    def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
+    def _single_scan_task(
+        self, pushdowns: PyPushdowns, total_rows: int | None, total_size: float
+    ) -> Iterator[ScanTask]:
         return iter([self._construct_scan_task(pushdowns, num_rows=total_rows, size_bytes=math.ceil(total_size))])
 
     def _construct_scan_task(
         self,
-        pushdowns: Pushdowns,
+        pushdowns: PyPushdowns,
         num_rows: int | None = None,
         size_bytes: int | None = None,
         partition_bounds: tuple[str, str] | None = None,
@@ -267,6 +270,10 @@ class SQLScanOperator(ScanOperator):
             sql = self.conn.construct_sql_query(self.sql, partition_bounds=partition_bounds)
 
         file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql, self.conn))
+
+        # keep column pushdowns because they are used for deriving the materialized schema
+        remaining_pushdowns = pushdowns if not apply_pushdowns_to_sql else PyPushdowns(columns=pushdowns.columns)
+
         return ScanTask.sql_scan_task(
             url=self.conn.url,
             file_format=file_format_config,
@@ -274,6 +281,6 @@ class SQLScanOperator(ScanOperator):
             storage_config=self.storage_config,
             num_rows=num_rows,
             size_bytes=size_bytes,
-            pushdowns=pushdowns if not apply_pushdowns_to_sql else None,
+            pushdowns=remaining_pushdowns,
             stats=stats,
         )

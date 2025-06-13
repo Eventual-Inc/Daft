@@ -39,8 +39,12 @@ jobs:
         pip install uv
 
     - name: Install dependencies
-      run: |
-        uv pip install -r requirements-dev.txt
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: uv pip install -r requirements-dev.txt
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
@@ -66,14 +70,10 @@ jobs:
       run: python benchmarking/tpch/data_generation.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --generate_parquet
 
     - name: Run Profiling on TPCH Benchmark
-      env:
-        DAFT_DEVELOPER_USE_THREAD_POOL: '0'
       run: |
         py-spy record --native --function -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup --skip_questions=11,12,13,14,15,16,17,18,19,20,21,22 || true
 
     - name: Run GIL Profiling on TPCH Benchmark
-      env:
-        DAFT_DEVELOPER_USE_THREAD_POOL: '0'
       run: |
         py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup --skip_questions=11,12,13,14,15,16,17,18,19,20,21,22 || true
 

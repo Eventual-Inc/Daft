@@ -6,13 +6,13 @@ use std::{
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
-use common_runtime::get_io_runtime;
+use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
-use futures::{future::try_join_all, stream::BoxStream, StreamExt};
+use futures::{future::try_join_all, stream::BoxStream, FutureExt, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},
     read::get_owned_page_stream_from_column_start,
@@ -28,10 +28,9 @@ use crate::{
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics,
     stream_reader::spawn_column_iters_to_table_task,
-    utils::combine_stream,
-    JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
-    UnableToCreateParquetPageStreamSnafu, UnableToParseSchemaFromMetadataSnafu,
-    UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
+    JoinSnafu, OneShotRecvSnafu, UnableToBindExpressionSnafu,
+    UnableToConvertRowGroupMetadataToStatsSnafu, UnableToCreateParquetPageStreamSnafu,
+    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
 };
 
 pub struct ParquetReaderBuilder {
@@ -119,6 +118,13 @@ pub fn build_row_ranges(
     let limit = limit.map(|v| v as i64);
     let mut row_ranges = vec![];
     let mut curr_row_index = 0;
+
+    let predicate = predicate
+        .map(|p| BoundExpr::try_new(p, schema))
+        .transpose()
+        .with_context(|_| UnableToBindExpressionSnafu {
+            path: uri.to_string(),
+        })?;
 
     if let Some(row_groups) = row_groups {
         let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
@@ -540,6 +546,7 @@ impl ParquetFileReader {
 
         let stream_of_streams =
             futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
+        let parquet_task = parquet_task.map(|x| x?);
         match maintain_order {
             true => Ok(combine_stream(stream_of_streams.flatten(), parquet_task).boxed()),
             false => {

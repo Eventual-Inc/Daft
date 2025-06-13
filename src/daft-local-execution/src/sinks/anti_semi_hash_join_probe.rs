@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{prelude::SchemaRef, series::IntoSeries};
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState, Probeable, RecordBatch};
@@ -55,7 +55,7 @@ impl StreamingSinkState for AntiSemiProbeState {
 }
 
 struct AntiSemiJoinParams {
-    probe_on: Vec<ExprRef>,
+    probe_on: Vec<BoundExpr>,
     is_semi: bool,
 }
 
@@ -70,7 +70,7 @@ impl AntiSemiProbeSink {
     const DEFAULT_GROWABLE_SIZE: usize = 20;
 
     pub fn new(
-        probe_on: Vec<ExprRef>,
+        probe_on: Vec<BoundExpr>,
         join_type: &JoinType,
         output_schema: &SchemaRef,
         probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
@@ -248,15 +248,9 @@ impl StreamingSink for AntiSemiProbeSink {
                     let (ps, bitmap_builder) =
                         probe_state.get_or_await_probe_state(build_on_left).await;
 
-                    let probe_on = params
-                        .probe_on
-                        .iter()
-                        .map(|expr| BoundExpr::try_new(expr.clone(), &input.schema()))
-                        .collect::<DaftResult<Vec<_>>>()?;
-
                     if let Some(bm_builder) = bitmap_builder {
                         Self::probe_anti_semi_with_bitmap(
-                            &probe_on,
+                            &params.probe_on,
                             ps.get_probeable(),
                             bm_builder,
                             &input,
@@ -264,7 +258,7 @@ impl StreamingSink for AntiSemiProbeSink {
                         Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                     } else {
                         let res = Self::probe_anti_semi(
-                            &probe_on,
+                            &params.probe_on,
                             ps.get_probeable(),
                             &input,
                             params.is_semi,
@@ -336,14 +330,11 @@ impl StreamingSink for AntiSemiProbeSink {
         runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
+        let default_size = runtime_handle.default_morsel_size();
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(RoundRobinDispatcher::with_fixed_threshold(default_size))
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(UnorderedDispatcher::with_fixed_threshold(default_size))
         }
     }
 }

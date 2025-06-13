@@ -1,20 +1,28 @@
 pub mod agg;
+pub mod function_args;
+#[cfg(test)]
+mod macro_tests;
 pub mod map;
 pub mod partitioning;
+pub mod prelude;
 pub mod python;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
 
 use std::{
+    collections::HashMap,
     fmt::{Display, Formatter, Result, Write},
     hash::Hash,
+    sync::{Arc, LazyLock, RwLock},
 };
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
+pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
 use python::PythonUDF;
-pub use scalar::*;
+use scalar::DynamicScalarFunction;
+pub use scalar::{ScalarFunction, ScalarFunctionFactory, ScalarUDF};
 use serde::{Deserialize, Serialize};
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
@@ -115,3 +123,58 @@ pub fn function_semantic_id(func: &FunctionExpr, inputs: &[ExprRef], schema: &Sc
     // TODO: check for function idempotency here.
     FieldID::new(format!("Function_{func:?}({inputs})"))
 }
+
+/// FunctionRegistry is a lookup structure for scalar functions.
+#[derive(Default)]
+pub struct FunctionRegistry {
+    // Todo: Use the Bindings object instead, so we can get aliases and case handling.
+    map: HashMap<String, Arc<dyn ScalarFunctionFactory>>,
+}
+
+/// FunctionModule is a mechanism to group and register scalar functions.
+pub trait FunctionModule {
+    /// Register this module to the given [SQLFunctions] table.
+    fn register(_parent: &mut FunctionRegistry);
+}
+
+impl FunctionRegistry {
+    /// Creates an empty FunctionRegistry.
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    /// Registers all functions defined in the FunctionModule to this registry.
+    pub fn register<Mod: FunctionModule>(&mut self) {
+        Mod::register(self);
+    }
+
+    /// Registers a scalar function factory without monomorphization.
+    pub fn add_fn_factory(&mut self, function: impl ScalarFunctionFactory + 'static) {
+        let function = Arc::new(function);
+        for alias in function.aliases() {
+            self.map.insert((*alias).to_string(), function.clone());
+        }
+        self.map.insert(function.name().to_string(), function);
+    }
+
+    // TODO: remove this monomorphizing version after migrating to `add_function`.
+    pub fn add_fn<UDF: ScalarUDF + 'static>(&mut self, func: UDF) {
+        // casting to dyn ScalarUDF so as to not modify the signature
+        let udf = Arc::new(func) as Arc<dyn ScalarUDF>;
+        let function = DynamicScalarFunction::from(udf);
+        self.add_fn_factory(function);
+    }
+
+    pub fn get(&self, name: &str) -> Option<Arc<dyn ScalarFunctionFactory>> {
+        self.map.get(name).cloned()
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (&String, &Arc<dyn ScalarFunctionFactory>)> {
+        self.map.iter()
+    }
+}
+
+pub static FUNCTION_REGISTRY: LazyLock<RwLock<FunctionRegistry>> =
+    LazyLock::new(|| RwLock::new(FunctionRegistry::new()));

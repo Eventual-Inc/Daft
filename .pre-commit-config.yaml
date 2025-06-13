@@ -2,10 +2,11 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v1.11.1
+  rev: v1.15.0
   hooks:
   - id: mypy
-    additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
+    args: ['--strict', '--ignore-missing-imports']
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
     files: daft
     exclude: daft/pickle/.*\.py
 
@@ -56,13 +57,13 @@ repos:
     exclude: static-dashboard-assets
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-      # Ruff version.
+  # Ruff version.
   rev: v0.8.2
   hooks:
-      # Run the linter.
+    # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
-          # Run the formatter.
+    # Run the formatter.
   - id: ruff-format
 
 - repo: local

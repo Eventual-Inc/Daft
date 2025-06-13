@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from daft.lazy_import import LazyImport
@@ -28,3 +30,18 @@ else:
     flight = LazyImport("pyarrow.flight")
 
 unity_catalog = LazyImport("daft.unity_catalog")
+
+__all__ = [
+    "flight",
+    "fsspec",
+    "np",
+    "pa",
+    "pacsv",
+    "pads",
+    "pafs",
+    "pajson",
+    "pd",
+    "pil_image",
+    "pq",
+    "unity_catalog",
+]

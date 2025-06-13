@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.daft import (
     CsvConvertOptions,
@@ -25,6 +25,8 @@ from daft.recordbatch.recordbatch import RecordBatch
 from daft.series import Series
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -42,8 +44,14 @@ class MicroPartition:
     def column_names(self) -> list[str]:
         return self._micropartition.column_names()
 
-    def get_column(self, name: str) -> Series:
-        return Series._from_pyseries(self._micropartition.get_column(name))
+    def get_column_by_name(self, name: str) -> Series:
+        return Series._from_pyseries(self._micropartition.get_column_by_name(name))
+
+    def get_column(self, idx: int) -> Series:
+        return Series._from_pyseries(self._micropartition.get_column(idx))
+
+    def columns(self) -> list[Series]:
+        return [Series._from_pyseries(s) for s in self._micropartition.columns()]
 
     def get_record_batches(self) -> list[RecordBatch]:
         return [RecordBatch._from_pyrecordbatch(t) for t in self._micropartition.get_record_batches()]
@@ -109,7 +117,7 @@ class MicroPartition:
         return MicroPartition._from_record_batches([table])
 
     @staticmethod
-    def from_pydict(data: dict) -> MicroPartition:
+    def from_pydict(data: Mapping[str, Any]) -> MicroPartition:
         table = RecordBatch.from_pydict(data)
         return MicroPartition._from_record_batches([table])
 
@@ -151,7 +159,7 @@ class MicroPartition:
         else:
             return self.to_record_batch().to_arrow_table()
 
-    def to_pydict(self) -> dict[str, list]:
+    def to_pydict(self) -> dict[str, list[Any]]:
         return self.to_record_batch().to_pydict()
 
     def to_pylist(self) -> list[dict[str, Any]]:
@@ -173,10 +181,6 @@ class MicroPartition:
     ###
     # Compute methods (MicroPartition -> MicroPartition)
     ###
-
-    def cast_to_schema(self, schema: Schema) -> MicroPartition:
-        """Casts a MicroPartition into the provided schema."""
-        return MicroPartition._from_pymicropartition(self._micropartition.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in exprs)
@@ -434,9 +438,9 @@ class MicroPartition:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], MicroPartition], tuple[dict[str, Series]]]:
         names = self.column_names()
-        return MicroPartition.from_pydict, ({name: self.get_column(name) for name in names},)
+        return MicroPartition.from_pydict, ({name: self.get_column_by_name(name) for name in names},)
 
     @classmethod
     def read_parquet_statistics(

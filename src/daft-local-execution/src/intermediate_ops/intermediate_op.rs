@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -58,8 +58,8 @@ pub trait IntermediateOperator: Send + Sync {
         Ok(get_compute_pool_num_threads())
     }
 
-    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
-        Some(runtime_handle.default_morsel_size())
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+        (0, runtime_handle.default_morsel_size())
     }
 
     fn dispatch_spawner(
@@ -67,10 +67,12 @@ pub trait IntermediateOperator: Send + Sync {
         runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
+        let (lower_bound, upper_bound) = self.morsel_size_range(runtime_handle);
+
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(self.morsel_size(runtime_handle)))
+            Arc::new(RoundRobinDispatcher::new(lower_bound, upper_bound))
         } else {
-            Arc::new(UnorderedDispatcher::new(self.morsel_size(runtime_handle)))
+            Arc::new(UnorderedDispatcher::new(lower_bound, upper_bound))
         }
     }
 }
@@ -80,6 +82,7 @@ pub struct IntermediateNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
+    node_info: NodeInfo,
 }
 
 impl IntermediateNode {
@@ -87,9 +90,12 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
+        ctx: &RuntimeContext,
     ) -> Self {
-        let rts = RuntimeStatsContext::new(intermediate_op.name());
-        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats)
+        let info = ctx.next_node_info(intermediate_op.name());
+
+        let rts = RuntimeStatsContext::new(info.clone());
+        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats, info)
     }
 
     pub(crate) fn new_with_runtime_stats(
@@ -97,12 +103,14 @@ impl IntermediateNode {
         children: Vec<Box<dyn PipelineNode>>,
         runtime_stats: Arc<RuntimeStatsContext>,
         plan_stats: StatsState,
+        node_info: NodeInfo,
     ) -> Self {
         Self {
             intermediate_op,
             children,
             runtime_stats,
             plan_stats,
+            node_info,
         }
     }
 
@@ -157,7 +165,7 @@ impl IntermediateNode {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
         for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            runtime_handle.spawn(
+            runtime_handle.spawn_local(
                 Self::run_worker(
                     self.intermediate_op.clone(),
                     input_receiver,
@@ -252,7 +260,7 @@ impl PipelineNode for IntermediateNode {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             self.name(),
         );
@@ -266,7 +274,7 @@ impl PipelineNode for IntermediateNode {
                 runtime_handle.memory_manager(),
             )
         });
-        runtime_handle.spawn(
+        runtime_handle.spawn_local(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {
                     if counting_sender.send(morsel).await.is_err() {
@@ -283,5 +291,12 @@ impl PipelineNode for IntermediateNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+
+    fn plan_id(&self) -> Arc<str> {
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

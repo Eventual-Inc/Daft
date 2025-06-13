@@ -20,8 +20,8 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
-        InferDataType,
+        try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+        try_stddev_aggregation_supertype, try_sum_supertype, InferDataType,
     },
     join::JoinSide,
     prelude::*,
@@ -35,10 +35,10 @@ use crate::{
     functions::{
         function_display_without_formatter, function_semantic_id,
         python::PythonUDF,
-        scalar_function_semantic_id,
+        scalar::scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionEvaluator, ScalarFunction,
+        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
     },
     lit,
     optimization::{get_required_columns, requires_computation},
@@ -351,6 +351,9 @@ pub enum AggExpr {
     #[display("list({_0})")]
     Concat(ExprRef),
 
+    #[display("skew({_0}")]
+    Skew(ExprRef),
+
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     MapGroups {
         func: FunctionExpr,
@@ -442,7 +445,8 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr) => expr.name(),
+            | Self::Concat(expr)
+            | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
@@ -530,6 +534,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
+            Self::Skew(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_skew()"))
+            }
             Self::MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
         }
     }
@@ -552,7 +560,8 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr) => vec![expr.clone()],
+            | Self::Concat(expr)
+            | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
@@ -578,6 +587,7 @@ impl AggExpr {
             Self::List(_) => Self::List(first_child()),
             Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
+            Self::Skew(_) => Self::Skew(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
                 inputs: children,
@@ -711,6 +721,15 @@ impl AggExpr {
                     ))),
                 }
             }
+
+            Self::Skew(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_skew_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+
             Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
         }
     }
@@ -977,6 +996,10 @@ impl Expr {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
     }
 
+    pub fn skew(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Skew(self)).into()
+    }
+
     pub fn agg_list(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::List(self)).into()
     }
@@ -1220,8 +1243,8 @@ impl Expr {
                     .join(",");
                 let frame_details = if let Some(frame) = &window_spec.frame {
                     format!(
-                        ",frame_type={:?},start={:?},end={:?},min_periods={}",
-                        frame.frame_type, frame.start, frame.end, window_spec.min_periods
+                        ",start={:?},end={:?},min_periods={}",
+                        frame.start, frame.end, window_spec.min_periods
                     )
                 } else {
                     String::new()
@@ -1272,7 +1295,7 @@ impl Expr {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
-            Self::ScalarFunction(sf) => sf.inputs.clone(),
+            Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
         }
     }
 
@@ -1289,6 +1312,7 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
+
             Self::IsNull(..) => {
                 Self::IsNull(children.first().expect("Should have 1 child").clone())
             }
@@ -1371,10 +1395,22 @@ impl Expr {
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
                 );
+                let new_children = sf
+                    .inputs
+                    .iter()
+                    .zip(children.into_iter())
+                    .map(|(fn_arg, child)| match fn_arg {
+                        FunctionArg::Named { name, .. } => FunctionArg::Named {
+                            name: name.clone(),
+                            arg: child,
+                        },
+                        FunctionArg::Unnamed(_) => FunctionArg::Unnamed(child),
+                    })
+                    .collect();
 
                 Self::ScalarFunction(crate::functions::ScalarFunction {
                     udf: sf.udf.clone(),
-                    inputs: children,
+                    inputs: FunctionArgs::new_unchecked(new_children),
                 })
             }
         }
@@ -1583,6 +1619,7 @@ impl Expr {
     pub fn name(&self) -> &str {
         match self {
             Self::Alias(.., name) => name.as_ref(),
+            // unlike alias, we only use the expr name here for functions,
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
@@ -1632,6 +1669,10 @@ impl Expr {
         Ok(self.to_field(schema)?.dtype)
     }
 
+    pub fn get_name(&self, schema: &Schema) -> DaftResult<String> {
+        Ok(self.to_field(schema)?.name)
+    }
+
     pub fn input_mapping(self: &Arc<Self>) -> Option<String> {
         let required_columns = get_required_columns(self);
         let requires_computation = requires_computation(self);
@@ -1653,7 +1694,7 @@ impl Expr {
                     write!(buffer, "{}", name)
                 }
                 Expr::Literal(lit) => lit.display_sql(buffer),
-                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
+                Expr::Alias(expr, ..) => to_sql_inner(expr, buffer),
                 Expr::BinaryOp { op, left, right } => {
                     to_sql_inner(left, buffer)?;
                     let op = match op {

@@ -156,16 +156,29 @@ pub struct HTTPConfig {
     pub config: crate::HTTPConfig,
 }
 
+#[derive(Clone, Default)]
+#[pyclass]
+pub struct UnityConfig {
+    pub config: crate::UnityConfig,
+}
+
 #[pymethods]
 impl IOConfig {
     #[new]
     #[must_use]
-    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
+    #[pyo3(signature = (
+        s3=None,
+        azure=None,
+        gcs=None,
+        http=None,
+        unity=None
+    ))]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
+        unity: Option<UnityConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -173,18 +186,26 @@ impl IOConfig {
                 azure: azure.unwrap_or_default().config,
                 gcs: gcs.unwrap_or_default().config,
                 http: http.unwrap_or_default().config,
+                unity: unity.unwrap_or_default().config,
             },
         }
     }
 
     #[must_use]
-    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
+    #[pyo3(signature = (
+        s3=None,
+        azure=None,
+        gcs=None,
+        http=None,
+        unity=None
+    ))]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
+        unity: Option<UnityConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -200,6 +221,9 @@ impl IOConfig {
                 http: http
                     .map(|http| http.config)
                     .unwrap_or_else(|| self.config.http.clone()),
+                unity: unity
+                    .map(|unity| unity.config)
+                    .unwrap_or_else(|| self.config.unity.clone()),
             },
         }
     }
@@ -237,6 +261,13 @@ impl IOConfig {
     pub fn http(&self) -> PyResult<HTTPConfig> {
         Ok(HTTPConfig {
             config: self.config.http.clone(),
+        })
+    }
+
+    #[getter]
+    pub fn unity(&self) -> PyResult<UnityConfig> {
+        Ok(UnityConfig {
+            config: self.config.unity.clone(),
         })
     }
 
@@ -1033,6 +1064,12 @@ impl From<config::IOConfig> for IOConfig {
     }
 }
 
+impl From<IOConfig> for config::IOConfig {
+    fn from(value: IOConfig) -> Self {
+        value.config
+    }
+}
+
 #[pymethods]
 impl HTTPConfig {
     #[new]
@@ -1049,12 +1086,56 @@ impl HTTPConfig {
     }
 }
 
+#[pymethods]
+impl UnityConfig {
+    #[new]
+    #[pyo3(signature = (endpoint=None, token=None))]
+    pub fn new(endpoint: Option<String>, token: Option<String>) -> Self {
+        let default = crate::UnityConfig::default();
+        Self {
+            config: crate::UnityConfig {
+                endpoint: endpoint.or(default.endpoint),
+                token: token.map(Into::into).or(default.token),
+            },
+        }
+    }
+
+    #[pyo3(signature = (endpoint=None, token=None))]
+    pub fn replace(&self, endpoint: Option<String>, token: Option<String>) -> Self {
+        Self {
+            config: crate::UnityConfig {
+                endpoint: endpoint.or_else(|| self.config.endpoint.clone()),
+                token: token.map(Into::into).or_else(|| self.config.token.clone()),
+            },
+        }
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!("{}", self.config)
+    }
+
+    #[getter]
+    pub fn endpoint(&self) -> Option<String> {
+        self.config.endpoint.clone()
+    }
+
+    #[getter]
+    pub fn token(&self) -> Option<String> {
+        self.config
+            .token
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned()
+    }
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;
     parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
+    parent.add_class::<UnityConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }

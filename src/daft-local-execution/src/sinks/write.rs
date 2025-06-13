@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -31,6 +31,7 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
+    DataSink,
 }
 
 struct WriteState {
@@ -54,10 +55,10 @@ impl BlockingSinkState for WriteState {
 pub(crate) struct WriteSink {
     write_format: WriteFormat,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-    partition_by: Option<Vec<ExprRef>>,
+    partition_by: Option<Vec<BoundExpr>>,
     file_schema: SchemaRef,
     /// File information is needed for overwriting files.
-    file_info: Option<OutputFileInfo>,
+    file_info: Option<OutputFileInfo<BoundExpr>>,
 }
 
 impl WriteSink {
@@ -66,9 +67,9 @@ impl WriteSink {
         writer_factory: Arc<
             dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
         >,
-        partition_by: Option<Vec<ExprRef>>,
+        partition_by: Option<Vec<BoundExpr>>,
         file_schema: SchemaRef,
-        file_info: Option<OutputFileInfo>,
+        file_info: Option<OutputFileInfo<BoundExpr>>,
     ) -> Self {
         Self {
             write_format,
@@ -140,9 +141,12 @@ impl BlockingSink for WriteSink {
                                     let file_paths = results
                                         .iter()
                                         .flat_map(|res| {
-                                            let s = res
-                                                .get_column("path")
+                                            let path_index = res
+                                                .schema
+                                                .get_index("path")
                                                 .expect("path to be a column");
+
+                                            let s = res.get_column(path_index);
                                             s.utf8()
                                                 .expect("path to be utf8")
                                                 .into_iter()
@@ -202,6 +206,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::Deltalake => "DeltalakeSink",
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
             WriteFormat::Lance => "LanceSink",
+            WriteFormat::DataSink => "DataSink",
         }
     }
 
@@ -219,7 +224,7 @@ impl BlockingSink for WriteSink {
         } else {
             // Unnecessary to buffer by morsel size because we are writing.
             // Writers also have their own internal buffering.
-            Arc::new(UnorderedDispatcher::new(None))
+            Arc::new(UnorderedDispatcher::unbounded())
         }
     }
 

@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, overload
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-from typing import overload
 
 from daft import DataType
 from daft.api_annotations import PublicAPI
-from daft.daft import ScanOperatorHandle
-from daft.dataframe import DataFrame
-from daft.io._generator import GeneratorScanOperator
-from daft.logical.builder import LogicalPlanBuilder
-from daft.logical.schema import Schema
-from daft.recordbatch.recordbatch import RecordBatch
+from daft.io.source import DataSource, DataSourceTask
+from daft.recordbatch import MicroPartition
+from daft.schema import Schema
+
+if TYPE_CHECKING:
+    from daft.dataframe import DataFrame
+    from daft.io.pushdowns import Pushdowns
 
 
 @overload
@@ -33,6 +35,7 @@ def _range(start: int, end: int, step: int) -> DataFrame: ...
 def _range(start: int, end: int, step: int, partitions: int) -> DataFrame: ...
 
 
+# TODO: consider using `from_range` and `Series.from_range` instead.
 @PublicAPI  # type: ignore
 def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 1) -> DataFrame:
     """Creates a DataFrame with a range of values.
@@ -133,39 +136,61 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
         start = 0
     else:
         start = start
-    scan_op = RangeScanOperator(start, end, step, partitions)
-    handle = ScanOperatorHandle.from_python_scan_operator(scan_op)
-    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
-
-    return DataFrame(builder)
+    return RangeSource(start, end, step, partitions).read()
 
 
-def _range_generators(
-    start: int, end: int, step: int, partitions: int
-) -> Iterator[Callable[[], Iterator[RecordBatch]]]:
-    # TODO: Partitioning with range scan is currently untested and unused.
-    # There may be issues with balanced partitions and step size.
+class RangeSource(DataSource):
+    """RangeSource produces a DataFrame from a range with a given step size."""
 
-    # Calculate partition bounds upfront
-    partition_size = (end - start) // partitions
-    partition_bounds = [
-        (start + (i * partition_size), start + ((i + 1) * partition_size) if i < partitions - 1 else end)
-        for i in range(partitions)
-    ]
+    _start: int
+    _end: int
+    _step: int
+    _partitions: int
+    _schema = Schema.from_pydict({"id": DataType.int64()})
 
-    def generator(partition_idx: int) -> Iterator[RecordBatch]:
-        partition_start, partition_end = partition_bounds[partition_idx]
-        values = list(range(partition_start, partition_end, step))
-        yield RecordBatch.from_pydict({"id": values})
-
-    from functools import partial
-
-    for partition_idx in range(partitions):
-        yield partial(generator, partition_idx)
-
-
-class RangeScanOperator(GeneratorScanOperator):
     def __init__(self, start: int, end: int, step: int = 1, partitions: int = 1) -> None:
-        schema = Schema._from_field_name_and_types([("id", DataType.int64())])
+        """Create a RangeSource instance.
 
-        super().__init__(schema=schema, generators=_range_generators(start, end, step, partitions))
+        Args:
+            start (int): The start of the range.
+            end (int, optional): The end of the range. If not provided, the start is 0 and the end is `start`.
+            step (int, optional): The step size of the range. Defaults to 1.
+            partitions (int, optional): The number of partitions to split the range into. Defaults to 1.
+        """
+        self._start = start
+        self._end = end
+        self._step = step
+        self._partitions = partitions
+
+    @property
+    def name(self) -> str:
+        return "RangeSource"
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[RangeSourceTask]:
+        step = self._step
+        size = (self._end - self._start) // self._partitions
+        curr_s = self._start
+        curr_e = self._start + size
+        while curr_e <= self._end:
+            yield RangeSourceTask(curr_s, curr_e, step)
+            # update to the next chunk
+            curr_s = curr_e + step
+            curr_e = curr_s + size
+
+
+@dataclass
+class RangeSourceTask(DataSourceTask):
+    _start: int
+    _end: int
+    _step: int
+
+    @property
+    def schema(self) -> Schema:
+        return RangeSource._schema
+
+    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+        yield MicroPartition.from_pydict({"id": list(range(self._start, self._end, self._step))})

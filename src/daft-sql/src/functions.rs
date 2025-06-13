@@ -3,9 +3,12 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use daft_core::prelude::Schema;
 use daft_dsl::{
-    expr::window::{WindowBoundary, WindowFrame, WindowFrameType},
-    Expr, ExprRef, WindowExpr, WindowSpec,
+    binary_op,
+    expr::window::{WindowBoundary, WindowFrame},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
+    Expr, ExprRef, Operator, WindowExpr, WindowSpec,
 };
 use daft_session::Session;
 use sqlparser::ast::{
@@ -15,39 +18,89 @@ use sqlparser::ast::{
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
+    invalid_operation_err,
     modules::{
-        coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleFloat, SQLModuleImage, SQLModuleJson, SQLModuleList,
-        SQLModuleMap, SQLModuleNumeric, SQLModulePartitioning, SQLModulePython, SQLModuleSketch,
-        SQLModuleStructs, SQLModuleTemporal, SQLModuleUri, SQLModuleUtf8, SQLModuleWindow,
+        SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
 };
+pub struct SQLConcat;
+
+impl SQLFunction for SQLConcat {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input).map(|arg| arg.into_inner()))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        let mut inputs = inputs.into_iter();
+
+        let Some(mut first) = inputs.next() else {
+            invalid_operation_err!("concat requires at least one argument")
+        };
+        for input in inputs {
+            first = binary_op(Operator::Plus, first, input);
+        }
+
+        Ok(first)
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Concatenate the inputs into a single string".to_string()
+    }
+}
 
 /// [SQL_FUNCTIONS] is a singleton that holds all the registered SQL functions.
 pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
-    functions.register::<SQLModuleFloat>();
-    functions.register::<SQLModuleHashing>();
-    functions.register::<SQLModuleImage>();
-    functions.register::<SQLModuleJson>();
-    functions.register::<SQLModuleList>();
     functions.register::<SQLModuleMap>();
-    functions.register::<SQLModuleNumeric>();
     functions.register::<SQLModulePartitioning>();
     functions.register::<SQLModulePython>();
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
-    functions.register::<SQLModuleTemporal>();
-    functions.register::<SQLModuleUri>();
-    functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
-    functions.add_fn("coalesce", SQLCoalesce {});
+    functions.add_fn("concat", SQLConcat);
+    for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
+        // Note:
+        //  FunctionModule came from SQLModule, but SQLModule still remains.
+        //  We must add all functions from the registry to the SQLModule, but
+        //  now the FunctionModule has the ability to represent both logical
+        //  and physical via ScalarFunctionFactory. This is an easy migration
+        //  because, like the python API, we've only had dynamic functions on
+        //  the SQL side. The solution is to add all `DynamicScalarFunction`
+        //  by calling get_function with empty arguments and only adding the ok's.
+        let args = FunctionArgs::empty();
+        let schema = Schema::empty();
+        if let Ok(function) = function_factory.get_function(args, &schema) {
+            functions.add_fn(name, function);
+        }
+    }
     functions
 });
+
+impl SQLFunction for Arc<dyn ScalarUDF> {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        Ok(ScalarFunction {
+            udf: self.clone(),
+            inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
+        }
+        .into())
+    }
+    fn docstrings(&self, _alias: &str) -> String {
+        ScalarUDF::docstring(self.as_ref()).to_string()
+    }
+}
 
 /// Current feature-set
 fn check_features(func: &Function) -> SQLPlannerResult<()> {
@@ -87,11 +140,13 @@ pub trait SQLFunction: Send + Sync {
         &self,
         inputs: &[FunctionArg],
         planner: &SQLPlanner,
-    ) -> SQLPlannerResult<Vec<ExprRef>> {
-        inputs
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArgs<ExprRef>> {
+        let inputs = inputs
             .iter()
             .map(|arg| planner.plan_function_arg(arg))
-            .collect::<SQLPlannerResult<Vec<_>>>()
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+        Ok(daft_dsl::functions::FunctionArgs::try_new(inputs)?)
     }
 
     // nit cleanup: argument consistency with SQLTableFunction
@@ -382,8 +437,8 @@ impl SQLPlanner<'_> {
             }
         };
 
-        if let Some(over) = func.over.as_ref() {
-            let window_spec = self.parse_window_spec(over)?;
+        if func.over.is_some() {
+            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
@@ -392,7 +447,7 @@ impl SQLPlanner<'_> {
                 Expr::WindowFunction(window_expr) => {
                     Expr::Over(window_expr.clone(), window_spec).arced()
                 }
-                _ => unsupported_sql_err!("window function expected, found: {:?}", window_fn),
+                _ => unsupported_sql_err!("window function expected"),
             })
         } else {
             // validate input argument arity and return the validated expression.
@@ -424,31 +479,24 @@ impl SQLPlanner<'_> {
 
                 if spec.window_frame.is_some() {
                     if let Some(sql_frame) = &spec.window_frame {
-                        let frame_type = match sql_frame.units {
-                            sqlparser::ast::WindowFrameUnits::Rows => WindowFrameType::Rows,
-                            sqlparser::ast::WindowFrameUnits::Range => WindowFrameType::Range,
-                            sqlparser::ast::WindowFrameUnits::Groups => {
-                                unsupported_sql_err!("Window frame units: Groups")
-                            }
-                        };
+                        let is_range_frame =
+                            matches!(sql_frame.units, sqlparser::ast::WindowFrameUnits::Range);
 
-                        let start = self.convert_window_frame_bound(&sql_frame.start_bound)?;
+                        let start = self
+                            .convert_window_frame_bound(&sql_frame.start_bound, is_range_frame)?;
 
                         // Convert end bound or default to CURRENT ROW if not specified
                         let end = match &sql_frame.end_bound {
-                            Some(end_bound) => self.convert_window_frame_bound(end_bound)?,
+                            Some(end_bound) => {
+                                self.convert_window_frame_bound(end_bound, is_range_frame)?
+                            }
                             None => WindowBoundary::Offset(0), // CURRENT ROW
                         };
 
-                        window_spec.frame = Some(WindowFrame {
-                            frame_type,
-                            start,
-                            end,
-                        });
+                        window_spec.frame = Some(WindowFrame { start, end });
                     }
                 }
 
-                // TODO: This should probably be done later in the code
                 if let Some(current_plan) = &self.current_plan {
                     window_spec = current_plan.resolve_window_spec(window_spec)?;
                 }
@@ -465,26 +513,29 @@ impl SQLPlanner<'_> {
     fn convert_window_frame_bound(
         &self,
         bound: &sqlparser::ast::WindowFrameBound,
+        is_range_frame: bool,
     ) -> SQLPlannerResult<daft_dsl::expr::window::WindowBoundary> {
         use daft_dsl::expr::window::WindowBoundary;
 
         match bound {
             sqlparser::ast::WindowFrameBound::CurrentRow => Ok(WindowBoundary::Offset(0)),
             sqlparser::ast::WindowFrameBound::Preceding(None) => {
-                Ok(WindowBoundary::UnboundedPreceding())
+                Ok(WindowBoundary::UnboundedPreceding)
             }
             sqlparser::ast::WindowFrameBound::Following(None) => {
-                Ok(WindowBoundary::UnboundedFollowing())
+                Ok(WindowBoundary::UnboundedFollowing)
             }
             sqlparser::ast::WindowFrameBound::Preceding(Some(expr)) => {
                 let parsed_expr = self.plan_expr(expr)?;
 
                 if let Some(lit) = parsed_expr.as_literal() {
-                    if let Some(value) = lit.as_i64() {
+                    if is_range_frame {
+                        Ok(WindowBoundary::RangeOffset(lit.neg()?))
+                    } else if let Some(value) = lit.as_i64() {
                         Ok(WindowBoundary::Offset(-value))
                     } else {
                         unsupported_sql_err!(
-                            "Window frame bound must be an integer, found: {}",
+                            "Window frame bound must be an integer for ROWS frames, found: {}",
                             lit
                         )
                     }
@@ -499,11 +550,13 @@ impl SQLPlanner<'_> {
                 let parsed_expr = self.plan_expr(expr)?;
 
                 if let Some(lit) = parsed_expr.as_literal() {
-                    if let Some(value) = lit.as_i64() {
+                    if is_range_frame {
+                        Ok(WindowBoundary::RangeOffset(lit.clone()))
+                    } else if let Some(value) = lit.as_i64() {
                         Ok(WindowBoundary::Offset(value))
                     } else {
                         unsupported_sql_err!(
-                            "Window frame bound must be an integer, found: {}",
+                            "Window frame bound must be an integer for ROWS frames, found: {}",
                             lit
                         )
                     }
@@ -570,10 +623,23 @@ impl SQLPlanner<'_> {
     pub(crate) fn plan_function_arg(
         &self,
         function_arg: &FunctionArg,
-    ) -> SQLPlannerResult<ExprRef> {
+    ) -> SQLPlannerResult<daft_dsl::functions::FunctionArg<ExprRef>> {
         match function_arg {
-            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => self.plan_expr(expr),
-            _ => unsupported_sql_err!("named function args not yet supported"),
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Ok(
+                daft_dsl::functions::FunctionArg::unnamed(self.plan_expr(expr)?),
+            ),
+            FunctionArg::Named {
+                name,
+                arg: FunctionArgExpr::Expr(expr),
+                operator: _,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                Ok(daft_dsl::functions::FunctionArg::named(
+                    name.to_string(),
+                    expr,
+                ))
+            }
+            _ => unsupported_sql_err!("non expr args not yet supported"),
         }
     }
 
@@ -583,6 +649,7 @@ impl SQLPlanner<'_> {
     ) -> SQLPlannerResult<ExprRef> {
         match expr {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
+
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
         }
     }
@@ -593,19 +660,7 @@ pub(crate) mod args {
     use common_io_config::IOConfig;
 
     use super::SQLFunctionArguments;
-    use crate::{error::PlannerError, modules::config::expr_to_iocfg, unsupported_sql_err};
-
-    /// Parses on_error => Literal['raise', 'null'] = 'raise' or err.
-    pub(crate) fn parse_on_error(args: &SQLFunctionArguments) -> Result<bool, PlannerError> {
-        match args.try_get_named::<String>("on_error")?.as_deref() {
-            None => Ok(true),
-            Some("raise") => Ok(true),
-            Some("null") => Ok(false),
-            Some(other) => {
-                unsupported_sql_err!("Expected on_error to be 'raise' or 'null', found '{other}'")
-            }
-        }
-    }
+    use crate::{error::PlannerError, modules::config::expr_to_iocfg};
 
     /// Parses io_config which is used in several SQL functions.
     pub(crate) fn parse_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {

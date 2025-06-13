@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.io import DataSink
     from daft.recordbatch import MicroPartition
 
 
@@ -216,6 +217,25 @@ def sort(
     )
 
 
+def top_n(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sort_by: list[PyExpr],
+    descending: list[bool],
+    nulls_first: list[bool],
+    limit: int,
+    num_partitions: int,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
+    return physical_plan.top_n(
+        child_plan=input,
+        sort_by=expr_projection,
+        descending=descending,
+        nulls_first=nulls_first,
+        limit=limit,
+        num_partitions=num_partitions,
+    )
+
+
 def fanout_by_hash(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     num_partitions: int,
@@ -375,7 +395,7 @@ def write_deltalake(
     path: str,
     large_dtypes: bool,
     version: int,
-    partition_cols: list[str] | None,
+    partition_cols: list[PyExpr] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.deltalake_write(
@@ -383,7 +403,7 @@ def write_deltalake(
         path,
         large_dtypes,
         version,
-        partition_cols,
+        ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols]) if partition_cols else None,
         io_config,
     )
 
@@ -393,6 +413,13 @@ def write_lance(
     path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
+    kwargs: dict[str, Any] | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
+
+
+def write_data_sink(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sink: DataSink[Any],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.data_sink_write(input, sink)

@@ -5,10 +5,10 @@ use common_error::DaftResult;
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     count_actor_pool_udfs,
+    expr::bound_expr::BoundExpr,
     functions::python::{
         get_concurrency, get_resource_request, get_udf_names, try_get_batch_size_from_udf,
     },
-    ExprRef,
 };
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
@@ -30,7 +30,7 @@ struct ActorHandle {
 }
 
 impl ActorHandle {
-    fn try_new(projection: &[ExprRef]) -> DaftResult<Self> {
+    fn try_new(projection: &[BoundExpr]) -> DaftResult<Self> {
         #[cfg(feature = "python")]
         {
             let handle = Python::with_gil(|py| {
@@ -40,7 +40,7 @@ impl ActorHandle {
                         .getattr(pyo3::intern!(py, "ActorHandle"))?
                         .call1((projection
                             .iter()
-                            .map(|expr| PyExpr::from(expr.clone()))
+                            .map(|expr| PyExpr::from(expr.as_ref().clone()))
                             .collect::<Vec<_>>(),))?
                         .unbind(),
                 )
@@ -122,23 +122,28 @@ impl IntermediateOpState for ActorPoolProjectState {
 }
 
 pub struct ActorPoolProjectOperator {
-    projection: Vec<ExprRef>,
+    projection: Vec<BoundExpr>,
     concurrency: usize,
     batch_size: Option<usize>,
     memory_request: u64,
 }
 
 impl ActorPoolProjectOperator {
-    pub fn try_new(projection: Vec<ExprRef>) -> DaftResult<Self> {
-        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
+    pub fn try_new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
+        let projection_unbound = projection
+            .iter()
+            .map(|expr| expr.inner().clone())
+            .collect::<Vec<_>>();
+
+        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection_unbound);
 
         assert_eq!(
             num_actor_pool_udfs, 1,
             "Expected only one actor pool udf in an actor pool project"
         );
 
-        let concurrency = get_concurrency(&projection);
-        let batch_size = try_get_batch_size_from_udf(&projection)?;
+        let concurrency = get_concurrency(&projection_unbound);
+        let batch_size = try_get_batch_size_from_udf(&projection_unbound)?;
 
         let memory_request = get_resource_request(&projection)
             .and_then(|req| req.memory_bytes())
@@ -193,7 +198,10 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         ));
         res.push(format!(
             "UDFs = [{}]",
-            self.projection.iter().flat_map(get_udf_names).join(", ")
+            self.projection
+                .iter()
+                .flat_map(|expr| get_udf_names(expr.inner()))
+                .join(", ")
         ));
         res.push(format!("Concurrency = {}", self.concurrency));
         if let Some(resource_request) = get_resource_request(&self.projection) {
@@ -219,8 +227,11 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         Ok(self.concurrency)
     }
 
-    fn morsel_size(&self, runtime_handle: &ExecutionRuntimeContext) -> Option<usize> {
-        self.batch_size
-            .or_else(|| Some(runtime_handle.default_morsel_size()))
+    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
+        if let Some(batch_size) = self.batch_size {
+            (batch_size, batch_size)
+        } else {
+            (0, runtime_handle.default_morsel_size())
+        }
     }
 }

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import Schema, SchemaVisitor
@@ -11,14 +11,14 @@ from daft.daft import PyField
 if TYPE_CHECKING:
     from pyiceberg.types import ListType, MapType, NestedField, PrimitiveType, StructType
 
-FieldIdMapping = Dict[int, PyField]
+FieldIdMapping = dict[int, PyField]
 
 
 def _nested_field_to_daft_pyfield(field: NestedField) -> PyField:
     return PyField.create(field.name, DataType.from_arrow_type(schema_to_pyarrow(field.field_type))._dtype)
 
 
-class SchemaFieldIdMappingVisitor(SchemaVisitor[FieldIdMapping]):
+class SchemaFieldIdMappingVisitor(SchemaVisitor[FieldIdMapping]):  # type: ignore[misc]
     """Extracts a mapping of {field_id: PyField} from an Iceberg schema."""
 
     def schema(self, schema: Schema, struct_result: FieldIdMapping) -> FieldIdMapping:

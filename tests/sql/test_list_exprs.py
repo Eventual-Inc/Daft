@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pyarrow as pa
 import pytest
 
@@ -168,8 +170,6 @@ def test_various_list_ops():
         col("col").list.sort().alias("sort"),
         col("col").list.sort(True).alias("sort_desc"),
         col("col").list.sort(False).alias("sort_asc"),
-        col("col").list.sort(True).alias("sort_desc_upper"),
-        col("col").list.sort(False).alias("sort_asc_upper"),
         col("col").list.slice(1, 2).alias("slice"),
     ).collect()
     actual = daft.sql(
@@ -180,10 +180,8 @@ def test_various_list_ops():
         list_mean(col) as mean,
         list_sum(col) as sum,
         list_sort(col) as sort,
-        list_sort(col, desc) as sort_desc,
-        list_sort(col, asc) as sort_asc,
-        list_sort(col, DESC) as sort_desc_upper,
-        list_sort(col, ASC) as sort_asc_upper,
+        list_sort(col, desc:=true) as sort_desc,
+        list_sort(col, desc:=false) as sort_asc,
         list_slice(col, 1, 2) as slice
     FROM test
     """,

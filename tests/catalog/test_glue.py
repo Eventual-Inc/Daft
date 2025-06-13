@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import boto3
 import botocore
@@ -155,13 +155,13 @@ def test_list_tables(glue_catalog, glue_client):
     # list tables with catalog
     tables = glue_catalog.list_tables("test_database")
     assert len(tables) == 2
-    assert "test_database.table1" in tables
-    assert "test_database.table2" in tables
+    assert Identifier("test_database", "table1") in tables
+    assert Identifier("test_database", "table2") in tables
 
     # test listing tables with pattern
     tables = glue_catalog.list_tables("test_database.table1")
     assert len(tables) == 1
-    assert "test_database.table1" in tables
+    assert Identifier("test_database", "table1") in tables
 
     # test listing tables with no pattern
     with pytest.raises(ValueError, match="requires the pattern to contain a namespace"):
@@ -279,10 +279,16 @@ class GlueTestTable(GlueTable):
     def read(self, **options) -> DataFrame:
         raise NotImplementedError
 
-    def write(
+    def append(
         self,
         df: DataFrame,
-        mode: Literal["append"] | Literal["overwrite"] = "append",
+        **options,
+    ) -> None:
+        raise NotImplementedError
+
+    def overwrite(
+        self,
+        df: DataFrame,
         **options,
     ) -> None:
         raise NotImplementedError
@@ -316,7 +322,7 @@ def test_glue_csv_table_from_table_info_1(glue_catalog):
     csv_table = GlueCsvTable.from_table_info(glue_catalog, table_info)
     assert csv_table._path == "s3://bucket/test_csv_table/"
     assert len(csv_table._schema) == 3
-    assert csv_table._schema == Schema._from_pydict(
+    assert csv_table._schema == Schema.from_pydict(
         {
             "col1": DataType.string(),
             "col2": DataType.int32(),
@@ -488,7 +494,7 @@ def test_convert_glue_schema():
     ]
 
     # Test schema conversion
-    assert _convert_glue_schema(columns) == Schema._from_pydict(
+    assert _convert_glue_schema(columns) == Schema.from_pydict(
         {
             "bool_col": DataType.bool(),
             "byte_col": DataType.int8(),

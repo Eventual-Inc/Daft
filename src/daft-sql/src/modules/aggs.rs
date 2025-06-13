@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
-use daft_dsl::{unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -41,7 +41,7 @@ impl SQLFunction for AggExpr {
             handle_count(inputs, planner)
         } else {
             let inputs = self.args_to_expr_unnamed(inputs, planner)?;
-            to_expr(self, inputs.as_slice())
+            to_expr(self, inputs.into_inner().as_slice())
         }
     }
 
@@ -106,9 +106,26 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
             }
         }
         [expr] => {
-            // SQL default COUNT ignores nulls
-            let input = planner.plan_function_arg(expr)?;
-            input.count(daft_core::count_mode::CountMode::Valid)
+            let input = planner.plan_function_arg(expr)?.into_inner();
+
+            match input.as_literal() {
+                // count(null) always returns 0
+                Some(LiteralValue::Null) => lit(0).alias("count"),
+                // in SQL, any count(<non null literal>) is functionally the same as count(*)
+                Some(_) => match &planner.current_plan {
+                    Some(plan) => {
+                        let schema = plan.schema();
+                        unresolved_col(schema[0].name.clone())
+                            .count(daft_core::count_mode::CountMode::All)
+                            .alias("count")
+                    }
+                    None => {
+                        unsupported_sql_err!("count(<literal>) is not supported in this context")
+                    }
+                },
+                // SQL default COUNT ignores nulls
+                None => input.count(daft_core::count_mode::CountMode::Valid),
+            }
         }
         _ => unsupported_sql_err!("COUNT takes exactly one argument"),
     })
@@ -158,6 +175,7 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         AggExpr::Concat(_) => unsupported_sql_err!("concat"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),
         AggExpr::Set(_) => unsupported_sql_err!("set"),
+        AggExpr::Skew(_) => unsupported_sql_err!("skew"),
     }
 }
 

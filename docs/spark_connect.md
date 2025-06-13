@@ -4,6 +4,14 @@ The `daft.pyspark` module provides a way to create a PySpark session that can be
 
 For the full PySpark SQL API documentation, see the [official PySpark documentation](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/index.html#spark-sql).
 
+## Installing Daft with Spark Connect support
+
+Daft supports Spark Connect through the optional `spark` dependency.
+
+```bash
+pip install -U "daft[spark]"
+```
+
 ## Example
 
 === "🐍 Python"
@@ -101,7 +109,7 @@ A few methods do have some notable differences compared to PySpark.
 
 ### explain
 
-The `df.explain()` method will output non-Spark compatible `explain` and instead will be the same as calling `explain` on a Daft dataframe.
+The `df.explain()` method will output non-Spark compatible `explain` and instead will be the same as calling `explain` on a DataFrame.
 
 ### show
 

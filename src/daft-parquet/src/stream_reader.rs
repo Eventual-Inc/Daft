@@ -2,12 +2,12 @@ use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, RuntimeTask};
+use common_runtime::{combine_stream, get_compute_runtime, RuntimeTask};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{stream::BoxStream, FutureExt, StreamExt};
 use itertools::Itertools;
 use rayon::{
     iter::ParallelIterator,
@@ -21,7 +21,6 @@ use crate::{
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
     stream_reader::read::schema::infer_schema_with_options,
-    utils::combine_stream,
     PARQUET_MORSEL_SIZE,
 };
 
@@ -122,7 +121,12 @@ fn arrow_chunk_to_table(
         let predicate = BoundExpr::try_new(predicate, &table.schema)?;
         table = table.filter(&[predicate])?;
         if let Some(oc) = &original_columns {
-            table = table.get_columns(oc)?;
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
         }
         if let Some(nr) = original_num_rows {
             table = table.head(nr)?;
@@ -594,6 +598,7 @@ pub async fn local_parquet_stream(
 
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
+    let parquet_task = parquet_task.map(|x| x?);
     let combined = match maintain_order {
         true => combine_stream(stream_of_streams.flatten(), parquet_task).boxed(),
         false => combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed(),

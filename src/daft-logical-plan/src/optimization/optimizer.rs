@@ -11,7 +11,7 @@ use super::{
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
         SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
-        UnnestPredicateSubquery, UnnestScalarSubquery,
+        SplitGranularProjection, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::LogicalPlan;
@@ -204,6 +204,14 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![Box::new(SimplifyExpressionsRule::new())],
             RuleExecutionStrategy::FixedPoint(None),
+        ));
+        self
+    }
+
+    pub fn split_granular_projections(mut self) -> Self {
+        self.rule_batches.push(RuleBatch::new(
+            vec![Box::new(SplitGranularProjection::new())],
+            RuleExecutionStrategy::Once,
         ));
         self
     }

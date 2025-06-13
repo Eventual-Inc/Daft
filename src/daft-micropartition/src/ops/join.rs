@@ -5,7 +5,7 @@ use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema, ExprRef};
+use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
 use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
@@ -17,8 +17,8 @@ impl MicroPartition {
         &self,
         right: &Self,
         io_stats: Arc<IOStatsContext>,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         how: JoinType,
         table_join: F,
     ) -> DaftResult<Self>
@@ -47,14 +47,10 @@ impl MicroPartition {
                 (_, None) => TruthValue::Maybe,
                 (None, _) => TruthValue::Maybe,
                 (Some(l), Some(r)) => {
-                    let l_eval_stats = l.eval_expression_list(left_on, &self.schema)?;
-                    let r_eval_stats = r.eval_expression_list(right_on, &right.schema)?;
+                    let l_eval_stats = l.eval_expression_list(left_on)?;
+                    let r_eval_stats = r.eval_expression_list(right_on)?;
                     let mut curr_tv = TruthValue::Maybe;
-                    for (lc, rc) in l_eval_stats
-                        .columns
-                        .values()
-                        .zip(r_eval_stats.columns.values())
-                    {
+                    for (lc, rc) in l_eval_stats.into_iter().zip(&r_eval_stats) {
                         if lc.equal(rc)?.to_truth_value() == TruthValue::False {
                             curr_tv = TruthValue::False;
                             break;
@@ -75,16 +71,7 @@ impl MicroPartition {
         match (lt.as_slice(), rt.as_slice()) {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema))),
             ([lt], [rt]) => {
-                let left_on = left_on
-                    .iter()
-                    .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
-                    .try_collect::<Vec<_>>()?;
-                let right_on = right_on
-                    .iter()
-                    .map(|expr| BoundExpr::try_new(expr.clone(), &right.schema))
-                    .try_collect::<Vec<_>>()?;
-
-                let joined_table = table_join(lt, rt, &left_on, &right_on, how)?;
+                let joined_table = table_join(lt, rt, left_on, right_on, how)?;
                 Ok(Self::new_loaded(
                     join_schema,
                     vec![joined_table].into(),
@@ -98,8 +85,8 @@ impl MicroPartition {
     pub fn hash_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         null_equals_nulls: Option<Vec<bool>>,
         how: JoinType,
     ) -> DaftResult<Self> {
@@ -120,8 +107,8 @@ impl MicroPartition {
     pub fn sort_merge_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         is_sorted: bool,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::sort_merge_join");

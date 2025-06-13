@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import urllib.parse
 import uuid
 from datetime import date, datetime
 
@@ -81,7 +82,7 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_s
     assert set(output_dict["Borough"]) == boroughs
 
     for path, bor in zip(output_dict["path"], output_dict["Borough"]):
-        assert f"Borough={bor}" in path
+        assert f"Borough={urllib.parse.quote(bor)}" in path
         read_back = daft.read_parquet(path).to_pydict()
         assert all(b == bor for b in read_back["Borough"])
 

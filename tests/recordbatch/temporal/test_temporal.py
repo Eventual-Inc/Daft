@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 
 import pytest
@@ -29,7 +31,7 @@ DATETIMES_WITH_NULL = [None, datetime.datetime(2021, 1, 2, 1, 2, 3)]
 def test_table_date(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
     dates = table.eval_expression_list([col("datetime").dt.date()])
-    assert dates.get_column("datetime").to_pylist() == expected
+    assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -48,7 +50,7 @@ def test_table_date(input, expected):
 def test_table_day(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
     dates = table.eval_expression_list([col("datetime").dt.day()])
-    assert dates.get_column("datetime").to_pylist() == expected
+    assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -67,7 +69,7 @@ def test_table_day(input, expected):
 def test_table_hour(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
     dates = table.eval_expression_list([col("datetime").dt.hour()])
-    assert dates.get_column("datetime").to_pylist() == expected
+    assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -86,7 +88,7 @@ def test_table_hour(input, expected):
 def test_table_minute(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
     dates = table.eval_expression_list([col("datetime").dt.minute()])
-    assert dates.get_column("datetime").to_pylist() == expected
+    assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -105,7 +107,7 @@ def test_table_minute(input, expected):
 def test_table_second(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
     dates = table.eval_expression_list([col("datetime").dt.second()])
-    assert dates.get_column("datetime").to_pylist() == expected
+    assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -124,4 +126,4 @@ def test_table_second(input, expected):
 def test_table_time(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
     dates = table.eval_expression_list([col("datetime").dt.time()])
-    assert dates.get_column("datetime").to_pylist() == expected
+    assert dates.get_column_by_name("datetime").to_pylist() == expected

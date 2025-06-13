@@ -4,11 +4,12 @@ use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{exprs_to_schema, ExprRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{logical_plan, logical_plan::CreationSnafu, stats::StatsState, LogicalPlan};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sort {
     pub plan_id: Option<usize>,
     // Upstream node.

@@ -7,7 +7,7 @@ use daft_schema::prelude::*;
 use crate::series::utils::python_fn::run_python_binary_operator_fn;
 use crate::{
     array::prelude::*,
-    datatypes::{InferDataType, Utf8Array},
+    datatypes::{InferDataType, Int32Type, Utf8Array},
     series::{utils::cast::cast_downcast_op, IntoSeries, Series},
     with_match_integer_daft_types, with_match_numeric_daft_types,
 };
@@ -85,13 +85,15 @@ impl Add for &Series {
                     // Duration
                     // ----------------
                     (DataType::Date, DataType::Duration(..)) => {
-                        let days = rhs.duration()?.cast_to_days()?;
-                        let physical_result = self.date()?.physical.add(&days)?;
+                        let days_series = rhs.duration()?.cast_to_days()?.cast(&DataType::Int32)?;
+                        let days_array = days_series.downcast()?;
+                        let physical_result = self.date()?.physical.add(days_array)?;
                         physical_result.cast(output_type)
                     }
                     (DataType::Duration(..), DataType::Date) => {
-                        let days = lhs.duration()?.cast_to_days()?;
-                        let physical_result = days.add(&rhs.date()?.physical)?;
+                        let days_series = lhs.duration()?.cast_to_days()?.cast(&DataType::Int32)?;
+                        let days_array: &DataArray<Int32Type> = days_series.downcast()?;
+                        let physical_result = days_array.add(&rhs.date()?.physical)?;
                         physical_result.cast(output_type)
                     }
                     (DataType::Duration(..), DataType::Duration(..)) => {
@@ -183,8 +185,9 @@ impl Sub for &Series {
                     // Duration
                     // ----------------
                     (DataType::Date, DataType::Duration(..)) => {
-                        let days = rhs.duration()?.cast_to_days()?;
-                        let physical_result = self.date()?.physical.sub(&days)?;
+                        let tmp = rhs.duration()?.cast_to_days()?.cast(&DataType::Int32)?;
+                        let days = tmp.downcast()?;
+                        let physical_result = self.date()?.physical.sub(days)?;
                         physical_result.cast(output_type)
                     }
                     (DataType::Date, DataType::Date) => {

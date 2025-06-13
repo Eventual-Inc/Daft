@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     fmt::{Display, Formatter},
     sync::Arc,
 };
@@ -8,28 +7,30 @@ use common_error::DaftResult;
 use daft_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use super::function_args::{FunctionArg, FunctionArgs};
 use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarFunction {
     pub udf: Arc<dyn ScalarUDF>,
-    pub inputs: Vec<ExprRef>,
+    pub inputs: FunctionArgs<ExprRef>,
 }
 
 impl ScalarFunction {
+    // TODO(cory): use FunctionArgs instead of `Vec<ExprRef>`
     pub fn new<UDF: ScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
+        let inputs = inputs.into_iter().map(FunctionArg::unnamed).collect();
         Self {
             udf: Arc::new(udf),
-            inputs,
+            inputs: FunctionArgs::new_unchecked(inputs),
         }
     }
-
     pub fn name(&self) -> &str {
         self.udf.name()
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf.to_field(&self.inputs, schema)
+        self.udf.function_args_to_field(self.inputs.clone(), schema)
     }
 }
 
@@ -39,17 +40,131 @@ impl From<ScalarFunction> for ExprRef {
     }
 }
 
-#[typetag::serde(tag = "type")]
-pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
-    fn as_any(&self) -> &dyn Any;
+/// This is a factory for scalar function implementations.
+///
+/// TODO:
+///   Rename to ScalarFunction (or similar) once ScalarFunction is migrated
+///   to ScalarUDF, and update ScalarUDF to ScalarFunctionImpl (or similar).
+///   Then update Expr::Function(ScalarUDF) to Expr::Function(ScalarFunctionFactory)
+///   which will enable *name* resolution within the DSL, but then we now have
+///   the ability for *type* resolution during planning via get_function. We can
+///   build rule-based type resolution at a later time.
+///
+pub trait ScalarFunctionFactory: Send + Sync {
+    /// The name of this function.
     fn name(&self) -> &'static str;
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series>;
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
+
+    /// Any additional aliases for this function.
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Returns a ScalarUDF for the given fields.
+    ///
+    /// Note:
+    ///   When the time comes, we should replace FunctionArgs<ExprRef> with bound ExprRef.
+    ///   This way we have the pair (Expr, Field) so we don't have to keep re-computing
+    ///   expression types each time we resolve a function. At present, I wanted to keep
+    ///   this signature the exact same as function_args_to_field.
+    ///
+    fn get_function(
+        &self,
+        args: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Arc<dyn ScalarUDF>>;
+}
+
+/// This is a concrete implementation of a ScalarFunction.
+#[typetag::serde(tag = "type")]
+pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
+    /// The name of the function.
+    fn name(&self) -> &'static str;
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    #[deprecated = "use evaluate instead"]
+    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
+        let inputs = FunctionArgs::try_new(
+            inputs
+                .iter()
+                .map(|s| FunctionArg::unnamed(s.clone()))
+                .collect(),
+        )?;
+
+        self.evaluate(inputs)
+    }
+    /// This is where the actual logic of the function is implemented.
+    /// A simple example would be a string function such as `to_uppercase` that simply takes in a utf8 array and uppercases all values
+    /// ```rs, no_run
+    /// impl ScalarUDF for MyToUppercase {
+    ///     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
+    ///         let s = inputs.required(0)?;
+    ///
+    ///         let arr = s
+    ///             .utf8()
+    ///             .expect("type should have been validated already during `function_args_to_field`")
+    ///             .into_iter()
+    ///             .map(|s_opt| s_opt.map(|s| s.to_uppercase()))
+    ///             .collect::<Utf8Array>();
+    ///
+    ///         Ok(arr.into_series())
+    ///     }
+    /// }
+    /// ```
+    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
+
+    /// `function_args_to_field` is used during planning to ensure that args and datatypes are compatible.
+    /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
+    /// ```rs, no_run
+    /// impl ScalarUDF for MyToUppercase {
+    ///     fn function_args_to_field(
+    ///         &self,
+    ///         inputs: FunctionArgs<ExprRef>,
+    ///         schema: &Schema,
+    ///     ) -> DaftResult<Field> {
+    ///         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
+    ///         /// grab the first positional value from `inputs`
+    ///         let input = inputs.required(0)?.to_field(schema)?;
+    ///         // make sure the input is a string datatype
+    ///         ensure!(input.dtype.is_string(), "expected string");
+    ///         Ok(input)
+    ///     }
+    /// }
+    /// ```
+    #[allow(deprecated)]
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        // for backwards compatibility we add a default implementation.
+        // TODO: move all existing implementations of `to_field` over to `function_args_to_field`
+        // Once that is done, we can name it back to `to_field`.
+        self.to_field(inputs.into_inner().as_slice(), schema)
+    }
+
+    #[deprecated = "use `function_args_to_field` instead"]
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        let inputs = inputs
+            .iter()
+            .map(|e| FunctionArg::unnamed(e.clone()))
+            .collect::<Vec<_>>();
+
+        let inputs = FunctionArgs::new_unchecked(inputs);
+        self.function_args_to_field(inputs, schema)
+    }
+
+    fn docstring(&self) -> &'static str {
+        "No documentation available"
+    }
 }
 
 pub fn scalar_function_semantic_id(func: &ScalarFunction, schema: &Schema) -> FieldID {
     let inputs = func
         .inputs
+        .clone()
+        .into_inner()
         .iter()
         .map(|expr| expr.semantic_id(schema).id.to_string())
         .collect::<Vec<String>>()
@@ -75,7 +190,7 @@ impl std::hash::Hash for ScalarFunction {
 impl Display for ScalarFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "{}(", self.name())?;
-        for (i, input) in self.inputs.iter().enumerate() {
+        for (i, input) in self.inputs.clone().into_inner().into_iter().enumerate() {
             if i != 0 {
                 write!(f, ", ")?;
             }
@@ -83,5 +198,31 @@ impl Display for ScalarFunction {
         }
         write!(f, ")")?;
         Ok(())
+    }
+}
+
+/// Function factory which is backed by a single dynamic ScalarUDF.
+pub struct DynamicScalarFunction(Arc<dyn ScalarUDF>);
+
+impl From<Arc<dyn ScalarUDF>> for DynamicScalarFunction {
+    fn from(value: Arc<dyn ScalarUDF>) -> Self {
+        Self(value)
+    }
+}
+
+impl ScalarFunctionFactory for DynamicScalarFunction {
+    /// Delegate to inner.
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    /// Delegate to inner.
+    fn aliases(&self) -> &'static [&'static str] {
+        self.0.aliases()
+    }
+
+    /// All typing for implementation variants is done during evaluation, hence dynamic.
+    fn get_function(&self, _: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Arc<dyn ScalarUDF>> {
+        Ok(self.0.clone())
     }
 }

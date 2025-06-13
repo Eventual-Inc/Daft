@@ -114,6 +114,6 @@ impl StreamingSink for LimitSink {
     ) -> Arc<dyn DispatchSpawner> {
         // Limits are greedy, so we don't need to buffer any input.
         // They are also not concurrent, so we don't need to worry about ordering.
-        Arc::new(UnorderedDispatcher::new(None))
+        Arc::new(UnorderedDispatcher::unbounded())
     }
 }

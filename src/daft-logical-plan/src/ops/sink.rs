@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;
@@ -11,7 +12,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sink {
     pub plan_id: Option<usize>,
     // Upstream node.
@@ -51,6 +52,10 @@ impl Sink {
                     CatalogType::DeltaLake(_) => vec![Field::new("add_action", DataType::Python)],
                     CatalogType::Lance(_) => vec![Field::new("fragments", DataType::Python)],
                 }
+            }
+            #[cfg(feature = "python")]
+            SinkInfo::DataSinkInfo(_) => {
+                vec![Field::new("write_results", DataType::Python)]
             }
         };
         let schema = Schema::new(fields).into();
@@ -98,6 +103,10 @@ impl Sink {
                     res.extend(lance_info.multiline_display());
                 }
             },
+            #[cfg(feature = "python")]
+            SinkInfo::DataSinkInfo(data_sink_info) => {
+                res.push(format!("Sink: DataSink({})", data_sink_info.name));
+            }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));
         if let StatsState::Materialized(stats) = &self.stats_state {

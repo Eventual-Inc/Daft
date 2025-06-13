@@ -10,9 +10,11 @@ mod local;
 mod object_io;
 mod object_store_glob;
 mod retry;
-mod s3_like;
+pub mod s3_like;
 mod stats;
 mod stream_utils;
+#[cfg(feature = "python")]
+mod unity;
 
 use std::sync::LazyLock;
 
@@ -21,6 +23,8 @@ use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
+#[cfg(feature = "python")]
+use unity::UnitySource;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -33,8 +37,7 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, GetResult};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::s3_config_from_env;
-use s3_like::S3LikeSource;
+pub use s3_like::{s3_config_from_env, S3LikeSource, S3MultipartWriter, S3PartBuffer};
 use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
@@ -181,7 +184,7 @@ impl From<Error> for std::io::Error {
     }
 }
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]
 pub struct IOClient {
@@ -197,7 +200,7 @@ impl IOClient {
         })
     }
 
-    async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
         let (source_type, path) = parse_url(input)?;
 
         {
@@ -229,6 +232,16 @@ impl IOClient {
             }
             SourceType::HF => {
                 HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+            }
+            SourceType::Unity => {
+                #[cfg(feature = "python")]
+                {
+                    UnitySource::get_client(&self.config.unity).await? as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    unimplemented!("Unity Catalog source currently requires Python");
+                }
             }
         };
 
@@ -372,6 +385,7 @@ pub enum SourceType {
     AzureBlob,
     GCS,
     HF,
+    Unity,
 }
 
 impl std::fmt::Display for SourceType {
@@ -383,6 +397,7 @@ impl std::fmt::Display for SourceType {
             Self::AzureBlob => write!(f, "AzureBlob"),
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
+            Self::Unity => write!(f, "UnityCatalog"),
         }
     }
 }
@@ -418,10 +433,11 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     match scheme.as_ref() {
         "file" => Ok((SourceType::File, fixed_input)),
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
-        "s3" | "s3a" => Ok((SourceType::S3, fixed_input)),
+        "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
+        "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))

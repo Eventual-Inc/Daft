@@ -25,7 +25,7 @@ from daft.series import Series
         (b"a", DataType.binary()),
         (True, DataType.bool()),
         (None, DataType.null()),
-        (Series.from_pylist([1, 2, 3]), DataType.int64()),
+        (Series.from_pylist([1, 2, 3]), DataType.list(DataType.int64())),
         (date(2023, 1, 1), DataType.date()),
         (time(1, 2, 3, 4), DataType.time(timeunit=TimeUnit.from_str("us"))),
         (datetime(2023, 1, 1), DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
@@ -40,7 +40,7 @@ def test_make_lit(data, expected_dtype) -> None:
     assert literal.name() == "literal"
     empty_table = MicroPartition.empty()
     lit_table = empty_table.eval_expression_list([literal])
-    series = lit_table.get_column("literal")
+    series = lit_table.get_column_by_name("literal")
     assert series.datatype() == expected_dtype
     repr_out = repr(literal)
 
@@ -149,7 +149,7 @@ def test_repr_functions_round() -> None:
     a = col("a")
     y = a.round()
     repr_out = repr(y)
-    assert repr_out == "round(col(a))"
+    assert repr_out == "round(col(a), lit(0))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -185,9 +185,9 @@ def test_repr_functions_log10() -> None:
 
 def test_repr_functions_log() -> None:
     a = col("a")
-    y = a.log()
+    y = a.log(2)
     repr_out = repr(y)
-    assert repr_out == "log(col(a))"
+    assert repr_out == "log(col(a), lit(2))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -432,18 +432,18 @@ def test_repr_functions_hash_2() -> None:
 
 def test_repr_functions_minhash() -> None:
     a = col("a")
-    y = a.minhash(1, 2)
+    y = a.minhash(num_hashes=1, ngram_size=2)
     repr_out = repr(y)
-    assert repr_out == "minhash(col(a))"
+    assert repr_out == 'minhash(col(a), lit(1), lit(2), lit(1), lit("murmurhash3"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
 
 def test_repr_functions_minhash_2() -> None:
     a = col("a")
-    y = a.minhash(1, 2, 3)
+    y = a.minhash(num_hashes=1, ngram_size=2, seed=3)
     repr_out = repr(y)
-    assert repr_out == "minhash(col(a))"
+    assert repr_out == 'minhash(col(a), lit(1), lit(2), lit(3), lit("murmurhash3"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -452,7 +452,7 @@ def test_repr_functions_tokenize_encode() -> None:
     a = col("a")
     y = a.str.tokenize_encode("cl100k_base")
     repr_out = repr(y)
-    assert repr_out == "tokenize_encode(col(a))"
+    assert repr_out == 'tokenize_encode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -461,7 +461,7 @@ def test_repr_functions_tokenize_decode() -> None:
     a = col("a")
     y = a.str.tokenize_decode("cl100k_base")
     repr_out = repr(y)
-    assert repr_out == "tokenize_decode(col(a))"
+    assert repr_out == 'tokenize_decode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -602,7 +602,7 @@ def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
     pa_table = pa.table({"dt": pa_array})
     mp = MicroPartition.from_arrow(pa_table)
 
-    series = mp.get_column("dt")
+    series = mp.get_column_by_name("dt")
     output = repr(series)
 
     # Series repr is very long, so we just check the last line which contains the timestamp
@@ -641,7 +641,7 @@ def test_duration_lit(input, expected) -> None:
 def test_repr_series_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
-    assert output == "lit([1, 2, 3])"
+    assert output == "lit([[1, 2, 3]])"
 
 
 def test_list_value_counts():

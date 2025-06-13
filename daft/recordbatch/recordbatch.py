@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 from daft.arrow_utils import ensure_table
 from daft.daft import (
@@ -12,6 +12,7 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
+    PySeries,
 )
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.daft import ScanTask as _ScanTask
@@ -29,6 +30,8 @@ from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from daft.io import IOConfig
 
 logger = logging.getLogger(__name__)
@@ -43,11 +46,11 @@ class RecordBatch:
     def schema(self) -> Schema:
         return Schema._from_pyschema(self._recordbatch.schema())
 
-    def column_names(self) -> list[str]:
-        return self._recordbatch.column_names()
+    def get_column(self, idx: int) -> Series:
+        return Series._from_pyseries(self._recordbatch.get_column(idx))
 
-    def get_column(self, name: str) -> Series:
-        return Series._from_pyseries(self._recordbatch.get_column(name))
+    def columns(self) -> list[Series]:
+        return [Series._from_pyseries(s) for s in self._recordbatch.columns()]
 
     def size_bytes(self) -> int:
         return self._recordbatch.size_bytes()
@@ -115,7 +118,7 @@ class RecordBatch:
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> RecordBatch:
-        if not pd.module_available():
+        if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
         assert isinstance(pd_df, pd.DataFrame)
         try:
@@ -126,11 +129,14 @@ class RecordBatch:
             return RecordBatch.from_arrow_table(arrow_table)
         # Fall back to pydict path.
         df_as_dict = pd_df.to_dict(orient="series")
-        return RecordBatch.from_pydict(df_as_dict)
+        if any(not isinstance(k, str) for k in df_as_dict.keys()):
+            raise ValueError("pandas.DataFrame column names must be of type `str` to convert to a daft.RecordBatch.")
+        df_as_dict_str = cast("dict[str, Any]", df_as_dict)
+        return RecordBatch.from_pydict(df_as_dict_str)
 
     @staticmethod
-    def from_pydict(data: dict) -> RecordBatch:
-        series_dict = dict()
+    def from_pydict(data: Mapping[str, Any]) -> RecordBatch:
+        series_dict: dict[str, PySeries] = dict()
         for k, v in data.items():
             series = item_to_series(k, v)
             series_dict[k] = series._series
@@ -161,23 +167,21 @@ class RecordBatch:
         return self
 
     def to_arrow_record_batch(self) -> pa.RecordBatch:
-        tab = pa.RecordBatch.from_pydict(
-            {colname: self.get_column(colname).to_arrow() for colname in self.column_names()}
-        )
+        tab = pa.RecordBatch.from_pydict({column.name(): column.to_arrow() for column in self.columns()})
         return tab
 
     def to_arrow_table(self) -> pa.Table:
-        tab = pa.Table.from_pydict({colname: self.get_column(colname).to_arrow() for colname in self.column_names()})
+        tab = pa.Table.from_pydict({column.name(): column.to_arrow() for column in self.columns()})
         return tab
 
-    def to_pydict(self) -> dict[str, list]:
-        return {colname: self.get_column(colname).to_pylist() for colname in self.column_names()}
+    def to_pydict(self) -> dict[str, list[Any]]:
+        return {column.name(): column.to_pylist() for column in self.columns()}
 
     def to_pylist(self) -> list[dict[str, Any]]:
         # TODO(Clark): Avoid a double-materialization of the table once the Rust-side table supports
         # by-row selection or iteration.
         table = self.to_pydict()
-        column_names = self.column_names()
+        column_names = table.keys()
         return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
 
     def to_pandas(
@@ -187,7 +191,7 @@ class RecordBatch:
     ) -> pd.DataFrame:
         from packaging.version import parse
 
-        if not pd.module_available():
+        if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
 
         python_fields = set()
@@ -200,8 +204,8 @@ class RecordBatch:
 
         if python_fields or tensor_fields:
             table = {}
-            for colname in self.column_names():
-                column_series = self.get_column(colname)
+            for column_series in self.columns():
+                colname = column_series.name()
                 # Use Python list representation for Python typed columns or tensor columns (return as numpy)
                 if colname in python_fields or colname in tensor_fields:
                     column = column_series.to_pylist()
@@ -225,10 +229,6 @@ class RecordBatch:
     ###
     # Compute methods (Table -> Table)
     ###
-
-    def cast_to_schema(self, schema: Schema) -> RecordBatch:
-        """Casts a RecordBatch into the provided schema."""
-        return RecordBatch._from_pyrecordbatch(self._recordbatch.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
@@ -305,7 +305,11 @@ class RecordBatch:
         return RecordBatch._from_pyrecordbatch(self._recordbatch.agg(to_agg_pyexprs, group_by_pyexprs))
 
     def pivot(
-        self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
+        self,
+        group_by: ExpressionsProjection,
+        pivot_column: Expression,
+        values_column: Expression,
+        names: list[str],
     ) -> RecordBatch:
         group_by_pyexprs = [e._expr for e in group_by]
         return RecordBatch._from_pyrecordbatch(
@@ -365,7 +369,10 @@ class RecordBatch:
 
         return RecordBatch._from_pyrecordbatch(
             self._recordbatch.sort_merge_join(
-                right._recordbatch, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted
+                right._recordbatch,
+                left_on=left_exprs,
+                right_on=right_exprs,
+                is_sorted=is_sorted,
             )
         )
 
@@ -379,7 +386,10 @@ class RecordBatch:
         ]
 
     def partition_by_range(
-        self, partition_keys: ExpressionsProjection, boundaries: RecordBatch, descending: list[bool]
+        self,
+        partition_keys: ExpressionsProjection,
+        boundaries: RecordBatch,
+        descending: list[bool],
     ) -> list[RecordBatch]:
         if not isinstance(boundaries, RecordBatch):
             raise TypeError(f"Expected a RecordBatch for `boundaries` in partition_by_range but got {type(boundaries)}")
@@ -450,9 +460,10 @@ class RecordBatch:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._recordbatch.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple:
-        names = self.column_names()
-        return RecordBatch.from_pydict, ({name: self.get_column(name) for name in names},)
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[[dict[str, Any]], RecordBatch], tuple[dict[str, Series]]]:
+        return RecordBatch.from_pydict, ({column.name(): column for column in self.columns()},)
 
     @classmethod
     def read_parquet(

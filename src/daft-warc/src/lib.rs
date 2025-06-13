@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-use std::{future::Future, num::NonZeroUsize, sync::Arc};
+use std::{num::NonZeroUsize, sync::Arc};
 
 use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
 use chrono::{DateTime, Utc};
@@ -10,7 +10,7 @@ use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{futures::try_future::TryFutureExt, Snafu};
 use tokio::{
     fs::File,
@@ -557,7 +557,12 @@ pub async fn stream_warc(
                 let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
                 let filtered = table.filter(&[predicate])?;
                 if let Some(include_columns) = &include_columns {
-                    filtered.get_columns(include_columns.as_slice())
+                    let include_column_indices = include_columns
+                        .iter()
+                        .map(|name| table.schema.get_index(name))
+                        .collect::<DaftResult<Vec<_>>>()?;
+
+                    Ok(filtered.get_columns(&include_column_indices))
                 } else {
                     Ok(filtered)
                 }
@@ -590,30 +595,9 @@ pub async fn stream_warc(
         }
     });
     let receiver_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-    let combined_stream = combine_stream(receiver_stream, warc_stream_task);
+    let combined_stream = common_runtime::combine_stream(receiver_stream, warc_stream_task);
 
     Ok(combined_stream.boxed())
-}
-
-fn combine_stream<T, E>(
-    stream: impl Stream<Item = Result<T, E>> + Unpin,
-    future: impl Future<Output = Result<(), E>>,
-) -> impl Stream<Item = Result<T, E>> {
-    use futures::stream::unfold;
-
-    let initial_state = (Some(future), stream);
-
-    unfold(initial_state, |(future, mut stream)| async move {
-        future.as_ref()?;
-
-        match stream.next().await {
-            Some(item) => Some((item, (future, stream))),
-            None => match future.unwrap().await {
-                Err(error) => Some((Err(error), (None, stream))),
-                Ok(()) => None,
-            },
-        }
-    })
 }
 
 #[cfg(test)]

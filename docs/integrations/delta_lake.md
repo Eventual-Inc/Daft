@@ -10,6 +10,8 @@ Daft currently supports:
 
 3. **Multi-cloud Support:** Daft supports reading Delta Lake tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 
+A detailed Delta Lake roadmap for Daft can be found on [our Github issues](https://github.com/Eventual-Inc/Daft/issues/2457). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
+
 ## Installing Daft with Delta Lake Support
 
 Daft internally uses the [deltalake](https://pypi.org/project/deltalake/) Python package to fetch metadata about the Delta Lake table, such as paths to the underlying Parquet files and table statistics. The `deltalake` package therefore must be installed to read Delta Lake tables with Daft, either manually or with the below `daft[deltalake]` extras install of Daft.
@@ -41,12 +43,12 @@ The below example uses the [deltalake](https://pypi.org/project/deltalake/) Pyth
     write_deltalake("some-table", df, partition_by="group")
     ```
 
-After writing this local example table, we can easily read it into a Daft DataFrame.
+After writing this local example table, we can easily read it into Daft.
 
 === "🐍 Python"
 
     ```python
-    # Read Delta Lake table into a Daft DataFrame.
+    # Read a Delta Lake table
     import daft
 
     df = daft.read_deltalake("some-table")
@@ -76,7 +78,7 @@ Filters on non-partition columns will still benefit from automatic file pruning 
 
 ## Write to Delta Lake
 
-You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write a Daft DataFrame to a Delta table:
+You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write a DataFrame to a Delta table:
 
 === "🐍 Python"
 
@@ -116,15 +118,3 @@ References:
 * [Python `unitycatalog` type name code reference](https://github.com/unitycatalog/unitycatalog-python/blob/main/src/unitycatalog/types/table_info.py)
 * [Spark types documentation](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/data_types.html)
 * [Databricks types documentation](https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-datatypes)
-
-## Roadmap
-
-Here are Delta Lake features that are on our roadmap. Please let us know if you would like to see support for any of these features!
-
-1. Read support for [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html) ([issue](https://github.com/Eventual-Inc/Daft/issues/1954)).
-
-2. Read support for [column mappings](https://docs.delta.io/latest/delta-column-mapping.html) ([issue](https://github.com/Eventual-Inc/Daft/issues/1955)).
-
-3. Writing new Delta Lake tables ([issue](https://github.com/Eventual-Inc/Daft/issues/1967)).
-
-4. Writing back to an existing table with appends, overwrites, upserts, or deletes ([issue](https://github.com/Eventual-Inc/Daft/issues/1968)).

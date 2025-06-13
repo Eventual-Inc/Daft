@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 from daft.context import get_context
 from daft.daft import (
@@ -27,6 +27,8 @@ from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.logical.builder import LogicalPlanBuilder
 
 logger = logging.getLogger(__name__)
@@ -107,7 +109,7 @@ class NativeRunner(Runner[MicroPartition]):
 
 
 @contextmanager
-def with_span():
+def with_span() -> Iterator[None]:
     span = QuerySpan()
     entered_span = span.enter()
     yield

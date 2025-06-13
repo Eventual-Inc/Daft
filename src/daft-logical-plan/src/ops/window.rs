@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{expr::window::WindowSpec, WindowExpr};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{LogicalPlan, Result},
@@ -28,7 +29,7 @@ use crate::{
 ///
 /// Multiple window function expressions can be stored in a single Window operator
 /// as long as they share the same window specification.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Window {
     /// An id for the plan.
     pub plan_id: Option<usize>,
@@ -135,16 +136,11 @@ impl Window {
         }
 
         if let Some(frame) = &self.window_spec.frame {
-            let frame_type = match frame.frame_type {
-                daft_dsl::expr::window::WindowFrameType::Rows => "ROWS",
-                daft_dsl::expr::window::WindowFrameType::Range => "RANGE",
-            };
-
             let start = match &frame.start {
-                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding => {
                     "UNBOUNDED PRECEDING".to_string()
                 }
-                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing => {
                     "UNBOUNDED FOLLOWING".to_string()
                 }
                 daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
@@ -152,13 +148,16 @@ impl Window {
                     std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
                     std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
                 },
+                daft_dsl::expr::window::WindowBoundary::RangeOffset(n) => {
+                    format!("RANGE {}", n)
+                }
             };
 
             let end = match &frame.end {
-                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding => {
                     "UNBOUNDED PRECEDING".to_string()
                 }
-                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing => {
                     "UNBOUNDED FOLLOWING".to_string()
                 }
                 daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
@@ -166,12 +165,12 @@ impl Window {
                     std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
                     std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
                 },
+                daft_dsl::expr::window::WindowBoundary::RangeOffset(n) => {
+                    format!("RANGE {}", n)
+                }
             };
 
-            lines.push(format!(
-                "  Frame: {} BETWEEN {} AND {}",
-                frame_type, start, end
-            ));
+            lines.push(format!("  Frame: BETWEEN {} AND {}", start, end));
         }
 
         if self.window_spec.min_periods != 1 {

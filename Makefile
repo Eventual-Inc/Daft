@@ -23,7 +23,7 @@ endif
 
 .venv:  ## Set up virtual environment
 ifeq (, $(shell which uv))
-	python3 -m venv $(VENV)
+	$(PYTHON_VERSION) -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 else
 	uv venv $(VENV) -p $(PYTHON_VERSION)
@@ -62,10 +62,9 @@ build: check-toolchain .venv  ## Compile and install Daft for development
 build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
 
-
 .PHONY: test
 test: .venv build  ## Run tests
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration
 
 .PHONY: doctests
 doctests:
@@ -77,12 +76,14 @@ dsdgen: .venv ## Generate TPC-DS data
 
 .PHONY: docs
 docs: .venv ## Build Daft documentation
-	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs build -f mkdocs.yml
+	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs build -f mkdocs.yml
 
 .PHONY: docs-serve
 docs-serve: .venv ## Build Daft documentation in development server
-	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs serve -f mkdocs.yml
+	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
+
 
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
+	rm -rf ./target

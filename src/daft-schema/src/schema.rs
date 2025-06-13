@@ -18,7 +18,7 @@ pub type SchemaRef = Arc<Schema>;
 
 use derivative::Derivative;
 
-#[derive(Debug, Display, Serialize, Deserialize, Derivative, Eq)]
+#[derive(Debug, Display, Serialize, Deserialize, Derivative, Eq, Clone)]
 #[derivative(Hash, PartialEq)]
 #[display("{}\n", make_schema_vertical_table(
     self.fields.iter().map(|field| (field.name.clone(), field.dtype.to_string()))
@@ -94,6 +94,19 @@ impl Schema {
             .iter()
             .map(|i| (*i, &self.fields[*i]))
             .collect()
+    }
+
+    pub fn append(&mut self, field: Field) {
+        let index = self.fields.len();
+        let name = field.name.clone();
+
+        self.fields.push(field);
+
+        if let Some(indices) = self.name_to_indices.get_mut(&name) {
+            indices.push(index);
+        } else {
+            self.name_to_indices.insert(name, vec![index]);
+        }
     }
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]

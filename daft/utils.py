@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterable, Union
+from collections.abc import AsyncIterator, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.dependencies import pa
 
@@ -13,11 +14,11 @@ ColumnInputType = Union["Expression", str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
-def get_arrow_version():
+def get_arrow_version() -> tuple[int, ...]:
     return tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
-def in_notebook():
+def in_notebook() -> bool:
     """Check if we are in a Jupyter notebook."""
     try:
         from IPython import get_ipython
@@ -31,7 +32,7 @@ def in_notebook():
     return True
 
 
-def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
+def pydict_to_rows(pydict: dict[str, list[Any]]) -> list[frozenset[tuple[str, Any]]]:
     """Converts a dataframe pydict to a list of rows representation.
 
     e.g.
@@ -52,7 +53,7 @@ def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
     ]
 
 
-def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
+def freeze(input: dict[Any, Any] | list[Any] | Any) -> frozenset[Any] | tuple[Any, ...] | Any:
     """Freezes mutable containers for equality comparison."""
     if isinstance(input, dict):
         return frozenset((key, freeze(value)) for key, value in input.items())
@@ -64,8 +65,8 @@ def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
 
 def map_operator_arrow_semantics_bool(
     operator: Callable[[Any, Any], Any],
-    left_pylist: list,
-    right_pylist: list,
+    left_pylist: list[Any],
+    right_pylist: list[Any],
 ) -> list[bool | None]:
     return [
         (bool(operator(left, right)) if (left is not None and right is not None) else None)
@@ -74,9 +75,9 @@ def map_operator_arrow_semantics_bool(
 
 
 def python_list_membership_check(
-    left_pylist: list,
-    right_pylist: list,
-) -> list:
+    left_pylist: list[Any],
+    right_pylist: list[Any],
+) -> list[Any]:
     try:
         right_pyset = set(right_pylist)
         return [elem in right_pyset for elem in left_pylist]
@@ -84,15 +85,15 @@ def python_list_membership_check(
         return [elem in right_pylist for elem in left_pylist]
 
 
-def python_list_between_check(value_pylist: list, lower_pylist: list, upper_pylist: list) -> list:
+def python_list_between_check(value_pylist: list[Any], lower_pylist: list[Any], upper_pylist: list[Any]) -> list[Any]:
     return [value <= upper and value >= lower for value, lower, upper in zip(value_pylist, lower_pylist, upper_pylist)]
 
 
 def map_operator_arrow_semantics(
     operator: Callable[[Any, Any], Any],
-    left_pylist: list,
-    right_pylist: list,
-) -> list:
+    left_pylist: list[Any],
+    right_pylist: list[Any],
+) -> list[Any]:
     return [
         operator(left, right) if (left is not None and right is not None) else None
         for (left, right) in zip(left_pylist, right_pylist)
@@ -133,18 +134,18 @@ class SyncFromAsyncIterator:
     Note that the async iterator is created lazily upon first iteration.
     """
 
-    def __init__(self, async_iter_producer: Callable[[], AsyncIterator]):
+    def __init__(self, async_iter_producer: Callable[[], AsyncIterator[Any]]):
         self.async_iter_producer = async_iter_producer
-        self.async_iter = None
+        self.async_iter: Any | None = None
         self.loop = asyncio.new_event_loop()
         self.stopped = False
 
-    def __iter__(self):
+    def __iter__(self) -> SyncFromAsyncIterator:
         if self.stopped:
             raise StopIteration
         return self
 
-    def __next__(self):
+    def __next__(self) -> Any:
         if self.stopped:
             raise StopIteration
 
@@ -155,7 +156,7 @@ class SyncFromAsyncIterator:
             self.loop.close()
             raise StopIteration
 
-    async def _get_next(self):
+    async def _get_next(self) -> Any:
         if self.async_iter is None:
             self.async_iter = self.async_iter_producer()
         res = await self.async_iter.__anext__()

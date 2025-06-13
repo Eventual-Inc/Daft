@@ -12,15 +12,17 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn, WindowSpec,
+    left_col, resolved_col, right_col, unresolved_col, Column, Expr, ExprRef, UnresolvedColumn,
+    WindowSpec,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
-use tracing::{info_span, Span};
+use tracing::info_span;
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
@@ -33,6 +35,7 @@ use {
 };
 
 use crate::{
+    display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
         self,
@@ -703,6 +706,15 @@ impl LogicalPlanBuilder {
         partition_cols: Option<Vec<String>>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
+        let partition_cols = partition_cols
+            .map(|cols| {
+                let expr_resolver = ExprResolver::default();
+
+                let cols = cols.into_iter().map(unresolved_col).collect();
+                expr_resolver.resolve(cols, self.plan.clone())
+            })
+            .transpose()?;
+
         use crate::sink_info::DeltaLakeCatalogInfo;
         let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
             catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {
@@ -748,6 +760,16 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[cfg(feature = "python")]
+    pub fn datasink_write(&self, name: String, sink: Arc<PyObject>) -> DaftResult<Self> {
+        use crate::sink_info::DataSinkInfo;
+
+        let sink_info = SinkInfo::DataSinkInfo(DataSinkInfo { name, sink });
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
     pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
@@ -765,6 +787,7 @@ impl LogicalPlanBuilder {
                     |builder| builder.reorder_joins(),
                 )
                 .simplify_expressions()
+                .split_granular_projections()
                 .build();
 
             let optimized_plan = optimizer.optimize(
@@ -823,6 +846,7 @@ impl LogicalPlanBuilder {
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()
+            .split_granular_projections()
             .build();
 
         let optimized_plan = optimizer.optimize(
@@ -866,6 +890,14 @@ impl LogicalPlanBuilder {
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         use common_display::mermaid::MermaidDisplay;
         self.plan.repr_mermaid(opts)
+    }
+
+    pub fn repr_json(&self, include_schema: bool) -> DaftResult<String> {
+        let mut output = String::new();
+        let mut json_vis = JsonVisitor::new(&mut output);
+        json_vis.with_schema(include_schema);
+        self.plan.visit(&mut json_vis)?;
+        Ok(output)
     }
 }
 
@@ -1283,6 +1315,11 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[pyo3(signature = (name, sink))]
+    pub fn datasink_write(&self, name: String, sink: PyObject) -> PyResult<Self> {
+        Ok(self.builder.datasink_write(name, Arc::new(sink))?.into())
+    }
+
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
     }
@@ -1298,6 +1335,9 @@ impl PyLogicalPlanBuilder {
 
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         self.builder.repr_mermaid(opts)
+    }
+    pub fn repr_json(&self, include_schema: bool) -> PyResult<String> {
+        Ok(self.builder.repr_json(include_schema)?)
     }
 }
 

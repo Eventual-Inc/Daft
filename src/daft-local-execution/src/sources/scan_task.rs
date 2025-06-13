@@ -1,14 +1,15 @@
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     sync::Arc,
 };
 
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_runtime::{get_compute_pool_num_threads, get_io_runtime};
+use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -18,11 +19,15 @@ use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{ChunkSpec, ScanTask};
 use daft_warc::WarcConvertOptions;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{FutureExt, Stream, StreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
 
-use crate::sources::source::{Source, SourceStream};
+use crate::{
+    channel::{create_channel, Sender},
+    sources::source::{Source, SourceStream},
+    TaskSet,
+};
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
@@ -81,6 +86,53 @@ impl ScanTaskSource {
     pub fn arced(self) -> Arc<dyn Source> {
         Arc::new(self) as Arc<dyn Source>
     }
+
+    /// Spawns the background task that processes scan tasks with limited parallelism
+    fn spawn_scan_task_processor(
+        &self,
+        senders: Vec<Sender<Arc<MicroPartition>>>,
+        io_stats: IOStatsRef,
+        delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
+        maintain_order: bool,
+    ) -> common_runtime::RuntimeTask<DaftResult<()>> {
+        let io_runtime = get_io_runtime(true);
+        let scan_tasks = self.scan_tasks.clone();
+        let num_parallel_tasks = self.num_parallel_tasks;
+
+        io_runtime.spawn(async move {
+            let mut task_set = TaskSet::new();
+            let mut scan_task_and_sender_iter = scan_tasks.into_iter().zip(senders.into_iter());
+
+            // Start initial batch of parallel tasks
+            for _ in 0..num_parallel_tasks {
+                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
+                    task_set.spawn(forward_scan_task_stream(
+                        scan_task,
+                        io_stats.clone(),
+                        delete_map.clone(),
+                        maintain_order,
+                        sender,
+                    ));
+                }
+            }
+
+            // Process remaining tasks as previous ones complete
+            while let Some(result) = task_set.join_next().await {
+                result??;
+                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
+                    task_set.spawn(forward_scan_task_stream(
+                        scan_task,
+                        io_stats.clone(),
+                        delete_map.clone(),
+                        maintain_order,
+                        sender,
+                    ));
+                }
+            }
+
+            Ok(())
+        })
+    }
 }
 
 #[async_trait]
@@ -91,35 +143,29 @@ impl Source for ScanTaskSource {
         maintain_order: bool,
         io_stats: IOStatsRef,
     ) -> DaftResult<SourceStream<'static>> {
-        let io_runtime = get_io_runtime(true);
+        // Get the delete map for the scan tasks, if any
         let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
-        let stream_of_streams =
-            futures::stream::iter(self.scan_tasks.clone().into_iter().map(move |scan_task| {
-                let io_stats = io_stats.clone();
-                let delete_map = delete_map.clone();
-                io_runtime.spawn(stream_scan_task(
-                    scan_task,
-                    io_stats,
-                    delete_map,
-                    maintain_order,
-                ))
-            }));
 
-        match maintain_order {
-            true => {
-                let buffered_and_flattened = stream_of_streams
-                    .buffered(self.num_parallel_tasks)
-                    .map(|r| r?)
-                    .try_flatten();
-                Ok(Box::pin(buffered_and_flattened))
-            }
+        // Create channels for the scan tasks
+        let (senders, receivers) = match maintain_order {
+            // If we need to maintain order, we need to create a channel for each scan task
+            true => (0..self.scan_tasks.len())
+                .map(|_| create_channel::<Arc<MicroPartition>>(0))
+                .unzip(),
+            // If we don't need to maintain order, we can use a single channel for all scan tasks
             false => {
-                let buffered_and_flattened = stream_of_streams
-                    .then(|r| async { r.await? })
-                    .try_flatten_unordered(self.num_parallel_tasks);
-                Ok(Box::pin(buffered_and_flattened))
+                let (tx, rx) = create_channel(0);
+                (vec![tx; self.scan_tasks.len()], vec![rx])
             }
-        }
+        };
+
+        // Spawn the scan task processor
+        let task = self.spawn_scan_task_processor(senders, io_stats, delete_map, maintain_order);
+
+        // Flatten the receivers into a stream
+        let result_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
+
+        Ok(Box::pin(result_stream))
     }
 
     fn name(&self) -> &'static str {
@@ -276,8 +322,20 @@ async fn get_delete_map(
                 let table = table_result?;
                 // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
                 // https://iceberg.apache.org/spec/#position-delete-files
-                let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-                let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+                let get_column_by_name = |name| {
+                    if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
+                        Ok(table.get_column(idx))
+                    } else {
+                        Err(DaftError::SchemaMismatch(format!(
+                            "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",
+                            table.schema
+                        )))
+                    }
+                };
+
+                let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
+                let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
                 for (file, pos) in file_paths
                     .as_arrow()
@@ -292,6 +350,36 @@ async fn get_delete_map(
             Ok(Some(delete_map))
         })
         .await?
+}
+
+/// Creates the final result stream by flattening receivers and handling task completion
+fn flatten_receivers_into_stream(
+    receivers: Vec<crate::channel::Receiver<Arc<MicroPartition>>>,
+    background_task: impl Future<Output = DaftResult<()>>,
+) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
+    let flattened_receivers =
+        futures::stream::iter(receivers.into_iter().map(|rx| rx.into_stream()))
+            .flatten()
+            .map(Ok);
+
+    // Handle the background task completion and forward any errors
+    combine_stream(Box::pin(flattened_receivers), background_task)
+}
+
+async fn forward_scan_task_stream(
+    scan_task: Arc<ScanTask>,
+    io_stats: IOStatsRef,
+    delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
+    maintain_order: bool,
+    sender: Sender<Arc<MicroPartition>>,
+) -> DaftResult<()> {
+    let mut stream = stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await?;
+    while let Some(result) = stream.next().await {
+        if sender.send(result?).await.is_err() {
+            break;
+        }
+    }
+    Ok(())
 }
 
 async fn stream_scan_task(
@@ -493,6 +581,7 @@ async fn stream_scan_task(
 
     Ok(table_stream.map(move |table| {
         let table = table?;
+        #[allow(deprecated)]
         let casted_table = table.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),
             scan_task
@@ -501,10 +590,20 @@ async fn stream_scan_task(
                 .map(|pspec| pspec.to_fill_map())
                 .as_ref(),
         )?;
+
+        let stats = scan_task
+            .statistics
+            .as_ref()
+            .map(|stats| {
+                #[allow(deprecated)]
+                stats.cast_to_schema(&scan_task.materialized_schema())
+            })
+            .transpose()?;
+
         let mp = Arc::new(MicroPartition::new_loaded(
             scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
-            scan_task.statistics.clone(),
+            stats,
         ));
         Ok(mp)
     }))

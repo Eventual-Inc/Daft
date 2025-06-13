@@ -1,41 +1,34 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
+use daft_dsl::functions::{prelude::*, ScalarFunction};
 use serde::{Deserialize, Serialize};
 
-fn series_to_struct(inputs: &[Series]) -> Series {
-    let child_fields: Vec<Field> = inputs.iter().map(|s| s.field().clone()).collect();
-    let field = Field::new("struct", DataType::Struct(child_fields));
-    let inputs = inputs.to_vec();
-    StructArray::new(field, inputs, None).into_series()
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct ToStructFunction {}
+pub(super) struct ToStructFunction;
 
 #[typetag::serde]
 impl ScalarUDF for ToStructFunction {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn name(&self) -> &'static str {
         "struct"
     }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let inputs = inputs.into_inner();
         if inputs.is_empty() {
             return Err(DaftError::ValueError(
                 "Cannot call struct with no inputs".to_string(),
             ));
         }
-        Ok(series_to_struct(inputs))
-    }
+        let child_fields: Vec<Field> = inputs.iter().map(|s| s.field().clone()).collect();
+        let field = Field::new("struct", DataType::Struct(child_fields));
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        Ok(StructArray::new(field, inputs, None).into_series())
+    }
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let inputs = inputs.into_inner();
         if inputs.is_empty() {
             return Err(DaftError::ValueError(
                 "Cannot call struct with no inputs".to_string(),
@@ -51,5 +44,5 @@ impl ScalarUDF for ToStructFunction {
 
 #[must_use]
 pub fn to_struct(inputs: Vec<ExprRef>) -> ExprRef {
-    ScalarFunction::new(ToStructFunction {}, inputs).into()
+    ScalarFunction::new(ToStructFunction, inputs).into()
 }

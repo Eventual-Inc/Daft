@@ -121,7 +121,6 @@ pub mod pylib {
         daft_distributed::register_modules(m)?;
         daft_dsl::register_modules(m)?;
         daft_functions::register_modules(m)?;
-        daft_functions_json::register_modules(m)?;
         daft_io::register_modules(m)?;
         daft_json::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
@@ -145,10 +144,35 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         m.add_wrapped(wrap_pyfunction!(set_compute_runtime_num_worker_threads))?;
-        daft_image::python::register_modules(m)?;
 
         daft_dashboard::register_modules(m)?;
         daft_cli::register_modules(m)?;
+
+        // We need to do this here because it's the only point in the rust codebase that we have access to all crates.
+        let mut functions_registry = daft_dsl::functions::FUNCTION_REGISTRY
+            .write()
+            .expect("Failed to acquire write lock on function registry");
+        functions_registry.register::<daft_functions::numeric::NumericFunctions>();
+        functions_registry.register::<daft_functions::float::FloatFunctions>();
+        functions_registry.register::<daft_functions_uri::UriFunctions>();
+        functions_registry.register::<daft_image::functions::ImageFunctions>();
+        functions_registry.register::<daft_functions_binary::BinaryFunctions>();
+        functions_registry.register::<daft_functions_json::JsonFunctions>();
+        functions_registry.register::<daft_functions_list::ListFunctions>();
+        functions_registry.register::<daft_functions_utf8::Utf8Functions>();
+        functions_registry.register::<daft_functions_json::JsonFunctions>();
+        functions_registry.register::<daft_functions_serde::SerdeFunctions>();
+        functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
+        functions_registry.register::<daft_functions::HashFunctions>();
+        functions_registry.register::<daft_functions::StructFunctions>();
+        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
+        functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
+
+        functions_registry.add_fn(daft_functions::coalesce::Coalesce);
+        functions_registry
+            .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
+        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
+
         Ok(())
     }
 }

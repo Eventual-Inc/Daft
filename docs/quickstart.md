@@ -1,11 +1,3 @@
-<!-- Hides Quickstart headers in nav -->
-<style>
-   .md-nav--primary .md-nav__link[for=__toc] > .md-nav__icon,
-   .md-nav--primary .md-nav__link[for=__toc] ~ .md-nav {
-     display: none;
-   }
-</style>
-
 # Quickstart
 
 <!--
@@ -32,9 +24,9 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 
 For more advanced installation options, please see [Installation](install.md).
 
-### Create Your First Daft DataFrame
+### Create Your First DataFrame in Daft
 
-See also [DataFrame Creation API Docs](api/dataframe_creation.md). Let's create a DataFrame from a dictionary of columns:
+See also [I/O API Docs](api/io.md). Let's create a DataFrame from a dictionary of columns:
 
 === "🐍 Python"
     ```python
@@ -116,7 +108,7 @@ Why does it say `(No data to display: Dataframe not materialized)` and where are
 
 ### Execute Your DataFrame and View Data
 
-Daft DataFrames are **lazy** by default. This means that the contents will not be computed (“materialized”) unless you explicitly tell Daft to do so. This is best practice for working with larger-than-memory datasets and parallel/distributed architectures.
+Daft is **lazy** by default. This means that the contents will not be computed (“materialized”) unless you explicitly tell Daft to do so. This is best practice for working with larger-than-memory datasets and parallel/distributed architectures.
 
 The file we have just loaded only has 5 rows. You can materialize the whole DataFrame in memory easily using the [`df.collect()`][daft.DataFrame.collect] method:
 
@@ -444,7 +436,6 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 
 <div class="grid cards" markdown>
 
-- [:simple-ray: **Ray**](integrations/ray.md)
 - [**Unity Catalog**](integrations/unity_catalog.md)
 - [**Apache Iceberg**](integrations/iceberg.md)
 - [**Delta Lake**](integrations/delta_lake.md)

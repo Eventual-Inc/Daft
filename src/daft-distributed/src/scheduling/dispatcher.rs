@@ -1,152 +1,438 @@
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use common_partitioning::PartitionRef;
-use futures::FutureExt;
-use tokio_util::sync::CancellationToken;
 
-use crate::{
-    channel::{
-        create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver, Sender,
-    },
-    runtime::JoinSet,
-    scheduling::{task::SwordfishTask, worker::WorkerManager},
+use super::{
+    scheduler::{ScheduledTask, WorkerSnapshot},
+    task::{Task, TaskID},
+    worker::{Worker, WorkerId, WorkerManager},
 };
-// The task dispatcher is responsible for dispatching tasks to workers.
+use crate::utils::{
+    channel::{create_channel, Receiver, Sender},
+    joinset::{JoinSet, JoinSetId},
+};
+
 #[allow(dead_code)]
-pub(crate) struct TaskDispatcher {
-    worker_manager: Box<dyn WorkerManager>,
+pub(super) struct DispatcherActor<W: Worker> {
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
 }
 
-impl TaskDispatcher {
-    pub fn new(worker_manager: Box<dyn WorkerManager>) -> Self {
+impl<W: Worker> DispatcherActor<W> {
+    pub fn new(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self { worker_manager }
     }
 
-    pub fn spawn_task_dispatcher(
-        task_dispatcher: Self,
+    pub fn spawn_dispatcher_actor(
+        dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
-    ) -> TaskDispatcherHandle {
-        let (task_dispatcher_sender, task_dispatcher_receiver) = create_channel(1);
-        joinset.spawn(Self::run_dispatch_loop(
-            task_dispatcher,
-            task_dispatcher_receiver,
+    ) -> DispatcherHandle<W::Task> {
+        let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
+        let initial_worker_snapshots = dispatcher
+            .worker_manager
+            .workers()
+            .values()
+            .map(WorkerSnapshot::from)
+            .collect::<Vec<_>>();
+        let (worker_update_sender, worker_update_receiver) =
+            tokio::sync::watch::channel(initial_worker_snapshots);
+        joinset.spawn(Self::run_dispatcher_loop(
+            dispatcher.worker_manager,
+            dispatcher_receiver,
+            worker_update_sender,
         ));
-        TaskDispatcherHandle::new(task_dispatcher_sender)
+        DispatcherHandle::new(dispatcher_sender, worker_update_receiver)
     }
 
-    async fn run_dispatch_loop(
-        _dispatcher: Self,
-        _task_rx: Receiver<DispatchedTask>,
+    fn dispatch_tasks(
+        scheduled_tasks: Vec<ScheduledTask<W::Task>>,
+        worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
+        running_tasks: &mut JoinSet<()>,
+        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskID, WorkerId)>,
     ) -> DaftResult<()> {
-        todo!("FLOTILLA_MS1: Implement run dispatch loop");
-    }
-}
+        let mut worker_to_tasks = HashMap::new();
 
-#[derive(Clone)]
-pub(crate) struct TaskDispatcherHandle {
-    task_dispatcher_sender: Sender<DispatchedTask>,
-}
-
-impl TaskDispatcherHandle {
-    fn new(task_dispatcher_sender: Sender<DispatchedTask>) -> Self {
-        Self {
-            task_dispatcher_sender,
+        for scheduled_task in scheduled_tasks {
+            let (worker_id, task) = scheduled_task.into_inner();
+            worker_to_tasks
+                .entry(worker_id)
+                .or_insert_with(Vec::new)
+                .push(task);
         }
+
+        let result_handles = worker_manager.submit_tasks_to_workers(worker_to_tasks)?;
+        for result_handle in result_handles {
+            let (task_id, worker_id) = (
+                result_handle.task_id().clone(),
+                result_handle.worker_id().clone(),
+            );
+            let id = running_tasks.spawn(result_handle.await_result());
+            running_tasks_by_id.insert(id, (task_id, worker_id));
+        }
+        Ok(())
     }
 
-    #[allow(dead_code)]
-    pub async fn submit_task(&self, task: SwordfishTask) -> DaftResult<SubmittedTask> {
-        let dispatchable_task = DispatchableTask::new(task);
-        let submitted_task = dispatchable_task
-            .dispatch(&self.task_dispatcher_sender)
-            .await?;
-        Ok(submitted_task)
+    async fn handle_finished_task(
+        finished_joinset_id: JoinSetId,
+        finished_task_result: DaftResult<()>,
+        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskID, WorkerId)>,
+        running_tasks: &mut JoinSet<()>,
+        worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
+        worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+    ) -> DaftResult<()> {
+        // Remove the first task from the running_tasks_by_id map
+        finished_task_result?;
+        let (task_id, worker_id) = running_tasks_by_id
+            .remove(&finished_joinset_id)
+            .expect("Task should be present in running_tasks_by_id");
+        worker_manager.mark_task_finished(&task_id, &worker_id);
+
+        // Try to get any other finished tasks
+        while let Some((id, finished_task_result)) = running_tasks.try_join_next_with_id() {
+            finished_task_result?;
+            let (task_id, worker_id) = running_tasks_by_id
+                .remove(&id)
+                .expect("Task should be present in running_tasks_by_id");
+            worker_manager.mark_task_finished(&task_id, &worker_id);
+        }
+
+        let workers = worker_manager.workers();
+        let worker_snapshots = workers
+            .values()
+            .map(WorkerSnapshot::from)
+            .collect::<Vec<_>>();
+        if worker_update_sender.send(worker_snapshots).is_err() {
+            tracing::debug!("Unable to send worker update, dispatcher handle dropped");
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "FlotillaDispatcher", skip_all)]
+    async fn run_dispatcher_loop(
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+        mut task_rx: Receiver<Vec<ScheduledTask<W::Task>>>,
+        worker_update_sender: tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+    ) -> DaftResult<()>
+    where
+        <W as Worker>::TaskResultHandle: std::marker::Send,
+    {
+        let mut input_exhausted = false;
+        let mut running_tasks = JoinSet::new();
+        let mut running_tasks_by_id = HashMap::new();
+
+        while !input_exhausted || !running_tasks.is_empty() {
+            tokio::select! {
+                maybe_tasks = task_rx.recv() => {
+                    if let Some(tasks) = maybe_tasks {
+                        Self::dispatch_tasks(
+                            tasks,
+                            &worker_manager,
+                            &mut running_tasks,
+                            &mut running_tasks_by_id,
+                        )?;
+                    } else if !input_exhausted {
+                        input_exhausted = true;
+                    }
+                }
+                Some((id, finished_task_result)) = running_tasks.join_next_with_id() => {
+                     Self::handle_finished_task(
+                        id,
+                        finished_task_result,
+                        &mut running_tasks_by_id,
+                        &mut running_tasks,
+                        &worker_manager,
+                        &worker_update_sender,
+                    ).await?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 #[allow(dead_code)]
-struct DispatchableTask {
-    task: SwordfishTask,
+pub(super) struct DispatcherHandle<T: Task> {
+    dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
+    worker_update_receiver: tokio::sync::watch::Receiver<Vec<WorkerSnapshot>>,
 }
 
-impl DispatchableTask {
-    fn new(task: SwordfishTask) -> Self {
-        Self { task }
+#[allow(dead_code)]
+impl<T: Task> DispatcherHandle<T> {
+    fn new(
+        dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
+        worker_update_receiver: tokio::sync::watch::Receiver<Vec<WorkerSnapshot>>,
+    ) -> Self {
+        Self {
+            dispatcher_sender,
+            worker_update_receiver,
+        }
     }
 
-    async fn dispatch(
-        self,
-        task_dispatcher_sender: &Sender<DispatchedTask>,
-    ) -> DaftResult<SubmittedTask> {
-        let (result_tx, result_rx) = create_oneshot_channel();
-        let cancel_token = CancellationToken::new();
-        let task = DispatchedTask::new(self.task, result_tx, cancel_token.clone());
-        task_dispatcher_sender
-            .send(task)
+    pub async fn dispatch_tasks(&self, tasks: Vec<ScheduledTask<T>>) -> DaftResult<()> {
+        self.dispatcher_sender.send(tasks).await.map_err(|_| {
+            DaftError::InternalError("Failed to send tasks to dispatcher".to_string())
+        })?;
+        Ok(())
+    }
+
+    pub async fn await_worker_updates(&mut self) -> Option<Vec<WorkerSnapshot>> {
+        self.worker_update_receiver.changed().await.ok()?;
+        let worker_snapshots = self.worker_update_receiver.borrow_and_update().clone();
+        Some(worker_snapshots)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
+    use super::*;
+    use crate::{
+        scheduling::{
+            scheduler::{
+                test_utils::setup_workers, SchedulerHandle, SubmittableTask, SubmittedTask,
+            },
+            task::tests::MockTaskFailure,
+            tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
+            worker::tests::MockWorkerManager,
+        },
+        utils::channel::create_oneshot_channel,
+    };
+
+    struct DispatcherTestContext {
+        dispatcher_handle: DispatcherHandle<MockTask>,
+        joinset: JoinSet<DaftResult<()>>,
+    }
+
+    fn setup_dispatcher_test_context(
+        worker_configs: &[(WorkerId, usize)],
+    ) -> DispatcherTestContext {
+        let workers = setup_workers(worker_configs);
+        let worker_manager = Arc::new(MockWorkerManager::new(workers));
+
+        let dispatcher = DispatcherActor::new(worker_manager);
+        let mut joinset = JoinSet::new();
+        let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(dispatcher, &mut joinset);
+        DispatcherTestContext {
+            dispatcher_handle,
+            joinset,
+        }
+    }
+
+    impl DispatcherTestContext {
+        async fn cleanup(mut self) -> DaftResult<()> {
+            drop(self.dispatcher_handle);
+            while let Some(task_result) = self.joinset.join_next().await {
+                task_result??;
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatcher_actor_basic_task() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let test_context = setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+
+        let partition_ref = create_mock_partition_ref(100, 100);
+        let task = MockTaskBuilder::new(partition_ref.clone()).build();
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
+        test_context
+            .dispatcher_handle
+            .dispatch_tasks(scheduled_tasks)
             .await
-            .map_err(|e| DaftError::InternalError(e.to_string()))?;
-        Ok(SubmittedTask::new(result_rx, Some(cancel_token)))
+            .unwrap();
+
+        let result = submitted_task.await?;
+        let partition = result[0].partition();
+        assert!(Arc::ptr_eq(&partition, &partition_ref));
+
+        test_context.cleanup().await?;
+        Ok(())
     }
-}
 
-#[allow(dead_code)]
-struct DispatchedTask {
-    swordfish_task: SwordfishTask,
-    result_tx: OneshotSender<DaftResult<PartitionRef>>,
-    cancel_token: CancellationToken,
-}
+    #[tokio::test]
+    async fn test_dispatcher_actor_multiple_tasks() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let mut test_context = setup_dispatcher_test_context(&[(worker_id.clone(), 4)]);
 
-impl DispatchedTask {
-    fn new(
-        swordfish_task: SwordfishTask,
-        result_tx: OneshotSender<DaftResult<PartitionRef>>,
-        cancel_token: CancellationToken,
-    ) -> Self {
-        Self {
-            swordfish_task,
-            result_tx,
-            cancel_token,
-        }
+        let num_tasks = 1000;
+
+        let mut rng = StdRng::from_entropy();
+        let (scheduled_tasks, submitted_tasks) = (0..num_tasks)
+            .map(|i| {
+                let task = MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 * (i + 1)))
+                    .with_task_id(format!("task-{}", i).into())
+                    .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(100..200)))
+                    .build();
+                let submittable_task = SubmittableTask::new(task);
+                let (schedulable_task, submitted_task) =
+                    SchedulerHandle::prepare_task_for_submission(submittable_task);
+                (
+                    ScheduledTask::new(schedulable_task, worker_id.clone()),
+                    submitted_task,
+                )
+            })
+            .unzip::<_, _, Vec<ScheduledTask<MockTask>>, Vec<SubmittedTask>>();
+
+        test_context.joinset.spawn(async move {
+            let mut count = 0;
+            for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
+                let result = submitted_task.await?;
+                let partition = result[0].partition();
+                assert_eq!(partition.num_rows().unwrap(), 100 + i);
+                assert_eq!(partition.size_bytes().unwrap(), Some(1024 * (i + 1)));
+                count += 1;
+            }
+            assert_eq!(count, num_tasks);
+            Ok(())
+        });
+
+        test_context
+            .dispatcher_handle
+            .dispatch_tasks(scheduled_tasks)
+            .await?;
+
+        test_context.cleanup().await?;
+
+        Ok(())
     }
-}
-pub(crate) struct SubmittedTask {
-    result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
-    cancel_token: Option<CancellationToken>,
-}
 
-impl SubmittedTask {
-    fn new(
-        result_rx: OneshotReceiver<DaftResult<PartitionRef>>,
-        cancel_token: Option<CancellationToken>,
-    ) -> Self {
-        Self {
-            result_rx,
-            cancel_token,
-        }
+    #[tokio::test]
+    async fn test_dispatcher_actor_cancelled_task() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let test_context = setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+
+        let partition_ref = create_mock_partition_ref(100, 100);
+        let (cancel_notifier, cancel_receiver) = create_oneshot_channel();
+        let task = MockTaskBuilder::new(partition_ref.clone())
+            .with_cancel_notifier(cancel_notifier)
+            .build();
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
+        test_context
+            .dispatcher_handle
+            .dispatch_tasks(scheduled_tasks)
+            .await
+            .unwrap();
+
+        drop(submitted_task);
+        cancel_receiver.await.unwrap();
+
+        test_context.cleanup().await?;
+        Ok(())
     }
-}
+    #[tokio::test]
+    async fn test_task_error_basic() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let test_context = setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
 
-impl Future for SubmittedTask {
-    type Output = Option<DaftResult<PartitionRef>>;
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+            .with_failure(MockTaskFailure::Error("test error".to_string()))
+            .build();
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.result_rx.poll_unpin(cx) {
-            Poll::Ready(Ok(result)) => Poll::Ready(Some(result)),
-            Poll::Ready(Err(_)) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
-        }
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
+        test_context
+            .dispatcher_handle
+            .dispatch_tasks(scheduled_tasks)
+            .await?;
+
+        let result = submitted_task.await;
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "DaftError::InternalError test error"
+        );
+
+        test_context.cleanup().await?;
+        Ok(())
     }
-}
 
-impl Drop for SubmittedTask {
-    fn drop(&mut self) {
-        if let Some(cancel_token) = self.cancel_token.take() {
-            cancel_token.cancel();
-        }
+    #[tokio::test]
+    async fn test_task_panic_basic() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let test_context = setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+            .with_failure(MockTaskFailure::Panic("test panic".to_string()))
+            .build();
+
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
+        test_context
+            .dispatcher_handle
+            .dispatch_tasks(scheduled_tasks)
+            .await?;
+
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
+
+        let text_context_result = test_context.cleanup().await;
+        assert!(text_context_result.is_err());
+        assert!(text_context_result
+            .unwrap_err()
+            .to_string()
+            .contains("panicked with message \"test panic\""));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dispatcher_drops_if_task_panics() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let test_context = setup_dispatcher_test_context(&[(worker_id.clone(), 2)]);
+
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+            .with_failure(MockTaskFailure::Panic("test panic".to_string()))
+            .build();
+
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id.clone())];
+        test_context
+            .dispatcher_handle
+            .dispatch_tasks(scheduled_tasks)
+            .await?;
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 0);
+
+        let new_task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024)).build();
+
+        let submittable_task = SubmittableTask::new(new_task);
+        let (schedulable_task, _submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
+        let result = test_context
+            .dispatcher_handle
+            .dispatch_tasks(scheduled_tasks)
+            .await;
+        assert!(result.is_err());
+        let error_message = result.err().unwrap().to_string();
+        assert_eq!(
+            error_message,
+            "DaftError::InternalError Failed to send tasks to dispatcher"
+        );
+
+        let cleanup_result = test_context.cleanup().await;
+        assert!(cleanup_result.is_err());
+        assert!(cleanup_result
+            .unwrap_err()
+            .to_string()
+            .contains("test panic"));
+
+        Ok(())
     }
 }
