@@ -1,22 +1,17 @@
-use daft_ir::schema::DataType;
-
-use crate::{
-    from_proto, from_proto_box, from_proto_err, to_proto_err, FromToProto, ProtoError, ProtoResult,
-};
+use super::{from_proto, from_proto_box, FromToProto, ProtoError, ProtoResult};
+use crate::{from_proto_err, to_proto_err};
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
 #[rustfmt::skip]
 mod ir {
-    pub use daft_ir::schema::daft_schema::image_mode::ImageMode;
-    pub use daft_ir::schema::daft_schema::time_unit::TimeUnit;
-    pub use daft_ir::schema::*;
+    pub use crate::schema::*;
 }
 
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
 #[rustfmt::skip]
 mod proto {
-    pub use crate::v1::protos::schema::data_type::*;
-    pub use crate::v1::protos::schema::*;
+    pub use daft_proto::protos::daft::v1::*;
+    pub use daft_proto::protos::daft::v1::data_type::DataTypeVariant;
 }
 
 /// Conversion logic for daft's Schema.
@@ -32,7 +27,7 @@ impl FromToProto for ir::Schema {
             .into_iter()
             .map(ir::Field::from_proto)
             .collect::<ProtoResult<Vec<_>>>()?;
-        Ok(ir::Schema::new(fields))
+        Ok(Self::new(fields))
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
@@ -57,48 +52,48 @@ impl FromToProto for ir::DataType {
             ProtoError::FromProtoError("Expected variant to be non-null".to_string())
         })?;
         Ok(match variant {
-            proto::DataTypeVariant::Null(_) => ir::DataType::Null,
-            proto::DataTypeVariant::Boolean(_) => ir::DataType::Boolean,
-            proto::DataTypeVariant::Int8(_) => ir::DataType::Int8,
-            proto::DataTypeVariant::Int16(_) => ir::DataType::Int16,
-            proto::DataTypeVariant::Int32(_) => ir::DataType::Int32,
-            proto::DataTypeVariant::Int64(_) => ir::DataType::Int64,
-            proto::DataTypeVariant::Uint8(_) => ir::DataType::UInt8,
-            proto::DataTypeVariant::Uint16(_) => ir::DataType::UInt16,
-            proto::DataTypeVariant::Uint32(_) => ir::DataType::UInt32,
-            proto::DataTypeVariant::Uint64(_) => ir::DataType::UInt64,
-            proto::DataTypeVariant::Float32(_) => ir::DataType::Float32,
-            proto::DataTypeVariant::Float64(_) => ir::DataType::Float64,
+            proto::DataTypeVariant::Null(_) => Self::Null,
+            proto::DataTypeVariant::Boolean(_) => Self::Boolean,
+            proto::DataTypeVariant::Int8(_) => Self::Int8,
+            proto::DataTypeVariant::Int16(_) => Self::Int16,
+            proto::DataTypeVariant::Int32(_) => Self::Int32,
+            proto::DataTypeVariant::Int64(_) => Self::Int64,
+            proto::DataTypeVariant::Uint8(_) => Self::UInt8,
+            proto::DataTypeVariant::Uint16(_) => Self::UInt16,
+            proto::DataTypeVariant::Uint32(_) => Self::UInt32,
+            proto::DataTypeVariant::Uint64(_) => Self::UInt64,
+            proto::DataTypeVariant::Float32(_) => Self::Float32,
+            proto::DataTypeVariant::Float64(_) => Self::Float64,
             proto::DataTypeVariant::Decimal128(decimal128) => {
-                ir::DataType::Decimal128(decimal128.precision as usize, decimal128.scale as usize)
+                Self::Decimal128(decimal128.precision as usize, decimal128.scale as usize)
             }
             proto::DataTypeVariant::Timestamp(timestamp) => {
                 let time_unit = ir::TimeUnit::from_proto(timestamp.unit)?;
-                ir::DataType::Timestamp(time_unit, timestamp.timezone)
+                Self::Timestamp(time_unit, timestamp.timezone)
             }
-            proto::DataTypeVariant::Date(_) => ir::DataType::Date,
+            proto::DataTypeVariant::Date(_) => Self::Date,
             proto::DataTypeVariant::Time(time) => {
                 let time_unit = ir::TimeUnit::from_proto(time.unit)?;
-                ir::DataType::Time(time_unit)
+                Self::Time(time_unit)
             }
             proto::DataTypeVariant::Duration(duration) => {
                 let time_unit = ir::TimeUnit::from_proto(duration.unit)?;
-                ir::DataType::Duration(time_unit)
+                Self::Duration(time_unit)
             }
-            proto::DataTypeVariant::Interval(_) => ir::DataType::Interval,
-            proto::DataTypeVariant::Binary(_) => ir::DataType::Binary,
+            proto::DataTypeVariant::Interval(_) => Self::Interval,
+            proto::DataTypeVariant::Binary(_) => Self::Binary,
             proto::DataTypeVariant::FixedSizeBinary(fixed_size_binary) => {
-                ir::DataType::FixedSizeBinary(fixed_size_binary.size as usize)
+                Self::FixedSizeBinary(fixed_size_binary.size as usize)
             }
-            proto::DataTypeVariant::Utf8(_) => ir::DataType::Utf8,
+            proto::DataTypeVariant::Utf8(_) => Self::Utf8,
             proto::DataTypeVariant::FixedSizeList(fixed_size_list) => {
                 let element_type = from_proto_box(fixed_size_list.element_type)?;
                 let size: usize = fixed_size_list.size as usize;
-                ir::DataType::FixedSizeList(element_type, size)
+                Self::FixedSizeList(element_type, size)
             }
             proto::DataTypeVariant::List(list) => {
                 let element_type = from_proto_box(list.element_type)?;
-                ir::DataType::List(element_type)
+                Self::List(element_type)
             }
             proto::DataTypeVariant::Struct(struct_) => {
                 let fields = struct_
@@ -106,12 +101,12 @@ impl FromToProto for ir::DataType {
                     .into_iter()
                     .map(ir::Field::from_proto)
                     .collect::<ProtoResult<Vec<_>>>()?;
-                ir::DataType::Struct(fields)
+                Self::Struct(fields)
             }
             proto::DataTypeVariant::Map(map) => {
                 let key_type = from_proto_box(map.key_type)?;
                 let val_type = from_proto_box(map.value_type)?;
-                ir::DataType::Map {
+                Self::Map {
                     key: key_type,
                     value: val_type,
                 }
@@ -122,15 +117,15 @@ impl FromToProto for ir::DataType {
             proto::DataTypeVariant::Embedding(embedding) => {
                 let element_type = from_proto_box(embedding.element_type)?;
                 let size = embedding.size as usize;
-                ir::DataType::Embedding(element_type, size)
+                Self::Embedding(element_type, size)
             }
             proto::DataTypeVariant::Image(image) => {
                 let mode = image.mode.map(ir::ImageMode::from_proto).transpose()?;
-                ir::DataType::Image(mode)
+                Self::Image(mode)
             }
             proto::DataTypeVariant::FixedShapeImage(fixed_shape_image) => {
                 let mode = ir::ImageMode::from_proto(fixed_shape_image.mode)?;
-                ir::DataType::FixedShapeImage(
+                Self::FixedShapeImage(
                     mode,
                     fixed_shape_image.height,
                     fixed_shape_image.width,
@@ -138,27 +133,27 @@ impl FromToProto for ir::DataType {
             }
             proto::DataTypeVariant::Tensor(tensor) => {
                 let element_type = from_proto_box(tensor.element_type)?;
-                ir::DataType::Tensor(element_type)
+                Self::Tensor(element_type)
             }
             proto::DataTypeVariant::FixedShapeTensor(fixed_shape_tensor) => {
                 let element_type = from_proto_box(fixed_shape_tensor.element_type)?;
-                ir::DataType::FixedShapeTensor(element_type, fixed_shape_tensor.shape)
+                Self::FixedShapeTensor(element_type, fixed_shape_tensor.shape)
             }
             proto::DataTypeVariant::SparseTensor(sparse_tensor) => {
                 let element_type = from_proto_box(sparse_tensor.element_type)?;
-                ir::DataType::SparseTensor(element_type, sparse_tensor.indices_offset)
+                Self::SparseTensor(element_type, sparse_tensor.indices_offset)
             }
             proto::DataTypeVariant::FixedShapeSparseTensor(fixed_shape_sparse_tensor) => {
                 let element_type = from_proto_box(fixed_shape_sparse_tensor.element_type)?;
-                ir::DataType::FixedShapeSparseTensor(
+                Self::FixedShapeSparseTensor(
                     element_type,
                     fixed_shape_sparse_tensor.shape,
                     fixed_shape_sparse_tensor.indices_offset,
                 )
             }
-            proto::DataTypeVariant::Unknown(_) => ir::DataType::Unknown,
+            proto::DataTypeVariant::Unknown(_) => Self::Unknown,
             #[cfg(feature = "python")]
-            proto::DataTypeVariant::Python(_) => ir::DataType::Python,
+            proto::DataTypeVariant::Python(_) => Self::Python,
             #[cfg(not(feature = "python"))]
             proto::DataTypeVariant::Python(_) => todo!("no python!"),
         })
@@ -166,122 +161,126 @@ impl FromToProto for ir::DataType {
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let variant = match self {
-            ir::DataType::Null => proto::DataTypeVariant::Null(true),
-            ir::DataType::Boolean => proto::DataTypeVariant::Boolean(true),
-            ir::DataType::Int8 => proto::DataTypeVariant::Int8(true),
-            ir::DataType::Int16 => proto::DataTypeVariant::Int16(true),
-            ir::DataType::Int32 => proto::DataTypeVariant::Int32(true),
-            ir::DataType::Int64 => proto::DataTypeVariant::Int64(true),
-            ir::DataType::UInt8 => proto::DataTypeVariant::Uint8(true),
-            ir::DataType::UInt32 => proto::DataTypeVariant::Uint32(true),
-            ir::DataType::UInt64 => proto::DataTypeVariant::Uint64(true),
-            ir::DataType::UInt16 => proto::DataTypeVariant::Uint16(true),
-            ir::DataType::Float32 => proto::DataTypeVariant::Float32(true),
-            ir::DataType::Float64 => proto::DataTypeVariant::Float64(true),
-            ir::DataType::Decimal128(precision, scale) => {
-                proto::DataTypeVariant::Decimal128(proto::Decimal128 {
+            Self::Null => proto::DataTypeVariant::Null(true),
+            Self::Boolean => proto::DataTypeVariant::Boolean(true),
+            Self::Int8 => proto::DataTypeVariant::Int8(true),
+            Self::Int16 => proto::DataTypeVariant::Int16(true),
+            Self::Int32 => proto::DataTypeVariant::Int32(true),
+            Self::Int64 => proto::DataTypeVariant::Int64(true),
+            Self::UInt8 => proto::DataTypeVariant::Uint8(true),
+            Self::UInt32 => proto::DataTypeVariant::Uint32(true),
+            Self::UInt64 => proto::DataTypeVariant::Uint64(true),
+            Self::UInt16 => proto::DataTypeVariant::Uint16(true),
+            Self::Float32 => proto::DataTypeVariant::Float32(true),
+            Self::Float64 => proto::DataTypeVariant::Float64(true),
+            Self::Decimal128(precision, scale) => {
+                proto::DataTypeVariant::Decimal128(proto::data_type::Decimal128 {
                     precision: *precision as u64,
                     scale: *scale as u64,
                 })
             }
-            ir::DataType::Timestamp(time_unit, timezone) => {
-                proto::DataTypeVariant::Timestamp(proto::Timestamp {
+            Self::Timestamp(time_unit, timezone) => {
+                proto::DataTypeVariant::Timestamp(proto::data_type::Timestamp {
                     unit: time_unit.to_proto()?,
                     timezone: timezone.clone(),
                 })
             }
-            ir::DataType::Date => proto::DataTypeVariant::Date(true),
-            ir::DataType::Time(time_unit) => proto::DataTypeVariant::Time(proto::Time {
-                unit: time_unit.to_proto()?,
-            }),
-            ir::DataType::Duration(time_unit) => {
-                proto::DataTypeVariant::Duration(proto::Duration {
+            Self::Date => proto::DataTypeVariant::Date(true),
+            Self::Time(time_unit) => {
+                proto::data_type::DataTypeVariant::Time(proto::data_type::Time {
                     unit: time_unit.to_proto()?,
                 })
             }
-            ir::DataType::Interval => proto::DataTypeVariant::Interval(true),
-            ir::DataType::Binary => proto::DataTypeVariant::Binary(true),
-            ir::DataType::FixedSizeBinary(size) => {
-                proto::DataTypeVariant::FixedSizeBinary(proto::FixedSizeBinary {
+            Self::Duration(time_unit) => {
+                proto::DataTypeVariant::Duration(proto::data_type::Duration {
+                    unit: time_unit.to_proto()?,
+                })
+            }
+            Self::Interval => proto::DataTypeVariant::Interval(true),
+            Self::Binary => proto::DataTypeVariant::Binary(true),
+            Self::FixedSizeBinary(size) => {
+                proto::DataTypeVariant::FixedSizeBinary(proto::data_type::FixedSizeBinary {
                     size: *size as u64,
                 })
             }
-            ir::DataType::Utf8 => proto::DataTypeVariant::Utf8(true),
-            ir::DataType::FixedSizeList(data_type, size) => proto::DataTypeVariant::FixedSizeList(
-                proto::FixedSizeList {
+            Self::Utf8 => proto::DataTypeVariant::Utf8(true),
+            Self::FixedSizeList(data_type, size) => proto::DataTypeVariant::FixedSizeList(
+                proto::data_type::FixedSizeList {
                     element_type: Some(data_type.to_proto()?.into()),
                     size: *size as u64,
                 }
                 .into(),
             ),
-            ir::DataType::List(data_type) => proto::DataTypeVariant::List(
-                proto::List {
+            Self::List(data_type) => proto::DataTypeVariant::List(
+                proto::data_type::List {
                     element_type: Some(data_type.to_proto()?.into()),
                 }
                 .into(),
             ),
-            ir::DataType::Struct(fields) => proto::DataTypeVariant::Struct(proto::Struct {
-                fields: fields
-                    .iter()
-                    .map(|f| f.to_proto())
-                    .collect::<ProtoResult<Vec<_>>>()?,
-            }),
-            ir::DataType::Map { key, value } => proto::DataTypeVariant::Map(
-                proto::Map {
+            Self::Struct(fields) => {
+                proto::DataTypeVariant::Struct(proto::data_type::Struct {
+                    fields: fields
+                        .iter()
+                        .map(|f| f.to_proto())
+                        .collect::<ProtoResult<Vec<_>>>()?,
+                })
+            }
+            Self::Map { key, value } => proto::DataTypeVariant::Map(
+                proto::data_type::Map {
                     key_type: Some(key.to_proto()?.into()),
                     value_type: Some(value.to_proto()?.into()),
                 }
                 .into(),
             ),
-            ir::DataType::Extension(..) => {
+            Self::Extension(..) => {
                 to_proto_err!("The extension type is not supported.")
             }
-            ir::DataType::Embedding(data_type, size) => proto::DataTypeVariant::Embedding(
-                proto::Embedding {
+            Self::Embedding(data_type, size) => proto::DataTypeVariant::Embedding(
+                proto::data_type::Embedding {
                     element_type: Some(data_type.to_proto()?.into()),
                     size: *size as u64,
                 }
                 .into(),
             ),
-            ir::DataType::Image(image_mode) => {
+            Self::Image(image_mode) => {
                 let image_mode = image_mode.map(|m| m.to_proto()).transpose()?;
-                let image = proto::Image { mode: image_mode };
+                let image = proto::data_type::Image { mode: image_mode };
                 proto::DataTypeVariant::Image(image)
             }
-            ir::DataType::FixedShapeImage(image_mode, height, width) => {
-                proto::DataTypeVariant::FixedShapeImage(proto::FixedShapeImage {
+            Self::FixedShapeImage(image_mode, height, width) => {
+                proto::DataTypeVariant::FixedShapeImage(proto::data_type::FixedShapeImage {
                     mode: image_mode.to_proto()?,
                     height: *height,
                     width: *width,
                 })
             }
-            ir::DataType::Tensor(data_type) => proto::DataTypeVariant::Tensor(
-                proto::Tensor {
+            Self::Tensor(data_type) => proto::DataTypeVariant::Tensor(
+                proto::data_type::Tensor {
                     element_type: Some(data_type.to_proto()?.into()),
                 }
                 .into(),
             ),
-            ir::DataType::FixedShapeTensor(data_type, shape) => {
+            Self::FixedShapeTensor(data_type, shape) => {
                 proto::DataTypeVariant::FixedShapeTensor(
-                    proto::FixedShapeTensor {
+                    proto::data_type::FixedShapeTensor {
                         element_type: Some(data_type.to_proto()?.into()),
                         shape: shape.clone(),
                     }
                     .into(),
                 )
             }
-            ir::DataType::SparseTensor(data_type, indices_offset) => {
+            Self::SparseTensor(data_type, indices_offset) => {
                 proto::DataTypeVariant::SparseTensor(
-                    proto::SparseTensor {
+                    proto::data_type::SparseTensor {
                         element_type: Some(data_type.to_proto()?.into()),
                         indices_offset: *indices_offset,
                     }
                     .into(),
                 )
             }
-            ir::DataType::FixedShapeSparseTensor(data_type, shape, indices_offset) => {
+            Self::FixedShapeSparseTensor(data_type, shape, indices_offset) => {
                 proto::DataTypeVariant::FixedShapeSparseTensor(
-                    proto::FixedShapeSparseTensor {
+                    proto::data_type::FixedShapeSparseTensor {
                         element_type: Some(data_type.to_proto()?.into()),
                         shape: shape.clone(),
                         indices_offset: *indices_offset,
@@ -289,9 +288,9 @@ impl FromToProto for ir::DataType {
                     .into(),
                 )
             }
-            ir::DataType::Unknown => proto::DataTypeVariant::Unknown(true),
+            Self::Unknown => proto::DataTypeVariant::Unknown(true),
             #[cfg(feature = "python")]
-            ir::DataType::Python => proto::DataTypeVariant::Python(true),
+            Self::Python => proto::DataTypeVariant::Python(true),
         };
         Ok(Self::Message {
             data_type_variant: Some(variant),
@@ -307,8 +306,8 @@ impl FromToProto for ir::Field {
         Self: Sized,
     {
         let name = message.name;
-        let data_type: DataType = from_proto(message.data_type)?;
-        Ok(ir::Field::new(name, data_type))
+        let data_type = from_proto(message.data_type)?;
+        Ok(Self::new(name, data_type))
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {

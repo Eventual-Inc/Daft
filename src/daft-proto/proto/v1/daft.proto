@@ -1,8 +1,170 @@
 syntax = "proto3";
 
-package rex;
+package daft.v1;
 
-import "schema.proto";
+// -------------------------------------------------------------
+//
+//                          SCHEMA
+//
+// -------------------------------------------------------------
+
+message Schema {
+  repeated Field fields = 1;
+}
+
+message DataType {
+  oneof data_type_variant {
+    bool null = 1;
+    bool boolean = 2;
+    bool int8 = 3;
+    bool int16 = 4;
+    bool int32 = 5;
+    bool int64 = 6;
+    bool uint8 = 7;
+    bool uint16 = 8;
+    bool uint32 = 9;
+    bool uint64 = 10;
+    bool float32 = 11;
+    bool float64 = 12;
+    Decimal128 decimal128 = 13;
+    Timestamp timestamp = 14;
+    bool date = 15;
+    Time time = 16;
+    Duration duration = 17;
+    bool interval = 18;
+    bool binary = 19;
+    FixedSizeBinary fixed_size_binary = 20;
+    bool utf8 = 21;
+    FixedSizeList fixed_size_list = 22;
+    List list = 23;
+    Struct struct = 24;
+    Map map = 25;
+    Extension extension = 26;
+    Embedding embedding = 27;
+    Image image = 28;
+    FixedShapeImage fixed_shape_image = 29;
+    Tensor tensor = 30;
+    FixedShapeTensor fixed_shape_tensor = 31;
+    SparseTensor sparse_tensor = 32;
+    FixedShapeSparseTensor fixed_shape_sparse_tensor = 33;
+    bool python = 34;
+    bool unknown = 35;
+  }
+
+  message Decimal128 {
+    uint64 precision = 1;
+    uint64 scale = 2;
+  }
+
+  message Timestamp {
+    TimeUnit unit = 1;
+    optional string timezone = 2;
+  }
+
+  message Time {
+    TimeUnit unit = 1;
+  }
+
+  message Duration {
+    TimeUnit unit = 1;
+  }
+
+  message FixedSizeBinary {
+    uint64 size = 1;
+  }
+
+  message FixedSizeList {
+    DataType element_type = 1;
+    uint64 size = 2;
+  }
+
+  message List {
+    DataType element_type = 1;
+  }
+
+  message Struct {
+    repeated Field fields = 1;
+  }
+
+  message Map {
+    DataType key_type = 1;
+    DataType value_type = 2;
+  }
+
+  message Extension {
+    string name = 1;
+    DataType data_type = 2;
+    optional string metadata = 3;
+  }
+
+  message Embedding {
+    DataType element_type = 1;
+    uint64 size = 2;
+  }
+
+  message Image {
+    optional ImageMode mode = 1;
+  }
+
+  message FixedShapeImage {
+    ImageMode mode = 1;
+    uint32 height = 2;
+    uint32 width = 3;
+  }
+
+  message Tensor {
+    DataType element_type = 1;
+  }
+
+  message FixedShapeTensor {
+    DataType element_type = 1;
+    repeated uint64 shape = 2;
+  }
+
+  message SparseTensor {
+    DataType element_type = 1;
+    bool indices_offset = 2;
+  }
+
+  message FixedShapeSparseTensor {
+    DataType element_type = 1;
+    repeated uint64 shape = 2;
+    bool indices_offset = 3;
+  }
+}
+
+enum TimeUnit {
+  TIME_UNIT_UNSPECIFIED = 0;
+  TIME_UNIT_NANOSECONDS = 1;
+  TIME_UNIT_MICROSECONDS = 2;
+  TIME_UNIT_SECONDS = 3;
+}
+
+enum ImageMode {
+  IMAGE_MODE_UNSPECIFIED = 0;
+  IMAGE_MODE_L = 1;
+  IMAGE_MODE_LA = 2;
+  IMAGE_MODE_RGB = 3;
+  IMAGE_MODE_RGBA = 4;
+  IMAGE_MODE_L16 = 5;
+  IMAGE_MODE_LA16 = 6;
+  IMAGE_MODE_RGB16 = 7;
+  IMAGE_MODE_RGBA16 = 8;
+  IMAGE_MODE_RGB32F = 9;
+  IMAGE_MODE_RGBA32F = 10;
+}
+
+message Field {
+  string name = 1;
+  DataType data_type = 2;
+}
+
+
+// -------------------------------------------------------------
+//
+//                       EXPRESSIONS
+//
+// -------------------------------------------------------------
 
 message Expr {
   oneof expr_variant {
@@ -63,18 +225,18 @@ message Literal {
 
   message Timestamp {
     int64 value = 1;
-    schema.TimeUnit unit = 2;
+    TimeUnit unit = 2;
     optional string timezone = 3;
   }
 
   message Time {
     int64 value = 1;
-    schema.TimeUnit unit = 2;
+    TimeUnit unit = 2;
   }
 
   message Duration {
     int64 value = 1;
-    schema.TimeUnit unit = 2;
+    TimeUnit unit = 2;
   }
 
   message Interval {
@@ -89,15 +251,15 @@ message Literal {
 
   message Series {
     string name = 1;
-    schema.DataType dtype = 2;
+    DataType dtype = 2;
     bytes data = 3;
   }
 
   message Struct {
     repeated Field fields = 1;
     message Field {
-        string name = 1;
-        Literal value = 2;
+      string name = 1;
+      Literal value = 2;
     }
   }
 }
@@ -109,7 +271,7 @@ message Literal {
 message Column {
   string name = 1;
   optional uint64 qualifier = 2;
-  optional string alias = 3; // alias wtf?
+  optional string alias = 3;// alias wtf?
 }
 
 message Alias {
@@ -125,7 +287,7 @@ message BinaryOp {
 
 message Cast {
   Expr expr = 1;
-  schema.DataType dtype = 2;
+  DataType dtype = 2;
 }
 
 message Not {
@@ -295,4 +457,27 @@ enum JoinSide {
 // !! PLACEHOLDER !!
 message LogicalPlan {
   string plan_type = 1;
+}
+
+// -------------------------------------------------------------
+//
+//                         RELATIONS
+//
+// -------------------------------------------------------------
+
+message Rel {
+  oneof rel_variant {
+    RelSource source = 1;
+    RelProject project = 2;
+  }
+}
+
+message RelSource {
+  Schema schema = 1;
+  string table = 2;
+}
+
+message RelProject {
+  Rel input = 1;
+  repeated Expr projections = 2;
 }

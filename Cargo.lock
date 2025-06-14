@@ -2512,10 +2512,15 @@ dependencies = [
 name = "daft-ir"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
  "daft-dsl",
  "daft-functions",
  "daft-logical-plan",
+ "daft-proto",
  "daft-schema",
+ "prost 0.13.5",
+ "pyo3",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2764,12 +2769,7 @@ dependencies = [
 name = "daft-proto"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
- "daft-ir",
  "prost 0.13.5",
- "pyo3",
- "thiserror 1.0.69",
- "tokio",
  "tonic",
  "tonic-build",
  "walkdir",

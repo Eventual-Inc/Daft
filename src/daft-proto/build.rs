@@ -32,14 +32,14 @@ fn get_proto_defs<P: AsRef<Path>>(proto_dir: P) -> Result<Vec<PathBuf>> {
 }
 
 fn main() -> Result<()> {
-    // (1) locate proto dir
+    // 1. locate proto dir
     let proto_dir = get_proto_dir()?;
-    // (2) collect .proto files
+    // 2. collect .proto files
     let proto_defs = get_proto_defs(&proto_dir)?;
-    // (3) generate code with tonic (and prost)
+    // 3. generate code with tonic (and prost)
     tonic_build::configure()
-        .build_client(true)
-        .build_server(true)
+        .build_client(false)
+        .build_server(false)
         .compile_protos(proto_defs.as_slice(), &[proto_dir])?;
     Ok(())
 }

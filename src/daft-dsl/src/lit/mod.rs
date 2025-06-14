@@ -1,7 +1,7 @@
 mod conversions;
 mod deserializer;
 use std::{
-    fmt::{Display, Formatter, Result}, hash::{Hash, Hasher}, io::{self, Write}, ops::Index, sync::Arc
+    fmt::{Display, Formatter, Result}, hash::{Hash, Hasher}, io::{self, Write}, sync::Arc
 };
 
 use common_error::{ensure, DaftError, DaftResult};

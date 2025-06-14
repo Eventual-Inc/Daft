@@ -111,16 +111,6 @@ class DataFrame:
     It has columns, where each column has a type and the same number of items (rows) as all other columns.
     """
 
-    #
-    # !! REMOVE ME !!
-    #
-
-    def run(self):
-        """Connects to a running tron service to execute a query."""
-        from daft.daft import tron_run
-
-        return tron_run(self._builder._builder)
-
     def __init__(self, builder: LogicalPlanBuilder) -> None:
         """Constructs a DataFrame according to a given LogicalPlan.
 

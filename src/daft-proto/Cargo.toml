@@ -1,24 +1,10 @@
-[[bin]]
-name = "tron"
-path = "src/server.rs"
-
 [build-dependencies]
-tonic-build = {workspace = true}
+tonic-build = { workspace = true }
 walkdir = "2.5.0"
 
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-ir = {path = "../daft-ir", default-features = false}
-prost = {workspace = true}
-pyo3 = {workspace = true, optional = true}
-thiserror = {workspace = true}
-tokio = {workspace = true, features = ["macros"]}
-tonic = {workspace = true}
-
-[features]
-python = [
-  "dep:pyo3"
-]
+prost = { workspace = true }
+tonic = { workspace = true }
 
 [lib]
 name = "daft_proto"
