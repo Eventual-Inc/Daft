@@ -326,26 +326,6 @@ impl NativeExecutor {
                         _ => {}
                     }
                 }
-                if enable_explain_analyze {
-                    let curr_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_millis();
-                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                    let mut file = File::create(file_name)?;
-                    writeln!(
-                        file,
-                        "```mermaid\n{}\n```",
-                        viz_pipeline_mermaid(
-                            pipeline.as_ref(),
-                            DisplayLevel::Verbose,
-                            true,
-                            Default::default()
-                        )
-                    )?;
-                }
-                flush_opentelemetry_providers();
-                finish_chrome_trace();
                 Ok(())
             };
 
@@ -363,7 +343,28 @@ impl NativeExecutor {
                     }
                     result = execution_task => result,
                 }
-            })
+            })?;
+            if enable_explain_analyze {
+                let curr_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis();
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                let mut file = File::create(file_name)?;
+                writeln!(
+                    file,
+                    "```mermaid\n{}\n```",
+                    viz_pipeline_mermaid(
+                        pipeline.as_ref(),
+                        DisplayLevel::Verbose,
+                        true,
+                        Default::default()
+                    )
+                )?;
+            }
+            flush_opentelemetry_providers();
+            finish_chrome_trace();
+            Ok(())
         });
 
         Ok(ExecutionEngineResult {
