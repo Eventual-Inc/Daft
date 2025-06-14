@@ -41,5 +41,18 @@ fn main() -> Result<()> {
         .build_client(false)
         .build_server(false)
         .compile_protos(proto_defs.as_slice(), &[proto_dir])?;
+    // 4. copy generated sources to `gen/` directory
+    let out_dir = env::var("OUT_DIR")?;
+    let gen_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?).join("gen");
+    std::fs::create_dir_all(&gen_dir)?;
+    for entry in walkdir::WalkDir::new(out_dir) {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+            let file_name = path.file_name().unwrap();
+            std::fs::copy(path, gen_dir.join(file_name))?;
+        }
+    }
+
     Ok(())
 }

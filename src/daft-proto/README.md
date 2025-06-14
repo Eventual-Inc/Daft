@@ -2,10 +2,14 @@
 
 This crate holds the daft-ir proto definitions.
 
-## Structure
+## Usage
 
-- daft-proto (definitions only)
-- daft-ir (depends on daft-proto)
+We do not (currently) compile protos at build time to avoid the protoc dependency.
+
+```shell
+# rename `.build.rs` to `build.rs` to enable it, then do:
+cargo build -p daft-proto
+```
 
 ## TODOs
 
