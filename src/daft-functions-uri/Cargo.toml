@@ -9,6 +9,7 @@ futures = {workspace = true}
 serde = {workspace = true}
 tokio = {workspace = true}
 typetag = {workspace = true}
+url = {workspace = true}
 uuid = {workspace = true}
 
 [lints]
