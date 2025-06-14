@@ -169,10 +169,27 @@ impl SQLFunction for HTTPConfigFunction {
         let user_agent = args.try_get_named::<String>("user_agent")?;
         let bearer_token = args.try_get_named::<String>("bearer_token")?;
 
+        let retry_initial_backoff_ms = args
+            .try_get_named::<usize>("retry_initial_backoff_ms")?
+            .map(|t: usize| t as u64);
+        let connect_timeout_ms = args
+            .try_get_named::<usize>("connect_timeout_ms")?
+            .map(|t: usize| t as u64);
+        let read_timeout_ms = args
+            .try_get_named::<usize>("read_timeout_ms")?
+            .map(|t: usize| t as u64);
+        let num_tries = args
+            .try_get_named::<usize>("num_tries")?
+            .map(|t: usize| t as u32);
+
         let entries = vec![
             (Field::new("variant", DataType::Utf8), literal_value("http")),
             item!(user_agent, Utf8),
             item!(bearer_token, Utf8),
+            item!(retry_initial_backoff_ms, UInt64),
+            item!(connect_timeout_ms, UInt64),
+            item!(read_timeout_ms, UInt64),
+            item!(num_tries, UInt32),
         ]
         .into_iter()
         .collect::<_>();
@@ -185,7 +202,14 @@ impl SQLFunction for HTTPConfigFunction {
     }
 
     fn arg_names(&self) -> &'static [&'static str] {
-        &["user_agent", "bearer_token"]
+        &[
+            "user_agent",
+            "bearer_token",
+            "retry_initial_backoff_ms",
+            "connect_timeout_ms",
+            "read_timeout_ms",
+            "num_tries",
+        ]
     }
 }
 pub struct AzureConfigFunction;
@@ -389,12 +413,22 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let default = HTTPConfig::default();
             let user_agent = get_value!("user_agent", Utf8)?.unwrap_or(default.user_agent);
             let bearer_token = get_value!("bearer_token", Utf8)?.map(|s| s.into());
+            let retry_initial_backoff_ms = get_value!("retry_initial_backoff_ms", UInt64)?
+                .unwrap_or(default.retry_initial_backoff_ms);
+            let connect_timeout_ms =
+                get_value!("connect_timeout_ms", UInt64)?.unwrap_or(default.connect_timeout_ms);
+            let read_timeout_ms =
+                get_value!("read_timeout_ms", UInt64)?.unwrap_or(default.read_timeout_ms);
+            let num_tries = get_value!("num_tries", UInt32)?.unwrap_or(default.num_tries);
 
             Ok(IOConfig {
                 http: HTTPConfig {
                     user_agent,
                     bearer_token,
-                    ..Default::default()
+                    retry_initial_backoff_ms,
+                    connect_timeout_ms,
+                    read_timeout_ms,
+                    num_tries,
                 },
                 ..Default::default()
             })
