@@ -6,6 +6,7 @@ mod ipc;
 mod parquet_writer;
 mod partition;
 mod physical;
+mod storage_backend;
 #[cfg(test)]
 mod test;
 mod utils;
