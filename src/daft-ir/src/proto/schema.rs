@@ -48,9 +48,9 @@ impl FromToProto for ir::DataType {
     where
         Self: Sized,
     {
-        let variant = message.data_type_variant.ok_or_else(|| {
-            ProtoError::FromProtoError("Expected variant to be non-null".to_string())
-        })?;
+        let variant = message
+            .data_type_variant
+            .ok_or_else(|| ProtoError::FromProto("Expected variant to be non-null".to_string()))?;
         Ok(match variant {
             proto::DataTypeVariant::Null(_) => Self::Null,
             proto::DataTypeVariant::Boolean(_) => Self::Boolean,
@@ -125,11 +125,7 @@ impl FromToProto for ir::DataType {
             }
             proto::DataTypeVariant::FixedShapeImage(fixed_shape_image) => {
                 let mode = ir::ImageMode::from_proto(fixed_shape_image.mode)?;
-                Self::FixedShapeImage(
-                    mode,
-                    fixed_shape_image.height,
-                    fixed_shape_image.width,
-                )
+                Self::FixedShapeImage(mode, fixed_shape_image.height, fixed_shape_image.width)
             }
             proto::DataTypeVariant::Tensor(tensor) => {
                 let element_type = from_proto_box(tensor.element_type)?;
@@ -217,14 +213,12 @@ impl FromToProto for ir::DataType {
                 }
                 .into(),
             ),
-            Self::Struct(fields) => {
-                proto::DataTypeVariant::Struct(proto::data_type::Struct {
-                    fields: fields
-                        .iter()
-                        .map(|f| f.to_proto())
-                        .collect::<ProtoResult<Vec<_>>>()?,
-                })
-            }
+            Self::Struct(fields) => proto::DataTypeVariant::Struct(proto::data_type::Struct {
+                fields: fields
+                    .iter()
+                    .map(|f| f.to_proto())
+                    .collect::<ProtoResult<Vec<_>>>()?,
+            }),
             Self::Map { key, value } => proto::DataTypeVariant::Map(
                 proto::data_type::Map {
                     key_type: Some(key.to_proto()?.into()),
@@ -260,24 +254,20 @@ impl FromToProto for ir::DataType {
                 }
                 .into(),
             ),
-            Self::FixedShapeTensor(data_type, shape) => {
-                proto::DataTypeVariant::FixedShapeTensor(
-                    proto::data_type::FixedShapeTensor {
-                        element_type: Some(data_type.to_proto()?.into()),
-                        shape: shape.clone(),
-                    }
-                    .into(),
-                )
-            }
-            Self::SparseTensor(data_type, indices_offset) => {
-                proto::DataTypeVariant::SparseTensor(
-                    proto::data_type::SparseTensor {
-                        element_type: Some(data_type.to_proto()?.into()),
-                        indices_offset: *indices_offset,
-                    }
-                    .into(),
-                )
-            }
+            Self::FixedShapeTensor(data_type, shape) => proto::DataTypeVariant::FixedShapeTensor(
+                proto::data_type::FixedShapeTensor {
+                    element_type: Some(data_type.to_proto()?.into()),
+                    shape: shape.clone(),
+                }
+                .into(),
+            ),
+            Self::SparseTensor(data_type, indices_offset) => proto::DataTypeVariant::SparseTensor(
+                proto::data_type::SparseTensor {
+                    element_type: Some(data_type.to_proto()?.into()),
+                    indices_offset: *indices_offset,
+                }
+                .into(),
+            ),
             Self::FixedShapeSparseTensor(data_type, shape, indices_offset) => {
                 proto::DataTypeVariant::FixedShapeSparseTensor(
                     proto::data_type::FixedShapeSparseTensor {

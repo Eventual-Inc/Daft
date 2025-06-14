@@ -1,4 +1,5 @@
 use super::{FromToProto, ProtoResult};
+use crate::unsupported_err;
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
 #[rustfmt::skip]
@@ -15,44 +16,26 @@ mod proto {
 impl FromToProto for ir::rel::LogicalPlan {
     type Message = proto::Rel;
 
-    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    fn from_proto(_message: Self::Message) -> ProtoResult<Self>
     where
         Self: Sized,
     {
-        dbg!(message);
-        todo!();
         // let rel = match message.rel_variant.unwrap() {
         //     proto::RelVariant::Source(rel_source) => todo!(),
         //     proto::RelVariant::Project(rel_project) => todo!(),
         // };
-        // Ok(rel)
+        unsupported_err!("LogicalPlan::from_proto");
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let rel_variant = match self {
-            //
-            //
-            ir::rel::LogicalPlan::Source(source) => {
+            Self::Source(source) => {
                 //
                 let schema = source.output_schema.to_proto()?;
                 let table = match source.source_info.as_ref() {
-                    ir::rel::SourceInfo::InMemory(in_memory_info) => {
-                        println!("CANNOT SERIALIIZE A MEMORY SCAN YET!");
-                        println!("------------------------------------");
-                        dbg!(in_memory_info);
-                        "in_memory"
-                    }
-                    ir::rel::SourceInfo::Physical(physical_scan_info) => {
-                        println!("CANNOT SERIALIIZE A PHYSICAL SCAN YET!");
-                        println!("--------------------------------------");
-                        dbg!(&source);
-                        // dbg!(physical_scan_info);
-                        "physical"
-                    },
-                    ir::rel::SourceInfo::PlaceHolder(place_holder_info) => {
-                        dbg!(place_holder_info);
-                        unreachable!();
-                    }
+                    ir::rel::SourceInfo::InMemory(_in_memory_info) => "in_memory",
+                    ir::rel::SourceInfo::Physical(_physical_scan_info) => "physical",
+                    ir::rel::SourceInfo::PlaceHolder(_place_holder_info) => unreachable!(),
                 };
                 let source = proto::RelSource {
                     schema: Some(schema),
@@ -60,9 +43,7 @@ impl FromToProto for ir::rel::LogicalPlan {
                 };
                 proto::rel::RelVariant::Source(source)
             }
-            //
-            //
-            ir::rel::LogicalPlan::Project(project) => {
+            Self::Project(project) => {
                 let input = project.input.to_proto()?;
                 let projections: ProtoResult<Vec<proto::Expr>> = project
                     .projection
@@ -75,26 +56,28 @@ impl FromToProto for ir::rel::LogicalPlan {
                 };
                 proto::rel::RelVariant::Project(project.into())
             }
-            ir::rel::LogicalPlan::ActorPoolProject(actor_pool_project) => todo!(),
-            ir::rel::LogicalPlan::Filter(filter) => todo!(),
-            ir::rel::LogicalPlan::Limit(limit) => todo!(),
-            ir::rel::LogicalPlan::Explode(explode) => todo!(),
-            ir::rel::LogicalPlan::Unpivot(unpivot) => todo!(),
-            ir::rel::LogicalPlan::Sort(sort) => todo!(),
-            ir::rel::LogicalPlan::Repartition(repartition) => todo!(),
-            ir::rel::LogicalPlan::Distinct(distinct) => todo!(),
-            ir::rel::LogicalPlan::Aggregate(aggregate) => todo!(),
-            ir::rel::LogicalPlan::Pivot(pivot) => todo!(),
-            ir::rel::LogicalPlan::Concat(concat) => todo!(),
-            ir::rel::LogicalPlan::Intersect(intersect) => todo!(),
-            ir::rel::LogicalPlan::Union(union) => todo!(),
-            ir::rel::LogicalPlan::Join(join) => todo!(),
-            ir::rel::LogicalPlan::Sink(sink) => todo!(),
-            ir::rel::LogicalPlan::Sample(sample) => todo!(),
-            ir::rel::LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => todo!(),
-            ir::rel::LogicalPlan::SubqueryAlias(subquery_alias) => todo!(),
-            ir::rel::LogicalPlan::Window(window) => todo!(),
-            ir::rel::LogicalPlan::TopN(top_n) => todo!(),
+            Self::ActorPoolProject(_actor_pool_project) => unsupported_err!("actor_pool_project"),
+            Self::Filter(_filter) => unsupported_err!("filter"),
+            Self::Limit(_limit) => unsupported_err!("limit"),
+            Self::Explode(_explode) => unsupported_err!("explode"),
+            Self::Unpivot(_unpivot) => unsupported_err!("unpivot"),
+            Self::Sort(_sort) => unsupported_err!("sort"),
+            Self::Repartition(_repartition) => unsupported_err!("repartition"),
+            Self::Distinct(_distinct) => unsupported_err!("distinct"),
+            Self::Aggregate(_aggregate) => unsupported_err!("aggregate"),
+            Self::Pivot(_pivot) => unsupported_err!("pivot"),
+            Self::Concat(_concat) => unsupported_err!("concat"),
+            Self::Intersect(_intersect) => unsupported_err!("intersect"),
+            Self::Union(_union) => unsupported_err!("union"),
+            Self::Join(_join) => unsupported_err!("join"),
+            Self::Sink(_sink) => unsupported_err!("sink"),
+            Self::Sample(_sample) => unsupported_err!("sample"),
+            Self::MonotonicallyIncreasingId(_monotonically_increasing_id) => {
+                unsupported_err!("monotonically_increasing_id")
+            }
+            Self::SubqueryAlias(_subquery_alias) => unsupported_err!("subquery_alias"),
+            Self::Window(_window) => unsupported_err!("window"),
+            Self::TopN(_top_nn) => unsupported_err!("top_n"),
         };
         Ok(Self::Message {
             rel_variant: Some(rel_variant),

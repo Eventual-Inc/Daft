@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 R = TypeVar("R")
 
-
 class ImageMode(Enum):
     """Supported image modes for Daft's image type.
 

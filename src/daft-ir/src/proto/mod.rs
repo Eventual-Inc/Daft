@@ -1,5 +1,4 @@
 #[macro_use]
-
 pub mod rel;
 pub mod rex;
 pub mod schema;
@@ -38,7 +37,6 @@ where
     M: prost::Message + Default + ToOwned + Clone,
 {
     let message = message.expect("expected non-null!");
-    let message = message.to_owned();
     let proto = P::from_proto(*message)?;
     Ok(Box::new(proto))
 }
@@ -50,34 +48,43 @@ where
     M: prost::Message + Default + ToOwned + Clone,
 {
     let message = message.expect("expected non-null!");
-    let message = message.to_owned();
     let proto = P::from_proto(*message)?;
     Ok(Arc::new(proto))
 }
 
-/// This macro creates a FromProtoError.
+/// This macro creates a ProtoError::FromProto.
 #[macro_export]
 macro_rules! from_proto_err {
     ($($arg:tt)*) => {
-        return Err($crate::proto::ProtoError::FromProtoError(format!($($arg)*)))
+        return Err($crate::proto::ProtoError::FromProto(format!($($arg)*)))
     };
 }
 
-/// This macro creates a ToProtoError.
+/// This macro creates an ProtoError::ToProto.
 #[macro_export]
 macro_rules! to_proto_err {
     ($($arg:tt)*) => {
-        return Err($crate::proto::ProtoError::ToProtoError(format!($($arg)*)))
+        return Err($crate::proto::ProtoError::ToProto(format!($($arg)*)))
+    };
+}
+
+/// This macro creates an ProtoError::Unsuppported.
+#[macro_export]
+macro_rules! unsupported_err {
+    ($($arg:tt)*) => {
+        return Err($crate::proto::ProtoError::Unsupported(format!($($arg)*)))
     };
 }
 
 /// The daft_proto conversion error.
 #[derive(Debug, Error)]
 pub enum ProtoError {
-    #[error("ProtoError::FromProtoError {0}")]
-    FromProtoError(String),
-    #[error("ProtoError::ToProtoError {0}")]
-    ToProtoError(String),
+    #[error("ProtoError::FromProto {0}")]
+    FromProto(String),
+    #[error("ProtoError::ToProto {0}")]
+    ToProto(String),
+    #[error("ProtoError::Unsupported {0}")]
+    Unsupported(String),
 }
 
 /// The daft_proto result type.

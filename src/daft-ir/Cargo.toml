@@ -1,13 +1,13 @@
 [dependencies]
-thiserror = { workspace = true }
-common-error = { path = "../common/error", default-features = false }
-daft-dsl = { path = "../daft-dsl" }
-daft-functions = { path = "../daft-functions" }
-daft-logical-plan = { path = "../daft-logical-plan" }
-daft-proto = { path = "../daft-proto" }
-daft-schema = { path = "../daft-schema" }
-prost = { workspace = true }
-pyo3 = { workspace = true, optional = true }
+common-error = {path = "../common/error", default-features = false}
+daft-dsl = {path = "../daft-dsl"}
+daft-functions = {path = "../daft-functions"}
+daft-logical-plan = {path = "../daft-logical-plan"}
+daft-proto = {path = "../daft-proto"}
+daft-schema = {path = "../daft-schema"}
+prost = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+thiserror = {workspace = true}
 
 [features]
 python = ["dep:pyo3"]

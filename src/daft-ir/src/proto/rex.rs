@@ -1,11 +1,10 @@
-use crate::{from_proto_err};
-use super::{from_proto, from_proto_arc, ProtoError, FromToProto, ProtoResult};
+use super::{from_proto, from_proto_arc, FromToProto, ProtoResult};
+use crate::{from_proto_err, unsupported_err};
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
 #[rustfmt::skip]
 mod ir {
     pub use crate::prelude::*;
-    // inner expression types
     pub use crate::rex::AggExpr;
     pub use crate::rex::Column;
     pub use crate::rex::Operator;
@@ -60,23 +59,23 @@ impl FromToProto for ir::Expr {
                     right: rhs,
                 }
             }
-            proto::expr::ExprVariant::Cast(cast) => todo!(),
-            proto::expr::ExprVariant::Function(function) => todo!(),
-            proto::expr::ExprVariant::Over(over) => todo!(),
-            proto::expr::ExprVariant::WindowFunction(window_function) => todo!(),
-            proto::expr::ExprVariant::Not(not) => todo!(),
-            proto::expr::ExprVariant::IsNull(is_null) => todo!(),
-            proto::expr::ExprVariant::NotNull(not_null) => todo!(),
-            proto::expr::ExprVariant::FillNull(fill_null) => todo!(),
-            proto::expr::ExprVariant::IsIn(is_in) => todo!(),
-            proto::expr::ExprVariant::Between(between) => todo!(),
-            proto::expr::ExprVariant::List(list) => todo!(),
-            proto::expr::ExprVariant::Literal(literal) => todo!(),
-            proto::expr::ExprVariant::IfElse(if_else) => todo!(),
-            proto::expr::ExprVariant::ScalarFunction(scalar_function) => todo!(),
-            proto::expr::ExprVariant::Subquery(subquery) => todo!(),
-            proto::expr::ExprVariant::InSubquery(in_subquery) => todo!(),
-            proto::expr::ExprVariant::Exists(exists) => todo!(),
+            proto::expr::ExprVariant::Cast(_) => unsupported_err!("cast"),
+            proto::expr::ExprVariant::Function(_) => unsupported_err!("function"),
+            proto::expr::ExprVariant::Over(_) => unsupported_err!("over"),
+            proto::expr::ExprVariant::WindowFunction(_) => unsupported_err!("window_function"),
+            proto::expr::ExprVariant::Not(_) => unsupported_err!("not"),
+            proto::expr::ExprVariant::IsNull(_) => unsupported_err!("is_null"),
+            proto::expr::ExprVariant::NotNull(_) => unsupported_err!("not_null"),
+            proto::expr::ExprVariant::FillNull(_) => unsupported_err!("fill_null"),
+            proto::expr::ExprVariant::IsIn(_) => unsupported_err!("is_in"),
+            proto::expr::ExprVariant::Between(_) => unsupported_err!("between"),
+            proto::expr::ExprVariant::List(_) => unsupported_err!("list"),
+            proto::expr::ExprVariant::Literal(_) => unsupported_err!("literal"),
+            proto::expr::ExprVariant::IfElse(_) => unsupported_err!("if_else"),
+            proto::expr::ExprVariant::ScalarFunction(_) => unsupported_err!("scalar_function"),
+            proto::expr::ExprVariant::Subquery(_) => unsupported_err!("subquery"),
+            proto::expr::ExprVariant::InSubquery(_) => unsupported_err!("in_subquery"),
+            proto::expr::ExprVariant::Exists(_) => unsupported_err!("exists"),
         };
         Ok(expr)
     }
@@ -89,9 +88,7 @@ impl FromToProto for ir::Expr {
             Self::BinaryOp { op, left, right } => to_proto_expr_binary_op(op, left, right),
             Self::Cast(expr, data_type) => to_proto_expr_cast(expr, data_type),
             Self::Function { func, inputs } => to_proto_expr_function(func, inputs),
-            Self::Over(window_expr, window_spec) => {
-                to_proto_expr_over(window_expr, window_spec)
-            }
+            Self::Over(window_expr, window_spec) => to_proto_expr_over(window_expr, window_spec),
             Self::WindowFunction(window_expr) => to_proto_expr_window_function(window_expr),
             Self::Not(expr) => to_proto_expr_not(expr),
             Self::IsNull(expr) => to_proto_expr_is_null(expr),
@@ -106,9 +103,7 @@ impl FromToProto for ir::Expr {
                 if_false,
                 predicate,
             } => to_proto_expr_if_else(if_true, if_false, predicate),
-            Self::ScalarFunction(scalar_function) => {
-                to_proto_expr_scalar_function(scalar_function)
-            }
+            Self::ScalarFunction(scalar_function) => to_proto_expr_scalar_function(scalar_function),
             Self::Subquery(subquery) => to_proto_expr_subquery(subquery),
             Self::InSubquery(expr, subquery) => to_proto_expr_in_subquery(expr, subquery),
             Self::Exists(subquery) => to_proto_expr_exists(subquery),
@@ -166,8 +161,7 @@ fn to_proto_expr_alias(expr: &ir::ExprRef, name: &str) -> ProtoResult<proto::exp
 }
 
 /// Proto translation for aggregate expression.
-fn to_proto_expr_agg(agg_expr: &ir::AggExpr) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!()
+fn to_proto_expr_agg(_: &ir::AggExpr) -> ProtoResult<proto::expr::ExprVariant> {
     // let agg = proto::AggExpr {
     //     name: agg_expr.name().to_string(),
     //     args: agg_expr
@@ -178,6 +172,7 @@ fn to_proto_expr_agg(agg_expr: &ir::AggExpr) -> ProtoResult<proto::expr::ExprVar
     //     distinct: false, // TODO: Add distinct flag to AggExpr
     // };
     // Ok(proto::expr::ExprVariant::Agg(agg))
+    unsupported_err!("agg_expr");
 }
 
 /// Proto translation for binary operation.
@@ -208,10 +203,9 @@ fn to_proto_expr_cast(
 
 /// Proto translation for function expression.
 fn to_proto_expr_function(
-    func: &ir::functions::FunctionExpr,
-    inputs: &[ir::ExprRef],
+    _func: &ir::functions::FunctionExpr,
+    _inputs: &[ir::ExprRef],
 ) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!()
     // let function = proto::Function {
     //     func: func.to_proto()?,
     //     inputs: inputs
@@ -220,30 +214,31 @@ fn to_proto_expr_function(
     //         .collect::<crate::ProtoResult<Vec<_>>>()?,
     // };
     // Ok(proto::expr::ExprVariant::Function(function))
+    unsupported_err!("expr_function");
 }
 
 /// Proto translation for window over expression.
 fn to_proto_expr_over(
-    window_expr: &ir::WindowExpr,
-    window_spec: &ir::WindowSpec,
+    _window_expr: &ir::WindowExpr,
+    _window_spec: &ir::WindowSpec,
 ) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!();
     // let over = proto::Over {
     //     expr: Some(Box::new(window_expr.to_proto()?)),
     //     spec: window_spec.to_proto()?,
     // };
     // Ok(proto::expr::ExprVariant::Over(over))
+    unsupported_err!("expr_over");
 }
 
 /// Proto translation for window function.
 fn to_proto_expr_window_function(
-    window_expr: &ir::WindowExpr,
+    _window_expr: &ir::WindowExpr,
 ) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!();
     // let window_function = proto::WindowFunction {
     //     expr: Some(Box::new(window_expr.to_proto()?)),
     // };
     // Ok(proto::expr::ExprVariant::WindowFunction(window_function))
+    unsupported_err!("expr_window_function");
 }
 
 /// Proto translation for not expression.
@@ -284,10 +279,9 @@ fn to_proto_expr_fill_null(
 
 /// Proto translation for is in expression.
 fn to_proto_expr_is_in(
-    expr: &ir::ExprRef,
-    items: &[ir::ExprRef],
+    _expr: &ir::ExprRef,
+    _items: &[ir::ExprRef],
 ) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!()
     // let is_in = proto::IsIn {
     //     expr: Some(Box::new(expr.to_proto()?)),
     //     items: items
@@ -296,6 +290,7 @@ fn to_proto_expr_is_in(
     //         .collect::<crate::ProtoResult<Vec<_>>>()?,
     // };
     // Ok(proto::expr::ExprVariant::IsIn(is_in))
+    unsupported_err!("expr_is_in");
 }
 
 /// Proto translation for between expression.
@@ -313,8 +308,7 @@ fn to_proto_expr_between(
 }
 
 /// Proto translation for list expression.
-fn to_proto_expr_list(items: &[ir::ExprRef]) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!();
+fn to_proto_expr_list(_items: &[ir::ExprRef]) -> ProtoResult<proto::expr::ExprVariant> {
     // let list = proto::List {
     //     items: items
     //         .iter()
@@ -322,6 +316,7 @@ fn to_proto_expr_list(items: &[ir::ExprRef]) -> ProtoResult<proto::expr::ExprVar
     //         .collect::<crate::ProtoResult<Vec<_>>>()?,
     // };
     // Ok(proto::expr::ExprVariant::List(list))
+    unsupported_err!("expr_list");
 }
 
 /// Proto translation for literal expression.
@@ -348,9 +343,8 @@ fn to_proto_expr_if_else(
 
 /// Proto translation for scalar function expression.
 fn to_proto_expr_scalar_function(
-    scalar_function: &ir::functions::ScalarFunction,
+    _scalar_function: &ir::functions::ScalarFunction,
 ) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!();
     // let scalar_function = proto::ScalarFunction {
     //     name: scalar_function.name().to_string(),
     //     args: scalar_function
@@ -360,37 +354,38 @@ fn to_proto_expr_scalar_function(
     //         .collect::<crate::ProtoResult<Vec<_>>>()?,
     // };
     // Ok(proto::expr::ExprVariant::ScalarFunction(scalar_function))
+    unsupported_err!("expr_scalar_function");
 }
 
 /// Proto translation for subquery expression.
-fn to_proto_expr_subquery(subquery: &ir::Subquery) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!();
+fn to_proto_expr_subquery(_subquery: &ir::Subquery) -> ProtoResult<proto::expr::ExprVariant> {
     // let subquery = proto::Subquery {
     //     plan: subquery.plan.to_proto()?,
     // };
     // Ok(proto::expr::ExprVariant::Subquery(subquery))
+    unsupported_err!("expr_subquery");
 }
 
 /// Proto translation for in subquery expression.
 fn to_proto_expr_in_subquery(
-    expr: &ir::ExprRef,
-    subquery: &ir::Subquery,
+    _expr: &ir::ExprRef,
+    _subquery: &ir::Subquery,
 ) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!();
     // let in_subquery = proto::InSubquery {
     //     expr: Some(Box::new(expr.to_proto()?)),
     //     plan: subquery.plan.to_proto()?,
     // };
     // Ok(proto::expr::ExprVariant::InSubquery(in_subquery))
+    unsupported_err!("expr_in_subquery");
 }
 
 /// Proto translation for exists expression.
-fn to_proto_expr_exists(subquery: &ir::Subquery) -> ProtoResult<proto::expr::ExprVariant> {
-    todo!();
+fn to_proto_expr_exists(_subquery: &ir::Subquery) -> ProtoResult<proto::expr::ExprVariant> {
     // let exists = proto::Exists {
     //     plan: subquery.plan.to_proto()?,
     // };
     // Ok(proto::expr::ExprVariant::Exists(exists))
+    unsupported_err!("expr_exists");
 }
 
 impl FromToProto for ir::Operator {
@@ -463,10 +458,7 @@ impl FromToProto for ir::LiteralValue {
             proto::literal::LiteralVariant::Utf8(s) => Self::Utf8(s.into()),
             proto::literal::LiteralVariant::Binary(items) => Self::Binary(items),
             proto::literal::LiteralVariant::FixedSizeBinary(fixed_size_binary) => {
-                Self::FixedSizeBinary(
-                    fixed_size_binary.value,
-                    fixed_size_binary.size as usize,
-                )
+                Self::FixedSizeBinary(fixed_size_binary.value, fixed_size_binary.size as usize)
             }
             proto::literal::LiteralVariant::Int8(i) => Self::Int8(i as i8),
             proto::literal::LiteralVariant::Uint8(i) => Self::UInt8(i as u8),
@@ -476,42 +468,43 @@ impl FromToProto for ir::LiteralValue {
             proto::literal::LiteralVariant::Uint32(i) => Self::UInt32(i),
             proto::literal::LiteralVariant::Int64(i) => Self::Int64(i),
             proto::literal::LiteralVariant::Uint64(i) => Self::UInt64(i),
-            proto::literal::LiteralVariant::Timestamp(timestamp) => {
-                todo!()
+            proto::literal::LiteralVariant::Timestamp(_) => {
                 // let unit = daft_ir::schema::TimeUnit::from_proto(timestamp.unit)?;
                 // LiteralValue::Timestamp(timestamp.value, unit, timestamp.timezone)
+                unsupported_err!("literal_timestamp")
             }
-            proto::literal::LiteralVariant::Date(days) => Self::Date(days as i32),
-            proto::literal::LiteralVariant::Time(time) => {
-                todo!()
+            proto::literal::LiteralVariant::Date(days) => Self::Date(days),
+            proto::literal::LiteralVariant::Time(_) => {
                 // let unit = daft_ir::schema::TimeUnit::from_proto(time.unit)?;
                 // LiteralValue::Time(time.value, unit)
+                unsupported_err!("literal_time")
             }
-            proto::literal::LiteralVariant::Duration(duration) => {
-                todo!()
+            proto::literal::LiteralVariant::Duration(_duration) => {
                 // let unit = daft_ir::schema::TimeUnit::from_proto(duration.unit)?;
                 // LiteralValue::Duration(duration.value, unit)
+                unsupported_err!("literal_duration")
             }
-            proto::literal::LiteralVariant::Interval(interval) => {
-                todo!()
+            proto::literal::LiteralVariant::Interval(_interval) => {
                 // LiteralValue::Interval(daft_ir::IntervalValue {
                 //     months: interval.months,
                 //     days: interval.days,
                 //     nanoseconds: interval.nanoseconds,
                 // })
+                unsupported_err!("literal_interval")
             }
             proto::literal::LiteralVariant::Float64(f) => Self::Float64(f),
-            proto::literal::LiteralVariant::Decimal(decimal) => {
+            proto::literal::LiteralVariant::Decimal(_decimal) => {
                 // TODO: Implement decimal parsing from string
-                todo!("Decimal parsing from string not implemented")
+                unsupported_err!("literal_decimal")
             }
-            proto::literal::LiteralVariant::Series(series) => {
-                let dtype = series.dtype.as_ref().ok_or_else(|| {
-                    ProtoError::FromProtoError("Missing dtype in Series".to_string())
-                })?;
-                let dtype = ir::DataType::from_proto(dtype.clone())?;
+            proto::literal::LiteralVariant::Series(_series) => {
                 // TODO: Implement series creation from bytes
-                todo!("Series creation from bytes not implemented")
+                // let dtype = series
+                //     .dtype
+                //     .as_ref()
+                //     .ok_or_else(|| ProtoError::FromProto("Missing dtype in Series".to_string()))?;
+                // let dtype = ir::DataType::from_proto(dtype.clone())?;
+                unsupported_err!("literal_series")
             }
             proto::literal::LiteralVariant::Struct(struct_) => {
                 let mut fields = vec![];
@@ -531,9 +524,7 @@ impl FromToProto for ir::LiteralValue {
             Self::Null => proto::literal::LiteralVariant::Null(true),
             Self::Boolean(bool) => proto::literal::LiteralVariant::Boolean(*bool),
             Self::Utf8(s) => proto::literal::LiteralVariant::Utf8(s.to_string()),
-            Self::Binary(items) => {
-                proto::literal::LiteralVariant::Binary(items.clone())
-            }
+            Self::Binary(items) => proto::literal::LiteralVariant::Binary(items.clone()),
             Self::FixedSizeBinary(items, size) => {
                 proto::literal::LiteralVariant::FixedSizeBinary(proto::literal::FixedSizeBinary {
                     value: items.clone(),
@@ -555,7 +546,7 @@ impl FromToProto for ir::LiteralValue {
                     timezone: timezone.clone(),
                 })
             }
-            Self::Date(days) => proto::literal::LiteralVariant::Date(*days as i32),
+            Self::Date(days) => proto::literal::LiteralVariant::Date(*days),
             Self::Time(value, time_unit) => {
                 proto::literal::LiteralVariant::Time(proto::literal::Time {
                     value: *value,
@@ -633,13 +624,12 @@ fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
     }
 }
 
-///
+/// Gets an ir::PlanRef from the proto column fields.
 fn get_plan_ref(qualifier: Option<u64>, alias: Option<String>) -> ir::PlanRef {
     // df["x"]
     if let Some(qualifier) = qualifier {
         return ir::PlanRef::Id(qualifier as usize);
     }
-    // no idea why columns would have an alias.
     if let Some(alias) = alias {
         return ir::PlanRef::Alias(alias.into());
     }

@@ -1,10 +1,10 @@
 [build-dependencies]
-tonic-build = { workspace = true }
+tonic-build = {workspace = true}
 walkdir = "2.5.0"
 
 [dependencies]
-prost = { workspace = true }
-tonic = { workspace = true }
+prost = {workspace = true}
+tonic = {workspace = true}
 
 [lib]
 name = "daft_proto"
