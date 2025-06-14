@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import signal
+import subprocess
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -27,7 +32,7 @@ from daft.runners.partitioning import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -37,6 +42,52 @@ except ImportError:
     raise
 
 logger = logging.getLogger(__name__)
+
+ENABLE_SAMPLY_PROFILING = os.getenv("DAFT_DEV_ENABLE_SAMPLY_PROFILING", "false").lower() == "true"
+
+
+@contextmanager
+def samply_profile() -> Generator[None, None, None]:
+    """Context manager to profile the current process with samply.
+
+    Args:
+        output_file: Path where to save the profile JSON output
+
+    Usage:
+        with samply_profile("my_profile.json"):
+            # Your code to profile here
+            expensive_function()
+    """
+    if not ENABLE_SAMPLY_PROFILING:
+        yield
+        return
+
+    current_pid = os.getpid()
+
+    cmd = [
+        "bash",
+        "-c",
+        f"""
+        samply record --pid {current_pid} -s -o /tmp/ray/session_latest/logs/daft/samply_{current_pid}_{time.time()}.json.gz
+        """,
+    ]
+
+    try:
+        # Start the profiler process
+        profiler_process = subprocess.Popen(cmd)
+
+        # Yield control back to the context
+        yield
+
+    finally:
+        print("Stopping profiler...")
+        # Stop profiling by sending SIGINT (Ctrl+C) to samply
+        if profiler_process.poll() is None:  # Process is still running
+            print("Profiler is still running, sending SIGTERM")
+            profiler_process.send_signal(signal.SIGTERM)
+            print("Waiting for profiler to finish...")
+            profiler_process.wait()
+            print("Profiler finished")
 
 
 @ray.remote(
@@ -62,17 +113,18 @@ class RaySwordfishActor:
         context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
         """Run a plan on swordfish and yield partitions."""
-        psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
-        psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+        with samply_profile():
+            psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
+            psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
-        metas = []
-        async for partition in self.native_executor.run_async(plan, psets_mp, config, None, context):
-            if partition is None:
-                break
-            mp = MicroPartition._from_pymicropartition(partition)
-            metas.append(PartitionMetadata.from_table(mp))
-            yield mp
-        yield metas
+            metas = []
+            async for partition in self.native_executor.run_async(plan, psets_mp, config, None, context):
+                if partition is None:
+                    break
+                mp = MicroPartition._from_pymicropartition(partition)
+                metas.append(PartitionMetadata.from_table(mp))
+                yield mp
+            yield metas
 
 
 @dataclass
