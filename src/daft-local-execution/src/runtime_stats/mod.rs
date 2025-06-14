@@ -1,3 +1,4 @@
+mod subscribers;
 use core::fmt;
 use std::{
     fmt::Write,
@@ -11,13 +12,16 @@ use std::{
 use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
 use kanal::SendError;
-use opentelemetry::{global, metrics::Counter, KeyValue};
 use tracing::{instrument::Instrumented, Instrument};
 
 use crate::{
     channel::{Receiver, Sender},
     pipeline::NodeInfo,
     progress_bar::OperatorProgressBar,
+    runtime_stats::subscribers::{
+        dashboard::DashboardSubscriber, opentelemetry::OpenTelemetrySubscriber,
+        RuntimeStatsSubscriber,
+    },
 };
 
 pub struct RuntimeStatsContext {
@@ -27,78 +31,6 @@ pub struct RuntimeStatsContext {
     node_info: NodeInfo,
     subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
 }
-
-pub trait RuntimeStatsSubscriber: Send + Sync {
-    #[cfg(test)]
-    fn as_any(&self) -> &dyn std::any::Any;
-
-    fn on_rows_received(&self, context: &NodeInfo, count: u64);
-    fn on_rows_emitted(&self, context: &NodeInfo, count: u64);
-    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64);
-}
-
-pub struct OpenTelemetrySubscriber {
-    rows_received: Counter<u64>,
-    rows_emitted: Counter<u64>,
-    cpu_us: Counter<u64>,
-}
-
-impl OpenTelemetrySubscriber {
-    pub fn new() -> Self {
-        let meter = global::meter("runtime_stats");
-        Self {
-            rows_received: meter
-                .u64_counter("daft.runtime_stats.rows_received")
-                .build(),
-            rows_emitted: meter.u64_counter("daft.runtime_stats.rows_emitted").build(),
-            cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
-        }
-    }
-}
-
-impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
-    #[cfg(test)]
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn on_rows_received(&self, context: &NodeInfo, count: u64) {
-        let mut attributes = vec![
-            KeyValue::new("name", context.name.to_string()),
-            KeyValue::new("id", context.id.to_string()),
-        ];
-
-        for (k, v) in &context.context {
-            attributes.push(KeyValue::new(k.clone(), v.clone()));
-        }
-
-        self.rows_received.add(count, &attributes);
-    }
-    fn on_rows_emitted(&self, context: &NodeInfo, count: u64) {
-        let mut attributes = vec![
-            KeyValue::new("name", context.name.to_string()),
-            KeyValue::new("id", context.id.to_string()),
-        ];
-
-        for (k, v) in &context.context {
-            attributes.push(KeyValue::new(k.clone(), v.clone()));
-        }
-        self.rows_emitted.add(count, &attributes);
-    }
-
-    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64) {
-        let mut attributes = vec![
-            KeyValue::new("name", context.name.to_string()),
-            KeyValue::new("id", context.id.to_string()),
-        ];
-
-        for (k, v) in &context.context {
-            attributes.push(KeyValue::new(k.clone(), v.clone()));
-        }
-        self.cpu_us.add(microseconds, &attributes);
-    }
-}
-
 #[derive(Debug)]
 pub struct RuntimeStats {
     pub rows_received: u64,
@@ -158,6 +90,10 @@ impl RuntimeStatsContext {
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         if should_enable_opentelemetry() {
             subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
+        }
+
+        if DashboardSubscriber::is_enabled() {
+            subscribers.push(Box::new(DashboardSubscriber::new()));
         }
 
         Self::new_with_subscribers(node_info, subscribers)
