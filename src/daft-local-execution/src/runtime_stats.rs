@@ -10,6 +10,7 @@ use std::{
 
 use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
+use indicatif::HumanCount;
 use kanal::SendError;
 use opentelemetry::{global, metrics::Counter, KeyValue};
 use tracing::{instrument::Instrumented, Instrument};
@@ -20,10 +21,114 @@ use crate::{
     progress_bar::OperatorProgressBar,
 };
 
+// ----------------------- General Traits for Runtime Stat Collection ----------------------- //
+pub(crate) trait AdditionalRuntimeStats: std::fmt::Debug {
+    fn display(
+        &self,
+        w: &mut dyn Write,
+        rows_received: u64,
+        rows_emitted: u64,
+        cpu_us: u64,
+    ) -> Result<(), fmt::Error>;
+}
+
+pub trait RuntimeStatsBuilder: Send + Sync + std::any::Any {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
+
+    fn display(&self, rows_received: u64, rows_emitted: u64) -> String;
+    fn result(&self) -> Box<dyn AdditionalRuntimeStats>;
+}
+
+pub struct EmptyAdditionalStatsBuilder {}
+
+impl EmptyAdditionalStatsBuilder {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn result_helper(&self) -> EmptyAdditionalStats {
+        EmptyAdditionalStats {}
+    }
+}
+
+impl RuntimeStatsBuilder for EmptyAdditionalStatsBuilder {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn display(&self, rows_received: u64, rows_emitted: u64) -> String {
+        format!(
+            "{} rows received, {} rows emitted",
+            HumanCount(rows_received),
+            HumanCount(rows_emitted)
+        )
+    }
+
+    fn result(&self) -> Box<dyn AdditionalRuntimeStats> {
+        Box::new(self.result_helper())
+    }
+}
+
+#[derive(Debug)]
+pub struct EmptyAdditionalStats {}
+
+impl AdditionalRuntimeStats for EmptyAdditionalStats {
+    fn display(
+        &self,
+        w: &mut dyn Write,
+        rows_received: u64,
+        rows_emitted: u64,
+        cpu_us: u64,
+    ) -> Result<(), fmt::Error> {
+        RuntimeStats::display_helper(w, rows_received, rows_emitted, cpu_us)
+    }
+}
+
+#[derive(Debug)]
+pub struct RuntimeStats {
+    pub rows_received: u64,
+    pub rows_emitted: u64,
+    pub cpu_us: u64,
+    pub additional: Box<dyn AdditionalRuntimeStats>,
+}
+
+impl RuntimeStats {
+    pub(crate) fn display_helper(
+        w: &mut dyn Write,
+        rows_received: u64,
+        rows_emitted: u64,
+        cpu_us: u64,
+    ) -> Result<(), fmt::Error> {
+        use num_format::{Locale, ToFormattedString};
+        writeln!(
+            w,
+            "Rows received =  {}",
+            rows_received.to_formatted_string(&Locale::en)
+        )?;
+
+        writeln!(
+            w,
+            "Rows emitted =  {}",
+            rows_emitted.to_formatted_string(&Locale::en)
+        )?;
+
+        let tms = (cpu_us as f32) / 1000f32;
+        writeln!(w, "CPU Time = {tms:.2}ms")?;
+
+        Ok(())
+    }
+
+    pub fn display(&self, w: &mut dyn Write) -> Result<(), fmt::Error> {
+        self.additional
+            .display(w, self.rows_received, self.rows_emitted, self.cpu_us)
+    }
+}
+
 pub struct RuntimeStatsContext {
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
+    pub additional: Arc<dyn RuntimeStatsBuilder>,
     node_info: NodeInfo,
     subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
 }
@@ -99,69 +204,40 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     }
 }
 
-#[derive(Debug)]
-pub struct RuntimeStats {
-    pub rows_received: u64,
-    pub rows_emitted: u64,
-    pub cpu_us: u64,
-}
-
-impl RuntimeStats {
-    pub(crate) fn display<W: Write>(
-        &self,
-        w: &mut W,
-        received: bool,
-        emitted: bool,
-        cpu_time: bool,
-    ) -> Result<(), fmt::Error> {
-        use num_format::{Locale, ToFormattedString};
-        if received {
-            writeln!(
-                w,
-                "Rows received =  {}",
-                self.rows_received.to_formatted_string(&Locale::en)
-            )?;
-        }
-
-        if emitted {
-            writeln!(
-                w,
-                "Rows emitted =  {}",
-                self.rows_emitted.to_formatted_string(&Locale::en)
-            )?;
-        }
-
-        if cpu_time {
-            let tms = (self.cpu_us as f32) / 1000f32;
-            writeln!(w, "CPU Time = {tms:.2}ms")?;
-        }
-
-        Ok(())
-    }
-}
-
 impl RuntimeStatsContext {
     pub(crate) fn new_with_subscribers(
         node_info: NodeInfo,
+        builder: Arc<dyn RuntimeStatsBuilder>,
         subscribers: Vec<Box<dyn RuntimeStatsSubscriber>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             rows_received: AtomicU64::new(0),
             rows_emitted: AtomicU64::new(0),
             cpu_us: AtomicU64::new(0),
+            additional: builder,
             node_info,
             subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
         })
     }
 
-    pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
+    pub(crate) fn new_with_builder(
+        node_info: NodeInfo,
+        builder: Arc<dyn RuntimeStatsBuilder>,
+    ) -> Arc<Self> {
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         if should_enable_opentelemetry() {
             subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
         }
 
-        Self::new_with_subscribers(node_info, subscribers)
+        Self::new_with_subscribers(node_info, builder, subscribers)
     }
+
+    pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
+        Self::new_with_builder(node_info, Arc::new(EmptyAdditionalStatsBuilder::new()))
+    }
+
+    // pub(crate) fn record_update(&self, )
+
     pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
         self.cpu_us.fetch_add(
             elapsed.as_micros() as u64,
@@ -188,22 +264,12 @@ impl RuntimeStatsContext {
         }
     }
 
-    pub(crate) fn get_rows_received(&self) -> u64 {
-        self.rows_received
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub(crate) fn get_rows_emitted(&self) -> u64 {
-        self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    #[allow(unused)]
-    pub(crate) fn reset(&self) {
-        self.rows_received
-            .store(0, std::sync::atomic::Ordering::Release);
-        self.rows_emitted
-            .store(0, std::sync::atomic::Ordering::Release);
-        self.cpu_us.store(0, std::sync::atomic::Ordering::Release);
+    pub(crate) fn display(&self) -> String {
+        self.additional.display(
+            self.rows_received
+                .load(std::sync::atomic::Ordering::Relaxed),
+            self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
+        )
     }
 
     pub(crate) fn result(&self) -> RuntimeStats {
@@ -213,6 +279,7 @@ impl RuntimeStatsContext {
                 .load(std::sync::atomic::Ordering::Relaxed),
             rows_emitted: self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
             cpu_us: self.cpu_us.load(std::sync::atomic::Ordering::Relaxed),
+            additional: self.additional.result(),
         }
     }
 }
@@ -368,7 +435,11 @@ mod tests {
             context: HashMap::new(),
         };
         let subscriber = Box::new(MockSubscriber::new());
-        let ctx = RuntimeStatsContext::new_with_subscribers(node_info, vec![subscriber as _]);
+        let ctx = RuntimeStatsContext::new_with_subscribers(
+            node_info,
+            Arc::new(EmptyAdditionalStatsBuilder::new()),
+            vec![subscriber as _],
+        );
 
         ctx.mark_rows_emitted(100);
         ctx.record_elapsed_cpu_time(Duration::from_secs(5));

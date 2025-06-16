@@ -173,16 +173,11 @@ impl ExecutionRuntimeContext {
         &self,
         prefix: &str,
         color: ProgressBarColor,
-        show_received: bool,
         runtime_stats: Arc<RuntimeStatsContext>,
     ) -> Option<Arc<OperatorProgressBar>> {
         if let Some(ref pb_manager) = self.progress_bar_manager {
             let pb = pb_manager.make_new_bar(color, prefix).unwrap();
-            Some(Arc::new(OperatorProgressBar::new(
-                pb,
-                runtime_stats,
-                show_received,
-            )))
+            Some(Arc::new(OperatorProgressBar::new(pb, runtime_stats)))
         } else {
             None
         }

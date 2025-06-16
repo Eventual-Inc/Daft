@@ -190,7 +190,7 @@ impl TreeDisplay for StreamingSinkNode {
                 }
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display, true, true, true).unwrap();
+                    rt_result.display(&mut display).unwrap();
                 }
             }
         }
@@ -224,7 +224,6 @@ impl PipelineNode for StreamingSinkNode {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Cyan,
-            true,
             self.runtime_stats.clone(),
         );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());

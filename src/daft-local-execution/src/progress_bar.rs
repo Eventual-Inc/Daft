@@ -7,7 +7,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use indicatif::{HumanCount, ProgressStyle};
+use indicatif::ProgressStyle;
 
 use crate::runtime_stats::RuntimeStatsContext;
 
@@ -45,7 +45,6 @@ impl ProgressBarColor {
 pub struct OperatorProgressBar {
     inner_progress_bar: Box<dyn ProgressBar>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    show_received: bool,
     start_time: Instant,
     last_update: AtomicU64,
 }
@@ -57,12 +56,10 @@ impl OperatorProgressBar {
     pub fn new(
         progress_bar: Box<dyn ProgressBar>,
         runtime_stats: Arc<RuntimeStatsContext>,
-        show_received: bool,
     ) -> Self {
         Self {
             inner_progress_bar: progress_bar,
             runtime_stats,
-            show_received,
             start_time: Instant::now(),
             last_update: AtomicU64::new(0),
         }
@@ -92,18 +89,9 @@ impl OperatorProgressBar {
     pub fn render(&self) {
         let now = std::time::Instant::now();
         if self.should_update_progress_bar(now) {
-            let rows_received = self.runtime_stats.get_rows_received();
-            let rows_emitted = self.runtime_stats.get_rows_emitted();
-            let msg = if self.show_received {
-                format!(
-                    "{} rows received, {} rows emitted",
-                    HumanCount(rows_received),
-                    HumanCount(rows_emitted)
-                )
-            } else {
-                format!("{} rows emitted", HumanCount(rows_emitted))
-            };
-            let _ = self.inner_progress_bar.set_message(msg);
+            let _ = self
+                .inner_progress_bar
+                .set_message(self.runtime_stats.display());
         }
     }
 }
@@ -123,7 +111,8 @@ impl ProgressBar for IndicatifProgressBar {
     }
 
     fn close(&self) -> DaftResult<()> {
-        self.0.finish_and_clear();
+        self.0
+            .finish_with_message(format!("🎉 Completed. {}", self.0.message()));
         Ok(())
     }
 }

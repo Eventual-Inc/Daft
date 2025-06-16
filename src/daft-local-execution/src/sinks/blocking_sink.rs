@@ -13,7 +13,10 @@ use crate::{
     pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::{
+        CountingReceiver, CountingSender, EmptyAdditionalStatsBuilder, RuntimeStatsBuilder,
+        RuntimeStatsContext,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
@@ -44,6 +47,9 @@ pub trait BlockingSink: Send + Sync {
     fn name(&self) -> &'static str;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(EmptyAdditionalStatsBuilder {})
+    }
     fn dispatch_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeContext,
@@ -76,11 +82,15 @@ impl BlockingSinkNode {
         let name = op.name();
         let node_info = ctx.next_node_info(name);
 
+        let runtime_stats = RuntimeStatsContext::new_with_builder(
+            node_info.clone(),
+            op.make_runtime_stats_builder(),
+        );
         Self {
             op,
             name,
             child,
-            runtime_stats: RuntimeStatsContext::new(node_info.clone()),
+            runtime_stats,
             plan_stats,
             node_info,
         }
@@ -151,7 +161,7 @@ impl TreeDisplay for BlockingSinkNode {
                 }
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display, true, true, true).unwrap();
+                    rt_result.display(&mut display).unwrap();
                 }
             }
         }
@@ -180,7 +190,6 @@ impl PipelineNode for BlockingSinkNode {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Cyan,
-            true,
             self.runtime_stats.clone(),
         );
         let child_results_receiver = self.child.start(false, runtime_handle)?;

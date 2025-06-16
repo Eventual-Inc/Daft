@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    fmt::Write,
+    sync::{atomic::AtomicU64, Arc},
+};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
@@ -17,8 +20,56 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    runtime_stats::{AdditionalRuntimeStats, RuntimeStats, RuntimeStatsBuilder},
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
+
+struct WriteStatsBuilder {
+    bytes_written: AtomicU64,
+}
+
+impl RuntimeStatsBuilder for WriteStatsBuilder {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn display(&self, rows_received: u64, rows_emitted: u64) -> String {
+        format!(
+            "{} rows received, {} rows written, {} bytes written",
+            rows_received,
+            rows_emitted,
+            self.bytes_written
+                .load(std::sync::atomic::Ordering::Relaxed)
+        )
+    }
+
+    fn result(&self) -> Box<dyn AdditionalRuntimeStats> {
+        Box::new(WriteStats {
+            bytes_written: self
+                .bytes_written
+                .load(std::sync::atomic::Ordering::Relaxed),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct WriteStats {
+    bytes_written: u64,
+}
+
+impl AdditionalRuntimeStats for WriteStats {
+    fn display(
+        &self,
+        w: &mut dyn Write,
+        rows_received: u64,
+        rows_emitted: u64,
+        cpu_us: u64,
+    ) -> Result<(), std::fmt::Error> {
+        RuntimeStats::display_helper(w, rows_received, rows_emitted, cpu_us)?;
+        writeln!(w, "Bytes written: {}", self.bytes_written)?;
+        Ok(())
+    }
+}
 
 #[derive(Debug)]
 pub enum WriteFormat {
@@ -89,16 +140,26 @@ impl BlockingSink for WriteSink {
         mut state: Box<dyn BlockingSinkState>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
+        let additional = spawner.runtime_context.additional.clone();
+
         spawner
             .spawn(
                 async move {
-                    state
+                    let bytes_written = state
                         .as_any_mut()
                         .downcast_mut::<WriteState>()
                         .expect("WriteSink should have WriteState")
                         .writer
                         .write(input)
                         .await?;
+
+                    additional
+                        .as_any_arc()
+                        .downcast_ref::<WriteStatsBuilder>()
+                        .expect("WriteStatsBuilder should be the additional stats builder")
+                        .bytes_written
+                        .fetch_add(bytes_written as u64, std::sync::atomic::Ordering::Relaxed);
+
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -213,6 +274,12 @@ impl BlockingSink for WriteSink {
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         let writer = self.writer_factory.create_writer(0, None)?;
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
+    }
+
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(WriteStatsBuilder {
+            bytes_written: AtomicU64::new(0),
+        })
     }
 
     fn dispatch_spawner(

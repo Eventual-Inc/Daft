@@ -17,7 +17,10 @@ use crate::{
     pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::{
+        CountingReceiver, CountingSender, EmptyAdditionalStatsBuilder, RuntimeStatsBuilder,
+        RuntimeStatsContext,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
 
@@ -50,6 +53,9 @@ pub trait IntermediateOperator: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
+    }
+    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
+        Arc::new(EmptyAdditionalStatsBuilder {})
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -94,7 +100,10 @@ impl IntermediateNode {
     ) -> Self {
         let info = ctx.next_node_info(intermediate_op.name());
 
-        let rts = RuntimeStatsContext::new(info.clone());
+        let rts = RuntimeStatsContext::new_with_builder(
+            info.clone(),
+            intermediate_op.make_runtime_stats_builder(),
+        );
         Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats, info)
     }
 
@@ -200,7 +209,7 @@ impl TreeDisplay for IntermediateNode {
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display, true, true, true).unwrap();
+                    rt_result.display(&mut display).unwrap();
                 }
             }
         }
@@ -233,7 +242,6 @@ impl PipelineNode for IntermediateNode {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Magenta,
-            true,
             self.runtime_stats.clone(),
         );
         for child in &self.children {
