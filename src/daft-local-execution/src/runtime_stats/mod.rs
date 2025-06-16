@@ -550,4 +550,145 @@ mod tests {
         assert_eq!(event.rows_emitted, 50);
         assert_eq!(event.cpu_us, 1000);
     }
+
+    #[tokio::test]
+    async fn test_multiple_subscribers_all_receive_events() {
+        let subscriber1 = Arc::new(MockSubscriber::new());
+        let subscriber2 = Arc::new(MockSubscriber::new());
+        let subscribers = Arc::new(vec![
+            subscriber1.clone() as Arc<dyn RuntimeStatsSubscriber>,
+            subscriber2.clone() as Arc<dyn RuntimeStatsSubscriber>,
+        ]);
+        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+
+        let node_info = create_node_info("test_node", 1);
+        let rt_context = RuntimeStatsContext::new(node_info);
+
+        handler.mark_rows_received(100, &rt_context);
+        sleep(Duration::from_millis(100)).await;
+
+        // Both subscribers should receive the event
+        assert_eq!(subscriber1.get_total_calls(), 1);
+        assert_eq!(subscriber2.get_total_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_subscriber_error_doesnt_affect_others() {
+        #[derive(Debug)]
+        struct FailingSubscriber;
+
+        impl RuntimeStatsSubscriber for FailingSubscriber {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn handle_event(&self, _: &RuntimeStatsEvent) -> DaftResult<()> {
+                Err(common_error::DaftError::InternalError(
+                    "Test error".to_string(),
+                ))
+            }
+        }
+
+        let failing_subscriber = Arc::new(FailingSubscriber);
+        let mock_subscriber = Arc::new(MockSubscriber::new());
+        let subscribers = Arc::new(vec![
+            failing_subscriber as Arc<dyn RuntimeStatsSubscriber>,
+            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
+        ]);
+        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+
+        let node_info = create_node_info("test_node", 1);
+        let rt_context = RuntimeStatsContext::new(node_info);
+
+        handler.mark_rows_received(100, &rt_context);
+        sleep(Duration::from_millis(100)).await;
+
+        // Mock subscriber should still receive event despite other failing
+        assert_eq!(mock_subscriber.get_total_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_runtime_stats_context_operations() {
+        let node_info = create_node_info("test_node", 1);
+        let rt_context = RuntimeStatsContext::new(node_info);
+
+        // Test initial state
+        assert_eq!(rt_context.get_rows_received(), 0);
+        assert_eq!(rt_context.get_rows_emitted(), 0);
+
+        // Test incremental updates
+        rt_context.mark_rows_received(100);
+        rt_context.mark_rows_received(50);
+        assert_eq!(rt_context.get_rows_received(), 150);
+
+        rt_context.mark_rows_emitted(75);
+        assert_eq!(rt_context.get_rows_emitted(), 75);
+
+        // Test reset
+        rt_context.reset();
+        assert_eq!(rt_context.get_rows_received(), 0);
+        assert_eq!(rt_context.get_rows_emitted(), 0);
+
+        let stats = rt_context.result();
+        assert_eq!(stats.rows_received, 0);
+        assert_eq!(stats.rows_emitted, 0);
+    }
+
+    #[tokio::test]
+    async fn test_rapid_event_updates_latest_wins() {
+        let mock_subscriber = Arc::new(MockSubscriber::new());
+        let subscribers = Arc::new(vec![
+            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
+        ]);
+        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+
+        let node_info = create_node_info("rapid_node", 1);
+        let rt_context = RuntimeStatsContext::new(node_info);
+
+        // Send many rapid updates
+        for i in 1..=20 {
+            handler.mark_rows_received(i * 10, &rt_context);
+        }
+
+        sleep(Duration::from_millis(100)).await;
+
+        // Should only get 1 event due to throttling
+        assert_eq!(mock_subscriber.get_total_calls(), 1);
+
+        let events = mock_subscriber.get_events();
+        let event = &events[0];
+
+        // Should contain cumulative rows: 10+20+30+...+200 = 2100
+        assert_eq!(event.rows_received, 2100);
+    }
+
+    #[tokio::test]
+    async fn test_mixed_event_types_cumulative() {
+        let mock_subscriber = Arc::new(MockSubscriber::new());
+        let subscribers = Arc::new(vec![
+            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
+        ]);
+        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+
+        let node_info = create_node_info("mixed_node", 1);
+        let rt_context = RuntimeStatsContext::new(node_info);
+
+        // Interleave different event types
+        handler.mark_rows_received(100, &rt_context);
+        handler.record_elapsed_cpu_time(Duration::from_micros(500), &rt_context);
+        handler.mark_rows_emitted(50, &rt_context);
+        handler.mark_rows_received(200, &rt_context); // Additional increment
+        handler.record_elapsed_cpu_time(Duration::from_micros(1500), &rt_context);
+
+        sleep(Duration::from_millis(100)).await;
+
+        assert_eq!(mock_subscriber.get_total_calls(), 1);
+
+        let events = mock_subscriber.get_events();
+        let event = &events[0];
+
+        // Should contain cumulative values
+        assert_eq!(event.rows_received, 300); // 100 + 200
+        assert_eq!(event.rows_emitted, 50);
+        assert_eq!(event.cpu_us, 2000); // 500 + 1500
+    }
 }
