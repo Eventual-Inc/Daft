@@ -154,6 +154,10 @@ impl RaySwordfishTask {
         self.task.context().clone()
     }
 
+    fn name(&self) -> String {
+        self.task.name()
+    }
+
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })

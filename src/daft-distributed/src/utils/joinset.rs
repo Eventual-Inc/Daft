@@ -136,7 +136,7 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
     }
 
     pub fn num_pending(&self) -> usize {
-        self.join_set.len() + self.order.len()
+        self.join_set.len() + self.finished.len()
     }
 }
 

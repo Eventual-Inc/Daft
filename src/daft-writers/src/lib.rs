@@ -6,6 +6,7 @@ mod ipc;
 mod parquet_writer;
 mod partition;
 mod physical;
+mod storage_backend;
 #[cfg(test)]
 mod test;
 mod utils;
@@ -95,6 +96,7 @@ pub fn make_physical_writer_factory(
         file_info.clone(),
         file_schema.clone(),
         cfg.native_parquet_writer,
+        cfg.native_remote_writer,
     )?;
     match file_info.file_format {
         FileFormat::Parquet => {

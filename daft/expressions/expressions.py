@@ -1671,7 +1671,7 @@ class Expression:
         return self._eval_expressions("serialize", format)
 
     def jq(self, filter: builtins.str) -> Expression:
-        """Applies a [https://jqlang.github.io/jq/manual/](jq) filter to the expression (string), returning the results as a string.
+        """Applies a [jq](https://jqlang.github.io/jq/manual/) filter to the expression (string), returning the results as a string.
 
         Args:
             file (str): The jq filter.
@@ -1680,8 +1680,8 @@ class Expression:
             Expression: Expression representing the result of the jq filter as a column of JSON-compatible strings.
 
         Warning:
-            This expression uses [https://github.com/01mf02/jaq](jaq) as its filter executor which can differ from the
-            [https://jqlang.org/](jq) command-line tool. Please consult [https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq][jq vs. jaq]
+            This expression uses [jaq](https://github.com/01mf02/jaq) as its filter executor which can differ from the
+            [jq](https://jqlang.org/) command-line tool. Please consult [jq vs. jaq](https://github.com/01mf02/jaq?tab=readme-ov-file#differences-between-jq-and-jaq)
             for a detailed look into possible differences.
 
         Examples:
@@ -1880,6 +1880,35 @@ class Expression:
 
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
+
+    def url_parse(self) -> Expression:
+        """Parses URLs in a string column and extracts URL components.
+
+        Returns:
+            Expression: a Struct expression containing the parsed URL components:
+                - scheme (str): The URL scheme (e.g., "https", "http")
+                - username (str): The username, if present
+                - password (str): The password, if present
+                - host (str): The hostname or IP address
+                - port (int): The port number, if specified
+                - path (str): The path component
+                - query (str): The query string, if present
+                - fragment (str): The fragment/anchor, if present
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
+            ... )
+            >>> # Parse URLs and expand all components
+            >>> df.select(daft.col("urls").url_parse()).select(daft.col("urls").struct.get("*")).collect()  # doctest: +SKIP
+
+        Note:
+            Invalid URLs will result in null values for all components.
+            The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
+        """
+        f = native.get_function_from_registry("url_parse")
+        return Expression._from_pyexpr(f(self._expr))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")

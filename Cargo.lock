@@ -2247,6 +2247,7 @@ name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
+ "common-display",
  "common-error",
  "common-partitioning",
  "common-py-serde",
@@ -2408,6 +2409,7 @@ dependencies = [
  "serde",
  "tokio",
  "typetag",
+ "url",
  "uuid 1.17.0",
 ]
 
@@ -2993,6 +2995,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "parking_lot 0.12.4",
  "parquet",
  "pyo3",
  "tokio",
@@ -5431,11 +5434,10 @@ dependencies = [
 [[package]]
 name = "parquet-format-safe"
 version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1131c54b167dd4e4799ce762e1ab01549ebb94d5bdd13e6ec1b467491c378e1f"
 dependencies = [
  "async-trait",
  "futures",
+ "tokio",
 ]
 
 [[package]]

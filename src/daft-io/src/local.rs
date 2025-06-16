@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     io::{SeekFrom, Write},
     ops::Range,
     path::PathBuf,
@@ -334,6 +335,10 @@ impl ObjectSource for LocalSource {
             }
         });
         Ok(file_meta_stream.boxed())
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 
