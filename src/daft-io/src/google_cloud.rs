@@ -56,45 +56,51 @@ enum Error {
     },
 }
 
+#[allow(clippy::fallible_impl_from)]
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
             NotAFile, NotFound, UnableToCreateClient, UnableToGrabSemaphore, UnableToListObjects,
             UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
         };
+
+        fn from_reqwest_err(path: String, err: reqwest::Error) -> super::Error {
+            match err.status().map(|s| s.as_u16()) {
+                Some(404 | 410) => super::Error::NotFound {
+                    path,
+                    source: err.into(),
+                },
+                Some(401) => super::Error::Unauthorized {
+                    store: super::SourceType::GCS,
+                    path,
+                    source: err.into(),
+                },
+                _ => {
+                    if err.is_connect() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: err.into(),
+                        }
+                    } else if err.is_timeout() {
+                        super::Error::ReadTimeout {
+                            path,
+                            source: err.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: err.into(),
+                        }
+                    }
+                }
+            }
+        }
+
         match error {
             UnableToReadBytes { path, source }
             | UnableToOpenFile { path, source }
             | UnableToListObjects { path, source } => match source {
-                GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
-                    Some(404 | 410) => Self::NotFound {
-                        path,
-                        source: err.into(),
-                    },
-                    Some(401) => Self::Unauthorized {
-                        store: super::SourceType::GCS,
-                        path,
-                        source: err.into(),
-                    },
-                    _ => {
-                        if err.is_connect() {
-                            Self::ConnectTimeout {
-                                path,
-                                source: err.into(),
-                            }
-                        } else if err.is_timeout() {
-                            Self::ReadTimeout {
-                                path,
-                                source: err.into(),
-                            }
-                        } else {
-                            Self::UnableToOpenFile {
-                                path,
-                                source: err.into(),
-                            }
-                        }
-                    }
-                },
+                GError::HttpClient(err) => from_reqwest_err(path, err),
                 GError::Response(err) => match err.code {
                     404 | 410 => Self::NotFound {
                         path,
@@ -114,6 +120,22 @@ impl From<Error> for super::Error {
                     store: super::SourceType::GCS,
                     source: err,
                 },
+                GError::HttpMiddleware(err) if err.is::<reqwest_retry::RetryError>() => {
+                    let err = err.downcast::<reqwest_retry::RetryError>().unwrap();
+
+                    let inner_err = match err {
+                        reqwest_retry::RetryError::Error(e)
+                        | reqwest_retry::RetryError::WithRetries { err: e, .. } => e,
+                    };
+
+                    match inner_err {
+                        reqwest_middleware::Error::Reqwest(e) => from_reqwest_err(path, e),
+                        reqwest_middleware::Error::Middleware(_) => Self::UnableToOpenFile {
+                            path,
+                            source: inner_err.into(),
+                        },
+                    }
+                }
                 err => Self::UnableToOpenFile {
                     path,
                     source: err.into(),
