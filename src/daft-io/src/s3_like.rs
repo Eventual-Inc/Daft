@@ -28,8 +28,6 @@ use aws_sdk_s3::{
     },
     primitives::{ByteStream, ByteStreamError},
 };
-use aws_smithy_async::rt::sleep::TokioSleep;
-use aws_smithy_http_client::hyper_014::HyperClientBuilder;
 use aws_smithy_runtime_api::http::Response;
 use bytes::Bytes;
 use common_io_config::S3Config;
@@ -194,10 +192,6 @@ enum Error {
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
     UnableToParseUtf8 { path: String, source: FromUtf8Error },
-    #[snafu(display("Unable to create TlsConnector. {source}"))]
-    UnableToCreateTlsConnector {
-        source: hyper_tls::native_tls::Error,
-    },
 
     #[snafu(display("Uploads cannot be anonymous. Please disable anonymous S3 access."))]
     UploadsCannotBeAnonymous {},
@@ -554,22 +548,32 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
     };
 
     let http_client = {
-        // TODO: change this to use rustls + aws-lc
-        let tls_connector = hyper_tls::native_tls::TlsConnector::builder()
-            .danger_accept_invalid_certs(!config.verify_ssl)
-            .danger_accept_invalid_hostnames((!config.verify_ssl) || (!config.check_hostname_ssl))
-            .build()
-            .context(UnableToCreateTlsConnectorSnafu {})?;
-        let mut http_connector = hyper::client::HttpConnector::new();
-        http_connector.enforce_http(false);
-        let https_connector = hyper_tls::HttpsConnector::<hyper::client::HttpConnector>::from((
-            http_connector,
-            tls_connector.into(),
-        ));
-        HyperClientBuilder::new().build(https_connector)
-    };
+        use aws_smithy_runtime_api::client::http::SharedHttpClient;
 
-    let sleep_impl = Arc::new(TokioSleep::new());
+        fn default_client() -> SharedHttpClient {
+            use aws_smithy_http_client::{
+                tls::{rustls_provider::CryptoMode, Provider},
+                Builder,
+            };
+            Builder::new()
+                .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
+                .build_https()
+        }
+
+        fn no_verify_hostname_client() -> SharedHttpClient {
+            unimplemented!("Setting `S3Config.check_hostname_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
+        }
+
+        fn no_verify_client() -> SharedHttpClient {
+            unimplemented!("Setting `S3Config.verify_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
+        }
+
+        match (config.verify_ssl, config.check_hostname_ssl) {
+            (true, true) => default_client(),
+            (true, false) => no_verify_hostname_client(),
+            (false, _) => no_verify_client(),
+        }
+    };
 
     let timeout_config = TimeoutConfig::builder()
         .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
@@ -600,7 +604,6 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
         loader = loader.region(region);
         loader = loader.retry_config(retry_config);
         loader = loader.http_client(http_client);
-        loader = loader.sleep_impl(sleep_impl);
         loader = loader.timeout_config(timeout_config);
 
         loader.load().await
