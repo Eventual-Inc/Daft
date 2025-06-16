@@ -28,7 +28,7 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profile
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator, Generator
+    from collections.abc import AsyncGenerator, AsyncIterator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -68,9 +68,7 @@ class RaySwordfishActor:
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
             metas = []
-            async for partition in self.native_executor.run_async(
-                plan, psets_mp, config, None, context
-            ):
+            async for partition in self.native_executor.run_async(plan, psets_mp, config, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
@@ -176,9 +174,7 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
 class FlotillaPlanRunner:
     def __init__(self) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
-        self.curr_result_gens: dict[
-            str, AsyncIterator[tuple[ray.ObjectRef, int, int]]
-        ] = {}
+        self.curr_result_gens: dict[str, AsyncIterator[tuple[ray.ObjectRef, int, int]]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
 
     def run_plan(
@@ -187,12 +183,7 @@ class FlotillaPlanRunner:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> None:
         psets = {
-            k: [
-                RayPartitionRef(
-                    v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0
-                )
-                for v in v.values()
-            ]
+            k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
             for k, v in partition_sets.items()
         }
         self.curr_plans[plan.id()] = plan
@@ -214,9 +205,7 @@ class FlotillaPlanRunner:
             return None
 
         obj, num_rows, size_bytes = next_result
-        metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
-            [PartitionMetadata(num_rows, size_bytes)]
-        )
+        metadata_accessor = PartitionMetadataAccessor.from_metadata_list([PartitionMetadata(num_rows, size_bytes)])
         materialized_result = RayMaterializedResult(
             partition=obj,
             metadatas=metadata_accessor,

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Generator
-from contextlib import _GeneratorContextManager, contextmanager
 import signal
 import subprocess
+from collections.abc import Generator
+from contextlib import _GeneratorContextManager, contextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -73,9 +73,7 @@ def log_event(name: str) -> _GeneratorContextManager[None]:
     return timingcontext(name)
 
 
-ENABLE_SAMPLY_PROFILING = (
-    os.getenv("DAFT_DEV_ENABLE_SAMPLY_PROFILING", "false").lower() == "true"
-)
+ENABLE_SAMPLY_PROFILING = os.getenv("DAFT_DEV_ENABLE_SAMPLY_PROFILING", "false").lower() == "true"
 
 
 @contextmanager
