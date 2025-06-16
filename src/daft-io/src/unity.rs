@@ -128,12 +128,6 @@ impl UnitySource {
     ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
         let url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
 
-        debug_assert_eq!(
-            url.scheme().to_lowercase(),
-            "vol+dbfs",
-            "UnitySource should only be used for paths with scheme `vol+dbfs`."
-        );
-
         let mut segments = url
             .path_segments()
             .ok_or_else(|| invalid_unity_path(path))?;

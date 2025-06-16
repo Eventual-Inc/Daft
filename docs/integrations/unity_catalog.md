@@ -62,7 +62,7 @@ See also [Delta Lake](delta_lake.md) for more information about how to work with
 
 ## Downloading files in Unity Catalog volumes
 
-Daft supports downloading from Unity Catalog volumes using [`Expression.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download]. File paths that start with `vol+dbfs:/` will be downloaded using the configurations in [`IOConfig.unity`][daft.daft.IOConfig.unity]. These configurations can be created using `UnityCatalog.to_io_config`, or automatically derived from the global session.
+Daft supports downloading from Unity Catalog volumes using [`Expression.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download]. File paths that start with `vol+dbfs:/` or `dbfs:/` will be downloaded using the configurations in [`IOConfig.unity`][daft.daft.IOConfig.unity]. These configurations can be created using `UnityCatalog.to_io_config`, or automatically derived from the global session.
 
 === "🐍 Python"
 
