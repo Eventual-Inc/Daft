@@ -8,7 +8,7 @@ use serde::Serialize;
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-pub struct UrlSpace;
+pub struct UrlParse;
 
 #[derive(FunctionArgs)]
 pub struct UrlParseArgs<T> {
@@ -16,15 +16,15 @@ pub struct UrlParseArgs<T> {
 }
 
 #[typetag::serde]
-impl ScalarUDF for UrlSpace {
+impl ScalarUDF for UrlParse {
     fn name(&self) -> &'static str {
-        "url_space"
+        "url_parse"
     }
 
     fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let UrlParseArgs { input } = inputs.try_into()?;
         let array = input.utf8()?;
-        let result = url_space(array)?;
+        let result = url_parse(array)?;
         Ok(result.into_series())
     }
 
@@ -58,7 +58,7 @@ impl ScalarUDF for UrlSpace {
     }
 }
 
-fn url_space(array: &Utf8Array) -> DaftResult<StructArray> {
+fn url_parse(array: &Utf8Array) -> DaftResult<StructArray> {
     let name = array.name();
     let len = array.len();
 

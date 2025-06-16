@@ -1881,7 +1881,7 @@ class Expression:
     def _initialize_udfs(self) -> Expression:
         return Expression._from_pyexpr(initialize_udfs(self._expr))
 
-    def url_space(self) -> Expression:
+    def url_parse(self) -> Expression:
         """Parses URLs in a string column and extracts URL components.
 
         Returns:
@@ -1901,7 +1901,7 @@ class Expression:
             ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
             ... )
             >>> # Parse URLs and expand all components
-            >>> df.select(daft.col("urls").url.url_space()).select(
+            >>> df.select(daft.col("urls").url_parse()).select(
             ...     daft.col("urls").struct.get("*")
             ... ).collect()  # doctest: +SKIP
 
@@ -1909,7 +1909,7 @@ class Expression:
             Invalid URLs will result in null values for all components.
             The parsed result is automatically aliased to 'urls' to enable easy struct field expansion.
         """
-        f = native.get_function_from_registry("url_space")
+        f = native.get_function_from_registry("url_parse")
         return Expression._from_pyexpr(f(self._expr))
 
 

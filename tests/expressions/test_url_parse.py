@@ -4,7 +4,7 @@ import daft
 from daft import col
 
 
-def test_url_space_basic():
+def test_url_parse_basic():
     urls = [
         "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/main/20231101.ar/train-00004-of-00007.parquet",
         "https://user:pass@example.com:8080/path?query=value#fragment",
@@ -14,7 +14,7 @@ def test_url_space_basic():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_space()).collect()
+    result = df.select(col("urls").url_parse()).collect()
 
     assert len(result) == 4
     schema = result.schema()
@@ -28,7 +28,7 @@ def test_url_space_basic():
     assert all(isinstance(url_struct, dict) for url_struct in result_data["urls"] if url_struct is not None)
 
 
-def test_url_space_component_extraction():
+def test_url_parse_component_extraction():
     urls = [
         "https://user:pass@example.com:8080/path?query=value#fragment",
         "http://localhost/api",
@@ -36,7 +36,7 @@ def test_url_space_component_extraction():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_space().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
 
     data = result.to_pydict()
 
@@ -59,22 +59,22 @@ def test_url_space_component_extraction():
     assert data["fragment"][1] is None
 
 
-def test_url_space_individual_fields():
+def test_url_parse_individual_fields():
     urls = ["https://example.com:443/path?query=value#fragment"]
 
     df = daft.from_pydict({"urls": urls})
 
     result = (
-        df.select(col("urls").url_space().alias("parsed"))
+        df.select(col("urls").url_parse())
         .select(
-            col("parsed").struct.get("scheme").alias("scheme"),
-            col("parsed").struct.get("host").alias("host"),
-            col("parsed").struct.get("port").alias("port"),
-            col("parsed").struct.get("path").alias("path"),
-            col("parsed").struct.get("query").alias("query"),
-            col("parsed").struct.get("fragment").alias("fragment"),
-            col("parsed").struct.get("username").alias("username"),
-            col("parsed").struct.get("password").alias("password"),
+            col("urls").struct.get("scheme").alias("scheme"),
+            col("urls").struct.get("host").alias("host"),
+            col("urls").struct.get("port").alias("port"),
+            col("urls").struct.get("path").alias("path"),
+            col("urls").struct.get("query").alias("query"),
+            col("urls").struct.get("fragment").alias("fragment"),
+            col("urls").struct.get("username").alias("username"),
+            col("urls").struct.get("password").alias("password"),
         )
         .collect()
     )
@@ -91,7 +91,7 @@ def test_url_space_individual_fields():
     assert data["password"][0] is None
 
 
-def test_url_space_null_handling():
+def test_url_parse_null_handling():
     urls = [
         "https://example.com",
         None,
@@ -100,7 +100,7 @@ def test_url_space_null_handling():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_space().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
 
     data = result.to_pydict()
 
@@ -115,7 +115,7 @@ def test_url_space_null_handling():
     assert data["host"][2] == "localhost"
 
 
-def test_url_space_invalid_urls():
+def test_url_parse_invalid_urls():
     urls = [
         "https://example.com",
         "invalid-url",
@@ -125,7 +125,7 @@ def test_url_space_invalid_urls():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_space().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
 
     data = result.to_pydict()
 
@@ -140,7 +140,7 @@ def test_url_space_invalid_urls():
         assert data["fragment"][i] is None
 
 
-def test_url_space_edge_cases():
+def test_url_parse_edge_cases():
     urls = [
         "https://example.com",
         "https://example.com/",
@@ -154,7 +154,7 @@ def test_url_space_edge_cases():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_space()).select(col("urls").struct.get("*")).collect()
+    result = df.select(col("urls").url_parse()).select(col("urls").struct.get("*")).collect()
 
     data = result.to_pydict()
 
@@ -177,7 +177,7 @@ def test_url_space_edge_cases():
     assert data["port"] == expected_ports
 
 
-def test_url_space_github_issue_example():
+def test_url_parse_github_issue_example():
     urls = [
         "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/main/20231101.ar/train-00004-of-00007.parquet",
         "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/main/20231101.ar/train-00005-of-00007.parquet",
@@ -194,7 +194,7 @@ def test_url_space_github_issue_example():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_space()).select(col("urls").struct.get("*")).collect()
+    result = df.select(col("urls").url_parse()).select(col("urls").struct.get("*")).collect()
 
     data = result.to_pydict()
 
@@ -213,7 +213,7 @@ def test_url_space_github_issue_example():
     assert all(port is None for port in data["port"])
 
 
-def test_url_space_with_authentication():
+def test_url_parse_with_authentication():
     urls = [
         "https://user@example.com/path",
         "https://user:pass@example.com/path",
@@ -222,7 +222,7 @@ def test_url_space_with_authentication():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_space().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
 
     data = result.to_pydict()
 

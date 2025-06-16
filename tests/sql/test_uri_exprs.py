@@ -98,7 +98,7 @@ def test_url_upload():
         assert os.path.exists(os.path.join(tmp_dir, "test2.txt"))
 
 
-def test_url_space():
+def test_url_parse():
     df = daft.from_pydict(
         {
             "urls": [
@@ -112,14 +112,14 @@ def test_url_space():
     actual = (
         daft.sql(
             """
-        SELECT url_space(urls) FROM df
+        SELECT url_parse(urls) FROM df
         """
         )
         .collect()
         .to_pydict()
     )
 
-    expected = df.select(col("urls").url_space()).collect().to_pydict()
+    expected = df.select(col("urls").url_parse()).collect().to_pydict()
 
     assert actual == expected
 
@@ -136,7 +136,7 @@ def test_url_space():
             urls.username as username,
             urls.password as password
         FROM (
-            SELECT url_space(urls) FROM df
+            SELECT url_parse(urls) FROM df
         )
         """
         )
@@ -145,7 +145,7 @@ def test_url_space():
     )
 
     expected_components = (
-        df.select(col("urls").url_space())
+        df.select(col("urls").url_parse())
         .select(
             col("urls").struct.get("scheme").alias("scheme"),
             col("urls").struct.get("host").alias("host"),
