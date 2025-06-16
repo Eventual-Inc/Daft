@@ -52,6 +52,10 @@ pub(crate) fn logical_plan_to_pipeline_node(
         ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
             // If current_nodes is not empty, create an intermediate node immediately
             if !current_nodes.is_empty() {
+                assert!(
+                    current_nodes.len() == 1,
+                    "Nodes can currently only have one child"
+                );
                 let translated = translate(&logical_plan)?;
                 return Ok(Arc::new(IntermediateNode::new(
                     self.plan_id.clone(),
@@ -59,7 +63,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     self.get_next_node_id(),
                     self.config.clone(),
                     translated,
-                    current_nodes,
+                    current_nodes[0].clone(),
                 )) as Arc<dyn DistributedPipelineNode>);
             }
 
