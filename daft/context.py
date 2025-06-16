@@ -184,6 +184,7 @@ def set_execution_config(
     flight_shuffle_dirs: list[str] | None = None,
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
+    native_parquet_writer: bool | None = None,
     flotilla: bool | None = None,
     min_cpu_per_task: float | None = None,
 ) -> DaftContext:
@@ -231,6 +232,7 @@ def set_execution_config(
         flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
+        native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -263,6 +265,7 @@ def set_execution_config(
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,
+            native_parquet_writer=native_parquet_writer,
             flotilla=flotilla,
         )
 

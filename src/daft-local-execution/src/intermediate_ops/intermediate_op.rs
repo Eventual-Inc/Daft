@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::{NodeInfo, PipelineNode, TranslationContext},
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -90,7 +90,7 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
-        ctx: &TranslationContext,
+        ctx: &RuntimeContext,
     ) -> Self {
         let info = ctx.next_node_info(intermediate_op.name());
 
@@ -293,6 +293,6 @@ impl PipelineNode for IntermediateNode {
     }
 
     fn plan_id(&self) -> Arc<str> {
-        self.node_info.plan_id.clone()
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

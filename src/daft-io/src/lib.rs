@@ -10,7 +10,7 @@ mod local;
 mod object_io;
 mod object_store_glob;
 mod retry;
-mod s3_like;
+pub mod s3_like;
 mod stats;
 mod stream_utils;
 #[cfg(feature = "python")]
@@ -37,8 +37,7 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, GetResult};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::s3_config_from_env;
-use s3_like::S3LikeSource;
+pub use s3_like::{s3_config_from_env, S3LikeSource, S3MultipartWriter, S3PartBuffer};
 use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
@@ -185,7 +184,7 @@ impl From<Error> for std::io::Error {
     }
 }
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]
 pub struct IOClient {
@@ -201,7 +200,7 @@ impl IOClient {
         })
     }
 
-    async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
         let (source_type, path) = parse_url(input)?;
 
         {
