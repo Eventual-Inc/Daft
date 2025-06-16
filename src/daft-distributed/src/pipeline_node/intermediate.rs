@@ -121,7 +121,7 @@ impl IntermediateNode {
                 worker_id,
                 soft: false,
             },
-            context.clone(),
+            context,
             self.node_id,
         );
         Ok(SubmittableTask::new(task))
