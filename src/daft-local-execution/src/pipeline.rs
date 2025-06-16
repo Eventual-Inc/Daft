@@ -223,11 +223,7 @@ impl NativeExecutor {
                 stats_state,
             }) => {
                 let source = EmptyScanSource::new(schema.clone());
-                SourceNode::new(
-                    source.arced(), 
-                    stats_state.clone(), 
-                    ctx
-                ).boxed()
+                SourceNode::new(source.arced(), stats_state.clone(), ctx).boxed()
             }
             LocalPhysicalPlan::PhysicalScan(PhysicalScan {
                 scan_tasks,

@@ -1,9 +1,7 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
+use common_error::DaftResult;
 use opentelemetry::{global, metrics::Counter, KeyValue};
 
-use crate::{pipeline::NodeInfo, runtime_stats::subscribers::RuntimeStatsSubscriber};
+use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEvent};
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
@@ -24,46 +22,23 @@ impl OpenTelemetrySubscriber {
         }
     }
 }
-#[async_trait]
+
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-
-    async fn on_rows_received(&self, context: &Arc<NodeInfo>, count: u64) {
+    fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
         let mut attributes = vec![
-            KeyValue::new("name", context.name.to_string()),
-            KeyValue::new("id", context.id.to_string()),
+            KeyValue::new("name", event.node_info.name.to_string()),
+            KeyValue::new("id", event.node_info.id.to_string()),
         ];
-
-        for (k, v) in &context.context {
+        for (k, v) in &event.node_info.context {
             attributes.push(KeyValue::new(k.clone(), v.clone()));
         }
-
-        self.rows_received.add(count, &attributes);
-    }
-    async fn on_rows_emitted(&self, context: &Arc<NodeInfo>, count: u64) {
-        let mut attributes = vec![
-            KeyValue::new("name", context.name.to_string()),
-            KeyValue::new("id", context.id.to_string()),
-        ];
-
-        for (k, v) in &context.context {
-            attributes.push(KeyValue::new(k.clone(), v.clone()));
-        }
-        self.rows_emitted.add(count, &attributes);
-    }
-
-    async fn on_cpu_time_elapsed(&self, context: &Arc<NodeInfo>, microseconds: u64) {
-        let mut attributes = vec![
-            KeyValue::new("name", context.name.to_string()),
-            KeyValue::new("id", context.id.to_string()),
-        ];
-
-        for (k, v) in &context.context {
-            attributes.push(KeyValue::new(k.clone(), v.clone()));
-        }
-        self.cpu_us.add(microseconds, &attributes);
+        self.rows_received.add(event.rows_received, &attributes);
+        self.rows_emitted.add(event.rows_emitted, &attributes);
+        self.cpu_us.add(event.cpu_us, &attributes);
+        Ok(())
     }
 }
