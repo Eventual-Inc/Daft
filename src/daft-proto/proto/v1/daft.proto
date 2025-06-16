@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package daft.v1;
 
+// https://en.wikipedia.org/wiki/Unit_type
+message Unit {};
+
 // -------------------------------------------------------------
 //
 //                          SCHEMA
@@ -13,28 +16,28 @@ message Schema {
 }
 
 message DataType {
-  oneof data_type_variant {
-    bool null = 1;
-    bool boolean = 2;
-    bool int8 = 3;
-    bool int16 = 4;
-    bool int32 = 5;
-    bool int64 = 6;
-    bool uint8 = 7;
-    bool uint16 = 8;
-    bool uint32 = 9;
-    bool uint64 = 10;
-    bool float32 = 11;
-    bool float64 = 12;
+  oneof variant {
+    Unit null = 1;
+    Unit boolean = 2;
+    Unit int8 = 3;
+    Unit int16 = 4;
+    Unit int32 = 5;
+    Unit int64 = 6;
+    Unit uint8 = 7;
+    Unit uint16 = 8;
+    Unit uint32 = 9;
+    Unit uint64 = 10;
+    Unit float32 = 11;
+    Unit float64 = 12;
     Decimal128 decimal128 = 13;
     Timestamp timestamp = 14;
-    bool date = 15;
+    Unit date = 15;
     Time time = 16;
     Duration duration = 17;
-    bool interval = 18;
-    bool binary = 19;
+    Unit interval = 18;
+    Unit binary = 19;
     FixedSizeBinary fixed_size_binary = 20;
-    bool utf8 = 21;
+    Unit utf8 = 21;
     FixedSizeList fixed_size_list = 22;
     List list = 23;
     Struct struct = 24;
@@ -47,8 +50,8 @@ message DataType {
     FixedShapeTensor fixed_shape_tensor = 31;
     SparseTensor sparse_tensor = 32;
     FixedShapeSparseTensor fixed_shape_sparse_tensor = 33;
-    bool python = 34;
-    bool unknown = 35;
+    Unit python = 34;
+    Unit unknown = 35;
   }
 
   message Decimal128 {
@@ -167,7 +170,7 @@ message Field {
 // -------------------------------------------------------------
 
 message Expr {
-  oneof expr_variant {
+  oneof variant {
     Column column = 1;
     Alias alias = 2;
     AggExpr agg = 3;
@@ -193,8 +196,8 @@ message Expr {
 }
 
 message Literal {
-  oneof literal_variant {
-    bool null = 1;
+  oneof variant {
+    Unit null = 1;
     bool boolean = 2;
     string utf8 = 3;
     bytes binary = 4;
@@ -214,8 +217,7 @@ message Literal {
     Interval interval = 18;
     double float64 = 19;
     Decimal decimal = 20;
-    Series series = 21;
-    Struct struct = 22;
+    Struct struct = 21;
   }
 
   message FixedSizeBinary {
@@ -248,13 +250,6 @@ message Literal {
   message Decimal {
     string value = 1;
   }
-
-  message Series {
-    string name = 1;
-    DataType dtype = 2;
-    bytes data = 3;
-  }
-
   message Struct {
     repeated Field fields = 1;
     message Field {
@@ -264,10 +259,6 @@ message Literal {
   }
 }
 
-// Column in the rust IR is complex and very messy.
-// You can simplify to just the optional qualifier, but I don't
-// know why there's an alias :sweat-smile: it all seems
-// quite hacky .. pain!
 message Column {
   string name = 1;
   optional uint64 qualifier = 2;
@@ -328,21 +319,20 @@ message IfElse {
   Expr predicate = 3;
 }
 
-// Function expressions
 message Function {
   FunctionExpr func = 1;
   repeated Expr inputs = 2;
 }
 
 message FunctionExpr {
-  oneof function_type {
+  oneof variant {
     StructExpr struct = 1;
     // Add other function types as needed
   }
 }
 
 message StructExpr {
-  oneof struct_type {
+  oneof variant {
     string get = 1;
     // Add other struct types as needed
   }
@@ -364,7 +354,7 @@ message WindowFunction {
 }
 
 message WindowExpr {
-  oneof window_type {
+  oneof variant {
     AggExpr agg = 1;
     bool row_number = 2;
     bool rank = 3;
@@ -404,28 +394,25 @@ enum FrameType {
   FRAME_TYPE_GROUPS = 3;
 }
 
-// Subquery expressions
 message Subquery {
-  LogicalPlan plan = 1;
+  Rel subquery = 1;
 }
 
 message InSubquery {
   Expr expr = 1;
-  LogicalPlan plan = 2;
+  Rel subquery = 2;
 }
 
 message Exists {
-  LogicalPlan plan = 1;
+  Rel subquery = 1;
 }
 
-// Aggregation expressions
 message AggExpr {
   string name = 1;
   repeated Expr args = 2;
   bool distinct = 3;
 }
 
-// Enums with prefixed variants
 enum Operator {
   OPERATOR_UNSPECIFIED = 0;
   OPERATOR_EQ = 1;
@@ -454,10 +441,6 @@ enum JoinSide {
   JOIN_SIDE_RIGHT = 2;
 }
 
-// !! PLACEHOLDER !!
-message LogicalPlan {
-  string plan_type = 1;
-}
 
 // -------------------------------------------------------------
 //
@@ -466,7 +449,7 @@ message LogicalPlan {
 // -------------------------------------------------------------
 
 message Rel {
-  oneof rel_variant {
+  oneof variant {
     RelSource source = 1;
     RelProject project = 2;
   }

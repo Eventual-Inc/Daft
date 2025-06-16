@@ -1,5 +1,5 @@
 //
-// !! PLEASE ENSURE THE MODULE STRUCTURE FOLLOWS PROTO DIR !!
+// !! PLEASE ENSURE THE MODULE STRUCTURE FOLLOWS THE PROTO DIR !!
 //
 
 #[allow(
@@ -12,10 +12,10 @@
 pub mod protos {
     pub mod daft {
         pub mod v1 {
-            // for build.rs gen sources
-            // tonic::include_proto!("daft.v1");
-            // for checked in gen sources
-            include!(concat!(env!("CARGO_MANIFEST_DIR"), "/gen/daft.v1.rs"));
+            include!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/generated/daft.v1.rs"
+            ));
         }
     }
 }

@@ -1,11 +1,14 @@
 #[macro_use]
-pub mod rel;
 pub mod rex;
+pub mod rel;
 pub mod schema;
 
 use std::sync::Arc;
 
 use thiserror::Error;
+
+/// The unit type which is used in many type definitions.
+pub(crate) const UNIT: daft_proto::protos::daft::v1::Unit = daft_proto::protos::daft::v1::Unit {};
 
 /// This trait defines the from/to protobuf message methods.
 pub trait FromToProto {

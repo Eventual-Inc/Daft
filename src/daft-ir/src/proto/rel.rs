@@ -11,6 +11,7 @@ mod ir {
 #[rustfmt::skip]
 mod proto {
     pub use daft_proto::protos::daft::v1::*;
+    pub use daft_proto::protos::daft::v1::rel::Variant as RelVariant;
 }
 
 impl FromToProto for ir::rel::LogicalPlan {
@@ -28,7 +29,7 @@ impl FromToProto for ir::rel::LogicalPlan {
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
-        let rel_variant = match self {
+        let variant = match self {
             Self::Source(source) => {
                 //
                 let schema = source.output_schema.to_proto()?;
@@ -41,7 +42,7 @@ impl FromToProto for ir::rel::LogicalPlan {
                     schema: Some(schema),
                     table: table.to_string(),
                 };
-                proto::rel::RelVariant::Source(source)
+                proto::RelVariant::Source(source)
             }
             Self::Project(project) => {
                 let input = project.input.to_proto()?;
@@ -54,7 +55,7 @@ impl FromToProto for ir::rel::LogicalPlan {
                     input: Some(input.into()),
                     projections: projections?,
                 };
-                proto::rel::RelVariant::Project(project.into())
+                proto::RelVariant::Project(project.into())
             }
             Self::ActorPoolProject(_actor_pool_project) => unsupported_err!("actor_pool_project"),
             Self::Filter(_filter) => unsupported_err!("filter"),
@@ -80,7 +81,7 @@ impl FromToProto for ir::rel::LogicalPlan {
             Self::TopN(_top_nn) => unsupported_err!("top_n"),
         };
         Ok(Self::Message {
-            rel_variant: Some(rel_variant),
+            variant: Some(variant),
         })
     }
 }

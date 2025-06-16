@@ -1,5 +1,5 @@
 use super::{from_proto, from_proto_box, FromToProto, ProtoError, ProtoResult};
-use crate::{from_proto_err, to_proto_err};
+use crate::{from_proto_err, proto::UNIT, to_proto_err};
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
 #[rustfmt::skip]
@@ -11,7 +11,7 @@ mod ir {
 #[rustfmt::skip]
 mod proto {
     pub use daft_proto::protos::daft::v1::*;
-    pub use daft_proto::protos::daft::v1::data_type::DataTypeVariant;
+    pub use daft_proto::protos::daft::v1::data_type::Variant as DataTypeVariant;
 }
 
 /// Conversion logic for daft's Schema.
@@ -49,7 +49,7 @@ impl FromToProto for ir::DataType {
         Self: Sized,
     {
         let variant = message
-            .data_type_variant
+            .variant
             .ok_or_else(|| ProtoError::FromProto("Expected variant to be non-null".to_string()))?;
         Ok(match variant {
             proto::DataTypeVariant::Null(_) => Self::Null,
@@ -157,18 +157,18 @@ impl FromToProto for ir::DataType {
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let variant = match self {
-            Self::Null => proto::DataTypeVariant::Null(true),
-            Self::Boolean => proto::DataTypeVariant::Boolean(true),
-            Self::Int8 => proto::DataTypeVariant::Int8(true),
-            Self::Int16 => proto::DataTypeVariant::Int16(true),
-            Self::Int32 => proto::DataTypeVariant::Int32(true),
-            Self::Int64 => proto::DataTypeVariant::Int64(true),
-            Self::UInt8 => proto::DataTypeVariant::Uint8(true),
-            Self::UInt32 => proto::DataTypeVariant::Uint32(true),
-            Self::UInt64 => proto::DataTypeVariant::Uint64(true),
-            Self::UInt16 => proto::DataTypeVariant::Uint16(true),
-            Self::Float32 => proto::DataTypeVariant::Float32(true),
-            Self::Float64 => proto::DataTypeVariant::Float64(true),
+            Self::Null => proto::DataTypeVariant::Null(UNIT),
+            Self::Boolean => proto::DataTypeVariant::Boolean(UNIT),
+            Self::Int8 => proto::DataTypeVariant::Int8(UNIT),
+            Self::Int16 => proto::DataTypeVariant::Int16(UNIT),
+            Self::Int32 => proto::DataTypeVariant::Int32(UNIT),
+            Self::Int64 => proto::DataTypeVariant::Int64(UNIT),
+            Self::UInt8 => proto::DataTypeVariant::Uint8(UNIT),
+            Self::UInt32 => proto::DataTypeVariant::Uint32(UNIT),
+            Self::UInt64 => proto::DataTypeVariant::Uint64(UNIT),
+            Self::UInt16 => proto::DataTypeVariant::Uint16(UNIT),
+            Self::Float32 => proto::DataTypeVariant::Float32(UNIT),
+            Self::Float64 => proto::DataTypeVariant::Float64(UNIT),
             Self::Decimal128(precision, scale) => {
                 proto::DataTypeVariant::Decimal128(proto::data_type::Decimal128 {
                     precision: *precision as u64,
@@ -181,25 +181,23 @@ impl FromToProto for ir::DataType {
                     timezone: timezone.clone(),
                 })
             }
-            Self::Date => proto::DataTypeVariant::Date(true),
-            Self::Time(time_unit) => {
-                proto::data_type::DataTypeVariant::Time(proto::data_type::Time {
-                    unit: time_unit.to_proto()?,
-                })
-            }
+            Self::Date => proto::DataTypeVariant::Date(UNIT),
+            Self::Time(time_unit) => proto::DataTypeVariant::Time(proto::data_type::Time {
+                unit: time_unit.to_proto()?,
+            }),
             Self::Duration(time_unit) => {
                 proto::DataTypeVariant::Duration(proto::data_type::Duration {
                     unit: time_unit.to_proto()?,
                 })
             }
-            Self::Interval => proto::DataTypeVariant::Interval(true),
-            Self::Binary => proto::DataTypeVariant::Binary(true),
+            Self::Interval => proto::DataTypeVariant::Interval(UNIT),
+            Self::Binary => proto::DataTypeVariant::Binary(UNIT),
             Self::FixedSizeBinary(size) => {
                 proto::DataTypeVariant::FixedSizeBinary(proto::data_type::FixedSizeBinary {
                     size: *size as u64,
                 })
             }
-            Self::Utf8 => proto::DataTypeVariant::Utf8(true),
+            Self::Utf8 => proto::DataTypeVariant::Utf8(UNIT),
             Self::FixedSizeList(data_type, size) => proto::DataTypeVariant::FixedSizeList(
                 proto::data_type::FixedSizeList {
                     element_type: Some(data_type.to_proto()?.into()),
@@ -278,12 +276,12 @@ impl FromToProto for ir::DataType {
                     .into(),
                 )
             }
-            Self::Unknown => proto::DataTypeVariant::Unknown(true),
+            Self::Unknown => proto::DataTypeVariant::Unknown(UNIT),
             #[cfg(feature = "python")]
-            Self::Python => proto::DataTypeVariant::Python(true),
+            Self::Python => proto::DataTypeVariant::Python(UNIT),
         };
         Ok(Self::Message {
-            data_type_variant: Some(variant),
+            variant: Some(variant),
         })
     }
 }

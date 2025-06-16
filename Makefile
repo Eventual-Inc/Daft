@@ -82,6 +82,9 @@ docs: .venv ## Build Daft documentation
 docs-serve: .venv ## Build Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
 
+.PHONY: daft-proto
+daft-proto: check-toolchain .venv ## Build Daft proto sources to avoid protoc build-time dependency.
+	trap 'mv src/daft-proto/build.rs src/daft-proto/.build.rs' EXIT && mv src/daft-proto/.build.rs src/daft-proto/build.rs && cargo build -p daft-proto
 
 .PHONY: clean
 clean:

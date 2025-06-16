@@ -1,11 +1,13 @@
-mod prelude;
 mod proto;
 
 // ---------------------------------------
 //   DAFT IR ORGANIZATION VIA RE-EXPORTS
 // ---------------------------------------
 
-pub use daft_dsl as rex;
+#[rustfmt::skip]
+pub mod rex {
+    pub use daft_dsl::*;
+}
 
 #[rustfmt::skip]
 pub mod functions {
