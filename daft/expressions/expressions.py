@@ -1901,9 +1901,7 @@ class Expression:
             ...     {"urls": ["https://user:pass@example.com:8080/path?query=value#fragment", "http://localhost/api"]}
             ... )
             >>> # Parse URLs and expand all components
-            >>> df.select(daft.col("urls").url_parse()).select(
-            ...     daft.col("urls").struct.get("*")
-            ... ).collect()  # doctest: +SKIP
+            >>> df.select(daft.col("urls").url_parse()).select(daft.col("urls").struct.get("*")).collect()  # doctest: +SKIP
 
         Note:
             Invalid URLs will result in null values for all components.
