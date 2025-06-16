@@ -1678,6 +1678,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "pyo3",
  "tracing",
  "tracing-chrome",
  "tracing-opentelemetry",
@@ -2605,6 +2606,7 @@ dependencies = [
  "pyo3",
  "serde",
  "strum 0.26.3",
+ "tracing",
 ]
 
 [[package]]
@@ -2644,6 +2646,7 @@ dependencies = [
  "snafu",
  "test-log",
  "tokio",
+ "tracing",
  "typed-builder 0.20.1",
  "uuid 1.17.0",
 ]
