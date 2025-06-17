@@ -10,7 +10,7 @@ use tracing::{info_span, instrument};
 use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, PipelineNode, TranslationContext},
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -71,7 +71,7 @@ impl BlockingSinkNode {
         op: Arc<dyn BlockingSink>,
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &TranslationContext,
+        ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name();
         let node_info = ctx.next_node_info(name);
@@ -251,6 +251,6 @@ impl PipelineNode for BlockingSinkNode {
         self.node_info.id
     }
     fn plan_id(&self) -> Arc<str> {
-        self.node_info.plan_id.clone()
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

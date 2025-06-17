@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_logical_plan::{
@@ -42,6 +43,7 @@ impl StagePlanBuilder {
             | LogicalPlan::Sink(_)
             | LogicalPlan::Sample(_)
             | LogicalPlan::Explode(_)
+            | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
             | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Sort(_)
@@ -52,7 +54,6 @@ impl StagePlanBuilder {
             | LogicalPlan::Concat(_)
             | LogicalPlan::TopN(_)
             | LogicalPlan::MonotonicallyIncreasingId(_)
-            | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Pivot(_)
             | LogicalPlan::Join(_) => {
                 can_translate = false;
@@ -207,11 +208,16 @@ impl StagePlanBuilder {
         }
     }
 
-    pub fn build_stage_plan(mut self, plan: LogicalPlanRef) -> DaftResult<StagePlan> {
+    pub fn build_stage_plan(
+        mut self,
+        plan: LogicalPlanRef,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<StagePlan> {
         let root_stage_id = self.build_stages_from_plan(plan)?;
         Ok(StagePlan {
             stages: self.stages,
             root_stage: root_stage_id,
+            config,
         })
     }
 

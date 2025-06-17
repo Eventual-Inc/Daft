@@ -19,7 +19,7 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::PlanRunner;
+pub(crate) use runner::{PlanID, PlanRunner};
 
 static PLAN_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -27,7 +27,6 @@ static PLAN_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub(crate) struct DistributedPhysicalPlan {
     id: String,
     stage_plan: StagePlan,
-    config: Arc<DaftExecutionConfig>,
 }
 
 impl DistributedPhysicalPlan {
@@ -36,21 +35,16 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let logical_plan = builder.build();
-        let stage_plan = StagePlan::from_logical_plan(logical_plan)?;
+        let stage_plan = StagePlan::from_logical_plan(logical_plan, config)?;
 
         Ok(Self {
             id: format!("plan_{}", PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed)),
             stage_plan,
-            config,
         })
     }
 
     pub fn id(&self) -> &str {
         &self.id
-    }
-
-    pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
-        &self.config
     }
 
     pub fn stage_plan(&self) -> &StagePlan {

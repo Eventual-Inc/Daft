@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
     scheduler::SchedulableTask,
-    task::{SwordfishTask, TaskId, TaskResultHandleAwaiter},
+    task::{SwordfishTask, TaskID, TaskResultHandleAwaiter},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -65,18 +65,11 @@ impl WorkerManager for RayWorkerManager {
         &self.ray_workers
     }
 
-    fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId) {
+    fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId) {
         self.ray_workers
             .get(worker_id)
             .expect("Worker should be present in RayWorkerManager")
             .mark_task_finished(task_id);
-    }
-
-    fn total_available_cpus(&self) -> usize {
-        self.ray_workers
-            .values()
-            .map(|w| w.available_num_cpus())
-            .sum()
     }
 
     fn shutdown(&self) -> DaftResult<()> {

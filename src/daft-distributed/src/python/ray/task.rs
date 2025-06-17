@@ -150,6 +150,14 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
+    fn context(&self) -> HashMap<String, String> {
+        self.task.context().clone()
+    }
+
+    fn name(&self) -> String {
+        self.task.name()
+    }
+
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })

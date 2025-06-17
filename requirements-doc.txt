@@ -7,3 +7,4 @@ mkdocs-material[imaging]
 mkdocstrings-python
 ruff
 mkdocs-minify-plugin
+mkdocs-redirects
