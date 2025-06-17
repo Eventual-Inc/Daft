@@ -474,10 +474,11 @@ impl SQLPlanner<'_> {
                         window_spec
                             .descending
                             .push(order.asc.is_some_and(|asc| !asc));
-                        // TODO(desmond): For now we follow the old behavior where nulls_first follows descending.
-                        window_spec
-                            .nulls_first
-                            .push(order.asc.is_some_and(|asc| !asc));
+                        window_spec.nulls_first.push(
+                            order
+                                .nulls_first
+                                .unwrap_or_else(|| order.asc.is_some_and(|asc| !asc)),
+                        );
                     }
                 }
 
