@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
@@ -34,6 +34,12 @@ impl MicroPartition {
     }
 
     pub fn dedup(&self, columns: &[BoundExpr]) -> DaftResult<Self> {
+        if columns.is_empty() {
+            return Err(DaftError::ValueError(
+                "Attempting to deduplicate with no columns".to_string(),
+            ));
+        }
+
         let io_stats = IOStatsContext::new("MicroPartition::dedup");
         let tables = self.concat_or_get(io_stats)?;
 

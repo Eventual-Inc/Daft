@@ -333,7 +333,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 .unwrap_or_else(|| schema.field_names().map(resolved_col).collect::<Vec<_>>());
             let columns = BoundExpr::bind_all(&columns, &schema)?;
 
-            Ok(LocalPhysicalPlan::drop_duplicates(
+            Ok(LocalPhysicalPlan::dedup(
                 input,
                 columns,
                 schema,

@@ -194,26 +194,15 @@ impl RecordBatch {
     }
 
     pub fn dedup(&self, columns: &[BoundExpr]) -> DaftResult<Self> {
-        match columns.len() {
-            // If no columns are provided, return an empty table
-            0 => {
-                let empty_table = Self::empty(Some(self.schema.clone()))?;
-                Ok(empty_table)
-            }
-            // If we are deduping based on all columns
-            x if x == self.schema.len() => {
-                let unique_indices = self.make_unique_idxs()?;
-                let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
-                self.take(&indices_as_series)
-            }
-            // If we are deduping based on some columns
-            _ => {
-                let dedup_table = self.eval_expression_list(columns)?;
-
-                let unique_indices = dedup_table.make_unique_idxs()?;
-                let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
-                self.take(&indices_as_series)
-            }
+        if columns.is_empty() {
+            return Err(DaftError::ValueError(
+                "Attempting to dedup RecordBatch on no columns".to_string(),
+            ));
         }
+
+        let dedup_table = self.eval_expression_list(columns)?;
+        let unique_indices = dedup_table.make_unique_idxs()?;
+        let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
+        self.take(&indices_as_series)
     }
 }

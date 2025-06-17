@@ -1044,9 +1044,13 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.summarize()?.into())
     }
 
-    #[pyo3(signature = (columns=None))]
-    pub fn distinct(&self, columns: Option<Vec<PyExpr>>) -> PyResult<Self> {
-        Ok(self.builder.distinct(columns.map(pyexprs_to_exprs))?.into())
+    pub fn distinct(&self, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let columns = if columns.is_empty() {
+            None
+        } else {
+            Some(pyexprs_to_exprs(columns))
+        };
+        Ok(self.builder.distinct(columns)?.into())
     }
 
     #[pyo3(signature = (fraction, with_replacement, seed=None))]

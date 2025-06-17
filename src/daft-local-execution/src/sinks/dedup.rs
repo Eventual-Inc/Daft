@@ -34,14 +34,14 @@ struct SinglePartitionDedupState {
     partially_deduped: Vec<MicroPartition>,
 }
 
-enum DropDuplicatesState {
+enum DedupState {
     Accumulating {
         inner_states: Vec<SinglePartitionDedupState>,
     },
     Done,
 }
 
-impl DropDuplicatesState {
+impl DedupState {
     fn new(num_partitions: usize) -> Self {
         let inner_states = (0..num_partitions)
             .map(|_| SinglePartitionDedupState::default())
@@ -80,17 +80,17 @@ impl DropDuplicatesState {
     }
 }
 
-impl BlockingSinkState for DropDuplicatesState {
+impl BlockingSinkState for DedupState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 }
 
-pub struct DropDuplicatesSink {
+pub struct DedupSink {
     columns: Arc<Vec<BoundExpr>>,
 }
 
-impl DropDuplicatesSink {
+impl DedupSink {
     pub fn new(columns: &[BoundExpr]) -> DaftResult<Self> {
         Ok(Self {
             columns: Arc::new(columns.to_vec()),
@@ -102,8 +102,8 @@ impl DropDuplicatesSink {
     }
 }
 
-impl BlockingSink for DropDuplicatesSink {
-    #[instrument(skip_all, name = "DropDuplicatesSink::sink")]
+impl BlockingSink for DedupSink {
+    #[instrument(skip_all, name = "DedupSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
@@ -116,8 +116,8 @@ impl BlockingSink for DropDuplicatesSink {
                 async move {
                     let dedup_state = state
                         .as_any_mut()
-                        .downcast_mut::<DropDuplicatesState>()
-                        .expect("DropDuplicatesSink should have DropDuplicatesState");
+                        .downcast_mut::<DedupState>()
+                        .expect("DedupSink should have DedupState");
 
                     dedup_state.push(input, &columns)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
@@ -127,7 +127,7 @@ impl BlockingSink for DropDuplicatesSink {
             .into()
     }
 
-    #[instrument(skip_all, name = "DropDuplicatesSink::finalize")]
+    #[instrument(skip_all, name = "DedupSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
@@ -143,8 +143,8 @@ impl BlockingSink for DropDuplicatesSink {
                         .map(|mut state| {
                             state
                                 .as_any_mut()
-                                .downcast_mut::<DropDuplicatesState>()
-                                .expect("DropDuplicatesSink should have DropDuplicatesState")
+                                .downcast_mut::<DedupState>()
+                                .expect("DedupSink should have DedupState")
                                 .finalize()
                                 .into_iter()
                         })
@@ -154,15 +154,15 @@ impl BlockingSink for DropDuplicatesSink {
                     for _ in 0..num_partitions {
                         // Collect the partially deduped micro-partitions (MPs) from all of the sub-states
                         // for the current partition
-                        let per_partition_micros =
-                            state_iters
-                                .iter_mut()
-                                .flat_map(|state| {
-                                    state.next().expect(
-                                    "DropDuplicatesSink should have SinglePartitionDedupState",
-                                ).partially_deduped
-                                })
-                                .collect::<Vec<_>>();
+                        let per_partition_micros = state_iters
+                            .iter_mut()
+                            .flat_map(|state| {
+                                state
+                                    .next()
+                                    .expect("DedupSink should have SinglePartitionDedupState")
+                                    .partially_deduped
+                            })
+                            .collect::<Vec<_>>();
 
                         // Merge the partially deduped MPs
                         // Do this concurrently across all of the partitions
@@ -188,13 +188,13 @@ impl BlockingSink for DropDuplicatesSink {
     }
 
     fn name(&self) -> &'static str {
-        "DropDuplicates"
+        "Dedup"
     }
 
     fn multiline_display(&self) -> Vec<String> {
         let mut display = vec![];
         display.push(format!(
-            "DropDuplicates: On Columns: {}",
+            "Dedup: On Columns: {}",
             self.columns.iter().map(|e| e.to_string()).join(", ")
         ));
         display
@@ -205,6 +205,6 @@ impl BlockingSink for DropDuplicatesSink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(DropDuplicatesState::new(self.num_partitions())))
+        Ok(Box::new(DedupState::new(self.num_partitions())))
     }
 }
