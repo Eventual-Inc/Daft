@@ -723,4 +723,36 @@ mod tests {
         assert_eq!(event.rows_emitted, 50);
         assert_eq!(event.cpu_us, 2000); // 500 + 1500
     }
+
+    #[tokio::test]
+    async fn test_final_event_observed_under_throttle_threshold() {
+        let mock_subscriber = Arc::new(MockSubscriber::new());
+        let subscribers = Arc::new(vec![
+            mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
+        ]);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
+
+        let node_info = create_node_info("fast_query", 1);
+        let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
+
+        // Simulate a fast query that completes in under 500ms
+        producer.mark_rows_received(100);
+        producer.mark_rows_emitted(50);
+        producer.record_elapsed_cpu_time(Duration::from_micros(1000));
+
+        // Wait less than throttle interval (500ms) but enough for processing
+        sleep(Duration::from_millis(10)).await;
+
+        // The final event should still be observed even though throttle interval wasn't met
+        assert_eq!(mock_subscriber.get_total_calls(), 1);
+
+        let events = mock_subscriber.get_events();
+        assert_eq!(events.len(), 1);
+
+        let event = &events[0];
+        assert_eq!(event.rows_received, 100);
+        assert_eq!(event.rows_emitted, 50);
+        assert_eq!(event.cpu_us, 1000);
+    }
 }
