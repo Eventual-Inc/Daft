@@ -135,7 +135,7 @@ impl Error {
             name: "TApplicationException".to_owned(),
         })?;
 
-        let message_field = TFieldIdentifier::new("message", TType::String, 1);
+        let message_field = TFieldIdentifier::new("message", TType::Binary, 1);
         let type_field = TFieldIdentifier::new("type", TType::I32, 2);
 
         o.write_field_begin(&message_field)?;

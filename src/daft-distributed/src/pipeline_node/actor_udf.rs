@@ -31,6 +31,7 @@ use crate::{
         channel::{create_channel, Sender},
         joinset::JoinSet,
     },
+    PipelineNodeSpan,
 };
 
 #[derive(Debug)]
@@ -153,8 +154,6 @@ impl UDFActors {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Clone)]
 pub(crate) struct ActorUDF {
     plan_id: PlanID,
     stage_id: StageID,
@@ -168,7 +167,6 @@ pub(crate) struct ActorUDF {
 }
 
 impl ActorUDF {
-    #[allow(dead_code)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -197,10 +195,9 @@ impl ActorUDF {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn execution_loop_fused(
-        self,
-        input: RunningPipelineNode<'_>,
+        self: Arc<Self>,
+        input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
@@ -226,6 +223,8 @@ impl ActorUDF {
                         worker_id,
                         actors,
                     )?;
+                    
+                    
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -270,7 +269,6 @@ impl ActorUDF {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn make_actor_udf_task_for_materialized_outputs(
         &self,
         materialized_outputs: Vec<MaterializedOutput>,
@@ -327,7 +325,6 @@ impl ActorUDF {
         Ok(task)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn append_actor_udf_to_task(
         &self,
         worker_id: WorkerId,
@@ -374,18 +371,19 @@ impl DistributedPipelineNode for ActorUDF {
         "ActorUDF"
     }
 
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
-        vec![self.child.as_ref()]
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+        vec![self.child.clone()]
     }
 
-    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let input_node = self.child.start(stage_context);
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
+        let span = PipelineNodeSpan::new(self.clone(), stage_context.span.hooks_manager.clone());
+        let input_node = self.child.clone().start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.clone().execution_loop_fused(input_node, result_tx);
+        let execution_loop = self.execution_loop_fused(input_node, result_tx);
         stage_context.joinset.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx, todo!())
+        RunningPipelineNode::new(result_rx, span)
     }
 
     fn plan_id(&self) -> &PlanID {

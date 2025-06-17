@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_display::{
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
@@ -77,8 +79,8 @@ pub(crate) enum PipelineOutput<T: Task> {
 #[allow(dead_code)]
 pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn name(&self) -> &'static str;
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
-    fn start<'a>(&'a self, stage_context: &'a mut StageContext<'a>) -> RunningPipelineNode<'a>;
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode;
     fn plan_id(&self) -> &PlanID;
     fn stage_id(&self) -> &StageID;
     fn node_id(&self) -> &NodeID;
@@ -158,7 +160,12 @@ impl RunningPipelineNode {
 
     pub fn into_stream(
         self,
-    ) -> impl Stream<Item = PipelineOutput<SwordfishTask>> + Send + Unpin + 'static {
-        ReceiverStream::new(self.result_receiver)
+    ) -> TrackedSpanStream<
+        Box<dyn Stream<Item = PipelineOutput<SwordfishTask>> + Send + Unpin + 'static>,
+        PipelineNodeSpan,
+    > {
+        let stream = ReceiverStream::new(self.result_receiver);
+
+        TrackedSpanStream::new(Box::new(stream), self._span)
     }
 }

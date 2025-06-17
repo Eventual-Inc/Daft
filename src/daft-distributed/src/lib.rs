@@ -80,10 +80,9 @@ impl Drop for StageSpan<'_> {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct PipelineNodeSpan {
     pipeline_node: Arc<dyn DistributedPipelineNode>,
-    hooks_manager: Arc<HooksManager>,
+    hooks_manager: HooksManager,
 }
 
 impl std::fmt::Debug for PipelineNodeSpan {
@@ -95,11 +94,10 @@ impl std::fmt::Debug for PipelineNodeSpan {
 impl PipelineNodeSpan {
     pub(crate) fn new(
         pipeline_node: Arc<dyn DistributedPipelineNode>,
-        hooks_manager: Arc<HooksManager>,
+        hooks_manager: HooksManager,
     ) -> Self {
         hooks_manager.emit(&PlanEvent::PipelineNodeStarted {
-            pipeline_node,
-            plan_id: &pipeline_node.plan_id(),
+            pipeline_node: &pipeline_node,
         });
         Self {
             pipeline_node,
@@ -111,12 +109,12 @@ impl PipelineNodeSpan {
 impl Drop for PipelineNodeSpan {
     fn drop(&mut self) {
         self.hooks_manager.emit(&PlanEvent::PipelineNodeCompleted {
-            pipeline_node: self.pipeline_node,
-            plan_id: &self.pipeline_node.plan_id(),
+            pipeline_node: &self.pipeline_node,
         });
     }
 }
 
+#[allow(dead_code)]
 pub(crate) enum PlanEvent<'a> {
     PlanStarted {
         plan: &'a DistributedPhysicalPlan,
@@ -135,12 +133,10 @@ pub(crate) enum PlanEvent<'a> {
         plan_id: &'a str,
     },
     PipelineNodeStarted {
-        pipeline_node: Arc<dyn DistributedPipelineNode>,
-        plan_id: Arc<str>,
+        pipeline_node: &'a Arc<dyn DistributedPipelineNode>,
     },
     PipelineNodeCompleted {
-        pipeline_node: Arc<dyn DistributedPipelineNode>,
-        plan_id: Arc<str>,
+        pipeline_node: &'a Arc<dyn DistributedPipelineNode>,
     },
 }
 
@@ -160,9 +156,9 @@ impl HooksManager {
         }
     }
 
-    pub(crate) fn add_subscriber(&mut self, subscriber: Arc<dyn PlanObserver + Send + Sync>) {
-        self.subscribers.push(subscriber);
-    }
+    // pub(crate) fn add_subscriber(&mut self, subscriber: Arc<dyn PlanObserver + Send + Sync>) {
+    //     self.subscribers.push(subscriber);
+    // }
 
     pub(crate) fn emit(&self, event: &PlanEvent) {
         for subscriber in &self.subscribers {
@@ -188,14 +184,10 @@ impl PlanObserver for DebugObserver {
             PlanEvent::StageCompleted { stage, .. } => {
                 println!("[DEBUG] Stage completed: {}", stage.id);
             }
-            PlanEvent::PipelineNodeStarted {
-                pipeline_node,
-                plan_id,
-            } => println!("[DEBUG] Pipeline node started: {}", pipeline_node.node_id()),
-            PlanEvent::PipelineNodeCompleted {
-                pipeline_node,
-                plan_id,
-            } => println!(
+            PlanEvent::PipelineNodeStarted { pipeline_node } => {
+                println!("[DEBUG] Pipeline node started: {}", pipeline_node.node_id())
+            }
+            PlanEvent::PipelineNodeCompleted { pipeline_node } => println!(
                 "[DEBUG] Pipeline node completed: {}",
                 pipeline_node.node_id()
             ),
@@ -229,5 +221,4 @@ impl<S: Stream + Unpin, Span: Unpin> Stream for TrackedSpanStream<S, Span> {
     }
 }
 
-// Make TrackedSpanStream Unpin when both S and Span are Unpin
 impl<S: Unpin, Span: Unpin> Unpin for TrackedSpanStream<S, Span> {}

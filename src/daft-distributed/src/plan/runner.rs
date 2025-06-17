@@ -60,8 +60,8 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
                 spawn_default_scheduler_actor(self.worker_manager.clone(), &mut joinset);
 
             joinset.spawn(async move {
-                // We call this inside the async function to keep the span alive until the plan is completed
-                let _span = this.plan_execution_span(&plan_clone);
+                // Create a 'span' to track the creation and completion of a "plan"
+                let _span = this.create_plan_span(&plan_clone);
 
                 this.execute_stages(stage_plan, psets, scheduler_handle, result_sender)
                     .await
@@ -126,10 +126,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
     /// this function is used to create a span for the execution of a plan
     /// It will emit the `PlanEvent::PlanStarted` on start, and `PlanEvent::PlanCompleted` when the span goes out of scope.
-    fn plan_execution_span<'a>(
-        &'a self,
-        plan: &'a DistributedPhysicalPlan,
-    ) -> PlanSpan<'a> {
+    fn create_plan_span<'a>(&'a self, plan: &'a DistributedPhysicalPlan) -> PlanSpan<'a> {
         PlanSpan::new(plan, &self.plan_id, &self.hooks_manager)
     }
 
