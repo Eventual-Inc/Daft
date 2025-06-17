@@ -61,6 +61,16 @@ where
     iter.into_iter().map(|t| t.to_proto()).collect()
 }
 
+/// Maps an iterator of protobuf messages into a Vec<T> where T implements ToFromProto.
+pub(crate) fn from_proto_vec<'a, I, T, M>(iter: I) -> ProtoResult<Vec<T>>
+where
+    I: IntoIterator<Item = M>,
+    T: ToFromProto<Message = M>,
+    M: prost::Message + Default,
+{
+    iter.into_iter().map(|m| T::from_proto(m)).collect()
+}
+
 /// This enables calling like `let p: P = from_proto(m)` dealing with prost's optionals.
 pub(crate) fn from_proto<T, M>(message: Option<M>) -> ProtoResult<T>
 where
@@ -108,6 +118,8 @@ pub enum ProtoError {
     NotOptimized(String),
     #[error("ProtoError::Bincode({0})")]
     Bincode(#[from] Box<bincode::ErrorKind>),
+    #[error("ProtoError::DaftError({0}")]
+    Daft(#[from] common_error::DaftError),
 }
 
 #[macro_export]

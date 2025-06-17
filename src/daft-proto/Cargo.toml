@@ -4,7 +4,6 @@ walkdir = "2.5.0"
 
 [dependencies]
 prost = {workspace = true}
-tonic = {workspace = true}
 
 [lib]
 name = "daft_proto"
@@ -14,3 +13,6 @@ path = "src/lib.rs"
 name = "daft-proto"
 edition.workspace = true
 version.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["tonic-build", "walkdir"]

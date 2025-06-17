@@ -188,10 +188,10 @@ message Expr {
     List list = 15;
     Literal literal = 16;
     IfElse if_else = 17;
-    ScalarFunction scalar_function = 18;
-    Subquery subquery = 19;
-    InSubquery in_subquery = 20;
-    Exists exists = 21;
+    Subquery subquery = 18;
+    SubqueryComp subquery_comp = 19;
+    SubqueryIn subquery_in = 20;
+    SubqueryTest subquery_test = 21;
   }
 }
 
@@ -262,7 +262,6 @@ message Literal {
 message Column {
   string name = 1;
   optional uint64 qualifier = 2;
-  optional string alias = 3;// alias wtf?
 }
 
 message Alias {
@@ -320,30 +319,29 @@ message IfElse {
 }
 
 message Function {
-  FunctionExpr func = 1;
-  repeated Expr inputs = 2;
-}
-
-message FunctionExpr {
-  oneof variant {
-    StructExpr struct = 1;
-    // Add other function types as needed
-  }
-}
-
-message StructExpr {
-  oneof variant {
-    string get = 1;
-    // Add other struct types as needed
-  }
-}
-
-message ScalarFunction {
   string name = 1;
-  repeated Expr args = 2;
+  Args args = 2;
+
+  // TODO: daft does not handle static parameter binding.
+  message Args {
+    repeated Arg args = 1;    
+  }
+
+  // TODO: Update param to required after static parameter binding is implemented.
+  message Arg {
+    optional string param = 1;
+    Expr expr = 2;
+  }
 }
 
-// Window expressions
+message FunctionArgs {
+
+}
+
+message FunctionArg {
+
+}
+
 message Over {
   WindowExpr expr = 1;
   WindowSpec spec = 2;
@@ -394,17 +392,56 @@ enum FrameType {
   FRAME_TYPE_GROUPS = 3;
 }
 
+// Daft currently only has scalar subquery coercion so just an input is fine for now.
 message Subquery {
-  Rel subquery = 1;
+  Rel input = 1;
 }
 
-message InSubquery {
-  Expr expr = 1;
-  Rel subquery = 2;
+// See SQL `<comparison predicate>` and `<quantified comparison predicate>`
+message SubqueryComp {
+  Rel input = 1;
+  repeated Expr args = 2;
+  Comparison comparison = 3;
+  Quantifier quantifier = 4;
+
 }
 
-message Exists {
-  Rel subquery = 1;
+// SQL `<comp op>` for use in the `<quantified comparison predicate`
+enum Comparison {
+  COMPARISON_UNSPECIFIED = 0;
+  COMPARISON_EQ = 1;
+  COMPARISON_NE = 2;
+  COMPARISON_LT = 3;
+  COMPARISON_LE = 4;
+  COMPARISON_GT = 5;
+  COMPARISON_GE = 6;
+}
+
+// See SQL `<quantifier>` for use in the `<quantified comparison predicate>`
+enum Quantifier {
+  QUANTIFIER_UNSPECIFIED = 0;
+  QUANTIFIER_ANY = 1;
+  QUANTIFIER_ALL = 2;
+  QUANTIFIER_SOME = 3;
+}
+
+// See SQL `<in predicate>`
+message SubqueryIn {
+  Rel input = 1;
+  repeated Expr args = 2;
+}
+
+// See SQL `<exists predicate>` and `<unique predicate>`.
+message SubqueryTest {
+  Rel input = 1;
+  Test test = 2;
+
+  // EXISTS and UNIQUE are defined by SQL.
+  enum Test {
+    TEST_UNSPECIFIED = 0;
+    TEST_EXISTS = 1;
+    TEST_UNIQUE = 2;
+  }
 }
 
 message AggExpr {
@@ -502,7 +539,7 @@ message PartitionTransform {
   oneof variant {
     Unit identity = 1;
     Unit year = 2;
-    Unit month= 4;
+    Unit month = 4;
     Unit day = 5;
     Unit hour = 6;
     Unit void = 7;

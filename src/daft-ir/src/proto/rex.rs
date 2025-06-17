@@ -1,10 +1,18 @@
+use daft_dsl::{
+    functions::{FunctionRegistry, FUNCTION_REGISTRY},
+    ExprRef,
+};
+
 use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
-use crate::{from_proto_err, non_null, not_implemented_err, proto::UNIT};
+use crate::{
+    from_proto_err, non_null, not_implemented_err, not_optimized_err, proto::{from_proto_vec, to_proto_vec, UNIT}
+};
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
 #[rustfmt::skip]
 mod ir {
     pub use crate::rex::*;
+    pub use crate::Schema;
 }
 
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
@@ -101,8 +109,8 @@ impl ToFromProto for ir::Expr {
                 // Self::List(values)
             }
             proto::ExprVariant::Literal(literal) => {
-                let literal_value = ir::LiteralValue::from_proto(literal)?;
-                Self::Literal(literal_value)
+                let literal = ir::LiteralValue::from_proto(literal)?;
+                Self::Literal(literal)
             }
             proto::ExprVariant::IfElse(if_else) => {
                 let if_true = from_proto_arc(if_else.if_true)?;
@@ -114,22 +122,22 @@ impl ToFromProto for ir::Expr {
                     predicate,
                 }
             }
-            proto::ExprVariant::ScalarFunction(_) => {
-                not_implemented_err!("scalar_function")
-                // Self::ScalarFunction(ir::ScalarFunction::from_proto(scalar_function)?)
-            }
             proto::ExprVariant::Subquery(_) => {
                 not_implemented_err!("subquery")
                 // Self::Subquery(ir::Subquery::from_proto(subquery)?)
             }
-            proto::ExprVariant::InSubquery(_) => {
-                not_implemented_err!("in_subquery")
+            proto::ExprVariant::SubqueryIn(_) => {
+                not_implemented_err!("subquery_in")
                 // let expr = from_proto_arc(in_subquery.expr)?;
                 // let subquery = ir::Subquery::from_proto(in_subquery.subquery)?;
                 // Self::InSubquery(expr, subquery)
             }
-            proto::ExprVariant::Exists(_) => {
-                not_implemented_err!("exists")
+            proto::ExprVariant::SubqueryComp(_) => {
+                not_implemented_err!("subquery_comp")
+                // Self::Exists(ir::Subquery::from_proto(exists.subquery)?)
+            }
+            proto::ExprVariant::SubqueryTest(_) => {
+                not_implemented_err!("subquery_test")
                 // Self::Exists(ir::Subquery::from_proto(exists.subquery)?)
             }
         };
@@ -282,48 +290,26 @@ impl ToFromProto for ir::Column {
     type Message = proto::Column;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self> {
-        let column = match message {
-            proto::Column {
-                name,
-                qualifier,
-                alias,
-            } => {
-                // handle unresolved columns
-                Self::Unresolved(ir::UnresolvedColumn {
-                    name: name.into(),
-                    plan_ref: get_plan_ref(qualifier, alias),
-                    plan_schema: None,
-                })
-            }
-        };
-        Ok(column)
+        // we only ever produce resolved columns
+        let column  = ir::ResolvedColumn::Basic(message.name.into());
+        Ok(Self::Resolved(column))
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
+        // validate the column is resolved
         let column = match self {
-            Self::Unresolved(column) => proto::Column {
-                name: column.name.to_string(),
-                qualifier: match &column.plan_ref {
-                    ir::PlanRef::Id(qualifier) => Some(*qualifier as u64),
-                    _ => None,
-                },
-                alias: match &column.plan_ref {
-                    ir::PlanRef::Alias(alias) => Some(alias.to_string()),
-                    _ => None,
-                },
-            },
-            Self::Resolved(column) => proto::Column {
-                name: match column {
-                    ir::ResolvedColumn::Basic(name) => name.to_string(),
-                    ir::ResolvedColumn::JoinSide(_, _) => todo!(),
-                    ir::ResolvedColumn::OuterRef(_, _) => todo!(),
-                },
+            Self::Bound(_) => not_implemented_err!("column::bound"),
+            Self::Unresolved(_) => not_optimized_err!("unresolved column in optimized plan"),
+            Self::Resolved(column) => column,
+        };
+        // convert the resolved column to proto
+        let column = match column {
+            ir::ResolvedColumn::Basic(name) => proto::Column {
+                name: name.to_string(),
                 qualifier: None,
-                alias: None,
             },
-            Self::Bound(_) => {
-                todo!("bound columns variants...")
-            }
+            ir::ResolvedColumn::JoinSide(_, _) => not_implemented_err!("column::join_side"),
+            ir::ResolvedColumn::OuterRef(_, _) => not_implemented_err!("column::outer_ref"),
         };
         Ok(column)
     }
@@ -356,12 +342,84 @@ impl ToFromProto for ir::functions::FunctionExpr {
 impl ToFromProto for ir::functions::ScalarFunction {
     type Message = proto::Function;
 
-    fn from_proto(_message: Self::Message) -> ProtoResult<Self> {
-        not_implemented_err!("expr_function")
+    fn from_proto(message: Self::Message) -> ProtoResult<Self> {
+        // lookup in registry by name (that's all we have atm).
+        let name = message.name;
+        let func = FUNCTION_REGISTRY
+            .read()
+            .expect("Failed to get FUNCTION_REGISTRY read lock")
+            .get(&name)
+            .expect("Missing function implementation, should have been impossible.");
+
+        // Convert arguments before doing resolution again since it's not possible to lookup resolved functions.
+        let inputs = ir::functions::FunctionArgs::from_proto(non_null!(message.args))?;
+
+        // Daft currently does not have static function resolution, once implemented, then
+        // we will be resolving to *concrete implementations* of functions based upon type
+        // signatures via string mangling or other techniques. For now, it suffices to lookup
+        // the dynamic functions by name because all functions are dynamic.
+        let schema = ir::Schema::empty();
+        let udf = func.get_function(inputs.clone(), &schema)?;
+
+        // don't use ::new
+        Ok(Self { udf, inputs })
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
-        not_implemented_err!("expr_function")
+        let name = self.name().to_string();
+        let args = self.inputs.to_proto()?;
+        Ok(Self::Message {
+            name,
+            args: Some(args),
+        })
+    }
+}
+
+impl ToFromProto for ir::functions::FunctionArgs<ir::ExprRef> {
+    type Message = proto::function::Args;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        let args = from_proto_vec(message.args)?;
+        Ok(Self::new_unchecked(args))
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        let args = to_proto_vec(self.iter())?;
+        Ok(proto::function::Args { args })
+    }
+}
+
+impl ToFromProto for ir::functions::FunctionArg<ExprRef> {
+    type Message = proto::function::Arg;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        let name = message.param.clone();
+        let expr = ir::Expr::from_proto(non_null!(message.expr))?.into();
+        let arg = match name {
+            Some(name) => Self::named(name, expr),
+            None => Self::unnamed(expr),
+        };
+        Ok(arg)
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        let arg = match self {
+            Self::Named { name, arg } => proto::function::Arg {
+                param: name.to_string().into(),
+                expr: arg.to_proto()?.into(),
+            },
+            Self::Unnamed(arg) => proto::function::Arg {
+                param: None,
+                expr: arg.to_proto()?.into(),
+            },
+        };
+        Ok(arg)
     }
 }
 
@@ -380,7 +438,7 @@ impl ToFromProto for ir::expr::WindowExpr {
 impl ToFromProto for ir::expr::Subquery {
     type Message = proto::Subquery;
 
-    fn from_proto(_message: Self::Message) -> ProtoResult<Self> {
+    fn from_proto(message: Self::Message) -> ProtoResult<Self> {
         not_implemented_err!("expr_subquery")
     }
 
@@ -543,31 +601,28 @@ impl ToFromProto for ir::LiteralValue {
                 value: *value,
                 unit: time_unit.to_proto()?,
             }),
-            Self::Duration(value, time_unit) => proto::LiteralVariant::Duration(proto::literal::Duration {
-                value: *value,
-                unit: time_unit.to_proto()?,
-            }),
-            Self::Interval(interval_value) => proto::LiteralVariant::Interval(proto::literal::Interval {
-                months: interval_value.months,
-                days: interval_value.days,
-                nanoseconds: interval_value.nanoseconds,
-            }),
+            Self::Duration(value, time_unit) => {
+                proto::LiteralVariant::Duration(proto::literal::Duration {
+                    value: *value,
+                    unit: time_unit.to_proto()?,
+                })
+            }
+            Self::Interval(interval_value) => {
+                proto::LiteralVariant::Interval(proto::literal::Interval {
+                    months: interval_value.months,
+                    days: interval_value.days,
+                    nanoseconds: interval_value.nanoseconds,
+                })
+            }
             Self::Float64(f) => proto::LiteralVariant::Float64(*f),
             Self::Decimal(value, precision, scale) => {
                 proto::LiteralVariant::Decimal(proto::literal::Decimal {
                     value: display_decimal128(*value, *precision, *scale),
                 })
             }
-            Self::Series(_) => {
-                todo!()
-                // proto::LiteralVariant::Series(proto::Series {
-                //     name: series.name().to_string(),
-                //     dtype: Some(series.data_type().to_proto()?),
-                //     data: series.to_bytes()?,
-                // })
-            }
+            Self::Series(_) => not_implemented_err!("series literal"),
             #[cfg(feature = "python")]
-            Self::Python(_) => todo!("Python object serialization not implemented"),
+            Self::Python(_) => todo!("python literal"),
             Self::Struct(struct_) => {
                 let mut fields = vec![];
                 for field in struct_ {

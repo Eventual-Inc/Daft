@@ -276,13 +276,13 @@ pub mod expr {
         #[prost(message, tag = "17")]
         IfElse(::prost::alloc::boxed::Box<super::IfElse>),
         #[prost(message, tag = "18")]
-        ScalarFunction(super::ScalarFunction),
-        #[prost(message, tag = "19")]
         Subquery(::prost::alloc::boxed::Box<super::Subquery>),
+        #[prost(message, tag = "19")]
+        SubqueryComp(::prost::alloc::boxed::Box<super::SubqueryComp>),
         #[prost(message, tag = "20")]
-        InSubquery(::prost::alloc::boxed::Box<super::InSubquery>),
+        SubqueryIn(::prost::alloc::boxed::Box<super::SubqueryIn>),
         #[prost(message, tag = "21")]
-        Exists(::prost::alloc::boxed::Box<super::Exists>),
+        SubqueryTest(::prost::alloc::boxed::Box<super::SubqueryTest>),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -406,9 +406,6 @@ pub struct Column {
     pub name: ::prost::alloc::string::String,
     #[prost(uint64, optional, tag = "2")]
     pub qualifier: ::core::option::Option<u64>,
-    /// alias wtf?
-    #[prost(string, optional, tag = "3")]
-    pub alias: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Alias {
@@ -487,47 +484,32 @@ pub struct IfElse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Function {
-    #[prost(message, optional, tag = "1")]
-    pub func: ::core::option::Option<FunctionExpr>,
-    #[prost(message, repeated, tag = "2")]
-    pub inputs: ::prost::alloc::vec::Vec<Expr>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FunctionExpr {
-    #[prost(oneof = "function_expr::Variant", tags = "1")]
-    pub variant: ::core::option::Option<function_expr::Variant>,
-}
-/// Nested message and enum types in `FunctionExpr`.
-pub mod function_expr {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Variant {
-        /// Add other function types as needed
-        #[prost(message, tag = "1")]
-        Struct(super::StructExpr),
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StructExpr {
-    #[prost(oneof = "struct_expr::Variant", tags = "1")]
-    pub variant: ::core::option::Option<struct_expr::Variant>,
-}
-/// Nested message and enum types in `StructExpr`.
-pub mod struct_expr {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Variant {
-        /// Add other struct types as needed
-        #[prost(string, tag = "1")]
-        Get(::prost::alloc::string::String),
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ScalarFunction {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub args: ::prost::alloc::vec::Vec<Expr>,
+    #[prost(message, optional, tag = "2")]
+    pub args: ::core::option::Option<function::Args>,
 }
-/// Window expressions
+/// Nested message and enum types in `Function`.
+pub mod function {
+    /// TODO: daft does not handle static parameter binding.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Args {
+        #[prost(message, repeated, tag = "1")]
+        pub args: ::prost::alloc::vec::Vec<Arg>,
+    }
+    /// TODO: Update param to required after static parameter binding is implemented.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Arg {
+        #[prost(string, optional, tag = "1")]
+        pub param: ::core::option::Option<::prost::alloc::string::String>,
+        #[prost(message, optional, tag = "2")]
+        pub expr: ::core::option::Option<super::Expr>,
+    }
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct FunctionArgs {}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct FunctionArg {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Over {
     #[prost(message, optional, boxed, tag = "1")]
@@ -597,22 +579,82 @@ pub struct WindowFrame {
     #[prost(message, optional, boxed, tag = "3")]
     pub end: ::core::option::Option<::prost::alloc::boxed::Box<Expr>>,
 }
+/// Daft currently only has scalar subquery coercion so just an input is fine for now.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Subquery {
     #[prost(message, optional, boxed, tag = "1")]
-    pub subquery: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
 }
+/// See SQL `<comparison predicate>` and `<quantified comparison predicate>`
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InSubquery {
+pub struct SubqueryComp {
     #[prost(message, optional, boxed, tag = "1")]
-    pub expr: ::core::option::Option<::prost::alloc::boxed::Box<Expr>>,
-    #[prost(message, optional, boxed, tag = "2")]
-    pub subquery: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, repeated, tag = "2")]
+    pub args: ::prost::alloc::vec::Vec<Expr>,
+    #[prost(enumeration = "Comparison", tag = "3")]
+    pub comparison: i32,
+    #[prost(enumeration = "Quantifier", tag = "4")]
+    pub quantifier: i32,
 }
+/// See SQL `<in predicate>`
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Exists {
+pub struct SubqueryIn {
     #[prost(message, optional, boxed, tag = "1")]
-    pub subquery: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, repeated, tag = "2")]
+    pub args: ::prost::alloc::vec::Vec<Expr>,
+}
+/// See SQL `<exists predicate>` and `<unique predicate>`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SubqueryTest {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(enumeration = "subquery_test::Test", tag = "2")]
+    pub test: i32,
+}
+/// Nested message and enum types in `SubqueryTest`.
+pub mod subquery_test {
+    /// EXISTS and UNIQUE are defined by SQL.
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Test {
+        Unspecified = 0,
+        Exists = 1,
+        Unique = 2,
+    }
+    impl Test {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Unspecified => "TEST_UNSPECIFIED",
+                Self::Exists => "TEST_EXISTS",
+                Self::Unique => "TEST_UNIQUE",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "TEST_UNSPECIFIED" => Some(Self::Unspecified),
+                "TEST_EXISTS" => Some(Self::Exists),
+                "TEST_UNIQUE" => Some(Self::Unique),
+                _ => None,
+            }
+        }
+    }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AggExpr {
@@ -889,6 +931,81 @@ impl FrameType {
             "FRAME_TYPE_ROWS" => Some(Self::Rows),
             "FRAME_TYPE_RANGE" => Some(Self::Range),
             "FRAME_TYPE_GROUPS" => Some(Self::Groups),
+            _ => None,
+        }
+    }
+}
+/// SQL `<comp op>` for use in the `<quantified comparison predicate`
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Comparison {
+    Unspecified = 0,
+    Eq = 1,
+    Ne = 2,
+    Lt = 3,
+    Le = 4,
+    Gt = 5,
+    Ge = 6,
+}
+impl Comparison {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "COMPARISON_UNSPECIFIED",
+            Self::Eq => "COMPARISON_EQ",
+            Self::Ne => "COMPARISON_NE",
+            Self::Lt => "COMPARISON_LT",
+            Self::Le => "COMPARISON_LE",
+            Self::Gt => "COMPARISON_GT",
+            Self::Ge => "COMPARISON_GE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "COMPARISON_UNSPECIFIED" => Some(Self::Unspecified),
+            "COMPARISON_EQ" => Some(Self::Eq),
+            "COMPARISON_NE" => Some(Self::Ne),
+            "COMPARISON_LT" => Some(Self::Lt),
+            "COMPARISON_LE" => Some(Self::Le),
+            "COMPARISON_GT" => Some(Self::Gt),
+            "COMPARISON_GE" => Some(Self::Ge),
+            _ => None,
+        }
+    }
+}
+/// See SQL `<quantifier>` for use in the `<quantified comparison predicate>`
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Quantifier {
+    Unspecified = 0,
+    Any = 1,
+    All = 2,
+    Some = 3,
+}
+impl Quantifier {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "QUANTIFIER_UNSPECIFIED",
+            Self::Any => "QUANTIFIER_ANY",
+            Self::All => "QUANTIFIER_ALL",
+            Self::Some => "QUANTIFIER_SOME",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "QUANTIFIER_UNSPECIFIED" => Some(Self::Unspecified),
+            "QUANTIFIER_ANY" => Some(Self::Any),
+            "QUANTIFIER_ALL" => Some(Self::All),
+            "QUANTIFIER_SOME" => Some(Self::Some),
             _ => None,
         }
     }

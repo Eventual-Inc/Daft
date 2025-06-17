@@ -11,4 +11,8 @@ def test_proto():
             "c": ["ABC", "DEF", "GHI"],
         }
     )
+
+    # test projection
+    df = df.select("a")
+
     df = df.collect().show()
