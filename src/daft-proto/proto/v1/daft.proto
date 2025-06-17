@@ -457,7 +457,85 @@ message Rel {
 
 message RelSource {
   Schema schema = 1;
-  string table = 2;
+  SourceInfo info = 2;
+}
+
+message SourceInfo {
+  oneof variant {
+    CacheInfo cache_info = 1;
+    ScanInfo scan_info = 2;
+  }
+
+  message CacheInfo {
+    Schema schema = 1;
+    string cache_key = 2;
+    // cache entry metadata 
+    uint64 num_partitions = 3;
+    uint64 num_rows = 4;
+    uint64 size_bytes = 5;
+  }
+
+  message ScanInfo {
+    Schema schema = 1;
+    PartitionFields partitions = 2;
+    Pushdowns pushdowns = 3;
+    ScanTasks tasks = 4;
+  }
+}
+
+// Columns in pushdowns are not bound in the representation.
+message Columns {
+  repeated string columns = 1;
+}
+
+message PartitionFields {
+  repeated PartitionField partitions = 1;
+}
+
+message PartitionField {
+  Field field = 1;
+  optional Field source = 2;
+  optional PartitionTransform transform = 3;
+}
+
+message PartitionTransform {
+  oneof variant {
+    Unit identity = 1;
+    Unit year = 2;
+    Unit month= 4;
+    Unit day = 5;
+    Unit hour = 6;
+    Unit void = 7;
+    IcebergBucket iceberg_bucket = 8;
+    IcebergTruncate iceberg_truncate = 9;
+  }
+
+  message IcebergBucket {
+    uint64 buckets = 1;
+  }
+
+  message IcebergTruncate {
+    uint64 width = 2;
+  }
+}
+
+message Pushdowns {
+  // This modeling inherently limits the ability to express composite predicates, and Clark acknowledge this limitation during implementation.
+  // see: TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
+  optional Expr filter = 1;
+  optional Expr partition_filter = 2;
+  optional Columns columns = 3;
+  optional uint64 limit = 4;
+}
+
+message ScanTasks {
+  repeated ScanTask tasks = 1;
+}
+
+// ScanTask definition could be added later, it's a lot of work.
+message ScanTask {
+  // bincode payload
+  bytes payload = 1;
 }
 
 message RelProject {

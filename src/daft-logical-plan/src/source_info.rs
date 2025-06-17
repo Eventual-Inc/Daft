@@ -1,4 +1,4 @@
-use std::hash::{Hash, Hasher};
+use std::{hash::{Hash, Hasher}};
 
 use common_partitioning::PartitionCacheEntry;
 use common_scan_info::PhysicalScanInfo;

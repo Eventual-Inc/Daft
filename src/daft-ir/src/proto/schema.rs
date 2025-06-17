@@ -1,4 +1,4 @@
-use super::{from_proto, from_proto_box, FromToProto, ProtoError, ProtoResult};
+use super::{from_proto, from_proto_box, ToFromProto, ProtoError, ProtoResult};
 use crate::{from_proto_err, proto::UNIT, to_proto_err};
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
@@ -15,7 +15,7 @@ mod proto {
 }
 
 /// Conversion logic for daft's Schema.
-impl FromToProto for ir::Schema {
+impl ToFromProto for ir::Schema {
     type Message = proto::Schema;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
@@ -41,7 +41,7 @@ impl FromToProto for ir::Schema {
 }
 
 /// Conversion logic for daft's DataType.
-impl FromToProto for ir::DataType {
+impl ToFromProto for ir::DataType {
     type Message = proto::DataType;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
@@ -286,7 +286,7 @@ impl FromToProto for ir::DataType {
     }
 }
 
-impl FromToProto for ir::Field {
+impl ToFromProto for ir::Field {
     type Message = proto::Field;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
@@ -306,7 +306,7 @@ impl FromToProto for ir::Field {
     }
 }
 
-impl FromToProto for ir::TimeUnit {
+impl ToFromProto for ir::TimeUnit {
     type Message = i32;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self> {
@@ -330,7 +330,7 @@ impl FromToProto for ir::TimeUnit {
     }
 }
 
-impl FromToProto for ir::ImageMode {
+impl ToFromProto for ir::ImageMode {
     type Message = i32;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self> {
