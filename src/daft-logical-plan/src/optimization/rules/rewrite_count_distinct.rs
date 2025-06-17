@@ -7,7 +7,7 @@ use daft_dsl::{resolved_col, AggExpr, Expr};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Aggregate, Distinct},
+    ops::{Aggregate, Distinct, Project},
     LogicalPlan,
 };
 
@@ -41,7 +41,7 @@ impl OptimizerRule for RewriteCountDistinct {
                     sub_expr = Some(cd.clone());
                     // TODO: Use semantic id or generate random one?
                     Ok(Transformed::yes(Arc::new(Expr::Agg(AggExpr::Count(
-                        resolved_col(e.semantic_id(aggregate.input.schema().as_ref()).id),
+                        resolved_col(cd.semantic_id(aggregate.input.schema().as_ref()).id),
                         CountMode::All,
                     )))))
                 } else {
@@ -53,9 +53,30 @@ impl OptimizerRule for RewriteCountDistinct {
                 assert!(!new_agg_expr.transformed);
                 return Ok(Transformed::no(node));
             };
-            let distinct_node =
-                LogicalPlan::Distinct(Distinct::new(aggregate.input.clone(), Some(vec![sub_expr])))
-                    .arced();
+
+            let sub_expr_name = sub_expr.semantic_id(aggregate.input.schema().as_ref()).id;
+
+            eprintln!("Sub expr: {}", sub_expr);
+            let input_node = if sub_expr.has_compute() {
+                // We need to create a project node to make this a permanent column
+                // Otherwise, distinct with only use it for the groupby and not include in the output
+                // Ideally, projection pushdown will clean this up
+                // TODO: Consider adding a flag to DISTINCT to include generated columns in output
+                LogicalPlan::Project(Project::try_new(
+                    aggregate.input.clone(),
+                    vec![sub_expr.alias(sub_expr_name.clone())],
+                )?)
+                .arced()
+            } else {
+                aggregate.input.clone()
+            };
+
+            eprintln!("Input node: {}", input_node.repr_ascii(false));
+            let distinct_node = LogicalPlan::Distinct(Distinct::new(
+                input_node,
+                Some(vec![resolved_col(sub_expr_name)]),
+            ))
+            .arced();
 
             let count_node = LogicalPlan::Aggregate(Aggregate::try_new(
                 distinct_node,
@@ -82,6 +103,7 @@ mod tests {
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             test::assert_optimized_plan_with_rules_eq,
+            Optimizer, OptimizerConfig,
         },
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
@@ -101,8 +123,9 @@ mod tests {
         )
     }
 
+    // Test that aggs without count_distinct are not modified
     #[test]
-    fn lift_exprs_global_agg() -> DaftResult<()> {
+    fn unmodified_unrelated_aggs() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
@@ -117,146 +140,112 @@ mod tests {
                         .add(unresolved_col("b").sum())
                         .alias("a_plus_b"),
                     unresolved_col("b").mean(),
-                    unresolved_col("b").mean().alias("c"),
                 ],
                 vec![],
             )?
             .build();
 
-        let schema = dummy_scan_node(scan_op.clone()).schema();
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+        Ok(())
+    }
 
-        let a_sum_id = unresolved_col("a").sum().semantic_id(schema.as_ref()).id;
-        let b_sum_id = unresolved_col("b").sum().semantic_id(schema.as_ref()).id;
-        let b_mean_id = unresolved_col("b").mean().semantic_id(schema.as_ref()).id;
+    // Test that count_distinct with other aggs are not modified
+    #[test]
+    fn unmodified_count_distinct_with_other_aggs() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(
+                vec![
+                    unresolved_col("a").count_distinct(),
+                    unresolved_col("b").sum(),
+                ],
+                vec![],
+            )?
+            .build();
+
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+        Ok(())
+    }
+
+    // Test that count_distinct in a groupby are not modified
+    #[test]
+    fn unmodified_count_distinct_in_groupby() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(
+                vec![unresolved_col("a").count_distinct()],
+                vec![unresolved_col("b")],
+            )?
+            .build();
+
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+        Ok(())
+    }
+
+    // Test that count_distinct is rewritten to count(distinct)
+    #[test]
+    fn rewrite_count_distinct_base() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(vec![unresolved_col("a").count_distinct()], vec![])?
+            .build();
 
         let expected = dummy_scan_node(scan_op)
+            .distinct(Some(vec![unresolved_col("a")]))?
             .aggregate(
-                vec![
-                    unresolved_col("a").sum().alias(a_sum_id.clone()),
-                    unresolved_col("b").sum().alias(b_sum_id.clone()),
-                    unresolved_col("b").mean().alias(b_mean_id.clone()),
-                ],
+                vec![unresolved_col("a").count(daft_core::prelude::CountMode::All)],
                 vec![],
             )?
-            .select(vec![
-                unresolved_col(a_sum_id.clone()).alias("a"),
-                unresolved_col(a_sum_id)
-                    .add(unresolved_col(b_sum_id))
-                    .alias("a_plus_b"),
-                unresolved_col(b_mean_id.clone()).alias("b"),
-                unresolved_col(b_mean_id).alias("c"),
-            ])?
             .build();
 
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
+    // Test that count_distinct on a projected column is rewritten to a count(distinct)
     #[test]
-    fn lift_exprs_groupby_agg() -> DaftResult<()> {
+    fn rewrite_count_distinct_on_projected_column() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![
-            Field::new("groupby_key", DataType::Utf8),
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
 
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(
-                vec![
-                    unresolved_col("a").sum(),
-                    unresolved_col("a")
-                        .sum()
-                        .add(unresolved_col("b").sum())
-                        .alias("a_plus_b"),
-                    unresolved_col("b").mean(),
-                    unresolved_col("b").mean().alias("c"),
-                ],
-                vec![unresolved_col("groupby_key")],
+                vec![unresolved_col("a")
+                    .add(unresolved_col("b"))
+                    .count_distinct()
+                    .alias("a_plus_b_count_distinct")],
+                vec![],
             )?
             .build();
-
-        let schema = dummy_scan_node(scan_op.clone()).schema();
-
-        let a_sum_id = unresolved_col("a").sum().semantic_id(schema.as_ref()).id;
-        let b_sum_id = unresolved_col("b").sum().semantic_id(schema.as_ref()).id;
-        let b_mean_id = unresolved_col("b").mean().semantic_id(schema.as_ref()).id;
 
         let expected = dummy_scan_node(scan_op)
-            .aggregate(
-                vec![
-                    unresolved_col("a").sum().alias(a_sum_id.clone()),
-                    unresolved_col("b").sum().alias(b_sum_id.clone()),
-                    unresolved_col("b").mean().alias(b_mean_id.clone()),
-                ],
-                vec![unresolved_col("groupby_key")],
-            )?
             .select(vec![
-                unresolved_col("groupby_key"),
-                unresolved_col(a_sum_id.clone()).alias("a"),
-                unresolved_col(a_sum_id)
-                    .add(unresolved_col(b_sum_id))
-                    .alias("a_plus_b"),
-                unresolved_col(b_mean_id.clone()).alias("b"),
-                unresolved_col(b_mean_id).alias("c"),
+                unresolved_col("a")
+                    .add(unresolved_col("b"))
+                    .alias("(a + b)"), // Semantic id is "(a + b)"
             ])?
-            .build();
-
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    #[test]
-    fn do_not_lift_exprs_global_agg() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Int64),
-        ]);
-
-        let plan = dummy_scan_node(scan_op.clone())
+            .distinct(Some(vec![unresolved_col("(a + b)")]))?
             .aggregate(
-                vec![
-                    unresolved_col("a").sum(),
-                    unresolved_col("a")
-                        .add(unresolved_col("b"))
-                        .sum()
-                        .alias("a_plus_b"),
-                    unresolved_col("b").mean(),
-                    unresolved_col("b").mean().alias("c"),
-                ],
+                vec![unresolved_col("(a + b)")
+                    .count(daft_core::prelude::CountMode::All)
+                    .alias("a_plus_b_count_distinct")],
                 vec![],
             )?
             .build();
-
-        let expected = plan.clone();
-
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    #[test]
-    fn do_not_lift_exprs_groupby_agg() -> DaftResult<()> {
-        let scan_op = dummy_scan_operator(vec![
-            Field::new("groupby_key", DataType::Utf8),
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Int64),
-        ]);
-
-        let plan = dummy_scan_node(scan_op.clone())
-            .aggregate(
-                vec![
-                    unresolved_col("a").sum(),
-                    unresolved_col("a")
-                        .add(unresolved_col("b"))
-                        .sum()
-                        .alias("a_plus_b"),
-                    unresolved_col("b").mean(),
-                    unresolved_col("b").mean().alias("c"),
-                ],
-                vec![unresolved_col("groupby_key")],
-            )?
-            .build();
-
-        let expected = plan.clone();
 
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
