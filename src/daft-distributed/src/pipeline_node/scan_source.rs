@@ -20,8 +20,6 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
 pub(crate) struct ScanSourceNode {
     plan_id: PlanID,
     stage_id: StageID,
@@ -33,7 +31,6 @@ pub(crate) struct ScanSourceNode {
 }
 
 impl ScanSourceNode {
-    #[allow(dead_code)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -55,7 +52,7 @@ impl ScanSourceNode {
     }
 
     async fn execution_loop(
-        self,
+        self: Arc<Self>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
@@ -156,13 +153,13 @@ impl DistributedPipelineNode for ScanSourceNode {
         "DistributedScan"
     }
 
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![]
     }
 
-    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.clone().execution_loop(result_tx);
+        let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)

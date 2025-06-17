@@ -20,8 +20,6 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
-#[allow(dead_code)]
-#[derive(Clone)]
 pub(crate) struct LimitNode {
     plan_id: PlanID,
     stage_id: StageID,
@@ -33,8 +31,6 @@ pub(crate) struct LimitNode {
 }
 
 impl LimitNode {
-    #[allow(dead_code)]
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -55,9 +51,8 @@ impl LimitNode {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn execution_loop(
-        self,
+        self: Arc<Self>,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
@@ -162,11 +157,11 @@ impl DistributedPipelineNode for LimitNode {
         "DistributedLimit"
     }
 
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
-        vec![self.child.as_ref()]
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+        vec![self.child.clone()]
     }
 
-    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
         // let child_id = self.child..node_id();
         let child_name = self.child.name();
         let child_id = self.child.node_id();
@@ -180,10 +175,10 @@ impl DistributedPipelineNode for LimitNode {
             ("child_name".to_string(), child_name.to_string()),
         ]);
 
-        let input_node = self.child.start(stage_context);
+        let input_node = self.child.clone().start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.clone().execution_loop(
+        let execution_loop = self.execution_loop(
             input_node,
             result_tx,
             stage_context.scheduler_handle.clone(),

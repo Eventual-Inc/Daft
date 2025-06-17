@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_display::{
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
@@ -76,8 +78,8 @@ pub(crate) enum PipelineOutput<T: Task> {
 #[allow(dead_code)]
 pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn name(&self) -> &'static str;
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
-    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode;
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode;
     fn plan_id(&self) -> &PlanID;
     fn stage_id(&self) -> &StageID;
     fn node_id(&self) -> &NodeID;

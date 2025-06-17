@@ -20,8 +20,6 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
 pub(crate) struct InMemorySourceNode {
     plan_id: PlanID,
     stage_id: StageID,
@@ -33,7 +31,6 @@ pub(crate) struct InMemorySourceNode {
 }
 
 impl InMemorySourceNode {
-    #[allow(dead_code)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -55,7 +52,7 @@ impl InMemorySourceNode {
     }
 
     async fn execution_loop(
-        self,
+        self: Arc<Self>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let partition_refs = self.input_psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
@@ -131,13 +128,13 @@ impl DistributedPipelineNode for InMemorySourceNode {
         "DistributedInMemoryScan"
     }
 
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![]
     }
 
-    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.clone().execution_loop(result_tx);
+        let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)

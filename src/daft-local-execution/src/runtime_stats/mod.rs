@@ -25,6 +25,8 @@ use tokio::{
 };
 use tracing::{instrument::Instrumented, Instrument};
 
+#[cfg(debug_assertions)]
+use crate::runtime_stats::subscribers::debug::DebugSubscriber;
 use crate::{
     channel::{Receiver, Sender},
     pipeline::NodeInfo,
@@ -127,6 +129,17 @@ impl RuntimeStatsEventHandler {
 
         if DashboardSubscriber::is_enabled() {
             subscribers.push(DashboardSubscriber::new());
+        }
+
+        #[cfg(debug_assertions)]
+        if let Ok(s) = std::env::var("DAFT_DEV_ENABLE_RUNTIME_STATS_DBG") {
+            let s = s.to_lowercase();
+            match s.as_ref() {
+                "1" | "true" => {
+                    subscribers.push(Arc::new(DebugSubscriber));
+                }
+                _ => {}
+            }
         }
 
         let subscribers = Arc::new(subscribers);

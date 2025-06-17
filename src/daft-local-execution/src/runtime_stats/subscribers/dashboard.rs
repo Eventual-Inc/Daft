@@ -32,7 +32,7 @@ impl DashboardSubscriber {
 
         static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
-        let client = if url.contains("localhost") {
+        let client = if url.contains("localhost") || url.contains("127.0.0.1") {
             reqwest::Client::builder()
                 // if it's a localhost uri we can skip ssl verification
                 .danger_accept_invalid_certs(true)
@@ -143,7 +143,6 @@ async fn send_metric(url: &str, client: &Arc<Client>, event: &RuntimeStatsEvent)
     if let Ok(run_id) = env::var("DAFT_DASHBOARD_RUN_ID") {
         payload.insert("run_id".to_string(), run_id);
     }
-    println!("Payload: {payload:?}");
 
     let req = client.post(url);
     let res = req.json(&payload).send().await;
