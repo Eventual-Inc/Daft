@@ -325,9 +325,18 @@ impl ToFromProto for ir::AggExpr {
                 let arg = set_function.args[0].clone(); // hack because I know we only support one atm.
                 let arg = ir::Expr::from_proto(arg)?.into();
                 let is_all = set_function.is_all;
+                // aggregations needs some work
+                if !is_all && name != "count" {
+                    not_implemented_err!(
+                        "daft does not support DISTINCT in aggregations other than count."
+                    );
+                }
                 // behold, the aggregation registry!
                 match name {
-                    "count" => Self::Count(arg, ir::CountMode::Valid),
+                    "count" => match is_all {
+                        true => Self::Count(arg, ir::CountMode::Valid),
+                        false => Self::CountDistinct(arg), // no mode?
+                    },
                     "count_star" => Self::Count(arg, ir::CountMode::All),
                     "count_nulls" => Self::Count(arg, ir::CountMode::Null),
                     "sum" => Self::Sum(arg),
@@ -508,8 +517,8 @@ impl ToFromProto for ir::AggExpr {
             Self::MapGroups { .. } => not_implemented_err!("map_groups"),
             Self::ApproxPercentile(_) => not_implemented_err!("approx_percentile"),
             Self::ApproxCountDistinct(_) => not_implemented_err!("approx_count_distinct"),
-            Self::ApproxSketch(expr, sketch_type) => not_implemented_err!("approx_sketch"),
-            Self::MergeSketch(expr, sketch_type) => not_implemented_err!("merge_sketch"),
+            Self::ApproxSketch(..) => not_implemented_err!("approx_sketch"),
+            Self::MergeSketch(..) => not_implemented_err!("merge_sketch"),
         };
         Ok(Self::Message {
             variant: Some(variant),

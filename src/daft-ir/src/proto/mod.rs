@@ -87,7 +87,7 @@ where
 }
 
 /// Maps an iterator of protobuf messages into a Vec<T> where T implements ToFromProto.
-pub(crate) fn from_proto_vec<'a, I, T, M>(iter: I) -> ProtoResult<Vec<T>>
+pub(crate) fn from_proto_vec<I, T, M>(iter: I) -> ProtoResult<Vec<T>>
 where
     I: IntoIterator<Item = M>,
     T: ToFromProto<Message = M>,

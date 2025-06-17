@@ -8,7 +8,6 @@ pub(crate) mod proto;
 pub use common_scan_info::{
     PartitionField, PartitionTransform, Pushdowns, ScanState, ScanTaskLike, ScanTaskLikeRef,
 };
-
 // todo(conner): why here?
 pub use daft_core::count_mode::CountMode;
 
@@ -34,7 +33,7 @@ pub mod functions {
         FUNCTION_REGISTRY
         .read()
         .expect("Failed to get FUNCTION_REGISTRY read lock")
-        .get(&name)
+        .get(name)
         .expect("Missing function implementation, should have been impossible.")
     }
 }
@@ -166,11 +165,11 @@ pub mod rel {
         let groupby_exprs = groups.into_iter().map(|e| e.into()).collect();
         let builder = LogicalPlanBuilder::new(input, None);
         let builder = builder.aggregate(agg_exprs, groupby_exprs)?;
-        // We just created this, so we immediately take back ownership of it, the builer arc'd it.
+        // We just created this, so we immediately take back ownership of it, the builder arc'd it.
         if let LogicalPlan::Aggregate(aggregate) = Arc::try_unwrap(builder.plan).unwrap_or_else(|_| panic!("Expected LogicalPlan::Aggregate!")) {
-            return Ok(aggregate)
+            Ok(aggregate)
         } else {
-            return Err(DaftError::InternalError(format!("Expected LogicalPlan::Aggregate!")))
+            Err(DaftError::InternalError("Expected LogicalPlan::Aggregate!".to_string()))
         }
     }
 }

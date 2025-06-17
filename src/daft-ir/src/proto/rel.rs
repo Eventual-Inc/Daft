@@ -21,6 +21,7 @@ mod proto {
     pub use daft_proto::protos::daft::v1::partition_transform::Variant as PartitionTransformVariant;
 }
 
+#[allow(unused)]
 impl ToFromProto for ir::rel::LogicalPlan {
     type Message = proto::Rel;
 
@@ -491,7 +492,10 @@ impl ToFromProto for ir::rel::Aggregate {
             let measure = match expr.as_ref() {
                 ir::Expr::Agg(agg) => {
                     let agg = agg.to_proto()?;
-                    proto::Measure { agg: Some(agg), alias: None }
+                    proto::Measure {
+                        agg: Some(agg),
+                        alias: None,
+                    }
                 }
                 ir::Expr::Alias(agg, alias) => {
                     // We should seriously consider removing binding names from aggregations.
@@ -500,12 +504,21 @@ impl ToFromProto for ir::rel::Aggregate {
                     // be its own domain.
                     let agg = match agg.as_ref() {
                         ir::Expr::Agg(agg) => agg.to_proto()?,
-                        _ => not_optimized_err!("encountered a scalar expression in an aggregation: {}", expr),
+                        _ => not_optimized_err!(
+                            "encountered a scalar expression in an aggregation: {}",
+                            expr
+                        ),
                     };
                     let alias = alias.to_string();
-                    proto::Measure { agg: Some(agg), alias: Some(alias) }
-                },
-                _ => not_optimized_err!("encountered a scalar expression in an aggregation: {}", expr),
+                    proto::Measure {
+                        agg: Some(agg),
+                        alias: Some(alias),
+                    }
+                }
+                _ => not_optimized_err!(
+                    "encountered a scalar expression in an aggregation: {}",
+                    expr
+                ),
             };
             measures.push(measure);
         }

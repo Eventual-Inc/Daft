@@ -1,4 +1,4 @@
-use super::{from_proto, from_proto_box, ToFromProto, ProtoError, ProtoResult};
+use super::{from_proto, from_proto_box, ProtoError, ProtoResult, ToFromProto};
 use crate::{from_proto_err, proto::UNIT, to_proto_err};
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.

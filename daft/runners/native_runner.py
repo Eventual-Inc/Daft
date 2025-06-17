@@ -84,7 +84,7 @@ class NativeRunner(Runner[MicroPartition]):
         builder = builder.optimize()
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
-        builder = _to_from_proto(builder)
+        # builder = _to_from_proto(builder)
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
@@ -103,7 +103,7 @@ class NativeRunner(Runner[MicroPartition]):
             yield result.partition()
 
 
-def _to_from_proto(builder: LogicalPlanBuilder):
+def _to_from_proto(builder: LogicalPlanBuilder) -> LogicalPlanBuilder:
     """This is a testing utility which mutably roundtrips an *optimized* plan through daft-proto."""
     from daft.daft import to_from_proto
     from daft.logical.builder import LogicalPlanBuilder

@@ -1,7 +1,7 @@
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-use crate::proto::{ToFromProto, ProtoError};
+use crate::proto::{ProtoError, ToFromProto};
 
 /// Expose via python to avoid circular dependency if this were a LogicalPlan rust method.
 #[pyfunction]
