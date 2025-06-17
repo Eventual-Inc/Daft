@@ -17,6 +17,7 @@ from typing import (
 
 import daft.daft as native
 from daft import context
+from daft.api_annotations import ExpressionPublicAPI
 from daft.daft import (
     CountMode,
     ImageFormat,
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
     EncodingCodec = Literal["deflate", "gzip", "gz", "utf-8", "utf8" "zlib"]
 
 
+@ExpressionPublicAPI
 def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
 
@@ -114,6 +116,7 @@ def lit(value: object) -> Expression:
     return Expression._from_pyexpr(lit_value)
 
 
+@ExpressionPublicAPI
 def col(name: str) -> Expression:
     """Creates an Expression referring to the column with the provided name.
 
@@ -153,6 +156,7 @@ def _resolved_col(name: str) -> Expression:
     return Expression._from_pyexpr(resolved_col(name))
 
 
+@ExpressionPublicAPI
 def list_(*items: Expression | str) -> Expression:
     """Constructs a list from the item expressions.
 
@@ -186,6 +190,7 @@ def list_(*items: Expression | str) -> Expression:
     return Expression._from_pyexpr(native.list_([col(i)._expr if isinstance(i, str) else i._expr for i in items]))
 
 
+@ExpressionPublicAPI
 def struct(*fields: Expression | str) -> Expression:
     """Constructs a struct from the input field expressions.
 
@@ -233,6 +238,7 @@ def struct(*fields: Expression | str) -> Expression:
     return Expression._from_pyexpr(f(*pyinputs))
 
 
+@ExpressionPublicAPI
 def interval(
     years: int | None = None,
     months: int | None = None,
@@ -250,6 +256,7 @@ def interval(
     return Expression._from_pyexpr(lit_value)
 
 
+@ExpressionPublicAPI
 def coalesce(*args: Expression) -> Expression:
     """Returns the first non-null value in a list of expressions. If all inputs are null, returns null.
 
@@ -291,61 +298,73 @@ class Expression:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
     @property
+    @ExpressionPublicAPI
     def str(self) -> ExpressionStringNamespace:
         """Access methods that work on columns of strings."""
         return ExpressionStringNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def dt(self) -> ExpressionDatetimeNamespace:
         """Access methods that work on columns of datetimes."""
         return ExpressionDatetimeNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def embedding(self) -> ExpressionEmbeddingNamespace:
         """Access methods that work on columns of embeddings."""
         return ExpressionEmbeddingNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def float(self) -> ExpressionFloatNamespace:
         """Access methods that work on columns of floats."""
         return ExpressionFloatNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def url(self) -> ExpressionUrlNamespace:
         """Access methods that work on columns of URLs."""
         return ExpressionUrlNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def list(self) -> ExpressionListNamespace:
         """Access methods that work on columns of lists."""
         return ExpressionListNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def struct(self) -> ExpressionStructNamespace:
         """Access methods that work on columns of structs."""
         return ExpressionStructNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def map(self) -> ExpressionMapNamespace:
         """Access methods that work on columns of maps."""
         return ExpressionMapNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images."""
         return ExpressionImageNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def partitioning(self) -> ExpressionPartitioningNamespace:
         """Access methods that support partitioning operators."""
         return ExpressionPartitioningNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def json(self) -> ExpressionJsonNamespace:
         """Access methods that work on columns of json."""
         return ExpressionJsonNamespace.from_expression(self)
 
     @property
+    @ExpressionPublicAPI
     def binary(self) -> ExpressionBinaryNamespace:
         """Access binary string operations for this expression.
 
@@ -415,6 +434,7 @@ class Expression:
         """Absolute of a numeric expression."""
         return self.abs()
 
+    @ExpressionPublicAPI
     def abs(self) -> Expression:
         """Absolute of a numeric expression."""
         f = native.get_function_from_registry("abs")
@@ -506,6 +526,7 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr == expr._expr)
 
+    @ExpressionPublicAPI
     def eq_null_safe(self, other: Expression) -> Expression:
         """Performs a null-safe equality comparison between two expressions.
 
@@ -615,6 +636,7 @@ class Expression:
         f = native.get_function_from_registry(func_name)
         return Expression._from_pyexpr(f(self._expr, *expr_args, **expr_kwargs))
 
+    @ExpressionPublicAPI
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name.
 
@@ -648,6 +670,7 @@ class Expression:
         expr = self._expr.alias(name)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
 
@@ -741,16 +764,19 @@ class Expression:
         expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def ceil(self) -> Expression:
         """The ceiling of a numeric expression."""
         f = native.get_function_from_registry("ceil")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def floor(self) -> Expression:
         """The floor of a numeric expression."""
         f = native.get_function_from_registry("floor")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
         """Clips an expression to the given minimum and maximum values.
 
@@ -764,26 +790,31 @@ class Expression:
         f = native.get_function_from_registry("clip")
         return Expression._from_pyexpr(f(self._expr, min_expr, max_expr))
 
+    @ExpressionPublicAPI
     def sign(self) -> Expression:
         """The sign of a numeric expression."""
         f = native.get_function_from_registry("sign")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def signum(self) -> Expression:
         """The signum of a numeric expression."""
         f = native.get_function_from_registry("sign")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def negate(self) -> Expression:
         """The negative of a numeric expression."""
         f = native.get_function_from_registry("negative")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def negative(self) -> Expression:
         """The negative of a numeric expression."""
         f = native.get_function_from_registry("negative")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def round(self, decimals: int | Expression = 0) -> Expression:
         """The round of a numeric expression.
 
@@ -795,76 +826,91 @@ class Expression:
         decimals_expr = Expression._to_expression(decimals)._expr
         return Expression._from_pyexpr(f(self._expr, decimals=decimals_expr))
 
+    @ExpressionPublicAPI
     def sqrt(self) -> Expression:
         """The square root of a numeric expression."""
         f = native.get_function_from_registry("sqrt")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def cbrt(self) -> Expression:
         """The cube root of a numeric expression."""
         f = native.get_function_from_registry("cbrt")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def sin(self) -> Expression:
         """The elementwise sine of a numeric expression."""
         f = native.get_function_from_registry("sin")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def cos(self) -> Expression:
         """The elementwise cosine of a numeric expression."""
         f = native.get_function_from_registry("cos")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def tan(self) -> Expression:
         """The elementwise tangent of a numeric expression."""
         f = native.get_function_from_registry("tan")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def csc(self) -> Expression:
         """The elementwise cosecant of a numeric expression."""
         f = native.get_function_from_registry("csc")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def sec(self) -> Expression:
         """The elementwise secant of a numeric expression."""
         f = native.get_function_from_registry("sec")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def cot(self) -> Expression:
         """The elementwise cotangent of a numeric expression."""
         f = native.get_function_from_registry("cot")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def sinh(self) -> Expression:
         """The elementwise hyperbolic sine of a numeric expression."""
         f = native.get_function_from_registry("sinh")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def cosh(self) -> Expression:
         """The elementwise hyperbolic cosine of a numeric expression."""
         f = native.get_function_from_registry("cosh")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def tanh(self) -> Expression:
         """The elementwise hyperbolic tangent of a numeric expression."""
         f = native.get_function_from_registry("tanh")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def arcsin(self) -> Expression:
         """The elementwise arc sine of a numeric expression."""
         f = native.get_function_from_registry("arcsin")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def arccos(self) -> Expression:
         """The elementwise arc cosine of a numeric expression."""
         f = native.get_function_from_registry("arccos")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def arctan(self) -> Expression:
         """The elementwise arc tangent of a numeric expression."""
         f = native.get_function_from_registry("arctan")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def arctan2(self, other: Expression) -> Expression:
         """Calculates the four quadrant arctangent of coordinates (y, x), in radians.
 
@@ -877,41 +923,49 @@ class Expression:
         f = native.get_function_from_registry("arctan2")
         return Expression._from_pyexpr(f(self._expr, expr._expr))
 
+    @ExpressionPublicAPI
     def arctanh(self) -> Expression:
         """The elementwise inverse hyperbolic tangent of a numeric expression."""
         f = native.get_function_from_registry("arctanh")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def arccosh(self) -> Expression:
         """The elementwise inverse hyperbolic cosine of a numeric expression."""
         f = native.get_function_from_registry("arccosh")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def arcsinh(self) -> Expression:
         """The elementwise inverse hyperbolic sine of a numeric expression."""
         f = native.get_function_from_registry("arcsinh")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def radians(self) -> Expression:
         """The elementwise radians of a numeric expression."""
         f = native.get_function_from_registry("radians")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def degrees(self) -> Expression:
         """The elementwise degrees of a numeric expression."""
         f = native.get_function_from_registry("degrees")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def log2(self) -> Expression:
         """The elementwise log base 2 of a numeric expression."""
         f = native.get_function_from_registry("log2")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def log10(self) -> Expression:
         """The elementwise log base 10 of a numeric expression."""
         f = native.get_function_from_registry("log10")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def log(self, base: float = math.e) -> Expression:  # type: ignore
         """The elementwise log with given base, of a numeric expression.
 
@@ -924,41 +978,49 @@ class Expression:
         expr = f(self._expr, base._expr)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def ln(self) -> Expression:
         """The elementwise natural log of a numeric expression."""
         f = native.get_function_from_registry("ln")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def log1p(self) -> Expression:
         """The ln(self + 1) of a numeric expression."""
         f = native.get_function_from_registry("log1p")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def exp(self) -> Expression:
         """The e^self of a numeric expression."""
         f = native.get_function_from_registry("exp")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def expm1(self) -> Expression:
         """The e^self - 1 of a numeric expression."""
         f = native.get_function_from_registry("expm1")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def bitwise_and(self, other: Expression) -> Expression:
         """Bitwise AND of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
+    @ExpressionPublicAPI
     def bitwise_or(self, other: Expression) -> Expression:
         """Bitwise OR of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
 
+    @ExpressionPublicAPI
     def bitwise_xor(self, other: Expression) -> Expression:
         """Bitwise XOR of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr ^ expr._expr)
 
+    @ExpressionPublicAPI
     def shift_left(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the left (``expr << other``).
 
@@ -968,6 +1030,7 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr << expr._expr)
 
+    @ExpressionPublicAPI
     def shift_right(self, other: Expression) -> Expression:
         """Shifts the bits of an integer expression to the right (``expr >> other``).
 
@@ -981,6 +1044,7 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
+    @ExpressionPublicAPI
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
@@ -992,15 +1056,18 @@ class Expression:
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def count_distinct(self) -> Expression:
         expr = self._expr.count_distinct()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def sum(self) -> Expression:
         """Calculates the sum of the values in the expression."""
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def approx_count_distinct(self) -> Expression:
         """Calculates the approximate number of non-`NULL` distinct values in the expression.
 
@@ -1028,6 +1095,7 @@ class Expression:
         expr = self._expr.approx_count_distinct()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
         """Calculates the approximate percentile(s) for a column of numeric values.
 
@@ -1096,26 +1164,31 @@ class Expression:
         expr = self._expr.approx_percentiles(percentiles)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def mean(self) -> Expression:
         """Calculates the mean of the values in the expression."""
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def stddev(self) -> Expression:
         """Calculates the standard deviation of the values in the expression."""
         expr = self._expr.stddev()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def min(self) -> Expression:
         """Calculates the minimum value in the expression."""
         expr = self._expr.min()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def max(self) -> Expression:
         """Calculates the maximum value in the expression."""
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def bool_and(self) -> Expression:
         """Calculates the boolean AND of all values in a list.
 
@@ -1147,6 +1220,7 @@ class Expression:
         expr = self._expr.bool_and()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def bool_or(self) -> Expression:
         """Calculates the boolean OR of all values in a list.
 
@@ -1178,6 +1252,7 @@ class Expression:
         expr = self._expr.bool_or()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def any_value(self, ignore_nulls: bool = False) -> Expression:
         """Returns any value in the expression.
 
@@ -1187,16 +1262,19 @@ class Expression:
         expr = self._expr.any_value(ignore_nulls)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def skew(self) -> Expression:
         """Calculates the skewness of the values from the expression."""
         expr = self._expr.skew()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def agg_list(self) -> Expression:
         """Aggregates the values in the expression into a list."""
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def agg_set(self) -> Expression:
         """Aggregates the values in the expression into a set (ignoring nulls).
 
@@ -1235,6 +1313,7 @@ class Expression:
         expr = self._expr.agg_set()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def agg_concat(self) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them."""
         expr = self._expr.agg_concat()
@@ -1244,6 +1323,7 @@ class Expression:
         f = native.get_function_from_registry("explode")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
         """Conditionally choose values between two expressions using the current boolean expression as a condition.
 
@@ -1281,6 +1361,7 @@ class Expression:
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
+    @ExpressionPublicAPI
     def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
 
@@ -1338,6 +1419,7 @@ class Expression:
             return_dtype=inferred_return_dtype,
         )(self)
 
+    @ExpressionPublicAPI
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data).
 
@@ -1367,6 +1449,7 @@ class Expression:
         expr = self._expr.is_null()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def not_null(self) -> Expression:
         """Checks if values in the Expression are not Null (a special value indicating missing data).
 
@@ -1396,6 +1479,7 @@ class Expression:
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def fill_null(self, fill_value: Expression) -> Expression:
         """Fills null values in the Expression with the provided fill_value.
 
@@ -1426,6 +1510,7 @@ class Expression:
         expr = self._expr.fill_null(fill_value._expr)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def is_in(self, other: Any) -> Expression:
         """Checks if values in the Expression are in the provided list.
 
@@ -1463,6 +1548,7 @@ class Expression:
         expr = self._expr.is_in([item._expr for item in other])
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def between(self, lower: Any, upper: Any) -> Expression:
         """Checks if values in the Expression are between lower and upper, inclusive.
 
@@ -1497,6 +1583,7 @@ class Expression:
         expr = self._expr.between(lower._expr, upper._expr)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def hash(self, seed: Any | None = None) -> Expression:
         """Hashes the values in the Expression.
 
@@ -1511,6 +1598,7 @@ class Expression:
         """
         return self._eval_expressions("hash", seed=seed)
 
+    @ExpressionPublicAPI
     def minhash(
         self,
         *,
@@ -1539,6 +1627,7 @@ class Expression:
             "minhash", num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
         )
 
+    @ExpressionPublicAPI
     def encode(self, codec: EncodingCodec) -> Expression:
         r"""Encodes the expression (binary strings) using the specified codec.
 
@@ -1585,6 +1674,7 @@ class Expression:
         """
         return self._eval_expressions("encode", codec=codec)
 
+    @ExpressionPublicAPI
     def decode(self, codec: EncodingCodec) -> Expression:
         """Decodes the expression (binary strings) using the specified codec.
 
@@ -1617,14 +1707,17 @@ class Expression:
         """
         return self._eval_expressions("decode", codec=codec)
 
+    @ExpressionPublicAPI
     def try_encode(self, codec: EncodingCodec) -> Expression:
         """Encodes or returns null, see `Expression.encode`."""
         return self._eval_expressions("try_encode", codec=codec)
 
+    @ExpressionPublicAPI
     def try_decode(self, codec: EncodingCodec) -> Expression:
         """Decodes or returns null, see `Expression.decode`."""
         return self._eval_expressions("try_decode", codec=codec)
 
+    @ExpressionPublicAPI
     def deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type.
 
@@ -1642,6 +1735,7 @@ class Expression:
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("deserialize", format, dtype._dtype)
 
+    @ExpressionPublicAPI
     def try_deserialize(self, format: Literal["json"], dtype: DataTypeLike) -> Expression:
         """Deserializes the expression (string) using the specified format and data type, inserting nulls on failures.
 
@@ -1659,6 +1753,7 @@ class Expression:
             dtype = DataType._infer_type(dtype)
         return self._eval_expressions("try_deserialize", format, dtype._dtype)
 
+    @ExpressionPublicAPI
     def serialize(self, format: Literal["json"]) -> Expression:
         """Serializes the expression as a string using the specified format.
 
@@ -1670,6 +1765,7 @@ class Expression:
         """
         return self._eval_expressions("serialize", format)
 
+    @ExpressionPublicAPI
     def jq(self, filter: builtins.str) -> Expression:
         """Applies a [jq](https://jqlang.github.io/jq/manual/) filter to the expression (string), returning the results as a string.
 
@@ -1705,9 +1801,11 @@ class Expression:
         """
         return self._eval_expressions("jq", filter)
 
+    @ExpressionPublicAPI
     def name(self) -> builtins.str:
         return self._expr.name()
 
+    @ExpressionPublicAPI
     def over(self, window: Window) -> Expression:
         """Apply the expression as a window function.
 
@@ -1754,6 +1852,7 @@ class Expression:
         expr = self._expr.over(window._spec)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def lag(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a previous row within a window partition.
 
@@ -1807,6 +1906,7 @@ class Expression:
         expr = self._expr.offset(-offset, default._expr if default is not None else None)
         return Expression._from_pyexpr(expr)
 
+    @ExpressionPublicAPI
     def lead(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a future row within a window partition.
 
@@ -1963,6 +2063,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         io_config = io_config.replace(s3=io_config.s3.replace(max_connections=max_connections))
         return io_config
 
+    @ExpressionPublicAPI
     def download(
         self,
         max_connections: int = 32,
@@ -2023,6 +2124,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             )
         )
 
+    @ExpressionPublicAPI
     def upload(
         self,
         location: str | Expression,
@@ -2082,6 +2184,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 class ExpressionFloatNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.float` attribute."""
 
+    @ExpressionPublicAPI
     def is_nan(self) -> Expression:
         """Checks if values are NaN (a special float value indicating not-a-number).
 
@@ -2114,6 +2217,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("is_nan")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def is_inf(self) -> Expression:
         """Checks if values in the Expression are Infinity.
 
@@ -2148,6 +2252,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("is_inf")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def not_nan(self) -> Expression:
         """Checks if values are not NaN (a special float value indicating not-a-number).
 
@@ -2180,6 +2285,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("not_nan")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def fill_nan(self, fill_value: Expression) -> Expression:
         """Fills NaN values in the Expression with the provided fill_value.
 
@@ -2214,6 +2320,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 class ExpressionDatetimeNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.dt` attribute."""
 
+    @ExpressionPublicAPI
     def date(self) -> Expression:
         """Retrieves the date for a datetime column.
 
@@ -2250,6 +2357,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("date")
 
+    @ExpressionPublicAPI
     def day(self) -> Expression:
         """Retrieves the day for a datetime column.
 
@@ -2286,6 +2394,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("day")
 
+    @ExpressionPublicAPI
     def hour(self) -> Expression:
         """Retrieves the day for a datetime column.
 
@@ -2322,6 +2431,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("hour")
 
+    @ExpressionPublicAPI
     def minute(self) -> Expression:
         """Retrieves the minute for a datetime column.
 
@@ -2358,6 +2468,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("minute")
 
+    @ExpressionPublicAPI
     def second(self) -> Expression:
         """Retrieves the second for a datetime column.
 
@@ -2394,6 +2505,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("second")
 
+    @ExpressionPublicAPI
     def millisecond(self) -> Expression:
         """Retrieves the millisecond for a datetime column.
 
@@ -2427,6 +2539,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("millisecond")
 
+    @ExpressionPublicAPI
     def microsecond(self) -> Expression:
         """Retrieves the microsecond for a datetime column.
 
@@ -2460,6 +2573,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("microsecond")
 
+    @ExpressionPublicAPI
     def nanosecond(self) -> Expression:
         """Retrieves the nanosecond for a datetime column.
 
@@ -2494,6 +2608,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("nanosecond")
 
+    @ExpressionPublicAPI
     def unix_date(self) -> Expression:
         """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
 
@@ -2531,6 +2646,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("unix_date")
 
+    @ExpressionPublicAPI
     def time(self) -> Expression:
         """Retrieves the time for a datetime column.
 
@@ -2567,6 +2683,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("time")
 
+    @ExpressionPublicAPI
     def month(self) -> Expression:
         """Retrieves the month for a datetime column.
 
@@ -2602,6 +2719,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("month")
 
+    @ExpressionPublicAPI
     def quarter(self) -> Expression:
         """Retrieves the quarter for a datetime column.
 
@@ -2637,6 +2755,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("quarter")
 
+    @ExpressionPublicAPI
     def year(self) -> Expression:
         """Retrieves the year for a datetime column.
 
@@ -2672,6 +2791,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("year")
 
+    @ExpressionPublicAPI
     def day_of_week(self) -> Expression:
         """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
 
@@ -2707,6 +2827,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("day_of_week")
 
+    @ExpressionPublicAPI
     def day_of_month(self) -> Expression:
         """Retrieves the day of the month for a datetime column.
 
@@ -2745,6 +2866,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("day_of_month")
 
+    @ExpressionPublicAPI
     def day_of_year(self) -> Expression:
         """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
 
@@ -2783,6 +2905,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("day_of_year")
 
+    @ExpressionPublicAPI
     def week_of_year(self) -> Expression:
         """Retrieves the week of the year for a datetime column.
 
@@ -2821,6 +2944,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("week_of_year")
 
+    @ExpressionPublicAPI
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval.
 
@@ -2860,6 +2984,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("truncate", relative_to, interval=interval)
 
+    @ExpressionPublicAPI
     def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
         """Converts a datetime column to a Unix timestamp. with the specified time unit. (default: seconds).
 
@@ -2897,6 +3022,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("to_unix_epoch", time_unit=time_unit)
 
+    @ExpressionPublicAPI
     def strftime(self, format: str | None = None) -> Expression:
         """Converts a datetime/date column to a string column.
 
@@ -2945,6 +3071,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("strftime", format=format)
 
+    @ExpressionPublicAPI
     def total_seconds(self) -> Expression:
         """Calculates the total number of seconds for a duration column.
 
@@ -2989,6 +3116,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("total_seconds")
 
+    @ExpressionPublicAPI
     def total_milliseconds(self) -> Expression:
         """Calculates the total number of milliseconds for a duration column.
 
@@ -3033,6 +3161,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("total_milliseconds")
 
+    @ExpressionPublicAPI
     def total_microseconds(self) -> Expression:
         """Calculates the total number of microseconds for a duration column.
 
@@ -3077,6 +3206,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("total_microseconds")
 
+    @ExpressionPublicAPI
     def total_nanoseconds(self) -> Expression:
         """Calculates the total number of nanoseconds for a duration column.
 
@@ -3121,6 +3251,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("total_nanoseconds")
 
+    @ExpressionPublicAPI
     def total_minutes(self) -> Expression:
         """Calculates the total number of minutes for a duration column.
 
@@ -3165,6 +3296,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("total_minutes")
 
+    @ExpressionPublicAPI
     def total_hours(self) -> Expression:
         """Calculates the total number of hours for a duration column.
 
@@ -3209,6 +3341,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("total_hours")
 
+    @ExpressionPublicAPI
     def total_days(self) -> Expression:
         """Calculates the total number of days for a duration column.
 
@@ -3257,6 +3390,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 class ExpressionStringNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.str` attribute."""
 
+    @ExpressionPublicAPI
     def contains(self, substr: str | Expression) -> Expression:
         """Checks whether each string contains the given pattern in a string column.
 
@@ -3290,6 +3424,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("utf8_contains")
         return Expression._from_pyexpr(f(self._expr, substr_expr))
 
+    @ExpressionPublicAPI
     def match(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given regular expression pattern in a string column.
 
@@ -3322,6 +3457,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("regexp_match")
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
+    @ExpressionPublicAPI
     def endswith(self, suffix: str | Expression) -> Expression:
         """Checks whether each string ends with the given pattern in a string column.
 
@@ -3355,6 +3491,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         return Expression._from_pyexpr(f(self._expr, suffix_expr))
 
+    @ExpressionPublicAPI
     def startswith(self, prefix: str | Expression) -> Expression:
         """Checks whether each string starts with the given pattern in a string column.
 
@@ -3388,6 +3525,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         return Expression._from_pyexpr(f(self._expr, prefix_expr))
 
+    @ExpressionPublicAPI
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
         r"""Splits each string on the given literal or regex pattern, into a list of strings.
 
@@ -3442,6 +3580,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry(f_name)
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
+    @ExpressionPublicAPI
     def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together.
 
@@ -3478,6 +3617,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         other_expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr) + other_expr
 
+    @ExpressionPublicAPI
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from the first regex match in each string in a string column.
 
@@ -3537,6 +3677,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("regexp_extract")
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
+    @ExpressionPublicAPI
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
 
@@ -3595,6 +3736,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("regexp_extract_all")
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, idx._expr))
 
+    @ExpressionPublicAPI
     def replace(
         self,
         pattern: str | Expression,
@@ -3658,6 +3800,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry(f_name)
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr, replacement_expr._expr))
 
+    @ExpressionPublicAPI
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column.
 
@@ -3687,6 +3830,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("length")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
 
@@ -3716,6 +3860,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("length_bytes")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase.
 
@@ -3745,6 +3890,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("lower")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def upper(self) -> Expression:
         """Convert UTF-8 string to all upper.
 
@@ -3774,6 +3920,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("upper")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def lstrip(self) -> Expression:
         """Strip whitespace from the left side of a UTF-8 string.
 
@@ -3803,6 +3950,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("lstrip")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def rstrip(self) -> Expression:
         """Strip whitespace from the right side of a UTF-8 string.
 
@@ -3832,6 +3980,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("rstrip")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.
 
@@ -3861,6 +4010,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("reverse")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def capitalize(self) -> Expression:
         """Capitalize a UTF-8 string.
 
@@ -3890,6 +4040,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("capitalize")
         return Expression._from_pyexpr(f(self._expr))
 
+    @ExpressionPublicAPI
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
 
@@ -3920,6 +4071,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("left")
         return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
+    @ExpressionPublicAPI
     def right(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) right-most characters of each string.
 
@@ -3950,6 +4102,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("right")
         return Expression._from_pyexpr(f(self._expr, nchars_expr._expr))
 
+    @ExpressionPublicAPI
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string.
 
@@ -3983,6 +4136,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("find")
         return Expression._from_pyexpr(f(self._expr, substr_expr._expr))
 
+    @ExpressionPublicAPI
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Right-pads each string by truncating or padding with the character.
 
@@ -4019,6 +4173,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
+    @ExpressionPublicAPI
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Left-pads each string by truncating on the right or padding with the character.
 
@@ -4054,6 +4209,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("lpad")
         return Expression._from_pyexpr(f(self._expr, length_expr._expr, pad_expr._expr))
 
+    @ExpressionPublicAPI
     def repeat(self, n: int | Expression) -> Expression:
         """Repeats each string n times.
 
@@ -4084,6 +4240,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("repeat")
         return Expression._from_pyexpr(f(self._expr, n_expr._expr))
 
+    @ExpressionPublicAPI
     def like(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
 
@@ -4117,6 +4274,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("like")
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
+    @ExpressionPublicAPI
     def ilike(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case insensitive.
 
@@ -4150,6 +4308,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("ilike")
         return Expression._from_pyexpr(f(self._expr, pattern_expr._expr))
 
+    @ExpressionPublicAPI
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
         """Extract a substring from a string, starting at a specified index and extending for a given length.
 
@@ -4184,6 +4343,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("substr")
         return Expression._from_pyexpr(f(self._expr, start_expr._expr, length_expr._expr))
 
+    @ExpressionPublicAPI
     def to_date(self, format: str) -> Expression:
         """Converts a string to a date using the specified format.
 
@@ -4217,6 +4377,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("to_date")
         return Expression._from_pyexpr(f(self._expr, format=format_expr))
 
+    @ExpressionPublicAPI
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
         """Converts a string to a datetime using the specified format and timezone.
 
@@ -4272,6 +4433,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("to_datetime")
         return Expression._from_pyexpr(f(self._expr, format=format_expr, timezone=timezone_expr))
 
+    @ExpressionPublicAPI
     def normalize(
         self,
         *,
@@ -4332,6 +4494,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             )
         )
 
+    @ExpressionPublicAPI
     def tokenize_encode(
         self,
         tokens_path: str,
@@ -4372,6 +4535,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             special_tokens=special_tokens,
         )
 
+    @ExpressionPublicAPI
     def tokenize_decode(
         self,
         tokens_path: str,
@@ -4404,6 +4568,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             special_tokens=special_tokens,
         )
 
+    @ExpressionPublicAPI
     def count_matches(
         self,
         patterns: Any,
@@ -4449,6 +4614,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
 class ExpressionListNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.list` attribute."""
 
+    @ExpressionPublicAPI
     def join(self, delimiter: str | Expression) -> Expression:
         """Joins every element of a list using the specified string delimiter.
 
@@ -4460,6 +4626,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_join", delimiter)
 
+    @ExpressionPublicAPI
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
@@ -4494,6 +4661,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_value_counts")
 
+    @ExpressionPublicAPI
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
 
@@ -4505,6 +4673,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_count", mode)
 
+    @ExpressionPublicAPI
     def lengths(self) -> Expression:
         """Gets the length of each list.
 
@@ -4520,6 +4689,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 
         return self._eval_expressions("list_count", CountMode.All)
 
+    @ExpressionPublicAPI
     def length(self) -> Expression:
         """Gets the length of each list.
 
@@ -4528,6 +4698,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_count", CountMode.All)
 
+    @ExpressionPublicAPI
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list.
 
@@ -4540,6 +4711,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_get", idx, default)
 
+    @ExpressionPublicAPI
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list.
 
@@ -4552,6 +4724,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_slice", start, end)
 
+    @ExpressionPublicAPI
     def chunk(self, size: int) -> Expression:
         """Splits each list into chunks of the given size.
 
@@ -4562,6 +4735,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_chunk", size)
 
+    @ExpressionPublicAPI
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
 
@@ -4570,6 +4744,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_sum")
 
+    @ExpressionPublicAPI
     def mean(self) -> Expression:
         """Calculates the mean of each list. If no non-null values in a list, the result is null.
 
@@ -4578,6 +4753,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_mean")
 
+    @ExpressionPublicAPI
     def min(self) -> Expression:
         """Calculates the minimum of each list. If no non-null values in a list, the result is null.
 
@@ -4586,6 +4762,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_min")
 
+    @ExpressionPublicAPI
     def max(self) -> Expression:
         """Calculates the maximum of each list. If no non-null values in a list, the result is null.
 
@@ -4594,6 +4771,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_max")
 
+    @ExpressionPublicAPI
     def bool_and(self) -> Expression:
         """Calculates the boolean AND of all values in a list.
 
@@ -4624,6 +4802,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_bool_and")
 
+    @ExpressionPublicAPI
     def bool_or(self) -> Expression:
         """Calculates the boolean OR of all values in a list.
 
@@ -4654,6 +4833,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_bool_or")
 
+    @ExpressionPublicAPI
     def sort(self, desc: bool | Expression | None = None, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
@@ -4684,6 +4864,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
+    @ExpressionPublicAPI
     def distinct(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
@@ -4731,6 +4912,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("list_distinct")
 
+    @ExpressionPublicAPI
     def unique(self) -> Expression:
         """Returns a list of distinct elements in each list, preserving order of first occurrence and ignoring nulls.
 
@@ -4787,6 +4969,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 class ExpressionStructNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.struct` attribute."""
 
+    @ExpressionPublicAPI
     def get(self, name: str) -> Expression:
         """Retrieves one field from a struct column, or all fields with "*".
 
@@ -4802,6 +4985,7 @@ class ExpressionStructNamespace(ExpressionNamespace):
 class ExpressionMapNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.map` attribute."""
 
+    @ExpressionPublicAPI
     def get(self, key: Expression) -> Expression:
         """Retrieves the value for a key in a map column.
 
@@ -4950,6 +5134,7 @@ class ExpressionsProjection(Iterable[Expression]):
 class ExpressionImageNamespace(ExpressionNamespace):
     """Expression operations for image columns. The following methods are available under the `expr.image` attribute."""
 
+    @ExpressionPublicAPI
     def decode(
         self,
         on_error: Literal["raise", "null"] = "raise",
@@ -4973,6 +5158,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
         return Expression._from_pyexpr(f(self._expr, on_error=raise_on_error, mode=image_mode))
 
+    @ExpressionPublicAPI
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
@@ -4990,6 +5176,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         image_format_expr = lit(image_format)._expr
         return Expression._from_pyexpr(f(self._expr, image_format=image_format_expr))
 
+    @ExpressionPublicAPI
     def resize(self, w: int, h: int) -> Expression:
         """Resize image into the provided width and height.
 
@@ -5005,6 +5192,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("image_resize")
         return Expression._from_pyexpr(f(self._expr, w=width, h=height))
 
+    @ExpressionPublicAPI
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
         """Crops images with the provided bounding box.
 
@@ -5026,6 +5214,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         f = native.get_function_from_registry("image_crop")
         return Expression._from_pyexpr(f(self._expr, bbox._expr))
 
+    @ExpressionPublicAPI
     def to_mode(self, mode: str | ImageMode) -> Expression:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
@@ -5039,6 +5228,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
 class ExpressionPartitioningNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.partition` attribute."""
 
+    @ExpressionPublicAPI
     def days(self) -> Expression:
         """Partitioning Transform that returns the number of days since epoch (1970-01-01).
 
@@ -5049,6 +5239,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.partitioning_days())
 
+    @ExpressionPublicAPI
     def hours(self) -> Expression:
         """Partitioning Transform that returns the number of hours since epoch (1970-01-01).
 
@@ -5057,6 +5248,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.partitioning_hours())
 
+    @ExpressionPublicAPI
     def months(self) -> Expression:
         """Partitioning Transform that returns the number of months since epoch (1970-01-01).
 
@@ -5065,6 +5257,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.partitioning_months())
 
+    @ExpressionPublicAPI
     def years(self) -> Expression:
         """Partitioning Transform that returns the number of years since epoch (1970-01-01).
 
@@ -5073,6 +5266,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.partitioning_years())
 
+    @ExpressionPublicAPI
     def iceberg_bucket(self, n: int) -> Expression:
         """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86.
 
@@ -5086,6 +5280,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.partitioning_iceberg_bucket(n))
 
+    @ExpressionPublicAPI
     def iceberg_truncate(self, w: int) -> Expression:
         """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
 
@@ -5103,6 +5298,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
 class ExpressionJsonNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.json` attribute."""
 
+    @ExpressionPublicAPI
     def query(self, jq_query: str) -> Expression:
         """Query JSON data in a column using a JQ-style filter <https://jqlang.github.io/jq/manual/>.
 
@@ -5147,6 +5343,7 @@ class ExpressionJsonNamespace(ExpressionNamespace):
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
     """The following methods are available under the `expr.embedding` attribute."""
 
+    @ExpressionPublicAPI
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings.
 
@@ -5209,6 +5406,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("binary_length")
 
+    @ExpressionPublicAPI
     def concat(self, other: Expression) -> Expression:
         r"""Concatenates two binary strings.
 
@@ -5244,6 +5442,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
         """
         return self._eval_expressions("binary_concat", other)
 
+    @ExpressionPublicAPI
     def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
         r"""Returns a slice of each binary string.
 
