@@ -18,6 +18,7 @@ use crate::{
     },
     stage::{StageContext, StageID},
     utils::channel::{Receiver, ReceiverStream},
+    PipelineNodeSpan, TrackedSpanStream,
 };
 
 #[cfg(feature = "python")]
@@ -114,6 +115,53 @@ pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple
 #[derive(Debug)]
 pub(crate) struct RunningPipelineNode {
     result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
+}
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct TrackedRunningPipelineNode<'a> {
+    result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
+    _span: PipelineNodeSpan<'a>,
+}
+
+impl<'a> TrackedRunningPipelineNode<'a> {
+    #[allow(dead_code)]
+    fn new(
+        result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
+        _span: PipelineNodeSpan<'a>,
+    ) -> Self {
+        Self {
+            result_receiver,
+            _span,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn materialize(
+        self,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> TrackedSpanStream<
+        Box<dyn Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static>,
+        PipelineNodeSpan<'a>,
+    > {
+        let stream = ReceiverStream::new(self.result_receiver).map(Ok);
+
+        let stream = materialize_all_pipeline_outputs(stream, scheduler_handle);
+        TrackedSpanStream::new(Box::new(stream), self._span)
+    }
+
+    pub fn materialize_running(
+        self,
+    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
+    {
+        let stream = self.into_stream().map(Ok);
+        materialize_running_pipeline_outputs(stream)
+    }
+
+    pub fn into_stream(
+        self,
+    ) -> impl Stream<Item = PipelineOutput<SwordfishTask>> + Send + Unpin + 'static {
+        ReceiverStream::new(self.result_receiver)
+    }
 }
 
 impl RunningPipelineNode {

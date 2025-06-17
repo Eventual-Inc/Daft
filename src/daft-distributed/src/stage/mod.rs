@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayLevel;
@@ -22,6 +27,7 @@ use crate::{
     plan::PlanID,
     scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
+    StageSpan, TrackedSpanStream,
 };
 
 mod stage_builder;
@@ -83,37 +89,13 @@ struct OutputChannel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct Stage {
-    id: StageID,
-    type_: StageType,
+    pub(crate) id: StageID,
+    pub(crate) type_: StageType,
     input_channels: Vec<InputChannel>,
     output_channels: Vec<OutputChannel>,
 }
 
 impl Stage {
-    pub(crate) fn run_stage(
-        &self,
-        plan_id: PlanID,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        config: Arc<DaftExecutionConfig>,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-    ) -> DaftResult<RunningStage> {
-        let mut stage_context = StageContext::new(scheduler_handle);
-        match &self.type_ {
-            StageType::MapPipeline { plan } => {
-                let pipeline_node = logical_plan_to_pipeline_node(
-                    plan_id,
-                    self.id.clone(),
-                    plan.clone(),
-                    config,
-                    Arc::new(psets),
-                )?;
-                let running_node = pipeline_node.start(&mut stage_context);
-                Ok(RunningStage::new(running_node, stage_context))
-            }
-            _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
-        }
-    }
-
     /// Get the logical plan for visualization purposes (only for MapPipeline stages)
     pub fn repr_mermaid(
         &self,
@@ -178,13 +160,16 @@ impl Stage {
     }
 }
 
-pub(crate) struct RunningStage {
+pub(crate) struct RunningStage<'a> {
     running_pipeline_node: RunningPipelineNode,
-    stage_context: StageContext,
+    stage_context: StageContext<'a>,
 }
 
-impl RunningStage {
-    fn new(running_pipeline_node: RunningPipelineNode, stage_context: StageContext) -> Self {
+impl<'a> RunningStage<'a> {
+    pub(crate) fn new(
+        running_pipeline_node: RunningPipelineNode,
+        stage_context: StageContext<'a>,
+    ) -> Self {
         Self {
             running_pipeline_node,
             stage_context,
@@ -194,25 +179,23 @@ impl RunningStage {
     pub fn materialize(
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-    ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-        let stream = self.into_stream();
-        materialize_all_pipeline_outputs(stream, scheduler_handle)
-    }
-
-    pub fn into_stream(
-        self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
-    {
-        JoinableForwardingStream::new(
+    ) -> TrackedSpanStream<
+        Box<dyn Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin>,
+        StageSpan<'a>,
+    > {
+        let stream = JoinableForwardingStream::new(
             self.running_pipeline_node.into_stream(),
             self.stage_context.joinset,
-        )
+        );
+
+        let stream = materialize_all_pipeline_outputs(stream, scheduler_handle);
+        TrackedSpanStream::new(Box::new(stream), self.stage_context.span)
     }
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum StageType {
+pub(crate) enum StageType {
     MapPipeline {
         plan: LogicalPlanRef,
     },
@@ -304,19 +287,43 @@ impl StagePlan {
     }
 }
 
+// #[allow(dead_code)]
+// pub(crate) struct StageContext {
+//     pub scheduler_handle: SchedulerHandle<SwordfishTask>,
+//     pub joinset: JoinSet<DaftResult<()>>,
+// }
+
+// impl StageContext {
+//     #[allow(dead_code)]
+//     pub(crate) fn new(scheduler_handle: SchedulerHandle<SwordfishTask>,
+//         // span: StageSpan
+//     ) -> Self {
+//         let joinset = JoinSet::new();
+//         Self {
+//             scheduler_handle,
+//             joinset,
+//         }
+//     }
+// }
+
 #[allow(dead_code)]
-pub(crate) struct StageContext {
+pub(crate) struct StageContext<'a> {
     pub scheduler_handle: SchedulerHandle<SwordfishTask>,
     pub joinset: JoinSet<DaftResult<()>>,
+    pub span: StageSpan<'a>,
 }
 
-impl StageContext {
+impl<'a> StageContext<'a> {
     #[allow(dead_code)]
-    fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
+    pub(crate) fn new(
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+        span: StageSpan<'a>,
+    ) -> Self {
         let joinset = JoinSet::new();
         Self {
             scheduler_handle,
             joinset,
+            span,
         }
     }
 }

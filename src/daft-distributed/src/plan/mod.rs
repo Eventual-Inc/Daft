@@ -23,7 +23,7 @@ pub(crate) use runner::{PlanID, PlanRunner};
 
 static PLAN_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct DistributedPhysicalPlan {
     id: String,
     stage_plan: StagePlan,
@@ -36,7 +36,6 @@ impl DistributedPhysicalPlan {
     ) -> DaftResult<Self> {
         let logical_plan = builder.build();
         let stage_plan = StagePlan::from_logical_plan(logical_plan, config)?;
-
         Ok(Self {
             id: format!("plan_{}", PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed)),
             stage_plan,
@@ -54,6 +53,7 @@ impl DistributedPhysicalPlan {
 
 pub(crate) type PlanResultStream = JoinableForwardingStream<ReceiverStream<MaterializedOutput>>;
 
+#[derive(Debug)]
 pub(crate) struct PlanResult {
     joinset: JoinSet<DaftResult<()>>,
     rx: Receiver<MaterializedOutput>,

@@ -18,6 +18,7 @@ use crate::{
     },
     stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
+    PipelineNodeSpan,
 };
 
 #[allow(dead_code)]
@@ -54,7 +55,7 @@ impl InMemorySourceNode {
         }
     }
 
-    async fn execution_loop(
+    async fn execution_loop<'a>(
         self,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
@@ -136,6 +137,8 @@ impl DistributedPipelineNode for InMemorySourceNode {
     }
 
     fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
+        let span = PipelineNodeSpan::new(self, &stage_context.span.hooks_manager);
+
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.clone().execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
