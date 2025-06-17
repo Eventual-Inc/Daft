@@ -42,7 +42,7 @@ impl OptimizerRule for RewriteCountDistinct {
                     // TODO: Use semantic id or generate random one?
                     Ok(Transformed::yes(Arc::new(Expr::Agg(AggExpr::Count(
                         resolved_col(cd.semantic_id(aggregate.input.schema().as_ref()).id),
-                        CountMode::All,
+                        CountMode::Valid,
                     )))))
                 } else {
                     Ok(Transformed::no(e))
@@ -56,7 +56,7 @@ impl OptimizerRule for RewriteCountDistinct {
 
             let sub_expr_name = sub_expr.semantic_id(aggregate.input.schema().as_ref()).id;
 
-            eprintln!("Sub expr: {}", sub_expr);
+            // TODO: UNDO
             let input_node = if sub_expr.has_compute() {
                 // We need to create a project node to make this a permanent column
                 // Otherwise, distinct with only use it for the groupby and not include in the output
@@ -71,7 +71,6 @@ impl OptimizerRule for RewriteCountDistinct {
                 aggregate.input.clone()
             };
 
-            eprintln!("Input node: {}", input_node.repr_ascii(false));
             let distinct_node = LogicalPlan::Distinct(Distinct::new(
                 input_node,
                 Some(vec![resolved_col(sub_expr_name)]),
@@ -95,6 +94,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
+    use daft_core::prelude::CountMode;
     use daft_dsl::unresolved_col;
     use daft_schema::{dtype::DataType, field::Field};
 
@@ -103,7 +103,6 @@ mod tests {
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             test::assert_optimized_plan_with_rules_eq,
-            Optimizer, OptimizerConfig,
         },
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
@@ -204,10 +203,7 @@ mod tests {
 
         let expected = dummy_scan_node(scan_op)
             .distinct(Some(vec![unresolved_col("a")]))?
-            .aggregate(
-                vec![unresolved_col("a").count(daft_core::prelude::CountMode::All)],
-                vec![],
-            )?
+            .aggregate(vec![unresolved_col("a").count(CountMode::Valid)], vec![])?
             .build();
 
         assert_optimized_plan_eq(plan, expected)?;
@@ -241,7 +237,7 @@ mod tests {
             .distinct(Some(vec![unresolved_col("(a + b)")]))?
             .aggregate(
                 vec![unresolved_col("(a + b)")
-                    .count(daft_core::prelude::CountMode::All)
+                    .count(CountMode::Valid)
                     .alias("a_plus_b_count_distinct")],
                 vec![],
             )?
