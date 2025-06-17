@@ -1,6 +1,7 @@
-use std::{fmt::Write, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use capitalize::Capitalize;
 use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -8,15 +9,14 @@ use daft_io::{IOStatsContext, IOStatsRef};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
+use indexmap::IndexMap;
 use indicatif::HumanCount;
 
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
-    runtime_stats::{
-        AdditionalRuntimeStats, CountingSender, RuntimeStatsBuilder, RuntimeStatsContext,
-    },
+    runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext},
     ExecutionRuntimeContext,
 };
 
@@ -29,34 +29,16 @@ impl RuntimeStatsBuilder for SourceStatsBuilder {
         self
     }
 
-    fn display(&self, _rows_received: u64, rows_emitted: u64) -> String {
-        format!("{} rows emitted", HumanCount(rows_emitted))
-    }
-
-    fn result(&self) -> Box<dyn AdditionalRuntimeStats> {
-        Box::new(SourceStats {})
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct SourceStats {}
-impl AdditionalRuntimeStats for SourceStats {
-    fn display(
+    fn render(
         &self,
-        w: &mut dyn Write,
+        stats: &mut IndexMap<Arc<str>, String>,
         _rows_received: u64,
         rows_emitted: u64,
-        _cpu_us: u64,
-    ) -> Result<(), std::fmt::Error> {
-        use num_format::{Locale, ToFormattedString};
-
-        writeln!(
-            w,
-            "Rows emitted =  {}",
-            rows_emitted.to_formatted_string(&Locale::en)
-        )?;
-
-        Ok(())
+    ) {
+        stats.insert(
+            Arc::from("rows emitted"),
+            HumanCount(rows_emitted).to_string(),
+        );
     }
 }
 
@@ -123,10 +105,12 @@ impl TreeDisplay for SourceNode {
                 }
 
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.result();
+                    let rt_result = self.runtime_stats.render();
 
                     writeln!(display).unwrap();
-                    rt_result.display(&mut display).unwrap();
+                    for (name, value) in rt_result {
+                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                    }
                     let bytes_read = self.io_stats.load_bytes_read();
                     writeln!(
                         display,

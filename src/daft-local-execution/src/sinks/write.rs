@@ -1,7 +1,4 @@
-use std::{
-    fmt::Write,
-    sync::{atomic::AtomicU64, Arc},
-};
+use std::sync::{atomic::AtomicU64, Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
@@ -12,6 +9,8 @@ use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriterFactory};
+use indexmap::IndexMap;
+use indicatif::{HumanBytes, HumanCount};
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -20,7 +19,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    runtime_stats::{AdditionalRuntimeStats, RuntimeStats, RuntimeStatsBuilder},
+    runtime_stats::RuntimeStatsBuilder,
     ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
@@ -33,41 +32,28 @@ impl RuntimeStatsBuilder for WriteStatsBuilder {
         self
     }
 
-    fn display(&self, rows_received: u64, rows_emitted: u64) -> String {
-        format!(
-            "{} rows received, {} rows written, {} bytes written",
-            rows_received,
-            rows_emitted,
-            self.bytes_written
-                .load(std::sync::atomic::Ordering::Relaxed)
-        )
-    }
-
-    fn result(&self) -> Box<dyn AdditionalRuntimeStats> {
-        Box::new(WriteStats {
-            bytes_written: self
-                .bytes_written
-                .load(std::sync::atomic::Ordering::Relaxed),
-        })
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct WriteStats {
-    bytes_written: u64,
-}
-
-impl AdditionalRuntimeStats for WriteStats {
-    fn display(
+    fn render(
         &self,
-        w: &mut dyn Write,
+        stats: &mut IndexMap<Arc<str>, String>,
         rows_received: u64,
         rows_emitted: u64,
-        cpu_us: u64,
-    ) -> Result<(), std::fmt::Error> {
-        RuntimeStats::display_helper(w, rows_received, rows_emitted, cpu_us)?;
-        writeln!(w, "Bytes written: {}", self.bytes_written)?;
-        Ok(())
+    ) {
+        stats.insert(
+            Arc::from("rows received"),
+            HumanCount(rows_received).to_string(),
+        );
+        stats.insert(
+            Arc::from("rows written"),
+            HumanCount(rows_emitted).to_string(),
+        );
+        stats.insert(
+            Arc::from("bytes written"),
+            HumanBytes(
+                self.bytes_written
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .to_string(),
+        );
     }
 }
 

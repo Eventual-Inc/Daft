@@ -1,19 +1,16 @@
-use core::fmt;
-use std::{fmt::Write, sync::Arc};
+use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use indicatif::HumanFloatCount;
+use indexmap::IndexMap;
+use indicatif::{HumanCount, HumanFloatCount};
 use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{
-    runtime_stats::{AdditionalRuntimeStats, RuntimeStats, RuntimeStatsBuilder},
-    ExecutionTaskSpawner,
-};
+use crate::{runtime_stats::RuntimeStatsBuilder, ExecutionTaskSpawner};
 
 pub struct FilterStatsBuilder {}
 
@@ -22,30 +19,24 @@ impl RuntimeStatsBuilder for FilterStatsBuilder {
         self
     }
 
-    fn display(&self, rows_received: u64, rows_emitted: u64) -> String {
-        format!(
-            "{}% selectivity",
-            HumanFloatCount(rows_emitted as f64 / rows_received as f64 * 100.0)
-        )
-    }
-
-    fn result(&self) -> Box<dyn AdditionalRuntimeStats> {
-        Box::new(FilterStats {})
-    }
-}
-
-#[derive(Debug)]
-pub struct FilterStats {}
-
-impl AdditionalRuntimeStats for FilterStats {
-    fn display(
+    fn render(
         &self,
-        w: &mut dyn Write,
+        stats: &mut IndexMap<Arc<str>, String>,
         rows_received: u64,
         rows_emitted: u64,
-        cpu_us: u64,
-    ) -> Result<(), fmt::Error> {
-        RuntimeStats::display_helper(w, rows_received, rows_emitted, cpu_us)
+    ) {
+        stats.insert(
+            Arc::from("rows received"),
+            HumanCount(rows_received).to_string(),
+        );
+        stats.insert(
+            Arc::from("rows emitted"),
+            HumanCount(rows_emitted).to_string(),
+        );
+        stats.insert(
+            Arc::from("selectivity"),
+            HumanFloatCount(rows_emitted as f64 / rows_received as f64 * 100.0).to_string(),
+        );
     }
 }
 

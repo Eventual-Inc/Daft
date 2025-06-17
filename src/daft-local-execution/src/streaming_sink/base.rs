@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -189,8 +190,10 @@ impl TreeDisplay for StreamingSinkNode {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display).unwrap();
+                    let rt_result = self.runtime_stats.render();
+                    for (name, value) in rt_result {
+                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                    }
                 }
             }
         }

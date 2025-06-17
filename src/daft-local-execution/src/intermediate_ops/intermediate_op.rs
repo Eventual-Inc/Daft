@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -18,7 +19,7 @@ use crate::{
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
-        CountingReceiver, CountingSender, EmptyAdditionalStatsBuilder, RuntimeStatsBuilder,
+        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
         RuntimeStatsContext,
     },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
@@ -55,7 +56,7 @@ pub trait IntermediateOperator: Send + Sync {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
     }
     fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
-        Arc::new(EmptyAdditionalStatsBuilder {})
+        Arc::new(BaseStatsBuilder {})
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -208,8 +209,10 @@ impl TreeDisplay for IntermediateNode {
                 }
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
-                    let rt_result = self.runtime_stats.result();
-                    rt_result.display(&mut display).unwrap();
+                    let rt_result = self.runtime_stats.render();
+                    for (name, value) in rt_result {
+                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                    }
                 }
             }
         }

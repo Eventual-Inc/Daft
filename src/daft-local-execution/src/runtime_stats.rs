@@ -1,16 +1,15 @@
-use core::fmt;
 use std::{
-    fmt::Write,
     future::Future,
     pin::Pin,
     sync::{atomic::AtomicU64, Arc},
     task::{Context, Poll},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use common_tracing::should_enable_opentelemetry;
 use daft_micropartition::MicroPartition;
-use indicatif::HumanCount;
+use indexmap::IndexMap;
+use indicatif::{HumanCount, HumanDuration};
 use kanal::SendError;
 use opentelemetry::{global, metrics::Counter, KeyValue};
 use tracing::{instrument::Instrumented, Instrument};
@@ -22,105 +21,45 @@ use crate::{
 };
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
-pub(crate) trait AdditionalRuntimeStats: std::fmt::Debug {
-    fn display(
-        &self,
-        w: &mut dyn Write,
-        rows_received: u64,
-        rows_emitted: u64,
-        cpu_us: u64,
-    ) -> Result<(), fmt::Error>;
-}
-
 pub trait RuntimeStatsBuilder: Send + Sync + std::any::Any {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
 
-    fn display(&self, rows_received: u64, rows_emitted: u64) -> String;
-    fn result(&self) -> Box<dyn AdditionalRuntimeStats>;
+    fn render(&self, stats: &mut IndexMap<Arc<str>, String>, rows_received: u64, rows_emitted: u64);
 }
 
-pub struct EmptyAdditionalStatsBuilder {}
+pub struct BaseStatsBuilder {}
 
-impl EmptyAdditionalStatsBuilder {
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    pub fn result_helper(&self) -> EmptyAdditionalStats {
-        EmptyAdditionalStats {}
+impl BaseStatsBuilder {
+    pub fn render_helper(
+        &self,
+        stats: &mut IndexMap<Arc<str>, String>,
+        rows_received: u64,
+        rows_emitted: u64,
+    ) {
+        stats.insert(
+            Arc::from("rows received"),
+            HumanCount(rows_received).to_string(),
+        );
+        stats.insert(
+            Arc::from("rows emitted"),
+            HumanCount(rows_emitted).to_string(),
+        );
     }
 }
 
-impl RuntimeStatsBuilder for EmptyAdditionalStatsBuilder {
+impl RuntimeStatsBuilder for BaseStatsBuilder {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
 
-    fn display(&self, rows_received: u64, rows_emitted: u64) -> String {
-        format!(
-            "{} rows received, {} rows emitted",
-            HumanCount(rows_received),
-            HumanCount(rows_emitted)
-        )
-    }
-
-    fn result(&self) -> Box<dyn AdditionalRuntimeStats> {
-        Box::new(self.result_helper())
-    }
-}
-
-#[derive(Debug)]
-pub struct EmptyAdditionalStats {}
-
-impl AdditionalRuntimeStats for EmptyAdditionalStats {
-    fn display(
+    fn render(
         &self,
-        w: &mut dyn Write,
+        stats: &mut IndexMap<Arc<str>, String>,
         rows_received: u64,
         rows_emitted: u64,
-        cpu_us: u64,
-    ) -> Result<(), fmt::Error> {
-        RuntimeStats::display_helper(w, rows_received, rows_emitted, cpu_us)
-    }
-}
-
-#[derive(Debug)]
-pub struct RuntimeStats {
-    pub rows_received: u64,
-    pub rows_emitted: u64,
-    pub cpu_us: u64,
-    pub additional: Box<dyn AdditionalRuntimeStats>,
-}
-
-impl RuntimeStats {
-    pub(crate) fn display_helper(
-        w: &mut dyn Write,
-        rows_received: u64,
-        rows_emitted: u64,
-        cpu_us: u64,
-    ) -> Result<(), fmt::Error> {
-        use num_format::{Locale, ToFormattedString};
-        writeln!(
-            w,
-            "Rows received =  {}",
-            rows_received.to_formatted_string(&Locale::en)
-        )?;
-
-        writeln!(
-            w,
-            "Rows emitted =  {}",
-            rows_emitted.to_formatted_string(&Locale::en)
-        )?;
-
-        let tms = (cpu_us as f32) / 1000f32;
-        writeln!(w, "CPU Time = {tms:.2}ms")?;
-
-        Ok(())
-    }
-
-    pub fn display(&self, w: &mut dyn Write) -> Result<(), fmt::Error> {
-        self.additional
-            .display(w, self.rows_received, self.rows_emitted, self.cpu_us)
+    ) {
+        // Default is render the stats as is
+        self.render_helper(stats, rows_received, rows_emitted);
     }
 }
 
@@ -233,7 +172,7 @@ impl RuntimeStatsContext {
     }
 
     pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
-        Self::new_with_builder(node_info, Arc::new(EmptyAdditionalStatsBuilder::new()))
+        Self::new_with_builder(node_info, Arc::new(BaseStatsBuilder {}))
     }
 
     // pub(crate) fn record_update(&self, )
@@ -264,23 +203,26 @@ impl RuntimeStatsContext {
         }
     }
 
-    pub(crate) fn display(&self) -> String {
-        self.additional.display(
-            self.rows_received
-                .load(std::sync::atomic::Ordering::Relaxed),
-            self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
-        )
-    }
+    /// Export the runtime stats out as a pair of (name, value)
+    /// Name is a small description. Can be rendered with different casing
+    /// Value can be a string. Function is responsible for formatting the value
+    /// This is used to update in-progress stats and final stats in UI clients
+    pub(crate) fn render(&self) -> IndexMap<Arc<str>, String> {
+        let rows_received = self
+            .rows_received
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let rows_emitted = self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed);
+        let cpu_us = self.cpu_us.load(std::sync::atomic::Ordering::Relaxed);
 
-    pub(crate) fn result(&self) -> RuntimeStats {
-        RuntimeStats {
-            rows_received: self
-                .rows_received
-                .load(std::sync::atomic::Ordering::Relaxed),
-            rows_emitted: self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
-            cpu_us: self.cpu_us.load(std::sync::atomic::Ordering::Relaxed),
-            additional: self.additional.result(),
-        }
+        let mut stats = IndexMap::new();
+        stats.insert(
+            Arc::from("cpu time"),
+            HumanDuration(Duration::from_micros(cpu_us)).to_string(),
+        );
+
+        self.additional
+            .render(&mut stats, rows_received, rows_emitted);
+        stats
     }
 }
 
@@ -437,7 +379,7 @@ mod tests {
         let subscriber = Box::new(MockSubscriber::new());
         let ctx = RuntimeStatsContext::new_with_subscribers(
             node_info,
-            Arc::new(EmptyAdditionalStatsBuilder::new()),
+            Arc::new(BaseStatsBuilder {}),
             vec![subscriber as _],
         );
 
