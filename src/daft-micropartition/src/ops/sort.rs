@@ -15,7 +15,6 @@ impl MicroPartition {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<Self> {
-        println!("sorting descending={descending:?}, nulls first={nulls_first:?}");
         let io_stats = IOStatsContext::new("MicroPartition::sort");
 
         let tables = self.concat_or_get(io_stats)?;
