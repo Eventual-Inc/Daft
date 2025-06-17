@@ -24,6 +24,27 @@ pub trait ToFromProto {
     fn to_proto(&self) -> ProtoResult<Self::Message>;
 }
 
+/// Blank impl for converting to/from arc'd types.
+impl<T> ToFromProto for Arc<T>
+where
+    T: ToFromProto,
+{
+    type Message = T::Message;
+
+    /// Convert a message to this rust type.
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self::new(T::from_proto(message)?))
+    }
+
+    /// Converts an instance of this type to a protobuf message.
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        self.as_ref().to_proto()
+    }
+}
+
 /// Macro to assert that an Option<T> is not None, returning a ProtoError::FromProto if it is.
 #[macro_export]
 macro_rules! non_null {
@@ -41,13 +62,17 @@ macro_rules! non_null {
 
 // todo(conner): better helpers and names
 // Helper to convert a list of proto expressions to new daft ir expressions.
-pub(crate) fn from_protos(exprs: Vec<daft_proto::protos::daft::v1::Expr>) -> ProtoResult<Vec<crate::Expr>> {
+pub(crate) fn from_protos(
+    exprs: Vec<daft_proto::protos::daft::v1::Expr>,
+) -> ProtoResult<Vec<crate::Expr>> {
     exprs.into_iter().map(crate::Expr::from_proto).collect()
 }
 
 // todo(conner): better helpers and names
 // Helper to convert a list of ExprRef (typically in the ir) to proto expressions.
-pub(crate) fn to_protos(exprs: &[crate::ExprRef]) -> ProtoResult<Vec<daft_proto::protos::daft::v1::Expr>> {
+pub(crate) fn to_protos(
+    exprs: &[crate::ExprRef],
+) -> ProtoResult<Vec<daft_proto::protos::daft::v1::Expr>> {
     exprs.iter().map(|e| e.to_proto()).collect()
 }
 

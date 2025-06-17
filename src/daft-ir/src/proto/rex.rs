@@ -1,17 +1,15 @@
-use daft_dsl::{
-    functions::{FunctionRegistry, FUNCTION_REGISTRY},
-    ExprRef,
-};
-
 use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
 use crate::{
-    from_proto_err, non_null, not_implemented_err, not_optimized_err, proto::{from_proto_vec, to_proto_vec, UNIT}
+    from_proto_err, non_null, not_implemented_err, not_optimized_err,
+    proto::{from_proto_vec, to_proto_vec, UNIT},
 };
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
 #[rustfmt::skip]
 mod ir {
     pub use crate::rex::*;
+    pub use crate::functions;
+    pub use crate::CountMode;
     pub use crate::Schema;
 }
 
@@ -19,6 +17,7 @@ mod ir {
 #[rustfmt::skip]
 mod proto {
     pub use daft_proto::protos::daft::v1::*;
+    pub use daft_proto::protos::daft::v1::agg::Variant as AggVariant;
     pub use daft_proto::protos::daft::v1::expr::Variant as ExprVariant;
     pub use daft_proto::protos::daft::v1::literal::Variant as LiteralVariant;
 }
@@ -38,7 +37,7 @@ impl ToFromProto for ir::Expr {
                 Self::Alias(expr, name)
             }
             proto::ExprVariant::Agg(agg) => {
-                let agg = ir::AggExpr::from_proto(agg)?;
+                let agg = ir::AggExpr::from_proto(*agg)?;
                 Self::Agg(agg)
             }
             proto::ExprVariant::BinaryOp(binary_op) => {
@@ -56,12 +55,9 @@ impl ToFromProto for ir::Expr {
                 let dtype = from_proto(cast.dtype)?;
                 Self::Cast(expr, dtype)
             }
-            proto::ExprVariant::Function(_) => {
-                not_implemented_err!("function")
-                // Self::Function {
-                //     func: ir::FunctionExpr::from_proto(function)?,
-                //     inputs: vec![], // TODO: implement inputs
-                // }
+            proto::ExprVariant::Function(function) => {
+                let func = from_proto(Some(function))?;
+                Self::ScalarFunction(func)
             }
             proto::ExprVariant::Over(_) => {
                 not_implemented_err!("over")
@@ -159,7 +155,7 @@ impl ToFromProto for ir::Expr {
                 )
             }
             Self::Agg(agg_expr) => {
-                let agg = agg_expr.to_proto()?;
+                let agg = agg_expr.to_proto()?.into();
                 proto::ExprVariant::Agg(agg)
             }
             Self::BinaryOp { op, left, right } => {
@@ -267,15 +263,19 @@ impl ToFromProto for ir::Expr {
                 )
             }
             Self::ScalarFunction(scalar_function) => {
-                not_implemented_err!("scalar_function")
+                let function = scalar_function.to_proto()?;
+                proto::ExprVariant::Function(function)
             }
-            Self::Subquery(subquery) => {
+            Self::Subquery(_) => {
+                // todo(conner)
                 not_implemented_err!("subquery")
             }
-            Self::InSubquery(expr, subquery) => {
+            Self::InSubquery(..) => {
+                // todo(conner)
                 not_implemented_err!("in_subquery")
             }
-            Self::Exists(subquery) => {
+            Self::Exists(_) => {
+                // todo(conner)
                 not_implemented_err!("exists")
             }
         };
@@ -291,7 +291,7 @@ impl ToFromProto for ir::Column {
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self> {
         // we only ever produce resolved columns
-        let column  = ir::ResolvedColumn::Basic(message.name.into());
+        let column = ir::ResolvedColumn::Basic(message.name.into());
         Ok(Self::Resolved(column))
     }
 
@@ -316,14 +316,204 @@ impl ToFromProto for ir::Column {
 }
 
 impl ToFromProto for ir::AggExpr {
-    type Message = proto::AggExpr;
+    type Message = proto::Agg;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self> {
-        not_implemented_err!("expr_agg")
+        let agg = match message.variant.unwrap() {
+            proto::AggVariant::SetFunction(set_function) => {
+                let name = set_function.name.as_str();
+                let arg = set_function.args[0].clone(); // hack because I know we only support one atm.
+                let arg = ir::Expr::from_proto(arg)?.into();
+                let is_all = set_function.is_all;
+                // behold, the aggregation registry!
+                match name {
+                    "count" => Self::Count(arg, ir::CountMode::Valid),
+                    "count_star" => Self::Count(arg, ir::CountMode::All),
+                    "count_nulls" => Self::Count(arg, ir::CountMode::Null),
+                    "sum" => Self::Sum(arg),
+                    "mean" => Self::Mean(arg),
+                    "stddev" => Self::Stddev(arg),
+                    "min" => Self::Min(arg),
+                    "max" => Self::Max(arg),
+                    "bool_and" => Self::BoolAnd(arg),
+                    "bool_or" => Self::BoolOr(arg),
+                    "any_value" => Self::AnyValue(arg, true), // TODO: handle ignore_nulls
+                    "agg_list" => Self::List(arg),
+                    "agg_set" => Self::Set(arg),
+                    "agg_concat" => Self::Concat(arg),
+                    "skew" => Self::Skew(arg),
+                    _ => not_implemented_err!("unrecognized aggregation function: {}", name),
+                }
+            }
+            proto::AggVariant::ApproxPercentile(_) => {
+                not_implemented_err!("approx_percentile");
+                // let expr = from_proto_arc(non_null!(approx_percentile.expr))?;
+                // let percentiles = approx_percentile.percentiles.iter().map(|p| FloatWrapper(*p)).collect();
+                // Self::ApproxPercentile(ApproxPercentileParams {
+                //     child: expr,
+                //     percentiles,
+                //     force_list_output: approx_percentile.force_list_output,
+                // })
+            }
+            proto::AggVariant::ApproxSketch(_) => {
+                not_implemented_err!("approx_sketch");
+                // let expr = from_proto_arc(non_null!(approx_sketch.expr))?;
+                // let sketch_type = match approx_sketch.sketch_type {
+                //     1 => SketchType::DDSketch,
+                //     2 => SketchType::HyperLogLog,
+                //     _ => return Err(ProtoError::FromProto("Invalid sketch type".to_string())),
+                // };
+                // Self::ApproxSketch(expr, sketch_type)
+            }
+            proto::AggVariant::MergeSketch(_) => {
+                not_implemented_err!("merge_sketch");
+                // let expr = from_proto_arc(non_null!(merge_sketch.expr))?;
+                // let sketch_type = match merge_sketch.sketch_type {
+                //     1 => SketchType::DDSketch,
+                //     2 => SketchType::HyperLogLog,
+                //     _ => return Err(ProtoError::FromProto("Invalid sketch type".to_string())),
+                // };
+                // Self::MergeSketch(expr, sketch_type)
+            }
+            proto::AggVariant::MapGroups(_) => {
+                not_implemented_err!("map_groups");
+                // let func = from_proto_arc(non_null!(map_groups.func))?;
+                // let inputs = map_groups.inputs.into_iter()
+                //     .map(|input| ir::Expr::from_proto(input).map(|e| e.into()))
+                //     .collect::<ProtoResult<Vec<_>>>()?;
+                // Self::MapGroups { func, inputs }
+            }
+        };
+        Ok(agg)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
-        not_implemented_err!("expr_agg")
+        let variant = match self {
+            Self::Count(expr, count_mode) => {
+                let name = match count_mode {
+                    ir::CountMode::Valid => "count",
+                    ir::CountMode::All => "count_star", // !! not to be confused with COUNT(ALL x) !!
+                    ir::CountMode::Null => "count_nulls",
+                };
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: name.to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::CountDistinct(expr) => {
+                // COUNT(DISTINCT <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "count".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: false,
+                })
+            }
+            Self::Sum(expr) => {
+                // SUM([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "sum".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Mean(expr) => {
+                // MEAN([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "mean".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Stddev(expr) => {
+                // STDDEV([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "stddev".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Min(expr) => {
+                // MIN([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "min".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Max(expr) => {
+                // MAX([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "max".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::BoolAnd(expr) => {
+                // BOOL_AND([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "bool_and".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::BoolOr(expr) => {
+                // BOOL_OR([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "bool_or".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::AnyValue(expr, _) => {
+                // ANY_VALUE([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "any_value".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::List(expr) => {
+                // AGG_LIST([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "agg_list".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Set(expr) => {
+                // AGG_SET([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "agg_set".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Concat(expr) => {
+                // AGG_CONCAT([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "agg_concat".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Skew(expr) => {
+                // SKEW([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "skew".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::MapGroups { .. } => not_implemented_err!("map_groups"),
+            Self::ApproxPercentile(_) => not_implemented_err!("approx_percentile"),
+            Self::ApproxCountDistinct(_) => not_implemented_err!("approx_count_distinct"),
+            Self::ApproxSketch(expr, sketch_type) => not_implemented_err!("approx_sketch"),
+            Self::MergeSketch(expr, sketch_type) => not_implemented_err!("merge_sketch"),
+        };
+        Ok(Self::Message {
+            variant: Some(variant),
+        })
     }
 }
 
@@ -345,11 +535,7 @@ impl ToFromProto for ir::functions::ScalarFunction {
     fn from_proto(message: Self::Message) -> ProtoResult<Self> {
         // lookup in registry by name (that's all we have atm).
         let name = message.name;
-        let func = FUNCTION_REGISTRY
-            .read()
-            .expect("Failed to get FUNCTION_REGISTRY read lock")
-            .get(&name)
-            .expect("Missing function implementation, should have been impossible.");
+        let func = ir::functions::get_function(&name);
 
         // Convert arguments before doing resolution again since it's not possible to lookup resolved functions.
         let inputs = ir::functions::FunctionArgs::from_proto(non_null!(message.args))?;
@@ -392,7 +578,7 @@ impl ToFromProto for ir::functions::FunctionArgs<ir::ExprRef> {
     }
 }
 
-impl ToFromProto for ir::functions::FunctionArg<ExprRef> {
+impl ToFromProto for ir::functions::FunctionArg<ir::ExprRef> {
     type Message = proto::function::Arg;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
@@ -438,7 +624,7 @@ impl ToFromProto for ir::expr::WindowExpr {
 impl ToFromProto for ir::expr::Subquery {
     type Message = proto::Subquery;
 
-    fn from_proto(message: Self::Message) -> ProtoResult<Self> {
+    fn from_proto(_message: Self::Message) -> ProtoResult<Self> {
         not_implemented_err!("expr_subquery")
     }
 
@@ -663,15 +849,4 @@ fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
             format!("{}{}.{:0scale$}", sign, integral, decimals)
         }
     }
-}
-
-// Helper function for plan ref
-fn get_plan_ref(qualifier: Option<u64>, alias: Option<String>) -> ir::PlanRef {
-    if let Some(qualifier) = qualifier {
-        return ir::PlanRef::Id(qualifier as usize);
-    }
-    if let Some(alias) = alias {
-        return ir::PlanRef::Alias(alias.into());
-    }
-    unreachable!("expected either a qualifier or alias.")
 }

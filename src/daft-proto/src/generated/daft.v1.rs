@@ -246,7 +246,7 @@ pub mod expr {
         #[prost(message, tag = "2")]
         Alias(::prost::alloc::boxed::Box<super::Alias>),
         #[prost(message, tag = "3")]
-        Agg(super::AggExpr),
+        Agg(::prost::alloc::boxed::Box<super::Agg>),
         #[prost(message, tag = "4")]
         BinaryOp(::prost::alloc::boxed::Box<super::BinaryOp>),
         #[prost(message, tag = "5")]
@@ -532,7 +532,7 @@ pub mod window_expr {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
         #[prost(message, tag = "1")]
-        Agg(super::AggExpr),
+        Agg(::prost::alloc::boxed::Box<super::Agg>),
         #[prost(bool, tag = "2")]
         RowNumber(bool),
         #[prost(bool, tag = "3")]
@@ -657,17 +657,11 @@ pub mod subquery_test {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AggExpr {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub args: ::prost::alloc::vec::Vec<Expr>,
-    #[prost(bool, tag = "3")]
-    pub distinct: bool,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Rel {
-    #[prost(oneof = "rel::Variant", tags = "1, 2")]
+    #[prost(
+        oneof = "rel::Variant",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23"
+    )]
     pub variant: ::core::option::Option<rel::Variant>,
 }
 /// Nested message and enum types in `Rel`.
@@ -675,9 +669,54 @@ pub mod rel {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
         #[prost(message, tag = "1")]
-        Source(::prost::alloc::boxed::Box<super::RelSource>),
+        Aggregate(::prost::alloc::boxed::Box<super::RelAggregate>),
         #[prost(message, tag = "2")]
+        Concat(::prost::alloc::boxed::Box<super::RelConcat>),
+        #[prost(message, tag = "3")]
+        Distinct(::prost::alloc::boxed::Box<super::RelDistinct>),
+        #[prost(message, tag = "4")]
+        Except(::prost::alloc::boxed::Box<super::RelExcept>),
+        #[prost(message, tag = "5")]
+        Filter(::prost::alloc::boxed::Box<super::RelFilter>),
+        #[prost(message, tag = "6")]
+        Intersect(::prost::alloc::boxed::Box<super::RelIntersect>),
+        #[prost(message, tag = "7")]
+        Join(::prost::alloc::boxed::Box<super::RelJoin>),
+        #[prost(message, tag = "8")]
+        Limit(::prost::alloc::boxed::Box<super::RelLimit>),
+        #[prost(message, tag = "9")]
         Project(::prost::alloc::boxed::Box<super::RelProject>),
+        #[prost(message, tag = "10")]
+        Sink(::prost::alloc::boxed::Box<super::RelSink>),
+        #[prost(message, tag = "11")]
+        Sort(::prost::alloc::boxed::Box<super::RelSort>),
+        #[prost(message, tag = "12")]
+        Source(::prost::alloc::boxed::Box<super::RelSource>),
+        #[prost(message, tag = "13")]
+        Union(::prost::alloc::boxed::Box<super::RelUnion>),
+        #[prost(message, tag = "14")]
+        Window(::prost::alloc::boxed::Box<super::RelWindow>),
+        /// --
+        #[prost(message, tag = "15")]
+        ActorPoolProject(::prost::alloc::boxed::Box<super::RelActorPoolProject>),
+        #[prost(message, tag = "16")]
+        Explode(::prost::alloc::boxed::Box<super::RelExplode>),
+        #[prost(message, tag = "17")]
+        MonotonicallyIncreasingId(
+            ::prost::alloc::boxed::Box<super::RelMonotonicallyIncreasingId>,
+        ),
+        #[prost(message, tag = "18")]
+        Pivot(::prost::alloc::boxed::Box<super::RelPivot>),
+        #[prost(message, tag = "19")]
+        Repartition(::prost::alloc::boxed::Box<super::RelRepartition>),
+        #[prost(message, tag = "20")]
+        Sample(::prost::alloc::boxed::Box<super::RelSample>),
+        #[prost(message, tag = "21")]
+        SubqueryAlias(::prost::alloc::boxed::Box<super::RelSubqueryAlias>),
+        #[prost(message, tag = "22")]
+        TopN(::prost::alloc::boxed::Box<super::RelTopN>),
+        #[prost(message, tag = "23")]
+        Unpivot(::prost::alloc::boxed::Box<super::RelUnpivot>),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -686,6 +725,146 @@ pub struct RelSource {
     pub schema: ::core::option::Option<Schema>,
     #[prost(message, optional, boxed, tag = "2")]
     pub info: ::core::option::Option<::prost::alloc::boxed::Box<SourceInfo>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelProject {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, repeated, tag = "2")]
+    pub projections: ::prost::alloc::vec::Vec<Expr>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelActorPoolProject {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelFilter {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub predicate: ::core::option::Option<::prost::alloc::boxed::Box<Expr>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelLimit {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(uint64, tag = "2")]
+    pub limit: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelExplode {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, repeated, tag = "2")]
+    pub projections: ::prost::alloc::vec::Vec<Expr>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelUnpivot {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelSort {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelRepartition {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelDistinct {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelAggregate {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, repeated, tag = "2")]
+    pub measures: ::prost::alloc::vec::Vec<Measure>,
+    #[prost(message, repeated, tag = "3")]
+    pub groups: ::prost::alloc::vec::Vec<Expr>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelPivot {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelConcat {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub lhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub rhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelUnion {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub lhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub rhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(bool, tag = "3")]
+    pub is_all: bool,
+    #[prost(bool, tag = "4")]
+    pub is_by_name: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelIntersect {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub lhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub rhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(bool, tag = "3")]
+    pub is_all: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelExcept {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub lhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub rhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(bool, tag = "3")]
+    pub is_all: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelJoin {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub lhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub rhs: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelSink {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelSample {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelMonotonicallyIncreasingId {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelSubqueryAlias {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelWindow {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelTopN {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceInfo {
@@ -728,12 +907,6 @@ pub mod source_info {
         #[prost(message, tag = "2")]
         ScanInfo(::prost::alloc::boxed::Box<ScanInfo>),
     }
-}
-/// Columns in pushdowns are not bound in the representation.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Columns {
-    #[prost(string, repeated, tag = "1")]
-    pub columns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartitionFields {
@@ -795,10 +968,20 @@ pub struct Pushdowns {
     #[prost(message, optional, boxed, tag = "2")]
     pub partition_filter: ::core::option::Option<::prost::alloc::boxed::Box<Expr>>,
     #[prost(message, optional, tag = "3")]
-    pub columns: ::core::option::Option<Columns>,
+    pub columns: ::core::option::Option<pushdowns::Columns>,
     #[prost(uint64, optional, tag = "4")]
     pub limit: ::core::option::Option<u64>,
 }
+/// Nested message and enum types in `Pushdowns`.
+pub mod pushdowns {
+    /// Columns in pushdowns are not bound in the representation.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Columns {
+        #[prost(string, repeated, tag = "1")]
+        pub columns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    }
+}
+/// ScanTasks is just typed list.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScanTasks {
     #[prost(message, repeated, tag = "1")]
@@ -811,12 +994,124 @@ pub struct ScanTask {
     #[prost(bytes = "vec", tag = "1")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
+/// See SQL <aggregate function> for details on measure, we will have a filter field at some point.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RelProject {
-    #[prost(message, optional, boxed, tag = "1")]
-    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
-    #[prost(message, repeated, tag = "2")]
-    pub projections: ::prost::alloc::vec::Vec<Expr>,
+pub struct Measure {
+    #[prost(message, optional, tag = "1")]
+    pub agg: ::core::option::Option<Agg>,
+    /// The logical plans reify bindings as alias expressions.
+    /// This is not desireable and does not accurately model the domain, but
+    /// it's fine and I can re-create the binding alias with this optional field.
+    ///
+    /// optional Expr filter = 3;
+    #[prost(string, optional, tag = "2")]
+    pub alias: ::core::option::Option<::prost::alloc::string::String>,
+}
+/// See SQL-99 <aggregate function> for variants.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Agg {
+    #[prost(oneof = "agg::Variant", tags = "1, 2, 3, 4, 5")]
+    pub variant: ::core::option::Option<agg::Variant>,
+}
+/// Nested message and enum types in `Agg`.
+pub mod agg {
+    /// avg, max, min, sum, stddev, skew
+    /// any, every, some, bool_and, bool_or
+    /// count, count_all, count_nulls
+    /// any_value
+    /// agg_list, agg_set, agg_concat
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct SetFunction {
+        #[prost(string, tag = "1")]
+        pub name: ::prost::alloc::string::String,
+        #[prost(message, repeated, tag = "2")]
+        pub args: ::prost::alloc::vec::Vec<super::Expr>,
+        #[prost(bool, tag = "3")]
+        pub is_all: bool,
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct ApproxPercentile {
+        #[prost(message, optional, boxed, tag = "1")]
+        pub expr: ::core::option::Option<::prost::alloc::boxed::Box<super::Expr>>,
+        #[prost(double, repeated, tag = "2")]
+        pub percentiles: ::prost::alloc::vec::Vec<f64>,
+        #[prost(bool, tag = "3")]
+        pub force_list_output: bool,
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct ApproxSketch {
+        #[prost(message, optional, boxed, tag = "1")]
+        pub expr: ::core::option::Option<::prost::alloc::boxed::Box<super::Expr>>,
+        #[prost(enumeration = "SketchType", tag = "2")]
+        pub sketch_type: i32,
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct MergeSketch {
+        #[prost(message, optional, boxed, tag = "1")]
+        pub expr: ::core::option::Option<::prost::alloc::boxed::Box<super::Expr>>,
+        #[prost(enumeration = "SketchType", tag = "2")]
+        pub sketch_type: i32,
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct MapGroups {
+        #[prost(message, optional, boxed, tag = "1")]
+        pub func: ::core::option::Option<::prost::alloc::boxed::Box<super::Expr>>,
+        #[prost(message, repeated, tag = "2")]
+        pub inputs: ::prost::alloc::vec::Vec<super::Expr>,
+    }
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum SketchType {
+        Unspecified = 0,
+        Dd = 1,
+        Hll = 2,
+    }
+    impl SketchType {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Unspecified => "SKETCH_TYPE_UNSPECIFIED",
+                Self::Dd => "SKETCH_TYPE_DD",
+                Self::Hll => "SKETCH_TYPE_HLL",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "SKETCH_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+                "SKETCH_TYPE_DD" => Some(Self::Dd),
+                "SKETCH_TYPE_HLL" => Some(Self::Hll),
+                _ => None,
+            }
+        }
+    }
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(message, tag = "1")]
+        SetFunction(SetFunction),
+        /// -- special forms
+        #[prost(message, tag = "2")]
+        ApproxPercentile(::prost::alloc::boxed::Box<ApproxPercentile>),
+        #[prost(message, tag = "3")]
+        ApproxSketch(::prost::alloc::boxed::Box<ApproxSketch>),
+        #[prost(message, tag = "4")]
+        MergeSketch(::prost::alloc::boxed::Box<MergeSketch>),
+        #[prost(message, tag = "5")]
+        MapGroups(::prost::alloc::boxed::Box<MapGroups>),
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -1010,6 +1305,7 @@ impl Quantifier {
         }
     }
 }
+/// Daft models binary operators as their own type, but this should be generalized at some point.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Operator {

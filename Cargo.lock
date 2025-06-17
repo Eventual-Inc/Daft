@@ -2758,6 +2758,7 @@ dependencies = [
  "bincode",
  "common-error",
  "common-scan-info",
+ "daft-core",
  "daft-dsl",
  "daft-functions",
  "daft-logical-plan",

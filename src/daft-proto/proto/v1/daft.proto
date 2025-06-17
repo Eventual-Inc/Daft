@@ -173,7 +173,7 @@ message Expr {
   oneof variant {
     Column column = 1;
     Alias alias = 2;
-    AggExpr agg = 3;
+    Agg agg = 3;
     BinaryOp binary_op = 4;
     Cast cast = 5;
     Function function = 6;
@@ -353,7 +353,7 @@ message WindowFunction {
 
 message WindowExpr {
   oneof variant {
-    AggExpr agg = 1;
+    Agg agg = 1;
     bool row_number = 2;
     bool rank = 3;
     bool dense_rank = 4;
@@ -403,7 +403,6 @@ message SubqueryComp {
   repeated Expr args = 2;
   Comparison comparison = 3;
   Quantifier quantifier = 4;
-
 }
 
 // SQL `<comp op>` for use in the `<quantified comparison predicate`
@@ -444,12 +443,7 @@ message SubqueryTest {
   }
 }
 
-message AggExpr {
-  string name = 1;
-  repeated Expr args = 2;
-  bool distinct = 3;
-}
-
+// Daft models binary operators as their own type, but this should be generalized at some point.
 enum Operator {
   OPERATOR_UNSPECIFIED = 0;
   OPERATOR_EQ = 1;
@@ -487,14 +481,139 @@ enum JoinSide {
 
 message Rel {
   oneof variant {
-    RelSource source = 1;
-    RelProject project = 2;
+    RelAggregate aggregate = 1;
+    RelConcat concat = 2;
+    RelDistinct distinct = 3;
+    RelExcept except = 4;
+    RelFilter filter = 5;
+    RelIntersect intersect = 6;
+    RelJoin join = 7;
+    RelLimit limit = 8;
+    RelProject project = 9;
+    RelSink sink = 10;
+    RelSort sort = 11;
+    RelSource source = 12;
+    RelUnion union = 13;
+    RelWindow window = 14;
+    //--
+    RelActorPoolProject actor_pool_project = 15;
+    RelExplode explode = 16;
+    RelMonotonicallyIncreasingId monotonically_increasing_id = 17;
+    RelPivot pivot = 18;
+    RelRepartition repartition = 19;
+    RelSample sample = 20;
+    RelSubqueryAlias subquery_alias = 21;
+    RelTopN top_n = 22;
+    RelUnpivot unpivot = 23;
   }
 }
 
 message RelSource {
   Schema schema = 1;
   SourceInfo info = 2;
+}
+
+message RelProject {
+  Rel input = 1;
+  repeated Expr projections = 2;
+}
+
+message RelActorPoolProject {
+  Rel input = 1;
+}
+
+message RelFilter {
+  Rel input = 1;
+  Expr predicate = 2;
+}
+
+message RelLimit {
+  Rel input = 1;
+  uint64 limit = 2;
+}
+
+message RelExplode {
+  Rel input = 1;
+  repeated Expr projections = 2;
+}
+
+message RelUnpivot {
+  Rel input = 1;
+}
+
+message RelSort {
+  Rel input = 1;
+}
+
+message RelRepartition {
+  Rel input = 1;
+}
+
+message RelDistinct {
+  Rel input = 1;
+}
+
+message RelAggregate {
+  Rel input = 1;
+  repeated Measure measures = 2;
+  repeated Expr groups = 3;
+}
+
+message RelPivot {
+  Rel input = 1;
+}
+
+message RelConcat {
+  Rel lhs = 1;
+  Rel rhs = 2;
+}
+
+message RelUnion {
+  Rel lhs = 1;
+  Rel rhs = 2;
+  bool is_all = 3;
+  bool is_by_name = 4;
+}
+
+message RelIntersect {
+  Rel lhs = 1;
+  Rel rhs = 2;
+  bool is_all = 3;
+}
+
+message RelExcept {
+  Rel lhs = 1;
+  Rel rhs = 2;
+  bool is_all = 3;
+}
+
+message RelJoin {
+  Rel lhs = 1;
+  Rel rhs = 2;
+}
+
+message RelSink {
+  Rel input = 1;
+}
+
+message RelSample {
+  Rel input = 1;
+}
+
+message RelMonotonicallyIncreasingId {
+  Rel input = 1;
+}
+
+message RelSubqueryAlias {
+  Rel input = 1;
+}
+
+message RelWindow {
+  Rel input = 1;
+}
+
+message RelTopN {
+  Rel input = 1;
 }
 
 message SourceInfo {
@@ -518,11 +637,6 @@ message SourceInfo {
     Pushdowns pushdowns = 3;
     ScanTasks tasks = 4;
   }
-}
-
-// Columns in pushdowns are not bound in the representation.
-message Columns {
-  repeated string columns = 1;
 }
 
 message PartitionFields {
@@ -563,8 +677,14 @@ message Pushdowns {
   optional Expr partition_filter = 2;
   optional Columns columns = 3;
   optional uint64 limit = 4;
+
+  // Columns in pushdowns are not bound in the representation.
+  message Columns {
+    repeated string columns = 1;
+  }
 }
 
+// ScanTasks is just typed list.
 message ScanTasks {
   repeated ScanTask tasks = 1;
 }
@@ -575,7 +695,62 @@ message ScanTask {
   bytes payload = 1;
 }
 
-message RelProject {
-  Rel input = 1;
-  repeated Expr projections = 2;
+// See SQL <aggregate function> for details on measure, we will have a filter field at some point.
+message Measure {
+  Agg agg = 1;
+  // The logical plans reify bindings as alias expressions.
+  // This is not desireable and does not accurately model the domain, but
+  // it's fine and I can re-create the binding alias with this optional field.
+  optional string alias = 2; 
+  // optional Expr filter = 3;
+}
+
+// See SQL-99 <aggregate function> for variants.
+message Agg {
+  oneof variant {
+    SetFunction set_function = 1;
+    //-- special forms
+    ApproxPercentile approx_percentile = 2;
+    ApproxSketch approx_sketch = 3;
+    MergeSketch merge_sketch = 4;
+    MapGroups map_groups = 5;
+  }
+
+  // avg, max, min, sum, stddev, skew
+  // any, every, some, bool_and, bool_or
+  // count, count_all, count_nulls
+  // any_value
+  // agg_list, agg_set, agg_concat
+  message SetFunction {
+    string name = 1; 
+    repeated Expr args = 2;
+    bool is_all = 3;
+  }
+
+  message ApproxPercentile {
+    Expr expr = 1;
+    repeated double percentiles = 2;
+    bool force_list_output = 3;
+  }
+
+  message ApproxSketch {
+    Expr expr = 1;
+    SketchType sketch_type = 2;
+  }
+
+  message MergeSketch {
+    Expr expr = 1;
+    SketchType sketch_type = 2;
+  }
+
+  enum SketchType {
+    SKETCH_TYPE_UNSPECIFIED = 0;
+    SKETCH_TYPE_DD = 1;
+    SKETCH_TYPE_HLL = 2;
+  }
+
+  message MapGroups {
+    Expr func = 1;
+    repeated Expr inputs = 2;
+  }
 }

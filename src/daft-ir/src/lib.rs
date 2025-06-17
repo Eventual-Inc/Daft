@@ -4,11 +4,13 @@ pub(crate) mod proto;
 //   DAFT IR ORGANIZATION VIA RE-EXPORTS
 // ---------------------------------------
 
-
 // todo(conner): consider scan, partition, pushdown mod
-pub use common_scan_info::Pushdowns;
-pub use common_scan_info::{PartitionField, PartitionTransform};
-pub use common_scan_info::{ScanState, ScanTaskLike, ScanTaskLikeRef};
+pub use common_scan_info::{
+    PartitionField, PartitionTransform, Pushdowns, ScanState, ScanTaskLike, ScanTaskLikeRef,
+};
+
+// todo(conner): why here?
+pub use daft_core::count_mode::CountMode;
 
 pub use crate::{
     rel::{LogicalPlan, LogicalPlanRef},
@@ -23,8 +25,18 @@ pub mod rex {
 
 #[rustfmt::skip]
 pub mod functions {
-    // pub use daft_functions::*;
+    use std::sync::Arc;
+
     pub use daft_dsl::functions::*;
+
+    // Link the function infallibly .. you may add error handling later.
+    pub fn get_function(name: &str) -> Arc<dyn ScalarFunctionFactory + 'static> {
+        FUNCTION_REGISTRY
+        .read()
+        .expect("Failed to get FUNCTION_REGISTRY read lock")
+        .get(&name)
+        .expect("Missing function implementation, should have been impossible.")
+    }
 }
 
 #[rustfmt::skip]
@@ -32,25 +44,31 @@ pub mod rel {
     use std::sync::Arc;
     use crate::rex::Expr;
 
+    use common_error::DaftError;
+    use common_error::DaftResult;
     pub use daft_logical_plan::*;
     pub use daft_logical_plan::ops::*;
     use crate::schema::Schema;
+
+    /// Consider updating other set operators to use the setq as it's better practice.
+    pub use daft_logical_plan::ops::SetQuantifier;
+    pub use daft_logical_plan::ops::UnionStrategy;
 
     /// Keep scan info together..
     pub use daft_logical_plan::source_info::*;
     pub use common_scan_info::PhysicalScanInfo;
 
-    /// Creates a new source variant.
-    pub fn new_source<S, I>(schema: S, info: I) -> Source
+    /// Creates a new source relational operator.
+    pub fn new_source<S, I>(schema: S, info: I) -> DaftResult<Source>
     where
         S: Into<Arc<Schema>>,
         I: Into<Arc<SourceInfo>>,
      {
-        Source::new(schema.into(), info.into())
+        Ok(Source::new(schema.into(), info.into()))
     }
 
-    /// Creates a new projection variant.
-    pub fn new_project<I, P, E>(input: I, projections: P) -> Project
+    /// Creates a new projection relational operator.
+    pub fn new_project<I, P, E>(input: I, projections: P) -> DaftResult<Project>
     where
         I: Into<Arc<LogicalPlan>>,
         P: IntoIterator<Item = E>,
@@ -58,7 +76,102 @@ pub mod rel {
     {
         let input: Arc<LogicalPlan> = input.into();
         let projections: Vec<Arc<Expr>> = projections.into_iter().map(|e| e.into()).collect();
-        Project::new(input, projections).expect("construction should be infallible.")
+        Project::new(input, projections)
+    }
+
+    /// Creates a new filter relational operator.
+    pub fn new_filter<I, P>(input: I, predicate: P) -> DaftResult<Filter>
+    where
+        I: Into<Arc<LogicalPlan>>,
+        P: Into<Arc<Expr>>,
+    {
+        let input: Arc<LogicalPlan> = input.into();
+        let predicate: Arc<Expr> = predicate.into();
+        Ok(Filter { plan_id: None, input, predicate, stats_state: stats::StatsState::NotMaterialized })
+    }
+
+    /// Creates a new limit relational operator.
+    pub fn new_limit<I>(input: I, limit: u64) -> DaftResult<Limit>
+    where
+        I: Into<Arc<LogicalPlan>>,
+    {
+        let input: Arc<LogicalPlan> = input.into();
+        let limit: i64 = limit.try_into().map_err(|_| DaftError::ValueError("limit too large".to_string()))?;
+        Ok(Limit { plan_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
+    }
+
+    /// Creates a new distinct relational operator.
+    pub fn new_distinct<I>(input: I) -> DaftResult<Distinct>
+    where
+        I: Into<Arc<LogicalPlan>>,
+    {
+        let input: Arc<LogicalPlan> = input.into();
+        Ok(Distinct { plan_id: None, input, stats_state: stats::StatsState::NotMaterialized })
+    }
+
+    /// Creates a new concat relational operator.
+    pub fn new_concat<R>(lhs: R, rhs: R) -> DaftResult<Concat>
+    where
+        R: Into<Arc<LogicalPlan>>,
+    {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        Ok(Concat { plan_id: None, input: lhs, other: rhs, stats_state: stats::StatsState::NotMaterialized })
+    }
+
+    /// Creates a new intersect relational operator.
+    pub fn new_intersect<R>(lhs: R, rhs: R, is_all: bool) -> DaftResult<Intersect>
+    where
+        R: Into<Arc<LogicalPlan>>,
+    {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        Ok(Intersect { plan_id: None, lhs, rhs, is_all })
+    }
+
+    /// Creates a new union relational operator.
+    pub fn new_union<R>(lhs: R, rhs: R, is_all: bool, is_by_name: bool) -> DaftResult<Union>
+    where
+        R: Into<Arc<LogicalPlan>>,
+    {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        let quantifier = if is_all { SetQuantifier::All } else { SetQuantifier::Distinct};
+        let strategy = if is_by_name { UnionStrategy::ByName } else { UnionStrategy::Positional };
+        Ok(Union { plan_id: None, lhs, rhs, quantifier, strategy })
+    }
+
+    /// Creates a new except relational operator.
+    pub fn new_except<R>(lhs: R, rhs: R, is_all: bool) -> DaftResult<Except>
+    where
+        R: Into<Arc<LogicalPlan>>,
+    {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        Ok(Except { plan_id: None, lhs, rhs, is_all })
+    }
+
+    /// Creates a new aggregation relational operator.
+    pub fn new_aggregate<I, A, G, E>(input: I, aggs: A, groups: G) -> DaftResult<Aggregate>
+    where
+        I: Into<Arc<LogicalPlan>>,
+        A: IntoIterator<Item = E>,
+        G: IntoIterator<Item = E>,
+        E: Into<Arc<Expr>>,
+     {
+        // Going through the builder for this because there's logic in the constructor, which
+        // is package private with a package private return type, neither of which I wish to change now.
+        let input = input.into();
+        let agg_exprs = aggs.into_iter().map(|e| e.into()).collect();
+        let groupby_exprs = groups.into_iter().map(|e| e.into()).collect();
+        let builder = LogicalPlanBuilder::new(input, None);
+        let builder = builder.aggregate(agg_exprs, groupby_exprs)?;
+        // We just created this, so we immediately take back ownership of it, the builer arc'd it.
+        if let LogicalPlan::Aggregate(aggregate) = Arc::try_unwrap(builder.plan).unwrap_or_else(|_| panic!("Expected LogicalPlan::Aggregate!")) {
+            return Ok(aggregate)
+        } else {
+            return Err(DaftError::InternalError(format!("Expected LogicalPlan::Aggregate!")))
+        }
     }
 }
 
