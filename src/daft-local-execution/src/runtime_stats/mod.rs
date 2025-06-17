@@ -19,7 +19,7 @@ use daft_micropartition::MicroPartition;
 use kanal::SendError;
 use parking_lot::Mutex;
 use tokio::{
-    sync::{mpsc, watch},
+    sync::{mpsc, oneshot, watch},
     task::JoinHandle,
     time::interval,
 };
@@ -46,6 +46,7 @@ use crate::{
 pub struct RuntimeStatsEventHandler {
     senders: Arc<Mutex<HashMap<String, watch::Sender<Option<RuntimeStatsEvent>>>>>,
     new_receiver_tx: mpsc::UnboundedSender<(String, watch::Receiver<Option<RuntimeStatsEvent>>)>,
+    flush_tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
     _handle: JoinHandle<()>,
 }
 
@@ -56,16 +57,54 @@ impl std::fmt::Debug for RuntimeStatsEventHandler {
 }
 
 impl RuntimeStatsEventHandler {
-    // Mostly used for testing purposes so we can inje
-    fn new_with_subscribers(subscribers: Arc<Vec<Arc<dyn RuntimeStatsSubscriber>>>) -> Self {
+    pub async fn flush(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (tx, rx) = oneshot::channel();
+        self.flush_tx.send(tx)?;
+        rx.await?;
+        Ok(())
+    }
+
+    pub fn new() -> Self {
+        let mut subscribers: Vec<Arc<dyn RuntimeStatsSubscriber>> = Vec::new();
+
+        if should_enable_opentelemetry() {
+            subscribers.push(Arc::new(OpenTelemetrySubscriber::new()));
+        }
+
+        if DashboardSubscriber::is_enabled() {
+            subscribers.push(DashboardSubscriber::new());
+        }
+
+        #[cfg(debug_assertions)]
+        if let Ok(s) = std::env::var("DAFT_DEV_ENABLE_RUNTIME_STATS_DBG") {
+            let s = s.to_lowercase();
+            match s.as_ref() {
+                "1" | "true" => {
+                    subscribers.push(Arc::new(DebugSubscriber));
+                }
+                _ => {}
+            }
+        }
+
+        let subscribers = Arc::new(subscribers);
+        let throttle_interval = Duration::from_millis(500);
+        Self::new_impl(subscribers, throttle_interval)
+    }
+
+    // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
+    fn new_impl(
+        subscribers: Arc<Vec<Arc<dyn RuntimeStatsSubscriber>>>,
+        throttle_interval: Duration,
+    ) -> Self {
         let senders = Arc::new(Mutex::new(HashMap::new()));
         let (new_receiver_tx, mut new_receiver_rx) = mpsc::unbounded_channel();
+        let (flush_tx, mut flush_rx) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
 
         let rt = get_io_runtime(true);
         let handle = rt.runtime.spawn(async move {
             let mut last_sent: HashMap<String, Instant> = HashMap::new();
             let mut receivers: HashMap<String, watch::Receiver<Option<RuntimeStatsEvent>>> = HashMap::new();
-            let throttle_interval = Duration::from_millis(500);
+
             let mut interval = interval(throttle_interval);
 
             loop {
@@ -98,6 +137,24 @@ impl RuntimeStatsEventHandler {
                     Some((key, rx)) = new_receiver_rx.recv() => {
                         receivers.insert(key, rx);
                     }
+                    Some(flush_response) = flush_rx.recv() => {
+                         // Process all events immediately
+                         for rx in receivers.values_mut() {
+                             if rx.has_changed().unwrap_or(false) {
+                                 let event = rx.borrow_and_update().clone();
+                                 if let Some(event) = event {
+                                    for subscriber in subscribers.iter() {
+                                        if let Err(e) = subscriber.handle_event(&event) {
+                                            log::error!("Failed to handle event: {}", e);
+                                        }
+                                    }
+                                 }
+                             }
+                         }
+                         let _ = flush_response.send(());
+                     }
+
+
                 }
             }
         });
@@ -105,9 +162,11 @@ impl RuntimeStatsEventHandler {
         Self {
             senders,
             new_receiver_tx,
+            flush_tx,
             _handle: handle,
         }
     }
+
     fn get_or_create_sender(&self, key: String) -> watch::Sender<Option<RuntimeStatsEvent>> {
         let mut senders = self.senders.lock();
         if let Some(sender) = senders.get(&key) {
@@ -118,32 +177,6 @@ impl RuntimeStatsEventHandler {
             let _ = self.new_receiver_tx.send((key, rx));
             tx
         }
-    }
-
-    pub fn new() -> Self {
-        let mut subscribers: Vec<Arc<dyn RuntimeStatsSubscriber>> = Vec::new();
-
-        if should_enable_opentelemetry() {
-            subscribers.push(Arc::new(OpenTelemetrySubscriber::new()));
-        }
-
-        if DashboardSubscriber::is_enabled() {
-            subscribers.push(DashboardSubscriber::new());
-        }
-
-        #[cfg(debug_assertions)]
-        if let Ok(s) = std::env::var("DAFT_DEV_ENABLE_RUNTIME_STATS_DBG") {
-            let s = s.to_lowercase();
-            match s.as_ref() {
-                "1" | "true" => {
-                    subscribers.push(Arc::new(DebugSubscriber));
-                }
-                _ => {}
-            }
-        }
-
-        let subscribers = Arc::new(subscribers);
-        Self::new_with_subscribers(subscribers)
     }
 }
 
@@ -472,11 +505,14 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
+        let producer = RuntimeEventsProducer::new(handler.clone(), rt_context);
 
         // Send multiple events rapidly
         producer.mark_rows_received(100);
@@ -484,7 +520,7 @@ mod tests {
         producer.mark_rows_received(300);
 
         // Wait for processing
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(15)).await;
 
         // Should only get 1 call due to throttling
         assert_eq!(mock_subscriber.get_total_calls(), 1);
@@ -496,7 +532,11 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
 
         let node_info1 = create_node_info("node1", 1);
         let node_info2 = create_node_info("node2", 2);
@@ -511,7 +551,7 @@ mod tests {
         producer2.mark_rows_received(200);
 
         // Wait for processing
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(15)).await;
 
         // Should get 2 calls (one for each node)
         assert_eq!(mock_subscriber.get_total_calls(), 2);
@@ -523,29 +563,43 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
-        let producer = RuntimeEventsProducer::new(handler, rt_context);
+        let producer = RuntimeEventsProducer::new(handler.clone(), rt_context);
 
         // Send first event
         producer.mark_rows_received(100);
-        sleep(Duration::from_millis(100)).await;
-        assert_eq!(mock_subscriber.get_total_calls(), 1);
+        assert_eq!(
+            mock_subscriber.get_total_calls(),
+            0,
+            "No materialized events should be sent yet"
+        );
 
         // Send second event before 500ms elapsed
         producer.mark_rows_received(200);
-        sleep(Duration::from_millis(100)).await;
-        assert_eq!(mock_subscriber.get_total_calls(), 1); // Still 1
+        sleep(Duration::from_millis(15)).await;
 
-        // Wait for throttle interval to pass
-        sleep(Duration::from_millis(500)).await;
+        assert_eq!(
+            mock_subscriber.get_total_calls(),
+            1,
+            "should only be a single event sent to subscribers"
+        );
 
         // Send third event
         producer.mark_rows_received(300);
-        sleep(Duration::from_millis(100)).await;
-        assert_eq!(mock_subscriber.get_total_calls(), 2); // Now 2
+        assert_eq!(mock_subscriber.get_total_calls(), 1); // Still 1
+        sleep(Duration::from_millis(15)).await;
+
+        assert_eq!(
+            mock_subscriber.get_total_calls(),
+            2,
+            "Third event should trigger a call"
+        );
     }
 
     #[tokio::test]
@@ -554,8 +608,11 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
         let producer = RuntimeEventsProducer::new(handler, rt_context);
@@ -564,7 +621,7 @@ mod tests {
         producer.record_elapsed_cpu_time(Duration::from_micros(1000));
         producer.mark_rows_emitted(50);
 
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(15)).await;
 
         // Only 1 call since all operations are on same NodeInfo within throttle window
         assert_eq!(mock_subscriber.get_total_calls(), 1);
@@ -587,14 +644,17 @@ mod tests {
             subscriber1.clone() as Arc<dyn RuntimeStatsSubscriber>,
             subscriber2.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         producer.mark_rows_received(100);
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(15)).await;
 
         // Both subscribers should receive the event
         assert_eq!(subscriber1.get_total_calls(), 1);
@@ -623,14 +683,17 @@ mod tests {
             failing_subscriber as Arc<dyn RuntimeStatsSubscriber>,
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         producer.mark_rows_received(100);
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(15)).await;
 
         // Mock subscriber should still receive event despite other failing
         assert_eq!(mock_subscriber.get_total_calls(), 1);
@@ -669,8 +732,11 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("rapid_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
         let producer = RuntimeEventsProducer::new(handler, rt_context);
@@ -680,7 +746,7 @@ mod tests {
             producer.mark_rows_received(i * 10);
         }
 
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(15)).await;
 
         // Should only get 1 event due to throttling
         assert_eq!(mock_subscriber.get_total_calls(), 1);
@@ -698,8 +764,11 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("mixed_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
         let producer = RuntimeEventsProducer::new(handler, rt_context);
@@ -711,7 +780,7 @@ mod tests {
         producer.mark_rows_received(200); // Additional increment
         producer.record_elapsed_cpu_time(Duration::from_micros(1500));
 
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(15)).await;
 
         assert_eq!(mock_subscriber.get_total_calls(), 1);
 
@@ -730,8 +799,11 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
-
+        let throttle_interval = Duration::from_millis(10);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
+            subscribers,
+            throttle_interval,
+        ));
         let node_info = create_node_info("fast_query", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
         let producer = RuntimeEventsProducer::new(handler, rt_context);
