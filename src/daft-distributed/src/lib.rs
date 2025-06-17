@@ -81,15 +81,21 @@ impl Drop for StageSpan<'_> {
 }
 
 #[derive(Debug)]
-pub(crate) struct PipelineNodeSpan<'a> {
-    pipeline_node: &'a dyn DistributedPipelineNode,
-    hooks_manager: &'a HooksManager,
+pub(crate) struct PipelineNodeSpan {
+    pipeline_node: Arc<dyn DistributedPipelineNode>,
+    hooks_manager: Arc<HooksManager>,
 }
 
-impl<'a> PipelineNodeSpan<'a> {
+impl std::fmt::Debug for PipelineNodeSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PipelineNodeSpan").finish()
+    }
+}
+
+impl PipelineNodeSpan {
     pub(crate) fn new(
-        pipeline_node: &'a dyn DistributedPipelineNode,
-        hooks_manager: &'a HooksManager,
+        pipeline_node: Arc<dyn DistributedPipelineNode>,
+        hooks_manager: Arc<HooksManager>,
     ) -> Self {
         hooks_manager.emit(&PlanEvent::PipelineNodeStarted {
             pipeline_node,
@@ -102,7 +108,7 @@ impl<'a> PipelineNodeSpan<'a> {
     }
 }
 
-impl Drop for PipelineNodeSpan<'_> {
+impl Drop for PipelineNodeSpan {
     fn drop(&mut self) {
         self.hooks_manager.emit(&PlanEvent::PipelineNodeCompleted {
             pipeline_node: self.pipeline_node,
@@ -129,12 +135,12 @@ pub(crate) enum PlanEvent<'a> {
         plan_id: &'a str,
     },
     PipelineNodeStarted {
-        pipeline_node: &'a dyn DistributedPipelineNode,
-        plan_id: &'a str,
+        pipeline_node: Arc<dyn DistributedPipelineNode>,
+        plan_id: Arc<str>,
     },
     PipelineNodeCompleted {
-        pipeline_node: &'a dyn DistributedPipelineNode,
-        plan_id: &'a str,
+        pipeline_node: Arc<dyn DistributedPipelineNode>,
+        plan_id: Arc<str>,
     },
 }
 

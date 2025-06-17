@@ -17,8 +17,7 @@ use crate::{
         task::{SchedulingStrategy, SwordfishTask},
     },
     stage::{StageContext, StageID},
-    utils::channel::{create_channel, Sender},
-    PipelineNodeSpan,
+    utils::channel::{create_channel, Sender}, PipelineNodeSpan,
 };
 
 #[allow(dead_code)]
@@ -55,7 +54,7 @@ impl InMemorySourceNode {
         }
     }
 
-    async fn execution_loop<'a>(
+    async fn execution_loop(
         self,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
@@ -137,13 +136,12 @@ impl DistributedPipelineNode for InMemorySourceNode {
     }
 
     fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let span = PipelineNodeSpan::new(self, &stage_context.span.hooks_manager);
-
+        let span = PipelineNodeSpan::new(self.clone(),stage_context.span.hooks_manager.clone())
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.clone().execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        RunningPipelineNode::new(result_rx, span)
     }
     fn plan_id(&self) -> &PlanID {
         &self.plan_id

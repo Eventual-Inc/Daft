@@ -78,7 +78,7 @@ pub(crate) enum PipelineOutput<T: Task> {
 pub(crate) trait DistributedPipelineNode: Send + Sync {
     fn name(&self) -> &'static str;
     fn children(&self) -> Vec<&dyn DistributedPipelineNode>;
-    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode;
+    fn start<'a>(&'a self, stage_context: &'a mut StageContext<'a>) -> RunningPipelineNode<'a>;
     fn plan_id(&self) -> &PlanID;
     fn stage_id(&self) -> &StageID;
     fn node_id(&self) -> &NodeID;
@@ -115,19 +115,14 @@ pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple
 #[derive(Debug)]
 pub(crate) struct RunningPipelineNode {
     result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
-}
-#[allow(dead_code)]
-#[derive(Debug)]
-pub(crate) struct TrackedRunningPipelineNode<'a> {
-    result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
-    _span: PipelineNodeSpan<'a>,
+    _span: PipelineNodeSpan,
 }
 
-impl<'a> TrackedRunningPipelineNode<'a> {
+impl RunningPipelineNode {
     #[allow(dead_code)]
     fn new(
         result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
-        _span: PipelineNodeSpan<'a>,
+        _span: PipelineNodeSpan,
     ) -> Self {
         Self {
             result_receiver,
@@ -141,7 +136,7 @@ impl<'a> TrackedRunningPipelineNode<'a> {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> TrackedSpanStream<
         Box<dyn Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static>,
-        PipelineNodeSpan<'a>,
+        PipelineNodeSpan,
     > {
         let stream = ReceiverStream::new(self.result_receiver).map(Ok);
 
@@ -151,45 +146,14 @@ impl<'a> TrackedRunningPipelineNode<'a> {
 
     pub fn materialize_running(
         self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
-    {
-        let stream = self.into_stream().map(Ok);
-        materialize_running_pipeline_outputs(stream)
-    }
+    ) -> TrackedSpanStream<
+        Box<dyn Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static>,
+        PipelineNodeSpan,
+    > {
+        let stream = ReceiverStream::new(self.result_receiver).map(Ok);
 
-    pub fn into_stream(
-        self,
-    ) -> impl Stream<Item = PipelineOutput<SwordfishTask>> + Send + Unpin + 'static {
-        ReceiverStream::new(self.result_receiver)
-    }
-}
-
-impl RunningPipelineNode {
-    #[allow(dead_code)]
-    fn new(result_receiver: Receiver<PipelineOutput<SwordfishTask>>) -> Self {
-        Self { result_receiver }
-    }
-
-    #[allow(dead_code)]
-    pub fn into_inner(self) -> Receiver<PipelineOutput<SwordfishTask>> {
-        self.result_receiver
-    }
-
-    #[allow(dead_code)]
-    pub fn materialize(
-        self,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-    ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-        let stream = self.into_stream().map(Ok);
-        materialize_all_pipeline_outputs(stream, scheduler_handle)
-    }
-
-    pub fn materialize_running(
-        self,
-    ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
-    {
-        let stream = self.into_stream().map(Ok);
-        materialize_running_pipeline_outputs(stream)
+        let stream = materialize_running_pipeline_outputs(stream);
+        TrackedSpanStream::new(Box::new(stream), self._span)
     }
 
     pub fn into_stream(

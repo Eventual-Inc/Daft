@@ -200,7 +200,7 @@ impl ActorUDF {
     #[allow(clippy::too_many_arguments)]
     async fn execution_loop_fused(
         self,
-        input: RunningPipelineNode,
+        input: RunningPipelineNode<'_>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
@@ -385,7 +385,7 @@ impl DistributedPipelineNode for ActorUDF {
         let execution_loop = self.clone().execution_loop_fused(input_node, result_tx);
         stage_context.joinset.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        RunningPipelineNode::new(result_rx, todo!())
     }
 
     fn plan_id(&self) -> &PlanID {
