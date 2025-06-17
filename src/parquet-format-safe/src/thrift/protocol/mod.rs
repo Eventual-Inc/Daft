@@ -164,7 +164,7 @@ pub trait TInputProtocol: Sized {
             TType::I32 => self.read_i32().map(|_| ()),
             TType::I64 => self.read_i64().map(|_| ()),
             TType::Double => self.read_double().map(|_| ()),
-            TType::String => self.read_string().map(|_| ()),
+            TType::Binary => self.read_bytes().map(|_| ()),
             TType::Struct => {
                 self.read_struct_begin()?;
                 loop {
@@ -705,8 +705,8 @@ pub enum TType {
     I32,
     /// Signed 64-bit int.
     I64,
-    /// UTF-8 string.
-    String,
+    /// Binary or UTF-8 string. Based on the Thrift compact protocol: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
+    Binary,
     /// UTF-7 string. *Unsupported*.
     Utf7,
     /// Thrift struct.
@@ -734,7 +734,7 @@ impl Display for TType {
             TType::I16 => write!(f, "i16"),
             TType::I32 => write!(f, "i32"),
             TType::I64 => write!(f, "i64"),
-            TType::String => write!(f, "string"),
+            TType::Binary => write!(f, "binary"),
             TType::Utf7 => write!(f, "UTF7"),
             TType::Struct => write!(f, "struct"),
             TType::Map => write!(f, "map"),

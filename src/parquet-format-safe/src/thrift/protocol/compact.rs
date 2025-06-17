@@ -322,7 +322,7 @@ pub(super) fn u8_to_type(b: u8) -> Result<TType> {
         0x05 => Ok(TType::I32),
         0x06 => Ok(TType::I64),
         0x07 => Ok(TType::Double),
-        0x08 => Ok(TType::String),
+        0x08 => Ok(TType::Binary),
         0x09 => Ok(TType::List),
         0x0A => Ok(TType::Set),
         0x0B => Ok(TType::Map),
