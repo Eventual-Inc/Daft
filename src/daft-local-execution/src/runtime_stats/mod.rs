@@ -145,29 +145,6 @@ impl RuntimeStatsEventHandler {
         let subscribers = Arc::new(subscribers);
         Self::new_with_subscribers(subscribers)
     }
-
-    pub(crate) fn record_elapsed_cpu_time(
-        &self,
-        elapsed: std::time::Duration,
-        rt: &RuntimeStatsContext,
-    ) {
-        rt.record_elapsed_cpu_time(elapsed);
-        self.handle_event(rt);
-    }
-    pub(crate) fn mark_rows_received(&self, rows: u64, rt: &RuntimeStatsContext) {
-        rt.mark_rows_received(rows);
-        self.handle_event(rt);
-    }
-
-    pub(crate) fn mark_rows_emitted(&self, rows: u64, rt: &RuntimeStatsContext) {
-        rt.mark_rows_emitted(rows);
-        self.handle_event(rt);
-    }
-    fn handle_event(&self, rt: &RuntimeStatsContext) {
-        let key = format!("{}:{}", rt.node_info.name, rt.node_info.id);
-        let sender = self.get_or_create_sender(key);
-        let _ = sender.send(Some(rt.into()));
-    }
 }
 
 pub struct RuntimeStatsContext {
@@ -237,6 +214,42 @@ impl RuntimeStats {
     }
 }
 
+pub(crate) struct RuntimeEventsProducer {
+    sender: watch::Sender<Option<RuntimeStatsEvent>>,
+    rt: Arc<RuntimeStatsContext>,
+}
+
+impl RuntimeEventsProducer {
+    pub fn new(
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        rt: Arc<RuntimeStatsContext>,
+    ) -> Self {
+        let key = format!("{}:{}", rt.node_info.name, rt.node_info.id);
+        let sender = rt_stats_handler.get_or_create_sender(key);
+
+        Self { sender, rt }
+    }
+
+    fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
+        self.rt.record_elapsed_cpu_time(elapsed);
+        self.emit_event();
+    }
+
+    pub(crate) fn mark_rows_received(&self, rows: u64) {
+        self.rt.mark_rows_received(rows);
+        self.emit_event();
+    }
+
+    pub(crate) fn mark_rows_emitted(&self, rows: u64) {
+        self.rt.mark_rows_emitted(rows);
+        self.emit_event();
+    }
+
+    fn emit_event(&self) {
+        let _ = self.sender.send(Some(self.rt.as_ref().into()));
+    }
+}
+
 impl RuntimeStatsContext {
     pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
         // let subscribers = get_subscriber_context();
@@ -298,8 +311,7 @@ pub struct TimedFuture<F: Future> {
     start: Option<Instant>,
     #[pin]
     future: Instrumented<F>,
-    runtime_context: Arc<RuntimeStatsContext>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+    rt_stats_producer: RuntimeEventsProducer,
 }
 
 impl<F: Future> TimedFuture<F> {
@@ -310,11 +322,11 @@ impl<F: Future> TimedFuture<F> {
         span: tracing::Span,
     ) -> Self {
         let instrumented = future.instrument(span);
+        let rt_stats_producer = RuntimeEventsProducer::new(rt_stats_handler, runtime_context);
         Self {
             start: None,
             future: instrumented,
-            runtime_context,
-            rt_stats_handler,
+            rt_stats_producer,
         }
     }
 }
@@ -327,8 +339,7 @@ impl<F: Future> Future for TimedFuture<F> {
         let start = this.start.get_or_insert_with(Instant::now);
         let inner_poll = this.future.as_mut().poll(cx);
         let elapsed = start.elapsed();
-        this.rt_stats_handler
-            .record_elapsed_cpu_time(elapsed, this.runtime_context);
+        this.rt_stats_producer.record_elapsed_cpu_time(elapsed);
 
         match inner_poll {
             Poll::Pending => Poll::Pending,
@@ -339,9 +350,8 @@ impl<F: Future> Future for TimedFuture<F> {
 
 pub struct CountingSender {
     sender: Sender<Arc<MicroPartition>>,
-    rt: Arc<RuntimeStatsContext>,
     progress_bar: Option<Arc<OperatorProgressBar>>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+    rt_stats_producer: RuntimeEventsProducer,
 }
 
 impl CountingSender {
@@ -349,19 +359,19 @@ impl CountingSender {
         sender: Sender<Arc<MicroPartition>>,
         rt: Arc<RuntimeStatsContext>,
         progress_bar: Option<Arc<OperatorProgressBar>>,
-        rt_stats_manager: Arc<RuntimeStatsEventHandler>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     ) -> Self {
+        let rt_stats_producer = RuntimeEventsProducer::new(rt_stats_handler, rt);
+
         Self {
             sender,
-            rt,
             progress_bar,
-            rt_stats_handler: rt_stats_manager,
+            rt_stats_producer,
         }
     }
     #[inline]
     pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
-        self.rt_stats_handler
-            .mark_rows_emitted(v.len() as u64, &self.rt);
+        self.rt_stats_producer.mark_rows_emitted(v.len() as u64);
         if let Some(ref pb) = self.progress_bar {
             pb.render();
         }
@@ -372,9 +382,8 @@ impl CountingSender {
 
 pub struct CountingReceiver {
     receiver: Receiver<Arc<MicroPartition>>,
-    rt: Arc<RuntimeStatsContext>,
     progress_bar: Option<Arc<OperatorProgressBar>>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+    rt_stats_producer: RuntimeEventsProducer,
 }
 
 impl CountingReceiver {
@@ -384,19 +393,19 @@ impl CountingReceiver {
         progress_bar: Option<Arc<OperatorProgressBar>>,
         rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     ) -> Self {
+        let rt_stats_producer = RuntimeEventsProducer::new(rt_stats_handler, rt);
+
         Self {
             receiver,
-            rt,
             progress_bar,
-            rt_stats_handler,
+            rt_stats_producer,
         }
     }
     #[inline]
     pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
-            self.rt_stats_handler
-                .mark_rows_received(v.len() as u64, &self.rt);
+            self.rt_stats_producer.mark_rows_received(v.len() as u64);
             if let Some(ref pb) = self.progress_bar {
                 pb.render();
             }
@@ -406,7 +415,7 @@ impl CountingReceiver {
 }
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::AtomicU64, Mutex};
+    use std::sync::{atomic::AtomicU64, Arc, Mutex};
 
     use common_error::DaftResult;
     use tokio::time::{sleep, Duration};
@@ -463,15 +472,16 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Send multiple events rapidly
-        handler.mark_rows_received(100, &rt_context);
-        handler.mark_rows_received(200, &rt_context);
-        handler.mark_rows_received(300, &rt_context);
+        producer.mark_rows_received(100);
+        producer.mark_rows_received(200);
+        producer.mark_rows_received(300);
 
         // Wait for processing
         sleep(Duration::from_millis(100)).await;
@@ -486,16 +496,19 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info1 = create_node_info("node1", 1);
         let node_info2 = create_node_info("node2", 2);
         let rt_context1 = RuntimeStatsContext::new(node_info1);
+        let producer1 = RuntimeEventsProducer::new(handler.clone(), rt_context1);
+
         let rt_context2 = RuntimeStatsContext::new(node_info2);
+        let producer2 = RuntimeEventsProducer::new(handler, rt_context2);
 
         // Send events for different nodes
-        handler.mark_rows_received(100, &rt_context1);
-        handler.mark_rows_received(200, &rt_context2);
+        producer1.mark_rows_received(100);
+        producer2.mark_rows_received(200);
 
         // Wait for processing
         sleep(Duration::from_millis(100)).await;
@@ -510,18 +523,19 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Send first event
-        handler.mark_rows_received(100, &rt_context);
+        producer.mark_rows_received(100);
         sleep(Duration::from_millis(100)).await;
         assert_eq!(mock_subscriber.get_total_calls(), 1);
 
         // Send second event before 500ms elapsed
-        handler.mark_rows_received(200, &rt_context);
+        producer.mark_rows_received(200);
         sleep(Duration::from_millis(100)).await;
         assert_eq!(mock_subscriber.get_total_calls(), 1); // Still 1
 
@@ -529,7 +543,7 @@ mod tests {
         sleep(Duration::from_millis(500)).await;
 
         // Send third event
-        handler.mark_rows_received(300, &rt_context);
+        producer.mark_rows_received(300);
         sleep(Duration::from_millis(100)).await;
         assert_eq!(mock_subscriber.get_total_calls(), 2); // Now 2
     }
@@ -540,14 +554,15 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
-        handler.mark_rows_received(100, &rt_context);
-        handler.record_elapsed_cpu_time(Duration::from_micros(1000), &rt_context);
-        handler.mark_rows_emitted(50, &rt_context);
+        producer.mark_rows_received(100);
+        producer.record_elapsed_cpu_time(Duration::from_micros(1000));
+        producer.mark_rows_emitted(50);
 
         sleep(Duration::from_millis(100)).await;
 
@@ -572,12 +587,13 @@ mod tests {
             subscriber1.clone() as Arc<dyn RuntimeStatsSubscriber>,
             subscriber2.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
-        handler.mark_rows_received(100, &rt_context);
+        producer.mark_rows_received(100);
         sleep(Duration::from_millis(100)).await;
 
         // Both subscribers should receive the event
@@ -607,12 +623,13 @@ mod tests {
             failing_subscriber as Arc<dyn RuntimeStatsSubscriber>,
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>,
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info = create_node_info("test_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
-        handler.mark_rows_received(100, &rt_context);
+        producer.mark_rows_received(100);
         sleep(Duration::from_millis(100)).await;
 
         // Mock subscriber should still receive event despite other failing
@@ -652,14 +669,15 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info = create_node_info("rapid_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Send many rapid updates
         for i in 1..=20 {
-            handler.mark_rows_received(i * 10, &rt_context);
+            producer.mark_rows_received(i * 10);
         }
 
         sleep(Duration::from_millis(100)).await;
@@ -680,17 +698,18 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let handler = RuntimeStatsEventHandler::new_with_subscribers(subscribers);
+        let handler = Arc::new(RuntimeStatsEventHandler::new_with_subscribers(subscribers));
 
         let node_info = create_node_info("mixed_node", 1);
         let rt_context = RuntimeStatsContext::new(node_info);
+        let producer = RuntimeEventsProducer::new(handler, rt_context);
 
         // Interleave different event types
-        handler.mark_rows_received(100, &rt_context);
-        handler.record_elapsed_cpu_time(Duration::from_micros(500), &rt_context);
-        handler.mark_rows_emitted(50, &rt_context);
-        handler.mark_rows_received(200, &rt_context); // Additional increment
-        handler.record_elapsed_cpu_time(Duration::from_micros(1500), &rt_context);
+        producer.mark_rows_received(100);
+        producer.record_elapsed_cpu_time(Duration::from_micros(500));
+        producer.mark_rows_emitted(50);
+        producer.mark_rows_received(200); // Additional increment
+        producer.record_elapsed_cpu_time(Duration::from_micros(1500));
 
         sleep(Duration::from_millis(100)).await;
 
