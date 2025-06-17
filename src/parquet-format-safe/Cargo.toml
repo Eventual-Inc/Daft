@@ -1,9 +1,9 @@
 [dependencies]
-async-trait = {version = "0.1", optional = true}
-futures = {version = "0.3", optional = true}
+async-trait = {workspace = true, optional = true}
+futures = {workspace = true, optional = true}
 
 [dev-dependencies]
-tokio = {version = "1", features = ["rt", "macros"]}
+tokio = {workspace = true, features = ["rt", "macros"]}
 
 [features]
 async = ["futures", "async-trait"]

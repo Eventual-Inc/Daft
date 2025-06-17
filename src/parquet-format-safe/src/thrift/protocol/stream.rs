@@ -147,7 +147,7 @@ pub trait TInputStreamProtocol: Send + Sized {
             TType::I32 => self.read_i32().await.map(|_| ()),
             TType::I64 => self.read_i64().await.map(|_| ()),
             TType::Double => self.read_double().await.map(|_| ()),
-            TType::String => self.read_string().await.map(|_| ()),
+            TType::Binary => self.read_bytes().await.map(|_| ()),
             TType::Struct => {
                 self.read_struct_begin().await?;
                 loop {

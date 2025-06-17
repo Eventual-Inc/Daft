@@ -448,8 +448,19 @@ class HTTPConfig:
     """I/O configuration for accessing HTTP systems."""
 
     bearer_token: str | None
+    retry_initial_backoff_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    num_tries: int
 
-    def __init__(self, bearer_token: str | None = None): ...
+    def __init__(
+        self,
+        bearer_token: str | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
+    ): ...
 
 class S3Config:
     """I/O configuration for accessing an S3-compatible system."""

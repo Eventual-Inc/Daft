@@ -263,7 +263,7 @@ pub(super) fn type_to_u8(field_type: TType) -> u8 {
         TType::I32 => 0x05,
         TType::I64 => 0x06,
         TType::Double => 0x07,
-        TType::String => 0x08,
+        TType::Binary => 0x08,
         TType::List => 0x09,
         TType::Set => 0x0A,
         TType::Map => 0x0B,
