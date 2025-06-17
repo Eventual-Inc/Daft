@@ -1,18 +1,9 @@
-use std::{
-    collections::HashMap,
-    env,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{env, sync::Arc, time::Duration};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
-use parking_lot::Mutex;
 use reqwest::{header, Client};
-use tokio::sync::{
-    mpsc::{self},
-    watch,
-};
+use tokio::sync::{mpsc, oneshot};
 
 use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEvent};
 
@@ -20,8 +11,8 @@ use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEven
 /// Since there could be many queries broadcasting to the dashboard at the same time, we want to be conscientious about how often we send updates.
 #[derive(Debug)]
 pub struct DashboardSubscriber {
-    senders: Arc<Mutex<HashMap<String, watch::Sender<Option<RuntimeStatsEvent>>>>>,
-    new_receiver_tx: mpsc::UnboundedSender<(String, watch::Receiver<Option<RuntimeStatsEvent>>)>,
+    event_tx: mpsc::UnboundedSender<RuntimeStatsEvent>,
+    flush_tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
 }
 
 impl DashboardSubscriber {
@@ -60,55 +51,41 @@ impl DashboardSubscriber {
                 .unwrap()
         };
         let client = Arc::new(client);
-        let senders = Arc::new(Mutex::new(HashMap::new()));
-        let (new_receiver_tx, mut new_receiver_rx) = mpsc::unbounded_channel();
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        let (flush_tx, mut flush_rx) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
 
         let rt = get_io_runtime(true);
         rt.runtime.spawn(async move {
-            let mut last_sent: HashMap<String, Instant> = HashMap::new();
-            let mut receivers: HashMap<String, watch::Receiver<Option<RuntimeStatsEvent>>> =
-                HashMap::new();
             let mut tick_interval = tokio::time::interval(interval);
+            let mut events_batch = Vec::new();
 
             loop {
                 tokio::select! {
-                    _ = tick_interval.tick() => {
-
-
-                        for (key, rx) in &mut receivers {
-                            if rx.has_changed().unwrap_or(false) {
-                                let event = rx.borrow_and_update().clone();
-                                if let Some(event) = event {
-                                    let now = Instant::now();
-                                    let should_process = last_sent.get(key).is_none_or(|last| now.duration_since(*last) >= interval);
-
-                                    if should_process {
-                                        send_metric(&url, &client, &event).await;
-                                        last_sent.insert(key.clone(), now);
-                                    }
-                                }
-                            }
-                        }
-
-                        // Cleanup
-                        // Remove old events to free up memory
-                        let cutoff = Instant::now().checked_sub(Duration::from_secs(300)).unwrap();
-                        last_sent.retain(|_, &mut last_time| last_time > cutoff);
+                    Some(event) = event_rx.recv() => {
+                        events_batch.push(event);
                     }
-                    Some((key, rx)) = new_receiver_rx.recv() => {
-                        receivers.insert(key, rx);
+                    Some(flush) = flush_rx.recv() => {
+                        if !events_batch.is_empty() {
+                            send_metrics_batch(&url, &client, &events_batch).await;
+                            events_batch.clear();
+                        }
+                        let _ = flush.send(());
+                    }
+                    _ = tick_interval.tick() => {
+                        if !events_batch.is_empty() {
+                            send_metrics_batch(&url, &client, &events_batch).await;
+                            events_batch.clear();
+                        }
                     }
                 }
             }
         });
 
-        Arc::new(Self {
-            senders,
-            new_receiver_tx,
-        })
+        Arc::new(Self { event_tx, flush_tx })
     }
     pub fn new() -> Arc<Self> {
-        Self::new_with_throttle_interval(Duration::from_secs(2))
+        Self::new_with_throttle_interval(Duration::from_secs(1))
     }
 
     pub fn is_enabled() -> bool {
@@ -117,46 +94,40 @@ impl DashboardSubscriber {
             .unwrap_or(false)
             && env::var("DAFT_DASHBOARD_METRICS_URL").is_ok()
     }
-    fn get_or_create_sender(&self, key: String) -> watch::Sender<Option<RuntimeStatsEvent>> {
-        let mut senders = self.senders.lock();
-        if let Some(sender) = senders.get(&key) {
-            sender.clone()
-        } else {
-            let (tx, rx) = watch::channel(None);
-            senders.insert(key.clone(), tx.clone());
-            let _ = self.new_receiver_tx.send((key, rx));
-            tx
-        }
-    }
 }
 
-async fn send_metric(url: &str, client: &Arc<Client>, event: &RuntimeStatsEvent) {
-    let context = &event.node_info;
-    let mut payload = event.node_info.context.clone();
+async fn send_metrics_batch(url: &str, client: &Arc<Client>, events: &[RuntimeStatsEvent]) {
+    let mut batch_payload = Vec::new();
 
-    payload.insert("name".to_string(), context.name.to_string());
-    payload.insert("id".to_string(), context.id.to_string());
-    payload.insert("rows_received".to_string(), event.rows_received.to_string());
-    payload.insert("rows_emitted".to_string(), event.rows_emitted.to_string());
-    payload.insert("cpu_usage".to_string(), event.cpu_us.to_string());
+    for event in events {
+        let context = &event.node_info;
+        let mut payload = event.node_info.context.clone();
 
-    if let Ok(run_id) = env::var("DAFT_DASHBOARD_RUN_ID") {
-        payload.insert("run_id".to_string(), run_id);
+        payload.insert("name".to_string(), context.name.to_string());
+        payload.insert("id".to_string(), context.id.to_string());
+        payload.insert("rows_received".to_string(), event.rows_received.to_string());
+        payload.insert("rows_emitted".to_string(), event.rows_emitted.to_string());
+        payload.insert("cpu_usage".to_string(), event.cpu_us.to_string());
+
+        if let Ok(run_id) = env::var("DAFT_DASHBOARD_RUN_ID") {
+            payload.insert("run_id".to_string(), run_id);
+        }
+
+        batch_payload.push(payload);
     }
 
-    let req = client.post(url);
-    let res = req.json(&payload).send().await;
+    let res = client.post(url).json(&batch_payload).send().await;
 
     if let Err(e) = res {
         #[cfg(debug_assertions)]
         {
-            eprintln!("Failed to send metric to dashboard: {}", e);
+            eprintln!("Failed to send metrics batch to dashboard: {}", e);
         }
-
-        log::error!("Failed to send metric to dashboard: {}", e);
+        log::error!("Failed to send metrics batch to dashboard: {}", e);
     }
 }
 
+#[async_trait::async_trait]
 impl RuntimeStatsSubscriber for DashboardSubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
@@ -164,9 +135,20 @@ impl RuntimeStatsSubscriber for DashboardSubscriber {
     }
 
     fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
-        let key = format!("{}:{}", event.node_info.name, event.node_info.id);
-        let sender = self.get_or_create_sender(key);
-        let _ = sender.send(Some(event.clone()));
+        self.event_tx
+            .send(event.clone())
+            .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
+        Ok(())
+    }
+
+    async fn flush(&self) -> DaftResult<()> {
+        let (tx, rx) = oneshot::channel();
+        self.flush_tx
+            .send(tx)
+            .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
+        rx.await
+            .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
+
         Ok(())
     }
 }

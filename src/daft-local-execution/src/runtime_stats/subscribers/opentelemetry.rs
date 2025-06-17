@@ -1,4 +1,5 @@
 use common_error::DaftResult;
+use common_tracing::flush_oltp_metrics_provider;
 use opentelemetry::{global, metrics::Counter, KeyValue};
 
 use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEvent};
@@ -22,7 +23,7 @@ impl OpenTelemetrySubscriber {
         }
     }
 }
-
+#[async_trait::async_trait]
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
@@ -39,6 +40,11 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
         self.rows_received.add(event.rows_received, &attributes);
         self.rows_emitted.add(event.rows_emitted, &attributes);
         self.cpu_us.add(event.cpu_us, &attributes);
+        Ok(())
+    }
+
+    async fn flush(&self) -> DaftResult<()> {
+        flush_oltp_metrics_provider();
         Ok(())
     }
 }

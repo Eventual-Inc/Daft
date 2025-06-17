@@ -7,6 +7,7 @@ use crate::runtime_stats::{subscribers::RuntimeStatsSubscriber, RuntimeStatsEven
 /// Note: this is feature gated to `#[cfg(debug_assertions)]` and should only be used for debugging purposes.
 pub struct DebugSubscriber;
 
+#[async_trait::async_trait]
 impl RuntimeStatsSubscriber for DebugSubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
@@ -15,6 +16,9 @@ impl RuntimeStatsSubscriber for DebugSubscriber {
 
     fn handle_event(&self, event: &RuntimeStatsEvent) -> DaftResult<()> {
         println!("{:#?}", event);
+        Ok(())
+    }
+    async fn flush(&self) -> DaftResult<()> {
         Ok(())
     }
 }

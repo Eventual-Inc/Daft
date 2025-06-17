@@ -61,6 +61,7 @@ impl RuntimeStatsEventHandler {
         let (tx, rx) = oneshot::channel();
         self.flush_tx.send(tx)?;
         rx.await?;
+
         Ok(())
     }
 
@@ -87,7 +88,7 @@ impl RuntimeStatsEventHandler {
         }
 
         let subscribers = Arc::new(subscribers);
-        let throttle_interval = Duration::from_millis(500);
+        let throttle_interval = Duration::from_millis(100);
         Self::new_impl(subscribers, throttle_interval)
     }
 
@@ -109,6 +110,29 @@ impl RuntimeStatsEventHandler {
 
             loop {
                 tokio::select! {
+                    Some((key, rx)) = new_receiver_rx.recv() => {
+                        receivers.insert(key, rx);
+                    }
+                    Some(flush_response) = flush_rx.recv() => {
+                         // Process all events immediately
+                         for rx in receivers.values_mut() {
+                             if rx.has_changed().unwrap_or(false) {
+                                 let event = rx.borrow_and_update().clone();
+                                 if let Some(event) = event {
+                                    for subscriber in subscribers.iter() {
+                                        if let Err(e) = subscriber.handle_event(&event) {
+                                            log::error!("Failed to handle event: {}", e);
+                                        }
+                                        if let Err(e) = subscriber.flush().await {
+                                            log::error!("Failed to flush subscriber: {}", e);
+                                        }
+                                    }
+                                 }
+                             }
+                         }
+                         let _ = flush_response.send(());
+                     }
+
                     _ = interval.tick() => {
                         // Process all receivers
                         for (key, rx) in &mut receivers {
@@ -134,25 +158,7 @@ impl RuntimeStatsEventHandler {
                         let cutoff = Instant::now().checked_sub(Duration::from_secs(300)).unwrap();
                         last_sent.retain(|_, &mut last_time| last_time > cutoff);
                     }
-                    Some((key, rx)) = new_receiver_rx.recv() => {
-                        receivers.insert(key, rx);
-                    }
-                    Some(flush_response) = flush_rx.recv() => {
-                         // Process all events immediately
-                         for rx in receivers.values_mut() {
-                             if rx.has_changed().unwrap_or(false) {
-                                 let event = rx.borrow_and_update().clone();
-                                 if let Some(event) = event {
-                                    for subscriber in subscribers.iter() {
-                                        if let Err(e) = subscriber.handle_event(&event) {
-                                            log::error!("Failed to handle event: {}", e);
-                                        }
-                                    }
-                                 }
-                             }
-                         }
-                         let _ = flush_response.send(());
-                     }
+
 
 
                 }
@@ -478,6 +484,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl RuntimeStatsSubscriber for MockSubscriber {
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -487,6 +494,9 @@ mod tests {
             self.total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.events.lock().unwrap().push(event.clone());
+            Ok(())
+        }
+        async fn flush(&self) -> DaftResult<()> {
             Ok(())
         }
     }
@@ -666,6 +676,7 @@ mod tests {
         #[derive(Debug)]
         struct FailingSubscriber;
 
+        #[async_trait::async_trait]
         impl RuntimeStatsSubscriber for FailingSubscriber {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
@@ -674,6 +685,9 @@ mod tests {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
+            }
+            async fn flush(&self) -> DaftResult<()> {
+                Ok(())
             }
         }
 
