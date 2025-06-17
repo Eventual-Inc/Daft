@@ -29,7 +29,7 @@ defaults:
 
 jobs:
   build:
-    runs-on: ${{ inputs.os }}-latest
+    runs-on: ${{ inputs.os == 'ubuntu' && 'buildjet-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
 
     steps:
     - uses: actions/checkout@v4
