@@ -64,7 +64,12 @@ impl PyInProgressSwordfishPlan {
         })
     }
 
-    fn put_input<'a>(&self, py: Python<'a>, morsel_id: usize, input: PyScanTask) -> PyResult<Bound<'a, PyAny>> {
+    fn put_input<'a>(
+        &self,
+        py: Python<'a>,
+        morsel_id: usize,
+        input: PyScanTask,
+    ) -> PyResult<Bound<'a, PyAny>> {
         let senders = self.channel_scan_senders.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             // for now, we only support one channel
@@ -74,31 +79,35 @@ impl PyInProgressSwordfishPlan {
     }
 }
 
+#[derive(Debug)]
+struct ResultCacheInner {
+    cache: HashMap<usize, Arc<MicroPartition>>,
+    pending_gets: HashMap<usize, oneshot::Sender<Arc<MicroPartition>>>,
+}
+
 /// A cache that stores micropartitions by morsel ID and allows async waiting for results
 #[derive(Debug, Clone)]
 struct ResultCache {
-    cache: Arc<Mutex<HashMap<usize, Arc<MicroPartition>>>>,
-    pending_gets: Arc<Mutex<HashMap<usize, Vec<oneshot::Sender<Arc<MicroPartition>>>>>>,
+    inner: Arc<Mutex<ResultCacheInner>>,
 }
 
 impl ResultCache {
     fn new() -> Self {
         Self {
-            cache: Arc::new(Mutex::new(HashMap::new())),
-            pending_gets: Arc::new(Mutex::new(HashMap::new())),
+            inner: Arc::new(Mutex::new(ResultCacheInner {
+                cache: HashMap::new(),
+                pending_gets: HashMap::new(),
+            })),
         }
     }
 
     /// Put a result into the cache and notify any waiting getters
     async fn put(&self, key: usize, value: Arc<MicroPartition>) {
-        let mut cache = self.cache.lock().await;
-        cache.insert(key, value.clone());
-
-        let mut pending = self.pending_gets.lock().await;
-        if let Some(senders) = pending.remove(&key) {
-            for sender in senders {
-                let _ = sender.send(value.clone());
-            }
+        let mut inner = self.inner.lock().await;
+        if let Some(sender) = inner.pending_gets.remove(&key) {
+            let _ = sender.send(value.clone());
+        } else {
+            inner.cache.insert(key, value);
         }
     }
 
@@ -106,8 +115,8 @@ impl ResultCache {
     async fn get(&self, key: usize) -> Arc<MicroPartition> {
         // First check if the value is already in the cache
         {
-            let cache = self.cache.lock().await;
-            if let Some(value) = cache.get(&key) {
+            let inner = self.inner.lock().await;
+            if let Some(value) = inner.cache.get(&key) {
                 return value.clone();
             }
         }
@@ -115,8 +124,8 @@ impl ResultCache {
         // If not, set up a oneshot channel to wait for the value
         let (tx, rx) = oneshot::channel();
         {
-            let mut pending = self.pending_gets.lock().await;
-            pending.entry(key).or_insert_with(Vec::new).push(tx);
+            let mut inner = self.inner.lock().await;
+            inner.pending_gets.entry(key).or_insert(tx);
         }
 
         rx.await.expect("Sender dropped")
@@ -142,7 +151,12 @@ impl ChannelScanSenders {
     }
 
     /// Enqueue a scan task to the specified channel index
-    async fn enqueue_input(&self, morsel_id: usize, scan_task: ScanTaskRef, channel_idx: usize) -> DaftResult<()> {
+    async fn enqueue_input(
+        &self,
+        morsel_id: usize,
+        scan_task: ScanTaskRef,
+        channel_idx: usize,
+    ) -> DaftResult<()> {
         assert_eq!(channel_idx, 0, "Only one channel is supported for now");
 
         self.channel_scan_senders[channel_idx]

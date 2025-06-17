@@ -394,7 +394,6 @@ fn append_actor_udf_to_task(
     };
     let input = submittable_task.task().input().clone();
     let task = submittable_task.with_new_task(SwordfishTask::new(
-        node_id.to_string().into(),
         actor_pool_project_plan,
         input_id,
         input,

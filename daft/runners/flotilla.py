@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
+import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -49,6 +52,19 @@ logger = logging.getLogger(__name__)
 )
 class RaySwordfishActor:
     def __init__(self) -> None:
+        # os.makedirs("/tmp/ray/session_latest/logs/daft", exist_ok=True)
+        # current_pid = os.getpid()
+        # time.time()
+        # subprocess.Popen(
+        #     [
+        #         "bash",
+        #         "-c",
+        #         f"""
+        #         echo '-1' | sudo tee /proc/sys/kernel/perf_event_paranoid
+        #         samply record --pid {current_pid} -s -o /tmp/ray/session_latest/logs/daft/samply_{current_pid}_{time.time()}.json.gz
+        #         """,
+        #     ],
+        # )
         self.native_executor = NativeExecutor()
         self.in_progress_plans: dict[str, InProgressSwordfishPlan] = {}
 

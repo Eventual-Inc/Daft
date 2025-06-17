@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -105,7 +105,6 @@ fn make_source_tasks(
     node_id: usize,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     let task = SwordfishTask::new(
-        node_id.to_string().into(),
         plan,
         input_id,
         scan_task.into(),

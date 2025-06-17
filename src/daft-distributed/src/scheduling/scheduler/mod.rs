@@ -165,10 +165,9 @@ impl WorkerSnapshot {
     }
 
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
-        self.available_num_cpus() >= task.resource_request().num_cpus()
-            && self.available_num_gpus() >= task.resource_request().num_gpus()
-            // For now, we only schedule one task at a time per worker
-            && self.active_task_details.is_empty()
+        self.active_task_details.len() < 16
+            // // For now, we only schedule one task at a time per worker
+            // && self.active_task_details.is_empty()
     }
 }
 

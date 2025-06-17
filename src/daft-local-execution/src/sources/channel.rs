@@ -34,7 +34,7 @@ pub struct ChannelSource {
 }
 
 impl ChannelSource {
-    const MAX_PARALLEL_SCAN_TASKS: usize = 8;
+    const MAX_PARALLEL_SCAN_TASKS: usize = 64;
 
     pub fn new(
         rx: Receiver<(usize, Arc<ScanTask>)>,

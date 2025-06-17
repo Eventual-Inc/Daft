@@ -178,7 +178,6 @@ fn append_plan_to_task(
     let input = submittable_task.task().input().clone();
     let scheduling_strategy = submittable_task.task().strategy().clone();
     let task = submittable_task.with_new_task(SwordfishTask::new(
-        node_id.to_string().into(),
         transformed_plan,
         input_id,
         input,

@@ -7,6 +7,7 @@ use common_resource_request::ResourceRequest;
 use daft_local_plan::LocalPhysicalPlanRef;
 use daft_scan::ScanTaskRef;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use super::worker::WorkerId;
 use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
@@ -113,7 +114,6 @@ pub(crate) struct SwordfishTask {
 #[allow(dead_code)]
 impl SwordfishTask {
     pub fn new(
-        task_id: TaskId,
         plan: LocalPhysicalPlanRef,
         input_id: TaskInputId,
         input: SwordfishTaskInput,
@@ -121,6 +121,7 @@ impl SwordfishTask {
         priority: TaskPriority,
         strategy: SchedulingStrategy,
     ) -> Self {
+        let task_id = Arc::from(Uuid::new_v4().to_string());
         let resource_request = TaskResourceRequest::new(plan.resource_request());
         Self {
             task_id,
