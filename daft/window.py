@@ -87,6 +87,9 @@ class Window:
                    Can be column names as strings, Expression objects, or iterables of these.
             desc: Sort descending (True) or ascending (False). Can be a single boolean value applied to all columns,
                  or a list of boolean values corresponding to each column. Default is False (ascending).
+            nulls_first: Whether to position NULL values at the beginning (True) or end (False) of the partition.
+                Can be a single boolean value applied to all columns, or a list of boolean values corresponding to each column.
+                Default is None, which means NULL values are positioned at the end for ascending order (default) and at the beginning for descending order.
 
         Returns:
             Window: A window specification with the given ordering.
