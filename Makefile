@@ -86,3 +86,4 @@ docs-serve: .venv ## Build Daft documentation in development server
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
+	rm -rf ./target

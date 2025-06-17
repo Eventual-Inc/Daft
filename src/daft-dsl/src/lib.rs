@@ -8,7 +8,7 @@ pub mod join;
 mod lit;
 pub mod optimization;
 #[cfg(feature = "python")]
-mod pyobj_serde;
+pub mod pyobj_serde;
 #[cfg(feature = "python")]
 pub mod python;
 
