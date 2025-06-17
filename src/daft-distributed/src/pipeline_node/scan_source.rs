@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode};
@@ -11,13 +12,14 @@ use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
     pipeline_node::NodeID,
     plan::PlanID,
-    scheduling::task::{SchedulingStrategy, SwordfishTask},
+    scheduling::{
+        scheduler::SubmittableTask,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
 pub(crate) struct ScanSourceNode {
     plan_id: PlanID,
     stage_id: StageID,
@@ -29,7 +31,6 @@ pub(crate) struct ScanSourceNode {
 }
 
 impl ScanSourceNode {
-    #[allow(dead_code)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -51,18 +52,25 @@ impl ScanSourceNode {
     }
 
     async fn execution_loop(
-        self,
+        self: Arc<Self>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
             let empty_scan_task = self.make_empty_scan_task()?;
-            let _ = result_tx.send(PipelineOutput::Task(empty_scan_task)).await;
+            let _ = result_tx
+                .send(PipelineOutput::Task(SubmittableTask::new(empty_scan_task)))
+                .await;
             return Ok(());
         }
 
-        for scan_task in self.scan_tasks.iter() {
-            let task = self.make_source_tasks(scan_task.clone())?;
-            if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+        let max_sources_per_scan_task = self.config.max_sources_per_scan_task;
+        for scan_tasks in self.scan_tasks.chunks(max_sources_per_scan_task) {
+            let task = self.make_source_tasks(scan_tasks.to_vec().into())?;
+            if result_tx
+                .send(PipelineOutput::Task(SubmittableTask::new(task)))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -70,14 +78,17 @@ impl ScanSourceNode {
         Ok(())
     }
 
-    fn make_source_tasks(&self, scan_task: ScanTaskLikeRef) -> DaftResult<SwordfishTask> {
+    fn make_source_tasks(
+        &self,
+        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    ) -> DaftResult<SwordfishTask> {
         let transformed_plan = self
             .plan
             .clone()
             .transform_up(|p| match p.as_ref() {
                 LocalPhysicalPlan::PlaceholderScan(placeholder) => {
                     let physical_scan = LocalPhysicalPlan::physical_scan(
-                        vec![scan_task.clone()].into(),
+                        scan_tasks.clone(),
                         self.pushdowns.clone(),
                         placeholder.schema.clone(),
                         StatsState::NotMaterialized,
@@ -101,6 +112,7 @@ impl ScanSourceNode {
             psets,
             SchedulingStrategy::Spread,
             context,
+            self.node_id,
         );
         Ok(task)
     }
@@ -130,6 +142,7 @@ impl ScanSourceNode {
             psets,
             SchedulingStrategy::Spread,
             context,
+            self.node_id,
         );
         Ok(task)
     }
@@ -137,16 +150,16 @@ impl ScanSourceNode {
 
 impl DistributedPipelineNode for ScanSourceNode {
     fn name(&self) -> &'static str {
-        "ScanSource"
+        "DistributedScan"
     }
 
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![]
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.clone().execution_loop(result_tx);
+        let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
@@ -162,5 +175,33 @@ impl DistributedPipelineNode for ScanSourceNode {
 
     fn node_id(&self) -> &NodeID {
         &self.node_id
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
+    }
+}
+
+impl TreeDisplay for ScanSourceNode {
+    fn display_as(&self, _level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+
+        let plan = self
+            .make_source_tasks(self.scan_tasks.clone())
+            .unwrap()
+            .plan();
+        writeln!(display, "Local Plan: {}", plan.single_line_display()).unwrap();
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![]
+    }
+
+    fn get_name(&self) -> String {
+        self.name().to_string()
     }
 }

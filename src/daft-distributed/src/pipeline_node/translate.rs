@@ -26,13 +26,13 @@ pub(crate) fn logical_plan_to_pipeline_node(
     plan: LogicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-) -> DaftResult<Box<dyn DistributedPipelineNode>> {
+) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
     #[allow(dead_code)]
     struct PipelineNodeBoundarySplitter {
         plan_id: PlanID,
         stage_id: StageID,
         root: LogicalPlanRef,
-        current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
+        current_nodes: Vec<Arc<dyn DistributedPipelineNode>>,
         config: Arc<DaftExecutionConfig>,
         node_id_counter: usize,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
@@ -48,26 +48,30 @@ pub(crate) fn logical_plan_to_pipeline_node(
         fn create_node(
             &mut self,
             logical_plan: LogicalPlanRef,
-            current_nodes: Vec<Box<dyn DistributedPipelineNode>>,
-        ) -> DaftResult<Box<dyn DistributedPipelineNode>> {
+            current_nodes: Vec<Arc<dyn DistributedPipelineNode>>,
+        ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
             // If current_nodes is not empty, create an intermediate node immediately
             if !current_nodes.is_empty() {
+                assert!(
+                    current_nodes.len() == 1,
+                    "Nodes can currently only have one child"
+                );
                 let translated = translate(&logical_plan)?;
-                return Ok(Box::new(IntermediateNode::new(
+                return Ok(Arc::new(IntermediateNode::new(
                     self.plan_id.clone(),
                     self.stage_id.clone(),
                     self.get_next_node_id(),
                     self.config.clone(),
                     translated,
-                    current_nodes,
-                )) as Box<dyn DistributedPipelineNode>);
+                    current_nodes[0].clone(),
+                )) as Arc<dyn DistributedPipelineNode>);
             }
 
             // Otherwise create a node based on pipeline_input
             let (logical_plan, inputs) = extract_inputs_from_logical_plan(logical_plan)?;
             let translated = translate(&logical_plan)?;
             let node = match inputs {
-                PipelineInput::InMemorySource { info } => Box::new(InMemorySourceNode::new(
+                PipelineInput::InMemorySource { info } => Arc::new(InMemorySourceNode::new(
                     self.plan_id.clone(),
                     self.stage_id.clone(),
                     self.get_next_node_id(),
@@ -76,11 +80,11 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     translated,
                     self.psets.clone(),
                 ))
-                    as Box<dyn DistributedPipelineNode>,
+                    as Arc<dyn DistributedPipelineNode>,
                 PipelineInput::ScanTasks {
                     pushdowns,
                     scan_tasks,
-                } => Box::new(ScanSourceNode::new(
+                } => Arc::new(ScanSourceNode::new(
                     self.plan_id.clone(),
                     self.stage_id.clone(),
                     self.get_next_node_id(),
@@ -88,7 +92,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     translated,
                     pushdowns,
                     scan_tasks,
-                )) as Box<dyn DistributedPipelineNode>,
+                )) as Arc<dyn DistributedPipelineNode>,
             };
             Ok(node)
         }
@@ -106,7 +110,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
                 LogicalPlan::Limit(limit) => {
                     let current_nodes = std::mem::take(&mut self.current_nodes);
                     let input_node = self.create_node(node.clone(), current_nodes)?;
-                    let limit_node = Box::new(LimitNode::new(
+                    let limit_node = Arc::new(LimitNode::new(
                         self.plan_id.clone(),
                         self.stage_id.clone(),
                         self.get_next_node_id(),
@@ -117,6 +121,32 @@ pub(crate) fn logical_plan_to_pipeline_node(
                     ));
 
                     self.current_nodes = vec![limit_node];
+                    // Here we will have to return a placeholder, essentially cutting off the plan
+                    let placeholder =
+                        PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
+                    Ok(Transformed::yes(
+                        LogicalPlan::Source(Source::new(
+                            node.schema(),
+                            SourceInfo::PlaceHolder(placeholder).into(),
+                        ))
+                        .into(),
+                    ))
+                }
+                #[cfg(feature = "python")]
+                LogicalPlan::ActorPoolProject(project) => {
+                    let input_nodes = std::mem::take(&mut self.current_nodes);
+                    let input_node = self.create_node(project.input.clone(), input_nodes)?;
+                    let project_node = Arc::new(crate::pipeline_node::actor_udf::ActorUDF::new(
+                        self.plan_id.clone(),
+                        self.stage_id.clone(),
+                        self.get_next_node_id(),
+                        self.config.clone(),
+                        project.projection.clone(),
+                        project.input.schema(),
+                        input_node.clone(),
+                    )?);
+
+                    self.current_nodes = vec![project_node];
                     // Here we will have to return a placeholder, essentially cutting off the plan
                     let placeholder =
                         PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
@@ -290,7 +320,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pipeline_node.name(), "InMemorySourceNode");
+        assert_eq!(pipeline_node.name(), "DistributedInMemoryScan");
         assert_eq!(pipeline_node.children().len(), 0);
     }
 
@@ -317,7 +347,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pipeline_node.name(), "ScanSource");
+        assert_eq!(pipeline_node.name(), "DistributedScan");
         assert_eq!(pipeline_node.children().len(), 0);
     }
 
@@ -343,11 +373,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pipeline_node.name(), "Limit");
+        assert_eq!(pipeline_node.name(), "DistributedLimit");
 
         let children = pipeline_node.children();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "ScanSource");
+        assert_eq!(children[0].name(), "DistributedScan");
         assert_eq!(children[0].children().len(), 0);
 
         Ok(())
@@ -377,7 +407,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(pipeline_node.name(), "ScanSource");
+        assert_eq!(pipeline_node.name(), "DistributedScan");
         assert_eq!(pipeline_node.children().len(), 0);
 
         Ok(())
@@ -411,15 +441,15 @@ mod tests {
         .unwrap();
 
         // Intermediate <- Limit <- Source
-        assert_eq!(pipeline_node.name(), "Intermediate");
+        assert_eq!(pipeline_node.name(), "DistributedIntermediateNode");
 
         let children = pipeline_node.children();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "Limit");
+        assert_eq!(children[0].name(), "DistributedLimit");
 
         let children = children[0].children();
         assert_eq!(children.len(), 1);
-        assert_eq!(children[0].name(), "ScanSource");
+        assert_eq!(children[0].name(), "DistributedScan");
         assert_eq!(children[0].children().len(), 0);
 
         Ok(())

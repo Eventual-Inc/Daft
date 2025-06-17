@@ -26,7 +26,7 @@ def test_daft_iceberg_table_predicate_pushdown_days(local_iceberg_catalog):
     # need to use datetime here
     iceberg_pandas = iceberg_pandas[iceberg_pandas["ts"] < datetime(2023, 3, 6, tzinfo=pytz.utc)]
 
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["ts"])
 
 
 def is_null(obj):
@@ -84,7 +84,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["dt"])]
     if limit:
         iceberg_pandas = iceberg_pandas[:limit]
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["dt"])
 
 
 @pytest.mark.integration()
@@ -126,7 +126,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, ta
     if limit:
         iceberg_pandas = iceberg_pandas[:limit]
 
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["ts"])
 
 
 @pytest.mark.integration()
@@ -167,7 +167,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit
     if limit:
         iceberg_pandas = iceberg_pandas[:limit]
 
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["letter"])
 
 
 @pytest.mark.integration()
@@ -208,7 +208,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_number(predicate, table, limit
     if limit:
         iceberg_pandas = iceberg_pandas[:limit]
 
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["number"])
 
 
 @pytest.mark.integration()

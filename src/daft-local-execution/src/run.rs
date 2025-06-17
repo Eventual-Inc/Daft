@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
-use common_tracing::{flush_opentelemetry_providers, refresh_chrome_trace};
+use common_tracing::{finish_chrome_trace, flush_opentelemetry_providers, start_chrome_trace};
 use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -282,7 +282,7 @@ impl NativeExecutor {
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
-        refresh_chrome_trace();
+        start_chrome_trace();
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
@@ -326,25 +326,6 @@ impl NativeExecutor {
                         _ => {}
                     }
                 }
-                if enable_explain_analyze {
-                    let curr_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_millis();
-                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                    let mut file = File::create(file_name)?;
-                    writeln!(
-                        file,
-                        "```mermaid\n{}\n```",
-                        viz_pipeline_mermaid(
-                            pipeline.as_ref(),
-                            DisplayLevel::Verbose,
-                            true,
-                            Default::default()
-                        )
-                    )?;
-                }
-                flush_opentelemetry_providers();
                 Ok(())
             };
 
@@ -362,7 +343,28 @@ impl NativeExecutor {
                     }
                     result = execution_task => result,
                 }
-            })
+            })?;
+            if enable_explain_analyze {
+                let curr_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis();
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                let mut file = File::create(file_name)?;
+                writeln!(
+                    file,
+                    "```mermaid\n{}\n```",
+                    viz_pipeline_mermaid(
+                        pipeline.as_ref(),
+                        DisplayLevel::Verbose,
+                        true,
+                        Default::default()
+                    )
+                )?;
+            }
+            flush_opentelemetry_providers();
+            finish_chrome_trace();
+            Ok(())
         });
 
         Ok(ExecutionEngineResult {

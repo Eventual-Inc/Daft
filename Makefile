@@ -89,3 +89,4 @@ daft-proto: check-toolchain .venv ## Build Daft proto sources to avoid protoc bu
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
+	rm -rf ./target

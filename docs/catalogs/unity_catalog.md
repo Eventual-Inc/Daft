@@ -58,25 +58,25 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
     df.show()
     ```
 
-See also [Delta Lake](delta_lake.md) for more information about how to work with the Delta Lake tables provided by the Unity Catalog.
+See also [Delta Lake](../io/delta_lake.md) for more information about how to work with the Delta Lake tables provided by the Unity Catalog.
 
 ## Downloading files in Unity Catalog volumes
 
-Daft supports downloading from Unity Catalog volumes using [`Expression.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download]. File paths that start with `dbfs:/` will be downloaded using the configurations in [`IOConfig.unity`][daft.daft.IOConfig.unity]. These configurations can be created using `UnityCatalog.to_io_config`, or automatically derived from the global session.
+Daft supports downloading from Unity Catalog volumes using [`Expression.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download]. File paths that start with `vol+dbfs:/` or `dbfs:/` will be downloaded using the configurations in [`IOConfig.unity`][daft.daft.IOConfig.unity]. These configurations can be created using `UnityCatalog.to_io_config`, or automatically derived from the global session.
 
 === "🐍 Python"
 
     ```python
     df = daft.from_pydict({
         "files": [
-            "dbfs:/Volumes/my_catalog/my_schema_name/my_volume_name/file1.txt",
-            "dbfs:/Volumes/my_catalog/my_schema_name/my_volume_name/file2.txt"
+            "/Volumes/my_catalog/my_schema_name/my_volume_name/file1.txt",
+            "/Volumes/my_catalog/my_schema_name/my_volume_name/file2.txt"
         ]
     })
 
     # explicitly specify the unity catalog
     io_config = unity.to_io_config()
-    data_df = df.select(df["files"].url.download(io_config=io_config))
+    data_df = df.select("vol+dbfs:" + df["files"].url.download(io_config=io_config))
     data_df.show()
 
     # use the global session

@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode};
@@ -11,13 +12,14 @@ use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
     pipeline_node::NodeID,
     plan::PlanID,
-    scheduling::task::{SchedulingStrategy, SwordfishTask},
+    scheduling::{
+        scheduler::SubmittableTask,
+        task::{SchedulingStrategy, SwordfishTask},
+    },
     stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
 pub(crate) struct InMemorySourceNode {
     plan_id: PlanID,
     stage_id: StageID,
@@ -29,7 +31,6 @@ pub(crate) struct InMemorySourceNode {
 }
 
 impl InMemorySourceNode {
-    #[allow(dead_code)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -51,31 +52,41 @@ impl InMemorySourceNode {
     }
 
     async fn execution_loop(
-        self,
+        self: Arc<Self>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let partition_refs = self.input_psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
 
         for partition_ref in partition_refs {
-            let task = self.make_task_for_partition_ref(partition_ref)?;
-            if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+            let task = self.make_task_for_partition_refs(vec![partition_ref])?;
+            if result_tx
+                .send(PipelineOutput::Task(SubmittableTask::new(task)))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
         Ok(())
     }
 
-    fn make_task_for_partition_ref(
+    fn make_task_for_partition_refs(
         &self,
-        partition_ref: PartitionRef,
+        partition_refs: Vec<PartitionRef>,
     ) -> DaftResult<SwordfishTask> {
+        let mut total_size_bytes = 0;
+        let mut total_num_rows = 0;
+        for partition_ref in &partition_refs {
+            total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
+            total_num_rows += partition_ref.num_rows().unwrap_or(0);
+        }
         let info = InMemoryInfo::new(
             self.plan.schema().clone(),
             self.info.cache_key.clone(),
             None,
             1,
-            partition_ref.size_bytes()?.expect("make_task_for_partition_ref: Expect that the input partition ref for a in-memory source node has a known size"),
-            partition_ref.num_rows()?,
+            total_size_bytes,
+            total_num_rows,
             None,
             None,
         );
@@ -91,7 +102,7 @@ impl InMemorySourceNode {
                 _ => Ok(Transformed::no(p)),
             })?
             .data;
-        let psets = HashMap::from([(self.info.cache_key.clone(), vec![partition_ref])]);
+        let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
         let context = HashMap::from([
             ("plan_id".to_string(), self.plan_id.to_string()),
             ("stage_id".to_string(), format!("{}", self.stage_id)),
@@ -106,6 +117,7 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             context,
+            self.node_id,
         );
         Ok(task)
     }
@@ -113,16 +125,16 @@ impl InMemorySourceNode {
 
 impl DistributedPipelineNode for InMemorySourceNode {
     fn name(&self) -> &'static str {
-        "InMemorySourceNode"
+        "DistributedInMemoryScan"
     }
 
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![]
     }
 
-    fn start(&mut self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.clone().execution_loop(result_tx);
+        let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
@@ -137,5 +149,30 @@ impl DistributedPipelineNode for InMemorySourceNode {
 
     fn node_id(&self) -> &NodeID {
         &self.node_id
+    }
+
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
+    }
+}
+
+impl TreeDisplay for InMemorySourceNode {
+    fn display_as(&self, _level: DisplayLevel) -> String {
+        use std::fmt::Write;
+        let mut display = String::new();
+
+        writeln!(display, "{}", self.name()).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        let plan = self.make_task_for_partition_refs(vec![]).unwrap().plan();
+        writeln!(display, "Local Plan: {}", plan.single_line_display()).unwrap();
+        display
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        vec![]
+    }
+
+    fn get_name(&self) -> String {
+        self.name().to_string()
     }
 }
