@@ -77,7 +77,9 @@ class Window:
         window._spec = self._spec.with_partition_by([expr._expr for expr in expressions])
         return window
 
-    def order_by(self, *cols: ManyColumnsInputType, desc: bool | list[bool] = False) -> Window:
+    def order_by(
+        self, *cols: ManyColumnsInputType, desc: bool | list[bool] = False, nulls_first: bool | list[bool] | None = None
+    ) -> Window:
         """Orders rows within each partition by specified columns or expressions.
 
         Args:
@@ -109,8 +111,17 @@ class Window:
                 raise ValueError("Length of descending flags must match number of order by columns")
             desc_flags = desc
 
+        if nulls_first is None:
+            nulls_first_flags = desc_flags
+        elif isinstance(nulls_first, bool):
+            nulls_first_flags = [nulls_first] * len(expressions)
+        else:
+            if len(nulls_first) != len(expressions):
+                raise ValueError("Length of nulls first flags must match number of order by columns")
+            nulls_first_flags = nulls_first
+
         window = Window()
-        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], desc_flags)
+        window._spec = self._spec.with_order_by([expr._expr for expr in expressions], desc_flags, nulls_first_flags)
         return window
 
     def rows_between(

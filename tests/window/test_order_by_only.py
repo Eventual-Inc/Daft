@@ -5,6 +5,7 @@ import random
 import pandas as pd
 import pytest
 
+import daft
 from daft import Window, col
 from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
@@ -286,3 +287,56 @@ def test_rank_with_1k_distinct_values(make_df, repartition_nparts, with_morsel_s
     )
 
     assert_df_equals(result_df, expected_df, sort_key=["id", "value"], check_dtype=False)
+
+
+def test_window_nulls():
+    """Test window functions with nulls_first=True/False."""
+    ids = list(range(1, 7))
+    values = [10, None, 20, None, 30, 30]
+    data = {
+        "id": ids,
+        "value": values,
+    }
+    df = daft.from_pydict(data)
+
+    window_specs = {
+        "asc_nulls_first": Window().order_by("value", desc=False, nulls_first=True),
+        "asc_nulls_last": Window().order_by("value", desc=False, nulls_first=False),
+        "desc_nulls_first": Window().order_by("value", desc=True, nulls_first=True),
+        "desc_nulls_last": Window().order_by("value", desc=True, nulls_first=False),
+    }
+    window_functions = {
+        "row_num": row_number(),
+        "rank": rank(),
+        "dense_rank": dense_rank(),
+    }
+
+    # Build the select statement.
+    select_exprs = [col("id"), col("value")]
+    for spec_name, spec in window_specs.items():
+        for func_name, func in window_functions.items():
+            select_exprs.append(func.over(spec).alias(f"{func_name}_{spec_name}"))
+
+    result = df.select(*select_exprs).sort("id").collect()
+    result_df = result.to_pandas()
+
+    # Generate expected results.
+    expected_data = {
+        "id": ids,
+        "value": values,
+        "row_num_asc_nulls_first": [3, 1, 4, 2, 5, 6],
+        "rank_asc_nulls_first": [3, 1, 4, 1, 5, 5],
+        "dense_rank_asc_nulls_first": [2, 1, 3, 1, 4, 4],
+        "row_num_asc_nulls_last": [3, 1, 4, 2, 5, 6],
+        "rank_asc_nulls_last": [3, 1, 4, 1, 5, 5],
+        "dense_rank_asc_nulls_last": [2, 1, 3, 1, 4, 4],
+        "row_num_desc_nulls_first": [6, 1, 5, 2, 3, 4],
+        "rank_desc_nulls_first": [6, 1, 5, 1, 3, 3],
+        "dense_rank_desc_nulls_first": [4, 1, 3, 1, 2, 2],
+        "row_num_desc_nulls_last": [6, 1, 5, 2, 3, 4],
+        "rank_desc_nulls_last": [6, 1, 5, 1, 3, 3],
+        "dense_rank_desc_nulls_last": [4, 1, 3, 1, 2, 2],
+    }
+    expected = pd.DataFrame(expected_data)
+
+    assert_df_equals(result_df, expected, sort_key=["id", "value"], check_dtype=False)
