@@ -80,7 +80,10 @@ impl GetResult {
         use GetResult::{File, Stream};
         let mut get_result = self;
         match get_result {
-            File(f) => collect_file(f).await,
+            File(f) => {
+                println!("Hmmm got a file");
+                collect_file(f).await
+            }
             Stream(stream, size, permit, retry_params) => {
                 use rand::Rng;
                 const NUM_TRIES: u64 = 3;
@@ -96,6 +99,7 @@ impl GetResult {
                             | super::Error::Throttled { .. }
                             | super::Error::MiscTransient { .. },
                         ) if let Some(rp) = &retry_params => {
+                            println!("Hmmm got a retryable error: {:?}", result);
                             let jitter = rand::thread_rng()
                                 .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
                                 as u64;
@@ -125,8 +129,14 @@ impl GetResult {
                             );
                             break;
                         }
-                        _ => break,
+                        Ok(_) => {
+                            // println!("Hmmm ok, breaking");
+                            break;
+                        }
                     }
+                }
+                if result.is_err() {
+                    println!("Hmmm after NUM_TRIES, got an error");
                 }
                 result
             }

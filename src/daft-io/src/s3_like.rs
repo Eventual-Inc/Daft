@@ -14,11 +14,17 @@ use std::{
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use aws_config::{meta::region::ProvideRegion, timeout::TimeoutConfig, BehaviorVersion};
+use aws_config::{
+    meta::region::ProvideRegion, retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion,
+    SdkConfig,
+};
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_s3::{
     self as s3,
-    config::{IdentityCache, ProvideCredentials, SharedCredentialsProvider},
+    config::{
+        IdentityCache, ProvideCredentials, SharedCredentialsProvider, SharedHttpClient,
+        SharedIdentityCache,
+    },
     error::ProvideErrorMetadata,
     operation::{
         complete_multipart_upload::CompleteMultipartUploadError,
@@ -380,6 +386,7 @@ impl From<Error> for super::Error {
 
 /// Retrieves an S3Config from the environment by leveraging the AWS SDK's credentials chain
 pub async fn s3_config_from_env() -> super::Result<S3Config> {
+    println!("Hmmm getting s3_config_from_env");
     let region_provider = aws_config::default_provider::region::default_provider();
     let region = region_provider.region().await;
     let region_name = region.map(|r| r.to_string());
@@ -468,20 +475,25 @@ async fn provide_credentials_with_retry(
     Ok(creds)
 }
 
-async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
+async fn get_region(config: &S3Config) -> Region {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
-    let region = if let Some(region_name) = &config.region_name {
+    if let Some(region_name) = &config.region_name {
         Region::new(region_name.clone())
     } else {
         let region_provider = aws_config::default_provider::region::default_provider();
         region_provider.region().await.unwrap_or(DEFAULT_REGION)
-    };
+    }
+}
 
-    let credentials_provider = if config.anonymous {
-        None
+async fn get_credential_provider(
+    config: &S3Config,
+    region: &Region,
+) -> super::Result<Option<SharedCredentialsProvider>> {
+    if config.anonymous {
+        Ok(None)
     } else if let Some(provider) = &config.credentials_provider {
-        Some(SharedCredentialsProvider::new(provider.clone()))
+        Ok(Some(SharedCredentialsProvider::new(provider.clone())))
     } else if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
@@ -492,7 +504,7 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
                 .unwrap(),
             config.session_token.as_ref().map(|s| s.as_string().clone()),
         );
-        Some(SharedCredentialsProvider::new(creds))
+        Ok(Some(SharedCredentialsProvider::new(creds)))
     } else if config.access_key.is_some() || config.key_id.is_some() {
         return Err(super::Error::InvalidArgument {
             msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
@@ -510,107 +522,135 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
             .await?
             .is_some()
         {
-            Some(SharedCredentialsProvider::new(default_provider))
+            Ok(Some(SharedCredentialsProvider::new(default_provider)))
         } else {
-            None
+            Ok(None)
         }
-    };
+    }
+}
 
-    let anonymous = credentials_provider.is_none();
-
-    let identity_cache = config.buffer_time.map(|buffer_time| {
+fn get_identity_cache(config: &S3Config) -> Option<SharedIdentityCache> {
+    config.buffer_time.map(|buffer_time| {
         IdentityCache::lazy()
             .buffer_time(Duration::from_secs(buffer_time))
             .build()
-    });
+    })
+}
 
-    let retry_config = {
-        ensure!(
-            config.num_tries > 0,
-            InvalidArgumentSnafu {
-                msg: "num_tries must be greater than zero"
-            }
-        );
+fn get_retry_config(config: &S3Config) -> super::Result<RetryConfig> {
+    ensure!(
+        config.num_tries > 0,
+        InvalidArgumentSnafu {
+            msg: "num_tries must be greater than zero"
+        }
+    );
 
-        let retry_mode = config
-            .retry_mode
-            .as_ref()
-            .map(|mode| mode.trim().to_lowercase());
+    let retry_mode = config
+        .retry_mode
+        .as_ref()
+        .map(|mode| mode.trim().to_lowercase());
 
-        let retry_config = match retry_mode.as_deref() {
-            None | Some("standard") => s3::config::retry::RetryConfig::standard(),
-            Some("adaptive") => s3::config::retry::RetryConfig::adaptive(),
-            _ => {
-                return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {}", config.retry_mode.clone().unwrap()) });
-            }
+    let retry_config = match retry_mode.as_deref() {
+        None | Some("standard") => s3::config::retry::RetryConfig::standard(),
+        Some("adaptive") => s3::config::retry::RetryConfig::adaptive(),
+        _ => {
+            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {}", config.retry_mode.clone().unwrap()) });
+        }
+    };
+
+    Ok(retry_config
+        .with_max_attempts(config.num_tries)
+        .with_initial_backoff(Duration::from_millis(config.retry_initial_backoff_ms)))
+}
+
+fn get_http_client(config: &S3Config) -> SharedHttpClient {
+    fn default_client() -> SharedHttpClient {
+        use aws_smithy_http_client::{
+            tls::{rustls_provider::CryptoMode, Provider},
+            Builder,
         };
+        Builder::new()
+            .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
+            .build_https()
+    }
 
-        retry_config
-            .with_max_attempts(config.num_tries)
-            .with_initial_backoff(Duration::from_millis(config.retry_initial_backoff_ms))
-    };
+    fn no_verify_hostname_client() -> SharedHttpClient {
+        unimplemented!("Setting `S3Config.check_hostname_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
+    }
 
-    let http_client = {
-        use aws_smithy_runtime_api::client::http::SharedHttpClient;
+    fn no_verify_client() -> SharedHttpClient {
+        unimplemented!("Setting `S3Config.verify_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
+    }
 
-        fn default_client() -> SharedHttpClient {
-            use aws_smithy_http_client::{
-                tls::{rustls_provider::CryptoMode, Provider},
-                Builder,
-            };
-            Builder::new()
-                .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
-                .build_https()
-        }
+    match (config.verify_ssl, config.check_hostname_ssl) {
+        (true, true) => default_client(),
+        (true, false) => no_verify_hostname_client(),
+        (false, _) => no_verify_client(),
+    }
+}
 
-        fn no_verify_hostname_client() -> SharedHttpClient {
-            unimplemented!("Setting `S3Config.check_hostname_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
-        }
-
-        fn no_verify_client() -> SharedHttpClient {
-            unimplemented!("Setting `S3Config.verify_ssl` is no longer supported. See this Github Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530");
-        }
-
-        match (config.verify_ssl, config.check_hostname_ssl) {
-            (true, true) => default_client(),
-            (true, false) => no_verify_hostname_client(),
-            (false, _) => no_verify_client(),
-        }
-    };
-
-    let timeout_config = TimeoutConfig::builder()
+fn get_timeout_config(config: &S3Config) -> TimeoutConfig {
+    TimeoutConfig::builder()
         .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
         .read_timeout(Duration::from_millis(config.read_timeout_ms))
-        .build();
+        .build()
+}
 
-    let sdk_config = {
-        let mut loader = aws_config::defaults(BehaviorVersion::latest());
+async fn get_sdk_config(
+    config: &S3Config,
+    region: Region,
+    credentials_provider: Option<SharedCredentialsProvider>,
+    identity_cache: Option<SharedIdentityCache>,
+    retry_config: RetryConfig,
+    http_client: SharedHttpClient,
+    timeout_config: TimeoutConfig,
+) -> SdkConfig {
+    let mut loader = aws_config::defaults(BehaviorVersion::latest());
 
-        macro_rules! maybe_set_loader_value {
-            ($method:ident, $value:expr) => {
-                if let Some($method) = $value {
-                    loader = loader.$method($method);
-                }
-            };
-        }
+    macro_rules! maybe_set_loader_value {
+        ($method:ident, $value:expr) => {
+            if let Some($method) = $value {
+                loader = loader.$method($method);
+            }
+        };
+    }
 
-        if let Some(provider) = credentials_provider {
-            loader = loader.credentials_provider(provider);
-        } else {
-            loader = loader.no_credentials();
-        }
+    if let Some(provider) = credentials_provider {
+        loader = loader.credentials_provider(provider);
+    } else {
+        loader = loader.no_credentials();
+    }
 
-        maybe_set_loader_value!(profile_name, &config.profile_name);
-        maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
-        maybe_set_loader_value!(identity_cache, identity_cache);
+    maybe_set_loader_value!(profile_name, &config.profile_name);
+    maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
+    maybe_set_loader_value!(identity_cache, identity_cache);
 
-        loader = loader.region(region);
-        loader = loader.retry_config(retry_config);
-        loader = loader.http_client(http_client);
-        loader = loader.timeout_config(timeout_config);
+    loader = loader.region(region);
+    loader = loader.retry_config(retry_config);
+    loader = loader.http_client(http_client);
+    loader = loader.timeout_config(timeout_config);
 
-        loader.load().await
-    };
+    loader.load().await
+}
+
+async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
+    let region = get_region(config).await;
+    let credentials_provider = get_credential_provider(config, &region).await?;
+    let anonymous = credentials_provider.is_none();
+    let identity_cache = get_identity_cache(config);
+    let retry_config = get_retry_config(config)?;
+    let http_client = get_http_client(config);
+    let timeout_config = get_timeout_config(config);
+    let sdk_config = get_sdk_config(
+        config,
+        region,
+        credentials_provider,
+        identity_cache,
+        retry_config,
+        http_client,
+        timeout_config,
+    )
+    .await;
 
     let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
 
@@ -623,6 +663,7 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
 }
 
 async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
+    println!("Hmmm building s3 client");
     let (anonymous, s3_conf) = build_s3_conf(config).await?;
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
