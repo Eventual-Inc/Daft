@@ -357,6 +357,8 @@ jobs:
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
     - name: Run IO integration tests
       run: |
         pytest tests/integration/io -m 'integration and not benchmark' --durations=50
