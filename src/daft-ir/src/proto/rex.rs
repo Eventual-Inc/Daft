@@ -1,16 +1,18 @@
+use std::sync::Arc;
+
 use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
-    proto::{from_proto_vec, to_proto_vec, UNIT},
+    proto::{
+        from_proto_vec, functions::{from_proto_function, function_expr_to_proto}, to_proto_vec, UNIT
+    },
 };
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
 #[rustfmt::skip]
 mod ir {
     pub use crate::rex::*;
-    pub use crate::functions;
     pub use crate::CountMode;
-    pub use crate::Schema;
 }
 
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
@@ -56,8 +58,8 @@ impl ToFromProto for ir::Expr {
                 Self::Cast(expr, dtype)
             }
             proto::ExprVariant::Function(function) => {
-                let func = from_proto(Some(function))?;
-                Self::ScalarFunction(func)
+                // there are various function expression types hidden within this method.
+                from_proto_function(function)?
             }
             proto::ExprVariant::Over(_) => {
                 not_implemented_err!("over")
@@ -87,11 +89,13 @@ impl ToFromProto for ir::Expr {
                 let fill_value = from_proto_arc(fill_null.fill_value)?;
                 Self::FillNull(expr, fill_value)
             }
-            proto::ExprVariant::IsIn(_) => {
-                not_implemented_err!("is_in")
-                // let expr = from_proto_arc(is_in.expr)?;
-                // let values = is_in.values.into_iter().map(from_proto_arc).collect::<ProtoResult<Vec<_>>>()?;
-                // Self::IsIn(expr, values)
+            proto::ExprVariant::IsIn(is_in) => {
+                let expr = from_proto_arc(is_in.expr)?;
+                let values = from_proto_vec(is_in.items)?
+                    .into_iter()
+                    .map(Arc::new)
+                    .collect();
+                Self::IsIn(expr, values)
             }
             proto::ExprVariant::Between(between) => {
                 let expr = from_proto_arc(between.expr)?;
@@ -99,10 +103,12 @@ impl ToFromProto for ir::Expr {
                 let upper = from_proto_arc(between.upper)?;
                 Self::Between(expr, lower, upper)
             }
-            proto::ExprVariant::List(_) => {
-                not_implemented_err!("list")
-                // let values = list.items.into_iter().map(from_proto_arc).collect::<ProtoResult<Vec<_>>>()?;
-                // Self::List(values)
+            proto::ExprVariant::List(list) => {
+                let values = from_proto_vec(list.items)?
+                    .into_iter()
+                    .map(Arc::new)
+                    .collect();
+                Self::List(values)
             }
             proto::ExprVariant::Literal(literal) => {
                 let literal = ir::LiteralValue::from_proto(literal)?;
@@ -142,7 +148,10 @@ impl ToFromProto for ir::Expr {
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let variant = match self {
-            Self::Column(column) => proto::ExprVariant::Column(column.to_proto()?),
+            Self::Column(column) => {
+                let column = column.to_proto()?;
+                proto::ExprVariant::Column(column)
+            }
             Self::Alias(expr, name) => {
                 let expr = expr.to_proto()?.into();
                 let name = name.to_string();
@@ -171,12 +180,17 @@ impl ToFromProto for ir::Expr {
                     .into(),
                 )
             }
-            Self::Cast(expr, dtype) => proto::ExprVariant::Cast(Box::new(proto::Cast {
-                expr: Some(Box::new(expr.to_proto()?)),
-                dtype: Some(dtype.to_proto()?),
-            })),
-            Self::Function { .. } => {
-                not_implemented_err!("function")
+            Self::Cast(expr, dtype) => {
+                let expr = expr.to_proto()?.into();
+                let dtype = dtype.to_proto()?.into();
+                proto::ExprVariant::Cast(Box::new(proto::Cast {
+                    expr: Some(expr),
+                    dtype: Some(dtype),
+                }))
+            }
+            Self::Function { func, inputs } => {
+                let function = function_expr_to_proto(func, inputs)?;
+                proto::ExprVariant::Function(function)
             }
             Self::Over(..) => {
                 not_implemented_err!("over")
@@ -209,10 +223,7 @@ impl ToFromProto for ir::Expr {
             }
             Self::IsIn(expr, values) => {
                 let expr = expr.to_proto()?.into();
-                let items = values
-                    .iter()
-                    .map(|v| v.to_proto())
-                    .collect::<ProtoResult<Vec<_>>>()?;
+                let items = to_proto_vec(values)?;
                 proto::ExprVariant::IsIn(
                     proto::IsIn {
                         expr: Some(expr),
@@ -235,10 +246,7 @@ impl ToFromProto for ir::Expr {
                 )
             }
             Self::List(values) => {
-                let items = values
-                    .iter()
-                    .map(|v| v.to_proto())
-                    .collect::<ProtoResult<Vec<_>>>()?;
+                let items = to_proto_vec(values)?;
                 proto::ExprVariant::List(proto::List { items }.into())
             }
             Self::Literal(value) => {
@@ -523,98 +531,6 @@ impl ToFromProto for ir::AggExpr {
         Ok(Self::Message {
             variant: Some(variant),
         })
-    }
-}
-
-impl ToFromProto for ir::functions::FunctionExpr {
-    type Message = proto::Function;
-
-    fn from_proto(_message: Self::Message) -> ProtoResult<Self> {
-        not_implemented_err!("expr_function")
-    }
-
-    fn to_proto(&self) -> ProtoResult<Self::Message> {
-        not_implemented_err!("expr_function")
-    }
-}
-
-impl ToFromProto for ir::functions::ScalarFunction {
-    type Message = proto::Function;
-
-    fn from_proto(message: Self::Message) -> ProtoResult<Self> {
-        // lookup in registry by name (that's all we have atm).
-        let name = message.name;
-        let func = ir::functions::get_function(&name);
-
-        // Convert arguments before doing resolution again since it's not possible to lookup resolved functions.
-        let inputs = ir::functions::FunctionArgs::from_proto(non_null!(message.args))?;
-
-        // Daft currently does not have static function resolution, once implemented, then
-        // we will be resolving to *concrete implementations* of functions based upon type
-        // signatures via string mangling or other techniques. For now, it suffices to lookup
-        // the dynamic functions by name because all functions are dynamic.
-        let schema = ir::Schema::empty();
-        let udf = func.get_function(inputs.clone(), &schema)?;
-
-        // don't use ::new
-        Ok(Self { udf, inputs })
-    }
-
-    fn to_proto(&self) -> ProtoResult<Self::Message> {
-        let name = self.name().to_string();
-        let args = self.inputs.to_proto()?;
-        Ok(Self::Message {
-            name,
-            args: Some(args),
-        })
-    }
-}
-
-impl ToFromProto for ir::functions::FunctionArgs<ir::ExprRef> {
-    type Message = proto::function::Args;
-
-    fn from_proto(message: Self::Message) -> ProtoResult<Self>
-    where
-        Self: Sized,
-    {
-        let args = from_proto_vec(message.args)?;
-        Ok(Self::new_unchecked(args))
-    }
-
-    fn to_proto(&self) -> ProtoResult<Self::Message> {
-        let args = to_proto_vec(self.iter())?;
-        Ok(proto::function::Args { args })
-    }
-}
-
-impl ToFromProto for ir::functions::FunctionArg<ir::ExprRef> {
-    type Message = proto::function::Arg;
-
-    fn from_proto(message: Self::Message) -> ProtoResult<Self>
-    where
-        Self: Sized,
-    {
-        let name = message.param.clone();
-        let expr = ir::Expr::from_proto(non_null!(message.expr))?.into();
-        let arg = match name {
-            Some(name) => Self::named(name, expr),
-            None => Self::unnamed(expr),
-        };
-        Ok(arg)
-    }
-
-    fn to_proto(&self) -> ProtoResult<Self::Message> {
-        let arg = match self {
-            Self::Named { name, arg } => proto::function::Arg {
-                param: name.to_string().into(),
-                expr: arg.to_proto()?.into(),
-            },
-            Self::Unnamed(arg) => proto::function::Arg {
-                param: None,
-                expr: arg.to_proto()?.into(),
-            },
-        };
-        Ok(arg)
     }
 }
 

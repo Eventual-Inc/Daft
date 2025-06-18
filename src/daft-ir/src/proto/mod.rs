@@ -2,6 +2,7 @@
 pub mod rex;
 pub mod rel;
 pub mod schema;
+pub mod functions;
 
 use std::sync::Arc;
 
@@ -13,7 +14,7 @@ pub(crate) const UNIT: daft_proto::protos::daft::v1::Unit = daft_proto::protos::
 /// This trait defines the from/to protobuf message methods.
 pub trait ToFromProto {
     /// This rust type's corresponding protobuf message type (M)
-    type Message: prost::Message + Default;
+    type Message: prost::Message;
 
     /// Convert a message to this rust type.
     fn from_proto(message: Self::Message) -> ProtoResult<Self>

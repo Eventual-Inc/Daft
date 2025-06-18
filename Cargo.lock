@@ -2757,10 +2757,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "bincode",
  "common-error",
+ "common-resource-request",
  "common-scan-info",
  "daft-core",
  "daft-dsl",
- "daft-functions",
  "daft-logical-plan",
  "daft-proto",
  "daft-schema",

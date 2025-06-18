@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use daft_logical_plan::ops::ActorPoolProject;
+
 use super::{ProtoResult, ToFromProto};
 use crate::{
     non_null, not_implemented_err, not_optimized_err,
@@ -39,9 +41,9 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 Self::Project(project)
             }
             proto::RelVariant::ActorPoolProject(actor_pool_project) => {
-                not_implemented_err!("actor_pool_project");
-                // let actor_pool_project = ir::rel::ActorPoolProject::from_proto(*actor_pool_project)?;
-                // Self::ActorPoolProject(actor_pool_project)
+                let actor_pool_project =
+                    ir::rel::ActorPoolProject::from_proto(*actor_pool_project)?;
+                Self::ActorPoolProject(actor_pool_project)
             }
             proto::RelVariant::Filter(filter) => {
                 let filter = ir::rel::Filter::from_proto(*filter)?;
@@ -153,9 +155,8 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 proto::RelVariant::Project(project)
             }
             Self::ActorPoolProject(actor_pool_project) => {
-                not_implemented_err!("actor_pool_project");
-                // let actor_pool_project = actor_pool_project.to_proto()?.into();
-                // proto::RelVariant::ActorPoolProject(actor_pool_project)
+                let actor_pool_project = actor_pool_project.to_proto()?.into();
+                proto::RelVariant::ActorPoolProject(actor_pool_project)
             }
             Self::Filter(filter) => {
                 let filter = filter.to_proto()?.into();
@@ -530,6 +531,28 @@ impl ToFromProto for ir::rel::Aggregate {
     }
 }
 
+impl ToFromProto for ActorPoolProject {
+    type Message = proto::RelActorPoolProject;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        let input = ir::rel::LogicalPlan::from_proto(*non_null!(message.input))?;
+        let projections = from_protos(message.projections)?;
+        Ok(ir::rel::new_project_with_actor_pool(input, projections)?)
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        let input = self.input.to_proto()?.into();
+        let projections = to_protos(&self.projection)?;
+        Ok(proto::RelActorPoolProject {
+            input: Some(input),
+            projections,
+        })
+    }
+}
+
 // -----------------------------------------------------------------
 //
 //                            OTHER
@@ -767,12 +790,12 @@ impl ToFromProto for ir::ScanTaskLikeRef {
     where
         Self: Sized,
     {
-        Ok(bincode::deserialize(&message.payload)?)
+        Ok(bincode::deserialize(&message.task)?)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         Ok(Self::Message {
-            payload: bincode::serialize(self)?,
+            task: bincode::serialize(self)?,
         })
     }
 }

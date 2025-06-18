@@ -484,14 +484,20 @@ pub struct IfElse {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Function {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "2")]
+    #[prost(message, optional, tag = "3")]
     pub args: ::core::option::Option<function::Args>,
+    #[prost(oneof = "function::Descriptor", tags = "1, 2")]
+    pub descriptor: ::core::option::Option<function::Descriptor>,
 }
 /// Nested message and enum types in `Function`.
 pub mod function {
-    /// TODO: daft does not handle static parameter binding.
+    /// For rust functions (builtins), we only have simple names.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct RsFunction {
+        #[prost(string, tag = "1")]
+        pub name: ::prost::alloc::string::String,
+    }
+    /// TODO: Daft does not handle static parameter binding.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Args {
         #[prost(message, repeated, tag = "1")]
@@ -505,11 +511,44 @@ pub mod function {
         #[prost(message, optional, tag = "2")]
         pub expr: ::core::option::Option<super::Expr>,
     }
+    /// For python functions (UDF), we need the pickled object and bound args.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct PyFunction {
+        #[prost(string, tag = "1")]
+        pub name: ::prost::alloc::string::String,
+        #[prost(uint64, tag = "2")]
+        pub arity: u64,
+        #[prost(message, optional, tag = "3")]
+        pub return_type: ::core::option::Option<super::DataType>,
+        /// --
+        #[prost(message, optional, tag = "4")]
+        pub callable: ::core::option::Option<super::PyObject>,
+        /// the __init__ args for runtime initialization
+        #[prost(message, optional, tag = "5")]
+        pub callable_init_args: ::core::option::Option<super::PyObject>,
+        /// the (possibly) closed args from decoration
+        #[prost(message, optional, tag = "6")]
+        pub callable_call_args: ::core::option::Option<super::PyObject>,
+        /// --
+        #[prost(uint64, optional, tag = "7")]
+        pub concurrency: ::core::option::Option<u64>,
+        #[prost(uint64, optional, tag = "8")]
+        pub batch_size: ::core::option::Option<u64>,
+        #[prost(uint64, optional, tag = "9")]
+        pub num_cpus: ::core::option::Option<u64>,
+        #[prost(uint64, optional, tag = "10")]
+        pub num_gpus: ::core::option::Option<u64>,
+        #[prost(uint64, optional, tag = "11")]
+        pub max_memory_bytes: ::core::option::Option<u64>,
+    }
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Descriptor {
+        #[prost(message, tag = "1")]
+        Rs(RsFunction),
+        #[prost(message, tag = "2")]
+        Py(PyFunction),
+    }
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct FunctionArgs {}
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct FunctionArg {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Over {
     #[prost(message, optional, boxed, tag = "1")]
@@ -733,10 +772,13 @@ pub struct RelProject {
     #[prost(message, repeated, tag = "2")]
     pub projections: ::prost::alloc::vec::Vec<Expr>,
 }
+/// This does not need to be separate, but it reduces impedance mismatch across the type definitions.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelActorPoolProject {
     #[prost(message, optional, boxed, tag = "1")]
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(message, repeated, tag = "2")]
+    pub projections: ::prost::alloc::vec::Vec<Expr>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelFilter {
@@ -990,9 +1032,9 @@ pub struct ScanTasks {
 /// ScanTask definition could be added later, it's a lot of work.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScanTask {
-    /// bincode payload
+    /// bincode
     #[prost(bytes = "vec", tag = "1")]
-    pub payload: ::prost::alloc::vec::Vec<u8>,
+    pub task: ::prost::alloc::vec::Vec<u8>,
 }
 /// See SQL <aggregate function> for details on measure, we will have a filter field at some point.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1112,6 +1154,13 @@ pub mod agg {
         #[prost(message, tag = "5")]
         MapGroups(::prost::alloc::boxed::Box<MapGroups>),
     }
+}
+/// / A type to leverage PyObjectWrapper's custom bincode serde.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PyObject {
+    /// bincode
+    #[prost(bytes = "vec", tag = "1")]
+    pub object: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

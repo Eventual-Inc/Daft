@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use daft_dsl::{
     count_actor_pool_udfs, exprs_to_schema,
@@ -28,6 +28,11 @@ pub struct ActorPoolProject {
 }
 
 impl ActorPoolProject {
+    /// Same as try_new, but with a DaftResult return type so this can be public.
+    pub fn new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> DaftResult<Self> {
+        Ok(Self::try_new(input, projection)?)
+    }
+
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
         if !num_actor_pool_udfs == 1 {

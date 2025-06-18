@@ -6,8 +6,6 @@ Consolidated crate for daft's IR e.g. daft-dsl, daft-logical-plan, daft-schema, 
 
 - rex: subqueries (should be eliminated though?)
 - rex: window functions
-- rex: function expr (the old one)
-- rel: actor_pool_project
 - rel: explode
 - rel: unpivot
 - rel: sort

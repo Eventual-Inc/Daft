@@ -19,7 +19,28 @@ pub use crate::{
 
 #[rustfmt::skip]
 pub mod rex {
+    use std::sync::Arc;
+
+    use daft_dsl::functions::{python::PythonUDF, FunctionArgs, FunctionExpr, ScalarFunction, ScalarUDF};
     pub use daft_dsl::*;
+
+    /// Creates an expression from a python-scalar function
+    pub fn from_py_func<A, E>(func: PythonUDF, args: A) -> Expr 
+    where
+        A: IntoIterator<Item = E>,
+        E: Into<Arc<Expr>>,
+    {
+        let func: FunctionExpr = FunctionExpr::Python(func);
+        let inputs: Vec<Arc<Expr>> = args.into_iter().map(|e| e.into()).collect();
+        Expr::Function { func, inputs }
+    }
+
+    /// Creates an expression from a python-scalar function
+    pub fn from_rs_func(func: Arc<dyn ScalarUDF>, args: FunctionArgs<ExprRef>) -> Expr {
+        // don't use ::new
+        let func = ScalarFunction { udf: func, inputs: args };
+        Expr::ScalarFunction(func)
+    }
 }
 
 #[rustfmt::skip]
@@ -28,7 +49,7 @@ pub mod functions {
 
     pub use daft_dsl::functions::*;
 
-    // Link the function infallibly .. you may add error handling later.
+    // Link the function (infallibly) .. todo(conner): add error handling later.
     pub fn get_function(name: &str) -> Arc<dyn ScalarFunctionFactory + 'static> {
         FUNCTION_REGISTRY
         .read()
@@ -76,6 +97,18 @@ pub mod rel {
         let input: Arc<LogicalPlan> = input.into();
         let projections: Vec<Arc<Expr>> = projections.into_iter().map(|e| e.into()).collect();
         Project::new(input, projections)
+    }
+
+    /// Creates a new projection relational operator where at least one input is an actor pool udf.
+    pub fn new_project_with_actor_pool<I, P, E>(input: I, projections: P) -> DaftResult<ActorPoolProject>
+    where
+        I: Into<Arc<LogicalPlan>>,
+        P: IntoIterator<Item = E>,
+        E: Into<Arc<Expr>>,
+    {
+        let input: Arc<LogicalPlan> = input.into();
+        let projections: Vec<Arc<Expr>> = projections.into_iter().map(|e| e.into()).collect();
+        ActorPoolProject::new(input, projections)
     }
 
     /// Creates a new filter relational operator.

@@ -319,10 +319,18 @@ message IfElse {
 }
 
 message Function {
-  string name = 1;
-  Args args = 2;
+  oneof descriptor {
+    RsFunction rs = 1;
+    PyFunction py = 2;
+  }
+  Args args = 3;
 
-  // TODO: daft does not handle static parameter binding.
+  // For rust functions (builtins), we only have simple names.
+  message RsFunction {
+    string name = 1;
+  }
+
+  // TODO: Daft does not handle static parameter binding.
   message Args {
     repeated Arg args = 1;    
   }
@@ -332,14 +340,23 @@ message Function {
     optional string param = 1;
     Expr expr = 2;
   }
-}
 
-message FunctionArgs {
-
-}
-
-message FunctionArg {
-
+  // For python functions (UDF), we need the pickled object and bound args.
+  message PyFunction {
+    string name = 1;
+    uint64 arity = 2;
+    DataType return_type = 3;
+    //--
+    PyObject callable = 4;
+    PyObject callable_init_args = 5; // the __init__ args for runtime initialization
+    PyObject callable_call_args = 6; // the (possibly) closed args from decoration
+    //--
+    optional uint64 concurrency = 7;
+    optional uint64 batch_size = 8;
+    optional uint64 num_cpus = 9; 
+    optional uint64 num_gpus = 10;
+    optional uint64 max_memory_bytes = 11;
+  }
 }
 
 message Over {
@@ -518,8 +535,10 @@ message RelProject {
   repeated Expr projections = 2;
 }
 
+// This does not need to be separate, but it reduces impedance mismatch across the type definitions.
 message RelActorPoolProject {
   Rel input = 1;
+  repeated Expr projections = 2;
 }
 
 message RelFilter {
@@ -691,8 +710,7 @@ message ScanTasks {
 
 // ScanTask definition could be added later, it's a lot of work.
 message ScanTask {
-  // bincode payload
-  bytes payload = 1;
+  bytes task = 1; // bincode
 }
 
 // See SQL <aggregate function> for details on measure, we will have a filter field at some point.
@@ -753,4 +771,9 @@ message Agg {
     Expr func = 1;
     repeated Expr inputs = 2;
   }
+}
+
+/// A type to leverage PyObjectWrapper's custom bincode serde.
+message PyObject {
+  bytes object = 1; // bincode
 }
