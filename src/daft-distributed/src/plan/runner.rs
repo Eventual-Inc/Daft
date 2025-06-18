@@ -11,13 +11,13 @@ use crate::{
         span::{PlanSpan, StageSpan},
         HooksManager,
     },
-    pipeline_node::MaterializedOutput,
+    pipeline_node::{logical_plan_to_pipeline_node, MaterializedOutput},
     scheduling::{
         scheduler::{spawn_default_scheduler_actor, SchedulerHandle},
         task::SwordfishTask,
         worker::{Worker, WorkerManager},
     },
-    stage::{RunningStage, Stage, StageContext, StagePlan},
+    stage::{RunningStage, Stage, StageContext, StagePlan, StageType},
     utils::{
         channel::{create_channel, Sender},
         joinset::create_join_set,
@@ -111,10 +111,20 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<RunningStage<'a>> {
         let mut stage_context = self.new_stage_context(stage, scheduler_handle);
-        let pipeline_node = stage.create_pipeline_node(self.plan_id.clone(), psets, config)?;
-
-        let running_node = pipeline_node.start(&mut stage_context);
-        Ok(RunningStage::new(running_node, stage_context))
+        match &stage.type_ {
+            StageType::MapPipeline { plan } => {
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    self.plan_id.clone(),
+                    stage.id.clone(),
+                    plan.clone(),
+                    config,
+                    Arc::new(psets),
+                )?;
+                let running_node = pipeline_node.start(&mut stage_context);
+                Ok(RunningStage::new(running_node, stage_context))
+            }
+            _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
+        }
     }
 
     /// this function is used to create a span for the execution of a plan
