@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_display::{
     ascii::fmt_tree_gitstyle,
@@ -33,7 +33,7 @@ mod translate;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = usize;
-
+pub(crate) type NodeName = &'static str;
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
 /// Right now, the only metadata is the worker id that has it so we can try
@@ -45,7 +45,6 @@ pub(crate) struct MaterializedOutput {
 }
 
 impl MaterializedOutput {
-    #[allow(dead_code)]
     pub fn new(partition: PartitionRef, worker_id: WorkerId) -> Self {
         Self {
             partition,
@@ -67,7 +66,6 @@ impl MaterializedOutput {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) enum PipelineOutput<T: Task> {
     Materialized(MaterializedOutput),
@@ -75,14 +73,50 @@ pub(crate) enum PipelineOutput<T: Task> {
     Running(SubmittedTask),
 }
 
-#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) struct DistributedPipelineNodeContext {
+    pub plan_id: PlanID,
+    pub stage_id: StageID,
+    pub node_id: NodeID,
+    pub node_name: NodeName,
+    pub additional_context: HashMap<String, String>,
+}
+
+impl DistributedPipelineNodeContext {
+    pub fn new(plan_id: PlanID, stage_id: StageID, node_id: NodeID, node_name: NodeName) -> Self {
+        Self {
+            plan_id,
+            stage_id,
+            node_id,
+            node_name,
+            additional_context: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, key: &str, value: String) {
+        self.additional_context.insert(key.to_string(), value);
+    }
+}
+
 pub(crate) trait DistributedPipelineNode: Send + Sync {
-    fn name(&self) -> &'static str;
+    #[allow(dead_code)]
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
     fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode;
-    fn plan_id(&self) -> &PlanID;
-    fn stage_id(&self) -> &StageID;
-    fn node_id(&self) -> &NodeID;
+    fn context(&self) -> DistributedPipelineNodeContext;
+    #[allow(dead_code)]
+    fn plan_id(&self) -> PlanID {
+        self.context().plan_id
+    }
+    #[allow(dead_code)]
+    fn stage_id(&self) -> StageID {
+        self.context().stage_id
+    }
+    fn node_id(&self) -> NodeID {
+        self.context().node_id
+    }
+    fn name(&self) -> NodeName {
+        self.context().node_name
+    }
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
 
@@ -112,24 +146,15 @@ pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple
     s
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
 pub(crate) struct RunningPipelineNode {
     result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
 }
 
 impl RunningPipelineNode {
-    #[allow(dead_code)]
     fn new(result_receiver: Receiver<PipelineOutput<SwordfishTask>>) -> Self {
         Self { result_receiver }
     }
 
-    #[allow(dead_code)]
-    pub fn into_inner(self) -> Receiver<PipelineOutput<SwordfishTask>> {
-        self.result_receiver
-    }
-
-    #[allow(dead_code)]
     pub fn materialize(
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,

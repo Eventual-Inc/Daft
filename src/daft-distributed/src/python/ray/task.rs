@@ -1,11 +1,12 @@
-use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, future::Future, sync::Arc};
 
-use common_daft_config::PyDaftExecutionConfig;
-use common_error::DaftResult;
-use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::PyLocalPhysicalPlan;
-use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
+use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
+use common_error::{DaftError, DaftResult};
+use common_partitioning::PartitionRef;
+use daft_local_plan::{LocalPhysicalPlanRef, PyLocalPhysicalPlan};
+use pyo3::{pyclass, pymethods, PyObject, PyResult, Python};
 
+use super::partition::RayPartitionRef;
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
@@ -15,7 +16,6 @@ use crate::{
 };
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
-#[allow(dead_code)]
 pub(crate) struct RayTaskResultHandle {
     /// The handle to the RaySwordfishTaskHandle
     handle: PyObject,
@@ -29,7 +29,6 @@ pub(crate) struct RayTaskResultHandle {
 
 impl RayTaskResultHandle {
     /// Create a new TaskHandle from a Python RaySwordfishTaskHandle
-    #[allow(dead_code)]
     pub fn new(
         handle: PyObject,
         coroutine: PyObject,
@@ -46,14 +45,15 @@ impl RayTaskResultHandle {
 }
 
 impl TaskResultHandle for RayTaskResultHandle {
-    /// Get the result of the task, awaiting if necessary
+    /// Wrap the asyncio coroutine in a rust future.
     fn get_result(
         &mut self,
     ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static {
-        // Create a rust future that will await the coroutine
+        // Take the coroutine and task locals from the handle.
         let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
 
+        // Convert the coroutine to a rust future.
         let await_coroutine = async move {
             let result = Python::with_gil(|py| {
                 pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
@@ -63,6 +63,8 @@ impl TaskResultHandle for RayTaskResultHandle {
         };
 
         let worker_id = self.worker_id.clone();
+
+        // Await the rust future under the scope of the task locals (asyncio event loop)
         async move {
             let materialized_result =
                 pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
@@ -81,6 +83,7 @@ impl TaskResultHandle for RayTaskResultHandle {
         }
     }
 
+    // Cancel the asyncio coroutine.
     fn cancel_callback(&mut self) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.handle.call_method0(py, "cancel")?;
@@ -89,84 +92,50 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef")]
-#[derive(Debug, FromPyObject)]
-pub(crate) struct RayPartitionRef {
-    pub object_ref: PyObject,
-    pub num_rows: usize,
-    pub size_bytes: usize,
-}
-
-#[pymethods]
-impl RayPartitionRef {
-    #[new]
-    pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
-        Self {
-            object_ref,
-            num_rows,
-            size_bytes,
-        }
-    }
-
-    #[getter]
-    pub fn get_object_ref(&self, py: Python) -> PyObject {
-        self.object_ref.clone_ref(py)
-    }
-
-    #[getter]
-    pub fn get_num_rows(&self) -> usize {
-        self.num_rows
-    }
-
-    #[getter]
-    pub fn get_size_bytes(&self) -> usize {
-        self.size_bytes
-    }
-}
-
-impl Partition for RayPartitionRef {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        Ok(Some(self.size_bytes))
-    }
-    fn num_rows(&self) -> DaftResult<usize> {
-        Ok(self.num_rows)
-    }
-}
-
 #[pyclass(module = "daft.daft", name = "RaySwordfishTask")]
 pub(crate) struct RaySwordfishTask {
-    task: SwordfishTask,
+    plan: LocalPhysicalPlanRef,
+    config: Arc<DaftExecutionConfig>,
+    context: HashMap<String, String>,
+    psets: HashMap<String, Vec<PartitionRef>>,
 }
 
-impl RaySwordfishTask {
-    #[allow(dead_code)]
-    pub fn new(task: SwordfishTask) -> Self {
-        Self { task }
+impl TryFrom<SwordfishTask> for RaySwordfishTask {
+    type Error = DaftError;
+
+    fn try_from(task: SwordfishTask) -> DaftResult<Self> {
+        let plan = task.plan;
+        let (merged_plan, psets) = task
+            .inputs
+            .merge_plan_with_input(plan, task.context.node_id.clone());
+        let context = task.context.into();
+        Ok(Self {
+            plan: merged_plan,
+            config: task.config.clone(),
+            context,
+            psets,
+        })
     }
 }
 
 #[pymethods]
 impl RaySwordfishTask {
     fn context(&self) -> HashMap<String, String> {
-        self.task.context().clone()
+        self.context.clone()
     }
 
     fn name(&self) -> String {
-        self.task.name()
+        self.context["node_name"].clone()
     }
 
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
-        let plan = self.task.plan();
+        let plan = self.plan.clone();
         Ok(PyLocalPhysicalPlan { plan })
     }
 
     fn psets(&self, py: Python) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
         let psets = self
-            .task
-            .psets()
+            .psets
             .iter()
             .map(|(k, v)| {
                 (
@@ -191,7 +160,7 @@ impl RaySwordfishTask {
     }
 
     fn config(&self) -> PyResult<PyDaftExecutionConfig> {
-        let config = self.task.config().clone();
+        let config = self.config.clone();
         Ok(PyDaftExecutionConfig { config })
     }
 }

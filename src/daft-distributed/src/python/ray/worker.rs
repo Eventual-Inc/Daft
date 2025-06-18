@@ -69,7 +69,7 @@ impl RaySwordfishWorker {
             let task_id: Arc<str> = Arc::from(task.task_id().to_string());
             let task_details = TaskDetails::from(&task);
 
-            let ray_swordfish_task = RaySwordfishTask::new(task);
+            let ray_swordfish_task = RaySwordfishTask::try_from(task)?;
             let py_task_handle = self.ray_worker_handle.call_method1(
                 py,
                 pyo3::intern!(py, "submit_task"),

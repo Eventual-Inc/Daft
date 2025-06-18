@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -10,20 +10,20 @@ use daft_dsl::{
     ExprRef,
 };
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 
 use super::{
-    DisplayLevel, DistributedPipelineNode, MaterializedOutput, NodeID, PipelineOutput,
-    RunningPipelineNode, TreeDisplay,
+    DisplayLevel, DistributedPipelineNode, DistributedPipelineNodeContext, MaterializedOutput,
+    NodeID, PipelineOutput, RunningPipelineNode, TreeDisplay,
 };
 use crate::{
     plan::PlanID,
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask},
+        task::{SchedulingStrategy, SwordfishTask, SwordfishTaskInput},
         worker::WorkerId,
     },
     stage::{StageContext, StageID},
@@ -154,9 +154,7 @@ impl UDFActors {
 }
 
 pub(crate) struct ActorUDF {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
+    context: DistributedPipelineNodeContext,
     config: Arc<DaftExecutionConfig>,
     child: Arc<dyn DistributedPipelineNode>,
     schema: SchemaRef,
@@ -166,6 +164,8 @@ pub(crate) struct ActorUDF {
 }
 
 impl ActorUDF {
+    const NODE_NAME: &'static str = "ActorUDF";
+
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -182,9 +182,12 @@ impl ActorUDF {
             .unwrap_or(0);
         let projection = BoundExpr::bind_all(&projection, &schema)?;
         Ok(Self {
-            plan_id,
-            stage_id,
-            node_id,
+            context: DistributedPipelineNodeContext::new(
+                plan_id,
+                stage_id,
+                node_id,
+                Self::NODE_NAME,
+            ),
             config,
             child,
             schema,
@@ -279,44 +282,26 @@ impl ActorUDF {
             partitions.push(partition);
         }
 
-        let in_memory_info = InMemoryInfo::new(
-            self.schema.clone(),
-            self.node_id.to_string(),
-            None,
-            partitions.len(),
-            0,
-            0,
-            None,
-            None,
-        );
-
-        let in_memory_source =
-            LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
+        let placeholder =
+            LocalPhysicalPlan::placeholder_scan(self.schema.clone(), StatsState::NotMaterialized);
 
         let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
-            in_memory_source,
+            placeholder,
             actors.into_iter().map(|e| e.into()).collect(),
             self.batch_size,
             self.memory_request,
             self.schema.clone(),
             StatsState::NotMaterialized,
         );
-        let context = HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), format!("{}", self.stage_id)),
-            ("node_id".to_string(), format!("{}", self.node_id)),
-            ("node_name".to_string(), self.name().to_string()),
-        ]);
         let task = SubmittableTask::new(SwordfishTask::new(
             actor_pool_project_plan,
             self.config.clone(),
-            HashMap::from([(self.node_id.to_string(), partitions)]),
+            SwordfishTaskInput::InMemory(partitions),
             SchedulingStrategy::WorkerAffinity {
                 worker_id,
                 soft: false,
             },
-            context,
-            self.node_id,
+            self.context.clone().into(),
         ));
 
         Ok(task)
@@ -328,7 +313,7 @@ impl ActorUDF {
         submittable_task: SubmittableTask<SwordfishTask>,
         actors: Vec<PyObjectWrapper>,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-        let task_plan = submittable_task.task().plan();
+        let task_plan = submittable_task.task().plan.clone();
         let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
             task_plan,
             actors,
@@ -343,31 +328,19 @@ impl ActorUDF {
             worker_id,
             soft: false,
         };
-        let psets = submittable_task.task().psets().clone();
-
-        let context = HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), format!("{}", self.stage_id)),
-            ("node_id".to_string(), format!("{}", self.node_id)),
-            ("node_name".to_string(), self.name().to_string()),
-        ]);
+        let inputs = submittable_task.task().inputs.clone();
         let task = submittable_task.with_new_task(SwordfishTask::new(
             actor_pool_project_plan,
             self.config.clone(),
-            psets,
+            inputs,
             scheduling_strategy,
-            context,
-            self.node_id,
+            self.context.clone().into(),
         ));
         Ok(task)
     }
 }
 
 impl DistributedPipelineNode for ActorUDF {
-    fn name(&self) -> &'static str {
-        "ActorUDF"
-    }
-
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![self.child.clone()]
     }
@@ -382,14 +355,8 @@ impl DistributedPipelineNode for ActorUDF {
         RunningPipelineNode::new(result_rx)
     }
 
-    fn plan_id(&self) -> &PlanID {
-        &self.plan_id
-    }
-    fn stage_id(&self) -> &StageID {
-        &self.stage_id
-    }
-    fn node_id(&self) -> &NodeID {
-        &self.node_id
+    fn context(&self) -> DistributedPipelineNodeContext {
+        self.context.clone()
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
@@ -403,11 +370,11 @@ impl TreeDisplay for ActorUDF {
         let mut display = String::new();
 
         writeln!(display, "{}", self.name()).unwrap();
-        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        writeln!(display, "Node ID: {}", self.node_id()).unwrap();
         let plan = self
             .make_actor_udf_task_for_materialized_outputs(vec![], WorkerId::default(), vec![])
             .unwrap();
-        writeln!(display, "{}", plan.task().plan().single_line_display()).unwrap();
+        writeln!(display, "{}", plan.task().plan.single_line_display()).unwrap();
         display
     }
 

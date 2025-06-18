@@ -4,12 +4,20 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_local_plan::LocalPhysicalPlanRef;
+use common_scan_info::{Pushdowns, ScanTaskLikeRef};
+use common_treenode::{Transformed, TreeNode};
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::worker::WorkerId;
-use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
+use crate::{
+    pipeline_node::{DistributedPipelineNodeContext, MaterializedOutput, NodeID, NodeName},
+    plan::PlanID,
+    stage::StageID,
+    utils::channel::OneshotSender,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
@@ -25,12 +33,10 @@ impl TaskResourceRequest {
         self.resource_request.num_cpus().unwrap_or(1.0)
     }
 
-    #[allow(dead_code)]
     pub fn num_gpus(&self) -> f64 {
         self.resource_request.num_gpus().unwrap_or(0.0)
     }
 
-    #[allow(dead_code)]
     pub fn memory_bytes(&self) -> usize {
         self.resource_request.memory_bytes().unwrap_or(0)
     }
@@ -38,17 +44,16 @@ impl TaskResourceRequest {
 
 pub(crate) type TaskID = Arc<str>;
 pub(crate) type TaskPriority = usize;
-#[allow(dead_code)]
+
 pub(crate) trait Task: Send + Sync + Debug + 'static {
     fn priority(&self) -> TaskPriority;
-    fn task_id(&self) -> &str;
+    fn task_id(&self) -> &TaskID;
     fn resource_request(&self) -> &TaskResourceRequest;
     fn strategy(&self) -> &SchedulingStrategy;
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskDetails {
-    #[allow(dead_code)]
     pub id: TaskID,
     pub resource_request: TaskResourceRequest,
 }
@@ -66,14 +71,13 @@ impl TaskDetails {
 impl<T: Task> From<&T> for TaskDetails {
     fn from(task: &T) -> Self {
         Self {
-            id: Arc::from(task.task_id()),
+            id: task.task_id().clone(),
             resource_request: task.resource_request().clone(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum SchedulingStrategy {
     Spread,
     // TODO: In the future if we run multiple workers on the same node, we can have a NodeAffinity strategy or a multi-worker affinity strategy
@@ -81,84 +85,181 @@ pub(crate) enum SchedulingStrategy {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SwordfishTask {
-    plan: LocalPhysicalPlanRef,
-    resource_request: TaskResourceRequest,
-    config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
-    strategy: SchedulingStrategy,
-    context: HashMap<String, String>,
-    notify_token: Option<CancellationToken>,
-    task_priority: TaskPriority,
+pub(crate) enum SwordfishTaskInput {
+    InMemory(Vec<PartitionRef>),
+    ScanTasks(Arc<Vec<ScanTaskLikeRef>>, Pushdowns),
 }
 
-#[allow(dead_code)]
+impl SwordfishTaskInput {
+    fn merge_in_memory_inputs_with_plan(
+        partitions: Vec<PartitionRef>,
+        plan: LocalPhysicalPlanRef,
+        node_id: NodeID,
+    ) -> LocalPhysicalPlanRef {
+        plan.clone()
+            .transform_up(|p| match p.as_ref() {
+                LocalPhysicalPlan::PlaceholderScan(placeholder_scan) => {
+                    let info = InMemoryInfo::new(
+                        placeholder_scan.schema.clone(),
+                        node_id.to_string(),
+                        None,
+                        partitions.len(),
+                        partitions
+                            .iter()
+                            .filter_map(|p| p.size_bytes().unwrap())
+                            .sum::<usize>(),
+                        partitions.iter().filter_map(|p| p.num_rows().ok()).sum(),
+                        None,
+                        None,
+                    );
+                    let in_memory_source =
+                        LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+                    Ok(Transformed::yes(in_memory_source.clone()))
+                }
+                _ => Ok(Transformed::no(p)),
+            })
+            .unwrap()
+            .data
+    }
+
+    fn merge_scan_tasks_with_plan(
+        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        pushdowns: Pushdowns,
+        plan: LocalPhysicalPlanRef,
+    ) -> LocalPhysicalPlanRef {
+        plan.clone()
+            .transform_up(|p| match p.as_ref() {
+                LocalPhysicalPlan::PlaceholderScan(placeholder_scan) => {
+                    let physical_source = LocalPhysicalPlan::physical_scan(
+                        scan_tasks.clone(),
+                        pushdowns.clone(),
+                        placeholder_scan.schema.clone(),
+                        StatsState::NotMaterialized,
+                    );
+                    Ok(Transformed::yes(physical_source.clone()))
+                }
+                _ => Ok(Transformed::no(p)),
+            })
+            .unwrap()
+            .data
+    }
+
+    pub fn merge_plan_with_input(
+        self,
+        plan: LocalPhysicalPlanRef,
+        node_id: NodeID,
+    ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
+        match self {
+            SwordfishTaskInput::InMemory(partitions) => {
+                let psets = partitions
+                    .iter()
+                    .map(|p| (node_id.to_string(), vec![p.clone()]))
+                    .collect();
+                (
+                    Self::merge_in_memory_inputs_with_plan(partitions, plan, node_id),
+                    psets,
+                )
+            }
+            SwordfishTaskInput::ScanTasks(scan_tasks, pushdowns) => {
+                let transformed_plan =
+                    Self::merge_scan_tasks_with_plan(scan_tasks.clone(), pushdowns.clone(), plan);
+                (transformed_plan, HashMap::new())
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct SwordfishTaskContext {
+    pub plan_id: PlanID,
+    pub stage_id: StageID,
+    pub node_id: NodeID,
+    pub task_id: TaskID,
+    pub node_name: NodeName,
+    pub additional_context: HashMap<String, String>,
+}
+
+impl SwordfishTaskContext {
+    pub fn new(
+        plan_id: PlanID,
+        stage_id: StageID,
+        node_id: NodeID,
+        node_name: NodeName,
+        additional_context: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            plan_id,
+            stage_id,
+            node_id,
+            task_id: Arc::from(Uuid::new_v4().to_string()),
+            node_name,
+            additional_context,
+        }
+    }
+}
+
+impl From<SwordfishTaskContext> for HashMap<String, String> {
+    fn from(context: SwordfishTaskContext) -> Self {
+        let mut context_map = HashMap::new();
+        context_map.insert("plan_id".to_string(), context.plan_id.to_string());
+        context_map.insert("stage_id".to_string(), context.stage_id.to_string());
+        context_map.insert("node_id".to_string(), context.node_id.to_string());
+        context_map.insert("node_name".to_string(), context.node_name.to_string());
+        context_map.extend(context.additional_context);
+        context_map
+    }
+}
+
+impl From<DistributedPipelineNodeContext> for SwordfishTaskContext {
+    fn from(context: DistributedPipelineNodeContext) -> Self {
+        Self::new(
+            context.plan_id,
+            context.stage_id,
+            context.node_id,
+            context.node_name,
+            context.additional_context,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct SwordfishTask {
+    pub plan: LocalPhysicalPlanRef,
+    pub resource_request: TaskResourceRequest,
+    pub config: Arc<DaftExecutionConfig>,
+    pub inputs: SwordfishTaskInput,
+    pub strategy: SchedulingStrategy,
+    pub context: SwordfishTaskContext,
+    pub notify_token: Option<CancellationToken>,
+    pub task_priority: TaskPriority,
+}
+
 impl SwordfishTask {
     pub fn new(
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
+        inputs: SwordfishTaskInput,
         strategy: SchedulingStrategy,
-        mut context: HashMap<String, String>,
-        task_priority: TaskPriority,
+        context: SwordfishTaskContext,
     ) -> Self {
-        let task_id = Uuid::new_v4().to_string();
         let resource_request = TaskResourceRequest::new(plan.resource_request());
-        context.insert("task_id".to_string(), task_id);
-
+        let priority = context.node_id;
         Self {
             plan,
             resource_request,
             config,
-            psets,
+            inputs,
             strategy,
             context,
             notify_token: None,
-            task_priority,
+            task_priority: priority,
         }
-    }
-
-    pub fn id(&self) -> &str {
-        self.context.get("task_id").unwrap()
-    }
-
-    pub fn strategy(&self) -> &SchedulingStrategy {
-        &self.strategy
-    }
-
-    pub fn plan(&self) -> LocalPhysicalPlanRef {
-        self.plan.clone()
-    }
-
-    pub fn config(&self) -> &Arc<DaftExecutionConfig> {
-        &self.config
-    }
-
-    pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
-        &self.psets
-    }
-
-    pub fn context(&self) -> &HashMap<String, String> {
-        &self.context
-    }
-
-    pub fn name(&self) -> String {
-        // TODO: Include all operators of the plan in this, not just the root
-        self.plan.name().to_string()
-    }
-
-    pub fn notify_token(&self) -> Option<CancellationToken> {
-        self.notify_token.clone()
-    }
-
-    pub fn task_priority(&self) -> TaskPriority {
-        self.task_priority
     }
 }
 
 impl Task for SwordfishTask {
-    fn task_id(&self) -> &str {
-        self.id()
+    fn task_id(&self) -> &TaskID {
+        &self.context.task_id
     }
 
     fn resource_request(&self) -> &TaskResourceRequest {
@@ -174,11 +275,14 @@ impl Task for SwordfishTask {
     }
 }
 
+// TaskResultHandle is a trait for handling the result of a task.
 pub(crate) trait TaskResultHandle: Send + Sync {
-    #[allow(dead_code)]
+    // Produce a future that will await the result of the task.
     fn get_result(
         &mut self,
     ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static;
+
+    // The callback to be called when the task is cancelled.
     fn cancel_callback(&mut self) -> DaftResult<()>;
 }
 
@@ -384,7 +488,7 @@ pub(super) mod tests {
             self.priority
         }
 
-        fn task_id(&self) -> &str {
+        fn task_id(&self) -> &TaskID {
             &self.task_id
         }
 

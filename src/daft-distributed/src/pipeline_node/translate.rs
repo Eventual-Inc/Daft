@@ -5,10 +5,10 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_scan_info::{Pushdowns, ScanState, ScanTaskLikeRef};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
-use daft_local_plan::translate;
+use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::{
-    ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, InMemoryInfo, LogicalPlan,
-    LogicalPlanRef, SourceInfo,
+    ops::Source, source_info::PlaceHolderInfo, InMemoryInfo, LogicalPlan, LogicalPlanRef,
+    SourceInfo,
 };
 
 use crate::{
@@ -20,6 +20,7 @@ use crate::{
     stage::StageID,
 };
 
+// Translate a logical plan to a distributed pipeline node.
 pub(crate) fn logical_plan_to_pipeline_node(
     plan_id: PlanID,
     stage_id: StageID,
@@ -27,168 +28,244 @@ pub(crate) fn logical_plan_to_pipeline_node(
     config: Arc<DaftExecutionConfig>,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-    #[allow(dead_code)]
-    struct PipelineNodeBoundarySplitter {
+    let mut splitter = PipelineNodeBoundarySplitter::new(plan_id, stage_id, config, psets);
+    let transformed = plan.rewrite(&mut splitter)?;
+    splitter.finalize(transformed)
+}
+
+// PipelineNodeBoundarySplitter splits a logical plan based on pipeline node boundaries.
+// It is used to create a pipeline node from a logical plan.
+struct PipelineNodeBoundarySplitter {
+    // The plan ID of the pipeline node.
+    plan_id: PlanID,
+    // The stage ID of the pipeline node.
+    stage_id: StageID,
+    // The current nodes in the pipeline.
+    current_nodes: Vec<Arc<dyn DistributedPipelineNode>>,
+    // The execution config.
+    config: Arc<DaftExecutionConfig>,
+    // The node ID counter.
+    node_id_counter: usize,
+    // The in memory partition sets.
+    psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+}
+
+impl PipelineNodeBoundarySplitter {
+    fn new(
         plan_id: PlanID,
         stage_id: StageID,
-        root: LogicalPlanRef,
-        current_nodes: Vec<Arc<dyn DistributedPipelineNode>>,
         config: Arc<DaftExecutionConfig>,
-        node_id_counter: usize,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
+    ) -> Self {
+        Self {
+            plan_id,
+            stage_id,
+            current_nodes: vec![],
+            config,
+            node_id_counter: 0,
+            psets,
+        }
     }
 
-    impl PipelineNodeBoundarySplitter {
-        fn get_next_node_id(&mut self) -> usize {
-            let node_id = self.node_id_counter;
-            self.node_id_counter += 1;
-            node_id
-        }
+    fn get_next_node_id(&mut self) -> usize {
+        let node_id = self.node_id_counter;
+        self.node_id_counter += 1;
+        node_id
+    }
 
-        fn create_node(
-            &mut self,
-            logical_plan: LogicalPlanRef,
-            current_nodes: Vec<Arc<dyn DistributedPipelineNode>>,
-        ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
-            // If current_nodes is not empty, create an intermediate node immediately
-            if !current_nodes.is_empty() {
-                assert!(
-                    current_nodes.len() == 1,
-                    "Nodes can currently only have one child"
-                );
-                let translated = translate(&logical_plan)?;
-                return Ok(Arc::new(IntermediateNode::new(
-                    self.plan_id.clone(),
-                    self.stage_id.clone(),
-                    self.get_next_node_id(),
-                    self.config.clone(),
-                    translated,
-                    current_nodes[0].clone(),
-                )) as Arc<dyn DistributedPipelineNode>);
+    fn add_intermediate_node(&mut self, local_plan: LocalPhysicalPlanRef) -> DaftResult<()> {
+        self.add_node_from_fn(|self_, mut children, node_id| {
+            assert!(children.len() == 1);
+            let child = children.pop().unwrap();
+            Ok(Arc::new(IntermediateNode::new(
+                self_.plan_id.clone(),
+                self_.stage_id.clone(),
+                node_id,
+                self_.config.clone(),
+                local_plan,
+                child,
+            )))
+        })
+    }
+
+    fn add_in_memory_source_node(
+        &mut self,
+        info: InMemoryInfo,
+        local_plan: LocalPhysicalPlanRef,
+    ) -> DaftResult<()> {
+        self.add_node_from_fn(|self_, children, node_id| {
+            assert!(children.is_empty());
+            Ok(Arc::new(InMemorySourceNode::new(
+                self_.plan_id.clone(),
+                self_.stage_id.clone(),
+                node_id,
+                self_.config.clone(),
+                info,
+                local_plan,
+                self_.psets.clone(),
+            )))
+        })
+    }
+
+    fn add_scan_source_node(
+        &mut self,
+        local_plan: LocalPhysicalPlanRef,
+        pushdowns: Pushdowns,
+        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    ) -> DaftResult<()> {
+        self.add_node_from_fn(|self_, children, node_id| {
+            assert!(children.is_empty());
+            Ok(Arc::new(ScanSourceNode::new(
+                self_.plan_id.clone(),
+                self_.stage_id.clone(),
+                node_id,
+                self_.config.clone(),
+                local_plan,
+                pushdowns,
+                scan_tasks,
+            )))
+        })
+    }
+
+    fn add_node_from_fn(
+        &mut self,
+        create_node_fn: impl FnOnce(
+            &Self,
+            // The current nodes in the pipeline.
+            Vec<Arc<dyn DistributedPipelineNode>>,
+            // The node ID of the new node.
+            usize,
+        ) -> DaftResult<Arc<dyn DistributedPipelineNode>>,
+    ) -> DaftResult<()> {
+        let node_id = self.get_next_node_id();
+        let children = std::mem::take(&mut self.current_nodes);
+        let node = create_node_fn(self, children, node_id)?;
+        self.current_nodes = vec![node];
+        Ok(())
+    }
+
+    // Translate a logical plan to a pipeline node.
+    // - If the current nodes is empty, it means that the node is the root of the pipeline, and either
+    // an in memory source or a scan source will be created.
+    // - If the current nodes is not empty, it means that an intermediate node will be created.
+    fn add_node_from_plan(&mut self, logical_plan: LogicalPlanRef) -> DaftResult<()> {
+        match self.current_nodes.len() {
+            // If the current nodes is empty, it means that the node is the root of the pipeline, and
+            // either an in memory source or a scan source will be created.
+            0 => {
+                let (logical_plan, inputs) = extract_inputs_from_logical_plan(logical_plan)?;
+                let local_plan = translate(&logical_plan)?;
+                match inputs {
+                    PipelineInput::InMemorySource { info } => {
+                        self.add_in_memory_source_node(info, local_plan)?
+                    }
+                    PipelineInput::ScanTasks {
+                        pushdowns,
+                        scan_tasks,
+                    } => self.add_scan_source_node(local_plan, pushdowns, scan_tasks)?,
+                }
+                Ok(())
             }
-
-            // Otherwise create a node based on pipeline_input
-            let (logical_plan, inputs) = extract_inputs_from_logical_plan(logical_plan)?;
-            let translated = translate(&logical_plan)?;
-            let node = match inputs {
-                PipelineInput::InMemorySource { info } => Arc::new(InMemorySourceNode::new(
-                    self.plan_id.clone(),
-                    self.stage_id.clone(),
-                    self.get_next_node_id(),
-                    self.config.clone(),
-                    info,
-                    translated,
-                    self.psets.clone(),
-                ))
-                    as Arc<dyn DistributedPipelineNode>,
-                PipelineInput::ScanTasks {
-                    pushdowns,
-                    scan_tasks,
-                } => Arc::new(ScanSourceNode::new(
-                    self.plan_id.clone(),
-                    self.stage_id.clone(),
-                    self.get_next_node_id(),
-                    self.config.clone(),
-                    translated,
-                    pushdowns,
-                    scan_tasks,
-                )) as Arc<dyn DistributedPipelineNode>,
-            };
-            Ok(node)
+            // If the current nodes is not empty, it means that an intermediate node will be created.
+            1 => {
+                let local_plan = translate(&logical_plan)?;
+                self.add_intermediate_node(local_plan)?;
+                Ok(())
+            }
+            _ => panic!("Nodes can currently only have one child"),
         }
     }
 
-    impl TreeNodeRewriter for PipelineNodeBoundarySplitter {
-        type Node = LogicalPlanRef;
-
-        fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            Ok(Transformed::no(node))
+    // Finalize the pipeline node.
+    // - If the transformed plan is a placeholder, it means that the logical plan has been fully translated,
+    // and the current nodes should be returned.
+    // - If the transformed plan is not a placeholder, it means that final pipeline node has not been created yet,
+    // and we should create it.
+    fn finalize(
+        mut self,
+        transformed: Transformed<LogicalPlanRef>,
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        match transformed.data.as_ref() {
+            LogicalPlan::Source(source)
+                if matches!(source.source_info.as_ref(), SourceInfo::PlaceHolder(_)) =>
+            {
+                assert!(self.current_nodes.len() == 1);
+                Ok(self.current_nodes.pop().expect("Expected exactly one node"))
+            }
+            _ => {
+                self.add_node_from_plan(transformed.data)?;
+                Ok(self.current_nodes.pop().expect("Expected exactly one node"))
+            }
         }
+    }
+}
 
-        fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-            match node.as_ref() {
-                LogicalPlan::Limit(limit) => {
-                    let current_nodes = std::mem::take(&mut self.current_nodes);
-                    let input_node = self.create_node(node.clone(), current_nodes)?;
-                    let limit_node = Arc::new(LimitNode::new(
-                        self.plan_id.clone(),
-                        self.stage_id.clone(),
-                        self.get_next_node_id(),
+impl TreeNodeRewriter for PipelineNodeBoundarySplitter {
+    type Node = LogicalPlanRef;
+
+    fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+        Ok(Transformed::no(node))
+    }
+
+    fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+        match node.as_ref() {
+            LogicalPlan::Limit(limit) => {
+                // 1. Create local limit node
+                self.add_node_from_plan(node.clone())?;
+                // 2. Create global limit node
+                self.add_node_from_fn(|self_, mut children, node_id| {
+                    assert!(children.len() == 1);
+                    let input_node = children.pop().unwrap();
+                    Ok(Arc::new(LimitNode::new(
+                        self_.plan_id.clone(),
+                        self_.stage_id.clone(),
+                        node_id,
                         limit.limit as usize,
                         node.schema(),
-                        self.config.clone(),
+                        self_.config.clone(),
                         input_node,
-                    ));
-
-                    self.current_nodes = vec![limit_node];
-                    // Here we will have to return a placeholder, essentially cutting off the plan
-                    let placeholder =
-                        PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
-                    Ok(Transformed::yes(
-                        LogicalPlan::Source(Source::new(
-                            node.schema(),
-                            SourceInfo::PlaceHolder(placeholder).into(),
-                        ))
-                        .into(),
-                    ))
+                    )))
+                })?;
+                // 3. Return placeholder
+                let placeholder = PlaceHolderInfo::new(node.schema(), Default::default());
+                let placeholder_source = LogicalPlan::Source(Source::new(
+                    node.schema(),
+                    Arc::new(SourceInfo::PlaceHolder(placeholder)),
+                ));
+                Ok(Transformed::yes(placeholder_source.into()))
+            }
+            #[cfg(feature = "python")]
+            LogicalPlan::ActorPoolProject(project) => {
+                // 1. Create input node if it is not a placeholder
+                if !matches!(
+                    project.input.as_ref(),
+                    LogicalPlan::Source(source) if matches!(source.source_info.as_ref(), SourceInfo::PlaceHolder(_))
+                ) {
+                    self.add_node_from_plan(project.input.clone())?;
                 }
-                #[cfg(feature = "python")]
-                LogicalPlan::ActorPoolProject(project) => {
-                    let input_nodes = std::mem::take(&mut self.current_nodes);
-                    let input_node = self.create_node(project.input.clone(), input_nodes)?;
-                    let project_node = Arc::new(crate::pipeline_node::actor_udf::ActorUDF::new(
-                        self.plan_id.clone(),
-                        self.stage_id.clone(),
-                        self.get_next_node_id(),
-                        self.config.clone(),
+                // 2. Create actor pool project node
+                self.add_node_from_fn(|self_, mut children, node_id| {
+                    assert!(children.len() == 1);
+                    let input_node = children.pop().unwrap();
+                    Ok(Arc::new(crate::pipeline_node::actor_udf::ActorUDF::new(
+                        self_.plan_id.clone(),
+                        self_.stage_id.clone(),
+                        node_id,
+                        self_.config.clone(),
                         project.projection.clone(),
                         project.input.schema(),
-                        input_node.clone(),
-                    )?);
-
-                    self.current_nodes = vec![project_node];
-                    // Here we will have to return a placeholder, essentially cutting off the plan
-                    let placeholder =
-                        PlaceHolderInfo::new(node.schema(), ClusteringSpec::default().into());
-                    Ok(Transformed::yes(
-                        LogicalPlan::Source(Source::new(
-                            node.schema(),
-                            SourceInfo::PlaceHolder(placeholder).into(),
-                        ))
-                        .into(),
-                    ))
-                }
-                _ => Ok(Transformed::no(node)),
+                        input_node,
+                    )?))
+                })?;
+                // 3. Return placeholder
+                let placeholder = PlaceHolderInfo::new(node.schema(), Default::default());
+                let placeholder_source = LogicalPlan::Source(Source::new(
+                    node.schema(),
+                    Arc::new(SourceInfo::PlaceHolder(placeholder)),
+                ));
+                Ok(Transformed::yes(placeholder_source.into()))
             }
-        }
-    }
-
-    let mut splitter = PipelineNodeBoundarySplitter {
-        plan_id,
-        stage_id,
-        root: plan.clone(),
-        current_nodes: vec![],
-        config,
-        node_id_counter: 0,
-        psets,
-    };
-
-    let transformed = plan.rewrite(&mut splitter)?;
-    match transformed.data.as_ref() {
-        LogicalPlan::Source(source)
-            if matches!(source.source_info.as_ref(), SourceInfo::PlaceHolder(_)) =>
-        {
-            assert!(splitter.current_nodes.len() == 1);
-            Ok(splitter
-                .current_nodes
-                .pop()
-                .expect("Expected exactly one node"))
-        }
-        _ => {
-            let logical_plan = transformed.data;
-            let current_nodes = std::mem::take(&mut splitter.current_nodes);
-            let node = splitter.create_node(logical_plan, current_nodes)?;
-            Ok(node)
+            _ => Ok(Transformed::no(node)),
         }
     }
 }
@@ -218,7 +295,7 @@ fn extract_inputs_from_logical_plan(
                 let pushdowns = info.pushdowns.clone();
                 let scan_tasks = match &info.scan_state {
                     ScanState::Tasks(tasks) => tasks.clone(),
-                    ScanState::Operator(_) => unreachable!(),
+                    ScanState::Operator(_) => unreachable!("ScanState::Operator should not be present in the logical plan after optimization"),
                 };
                 pipeline_input = Some(PipelineInput::ScanTasks {
                     pushdowns,
@@ -243,7 +320,7 @@ fn extract_inputs_from_logical_plan(
 
     Ok((
         transformed_plan.data,
-        pipeline_input.expect("Expected pipeline input"),
+        pipeline_input.expect("Expected pipeline input from logical plan"),
     ))
 }
 

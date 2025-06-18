@@ -4,26 +4,23 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_treenode::{Transformed, TreeNode};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_local_plan::LocalPhysicalPlanRef;
+use daft_logical_plan::InMemoryInfo;
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
-    pipeline_node::NodeID,
+    pipeline_node::DistributedPipelineNodeContext,
     plan::PlanID,
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask},
+        task::{SchedulingStrategy, SwordfishTask, SwordfishTaskInput},
     },
     stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct InMemorySourceNode {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
+    context: DistributedPipelineNodeContext,
     config: Arc<DaftExecutionConfig>,
     info: InMemoryInfo,
     plan: LocalPhysicalPlanRef,
@@ -31,6 +28,8 @@ pub(crate) struct InMemorySourceNode {
 }
 
 impl InMemorySourceNode {
+    const NODE_NAME: &'static str = "InMemorySource";
+
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -41,9 +40,12 @@ impl InMemorySourceNode {
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> Self {
         Self {
-            plan_id,
-            stage_id,
-            node_id,
+            context: DistributedPipelineNodeContext::new(
+                plan_id,
+                stage_id,
+                node_id,
+                Self::NODE_NAME,
+            ),
             config,
             info,
             plan,
@@ -74,50 +76,14 @@ impl InMemorySourceNode {
         &self,
         partition_refs: Vec<PartitionRef>,
     ) -> DaftResult<SwordfishTask> {
-        let mut total_size_bytes = 0;
-        let mut total_num_rows = 0;
-        for partition_ref in &partition_refs {
-            total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
-            total_num_rows += partition_ref.num_rows().unwrap_or(0);
-        }
-        let info = InMemoryInfo::new(
-            self.plan.schema().clone(),
-            self.info.cache_key.clone(),
-            None,
-            1,
-            total_size_bytes,
-            total_num_rows,
-            None,
-            None,
-        );
-        let in_memory_source = LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
-        // the first operator of physical_plan has to be a scan
-        let transformed_plan = self
-            .plan
-            .clone()
-            .transform_up(|p| match p.as_ref() {
-                LocalPhysicalPlan::PlaceholderScan(_) => {
-                    Ok(Transformed::yes(in_memory_source.clone()))
-                }
-                _ => Ok(Transformed::no(p)),
-            })?
-            .data;
-        let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
-        let context = HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), format!("{}", self.stage_id)),
-            ("node_id".to_string(), format!("{}", self.node_id)),
-            ("node_name".to_string(), self.name().to_string()),
-        ]);
         let task = SwordfishTask::new(
-            transformed_plan,
+            self.plan.clone(),
             self.config.clone(),
-            psets,
+            SwordfishTaskInput::InMemory(partition_refs),
             // TODO: Replace with WorkerAffinity based on the psets location
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
-            context,
-            self.node_id,
+            self.context.clone().into(),
         );
         Ok(task)
     }
@@ -139,16 +105,9 @@ impl DistributedPipelineNode for InMemorySourceNode {
 
         RunningPipelineNode::new(result_rx)
     }
-    fn plan_id(&self) -> &PlanID {
-        &self.plan_id
-    }
 
-    fn stage_id(&self) -> &StageID {
-        &self.stage_id
-    }
-
-    fn node_id(&self) -> &NodeID {
-        &self.node_id
+    fn context(&self) -> DistributedPipelineNodeContext {
+        self.context.clone()
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
@@ -160,10 +119,9 @@ impl TreeDisplay for InMemorySourceNode {
     fn display_as(&self, _level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-
         writeln!(display, "{}", self.name()).unwrap();
-        writeln!(display, "Node ID: {}", self.node_id).unwrap();
-        let plan = self.make_task_for_partition_refs(vec![]).unwrap().plan();
+        writeln!(display, "Node ID: {}", self.node_id()).unwrap();
+        let plan = self.make_task_for_partition_refs(vec![]).unwrap().plan;
         writeln!(display, "Local Plan: {}", plan.single_line_display()).unwrap();
         display
     }
