@@ -108,7 +108,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 }
                 #[cfg(not(feature = "python"))]
                 {
-                    unreachable!("ActorUDF is not supported without Python feature")
+                    panic!("ActorUDF is not supported without Python feature")
                 }
             }
             LogicalPlan::Filter(filter) => {
