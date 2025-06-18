@@ -238,10 +238,13 @@ impl From<Error> for super::Error {
                     path,
                     source: err.into(),
                 },
-                _ => super::Error::Unhandled {
-                    path,
-                    msg: DisplayErrorContext(err).to_string(),
-                },
+                _ => {
+                    println!("code: {:?}", err);
+                    super::Error::Unhandled {
+                        path,
+                        msg: DisplayErrorContext(err).to_string(),
+                    }
+                }
             }
         }
 

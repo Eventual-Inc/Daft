@@ -92,7 +92,9 @@ impl GetResult {
                     match result {
                         Err(
                             super::Error::SocketError { .. }
-                            | super::Error::UnableToReadBytes { .. },
+                            | super::Error::UnableToReadBytes { .. }
+                            | super::Error::Throttled { .. }
+                            | super::Error::MiscTransient { .. },
                         ) if let Some(rp) = &retry_params => {
                             let jitter = rand::thread_rng()
                                 .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
