@@ -305,9 +305,6 @@ jobs:
         exclude:
         - daft-runner: native
           flotilla: 1
-    permissions:
-      id-token: write
-      contents: read
     steps:
     - uses: actions/checkout@v4
       with:
@@ -346,19 +343,11 @@ jobs:
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
-    - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-region: us-west-2
-        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
-        role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
       uses: isbang/compose-action@v2.0.2
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
-    - name: Setup tmate session
-      uses: mxschmitt/action-tmate@v3
     - name: Run IO integration tests
       run: |
         pytest tests/integration/io -m 'integration and not benchmark' --durations=50
