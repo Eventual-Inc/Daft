@@ -6,6 +6,7 @@ mod cross_join;
 mod csv;
 #[cfg(feature = "python")]
 mod data_sink_write;
+mod dedup;
 #[cfg(feature = "python")]
 mod deltalake_write;
 mod empty_scan;
@@ -40,6 +41,7 @@ pub use cross_join::CrossJoin;
 pub use csv::TabularWriteCsv;
 #[cfg(feature = "python")]
 pub use data_sink_write::DataSink;
+pub use dedup::Dedup;
 #[cfg(feature = "python")]
 pub use deltalake_write::DeltaLakeWrite;
 pub use empty_scan::EmptyScan;
