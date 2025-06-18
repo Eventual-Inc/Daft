@@ -20,8 +20,6 @@ use crate::{
     utils::channel::{create_channel, Sender},
 };
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
 pub(crate) struct ScanSourceNode {
     plan_id: PlanID,
     stage_id: StageID,
@@ -33,7 +31,6 @@ pub(crate) struct ScanSourceNode {
 }
 
 impl ScanSourceNode {
-    #[allow(dead_code)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
@@ -55,7 +52,7 @@ impl ScanSourceNode {
     }
 
     async fn execution_loop(
-        self,
+        self: Arc<Self>,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
@@ -66,8 +63,9 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        for scan_task in self.scan_tasks.iter() {
-            let task = self.make_source_tasks(vec![scan_task.clone()].into())?;
+        let max_sources_per_scan_task = self.config.max_sources_per_scan_task;
+        for scan_tasks in self.scan_tasks.chunks(max_sources_per_scan_task) {
+            let task = self.make_source_tasks(scan_tasks.to_vec().into())?;
             if result_tx
                 .send(PipelineOutput::Task(SubmittableTask::new(task)))
                 .await
@@ -155,13 +153,13 @@ impl DistributedPipelineNode for ScanSourceNode {
         "DistributedScan"
     }
 
-    fn children(&self) -> Vec<&dyn DistributedPipelineNode> {
+    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![]
     }
 
-    fn start(&self, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.clone().execution_loop(result_tx);
+        let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)

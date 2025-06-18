@@ -25,6 +25,7 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionSet,
 )
+from daft.runners.profiler import profile
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator
@@ -62,17 +63,18 @@ class RaySwordfishActor:
         context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
         """Run a plan on swordfish and yield partitions."""
-        psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
-        psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+        with profile():
+            psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
+            psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
-        metas = []
-        async for partition in self.native_executor.run_async(plan, psets_mp, config, None, context):
-            if partition is None:
-                break
-            mp = MicroPartition._from_pymicropartition(partition)
-            metas.append(PartitionMetadata.from_table(mp))
-            yield mp
-        yield metas
+            metas = []
+            async for partition in self.native_executor.run_async(plan, psets_mp, config, None, context):
+                if partition is None:
+                    break
+                mp = MicroPartition._from_pymicropartition(partition)
+                metas.append(PartitionMetadata.from_table(mp))
+                yield mp
+            yield metas
 
 
 @dataclass
