@@ -618,6 +618,8 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
 
     let s3_conf = builder.build();
 
+    println!("built with retry config: {:?}", s3_conf.retry_config());
+
     Ok((anonymous, s3_conf))
 }
 
