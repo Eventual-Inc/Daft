@@ -2093,8 +2093,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         """
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
-
-        if io_config.unity.endpoint is None:
+        if getattr(io_config, "unity", None) is not None and getattr(io_config.unity, "endpoint", None) is None:
             try:
                 from daft.catalog.__unity import UnityCatalog
             except ImportError:
