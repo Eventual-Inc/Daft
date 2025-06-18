@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayLevel;
 use common_error::DaftResult;
+use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::{
     partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
@@ -90,6 +91,26 @@ pub(crate) struct Stage {
 }
 
 impl Stage {
+    pub(crate) fn create_pipeline_node(
+        &self,
+        plan_id: PlanID,
+        psets: HashMap<String, Vec<PartitionRef>>,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        match &self.type_ {
+            StageType::MapPipeline { plan } => {
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Arc::new(psets),
+                )?;
+                Ok(pipeline_node)
+            }
+            _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
+        }
+    }
     /// Get the logical plan for visualization purposes (only for MapPipeline stages)
     pub fn repr_mermaid(
         &self,
@@ -159,6 +180,7 @@ pub(crate) struct RunningStage<'a> {
     stage_context: StageContext<'a>,
 }
 
+#[allow(dead_code)]
 impl<'a> RunningStage<'a> {
     pub(crate) fn new(
         running_pipeline_node: RunningPipelineNode,
@@ -288,8 +310,8 @@ pub(crate) struct StageContext<'a> {
     span: StageSpan<'a>,
 }
 
+#[allow(dead_code)]
 impl<'a> StageContext<'a> {
-    #[allow(dead_code)]
     pub(crate) fn new(
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         span: StageSpan<'a>,

@@ -15,6 +15,7 @@ pub mod span;
     dead_code,
     reason = "Observers for the plan events are Not Yet Implemented"
 )]
+#[derive(Clone)]
 pub(crate) enum PlanEvent<'a> {
     PlanStarted {
         plan: &'a DistributedPhysicalPlan,
@@ -76,6 +77,7 @@ pub struct HooksManager {
     subscribers: Vec<Arc<dyn PlanObserver>>,
 }
 
+#[allow(dead_code)]
 impl HooksManager {
     pub fn new() -> Self {
         let mut subscribers: Vec<Arc<dyn PlanObserver>> = Vec::new();
