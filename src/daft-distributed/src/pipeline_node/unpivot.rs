@@ -5,6 +5,7 @@ use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
+use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
@@ -33,6 +34,7 @@ impl UnpivotNode {
         values: Vec<BoundExpr>,
         variable_name: String,
         value_name: String,
+        schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -42,8 +44,7 @@ impl UnpivotNode {
             vec![*child.node_id()],
             vec![child.name()],
         );
-        let config =
-            PipelineNodeConfig::new(child.config().schema.clone(), stage_config.config.clone());
+        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
         Self {
             config,
             context,

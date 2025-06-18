@@ -4,6 +4,7 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{stats::StatsState, SinkInfo};
+use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
@@ -25,6 +26,7 @@ impl SinkNode {
         stage_config: &StageConfig,
         node_id: NodeID,
         sink_info: Arc<SinkInfo>,
+        schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -34,8 +36,7 @@ impl SinkNode {
             vec![*child.node_id()],
             vec![child.name()],
         );
-        let config =
-            PipelineNodeConfig::new(child.config().schema.clone(), stage_config.config.clone());
+        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
         Self {
             config,
             context,

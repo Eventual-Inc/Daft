@@ -167,6 +167,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     values,
                     unpivot.variable_name.clone(),
                     unpivot.value_name.clone(),
+                    node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
                 .arced()
@@ -185,6 +186,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 &self.stage_config,
                 node_id,
                 sink.sink_info.clone(),
+                sink.schema.clone(),
                 self.curr_node.pop().unwrap(),
             )
             .arced(),
