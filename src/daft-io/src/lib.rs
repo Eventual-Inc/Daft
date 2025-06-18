@@ -319,8 +319,14 @@ impl IOClient {
         let value = if let Some(input) = input {
             let response = self.single_url_get(input, None, io_stats).await;
             let res = match response {
-                Ok(res) => res.bytes().await,
-                Err(err) => Err(err),
+                Ok(res) => {
+                    println!("Hmmm trying to get bytes");
+                    res.bytes().await
+                }
+                Err(err) => {
+                    println!("Hmmm not even gonna try to get bytes");
+                    Err(err)
+                }
             };
             Some(res)
         } else {
