@@ -18,7 +18,6 @@ use crate::{
     },
     stage::{StageContext, StageID},
     utils::channel::{create_channel, Sender},
-    PipelineNodeSpan,
 };
 
 pub(crate) struct LimitNode {
@@ -163,7 +162,7 @@ impl DistributedPipelineNode for LimitNode {
     }
 
     fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let span = PipelineNodeSpan::new(self.clone(), stage_context.span.hooks_manager.clone());
+        let span = stage_context.new_pipeline_span(self.clone());
 
         // let child_id = self.child..node_id();
         let child_name = self.child.name();

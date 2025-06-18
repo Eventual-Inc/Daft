@@ -12,6 +12,7 @@ use futures::{Stream, StreamExt};
 use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};
 
 use crate::{
+    observability::{span::PipelineNodeSpan, TrackedSpanStream},
     plan::PlanID,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
@@ -20,7 +21,6 @@ use crate::{
     },
     stage::{StageContext, StageID},
     utils::channel::{Receiver, ReceiverStream},
-    PipelineNodeSpan, TrackedSpanStream,
 };
 
 #[cfg(feature = "python")]

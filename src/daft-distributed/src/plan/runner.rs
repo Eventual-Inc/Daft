@@ -4,10 +4,13 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use futures::StreamExt;
-use tracing::info_span;
 
 use super::{DistributedPhysicalPlan, PlanResult};
 use crate::{
+    observability::{
+        span::{PlanSpan, StageSpan},
+        HooksManager,
+    },
     pipeline_node::{logical_plan_to_pipeline_node, MaterializedOutput},
     scheduling::{
         scheduler::{spawn_default_scheduler_actor, SchedulerHandle},
@@ -20,7 +23,6 @@ use crate::{
         joinset::create_join_set,
         runtime::get_or_init_runtime,
     },
-    HooksManager, PlanSpan, StageSpan,
 };
 pub type PlanID = Arc<str>;
 
@@ -100,6 +102,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         }
         Ok(())
     }
+
     pub(crate) fn run_stage<'a>(
         &'a self,
         stage: &'a Stage,
@@ -130,6 +133,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         PlanSpan::new(plan, &self.plan_id, &self.hooks_manager)
     }
 
+    /// Create a new `StageContext` with additional span information for the stage
     fn new_stage_context<'a>(
         &'a self,
         stage: &'a Stage,

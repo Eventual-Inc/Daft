@@ -54,7 +54,6 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     #[ignore]

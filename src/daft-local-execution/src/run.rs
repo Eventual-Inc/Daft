@@ -337,7 +337,7 @@ impl NativeExecutor {
 
             let local_set = tokio::task::LocalSet::new();
             local_set.block_on(&runtime, async {
-                tokio::select! {
+                let result = tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
                         log::info!("Execution engine cancelled");
@@ -348,7 +348,14 @@ impl NativeExecutor {
                         Ok(())
                     }
                     result = execution_task => result,
+                };
+
+                // Flush remaining stats events
+                if let Err(e) = stats_handler.flush().await {
+                    log::warn!("Failed to flush runtime stats: {}", e);
                 }
+
+                result
             })?;
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()

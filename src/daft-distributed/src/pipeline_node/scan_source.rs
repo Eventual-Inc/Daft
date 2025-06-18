@@ -17,7 +17,7 @@ use crate::{
         task::{SchedulingStrategy, SwordfishTask},
     },
     stage::{StageContext, StageID},
-    utils::channel::{create_channel, Sender}, PipelineNodeSpan,
+    utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct ScanSourceNode {
@@ -158,7 +158,7 @@ impl DistributedPipelineNode for ScanSourceNode {
     }
 
     fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let span = PipelineNodeSpan::new(self.clone(), stage_context.span.hooks_manager.clone());
+        let span = stage_context.new_pipeline_span(self.clone());
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(result_tx);

@@ -1,14 +1,8 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayLevel;
 use common_error::DaftResult;
-use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::{
     partitioning::ClusteringSpecRef, stats::ApproxStats, JoinType, LogicalPlanRef,
@@ -19,15 +13,15 @@ use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
+    observability::{span::StageSpan, TrackedSpanStream},
     pipeline_node::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        viz_distributed_pipeline_ascii, viz_distributed_pipeline_mermaid, MaterializedOutput,
-        PipelineOutput, RunningPipelineNode,
+        viz_distributed_pipeline_ascii, viz_distributed_pipeline_mermaid, DistributedPipelineNode,
+        MaterializedOutput, RunningPipelineNode,
     },
     plan::PlanID,
     scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
-    StageSpan, TrackedSpanStream,
 };
 
 mod stage_builder;
@@ -287,30 +281,11 @@ impl StagePlan {
     }
 }
 
-// #[allow(dead_code)]
-// pub(crate) struct StageContext {
-//     pub scheduler_handle: SchedulerHandle<SwordfishTask>,
-//     pub joinset: JoinSet<DaftResult<()>>,
-// }
-
-// impl StageContext {
-//     #[allow(dead_code)]
-//     pub(crate) fn new(scheduler_handle: SchedulerHandle<SwordfishTask>,
-//         // span: StageSpan
-//     ) -> Self {
-//         let joinset = JoinSet::new();
-//         Self {
-//             scheduler_handle,
-//             joinset,
-//         }
-//     }
-// }
-
 #[allow(dead_code)]
 pub(crate) struct StageContext<'a> {
     pub scheduler_handle: SchedulerHandle<SwordfishTask>,
     pub joinset: JoinSet<DaftResult<()>>,
-    pub span: StageSpan<'a>,
+    span: StageSpan<'a>,
 }
 
 impl<'a> StageContext<'a> {
@@ -325,5 +300,11 @@ impl<'a> StageContext<'a> {
             joinset,
             span,
         }
+    }
+    pub fn new_pipeline_span(
+        &self,
+        pipeline_node: Arc<dyn DistributedPipelineNode>,
+    ) -> crate::observability::span::PipelineNodeSpan {
+        self.span.new_pipeline_span(pipeline_node)
     }
 }

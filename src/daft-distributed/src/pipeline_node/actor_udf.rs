@@ -31,7 +31,6 @@ use crate::{
         channel::{create_channel, Sender},
         joinset::JoinSet,
     },
-    PipelineNodeSpan,
 };
 
 #[derive(Debug)]
@@ -223,8 +222,7 @@ impl ActorUDF {
                         worker_id,
                         actors,
                     )?;
-                    
-                    
+
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -376,7 +374,8 @@ impl DistributedPipelineNode for ActorUDF {
     }
 
     fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let span = PipelineNodeSpan::new(self.clone(), stage_context.span.hooks_manager.clone());
+        // TODO: abstract this away so the span doesn't need to be explicitly declared in the `start` fn
+        let span = stage_context.new_pipeline_span(self.clone());
         let input_node = self.child.clone().start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
