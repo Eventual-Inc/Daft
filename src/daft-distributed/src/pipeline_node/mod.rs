@@ -114,7 +114,6 @@ pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
 pub(crate) struct RunningPipelineNode {
     result_receiver: Receiver<PipelineOutput<SwordfishTask>>,
     _span: PipelineNodeSpan,

@@ -7,6 +7,7 @@ use crate::{
     stage::Stage,
 };
 
+/// A `span` that represents the lifetime of a `Plan`.
 pub(crate) struct PlanSpan<'a> {
     plan: &'a DistributedPhysicalPlan,
     plan_id: &'a str,
@@ -38,7 +39,6 @@ impl Drop for PlanSpan<'_> {
 }
 
 /// A `span` that represents the lifetime of a `Stage`.
-///
 pub(crate) struct StageSpan<'a> {
     stage: &'a Stage,
     hooks_manager: &'a HooksManager,
@@ -71,15 +71,11 @@ impl Drop for StageSpan<'_> {
     }
 }
 
+/// A `span` that represents the lifetime of a `PipelineNode`.
+/// Unlike the other spans, `PipelineNodeSpan` requires an owned context due to async lifetimes
 pub(crate) struct PipelineNodeSpan {
     pipeline_node: Arc<dyn DistributedPipelineNode>,
     hooks_manager: HooksManager,
-}
-
-impl std::fmt::Debug for PipelineNodeSpan {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PipelineNodeSpan").finish()
-    }
 }
 
 impl PipelineNodeSpan {
