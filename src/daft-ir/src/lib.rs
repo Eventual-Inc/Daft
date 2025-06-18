@@ -25,7 +25,7 @@ pub mod rex {
     pub use daft_dsl::*;
 
     /// Creates an expression from a python-scalar function
-    pub fn from_py_func<A, E>(func: PythonUDF, args: A) -> Expr 
+    pub fn from_py_func<A, E>(func: PythonUDF, args: A) -> Expr
     where
         A: IntoIterator<Item = E>,
         E: Into<Arc<Expr>>,

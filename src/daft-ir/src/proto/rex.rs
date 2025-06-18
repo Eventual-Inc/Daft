@@ -4,7 +4,9 @@ use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
-        from_proto_vec, functions::{from_proto_function, function_expr_to_proto}, to_proto_vec, UNIT
+        from_proto_vec,
+        functions::{from_proto_function, function_expr_to_proto},
+        to_proto_vec, UNIT,
     },
 };
 

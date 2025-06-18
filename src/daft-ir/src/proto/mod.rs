@@ -1,8 +1,8 @@
 #[macro_use]
 pub mod rex;
+pub mod functions;
 pub mod rel;
 pub mod schema;
-pub mod functions;
 
 use std::sync::Arc;
 

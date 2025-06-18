@@ -332,7 +332,7 @@ message Function {
 
   // TODO: Daft does not handle static parameter binding.
   message Args {
-    repeated Arg args = 1;    
+    repeated Arg args = 1;
   }
 
   // TODO: Update param to required after static parameter binding is implemented.
@@ -353,7 +353,7 @@ message Function {
     //--
     optional uint64 concurrency = 7;
     optional uint64 batch_size = 8;
-    optional uint64 num_cpus = 9; 
+    optional uint64 num_cpus = 9;
     optional uint64 num_gpus = 10;
     optional uint64 max_memory_bytes = 11;
   }
@@ -644,7 +644,7 @@ message SourceInfo {
   message CacheInfo {
     Schema schema = 1;
     string cache_key = 2;
-    // cache entry metadata 
+    // cache entry metadata
     uint64 num_partitions = 3;
     uint64 num_rows = 4;
     uint64 size_bytes = 5;
@@ -717,9 +717,9 @@ message ScanTask {
 message Measure {
   Agg agg = 1;
   // The logical plans reify bindings as alias expressions.
-  // This is not desireable and does not accurately model the domain, but
+  // This is not desirable and does not accurately model the domain, but
   // it's fine and I can re-create the binding alias with this optional field.
-  optional string alias = 2; 
+  optional string alias = 2;
   // optional Expr filter = 3;
 }
 
@@ -740,7 +740,7 @@ message Agg {
   // any_value
   // agg_list, agg_set, agg_concat
   message SetFunction {
-    string name = 1; 
+    string name = 1;
     repeated Expr args = 2;
     bool is_all = 3;
   }

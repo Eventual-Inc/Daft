@@ -3013,7 +3013,7 @@ dependencies = [
 
 [[package]]
 name = "daft-proto"
-version = "0.3.0-dev0"
+version = "0.0.0"
 dependencies = [
  "prost 0.13.5",
  "tonic-build",

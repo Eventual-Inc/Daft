@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use super::ProtoResult;
 use crate::{
-    from_proto_err, non_null, not_implemented_err, proto::{from_proto, from_proto_vec, to_proto_vec, ToFromProto}
+    from_proto_err, non_null, not_implemented_err,
+    proto::{from_proto, from_proto_vec, to_proto_vec, ToFromProto},
 };
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
@@ -62,7 +63,7 @@ pub fn from_proto_function(message: proto::Function) -> ProtoResult<ir::Expr> {
 /// implement ToFromProto on the FunctionExpr to Descriptor. FunctionExpr is also
 /// either an RsDescriptor or PyDescriptor. All this together means the simplest method
 /// is a custom to_proto implementation. Finally FunctionExpr doesn't use FunctionArgs
-/// so we'll have to derive those as unamed arguments. It would be nice to have a type
+/// so we'll have to derive those as unnamed arguments. It would be nice to have a type
 /// here rather than the inlined struct, and I could define one in mod.rs but kiss.
 pub fn function_expr_to_proto(
     func: &ir::functions::FunctionExpr,
@@ -94,7 +95,7 @@ pub fn function_expr_to_proto(
         }
     };
 
-    // Convert all arguments to unbound arguments (aka no param name) then re-use existing conversion logic.
+    // Convert all arguments to unbound arguments (aka no param name) then reuse existing conversion logic.
     let function_args = args
         .iter()
         .map(|arg| ir::functions::FunctionArg::Unnamed(arg.clone()))
@@ -347,17 +348,17 @@ impl ToFromProto for ir::functions::python::PythonUDF {
             inner: callable,
             init_args: callable_init_args,
         };
-        
+
         // Convert the numeric fields back to their original types
         let concurrency = message.concurrency.map(|c| c as usize);
         let batch_size = message.batch_size.map(|b| b as usize);
-        
+
         // Reconstruct the ResourceRequest from the flattened fields
         let resource_request = {
             let num_cpus = message.num_cpus.map(|c| c as f64);
             let num_gpus = message.num_gpus.map(|g| g as f64);
             let max_memory_bytes = message.max_memory_bytes.map(|m| m as usize);
-            
+
             if num_cpus.is_some() || num_gpus.is_some() || max_memory_bytes.is_some() {
                 Some(common_resource_request::ResourceRequest::try_new_internal(
                     num_cpus,
@@ -368,7 +369,7 @@ impl ToFromProto for ir::functions::python::PythonUDF {
                 None
             }
         };
-    
+
         Ok(Self {
             name: name.into(),
             func,
@@ -392,21 +393,22 @@ impl ToFromProto for ir::functions::python::PythonUDF {
             ir::functions::python::MaybeInitializedUDF::Initialized(py) => {
                 // no args, already have the callable
                 let callable = py.to_proto()?;
-                let callable_init_args = ir::functions::python::RuntimePyObject::new_none().to_proto()?;
+                let callable_init_args =
+                    ir::functions::python::RuntimePyObject::new_none().to_proto()?;
                 (callable, callable_init_args)
-            },
+            }
             ir::functions::python::MaybeInitializedUDF::Uninitialized { inner, init_args } => {
                 let callable = inner.to_proto()?;
                 let callable_init_args = init_args.to_proto()?;
                 (callable, callable_init_args)
-            },
+            }
         };
 
         // The decorator creates a closure and these are the arguments captured in that scope.
         let callable_call_args = self.bound_args.to_proto()?;
 
         // Now flatten out what is currently "resources" but will get renamed at some point.
-        let concurrency: Option<u64>  = self.concurrency.map(|s| s as u64);
+        let concurrency: Option<u64> = self.concurrency.map(|s| s as u64);
         let batch_size: Option<u64> = self.batch_size.map(|s| s as u64);
         let (num_cpus, num_gpus, max_memory_bytes) = match &self.resource_request {
             Some(req) => {
@@ -414,7 +416,7 @@ impl ToFromProto for ir::functions::python::PythonUDF {
                 let num_gpus: Option<u64> = req.num_gpus().map(|f| f as u64);
                 let max_memory_bytes: Option<u64> = req.memory_bytes().map(|s| s as u64);
                 (num_cpus, num_gpus, max_memory_bytes)
-            },
+            }
             None => (None, None, None),
         };
 

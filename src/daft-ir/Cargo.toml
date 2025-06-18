@@ -3,7 +3,7 @@ bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
-daft-core ={ path = "../daft-core" }
+daft-core = {path = "../daft-core"}
 daft-dsl = {path = "../daft-dsl"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 daft-proto = {path = "../daft-proto"}
