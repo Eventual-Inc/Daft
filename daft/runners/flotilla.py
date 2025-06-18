@@ -190,7 +190,6 @@ class FlotillaPlanRunner:
         self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets)
 
     async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
-        print(f"get next partition : plan_id = {plan_id}")
         from daft.runners.ray_runner import (
             PartitionMetadataAccessor,
             RayMaterializedResult,
