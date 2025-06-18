@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::{
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
@@ -8,6 +9,9 @@ use common_display::{
 };
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
+use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt};
 use materialize::{materialize_all_pipeline_outputs, materialize_running_pipeline_outputs};
 
@@ -15,21 +19,26 @@ use crate::{
     plan::PlanID,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
-        task::{SwordfishTask, Task},
+        task::{SchedulingStrategy, SwordfishTask, Task},
         worker::WorkerId,
     },
     stage::{StageContext, StageID},
-    utils::channel::{Receiver, ReceiverStream},
+    utils::channel::{create_channel, Receiver, ReceiverStream},
 };
 
 #[cfg(feature = "python")]
 mod actor_udf;
+mod explode;
+mod filter;
 mod in_memory_source;
-mod intermediate;
 mod limit;
 pub(crate) mod materialize;
+mod project;
+mod sample;
 mod scan_source;
+mod sink;
 mod translate;
+mod unpivot;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = usize;
@@ -151,4 +160,128 @@ impl RunningPipelineNode {
     ) -> impl Stream<Item = PipelineOutput<SwordfishTask>> + Send + Unpin + 'static {
         ReceiverStream::new(self.result_receiver)
     }
+
+    pub fn pipeline_instruction<F>(
+        self,
+        stage_context: &mut StageContext,
+        config: Arc<DaftExecutionConfig>,
+        node_id: NodeID,
+        schema: SchemaRef,
+        context: HashMap<String, String>,
+        plan_builder: F,
+    ) -> Self
+    where
+        F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send + Sync + 'static,
+    {
+        let (result_tx, result_rx) = create_channel(1);
+
+        let execution_loop = async move {
+            let mut task_or_partition_ref_stream = self.materialize_running();
+
+            while let Some(pipeline_result) = task_or_partition_ref_stream.next().await {
+                let pipeline_output = pipeline_result?;
+                match pipeline_output {
+                    PipelineOutput::Running(_) => {
+                        unreachable!("All running tasks should be materialized before this point")
+                    }
+                    PipelineOutput::Materialized(materialized_output) => {
+                        // make new task for this partition ref
+                        let task = make_new_task_from_materialized_output(
+                            materialized_output,
+                            context.clone(),
+                            config.clone(),
+                            node_id,
+                            schema.clone(),
+                            &plan_builder,
+                        )?;
+                        if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                            break;
+                        }
+                    }
+                    PipelineOutput::Task(task) => {
+                        // append plan to this task
+                        let task =
+                            append_plan_to_existing_task(task, context.clone(), &plan_builder)?;
+                        if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok::<(), common_error::DaftError>(())
+        };
+
+        stage_context.joinset.spawn(execution_loop);
+        Self::new(result_rx)
+    }
+}
+
+fn make_new_task_from_materialized_output<F>(
+    materialized_output: MaterializedOutput,
+    context: HashMap<String, String>,
+    config: Arc<DaftExecutionConfig>,
+    node_id: NodeID,
+    schema: SchemaRef,
+    plan_builder: &F,
+) -> DaftResult<SubmittableTask<SwordfishTask>>
+where
+    F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef>,
+{
+    let (partition_ref, worker_id) = materialized_output.into_inner();
+
+    let info = InMemoryInfo::new(
+        schema,
+        node_id.to_string(),
+        None,
+        1,
+        partition_ref
+            .size_bytes()?
+            .expect("The size of the materialized output should be known"),
+        partition_ref.num_rows()?,
+        None,
+        None,
+    );
+    let in_memory_source_plan =
+        LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+    let plan = plan_builder(in_memory_source_plan)?;
+    let psets = HashMap::from([(node_id.to_string(), vec![partition_ref])]);
+
+    let task = SwordfishTask::new(
+        plan,
+        config,
+        psets,
+        SchedulingStrategy::WorkerAffinity {
+            worker_id,
+            soft: false,
+        },
+        context,
+        node_id,
+    );
+    Ok(SubmittableTask::new(task))
+}
+
+fn append_plan_to_existing_task<F>(
+    submittable_task: SubmittableTask<SwordfishTask>,
+    context: HashMap<String, String>,
+    plan_builder: &F,
+) -> DaftResult<SubmittableTask<SwordfishTask>>
+where
+    F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef>,
+{
+    let plan = submittable_task.task().plan();
+    let new_plan = plan_builder(plan)?;
+    let scheduling_strategy = submittable_task.task().strategy().clone();
+    let psets = submittable_task.task().psets().clone();
+    let config = submittable_task.task().config().clone();
+    let task_priority = submittable_task.task().task_priority();
+
+    let task = submittable_task.with_new_task(SwordfishTask::new(
+        new_plan,
+        config,
+        psets,
+        scheduling_strategy,
+        context,
+        task_priority,
+    ));
+    Ok(task)
 }

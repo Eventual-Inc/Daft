@@ -130,16 +130,25 @@ impl LimitNode {
         );
         Ok(SubmittableTask::new(task))
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![format!("Limit: {}", self.limit)]
+    }
 }
 
 impl TreeDisplay for LimitNode {
-    fn display_as(&self, _level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-
-        writeln!(display, "{}", self.name()).unwrap();
-        writeln!(display, "Node ID: {}", self.node_id).unwrap();
-        writeln!(display, "Limit: {}", self.limit).unwrap();
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.name()).unwrap();
+            }
+            _ => {
+                let multiline_display = self.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+            }
+        }
         display
     }
 
@@ -154,7 +163,7 @@ impl TreeDisplay for LimitNode {
 
 impl DistributedPipelineNode for LimitNode {
     fn name(&self) -> &'static str {
-        "DistributedLimit"
+        "Limit"
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
@@ -177,9 +186,31 @@ impl DistributedPipelineNode for LimitNode {
 
         let input_node = self.child.clone().start(stage_context);
 
+        // Add pipeline instruction to add local limit to the physical plan
+        let limit_value = self.limit as i64;
+        let schema = self.schema.clone();
+        let config = self.config.clone();
+        let node_id = self.node_id;
+        let context_clone = context.clone();
+
+        let result_node = input_node.pipeline_instruction(
+            stage_context,
+            config,
+            node_id,
+            schema,
+            context_clone,
+            move |input_plan| {
+                Ok(daft_local_plan::LocalPhysicalPlan::limit(
+                    input_plan,
+                    limit_value,
+                    daft_logical_plan::stats::StatsState::NotMaterialized,
+                ))
+            },
+        );
+
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(
-            input_node,
+            result_node,
             result_tx,
             stage_context.scheduler_handle.clone(),
             context,

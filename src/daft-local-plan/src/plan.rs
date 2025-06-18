@@ -161,7 +161,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn filter(
+    pub fn filter(
         input: LocalPhysicalPlanRef,
         predicate: BoundExpr,
         stats_state: StatsState,
@@ -191,7 +191,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn explode(
+    pub fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<BoundExpr>,
         schema: SchemaRef,
@@ -206,7 +206,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn project(
+    pub fn project(
         input: LocalPhysicalPlanRef,
         projection: Vec<BoundExpr>,
         schema: SchemaRef,
@@ -379,7 +379,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn unpivot(
+    pub fn unpivot(
         input: LocalPhysicalPlanRef,
         ids: Vec<BoundExpr>,
         values: Vec<BoundExpr>,
@@ -464,7 +464,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn sample(
+    pub fn sample(
         input: LocalPhysicalPlanRef,
         fraction: f64,
         with_replacement: bool,
@@ -552,7 +552,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn physical_write(
+    pub fn physical_write(
         input: LocalPhysicalPlanRef,
         data_schema: SchemaRef,
         file_schema: SchemaRef,
@@ -570,7 +570,7 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub(crate) fn catalog_write(
+    pub fn catalog_write(
         input: LocalPhysicalPlanRef,
         catalog_type: daft_logical_plan::CatalogType<BoundExpr>,
         data_schema: SchemaRef,
@@ -588,7 +588,7 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub(crate) fn lance_write(
+    pub fn lance_write(
         input: LocalPhysicalPlanRef,
         lance_info: daft_logical_plan::LanceCatalogInfo,
         data_schema: SchemaRef,
@@ -606,7 +606,7 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub(crate) fn data_sink(
+    pub fn data_sink(
         input: LocalPhysicalPlanRef,
         data_sink_info: daft_logical_plan::DataSinkInfo,
         file_schema: SchemaRef,

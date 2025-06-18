@@ -361,6 +361,50 @@ impl ActorUDF {
         ));
         Ok(task)
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        use daft_dsl::functions::python::{get_concurrency, get_resource_request, get_udf_names};
+        use itertools::Itertools;
+        let mut res = vec![];
+        res.push("ActorUDF:".to_string());
+        res.push(format!(
+            "Projection = [{}]",
+            self.projection.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "UDFs = [{}]",
+            self.projection
+                .iter()
+                .flat_map(|expr| get_udf_names(expr.inner()))
+                .join(", ")
+        ));
+        res.push(format!(
+            "Concurrency = {}",
+            get_concurrency(
+                &self
+                    .projection
+                    .iter()
+                    .map(|e| e.inner().clone())
+                    .collect::<Vec<_>>()
+            )
+        ));
+        if let Some(resource_request) = get_resource_request(
+            &self
+                .projection
+                .iter()
+                .map(|e| e.inner().clone())
+                .collect::<Vec<_>>(),
+        ) {
+            let multiline_display = resource_request.multiline_display();
+            res.push(format!(
+                "Resource request = {{ {} }}",
+                multiline_display.join(", ")
+            ));
+        } else {
+            res.push("Resource request = None".to_string());
+        }
+        res
+    }
 }
 
 impl DistributedPipelineNode for ActorUDF {
@@ -398,16 +442,18 @@ impl DistributedPipelineNode for ActorUDF {
 }
 
 impl TreeDisplay for ActorUDF {
-    fn display_as(&self, _level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-
-        writeln!(display, "{}", self.name()).unwrap();
-        writeln!(display, "Node ID: {}", self.node_id).unwrap();
-        let plan = self
-            .make_actor_udf_task_for_materialized_outputs(vec![], WorkerId::default(), vec![])
-            .unwrap();
-        writeln!(display, "{}", plan.task().plan().single_line_display()).unwrap();
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.name()).unwrap();
+            }
+            _ => {
+                let multiline_display = self.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+            }
+        }
         display
     }
 

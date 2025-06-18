@@ -1,12 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
+use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use common_treenode::{Transformed, TreeNode};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
+use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
 use crate::{
@@ -25,9 +26,9 @@ pub(crate) struct ScanSourceNode {
     stage_id: StageID,
     node_id: NodeID,
     config: Arc<DaftExecutionConfig>,
-    plan: LocalPhysicalPlanRef,
     pushdowns: Pushdowns,
     scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    schema: SchemaRef,
 }
 
 impl ScanSourceNode {
@@ -36,19 +37,23 @@ impl ScanSourceNode {
         stage_id: StageID,
         node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
-        plan: LocalPhysicalPlanRef,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        schema: SchemaRef,
     ) -> Self {
         Self {
             plan_id,
             stage_id,
             node_id,
             config,
-            plan,
             pushdowns,
             scan_tasks,
+            schema,
         }
+    }
+
+    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
+        Arc::new(self)
     }
 
     async fn execution_loop(
@@ -82,22 +87,12 @@ impl ScanSourceNode {
         &self,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     ) -> DaftResult<SwordfishTask> {
-        let transformed_plan = self
-            .plan
-            .clone()
-            .transform_up(|p| match p.as_ref() {
-                LocalPhysicalPlan::PlaceholderScan(placeholder) => {
-                    let physical_scan = LocalPhysicalPlan::physical_scan(
-                        scan_tasks.clone(),
-                        self.pushdowns.clone(),
-                        placeholder.schema.clone(),
-                        StatsState::NotMaterialized,
-                    );
-                    Ok(Transformed::yes(physical_scan))
-                }
-                _ => Ok(Transformed::no(p)),
-            })?
-            .data;
+        let physical_scan = LocalPhysicalPlan::physical_scan(
+            scan_tasks.clone(),
+            self.pushdowns.clone(),
+            self.schema.clone(),
+            StatsState::NotMaterialized,
+        );
 
         let psets = HashMap::new();
         let context = HashMap::from([
@@ -107,7 +102,7 @@ impl ScanSourceNode {
             ("node_name".to_string(), self.name().to_string()),
         ]);
         let task = SwordfishTask::new(
-            transformed_plan,
+            physical_scan,
             self.config.clone(),
             psets,
             SchedulingStrategy::Spread,
@@ -117,17 +112,7 @@ impl ScanSourceNode {
         Ok(task)
     }
     fn make_empty_scan_task(&self) -> DaftResult<SwordfishTask> {
-        let transformed_plan = self
-            .plan
-            .clone()
-            .transform_up(|p| match p.as_ref() {
-                LocalPhysicalPlan::PlaceholderScan(placeholder) => {
-                    let empty_scan = LocalPhysicalPlan::empty_scan(placeholder.schema.clone());
-                    Ok(Transformed::yes(empty_scan))
-                }
-                _ => Ok(Transformed::no(p)),
-            })?
-            .data;
+        let transformed_plan = LocalPhysicalPlan::empty_scan(self.schema.clone());
         let context = HashMap::from([
             ("plan_id".to_string(), self.plan_id.to_string()),
             ("stage_id".to_string(), format!("{}", self.stage_id)),
@@ -150,7 +135,7 @@ impl ScanSourceNode {
 
 impl DistributedPipelineNode for ScanSourceNode {
     fn name(&self) -> &'static str {
-        "DistributedScan"
+        "ScanSource"
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
@@ -183,18 +168,78 @@ impl DistributedPipelineNode for ScanSourceNode {
 }
 
 impl TreeDisplay for ScanSourceNode {
-    fn display_as(&self, _level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
-        let mut display = String::new();
-        writeln!(display, "{}", self.name()).unwrap();
-        writeln!(display, "Node ID: {}", self.node_id).unwrap();
+        fn base_display(scan: &ScanSourceNode) -> String {
+            let num_scan_tasks = scan.scan_tasks.len();
+            let total_bytes: usize = scan
+                .scan_tasks
+                .iter()
+                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                .sum();
 
-        let plan = self
-            .make_source_tasks(self.scan_tasks.clone())
-            .unwrap()
-            .plan();
-        writeln!(display, "Local Plan: {}", plan.single_line_display()).unwrap();
-        display
+            #[allow(unused_mut)]
+            let mut s = format!(
+                "ScanTaskSource:
+Num Scan Tasks = {num_scan_tasks}
+Estimated Scan Bytes = {total_bytes}
+"
+            );
+            #[cfg(feature = "python")]
+            if let FileFormatConfig::Database(config) =
+                scan.scan_tasks[0].file_format_config().as_ref()
+            {
+                if num_scan_tasks == 1 {
+                    writeln!(s, "SQL Query = {}", &config.sql).unwrap();
+                } else {
+                    writeln!(s, "SQL Queries = [{},..]", &config.sql).unwrap();
+                }
+            }
+            s
+        }
+        match level {
+            DisplayLevel::Compact => self.get_name(),
+            DisplayLevel::Default => {
+                let mut s = base_display(self);
+                // We're only going to display the pushdowns and schema for the first scan task.
+                let pushdown = self.scan_tasks[0].pushdowns();
+                if !pushdown.is_empty() {
+                    s.push_str(&pushdown.display_as(DisplayLevel::Compact));
+                    s.push('\n');
+                }
+
+                let schema = self.scan_tasks[0].schema();
+                writeln!(
+                    s,
+                    "Schema: {{{}}}",
+                    schema.display_as(DisplayLevel::Compact)
+                )
+                .unwrap();
+
+                let tasks = self.scan_tasks.iter();
+
+                writeln!(s, "Scan Tasks: [").unwrap();
+                for (i, st) in tasks.enumerate() {
+                    if i < 3 || i >= self.scan_tasks.len() - 3 {
+                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
+                    } else if i == 3 {
+                        writeln!(s, "...").unwrap();
+                    }
+                }
+                writeln!(s, "]").unwrap();
+
+                s
+            }
+            DisplayLevel::Verbose => {
+                let mut s = base_display(self);
+                writeln!(s, "Scan Tasks: [").unwrap();
+
+                for st in self.scan_tasks.iter() {
+                    writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
+                }
+                s
+            }
+        }
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

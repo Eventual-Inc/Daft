@@ -4,8 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_treenode::{Transformed, TreeNode};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 
 use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
@@ -26,7 +25,6 @@ pub(crate) struct InMemorySourceNode {
     node_id: NodeID,
     config: Arc<DaftExecutionConfig>,
     info: InMemoryInfo,
-    plan: LocalPhysicalPlanRef,
     input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 }
 
@@ -37,7 +35,6 @@ impl InMemorySourceNode {
         node_id: usize,
         config: Arc<DaftExecutionConfig>,
         info: InMemoryInfo,
-        plan: LocalPhysicalPlanRef,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> Self {
         Self {
@@ -46,9 +43,12 @@ impl InMemorySourceNode {
             node_id,
             config,
             info,
-            plan,
             input_psets,
         }
+    }
+
+    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
+        Arc::new(self)
     }
 
     async fn execution_loop(
@@ -81,7 +81,7 @@ impl InMemorySourceNode {
             total_num_rows += partition_ref.num_rows().unwrap_or(0);
         }
         let info = InMemoryInfo::new(
-            self.plan.schema().clone(),
+            self.info.source_schema.clone(),
             self.info.cache_key.clone(),
             None,
             1,
@@ -90,18 +90,8 @@ impl InMemorySourceNode {
             None,
             None,
         );
-        let in_memory_source = LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
-        // the first operator of physical_plan has to be a scan
-        let transformed_plan = self
-            .plan
-            .clone()
-            .transform_up(|p| match p.as_ref() {
-                LocalPhysicalPlan::PlaceholderScan(_) => {
-                    Ok(Transformed::yes(in_memory_source.clone()))
-                }
-                _ => Ok(Transformed::no(p)),
-            })?
-            .data;
+        let in_memory_source_plan =
+            LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
         let context = HashMap::from([
             ("plan_id".to_string(), self.plan_id.to_string()),
@@ -110,7 +100,7 @@ impl InMemorySourceNode {
             ("node_name".to_string(), self.name().to_string()),
         ]);
         let task = SwordfishTask::new(
-            transformed_plan,
+            in_memory_source_plan,
             self.config.clone(),
             psets,
             // TODO: Replace with WorkerAffinity based on the psets location
@@ -121,11 +111,22 @@ impl InMemorySourceNode {
         );
         Ok(task)
     }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("InMemorySource:".to_string());
+        res.push(format!(
+            "Schema = {}",
+            self.info.source_schema.short_string()
+        ));
+        res.push(format!("Size bytes = {}", self.info.size_bytes));
+        res
+    }
 }
 
 impl DistributedPipelineNode for InMemorySourceNode {
     fn name(&self) -> &'static str {
-        "DistributedInMemoryScan"
+        "InMemorySource"
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
@@ -157,14 +158,18 @@ impl DistributedPipelineNode for InMemorySourceNode {
 }
 
 impl TreeDisplay for InMemorySourceNode {
-    fn display_as(&self, _level: DisplayLevel) -> String {
+    fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-
-        writeln!(display, "{}", self.name()).unwrap();
-        writeln!(display, "Node ID: {}", self.node_id).unwrap();
-        let plan = self.make_task_for_partition_refs(vec![]).unwrap().plan();
-        writeln!(display, "Local Plan: {}", plan.single_line_display()).unwrap();
+        match level {
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.name()).unwrap();
+            }
+            _ => {
+                let multiline_display = self.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
+            }
+        }
         display
     }
 
