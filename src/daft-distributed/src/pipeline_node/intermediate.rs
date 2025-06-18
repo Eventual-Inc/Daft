@@ -192,6 +192,7 @@ impl DistributedPipelineNode for IntermediateNode {
     }
 
     fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
+        let span = stage_context.new_pipeline_span(self.clone());
         let context = {
             let child_name = self.child.name();
             let child_id = self.child.node_id();
@@ -212,7 +213,7 @@ impl DistributedPipelineNode for IntermediateNode {
         let execution_loop = self.execution_loop(input_node, result_tx, context);
         stage_context.joinset.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        RunningPipelineNode::new(result_rx, span)
     }
     fn plan_id(&self) -> &PlanID {
         &self.plan_id

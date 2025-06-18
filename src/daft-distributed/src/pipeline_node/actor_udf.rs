@@ -222,6 +222,7 @@ impl ActorUDF {
                         worker_id,
                         actors,
                     )?;
+
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -373,13 +374,15 @@ impl DistributedPipelineNode for ActorUDF {
     }
 
     fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
+        // TODO: abstract this away so the span doesn't need to be explicitly declared in the `start` fn
+        let span = stage_context.new_pipeline_span(self.clone());
         let input_node = self.child.clone().start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop_fused(input_node, result_tx);
         stage_context.joinset.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        RunningPipelineNode::new(result_rx, span)
     }
 
     fn plan_id(&self) -> &PlanID {

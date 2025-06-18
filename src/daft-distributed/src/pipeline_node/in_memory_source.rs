@@ -133,11 +133,13 @@ impl DistributedPipelineNode for InMemorySourceNode {
     }
 
     fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
+        let span = stage_context.new_pipeline_span(self.clone());
+
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
-        RunningPipelineNode::new(result_rx)
+        RunningPipelineNode::new(result_rx, span)
     }
     fn plan_id(&self) -> &PlanID {
         &self.plan_id
