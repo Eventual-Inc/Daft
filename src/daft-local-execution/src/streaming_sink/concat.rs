@@ -4,7 +4,7 @@ use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::streaming_sink::{
+use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };

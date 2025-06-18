@@ -7,12 +7,29 @@ use std::{
 };
 
 use common_error::DaftResult;
-use indicatif::{HumanCount, ProgressStyle};
+use indexmap::IndexMap;
+use indicatif::ProgressStyle;
 
 use crate::runtime_stats::RuntimeStatsContext;
 
+/// Convert statistics to a message for progress bars
+fn stats_to_message(stats: IndexMap<Arc<str>, String>) -> String {
+    let mut messages = vec![];
+
+    for (name, value) in stats {
+        // Tracked by the progress bar itself
+        if name.as_ref() == "cpu time" {
+            continue;
+        }
+
+        messages.push(format!("{} {}", value, name.to_lowercase()));
+    }
+
+    messages.join(", ")
+}
+
 pub trait ProgressBar: Send + Sync {
-    fn set_message(&self, message: String) -> DaftResult<()>;
+    fn set_message(&self, message: IndexMap<Arc<str>, String>) -> DaftResult<()>;
     fn close(&self) -> DaftResult<()>;
 }
 
@@ -45,7 +62,6 @@ impl ProgressBarColor {
 pub struct OperatorProgressBar {
     inner_progress_bar: Box<dyn ProgressBar>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    show_received: bool,
     start_time: Instant,
     last_update: AtomicU64,
 }
@@ -57,12 +73,10 @@ impl OperatorProgressBar {
     pub fn new(
         progress_bar: Box<dyn ProgressBar>,
         runtime_stats: Arc<RuntimeStatsContext>,
-        show_received: bool,
     ) -> Self {
         Self {
             inner_progress_bar: progress_bar,
             runtime_stats,
-            show_received,
             start_time: Instant::now(),
             last_update: AtomicU64::new(0),
         }
@@ -92,18 +106,9 @@ impl OperatorProgressBar {
     pub fn render(&self) {
         let now = std::time::Instant::now();
         if self.should_update_progress_bar(now) {
-            let rows_received = self.runtime_stats.get_rows_received();
-            let rows_emitted = self.runtime_stats.get_rows_emitted();
-            let msg = if self.show_received {
-                format!(
-                    "{} rows received, {} rows emitted",
-                    HumanCount(rows_received),
-                    HumanCount(rows_emitted)
-                )
-            } else {
-                format!("{} rows emitted", HumanCount(rows_emitted))
-            };
-            let _ = self.inner_progress_bar.set_message(msg);
+            let _ = self
+                .inner_progress_bar
+                .set_message(self.runtime_stats.render());
         }
     }
 }
@@ -117,13 +122,14 @@ impl Drop for OperatorProgressBar {
 struct IndicatifProgressBar(indicatif::ProgressBar);
 
 impl ProgressBar for IndicatifProgressBar {
-    fn set_message(&self, message: String) -> DaftResult<()> {
-        self.0.set_message(message);
+    fn set_message(&self, stats: IndexMap<Arc<str>, String>) -> DaftResult<()> {
+        self.0.set_message(stats_to_message(stats));
         Ok(())
     }
 
     fn close(&self) -> DaftResult<()> {
-        self.0.finish_and_clear();
+        self.0
+            .finish_with_message(format!("🎉 Completed. {}", self.));
         Ok(())
     }
 }
@@ -208,7 +214,8 @@ mod python {
     }
 
     impl ProgressBar for TqdmProgressBar {
-        fn set_message(&self, message: String) -> DaftResult<()> {
+        fn set_message(&self, stats: IndexMap<Arc<str>, String>) -> DaftResult<()> {
+            let message = stats_to_message(stats);
             self.manager.update_bar(self.pb_id, message.as_str())
         }
 

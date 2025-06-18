@@ -38,18 +38,12 @@ use crate::{
     },
     sinks::{
         aggregate::AggregateSink,
-        anti_semi_hash_join_probe::AntiSemiProbeSink,
         blocking_sink::BlockingSinkNode,
-        concat::ConcatSink,
         cross_join_collect::CrossJoinCollectSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
-        limit::LimitSink,
-        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink,
         pivot::PivotSink,
         sort::SortSink,
-        streaming_sink::StreamingSinkNode,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
@@ -59,6 +53,11 @@ use crate::{
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
     state_bridge::BroadcastStateBridge,
+    streaming_sink::{
+        anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
+        limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink,
+    },
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
