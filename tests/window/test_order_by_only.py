@@ -5,7 +5,6 @@ import random
 import pandas as pd
 import pytest
 
-import daft
 from daft import Window, col
 from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
@@ -330,15 +329,17 @@ def test_rank_with_1k_distinct_values(make_df, repartition_nparts, with_morsel_s
         ),
     ],
 )
-def test_window_nulls(desc, nulls_first, expected):
+def test_window_nulls_first_or_last(make_df, desc, nulls_first, expected):
     """Test window functions with nulls_first=True/False."""
-    ids = list(range(1, 7))
-    values = [10, None, 20, None, 30, 30]
-    data = {
-        "id": ids,
-        "value": values,
-    }
-    df = daft.from_pydict(data)
+    data = [
+        {"id": 1, "value": 10},
+        {"id": 2, "value": None},
+        {"id": 3, "value": 20},
+        {"id": 4, "value": None},
+        {"id": 5, "value": 30},
+        {"id": 6, "value": 30},
+    ]
+    df = make_df(data)
 
     window_specs = Window().order_by("value", desc=desc, nulls_first=nulls_first)
     window_functions = {
@@ -354,8 +355,8 @@ def test_window_nulls(desc, nulls_first, expected):
     result_df = result.to_pandas()
 
     expected_data = {
-        "id": ids,
-        "value": values,
+        "id": [1, 2, 3, 4, 5, 6],
+        "value": [10, None, 20, None, 30, 30],
     }
     expected_data.update(expected)
     expected = pd.DataFrame(expected_data)
