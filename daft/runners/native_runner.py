@@ -84,7 +84,7 @@ class NativeRunner(Runner[MicroPartition]):
         builder = builder.optimize()
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
-        builder = _to_from_proto(builder)
+        # builder = _to_from_proto(builder)
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
