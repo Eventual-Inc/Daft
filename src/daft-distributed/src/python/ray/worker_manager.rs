@@ -11,7 +11,6 @@ use crate::scheduling::{
 };
 
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
-#[allow(dead_code)]
 pub(crate) struct RayWorkerManager {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
     task_locals: pyo3_async_runtimes::TaskLocals,

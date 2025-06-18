@@ -9,7 +9,6 @@ use futures::{Stream, StreamExt};
 use crate::utils::joinset::JoinSet;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 enum ForwardingStreamState<S> {
     // Active: Forwarding results from input stream and tracking background tasks
     Active {
@@ -22,12 +21,10 @@ enum ForwardingStreamState<S> {
     Complete,
 }
 
-#[allow(dead_code)]
 pub(crate) struct JoinableForwardingStream<S> {
     state: ForwardingStreamState<S>,
 }
 
-#[allow(dead_code)]
 impl<S> JoinableForwardingStream<S> {
     pub fn new(input_stream: S, joinset: JoinSet<DaftResult<()>>) -> Self {
         Self {

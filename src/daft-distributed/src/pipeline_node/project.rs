@@ -1,6 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -10,38 +9,39 @@ use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
-    pipeline_node::NodeID,
-    plan::PlanID,
-    stage::{StageContext, StageID},
+    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    stage::{StageConfig, StageExecutionContext},
 };
 
 pub(crate) struct ProjectNode {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
     projection: Vec<BoundExpr>,
-    schema: SchemaRef,
-    config: Arc<DaftExecutionConfig>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
 impl ProjectNode {
+    const NODE_NAME: NodeName = "Project";
+
     pub fn new(
-        plan_id: PlanID,
-        stage_id: StageID,
+        stage_config: &StageConfig,
         node_id: NodeID,
-        config: Arc<DaftExecutionConfig>,
         projection: Vec<BoundExpr>,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
-        Self {
-            plan_id,
-            stage_id,
+        let context = PipelineNodeContext::new(
+            stage_config,
             node_id,
-            projection,
-            schema,
+            Self::NODE_NAME,
+            vec![*child.node_id()],
+            vec![child.name()],
+        );
+        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        Self {
             config,
+            context,
+            projection,
             child,
         }
     }
@@ -50,7 +50,7 @@ impl ProjectNode {
         Arc::new(self)
     }
 
-    pub fn multiline_display(&self) -> Vec<String> {
+    fn multiline_display(&self) -> Vec<String> {
         use daft_dsl::functions::python::get_resource_request;
         use itertools::Itertools;
         let mut res = vec![];
@@ -97,34 +97,23 @@ impl TreeDisplay for ProjectNode {
 }
 
 impl DistributedPipelineNode for ProjectNode {
-    fn name(&self) -> &'static str {
-        "Project"
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let context = {
-            let child_name = self.child.name();
-            let child_id = self.child.node_id();
-
-            HashMap::from([
-                ("plan_id".to_string(), self.plan_id.to_string()),
-                ("stage_id".to_string(), format!("{}", self.stage_id)),
-                ("node_id".to_string(), format!("{}", self.node_id)),
-                ("node_name".to_string(), self.name().to_string()),
-                ("child_id".to_string(), format!("{}", child_id)),
-                ("child_name".to_string(), child_name.to_string()),
-            ])
-        };
-
+    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        // Create the plan builder closure
         let projection = self.projection.clone();
-        let schema = self.schema.clone();
+        let schema = self.config.schema.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::project(
                 input,
@@ -134,26 +123,7 @@ impl DistributedPipelineNode for ProjectNode {
             ))
         };
 
-        input_node.pipeline_instruction(
-            stage_context,
-            self.config.clone(),
-            self.node_id,
-            self.schema.clone(),
-            context,
-            plan_builder,
-        )
-    }
-
-    fn plan_id(&self) -> &PlanID {
-        &self.plan_id
-    }
-
-    fn stage_id(&self) -> &StageID {
-        &self.stage_id
-    }
-
-    fn node_id(&self) -> &NodeID {
-        &self.node_id
+        input_node.pipeline_instruction(stage_context, self, plan_builder)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

@@ -1,52 +1,52 @@
-use std::{cmp::Ordering, collections::HashMap, sync::Arc};
+use std::{cmp::Ordering, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, InMemoryInfo};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{DistributedPipelineNode, MaterializedOutput, PipelineOutput, RunningPipelineNode};
+use super::{
+    make_new_task_from_materialized_output, DistributedPipelineNode, PipelineOutput,
+    RunningPipelineNode,
+};
 use crate::{
-    pipeline_node::NodeID,
-    plan::PlanID,
-    scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SchedulingStrategy, SwordfishTask},
-    },
-    stage::{StageContext, StageID},
+    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
+    stage::{StageConfig, StageExecutionContext},
     utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct LimitNode {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
     limit: usize,
-    schema: SchemaRef,
-    config: Arc<DaftExecutionConfig>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
 impl LimitNode {
+    const NODE_NAME: NodeName = "Limit";
+
     pub fn new(
-        plan_id: PlanID,
-        stage_id: StageID,
+        stage_config: &StageConfig,
         node_id: NodeID,
         limit: usize,
         schema: SchemaRef,
-        config: Arc<DaftExecutionConfig>,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
-        Self {
-            plan_id,
-            stage_id,
+        let context = PipelineNodeContext::new(
+            stage_config,
             node_id,
-            limit,
-            schema,
+            Self::NODE_NAME,
+            vec![*child.node_id()],
+            vec![child.name()],
+        );
+        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        Self {
             config,
+            context,
+            limit,
             child,
         }
     }
@@ -56,7 +56,6 @@ impl LimitNode {
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        context: HashMap<String, String>,
     ) -> DaftResult<()> {
         let mut remaining_limit = self.limit;
         let mut materialized_result_stream = input.materialize(scheduler_handle.clone());
@@ -72,13 +71,18 @@ impl LimitNode {
                 }
                 Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
                 Ordering::Greater => {
-                    let task_with_limit = self.make_task_with_limit(
+                    let task = make_new_task_from_materialized_output(
                         materialized_output,
-                        context.clone(),
-                        remaining_limit,
+                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        &move |input| {
+                            Ok(LocalPhysicalPlan::limit(
+                                input,
+                                remaining_limit as i64,
+                                StatsState::NotMaterialized,
+                            ))
+                        },
                     )?;
-                    let task_result_handle = task_with_limit.submit(&scheduler_handle).await?;
-                    (PipelineOutput::Running(task_result_handle), true)
+                    (PipelineOutput::Task(task), true)
                 }
             };
             if result_tx.send(to_send).await.is_err() {
@@ -89,46 +93,6 @@ impl LimitNode {
             }
         }
         Ok(())
-    }
-
-    fn make_task_with_limit(
-        &self,
-        materialized_output: MaterializedOutput,
-        context: HashMap<String, String>,
-        limit: usize,
-    ) -> DaftResult<SubmittableTask<SwordfishTask>> {
-        let (partition, worker_id) = materialized_output.into_inner();
-        let in_memory_info = InMemoryInfo::new(
-            self.schema.clone(),
-            self.node_id.to_string(),
-            None,
-            1,
-            0,
-            0,
-            None,
-            None,
-        );
-
-        let in_memory_source =
-            LocalPhysicalPlan::in_memory_scan(in_memory_info, StatsState::NotMaterialized);
-
-        let limit_plan =
-            LocalPhysicalPlan::limit(in_memory_source, limit as i64, StatsState::NotMaterialized);
-
-        let mpset = HashMap::from([(self.node_id.to_string(), vec![partition])]);
-
-        let task = SwordfishTask::new(
-            limit_plan,
-            self.config.clone(),
-            mpset,
-            SchedulingStrategy::WorkerAffinity {
-                worker_id,
-                soft: true,
-            },
-            context,
-            self.node_id,
-        );
-        Ok(SubmittableTask::new(task))
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -142,7 +106,7 @@ impl TreeDisplay for LimitNode {
         let mut display = String::new();
         match level {
             DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
+                writeln!(display, "{}", self.context.node_name).unwrap();
             }
             _ => {
                 let multiline_display = self.multiline_display().join("\n");
@@ -157,78 +121,45 @@ impl TreeDisplay for LimitNode {
     }
 
     fn get_name(&self) -> String {
-        self.name().to_string()
+        self.context.node_name.to_string()
     }
 }
 
 impl DistributedPipelineNode for LimitNode {
-    fn name(&self) -> &'static str {
-        "Limit"
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
-        // let child_id = self.child..node_id();
-        let child_name = self.child.name();
-        let child_id = self.child.node_id();
-
-        let context = HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), format!("{}", self.stage_id)),
-            ("node_id".to_string(), format!("{}", self.node_id)),
-            ("node_name".to_string(), self.name().to_string()),
-            ("child_id".to_string(), format!("{}", child_id)),
-            ("child_name".to_string(), child_name.to_string()),
-        ]);
-
+    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        // Add pipeline instruction to add local limit to the physical plan
-        let limit_value = self.limit as i64;
-        let schema = self.schema.clone();
-        let config = self.config.clone();
-        let node_id = self.node_id;
-        let context_clone = context.clone();
-
-        let result_node = input_node.pipeline_instruction(
-            stage_context,
-            config,
-            node_id,
-            schema,
-            context_clone,
-            move |input_plan| {
-                Ok(daft_local_plan::LocalPhysicalPlan::limit(
+        let limit = self.limit as i64;
+        let local_limit_node =
+            input_node.pipeline_instruction(stage_context, self.clone(), move |input_plan| {
+                Ok(LocalPhysicalPlan::limit(
                     input_plan,
-                    limit_value,
-                    daft_logical_plan::stats::StatsState::NotMaterialized,
+                    limit,
+                    StatsState::NotMaterialized,
                 ))
-            },
-        );
+            });
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(
-            result_node,
+            local_limit_node,
             result_tx,
             stage_context.scheduler_handle.clone(),
-            context,
         );
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
-    }
-    fn plan_id(&self) -> &PlanID {
-        &self.plan_id
-    }
-
-    fn stage_id(&self) -> &StageID {
-        &self.stage_id
-    }
-
-    fn node_id(&self) -> &NodeID {
-        &self.node_id
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

@@ -12,7 +12,6 @@ use crate::utils::{
     joinset::{JoinSet, JoinSetId},
 };
 
-#[allow(dead_code)]
 pub(super) struct DispatcherActor<W: Worker> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
 }
@@ -150,13 +149,11 @@ impl<W: Worker> DispatcherActor<W> {
     }
 }
 
-#[allow(dead_code)]
 pub(super) struct DispatcherHandle<T: Task> {
     dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
     worker_update_receiver: tokio::sync::watch::Receiver<Vec<WorkerSnapshot>>,
 }
 
-#[allow(dead_code)]
 impl<T: Task> DispatcherHandle<T> {
     fn new(
         dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,

@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
@@ -9,46 +8,45 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
+use super::{
+    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineOutput,
+    RunningPipelineNode,
+};
 use crate::{
     pipeline_node::NodeID,
-    plan::PlanID,
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask},
     },
-    stage::{StageContext, StageID},
+    stage::{StageConfig, StageExecutionContext},
     utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct ScanSourceNode {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
-    config: Arc<DaftExecutionConfig>,
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
     pushdowns: Pushdowns,
     scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    schema: SchemaRef,
 }
 
 impl ScanSourceNode {
+    const NODE_NAME: NodeName = "ScanSource";
+
     pub fn new(
-        plan_id: PlanID,
-        stage_id: StageID,
+        stage_config: &StageConfig,
         node_id: NodeID,
-        config: Arc<DaftExecutionConfig>,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
     ) -> Self {
+        let context =
+            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
+        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
         Self {
-            plan_id,
-            stage_id,
-            node_id,
             config,
+            context,
             pushdowns,
             scan_tasks,
-            schema,
         }
     }
 
@@ -68,7 +66,7 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        let max_sources_per_scan_task = self.config.max_sources_per_scan_task;
+        let max_sources_per_scan_task = self.config.execution_config.max_sources_per_scan_task;
         for scan_tasks in self.scan_tasks.chunks(max_sources_per_scan_task) {
             let task = self.make_source_tasks(scan_tasks.to_vec().into())?;
             if result_tx
@@ -90,76 +88,55 @@ impl ScanSourceNode {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             scan_tasks.clone(),
             self.pushdowns.clone(),
-            self.schema.clone(),
+            self.config.schema.clone(),
             StatsState::NotMaterialized,
         );
 
-        let psets = HashMap::new();
-        let context = HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), format!("{}", self.stage_id)),
-            ("node_id".to_string(), format!("{}", self.node_id)),
-            ("node_name".to_string(), self.name().to_string()),
-        ]);
         let task = SwordfishTask::new(
             physical_scan,
-            self.config.clone(),
-            psets,
+            self.config.execution_config.clone(),
+            Default::default(),
             SchedulingStrategy::Spread,
-            context,
-            self.node_id,
+            self.context.to_hashmap(),
+            self.context.node_id,
         );
         Ok(task)
     }
-    fn make_empty_scan_task(&self) -> DaftResult<SwordfishTask> {
-        let transformed_plan = LocalPhysicalPlan::empty_scan(self.schema.clone());
-        let context = HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), format!("{}", self.stage_id)),
-            ("node_id".to_string(), format!("{}", self.node_id)),
-            ("node_name".to_string(), self.name().to_string()),
-        ]);
 
+    fn make_empty_scan_task(&self) -> DaftResult<SwordfishTask> {
+        let transformed_plan = LocalPhysicalPlan::empty_scan(self.config.schema.clone());
         let psets = HashMap::new();
         let task = SwordfishTask::new(
             transformed_plan,
-            self.config.clone(),
+            self.config.execution_config.clone(),
             psets,
             SchedulingStrategy::Spread,
-            context,
-            self.node_id,
+            self.context.to_hashmap(),
+            self.context.node_id,
         );
         Ok(task)
     }
 }
 
 impl DistributedPipelineNode for ScanSourceNode {
-    fn name(&self) -> &'static str {
-        "ScanSource"
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
-    }
-
-    fn plan_id(&self) -> &PlanID {
-        &self.plan_id
-    }
-
-    fn stage_id(&self) -> &StageID {
-        &self.stage_id
-    }
-
-    fn node_id(&self) -> &NodeID {
-        &self.node_id
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

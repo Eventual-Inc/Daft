@@ -1,47 +1,45 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
 
-use super::{DistributedPipelineNode, PipelineOutput, RunningPipelineNode};
+use super::{DistributedPipelineNode, PipelineNodeContext, PipelineOutput, RunningPipelineNode};
 use crate::{
-    pipeline_node::NodeID,
-    plan::PlanID,
+    pipeline_node::{NodeID, NodeName, PipelineNodeConfig},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask},
     },
-    stage::{StageContext, StageID},
+    stage::{StageConfig, StageExecutionContext},
     utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct InMemorySourceNode {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
-    config: Arc<DaftExecutionConfig>,
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
     info: InMemoryInfo,
     input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 }
 
 impl InMemorySourceNode {
+    const NODE_NAME: NodeName = "InMemorySource";
+
     pub fn new(
-        plan_id: PlanID,
-        stage_id: StageID,
-        node_id: usize,
-        config: Arc<DaftExecutionConfig>,
+        stage_config: &StageConfig,
+        node_id: NodeID,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> Self {
+        let context =
+            PipelineNodeContext::new(stage_config, node_id, Self::NODE_NAME, vec![], vec![]);
+        let config =
+            PipelineNodeConfig::new(info.source_schema.clone(), stage_config.config.clone());
         Self {
-            plan_id,
-            stage_id,
-            node_id,
             config,
+            context,
             info,
             input_psets,
         }
@@ -93,21 +91,15 @@ impl InMemorySourceNode {
         let in_memory_source_plan =
             LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
-        let context = HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), format!("{}", self.stage_id)),
-            ("node_id".to_string(), format!("{}", self.node_id)),
-            ("node_name".to_string(), self.name().to_string()),
-        ]);
         let task = SwordfishTask::new(
             in_memory_source_plan,
-            self.config.clone(),
+            self.config.execution_config.clone(),
             psets,
             // TODO: Replace with WorkerAffinity based on the psets location
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
-            context,
-            self.node_id,
+            self.context.to_hashmap(),
+            self.context.node_id,
         );
         Ok(task)
     }
@@ -125,31 +117,24 @@ impl InMemorySourceNode {
 }
 
 impl DistributedPipelineNode for InMemorySourceNode {
-    fn name(&self) -> &'static str {
-        "InMemorySource"
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
+    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(result_tx);
         stage_context.joinset.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
-    }
-    fn plan_id(&self) -> &PlanID {
-        &self.plan_id
-    }
-
-    fn stage_id(&self) -> &StageID {
-        &self.stage_id
-    }
-
-    fn node_id(&self) -> &NodeID {
-        &self.node_id
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
@@ -163,7 +148,7 @@ impl TreeDisplay for InMemorySourceNode {
         let mut display = String::new();
         match level {
             DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
+                writeln!(display, "{}", self.context.node_name).unwrap();
             }
             _ => {
                 let multiline_display = self.multiline_display().join("\n");
@@ -178,6 +163,6 @@ impl TreeDisplay for InMemorySourceNode {
     }
 
     fn get_name(&self) -> String {
-        self.name().to_string()
+        self.context.node_name.to_string()
     }
 }

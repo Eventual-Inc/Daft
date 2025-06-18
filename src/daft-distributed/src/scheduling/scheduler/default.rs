@@ -9,7 +9,6 @@ use crate::scheduling::{
     worker::WorkerId,
 };
 
-#[allow(dead_code)]
 pub(super) struct DefaultScheduler<T: Task> {
     pending_tasks: BinaryHeap<SchedulableTask<T>>,
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
@@ -21,7 +20,6 @@ impl<T: Task> Default for DefaultScheduler<T> {
     }
 }
 
-#[allow(dead_code)]
 impl<T: Task> DefaultScheduler<T> {
     pub fn new() -> Self {
         Self {
@@ -95,7 +93,7 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
                         Arc::from(task.task_id().to_string()),
                         TaskDetails::from(&task.task),
                     );
-                scheduled.push(ScheduledTask { task, worker_id });
+                scheduled.push(ScheduledTask::new(task, worker_id));
             } else {
                 unscheduled.push(task);
             }

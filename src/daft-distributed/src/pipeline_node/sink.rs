@@ -1,47 +1,45 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{stats::StatsState, SinkInfo};
-use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, RunningPipelineNode};
 use crate::{
-    pipeline_node::NodeID,
-    plan::PlanID,
-    stage::{StageContext, StageID},
+    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    stage::{StageConfig, StageExecutionContext},
 };
 
-#[derive(Clone)]
 pub(crate) struct SinkNode {
-    plan_id: PlanID,
-    stage_id: StageID,
-    node_id: NodeID,
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
     sink_info: Arc<SinkInfo>,
-    schema: SchemaRef,
-    config: Arc<DaftExecutionConfig>,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
 impl SinkNode {
+    const NODE_NAME: NodeName = "Sink";
+
     pub fn new(
-        plan_id: PlanID,
-        stage_id: StageID,
+        stage_config: &StageConfig,
         node_id: NodeID,
-        config: Arc<DaftExecutionConfig>,
         sink_info: Arc<SinkInfo>,
-        schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
-        Self {
-            plan_id,
-            stage_id,
+        let context = PipelineNodeContext::new(
+            stage_config,
             node_id,
-            sink_info,
-            schema,
+            Self::NODE_NAME,
+            vec![*child.node_id()],
+            vec![child.name()],
+        );
+        let config =
+            PipelineNodeConfig::new(child.config().schema.clone(), stage_config.config.clone());
+        Self {
             config,
+            context,
+            sink_info,
             child,
         }
     }
@@ -51,14 +49,15 @@ impl SinkNode {
     }
 
     fn create_sink_plan(&self, input: LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
-        let schema = input.schema().clone();
+        let data_schema = input.schema().clone();
+        let file_schema = self.config.schema.clone();
         match self.sink_info.as_ref() {
             SinkInfo::OutputFileInfo(info) => {
-                let info = info.clone().bind(&schema)?;
+                let info = info.clone().bind(&data_schema)?;
                 Ok(LocalPhysicalPlan::physical_write(
                     input,
-                    schema,
-                    self.schema.clone(),
+                    data_schema,
+                    file_schema,
                     info,
                     StatsState::NotMaterialized,
                 ))
@@ -67,19 +66,20 @@ impl SinkNode {
             SinkInfo::CatalogInfo(info) => match &info.catalog {
                 daft_logical_plan::CatalogType::DeltaLake(..)
                 | daft_logical_plan::CatalogType::Iceberg(..) => {
+                    let catalog = info.catalog.clone().bind(&data_schema)?;
                     Ok(LocalPhysicalPlan::catalog_write(
                         input,
-                        info.catalog.clone().bind(&schema)?,
-                        schema,
-                        self.schema.clone(),
+                        catalog,
+                        data_schema,
+                        file_schema,
                         StatsState::NotMaterialized,
                     ))
                 }
                 daft_logical_plan::CatalogType::Lance(info) => Ok(LocalPhysicalPlan::lance_write(
                     input,
                     info.clone(),
-                    schema,
-                    self.schema.clone(),
+                    data_schema,
+                    file_schema,
                     StatsState::NotMaterialized,
                 )),
             },
@@ -87,13 +87,13 @@ impl SinkNode {
             SinkInfo::DataSinkInfo(data_sink_info) => Ok(LocalPhysicalPlan::data_sink(
                 input,
                 data_sink_info.clone(),
-                self.schema.clone(),
+                file_schema,
                 StatsState::NotMaterialized,
             )),
         }
     }
 
-    pub fn multiline_display(&self) -> Vec<String> {
+    fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
 
         match self.sink_info.as_ref() {
@@ -121,7 +121,10 @@ impl SinkNode {
                 res.push(format!("Sink: DataSink({})", data_sink_info.name));
             }
         }
-        res.push(format!("Output schema = {}", self.schema.short_string()));
+        res.push(format!(
+            "Output schema = {}",
+            self.config.schema.short_string()
+        ));
         res
     }
 }
@@ -132,7 +135,7 @@ impl TreeDisplay for SinkNode {
         let mut display = String::new();
         match level {
             DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
+                writeln!(display, "{}", self.context.node_name).unwrap();
             }
             _ => {
                 let multiline_display = self.multiline_display().join("\n");
@@ -147,62 +150,32 @@ impl TreeDisplay for SinkNode {
     }
 
     fn get_name(&self) -> String {
-        self.name().to_string()
+        self.context.node_name.to_string()
     }
 }
 
 impl DistributedPipelineNode for SinkNode {
-    fn name(&self) -> &'static str {
-        "DistributedSinkNode"
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
     }
 
     fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
         vec![self.child.clone()]
     }
 
-    fn start(self: Arc<Self>, stage_context: &mut StageContext) -> RunningPipelineNode {
-        let context = {
-            let child_name = self.child.name();
-            let child_id = self.child.node_id();
-
-            HashMap::from([
-                ("plan_id".to_string(), self.plan_id.to_string()),
-                ("stage_id".to_string(), format!("{}", self.stage_id)),
-                ("node_id".to_string(), format!("{}", self.node_id)),
-                ("node_name".to_string(), self.name().to_string()),
-                ("child_id".to_string(), format!("{}", child_id)),
-                ("child_name".to_string(), child_name.to_string()),
-            ])
-        };
-
+    fn start(self: Arc<Self>, stage_context: &mut StageExecutionContext) -> RunningPipelineNode {
         let input_node = self.child.clone().start(stage_context);
 
-        // Create the plan builder closure that uses the create_sink_plan method
         let sink_node = self.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
             sink_node.create_sink_plan(input)
         };
 
-        input_node.pipeline_instruction(
-            stage_context,
-            self.config.clone(),
-            self.node_id,
-            self.schema.clone(),
-            context,
-            plan_builder,
-        )
-    }
-
-    fn plan_id(&self) -> &PlanID {
-        &self.plan_id
-    }
-
-    fn stage_id(&self) -> &StageID {
-        &self.stage_id
-    }
-
-    fn node_id(&self) -> &NodeID {
-        &self.node_id
+        input_node.pipeline_instruction(stage_context, self, plan_builder)
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
