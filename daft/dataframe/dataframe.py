@@ -1812,13 +1812,14 @@ class DataFrame:
         Args:
             column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
             desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
+            nulls_first (Union[bool, List[bool]), optional): Sort by nulls first. Defaults to nulls being treated as the greatest value.
 
         Returns:
             DataFrame: Sorted DataFrame.
 
         Note:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
-            * Supports multicolumn sorts and can have unique `descending` flag per column.
+            * Supports multicolumn sorts and can have unique `descending` and `nulls_first` flags per column.
 
         Examples:
             >>> import daft
@@ -1882,14 +1883,6 @@ class DataFrame:
             ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 5 of 5 rows)
-
-        Args:
-            column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
-            desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
-            nulls_first (Union[bool, List[bool]), optional): Sort by nulls first. Defaults to nulls being treated as the greatest value.
-
-        Returns:
-            DataFrame: Sorted DataFrame.
         """
         if not isinstance(by, list):
             by = [

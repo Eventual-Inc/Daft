@@ -86,6 +86,26 @@ docs-serve: .venv ## Build Daft documentation in development server
 daft-proto: check-toolchain .venv ## Build Daft proto sources to avoid protoc build-time dependency.
 	trap 'mv src/daft-proto/build.rs src/daft-proto/.build.rs' EXIT && mv src/daft-proto/.build.rs src/daft-proto/build.rs && cargo build -p daft-proto
 
+.PHONY: check-format
+check-format: check-toolchain .venv  ## Check if code is properly formatted
+	source $(VENV_BIN)/activate && pre-commit run --all-files
+
+.PHONY: format-check
+format-check: check-format  ## Alias for check-format
+
+format: check-toolchain .venv  ## Format Python and Rust code
+	source $(VENV_BIN)/activate && pre-commit run ruff-format --all-files
+	source $(VENV_BIN)/activate && pre-commit run fmt --all-files
+
+.PHONY: lint
+lint: check-toolchain .venv  ## Lint Python and Rust code
+	source $(VENV_BIN)/activate && pre-commit run ruff --all-files
+	source $(VENV_BIN)/activate && pre-commit run clippy --all-files
+
+.PHONY: precommit
+precommit:  check-toolchain .venv  ## Run all pre-commit hooks
+	source $(VENV_BIN)/activate && pre-commit run --all-files
+
 .PHONY: clean
 clean:
 	rm -rf $(VENV)

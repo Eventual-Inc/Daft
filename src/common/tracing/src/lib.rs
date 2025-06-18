@@ -48,7 +48,6 @@ pub fn init_opentelemetry_providers() {
 }
 
 pub fn flush_opentelemetry_providers() {
-    flush_oltp_metrics_provider();
     flush_oltp_tracer_provider();
 }
 
@@ -77,7 +76,7 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
     *mg = Some(metrics_provider);
 }
 
-fn flush_oltp_metrics_provider() {
+pub fn flush_oltp_metrics_provider() {
     let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     if let Some(meter_provider) = mg.as_ref() {
         if let Err(e) = meter_provider.force_flush() {

@@ -2842,6 +2842,7 @@ dependencies = [
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
+ "reqwest",
  "snafu",
  "tokio",
  "tokio-util",
