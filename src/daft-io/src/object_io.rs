@@ -117,6 +117,14 @@ impl GetResult {
                                 unreachable!("Retrying a stream should always be a stream");
                             }
                         }
+                        Err(ref e) => {
+                            println!("Hmmm got an error: {:?}", e);
+                            println!(
+                                "Here's your retry params.is_some(): {}",
+                                retry_params.is_some()
+                            );
+                            break;
+                        }
                         _ => break,
                     }
                 }
