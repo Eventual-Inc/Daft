@@ -466,6 +466,8 @@ async fn provide_credentials_with_retry(
 }
 
 async fn build_s3_conf(config: &S3Config) -> super::Result<(bool, s3::Config)> {
+    println!("Building s3 conf for config: {config:?}");
+
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let region = if let Some(region_name) = &config.region_name {
