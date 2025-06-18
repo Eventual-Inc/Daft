@@ -6,7 +6,10 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_dsl::{
+    expr::bound_expr::BoundExpr,
+    functions::python::{get_resource_request, try_get_batch_size_from_udf},
+};
 use daft_logical_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use crate::{
@@ -96,13 +99,24 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::ActorPoolProject(actor_pool_project) => {
                 #[cfg(feature = "python")]
                 {
+                    let batch_size = try_get_batch_size_from_udf(&actor_pool_project.projection)?;
+                    let memory_request = get_resource_request(&actor_pool_project.projection)
+                        .and_then(|req| req.memory_bytes())
+                        .map(|m| m as u64)
+                        .unwrap_or(0);
+                    let projection = BoundExpr::bind_all(
+                        &actor_pool_project.projection,
+                        &actor_pool_project.input.schema(),
+                    )?;
                     Arc::new(crate::pipeline_node::actor_udf::ActorUDF::new(
                         self.plan_id.clone(),
                         self.stage_id.clone(),
                         self.get_next_node_id(),
                         self.config.clone(),
-                        actor_pool_project.projection.clone(),
-                        node.schema(),
+                        projection,
+                        batch_size,
+                        memory_request,
+                        actor_pool_project.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
                     )?)
                 }

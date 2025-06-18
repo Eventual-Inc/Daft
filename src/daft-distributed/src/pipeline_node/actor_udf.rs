@@ -4,10 +4,9 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_dsl::{
     expr::bound_expr::BoundExpr,
-    functions::python::{get_concurrency, get_resource_request, try_get_batch_size_from_udf},
+    functions::python::{get_concurrency, get_resource_request},
     pyobj_serde::PyObjectWrapper,
     python::PyExpr,
-    ExprRef,
 };
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{stats::StatsState, InMemoryInfo};
@@ -166,21 +165,18 @@ pub(crate) struct ActorUDF {
 }
 
 impl ActorUDF {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         plan_id: PlanID,
         stage_id: StageID,
         node_id: NodeID,
         config: Arc<DaftExecutionConfig>,
-        projection: Vec<ExprRef>,
+        projection: Vec<BoundExpr>,
+        batch_size: Option<usize>,
+        memory_request: u64,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> DaftResult<Self> {
-        let batch_size = try_get_batch_size_from_udf(&projection)?;
-        let memory_request = get_resource_request(&projection)
-            .and_then(|req| req.memory_bytes())
-            .map(|m| m as u64)
-            .unwrap_or(0);
-        let projection = BoundExpr::bind_all(&projection, &schema)?;
         Ok(Self {
             plan_id,
             stage_id,
