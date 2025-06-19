@@ -836,6 +836,27 @@ class Aggregate(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class Dedup(SingleOutputInstruction):
+    columns: ExpressionsProjection
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._dedup(inputs)
+
+    def _dedup(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        return [input.dedup(self.columns)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
 class Pivot(SingleOutputInstruction):
     group_by: ExpressionsProjection
     pivot_col: Expression

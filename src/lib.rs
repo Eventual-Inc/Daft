@@ -121,6 +121,7 @@ pub mod pylib {
         daft_dsl::register_modules(m)?;
         daft_functions::register_modules(m)?;
         daft_io::register_modules(m)?;
+        daft_ir::register_modules(m)?;
         daft_json::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
         daft_local_plan::register_modules(m)?;
@@ -153,7 +154,7 @@ pub mod pylib {
             .expect("Failed to acquire write lock on function registry");
         functions_registry.register::<daft_functions::numeric::NumericFunctions>();
         functions_registry.register::<daft_functions::float::FloatFunctions>();
-        functions_registry.register::<daft_functions::uri::UriFunctions>();
+        functions_registry.register::<daft_functions_uri::UriFunctions>();
         functions_registry.register::<daft_image::functions::ImageFunctions>();
         functions_registry.register::<daft_functions_binary::BinaryFunctions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();

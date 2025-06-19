@@ -14,10 +14,12 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::PipelineNode,
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::{
+        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
 };
 
@@ -82,6 +84,7 @@ pub struct IntermediateNode {
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
     plan_stats: StatsState,
+    node_info: NodeInfo,
 }
 
 impl IntermediateNode {
@@ -89,9 +92,12 @@ impl IntermediateNode {
         intermediate_op: Arc<dyn IntermediateOperator>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
+        ctx: &RuntimeContext,
     ) -> Self {
-        let rts = RuntimeStatsContext::new(intermediate_op.name());
-        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats)
+        let info = ctx.next_node_info(intermediate_op.name());
+
+        let rts = RuntimeStatsContext::new(info.clone());
+        Self::new_with_runtime_stats(intermediate_op, children, rts, plan_stats, info)
     }
 
     pub(crate) fn new_with_runtime_stats(
@@ -99,12 +105,14 @@ impl IntermediateNode {
         children: Vec<Box<dyn PipelineNode>>,
         runtime_stats: Arc<RuntimeStatsContext>,
         plan_stats: StatsState,
+        node_info: NodeInfo,
     ) -> Self {
         Self {
             intermediate_op,
             children,
             runtime_stats,
             plan_stats,
+            node_info,
         }
     }
 
@@ -118,12 +126,18 @@ impl IntermediateNode {
         receiver: Receiver<Arc<MicroPartition>>,
         sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
         memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
-        let task_spawner =
-            ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
+        let task_spawner = ExecutionTaskSpawner::new(
+            compute_runtime,
+            memory_manager,
+            rt_context,
+            rt_stats_handler,
+            span,
+        );
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
@@ -166,6 +180,7 @@ impl IntermediateNode {
                     input_receiver,
                     output_sender,
                     self.runtime_stats.clone(),
+                    runtime_handle.runtime_stats_handler(),
                     memory_manager.clone(),
                 ),
                 self.intermediate_op.name(),
@@ -230,12 +245,14 @@ impl PipelineNode for IntermediateNode {
             true,
             self.runtime_stats.clone(),
         );
+
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
                 self.runtime_stats.clone(),
                 progress_bar.clone(),
+                runtime_handle.runtime_stats_handler(),
             ));
         }
         let op = self.intermediate_op.clone();
@@ -243,8 +260,12 @@ impl PipelineNode for IntermediateNode {
             node_name: self.name(),
         })?;
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
+        let counting_sender = CountingSender::new(
+            destination_sender,
+            self.runtime_stats.clone(),
+            progress_bar,
+            runtime_handle.runtime_stats_handler(),
+        );
 
         let dispatch_spawner = self
             .intermediate_op
@@ -281,5 +302,12 @@ impl PipelineNode for IntermediateNode {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+
+    fn plan_id(&self) -> Arc<str> {
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

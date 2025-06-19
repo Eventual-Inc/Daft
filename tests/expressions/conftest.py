@@ -18,7 +18,7 @@ def test_expression():
         name: str,
         namespace: str | None = None,
         sql_name: str | None = None,
-        args: list[any] = [],
+        args: list[Any] = [],
         kwargs: dict | None = None,
     ):
         fn_name = name
@@ -47,7 +47,11 @@ def test_expression():
         kwargs_parts = []
         for k, v in fn_kwargs.items():
             if isinstance(v, bool):
-                kwargs_parts.append(f"{k}:={str(v).lower()}")
+                if sql_name == "regexp_replace" and k == "regex":
+                    # dataframe replace func takes 'regex' bool param, but sql regexp_replace doesn't"
+                    pass
+                else:
+                    kwargs_parts.append(f"{k}:={str(v).lower()}")
             elif isinstance(v, str):
                 kwargs_parts.append(f"{k}:='{v}'")
             else:

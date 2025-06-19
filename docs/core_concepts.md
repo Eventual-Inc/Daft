@@ -628,7 +628,7 @@ For a full list of available expressions, see [Expressions API Docs](api/express
 
 #### Referring to a column in a DataFrame
 
-Most commonly you will be creating expressions by using the [`daft.col()`][daft.expressions.col] function. The following example will create an expressiom referring to a columned named `A` but with every row incremented by 1.
+Most commonly you will be creating expressions by using the [`daft.col()`][daft.expressions.col] function. The following example will create an expression referring to a column named `A` but with every row incremented by 1.
 
 === "🐍 Python"
     ``` python
@@ -1505,7 +1505,7 @@ To learn more about each of these constructors, as well as the options that they
 
 ### From Data Catalogs
 
-If you use catalogs such as [Apache Iceberg](integrations/iceberg.md) or [Apache Hudi](integrations/hudi.md), you can check out their dedicated integration pages.
+If you use catalogs such as [Apache Iceberg](io/iceberg.md) or [Apache Hudi](io/hudi.md), you can check out their dedicated integration pages.
 
 ### From File Paths
 
@@ -1555,7 +1555,7 @@ Daft can also read data from a variety of databases, including PostgreSQL, MySQL
     df = daft.read_sql("SELECT * FROM my_table", partition_col="date", uri)
     ```
 
-To learn more, consult the [`SQL Integration Page`](integrations/sql.md) or the API documentation on [`daft.read_sql()`][daft.read_sql].
+To learn more, consult the [`SQL Integration Page`](io/sql.md) or the API documentation on [`daft.read_sql()`][daft.read_sql].
 
 ### Reading a column of URLs
 
@@ -2631,15 +2631,35 @@ Now you're ready to call this function on the `urls` column and store the output
 
 ### Integrations
 
+#### Catalogs
+
 <div class="grid cards" markdown>
 
-- [**Unity Catalog**](integrations/unity_catalog.md)
-- [**Apache Iceberg**](integrations/iceberg.md)
-- [**Delta Lake**](integrations/delta_lake.md)
-- [:material-microsoft-azure: **Microsoft Azure**](integrations/azure.md)
-- [:fontawesome-brands-aws: **Amazon Web Services (AWS)**](integrations/aws.md)
-- [**SQL**](integrations/sql.md)
-- [:simple-huggingface: **Hugging Face Datasets**](integrations/huggingface.md)
+- [**Apache Iceberg**](io/iceberg.md)
+- [**AWS Glue**](catalogs/glue.md)
+- [**AWS S3Tables**](catalogs/s3tables.md)
+- [**Unity Catalog**](catalogs/unity_catalog.md)
+
+</div>
+
+#### Tables
+
+<div class="grid cards" markdown>
+
+- [**Apache Iceberg**](io/iceberg.md)
+- [**Apache Hudi**](io/hudi.md)
+- [**Delta Lake**](io/delta_lake.md)
+- [**Hugging Face Datasets**](io/huggingface.md)
+<!-- - [**LanceDB**](io/lancedb.md) -->
+
+</div>
+
+#### Storage
+
+<div class="grid cards" markdown>
+
+- [**Amazon Web Services (AWS)**](io/aws.md)
+- [**Microsoft Azure**](io/azure.md)
 
 </div>
 
@@ -2656,11 +2676,11 @@ Now you're ready to call this function on the `urls` column and store the output
 
 <div class="grid cards" markdown>
 
-- [:material-image-edit: **MNIST Digit Classification**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/mnist.ipynb)
-- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/embeddings/daft_tutorial_embeddings_stackexchange.ipynb)
-- [:material-image-search: **Querying Images with UDFs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/image_querying/top_n_red_color.ipynb)
-- [:material-image-sync: **Image Generation on GPUs**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb)
-- [:material-window-closed-variant: **Window Functions in Daft**](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/window_functions/window_functions.ipynb)
+- [:material-image-edit: **MNIST Digit Classification**](resources/tutorials.md#mnist-digit-classification)
+- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](resources/tutorials.md#running-llms-on-the-red-pajamas-dataset)
+- [:material-image-search: **Querying Images with UDFs**](resources/tutorials.md#querying-images-with-udfs)
+- [:material-image-sync: **Image Generation on GPUs**](resources/tutorials.md#image-generation-on-gpus)
+- [:material-window-closed-variant: **Window Functions in Daft**](resources/tutorials.md#window-functions)
 
 </div>
 

@@ -117,8 +117,14 @@ impl Runtime {
     /// For example, URL download is an async function, but it is called from a synchronous function in a tokio runtime,
     /// i.e. calling the Expression Evaluator from the Native Executor.
     ///
+    /// Caution:
+    /// If the tokio runtimes of the synchronous function and the asynchronous function are same, that can potentially cause
+    /// a deadlock, so the caller needs to be careful to avoid nested calls that can cause this situation.
+    ///
+    /// Also, the calling runtime thread will not do any other work until this call returns, since it is blocked.
+    ///
     /// In the future, we should refactor the code to be fully async, but for now, this is a workaround.
-    pub fn block_on<F>(&self, future: F) -> DaftResult<F::Output>
+    pub fn block_within_async_context<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -147,6 +153,23 @@ impl Runtime {
         F::Output: Send + 'static,
     {
         RuntimeTask::new(self.runtime.handle(), future)
+    }
+
+    pub fn spawn_blocking<F, R>(&self, f: F) -> RuntimeTask<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        match self.pool_type {
+            PoolType::Compute => {
+                panic!("Cannot spawn blocking task on compute runtime from a non-compute thread");
+            }
+            PoolType::IO | PoolType::Custom(_) => {
+                let mut join_set = JoinSet::new();
+                join_set.spawn_blocking_on(f, self.runtime.handle());
+                RuntimeTask { joinset: join_set }
+            }
+        }
     }
 }
 

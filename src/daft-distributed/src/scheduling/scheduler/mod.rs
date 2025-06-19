@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskId},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskID, TaskPriority},
     worker::{Worker, WorkerId},
 };
 use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
@@ -11,10 +11,11 @@ mod linear;
 mod scheduler_actor;
 
 use common_error::DaftResult;
-pub(crate) use scheduler_actor::{spawn_default_scheduler_actor, SchedulerHandle, SubmittedTask};
+pub(crate) use scheduler_actor::{
+    spawn_default_scheduler_actor, SchedulerHandle, SubmittableTask, SubmittedTask,
+};
 use tokio_util::sync::CancellationToken;
 
-#[allow(dead_code)]
 pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>);
@@ -22,7 +23,6 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn num_pending_tasks(&self) -> usize;
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
@@ -30,7 +30,6 @@ pub(crate) struct SchedulableTask<T: Task> {
     cancel_token: CancellationToken,
 }
 
-#[allow(dead_code)]
 impl<T: Task> SchedulableTask<T> {
     pub fn new(
         task: T,
@@ -49,12 +48,11 @@ impl<T: Task> SchedulableTask<T> {
     }
 
     #[allow(dead_code)]
-    pub fn priority(&self) -> u32 {
+    pub fn priority(&self) -> TaskPriority {
         self.task.priority()
     }
 
-    #[allow(dead_code)]
-    pub fn task_id(&self) -> &TaskId {
+    pub fn task_id(&self) -> &str {
         self.task.task_id()
     }
 
@@ -89,14 +87,12 @@ impl<T: Task> Ord for SchedulableTask<T> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(super) struct ScheduledTask<T: Task> {
     task: SchedulableTask<T>,
     worker_id: WorkerId,
 }
 
-#[allow(dead_code)]
 impl<T: Task> ScheduledTask<T> {
     pub fn new(task: SchedulableTask<T>, worker_id: WorkerId) -> Self {
         Self { task, worker_id }
@@ -107,41 +103,66 @@ impl<T: Task> ScheduledTask<T> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(super) struct WorkerSnapshot {
     worker_id: WorkerId,
-    total_num_cpus: usize,
-    active_task_details: HashMap<TaskId, TaskDetails>,
+    total_num_cpus: f64,
+    total_num_gpus: f64,
+    active_task_details: HashMap<TaskID, TaskDetails>,
 }
 
-#[allow(dead_code)]
 impl WorkerSnapshot {
     pub fn new(
         worker_id: WorkerId,
-        total_num_cpus: usize,
-        active_task_details: HashMap<TaskId, TaskDetails>,
+        total_num_cpus: f64,
+        total_num_gpus: f64,
+        active_task_details: HashMap<TaskID, TaskDetails>,
     ) -> Self {
         Self {
             worker_id,
             total_num_cpus,
+            total_num_gpus,
             active_task_details,
         }
     }
 
-    pub fn active_num_cpus(&self) -> usize {
+    pub fn active_num_cpus(&self) -> f64 {
         self.active_task_details
             .values()
             .map(|details| details.num_cpus())
             .sum()
     }
 
-    pub fn available_num_cpus(&self) -> usize {
+    pub fn active_num_gpus(&self) -> f64 {
+        self.active_task_details
+            .values()
+            .map(|details| details.num_gpus())
+            .sum::<f64>()
+    }
+
+    pub fn available_num_cpus(&self) -> f64 {
         self.total_num_cpus - self.active_num_cpus()
     }
 
-    pub fn total_num_cpus(&self) -> usize {
+    pub fn available_num_gpus(&self) -> f64 {
+        self.total_num_gpus - self.active_num_gpus()
+    }
+
+    #[allow(dead_code)]
+    pub fn total_num_cpus(&self) -> f64 {
         self.total_num_cpus
+    }
+
+    #[allow(dead_code)]
+    pub fn total_num_gpus(&self) -> f64 {
+        self.total_num_gpus
+    }
+
+    pub fn can_schedule_task(&self, task: &impl Task) -> bool {
+        self.available_num_cpus() >= task.resource_request().num_cpus()
+            && self.available_num_gpus() >= task.resource_request().num_gpus()
+            // For now, we only schedule one task at a time per worker
+            && self.active_task_details.is_empty()
     }
 }
 
@@ -150,6 +171,7 @@ impl<W: Worker> From<&W> for WorkerSnapshot {
         Self::new(
             worker.id().clone(),
             worker.total_num_cpus(),
+            worker.total_num_gpus(),
             worker.active_task_details(),
         )
     }
@@ -171,7 +193,7 @@ pub(super) mod test_utils {
         configs
             .iter()
             .map(|(id, num_slots)| {
-                let worker = MockWorker::new(id.clone(), *num_slots);
+                let worker = MockWorker::new(id.clone(), *num_slots as f64, 0.0);
                 (id.clone(), worker)
             })
             .collect::<HashMap<_, _>>()

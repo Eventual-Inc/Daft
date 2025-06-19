@@ -222,9 +222,9 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(dbg!(self
+        Ok(self
             .concurrency
-            .unwrap_or_else(get_compute_pool_num_threads)))
+            .unwrap_or_else(get_compute_pool_num_threads))
     }
 
     fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {

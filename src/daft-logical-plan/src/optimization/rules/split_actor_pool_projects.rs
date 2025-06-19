@@ -566,10 +566,10 @@ mod tests {
             func: FunctionExpr::Python(PythonUDF {
                 name: Arc::new("foo".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
-                    inner: RuntimePyObject::new_testing_none(),
-                    init_args: RuntimePyObject::new_testing_none(),
+                    inner: RuntimePyObject::new_none(),
+                    init_args: RuntimePyObject::new_none(),
                 },
-                bound_args: RuntimePyObject::new_testing_none(),
+                bound_args: RuntimePyObject::new_none(),
                 num_expressions: inputs.len(),
                 return_dtype: DataType::Utf8,
                 resource_request: Some(create_resource_request()),

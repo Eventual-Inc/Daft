@@ -38,6 +38,10 @@ To set up your development environment:
 3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests
 4. `make docs`: build docs
 5. `make docs-serve`: build docs in development server
+6. `make format`: format all Python and Rust code
+7. `make lint`: lint all Python and Rust code
+8. `make check-format`: check that all Python and Rust code is formatted, alias `make format-check`
+9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
 
 #### Note about Developing `daft-dashboard`
 
