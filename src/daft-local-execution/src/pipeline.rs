@@ -945,11 +945,7 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let write_sink = CommitWriteSink::new(
-                file_info.partition_cols.clone(),
-                file_schema.clone(),
-                file_info.clone(),
-            );
+            let write_sink = CommitWriteSink::new(file_schema.clone(), file_info.clone());
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
         }

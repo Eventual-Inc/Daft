@@ -7,6 +7,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -38,19 +39,13 @@ impl BlockingSinkState for CommitWriteState {
 }
 
 pub(crate) struct CommitWriteSink {
-    partition_by: Option<Vec<BoundExpr>>,
     file_schema: SchemaRef,
     file_info: OutputFileInfo<BoundExpr>,
 }
 
 impl CommitWriteSink {
-    pub(crate) fn new(
-        partition_by: Option<Vec<BoundExpr>>,
-        file_schema: SchemaRef,
-        file_info: OutputFileInfo<BoundExpr>,
-    ) -> Self {
+    pub(crate) fn new(file_schema: SchemaRef, file_info: OutputFileInfo<BoundExpr>) -> Self {
         Self {
-            partition_by,
             file_schema,
             file_info,
         }
@@ -176,8 +171,19 @@ impl BlockingSink for CommitWriteSink {
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![];
         lines.push("CommitWriteSink".to_string());
-        if let Some(partition_by) = &self.partition_by {
-            lines.push(format!("Partition by: {:?}", partition_by));
+        if matches!(self.file_info.write_mode, WriteMode::Overwrite) {
+            lines.push("Overwrite".to_string());
+        } else if matches!(self.file_info.write_mode, WriteMode::OverwritePartitions) {
+            lines.push(format!(
+                "OverwritePartitions: {:?}",
+                self.file_info
+                    .partition_cols
+                    .as_ref()
+                    .expect("Partition_cols to be present for OverwritePartitions")
+                    .iter()
+                    .map(|col| col.to_string())
+                    .join(", ")
+            ));
         }
         lines
     }
