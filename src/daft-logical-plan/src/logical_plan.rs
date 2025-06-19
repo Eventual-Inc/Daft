@@ -174,13 +174,18 @@ impl LogicalPlan {
                 vec![res]
             }
             Self::Distinct(distinct) => {
-                let res = distinct
-                    .input
-                    .schema()
-                    .field_names()
-                    .map(ToString::to_string)
-                    .collect();
-                vec![res]
+                if let Some(on) = &distinct.columns {
+                    let res = on.iter().flat_map(get_required_columns).collect();
+                    vec![res]
+                } else {
+                    let res = distinct
+                        .input
+                        .schema()
+                        .field_names()
+                        .map(ToString::to_string)
+                        .collect();
+                    vec![res]
+                }
             }
             Self::Aggregate(aggregate) => {
                 let res = aggregate
@@ -426,15 +431,15 @@ impl LogicalPlan {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
                 Self::Shard(Shard { sharder, .. }) => Self::Shard(Shard::new(input.clone(), sharder.clone())),
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
-                    input.clone(), projection.clone(),
-                ).unwrap()),
+                        input.clone(), projection.clone(),
+                    ).unwrap()),
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
                 Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
-                Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
+                Self::Distinct(distinct) => Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),

@@ -260,7 +260,6 @@ class Series:
         _ensure_registered_super_ext_type()
 
         dtype = self.datatype()
-        arrow_arr = self._series.to_arrow()
 
         # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
         # TODO: Push this down into self._series.to_arrow()?
@@ -268,8 +267,8 @@ class Series:
             pyarrow_dtype = dtype.to_arrow_dtype()
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
-
-        return arrow_arr
+        else:
+            return self._series.to_arrow()
 
     def to_pylist(self) -> list[Any]:
         """Convert this Series to a Python list."""

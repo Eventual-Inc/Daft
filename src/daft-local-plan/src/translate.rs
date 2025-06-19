@@ -4,12 +4,9 @@ use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
-    expr::{
-        bound_col,
-        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    },
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     join::normalize_join_keys,
-    WindowExpr,
+    resolved_col, WindowExpr,
 };
 use daft_logical_plan::{stats::StatsState, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 use daft_physical_plan::extract_agg_expr;
@@ -332,17 +329,16 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();
             let input = translate(&distinct.input)?;
-            let col_exprs = input
-                .schema()
-                .into_iter()
-                .enumerate()
-                .map(|(i, f)| BoundExpr::new_unchecked(bound_col(i, f.clone())))
-                .collect();
 
-            Ok(LocalPhysicalPlan::hash_aggregate(
+            let columns = distinct
+                .columns
+                .clone()
+                .unwrap_or_else(|| schema.field_names().map(resolved_col).collect::<Vec<_>>());
+            let columns = BoundExpr::bind_all(&columns, &schema)?;
+
+            Ok(LocalPhysicalPlan::dedup(
                 input,
-                vec![],
-                col_exprs,
+                columns,
                 schema,
                 distinct.stats_state.clone(),
             ))

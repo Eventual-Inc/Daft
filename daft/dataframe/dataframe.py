@@ -1461,8 +1461,13 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def distinct(self) -> "DataFrame":
+    def distinct(self, *on: ColumnInputType) -> "DataFrame":
         """Computes distinct rows, dropping duplicates.
+
+        Optionally, specify a subset of columns to perform distinct on.
+
+        Args:
+            *on (Union[str, Expression]): columns to perform distinct on. Defaults to all columns.
 
         Returns:
             DataFrame: DataFrame that has only distinct rows.
@@ -1484,16 +1489,36 @@ class DataFrame:
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
+            >>> # Pass a subset of columns to perform distinct on
+            >>> # Note that output for z is non-deterministic. Both 8 and 9 are possible.
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 9]})
+            >>> df.distinct("x", daft.col("y")).sort("x").show()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
         """
-        ExpressionsProjection.from_schema(self._builder.schema())
-        builder = self._builder.distinct()
+        builder = self._builder.distinct(self.__column_input_to_expression(on))
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def unique(self) -> "DataFrame":
+    def unique(self, *by: ColumnInputType) -> "DataFrame":
         """Computes distinct rows, dropping duplicates.
 
         Alias for [DataFrame.distinct][daft.DataFrame.distinct].
+
+        Args:
+            *by (Union[str, Expression]): columns to perform distinct on. Defaults to all columns.
+
+        Returns:
+            DataFrame: DataFrame that has only distinct rows.
 
         Examples:
             >>> import daft
@@ -1512,11 +1537,40 @@ class DataFrame:
             ╰───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
+        """
+        return self.distinct(*by)
+
+    @DataframePublicAPI
+    def drop_duplicates(self, *subset: ColumnInputType) -> "DataFrame":
+        """Computes distinct rows, dropping duplicates.
+
+        Alias for [DataFrame.distinct][daft.DataFrame.distinct].
+
+        Args:
+            *subset (Union[str, Expression]): columns to perform distinct on. Defaults to all columns.
 
         Returns:
             DataFrame: DataFrame that has only distinct rows.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 2], "y": [4, 5, 5], "z": [7, 8, 8]})
+            >>> distinct_df = df.drop_duplicates()
+            >>> distinct_df = distinct_df.sort("x")
+            >>> distinct_df.show()
+            ╭───────┬───────┬───────╮
+            │ x     ┆ y     ┆ z     │
+            │ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 7     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 8     │
+            ╰───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
         """
-        return self.distinct()
+        return self.distinct(*subset)
 
     @DataframePublicAPI
     def sample(
@@ -1812,13 +1866,14 @@ class DataFrame:
         Args:
             column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
             desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
+            nulls_first (Union[bool, List[bool]), optional): Sort by nulls first. Defaults to nulls being treated as the greatest value.
 
         Returns:
             DataFrame: Sorted DataFrame.
 
         Note:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
-            * Supports multicolumn sorts and can have unique `descending` flag per column.
+            * Supports multicolumn sorts and can have unique `descending` and `nulls_first` flags per column.
 
         Examples:
             >>> import daft
@@ -1882,14 +1937,6 @@ class DataFrame:
             ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 5 of 5 rows)
-
-        Args:
-            column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
-            desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
-            nulls_first (Union[bool, List[bool]), optional): Sort by nulls first. Defaults to nulls being treated as the greatest value.
-
-        Returns:
-            DataFrame: Sorted DataFrame.
         """
         if not isinstance(by, list):
             by = [

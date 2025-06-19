@@ -263,16 +263,17 @@ pub(super) fn translate_single_logical_node(
                 Ok(repartitioned_plan.arced())
             }
         }
-        LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
+        LogicalPlan::Distinct(LogicalDistinct { input, columns, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
-            let col_exprs = input
-                .schema()
-                .names()
-                .iter()
-                .map(|name| daft_dsl::resolved_col(name.clone()))
-                .collect::<Vec<ExprRef>>();
-            let agg_op =
-                PhysicalPlan::Aggregate(Aggregate::new(input_physical, vec![], col_exprs.clone()));
+            let col_exprs = columns.clone().unwrap_or_else(|| {
+                input
+                    .schema()
+                    .names()
+                    .iter()
+                    .map(|name| daft_dsl::resolved_col(name.clone()))
+                    .collect::<Vec<_>>()
+            });
+            let agg_op = PhysicalPlan::Dedup(Dedup::new(input_physical, col_exprs.clone()));
             let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
                 let shuffle_op = PhysicalPlan::ShuffleExchange(
@@ -282,10 +283,7 @@ pub(super) fn translate_single_logical_node(
                         Some(cfg),
                     )?,
                 );
-                Ok(
-                    PhysicalPlan::Aggregate(Aggregate::new(shuffle_op.into(), vec![], col_exprs))
-                        .arced(),
-                )
+                Ok(PhysicalPlan::Dedup(Dedup::new(shuffle_op.into(), col_exprs)).arced())
             } else {
                 Ok(agg_op.arced())
             }

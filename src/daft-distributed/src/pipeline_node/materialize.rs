@@ -114,7 +114,6 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
 }
 
 // This function is responsible for awaiting the results of any running tasks
-#[allow(dead_code)]
 pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
     input: impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static,
 ) -> impl Stream<Item = DaftResult<PipelineOutput<T>>> + Send + Unpin + 'static {

@@ -10,8 +10,9 @@ use super::{
         EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
-        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
-        SplitGranularProjection, UnnestPredicateSubquery, UnnestScalarSubquery,
+        RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
+        SplitActorPoolProjects, SplitGranularProjection, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::{
@@ -100,6 +101,7 @@ impl Default for OptimizerBuilder {
                 RuleBatch::new(
                     vec![
                         Box::new(LiftProjectFromAgg::new()),
+                        Box::new(RewriteCountDistinct::new()),
                         Box::new(UnnestScalarSubquery::new()),
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
