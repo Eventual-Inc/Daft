@@ -1245,7 +1245,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                     warnings.warn(
                         f"The address to a Ray client server is typically at port :10001, but instead we found: {address}"
                     )
-                elif address.startswith("ray://"):
+                if not address.startswith("ray://"):
                     warnings.warn(
                         f"Expected Ray address to start with 'ray://' protocol but found: {address}. Automatically prefixing your address with the protocol to make a Ray connection: ray://{address}"
                     )
