@@ -278,40 +278,13 @@ fn get_ray_runner_config_from_env() -> RunnerConfig {
 /// Helper function to automatically detect whether to use the ray runner.
 #[cfg(feature = "python")]
 fn detect_ray_state() -> bool {
-    let mut ray_is_in_job = false;
-    let mut in_ray_worker = false;
-    let mut ray_is_initialized = false;
-
-    pyo3::Python::with_gil(|py| {
-        let ray = py.import("ray").ok()?;
-
-        ray_is_initialized = ray
-            .call_method0("is_initialized")
-            .ok()?
-            .extract::<bool>()
-            .ok()?;
-
-        let worker_mode = ray
-            .getattr("_private")
-            .ok()?
-            .getattr("worker")
-            .ok()?
-            .getattr("global_worker")
-            .ok()?
-            .getattr("mode")
-            .ok()?;
-
-        let ray_worker_mode = ray.getattr("WORKER_MODE").ok()?;
-        if worker_mode.eq(ray_worker_mode).ok()? {
-            in_ray_worker = true;
-        }
-        if std::env::var("RAY_JOB_ID").is_ok() {
-            ray_is_in_job = true;
-        }
-        Some(())
-    });
-
-    !in_ray_worker && (ray_is_initialized || ray_is_in_job)
+    Python::with_gil(|py| {
+        py.import(pyo3::intern!(py, "daft.utils"))
+            .and_then(|m| m.getattr(pyo3::intern!(py, "detect_ray_state")))
+            .and_then(|m| m.call0())
+            .and_then(|m| m.extract())
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(feature = "python")]

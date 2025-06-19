@@ -32,13 +32,16 @@ impl PyDaftContext {
     }
 
     pub fn get_or_create_runner(&self, py: Python) -> PyResult<PyObject> {
-        let mut lock = self
-            .inner
-            .state
-            .write()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e)))?;
+        let runner = py.allow_threads(|| {
+            let mut lock =
+                self.inner.state.write().map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyException, _>(format!("{:?}", e))
+                })?;
 
-        let runner = lock.get_or_create_runner()?;
+            let runner = lock.get_or_create_runner()?;
+            PyResult::Ok(runner)
+        })?;
+
         match runner.as_ref() {
             Runner::Ray(ray) => {
                 let pyobj = ray.pyobj.as_ref();
