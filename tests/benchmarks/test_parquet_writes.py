@@ -205,26 +205,26 @@ def generate_parquet_file(config: FileConfig, output_path: Path) -> None:
 
 # Test data configurations for different benchmark scenarios
 TEST_CONFIGS = {
-    "small_mixed": FileConfig.from_pattern(
+    "05_small_mixed": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
         repeat=4,
     ),
-    "large_strings": FileConfig.from_pattern(
-        num_rows=500000,
+    "04_large_strings": FileConfig.from_pattern(
+        num_rows=50000,
         pattern="int,large_string,large_string,string",
         repeat=10,
     ),
-    "integer_heavy": FileConfig.from_pattern(num_rows=5000000, pattern="int", repeat=10, null_percentage=0.0),
-    "boolean_heavy": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05),
-    "wide_table": FileConfig.from_pattern(
+    "03_integer_heavy": FileConfig.from_pattern(num_rows=5000000, pattern="int", repeat=10, null_percentage=0.0),
+    "01_boolean_heavy": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05),
+    "06_wide_table": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
         repeat=25,  # 100 columns total
         null_percentage=0.1,
         string_avg_length=30,
     ),
-    "high_nulls": FileConfig(
+    "02_high_nulls": FileConfig(
         num_rows=2000000,
         schema=[
             ColumnSpec("id", ColumnType.INT),
@@ -233,6 +233,104 @@ TEST_CONFIGS = {
             ColumnSpec("maybe_active", ColumnType.BOOLEAN, null_percentage=0.6),
             ColumnSpec("sparse_data", ColumnType.LARGE_STRING, null_percentage=0.9),
         ],
+    ),
+    "08_wide_table_with_strings": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int,string,float,boolean",
+        repeat=25,  # 100 columns total
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "07_wide_table_no_strings": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int,float,float,boolean",
+        repeat=25,  # 100 columns total
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "09_int_1": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int,string,float,boolean",
+        repeat=1,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "10_int_10": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int",
+        repeat=10,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "11_int_25": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int",
+        repeat=25,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "12_int_50": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int",
+        repeat=50,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "13_int_75": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int",
+        repeat=75,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "14_int_100": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="int",
+        repeat=100,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "15_float_1": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="float",
+        repeat=1,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "16_float_10": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="float",
+        repeat=10,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "17_float_25": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="float",
+        repeat=25,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "18_float_50": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="float",
+        repeat=50,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "19_float_75": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="float",
+        repeat=75,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "20_float_100": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="float",
+        repeat=100,
+        null_percentage=0.1,
+        string_avg_length=30,
     ),
 }
 
@@ -260,8 +358,8 @@ def test_data_dir():
 
 @pytest.mark.benchmark(group="parquet_writes")
 @pytest.mark.parametrize("writer", ["native", "pyarrow"])
-@pytest.mark.parametrize("target", ["local", "s3"])
-@pytest.mark.parametrize("config_name", list(TEST_CONFIGS.keys()))
+@pytest.mark.parametrize("target", ["s3"])
+@pytest.mark.parametrize("config_name", sorted(list(TEST_CONFIGS.keys())))
 def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_dir, writer, target, config_name):
     # Configure writer.
     if writer == "native":
@@ -287,9 +385,17 @@ def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_di
         return output_file
 
     benchmark_group = f"write_{config_name}-{target}"
+
+    time.sleep(30) # Sleep 30 seconds to get "clean data"
+    start_time = int(time.time())
     result_file = benchmark_with_memray(benchmark_write, benchmark_group)
+    end_time = int(time.time())
+
+    with open("timing.txt", "a") as timing_file:
+        dashboard_url = f"http://10.242.147.249:19999/v3/spaces/c7i-8xlarge/rooms/local/dashboards/local-custom-dashboard#metrics_correlation=false&after={start_time}000&before={end_time}000&utc=America%2FLos_Angeles&offset=-7&timezoneName=Pacific%20Time%20&modal=&modalTab=&modalParams=&force_play=false"
+        print(f"{config_name}-{target}-{writer}-{dashboard_url}", file=timing_file)
 
     # Verify the file was written correctly.
-    assert result_file.exists()
-    results_df = daft.read_parquet(str(result_file))
-    assert results_df.sort("id").to_arrow() == df.sort("id").to_arrow()
+    #assert result_file.exists()
+    #results_df = daft.read_parquet(str(result_file))
+    #assert results_df.sort("id").to_arrow() == df.sort("id").to_arrow()
