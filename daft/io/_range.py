@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, overload
@@ -182,17 +183,11 @@ class RangeSource(DataSource):
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[RangeSourceTask]:
         step = self._step
 
-        # Calculate the total number of elements in the range
-        # For negative steps, we need to handle the calculation differently
+        # Calculate the total number of elements in the range using ceiling division
         if step > 0:
-            total_elements = (self._end - self._start) // step
-            if (self._end - self._start) % step != 0:
-                total_elements += 1
+            total_elements = math.ceil((self._end - self._start) / step)
         else:
-            # For negative steps, end < start
-            total_elements = (self._start - self._end) // abs(step)
-            if (self._start - self._end) % abs(step) != 0:
-                total_elements += 1
+            total_elements = math.ceil((self._start - self._end) / abs(step))
 
         # Calculate elements per partition
         elements_per_partition = total_elements // self._partitions
