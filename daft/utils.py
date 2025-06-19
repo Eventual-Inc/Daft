@@ -101,12 +101,11 @@ def map_operator_arrow_semantics(
 
 
 def pyarrow_supports_fixed_shape_tensor() -> bool:
-    """Whether pyarrow supports the fixed_shape_tensor canonical extension type."""
-    from daft.context import get_context
+    """Whether pyarrow supports the fixed_shape_tensor canonical extension type.
 
-    return hasattr(pa, "fixed_shape_tensor") and (
-        (get_context().get_or_create_runner().name != "ray") or get_arrow_version() >= (13, 0, 0)
-    )
+    We also check if the version is >= 13.0.0 because there is a bug when using the canonical extension type on < 13.0.0 with ray.
+    """
+    return hasattr(pa, "fixed_shape_tensor") and get_arrow_version() >= (13, 0, 0)
 
 
 # Column utility functions
