@@ -146,6 +146,10 @@ pub struct IOConfig {
 /// Args:
 ///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
 ///     bearer_token (str, optional): Bearer token to use for authentication. This will be used as the value for the `Authorization` header. such as "Authorization: Bearer xxx"
+///     retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an HTTP retry, defaults to 1000ms
+///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to HTTP in milliseconds, defaults to 30 seconds
+///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from HTTP in milliseconds, defaults to 30 seconds
+///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
 ///
 /// Examples:
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
@@ -156,16 +160,29 @@ pub struct HTTPConfig {
     pub config: crate::HTTPConfig,
 }
 
+#[derive(Clone, Default)]
+#[pyclass]
+pub struct UnityConfig {
+    pub config: crate::UnityConfig,
+}
+
 #[pymethods]
 impl IOConfig {
     #[new]
     #[must_use]
-    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
+    #[pyo3(signature = (
+        s3=None,
+        azure=None,
+        gcs=None,
+        http=None,
+        unity=None
+    ))]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
+        unity: Option<UnityConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -173,18 +190,26 @@ impl IOConfig {
                 azure: azure.unwrap_or_default().config,
                 gcs: gcs.unwrap_or_default().config,
                 http: http.unwrap_or_default().config,
+                unity: unity.unwrap_or_default().config,
             },
         }
     }
 
     #[must_use]
-    #[pyo3(signature = (s3=None, azure=None, gcs=None, http=None))]
+    #[pyo3(signature = (
+        s3=None,
+        azure=None,
+        gcs=None,
+        http=None,
+        unity=None
+    ))]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
+        unity: Option<UnityConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -200,6 +225,9 @@ impl IOConfig {
                 http: http
                     .map(|http| http.config)
                     .unwrap_or_else(|| self.config.http.clone()),
+                unity: unity
+                    .map(|unity| unity.config)
+                    .unwrap_or_else(|| self.config.unity.clone()),
             },
         }
     }
@@ -237,6 +265,13 @@ impl IOConfig {
     pub fn http(&self) -> PyResult<HTTPConfig> {
         Ok(HTTPConfig {
             config: self.config.http.clone(),
+        })
+    }
+
+    #[getter]
+    pub fn unity(&self) -> PyResult<UnityConfig> {
+        Ok(UnityConfig {
+            config: self.config.unity.clone(),
         })
     }
 
@@ -1043,15 +1078,73 @@ impl From<IOConfig> for config::IOConfig {
 impl HTTPConfig {
     #[new]
     #[must_use]
-    #[pyo3(signature = (bearer_token=None))]
-    pub fn new(bearer_token: Option<String>) -> Self {
+    #[pyo3(signature = (bearer_token=None, retry_initial_backoff_ms=None, connect_timeout_ms=None, read_timeout_ms=None, num_tries=None))]
+    pub fn new(
+        bearer_token: Option<String>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        num_tries: Option<u32>,
+    ) -> Self {
+        let def = crate::HTTPConfig::default();
         Self {
-            config: crate::HTTPConfig::new(bearer_token),
+            config: crate::HTTPConfig {
+                bearer_token: bearer_token.map(Into::into).or(def.bearer_token),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(def.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
+                num_tries: num_tries.unwrap_or(def.num_tries),
+                ..def
+            },
         }
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.config))
+    }
+}
+
+#[pymethods]
+impl UnityConfig {
+    #[new]
+    #[pyo3(signature = (endpoint=None, token=None))]
+    pub fn new(endpoint: Option<String>, token: Option<String>) -> Self {
+        let default = crate::UnityConfig::default();
+        Self {
+            config: crate::UnityConfig {
+                endpoint: endpoint.or(default.endpoint),
+                token: token.map(Into::into).or(default.token),
+            },
+        }
+    }
+
+    #[pyo3(signature = (endpoint=None, token=None))]
+    pub fn replace(&self, endpoint: Option<String>, token: Option<String>) -> Self {
+        Self {
+            config: crate::UnityConfig {
+                endpoint: endpoint.or_else(|| self.config.endpoint.clone()),
+                token: token.map(Into::into).or_else(|| self.config.token.clone()),
+            },
+        }
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!("{}", self.config)
+    }
+
+    #[getter]
+    pub fn endpoint(&self) -> Option<String> {
+        self.config.endpoint.clone()
+    }
+
+    #[getter]
+    pub fn token(&self) -> Option<String> {
+        self.config
+            .token
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned()
     }
 }
 
@@ -1061,6 +1154,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<S3Config>()?;
     parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
+    parent.add_class::<UnityConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }

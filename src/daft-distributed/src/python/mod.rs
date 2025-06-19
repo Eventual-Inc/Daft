@@ -4,10 +4,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::Partition;
+use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
 use pyo3::prelude::*;
 use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner};
@@ -54,6 +56,7 @@ impl PythonPartitionRefStream {
 }
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan", frozen)]
+#[derive(Serialize, Deserialize)]
 struct PyDistributedPhysicalPlan {
     plan: DistributedPhysicalPlan,
 }
@@ -71,11 +74,30 @@ impl PyDistributedPhysicalPlan {
         )?;
         Ok(Self { plan })
     }
+
+    fn id(&self) -> String {
+        self.plan.id().to_string()
+    }
+
+    /// Visualize the distributed pipeline as ASCII text
+    fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        Ok(stage_plan.repr_ascii(self.plan.id().into(), simple)?)
+    }
+
+    /// Visualize the distributed pipeline as Mermaid markdown
+    fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
+        // Create a pipeline node from the stage plan
+        let stage_plan = self.plan.stage_plan();
+        Ok(stage_plan.repr_mermaid(self.plan.id().into(), simple, bottom_up)?)
+    }
 }
+impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {
-    runner: PlanRunner<RaySwordfishWorker>,
+    runner: Arc<PlanRunner<RaySwordfishWorker>>,
 }
 
 #[pymethods]
@@ -84,7 +106,7 @@ impl PyDistributedPhysicalPlanRunner {
     fn new() -> PyResult<Self> {
         let worker_manager = RayWorkerManager::try_new()?;
         Ok(Self {
-            runner: PlanRunner::new(Arc::new(worker_manager)),
+            runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
     }
 

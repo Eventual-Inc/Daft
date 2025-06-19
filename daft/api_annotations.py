@@ -41,6 +41,18 @@ def PublicAPI(func: Callable[P, T]) -> Callable[P, T]:
     return _wrap
 
 
+def ExpressionPublicAPI(func: Callable[P, T]) -> Callable[P, T]:
+    """A decorator to mark a function as part of the Daft public API."""
+
+    @functools.wraps(func)
+    def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+        __tracebackhide__ = True
+        timed_func = time_func(func)
+        return timed_func(*args, **kwargs)
+
+    return _wrap
+
+
 class APITypeError(TypeError):
     pass
 

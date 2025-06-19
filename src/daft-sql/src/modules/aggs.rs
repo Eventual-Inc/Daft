@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
-use daft_dsl::{unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -106,10 +106,26 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
             }
         }
         [expr] => {
-            // SQL default COUNT ignores nulls
             let input = planner.plan_function_arg(expr)?.into_inner();
 
-            input.count(daft_core::count_mode::CountMode::Valid)
+            match input.as_literal() {
+                // count(null) always returns 0
+                Some(LiteralValue::Null) => lit(0).alias("count"),
+                // in SQL, any count(<non null literal>) is functionally the same as count(*)
+                Some(_) => match &planner.current_plan {
+                    Some(plan) => {
+                        let schema = plan.schema();
+                        unresolved_col(schema[0].name.clone())
+                            .count(daft_core::count_mode::CountMode::All)
+                            .alias("count")
+                    }
+                    None => {
+                        unsupported_sql_err!("count(<literal>) is not supported in this context")
+                    }
+                },
+                // SQL default COUNT ignores nulls
+                None => input.count(daft_core::count_mode::CountMode::Valid),
+            }
         }
         _ => unsupported_sql_err!("COUNT takes exactly one argument"),
     })

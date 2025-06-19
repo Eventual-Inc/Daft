@@ -103,10 +103,10 @@ repos:
     types: [rust]
     pass_filenames: false
 
-  - id: check-for-rustls
-    name: check-for-rustls
+  - id: check-for-openssl
+    name: check-for-openssl
     description: Lint rust sources
-    entry: ./tools/check_for_rustls.sh
+    entry: ./tools/check_for_openssl.sh
     language: system
     types: [rust]
     pass_filenames: false

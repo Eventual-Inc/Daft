@@ -1,5 +1,6 @@
 use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
+use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
@@ -65,10 +66,18 @@ impl TaskResultHandle for RayTaskResultHandle {
         async move {
             let materialized_result =
                 pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-            let ray_part_ref =
-                Python::with_gil(|py| materialized_result.extract::<RayPartitionRef>(py))?;
-            let partition_ref = Arc::new(ray_part_ref) as PartitionRef;
-            Ok(vec![MaterializedOutput::new(partition_ref, worker_id)])
+            let ray_part_refs =
+                Python::with_gil(|py| materialized_result.extract::<Vec<RayPartitionRef>>(py))?;
+            let materialized_outputs = ray_part_refs
+                .into_iter()
+                .map(|ray_part_ref| {
+                    MaterializedOutput::new(
+                        Arc::new(ray_part_ref) as PartitionRef,
+                        worker_id.clone(),
+                    )
+                })
+                .collect();
+            Ok(materialized_outputs)
         }
     }
 
@@ -86,6 +95,33 @@ pub(crate) struct RayPartitionRef {
     pub object_ref: PyObject,
     pub num_rows: usize,
     pub size_bytes: usize,
+}
+
+#[pymethods]
+impl RayPartitionRef {
+    #[new]
+    pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
+        Self {
+            object_ref,
+            num_rows,
+            size_bytes,
+        }
+    }
+
+    #[getter]
+    pub fn get_object_ref(&self, py: Python) -> PyObject {
+        self.object_ref.clone_ref(py)
+    }
+
+    #[getter]
+    pub fn get_num_rows(&self) -> usize {
+        self.num_rows
+    }
+
+    #[getter]
+    pub fn get_size_bytes(&self) -> usize {
+        self.size_bytes
+    }
 }
 
 impl Partition for RayPartitionRef {
@@ -114,6 +150,14 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
+    fn context(&self) -> HashMap<String, String> {
+        self.task.context().clone()
+    }
+
+    fn name(&self) -> String {
+        self.task.name()
+    }
+
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })
@@ -144,5 +188,10 @@ impl RaySwordfishTask {
             })
             .collect();
         Ok(psets)
+    }
+
+    fn config(&self) -> PyResult<PyDaftExecutionConfig> {
+        let config = self.task.config().clone();
+        Ok(PyDaftExecutionConfig { config })
     }
 }

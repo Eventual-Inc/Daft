@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
     scheduler::SchedulableTask,
-    task::{SwordfishTask, TaskId, TaskResultHandleAwaiter},
+    task::{SwordfishTask, TaskID, TaskResultHandleAwaiter},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -20,8 +20,8 @@ pub(crate) struct RayWorkerManager {
 impl RayWorkerManager {
     pub fn try_new() -> DaftResult<Self> {
         let (ray_workers, task_locals) = Python::with_gil(|py| {
-            let distributed_swordfish_module = py.import("daft.runners.distributed_swordfish")?;
-            let ray_workers = distributed_swordfish_module
+            let flotilla_module = py.import("daft.runners.flotilla")?;
+            let ray_workers = flotilla_module
                 .call_method0("start_ray_workers")?
                 .extract::<Vec<RaySwordfishWorker>>()?;
             let ray_worker_hashmap = ray_workers
@@ -65,18 +65,11 @@ impl WorkerManager for RayWorkerManager {
         &self.ray_workers
     }
 
-    fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId) {
+    fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId) {
         self.ray_workers
             .get(worker_id)
             .expect("Worker should be present in RayWorkerManager")
             .mark_task_finished(task_id);
-    }
-
-    fn total_available_cpus(&self) -> usize {
-        self.ray_workers
-            .values()
-            .map(|w| w.available_num_cpus())
-            .sum()
     }
 
     fn shutdown(&self) -> DaftResult<()> {

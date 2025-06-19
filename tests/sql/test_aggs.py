@@ -58,8 +58,16 @@ def test_aggs_sql():
         ("sum(values) as sum_v", "sum_v > 10", {"sum_v": [22.0, 29.5]}),
         ("count(*) as cnt", "cnt > 2", {"cnt": [4, 5]}),
         ("count(*) as cnt", "count(*) > 2", {"cnt": [4, 5]}),
+        ("count(1) as cnt", "cnt > 2", {"cnt": [4, 5]}),
+        ("count(1) as cnt", "count(1) > 2", {"cnt": [4, 5]}),
         ("count(*)", "count(*) > 2", {"count": [4, 5]}),
+        ("count(1)", "count(1) > 2", {"count": [4, 5]}),
         ("count(*) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(1) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(true) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(false) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count([1]) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(null) as null", "sum(values) > 10", {"null": [0, 0]}),
         # duplicates of the above 4 `count` tests but for count-distinct
         ("count(distinct values) as count_distinct", "count_distinct > 2", {"count_distinct": [3, 5]}),
         ("count(distinct values) as count_distinct", "count(distinct values) > 2", {"count_distinct": [3, 5]}),
@@ -233,3 +241,11 @@ def test_various_groupby_positions(query):
     else:
         res = res.sort("strings").to_pydict()
         assert res == {"strings": ["Bar", "Foo"], "count": [1, 1]}
+
+
+def test_group_by_with_lit_selection():
+    df = daft.from_pydict({"ids": [1, 1, 2, 2, 3, 4], "values": [10, 20, 30, 40, 50, 60]})
+
+    res = daft.sql("select 0 from df group by ids", df=df)
+    expected = {"literal": [0, 0, 0, 0]}
+    assert res.to_pydict() == expected

@@ -1,10 +1,40 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common_error::{DaftError, DaftResult};
+use daft_io::SourceType;
 use daft_recordbatch::RecordBatch;
 
 /// The default value used by Hive for null partition values.
-pub const DEFAULT_PARTITION_VALUE: &str = "__HIVE_DEFAULT_PARTITION__";
+const DEFAULT_PARTITION_VALUE: &str = "__HIVE_DEFAULT_PARTITION__";
+
+/// Helper function to build the filename for the output file.
+pub(crate) fn build_filename(
+    source_type: SourceType,
+    root_dir: &str,
+    partition_values: Option<&RecordBatch>,
+    file_idx: usize,
+    suffix: &str,
+) -> DaftResult<PathBuf> {
+    let partition_path = get_partition_path(partition_values)?;
+    let filename = generate_filename(file_idx, suffix);
+
+    match source_type {
+        SourceType::File => build_local_file_path(root_dir, partition_path, filename),
+        SourceType::S3 => build_s3_path(root_dir, partition_path, filename),
+        _ => Err(DaftError::ValueError(format!(
+            "Unsupported source type: {:?}",
+            source_type
+        ))),
+    }
+}
+
+/// Helper function to get the partition path from the record batch.
+fn get_partition_path(partition_values: Option<&RecordBatch>) -> DaftResult<PathBuf> {
+    match partition_values {
+        Some(partition_values) => Ok(record_batch_to_partition_path(partition_values, None)?),
+        None => Ok(PathBuf::new()),
+    }
+}
 
 /// Converts a single-row RecordBatch to a Hive-style partition path.
 ///
@@ -21,7 +51,7 @@ pub const DEFAULT_PARTITION_VALUE: &str = "__HIVE_DEFAULT_PARTITION__";
 ///
 /// * `Ok(PathBuf)` - The partition path if successful
 /// * `Err(DaftError)` - If the RecordBatch has more than one row, or if we fail to downcast the partition values to UTF-8 strings.
-pub(crate) fn record_batch_to_partition_path(
+fn record_batch_to_partition_path(
     record_batch: &RecordBatch,
     partition_null_fallback: Option<&str>,
 ) -> DaftResult<PathBuf> {
@@ -49,6 +79,29 @@ pub(crate) fn record_batch_to_partition_path(
         })
         .collect::<DaftResult<PathBuf>>()?;
     Ok(partition_path)
+}
+
+// Helper function to generate a filename.
+fn generate_filename(file_idx: usize, suffix: &str) -> String {
+    format!("{}-{}.{}", uuid::Uuid::new_v4(), file_idx, suffix)
+}
+
+/// Helper function to build the path to a local file.
+fn build_local_file_path(
+    root_dir: &str,
+    partition_path: PathBuf,
+    filename: String,
+) -> DaftResult<PathBuf> {
+    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
+    let dir = root_dir.join(partition_path);
+    Ok(dir.join(filename))
+}
+
+/// Helper function to build the path to an S3 url.
+fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
+    let (_scheme, bucket, key) = daft_io::s3_like::parse_s3_url(root_dir)?;
+    let key = Path::new(&key).join(partition_path).join(filename);
+    Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
 }
 
 #[cfg(test)]

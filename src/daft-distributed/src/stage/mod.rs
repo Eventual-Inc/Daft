@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_display::DisplayLevel;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_dsl::ExprRef;
@@ -9,26 +10,42 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use stage_builder::StagePlanBuilder;
 
 use crate::{
     pipeline_node::{
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
-        MaterializedOutput, PipelineOutput, RunningPipelineNode,
+        viz_distributed_pipeline_ascii, viz_distributed_pipeline_mermaid, MaterializedOutput,
+        PipelineOutput, RunningPipelineNode,
     },
+    plan::PlanID,
     scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
 mod stage_builder;
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
-struct StageID(usize);
+#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct StageID(usize);
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug)]
+impl std::fmt::Display for StageID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[allow(dead_code)]
+impl StageID {
+    pub fn new(id: usize) -> Self {
+        Self(id)
+    }
+}
+
+#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct ChannelID(usize);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct DataChannel {
     schema: SchemaRef,
@@ -36,14 +53,14 @@ struct DataChannel {
     stats: Option<ApproxStats>,
     // ordering: Option<ExprRef>,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct InputChannel {
     from_stage: StageID,
     channel_id: ChannelID,
     data_channel: DataChannel,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 struct OutputChannel {
     to_stages: Vec<StageID>,
@@ -63,7 +80,7 @@ struct OutputChannel {
 // - We must be able to do re-planning based on new statistics.
 // - We must allow for potential concurrent execution of stages.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct Stage {
     id: StageID,
@@ -75,6 +92,7 @@ pub(crate) struct Stage {
 impl Stage {
     pub(crate) fn run_stage(
         &self,
+        plan_id: PlanID,
         psets: HashMap<String, Vec<PartitionRef>>,
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
@@ -82,26 +100,94 @@ impl Stage {
         let mut stage_context = StageContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let mut pipeline_node =
-                    logical_plan_to_pipeline_node(plan.clone(), config, Arc::new(psets))?;
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Arc::new(psets),
+                )?;
                 let running_node = pipeline_node.start(&mut stage_context);
-                Ok(RunningStage::new(running_node, stage_context.joinset))
+                Ok(RunningStage::new(running_node, stage_context))
             }
             _ => todo!("FLOTILLA_MS2: Implement run_stage for other stage types"),
         }
+    }
+
+    /// Get the logical plan for visualization purposes (only for MapPipeline stages)
+    pub fn repr_mermaid(
+        &self,
+        plan_id: PlanID,
+        simple: bool,
+        bottom_up: bool,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<String> {
+        match &self.type_ {
+            StageType::MapPipeline { plan } => {
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Default::default(),
+                )?;
+                let display_level = if simple {
+                    DisplayLevel::Compact
+                } else {
+                    DisplayLevel::Default
+                };
+                Ok(viz_distributed_pipeline_mermaid(
+                    pipeline_node.as_ref(),
+                    display_level,
+                    bottom_up,
+                    None,
+                ))
+            }
+            _ => todo!("FLOTILLA_MS2: Implement repr_mermaid for other stage types"),
+        }
+    }
+
+    pub fn repr_ascii(
+        &self,
+        plan_id: PlanID,
+        simple: bool,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<String> {
+        match &self.type_ {
+            StageType::MapPipeline { plan } => {
+                let pipeline_node = logical_plan_to_pipeline_node(
+                    plan_id,
+                    self.id.clone(),
+                    plan.clone(),
+                    config,
+                    Default::default(),
+                )?;
+                Ok(viz_distributed_pipeline_ascii(
+                    pipeline_node.as_ref(),
+                    simple,
+                ))
+            }
+            _ => todo!("FLOTILLA_MS2: Implement repr_ascii for other stage types"),
+        }
+    }
+
+    /// Get the stage type name for visualization
+    #[allow(dead_code)]
+    pub fn stage_type_name(&self) -> &str {
+        self.type_.name()
     }
 }
 
 pub(crate) struct RunningStage {
     running_pipeline_node: RunningPipelineNode,
-    joinset: JoinSet<DaftResult<()>>,
+    stage_context: StageContext,
 }
 
 impl RunningStage {
-    fn new(running_pipeline_node: RunningPipelineNode, joinset: JoinSet<DaftResult<()>>) -> Self {
+    fn new(running_pipeline_node: RunningPipelineNode, stage_context: StageContext) -> Self {
         Self {
             running_pipeline_node,
-            joinset,
+            stage_context,
         }
     }
 
@@ -117,12 +203,15 @@ impl RunningStage {
         self,
     ) -> impl Stream<Item = DaftResult<PipelineOutput<SwordfishTask>>> + Send + Unpin + 'static
     {
-        JoinableForwardingStream::new(self.running_pipeline_node.into_stream(), self.joinset)
+        JoinableForwardingStream::new(
+            self.running_pipeline_node.into_stream(),
+            self.stage_context.joinset,
+        )
     }
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum StageType {
     MapPipeline {
         plan: LogicalPlanRef,
@@ -149,6 +238,7 @@ enum StageType {
 }
 
 impl StageType {
+    #[allow(dead_code)]
     fn name(&self) -> &str {
         match self {
             Self::MapPipeline { .. } => "MapPipeline",
@@ -160,37 +250,43 @@ impl StageType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StagePlan {
     stages: HashMap<StageID, Stage>,
     root_stage: StageID,
+    config: Arc<DaftExecutionConfig>,
 }
 
 impl StagePlan {
-    pub(crate) fn from_logical_plan(plan: LogicalPlanRef) -> DaftResult<Self> {
+    pub(crate) fn from_logical_plan(
+        plan: LogicalPlanRef,
+        config: Arc<DaftExecutionConfig>,
+    ) -> DaftResult<Self> {
         let builder = StagePlanBuilder::new();
-        let stage_plan = builder.build_stage_plan(plan)?;
+        let stage_plan = builder.build_stage_plan(plan, config.clone())?;
 
-        Ok(stage_plan)
+        Ok(Self {
+            stages: stage_plan.stages,
+            root_stage: stage_plan.root_stage,
+            config,
+        })
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn print_plan(&self) {
-        let mut stack = vec![(0, self.root_stage.clone())];
-        while let Some((depth, curr)) = stack.pop() {
-            let stage = self
-                .stages
-                .get(&curr)
-                .expect("expect this stage id to be in stages");
-            let name = stage.type_.name();
-            for _ in 0..depth {
-                print!("  ");
-            }
-            println!("Stage {}: {}", curr.0, name);
-            stage.input_channels.iter().enumerate().for_each(|(i, c)| {
-                stack.push((depth + ((i != 0) as usize), c.from_stage.clone()));
-            });
-        }
+    pub fn repr_mermaid(
+        &self,
+        plan_id: PlanID,
+        simple: bool,
+        bottom_up: bool,
+    ) -> DaftResult<String> {
+        let root_stage = self.get_root_stage();
+        let config = self.config.clone();
+        root_stage.repr_mermaid(plan_id, simple, bottom_up, config)
+    }
+
+    pub fn repr_ascii(&self, plan_id: PlanID, simple: bool) -> DaftResult<String> {
+        let root_stage = self.get_root_stage();
+        let config = self.config.clone();
+        root_stage.repr_ascii(plan_id, simple, config)
     }
 
     pub(crate) fn num_stages(&self) -> usize {
@@ -201,6 +297,10 @@ impl StagePlan {
         self.stages
             .get(&self.root_stage)
             .expect("expect root stage to be in stages")
+    }
+
+    pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
+        &self.config
     }
 }
 

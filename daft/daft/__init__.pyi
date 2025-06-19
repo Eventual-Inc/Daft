@@ -9,6 +9,7 @@ from daft.execution import physical_plan
 from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.io.sink import WriteResultType
+from daft.runners.flotilla import RaySwordfishActorHandle
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
@@ -447,8 +448,19 @@ class HTTPConfig:
     """I/O configuration for accessing HTTP systems."""
 
     bearer_token: str | None
+    retry_initial_backoff_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    num_tries: int
 
-    def __init__(self, bearer_token: str | None = None): ...
+    def __init__(
+        self,
+        bearer_token: str | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
+    ): ...
 
 class S3Config:
     """I/O configuration for accessing an S3-compatible system."""
@@ -630,6 +642,25 @@ class GCSConfig:
         """Replaces values if provided, returning a new GCSConfig."""
         ...
 
+class UnityConfig:
+    """I/O configuration for Unity Catalog volumes."""
+
+    endpoint: str | None
+    token: str | None
+
+    def __init__(
+        self,
+        endpoint: str | None,
+        token: str | None,
+    ): ...
+    def replace(
+        self,
+        endpoint: str | None,
+        token: str | None,
+    ) -> UnityConfig:
+        """Replaces values if provided, returning a new UnityConfig."""
+        ...
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -637,6 +668,7 @@ class IOConfig:
     azure: AzureConfig
     gcs: GCSConfig
     http: HTTPConfig
+    unity: UnityConfig
 
     def __init__(
         self,
@@ -644,6 +676,7 @@ class IOConfig:
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
+        unity: UnityConfig | None = None,
     ): ...
     def replace(
         self,
@@ -651,6 +684,7 @@ class IOConfig:
         azure: AzureConfig | None = None,
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
+        unity: UnityConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -1685,7 +1719,15 @@ class DistributedPhysicalPlan:
     def from_logical_plan_builder(
         builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
-    def run_plan(self, psets: dict[str, list[RayPartitionRef]]) -> AsyncIterator[tuple[object, int, int]]: ...
+    def id(self) -> str: ...
+    def repr_ascii(self, simple: bool) -> str: ...
+    def repr_mermaid(self, options: MermaidOptions) -> str: ...
+
+class DistributedPhysicalPlanRunner:
+    def __init__(self) -> None: ...
+    def run_plan(
+        self, plan: DistributedPhysicalPlan, psets: dict[str, list[RayPartitionRef]]
+    ) -> AsyncIterator[tuple[object, int, int]]: ...
 
 class LocalPhysicalPlan:
     @staticmethod
@@ -1699,9 +1741,21 @@ class RayPartitionRef:
     def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int): ...
 
 class RaySwordfishTask:
+    def name(self) -> str: ...
     def plan(self) -> LocalPhysicalPlan: ...
     def psets(self) -> dict[str, list[RayPartitionRef]]: ...
-    def estimated_memory_cost(self) -> int: ...
+    def config(self) -> PyDaftExecutionConfig: ...
+    def context(self) -> dict[str, str]: ...
+
+class RaySwordfishWorker:
+    def __init__(
+        self,
+        worker_id: str,
+        actor_handle: RaySwordfishActorHandle,
+        num_cpus: int,
+        num_gpus: int,
+        total_memory_bytes: int,
+    ) -> None: ...
 
 class NativeExecutor:
     def __init__(self) -> None: ...
@@ -1718,6 +1772,7 @@ class NativeExecutor:
         psets: dict[str, list[PyMicroPartition]],
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
+        context: dict[str, str] | None,
     ) -> AsyncIterator[PyMicroPartition]: ...
     def repr_ascii(
         self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool
@@ -1725,6 +1780,19 @@ class NativeExecutor:
     def repr_mermaid(
         self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
     ) -> str: ...
+    def get_relationship_info(
+        self,
+        logical_plan_builder: LogicalPlanBuilder,
+        daft_execution_config: PyDaftExecutionConfig,
+    ) -> RelationshipInformation: ...
+
+class RelationshipInformation:
+    ids: list[RelationshipNode]
+    plan_id: str
+
+class RelationshipNode:
+    id: int
+    parent_id: int | None
 
 class PyDaftExecutionConfig:
     @staticmethod
@@ -1756,7 +1824,9 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
+        native_parquet_writer: bool | None = None,
         flotilla: bool | None = None,
+        min_cpu_per_task: float | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1806,6 +1876,8 @@ class PyDaftExecutionConfig:
     def enable_ray_tracing(self) -> bool: ...
     @property
     def flotilla(self) -> bool: ...
+    @property
+    def min_cpu_per_task(self) -> float: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

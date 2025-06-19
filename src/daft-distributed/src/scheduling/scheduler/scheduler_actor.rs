@@ -17,11 +17,14 @@ use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
         dispatcher::{DispatcherActor, DispatcherHandle},
-        task::{Task, TaskId},
+        task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
     utils::{
-        channel::{create_channel, create_oneshot_channel, OneshotReceiver, Receiver, Sender},
+        channel::{
+            create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
+            Sender,
+        },
         joinset::JoinSet,
     },
 };
@@ -74,7 +77,7 @@ where
         let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(dispatcher_actor, joinset);
 
         // Spawn the scheduler actor to schedule tasks and dispatch them to the dispatcher
-        let (scheduler_sender, scheduler_receiver) = create_channel(1);
+        let (scheduler_sender, scheduler_receiver) = create_channel(10000);
         joinset.spawn(Self::run_scheduler_loop(
             scheduler.scheduler,
             scheduler_receiver,
@@ -166,20 +169,29 @@ impl<T: Task> SchedulerHandle<T> {
         Self { scheduler_sender }
     }
 
-    pub fn prepare_task_for_submission(task: T) -> (SchedulableTask<T>, SubmittedTask) {
-        let (result_tx, result_rx) = create_oneshot_channel();
-        let cancel_token = CancellationToken::new();
-
-        let task_id = task.task_id().clone();
-        let schedulable_task = SchedulableTask::new(task, result_tx, cancel_token.clone());
-        let submitted_task = SubmittedTask::new(task_id, result_rx, Some(cancel_token));
+    pub fn prepare_task_for_submission(
+        submittable_task: SubmittableTask<T>,
+    ) -> (SchedulableTask<T>, SubmittedTask) {
+        let task_id = submittable_task.task.task_id().to_string();
+        let schedulable_task = SchedulableTask::new(
+            submittable_task.task,
+            submittable_task.result_tx,
+            submittable_task.cancel_token.clone(),
+        );
+        let submitted_task = SubmittedTask::new(
+            Arc::from(task_id),
+            submittable_task.result_rx,
+            Some(submittable_task.cancel_token),
+            submittable_task.notify_token,
+        );
 
         (schedulable_task, submitted_task)
     }
 
     #[allow(dead_code)]
-    pub async fn submit_task(&self, task: T) -> DaftResult<SubmittedTask> {
-        let (schedulable_task, submitted_task) = Self::prepare_task_for_submission(task);
+    async fn submit_task(&self, submittable_task: SubmittableTask<T>) -> DaftResult<SubmittedTask> {
+        let (schedulable_task, submitted_task) =
+            Self::prepare_task_for_submission(submittable_task);
         self.scheduler_sender
             .send(schedulable_task)
             .await
@@ -191,29 +203,74 @@ impl<T: Task> SchedulerHandle<T> {
 }
 
 #[derive(Debug)]
+pub(crate) struct SubmittableTask<T: Task> {
+    task: T,
+    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+    result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
+    cancel_token: CancellationToken,
+    notify_token: Option<OneshotSender<()>>,
+}
+
+impl<T: Task> SubmittableTask<T> {
+    pub fn new(task: T) -> Self {
+        let (result_tx, result_rx) = create_oneshot_channel();
+        let cancel_token = CancellationToken::new();
+        Self {
+            task,
+            result_tx,
+            result_rx,
+            cancel_token,
+            notify_token: None,
+        }
+    }
+
+    pub fn task(&self) -> &T {
+        &self.task
+    }
+
+    pub fn with_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
+        let (notify_token, notify_rx) = create_oneshot_channel();
+        self.notify_token = Some(notify_token);
+        (self, notify_rx)
+    }
+
+    pub fn with_new_task(mut self, new_task: T) -> Self {
+        self.task = new_task;
+        self
+    }
+
+    pub async fn submit(self, scheduler_handle: &SchedulerHandle<T>) -> DaftResult<SubmittedTask> {
+        scheduler_handle.submit_task(self).await
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct SubmittedTask {
-    _task_id: TaskId,
+    _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
+    notify_token: Option<OneshotSender<()>>,
     finished: bool,
 }
 
 impl SubmittedTask {
     fn new(
-        task_id: TaskId,
+        task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
+        notify_token: Option<OneshotSender<()>>,
     ) -> Self {
         Self {
             _task_id: task_id,
             result_rx,
             cancel_token,
+            notify_token,
             finished: false,
         }
     }
 
     #[allow(dead_code)]
-    pub fn id(&self) -> &TaskId {
+    pub fn id(&self) -> &TaskID {
         &self._task_id
     }
 }
@@ -225,11 +282,17 @@ impl Future for SubmittedTask {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
+                if let Some(notify_token) = self.notify_token.take() {
+                    let _ = notify_token.send(());
+                }
                 Poll::Ready(result)
             }
             // If the receiver is dropped, return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
+                if let Some(notify_token) = self.notify_token.take() {
+                    let _ = notify_token.send(());
+                }
                 Poll::Ready(Ok(vec![]))
             }
             Poll::Pending => Poll::Pending,
@@ -296,7 +359,10 @@ mod tests {
         let partition_ref = create_mock_partition_ref(100, 1024);
         let task = MockTaskBuilder::new(partition_ref.clone()).build();
 
-        let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
+        let submittable_task = SubmittableTask::new(task);
+        let submitted_task = submittable_task
+            .submit(&test_context.scheduler_handle_ref)
+            .await?;
 
         let result = submitted_task.await?;
         assert!(Arc::ptr_eq(&result[0].partition(), &partition_ref));
@@ -319,11 +385,10 @@ mod tests {
                 .with_task_id(format!("task-{}", i).into())
                 .with_sleep_duration(task_duration)
                 .build();
-            let submitted_task = test_context
-                .scheduler_handle_ref
-                .submit_task(task)
-                .await
-                .unwrap();
+            let submittable_task = SubmittableTask::new(task);
+            let submitted_task = submittable_task
+                .submit(&test_context.scheduler_handle_ref)
+                .await?;
             submitted_tasks.push(submitted_task);
         }
 
@@ -371,7 +436,8 @@ mod tests {
                         .with_task_id(format!("submitter-{}:task-{}", submitter_id, task_id).into())
                         .with_sleep_duration(task_duration)
                         .build();
-                    let submitted_task = scheduler_handle.submit_task(task).await.unwrap();
+                    let submittable_task = SubmittableTask::new(task);
+                    let submitted_task = submittable_task.submit(&scheduler_handle).await?;
                     submitted_task_tx
                         .send((submitted_task, num_rows, num_bytes))
                         .await
@@ -404,7 +470,10 @@ mod tests {
             .with_sleep_duration(std::time::Duration::from_millis(1000))
             .build();
 
-        let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
+        let submittable_task = SubmittableTask::new(task);
+        let submitted_task = submittable_task
+            .submit(&test_context.scheduler_handle_ref)
+            .await?;
         drop(submitted_task);
         cancel_receiver.await.unwrap();
 
@@ -415,15 +484,12 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_actor_multiple_concurrent_tasks_with_cancelled_tasks() -> DaftResult<()>
     {
-        let worker_1: WorkerId = Arc::from("worker1");
-        let worker_2: WorkerId = Arc::from("worker2");
-        let worker_3: WorkerId = Arc::from("worker3");
-
-        let mut test_context = setup_scheduler_actor_test_context(&[
-            (worker_1.clone(), 10),
-            (worker_2.clone(), 10),
-            (worker_3.clone(), 10),
-        ]);
+        let num_workers = 30;
+        let mut test_context = setup_scheduler_actor_test_context(
+            &(0..num_workers)
+                .map(|i| (format!("worker{}", i).into(), 1))
+                .collect::<Vec<_>>(),
+        );
         let num_tasks = 3000;
         let num_concurrent_submitters = 30;
         let num_tasks_per_submitter = num_tasks / num_concurrent_submitters;
@@ -452,7 +518,8 @@ mod tests {
                             .with_cancel_notifier(cancel_notifier)
                             .with_sleep_duration(task_duration);
                         let task = task.build();
-                        let submitted_task = scheduler_handle.submit_task(task).await.unwrap();
+                        let submittable_task = SubmittableTask::new(task);
+                        let submitted_task = submittable_task.submit(&scheduler_handle).await?;
                         submitted_task_tx
                             .send((submitted_task, num_rows, num_bytes, Some(cancel_receiver)))
                             .await
@@ -462,7 +529,8 @@ mod tests {
                             std::time::Duration::from_millis(rand::thread_rng().gen_range(50..150));
                         let task = task.with_sleep_duration(task_duration);
                         let task = task.build();
-                        let submitted_task = scheduler_handle.submit_task(task).await.unwrap();
+                        let submittable_task = SubmittableTask::new(task);
+                        let submitted_task = submittable_task.submit(&scheduler_handle).await?;
                         submitted_task_tx
                             .send((submitted_task, num_rows, num_bytes, None))
                             .await
@@ -500,7 +568,10 @@ mod tests {
             .with_task_id(format!("task-{}", 0).into())
             .with_failure(MockTaskFailure::Error("test error".to_string()))
             .build();
-        let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
+        let submittable_task = SubmittableTask::new(task);
+        let submitted_task = submittable_task
+            .submit(&test_context.scheduler_handle_ref)
+            .await?;
         let result = submitted_task.await;
         assert!(result.is_err());
         assert_eq!(
@@ -520,7 +591,10 @@ mod tests {
             .with_task_id(format!("task-{}", 0).into())
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
-        let submitted_task = test_context.scheduler_handle_ref.submit_task(task).await?;
+        let submittable_task = SubmittableTask::new(task);
+        let submitted_task = submittable_task
+            .submit(&test_context.scheduler_handle_ref)
+            .await?;
         let result = submitted_task.await?;
         assert_eq!(result.len(), 0);
 

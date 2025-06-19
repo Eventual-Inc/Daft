@@ -1,12 +1,15 @@
-use std::{cmp::max, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
+#[cfg(feature = "python")]
+use common_py_serde::{deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use common_treenode::DynTreeNode;
+use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    functions::python::get_resource_request,
     WindowExpr, WindowFrame,
 };
 use daft_logical_plan::{
@@ -24,6 +27,8 @@ pub enum LocalPhysicalPlan {
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
+    #[cfg(feature = "python")]
+    DistributedActorPoolProject(DistributedActorPoolProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -107,6 +112,9 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. })
+            | Self::DistributedActorPoolProject(DistributedActorPoolProject {
+                stats_state, ..
+            })
             | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }
@@ -145,7 +153,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
+    pub fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
         Self::EmptyScan(EmptyScan {
             schema,
             stats_state: StatsState::Materialized(PlanStats::empty().into()),
@@ -228,6 +236,25 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[cfg(feature = "python")]
+    pub fn distributed_actor_pool_project(
+        input: LocalPhysicalPlanRef,
+        actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+        batch_size: Option<usize>,
+        memory_request: u64,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::DistributedActorPoolProject(DistributedActorPoolProject {
+            input,
+            actor_objects,
+            batch_size,
+            memory_request,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
     pub(crate) fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
@@ -629,13 +656,42 @@ impl LocalPhysicalPlan {
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
+            #[cfg(feature = "python")]
+            Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
         }
     }
 
-    pub fn resource_request(&self) -> ResourceRequest {
-        todo!("Implement resource request for local physical plan");
+    pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
+        let mut base = ResourceRequest::default_cpu();
+        self.apply(|plan| match plan.as_ref() {
+            Self::Project(Project { projection, .. }) => {
+                if let Some(resource_request) = get_resource_request(projection) {
+                    base = base.max(&resource_request);
+                }
+                Ok(TreeNodeRecursion::Continue)
+            }
+            Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
+                if let Some(resource_request) = get_resource_request(projection) {
+                    base = base.max(&resource_request);
+                }
+                Ok(TreeNodeRecursion::Continue)
+            }
+            #[cfg(feature = "python")]
+            Self::DistributedActorPoolProject(DistributedActorPoolProject {
+                memory_request,
+                ..
+            }) => {
+                base = base.max(
+                    &ResourceRequest::default_cpu()
+                        .with_memory_bytes(Some(*memory_request as usize))?,
+                );
+                Ok(TreeNodeRecursion::Continue)
+            }
+            _ => Ok(TreeNodeRecursion::Continue),
+        });
+        base
     }
 
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
@@ -672,6 +728,10 @@ impl LocalPhysicalPlan {
             Self::LanceWrite(LanceWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
             Self::DataSink(DataSink { input, .. }) => vec![input.clone()],
+            #[cfg(feature = "python")]
+            Self::DistributedActorPoolProject(DistributedActorPoolProject { input, .. }) => {
+                vec![input.clone()]
+            }
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
         }
@@ -707,6 +767,8 @@ impl LocalPhysicalPlan {
                 Self::CatalogWrite(CatalogWrite {  catalog_type, data_schema, file_schema, stats_state, .. }) => Self::catalog_write(new_child.clone(), catalog_type.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite {  lance_info, data_schema, file_schema, stats_state, .. }) => Self::lance_write(new_child.clone(), lance_info.clone(), data_schema.clone(), file_schema.clone(), stats_state.clone()),
+                #[cfg(feature = "python")]
+                Self::DistributedActorPoolProject(DistributedActorPoolProject {  actor_objects, schema, batch_size, memory_request, .. }) => Self::distributed_actor_pool_project(new_child.clone(), actor_objects.clone(), *batch_size, *memory_request, schema.clone(), StatsState::NotMaterialized),
                 Self::HashJoin(_) => panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children"),
                 Self::CrossJoin(_) => panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children"),
                 Self::Concat(_) => panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children"),
@@ -724,6 +786,22 @@ impl LocalPhysicalPlan {
                 _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
             },
             _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
+        }
+    }
+
+    pub fn single_line_display(&self) -> String {
+        let children = self.children();
+        if children.is_empty() {
+            self.name().to_string()
+        } else if children.len() == 1 {
+            format!("{}->{}", children[0].single_line_display(), self.name())
+        } else {
+            // For multiple children, show them in parentheses
+            let child_names: Vec<String> = children
+                .iter()
+                .map(|child| child.single_line_display())
+                .collect();
+            format!("({})->{}", child_names.join(", "), self.name())
         }
     }
 }
@@ -792,6 +870,16 @@ pub struct ActorPoolProject {
     pub stats_state: StatsState,
 }
 
+#[cfg(feature = "python")]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DistributedActorPoolProject {
+    pub input: LocalPhysicalPlanRef,
+    pub actor_objects: Vec<daft_dsl::pyobj_serde::PyObjectWrapper>,
+    pub batch_size: Option<usize>,
+    pub memory_request: u64,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,

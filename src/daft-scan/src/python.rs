@@ -157,7 +157,7 @@ pub mod pylib {
                     hive_partitioning,
                 );
 
-                let operator = executor.block_on(task)??;
+                let operator = executor.block_within_async_context(task)??;
                 let operator = Arc::new(operator);
 
                 Ok(Self {

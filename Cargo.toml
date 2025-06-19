@@ -28,6 +28,7 @@ daft-functions-list = {path = "src/daft-functions-list", default-features = fals
 daft-functions-serde = {path = "src/daft-functions-serde", default-features = false}
 daft-functions-temporal = {path = "src/daft-functions-temporal", default-features = false}
 daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
+daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
@@ -116,6 +117,7 @@ ignored = ["lzma-sys"]
 
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}
+parquet-format-safe = {path = "src/parquet-format-safe"}
 parquet2 = {path = "src/parquet2"}
 
 [profile.bench]
@@ -176,6 +178,7 @@ members = [
   "src/daft-functions-binary",
   "src/daft-functions-json",
   "src/daft-functions-list",
+  "src/daft-functions-uri",
   "src/daft-functions-tokenize",
   "src/daft-functions-utf8",
   "src/daft-functions-temporal",
@@ -201,6 +204,7 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
+  "src/parquet-format-safe",
   "src/generated/spark-connect",
   "src/daft-cli"
 ]
@@ -234,6 +238,7 @@ daft-functions-json = {path = "src/daft-functions-json"}
 daft-functions-list = {path = "src/daft-functions-list"}
 daft-functions-temporal = {path = "src/daft-functions-temporal"}
 daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
+daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
@@ -251,10 +256,9 @@ futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
 itertools = "0.11"
-jaq-core = "1.2.0"
-jaq-interpret = "1.2.0"
-jaq-parse = "1.0.0"
-jaq-std = "1.2.0"
+jaq-core = "2.2.0"
+jaq-json = {version = "1.1.2", features = ["serde_json"]}
+jaq-std = "2.1.1"
 mur3 = "0.1.0"
 num-derive = "0.3.3"
 num-format = "0.4.4"
@@ -317,6 +321,10 @@ version = "1.0.0"
 features = ["std"]
 version = "0.4.19"
 
+[workspace.dependencies.parquet-format-safe]
+features = ['async']
+path = "src/parquet-format-safe"
+
 [workspace.dependencies.parquet2]
 # branch = "sammy/owned-page-stream"
 features = ['async']
@@ -345,6 +353,7 @@ cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
 cast_precision_loss = "allow"
 cognitive_complexity = "allow"
+dbg_macro = "deny"
 default_trait_access = "allow"
 doc-markdown = "allow"
 doc_link_with_quotes = "allow"

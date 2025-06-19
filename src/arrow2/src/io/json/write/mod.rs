@@ -3,8 +3,8 @@ mod serialize;
 mod utf8;
 
 pub use fallible_streaming_iterator::*;
-pub(crate) use serialize::new_serializer;
-use serialize::serialize;
+pub use serialize::new_serializer;
+use serialize::serialize_array;
 use std::io::Write;
 
 use crate::{
@@ -48,7 +48,7 @@ where
         self.buffer.clear();
         self.arrays
             .next()
-            .map(|maybe_array| maybe_array.map(|array| serialize(array.as_ref(), &mut self.buffer)))
+            .map(|maybe_array| maybe_array.map(|array| serialize_array(array.as_ref(), &mut self.buffer)))
             .transpose()?;
         Ok(())
     }

@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use super::{
     scheduler::SchedulableTask,
-    task::{Task, TaskDetails, TaskId, TaskResultHandle, TaskResultHandleAwaiter},
+    task::{Task, TaskDetails, TaskID, TaskResultHandle, TaskResultHandleAwaiter},
 };
 
 pub(crate) type WorkerId = Arc<str>;
@@ -15,10 +15,17 @@ pub(crate) trait Worker: Send + Sync + Debug + 'static {
     type TaskResultHandle: TaskResultHandle;
 
     fn id(&self) -> &WorkerId;
-    fn active_task_details(&self) -> HashMap<TaskId, TaskDetails>;
-    fn total_num_cpus(&self) -> usize;
-    fn active_num_cpus(&self) -> usize;
-    fn available_num_cpus(&self) -> usize;
+    fn active_task_details(&self) -> HashMap<TaskID, TaskDetails>;
+    fn total_num_cpus(&self) -> f64;
+    fn total_num_gpus(&self) -> f64;
+    fn active_num_cpus(&self) -> f64;
+    fn active_num_gpus(&self) -> f64;
+    fn available_num_cpus(&self) -> f64 {
+        self.total_num_cpus() - self.active_num_cpus()
+    }
+    fn available_num_gpus(&self) -> f64 {
+        self.total_num_gpus() - self.active_num_gpus()
+    }
 }
 
 #[allow(dead_code)]
@@ -34,9 +41,8 @@ pub(crate) trait WorkerManager: Send + Sync {
     ) -> DaftResult<
         Vec<TaskResultHandleAwaiter<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>,
     >;
-    fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId);
+    fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId);
     fn workers(&self) -> &HashMap<WorkerId, Self::Worker>;
-    fn total_available_cpus(&self) -> usize;
     #[allow(dead_code)]
     fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
         Ok(())
@@ -90,7 +96,7 @@ pub(super) mod tests {
                     }
 
                     result.push(TaskResultHandleAwaiter::new(
-                        task.task_id().clone(),
+                        Arc::from(task.task_id().to_string()),
                         worker_id.clone(),
                         MockTaskResultHandle::new(task),
                         result_tx,
@@ -102,7 +108,7 @@ pub(super) mod tests {
             Ok(result)
         }
 
-        fn mark_task_finished(&self, task_id: &TaskId, worker_id: &WorkerId) {
+        fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId) {
             if let Some(worker) = self.workers.get(worker_id) {
                 worker.mark_task_finished(task_id);
             }
@@ -110,13 +116,6 @@ pub(super) mod tests {
 
         fn workers(&self) -> &HashMap<WorkerId, Self::Worker> {
             &self.workers
-        }
-
-        fn total_available_cpus(&self) -> usize {
-            self.workers
-                .values()
-                .map(|w| w.total_num_cpus() - w.active_num_cpus())
-                .sum()
         }
 
         fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
@@ -133,30 +132,32 @@ pub(super) mod tests {
     #[derive(Clone, Debug)]
     pub struct MockWorker {
         worker_id: WorkerId,
-        total_num_cpus: usize,
-        active_task_details: Arc<Mutex<HashMap<TaskId, TaskDetails>>>,
+        total_num_cpus: f64,
+        total_num_gpus: f64,
+        active_task_details: Arc<Mutex<HashMap<TaskID, TaskDetails>>>,
         is_shutdown: Arc<AtomicBool>,
     }
 
     impl MockWorker {
-        pub fn new(worker_id: WorkerId, total_num_cpus: usize) -> Self {
+        pub fn new(worker_id: WorkerId, total_num_cpus: f64, total_num_gpus: f64) -> Self {
             Self {
                 worker_id,
                 total_num_cpus,
+                total_num_gpus,
                 active_task_details: Arc::new(Mutex::new(HashMap::new())),
                 is_shutdown: Arc::new(AtomicBool::new(false)),
             }
         }
 
-        pub fn mark_task_finished(&self, task_id: &TaskId) {
+        pub fn mark_task_finished(&self, task_id: &TaskID) {
             self.active_task_details.lock().unwrap().remove(task_id);
         }
 
         pub fn add_active_task(&self, task: &impl Task) {
-            self.active_task_details
-                .lock()
-                .unwrap()
-                .insert(task.task_id().clone(), TaskDetails::from(task));
+            self.active_task_details.lock().unwrap().insert(
+                Arc::from(task.task_id().to_string()),
+                TaskDetails::from(task),
+            );
         }
 
         pub fn shutdown(&self) {
@@ -173,24 +174,33 @@ pub(super) mod tests {
             &self.worker_id
         }
 
-        fn total_num_cpus(&self) -> usize {
+        fn total_num_cpus(&self) -> f64 {
             self.total_num_cpus
         }
 
-        fn active_num_cpus(&self) -> usize {
-            let active_task_details = self.active_task_details.lock().unwrap();
+        fn total_num_gpus(&self) -> f64 {
+            self.total_num_gpus
+        }
 
-            active_task_details
+        fn active_num_cpus(&self) -> f64 {
+            self.active_task_details
+                .lock()
+                .expect("Active task ids should be present")
                 .values()
                 .map(|details| details.num_cpus())
                 .sum()
         }
 
-        fn available_num_cpus(&self) -> usize {
-            self.total_num_cpus() - self.active_num_cpus()
+        fn active_num_gpus(&self) -> f64 {
+            self.active_task_details
+                .lock()
+                .expect("Active task ids should be present")
+                .values()
+                .map(|details| details.num_gpus())
+                .sum()
         }
 
-        fn active_task_details(&self) -> HashMap<TaskId, TaskDetails> {
+        fn active_task_details(&self) -> HashMap<TaskID, TaskDetails> {
             self.active_task_details
                 .lock()
                 .expect("Active task ids should be present")

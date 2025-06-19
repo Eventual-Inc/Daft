@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 
 use super::{
     scheduler::{ScheduledTask, WorkerSnapshot},
-    task::{Task, TaskId},
+    task::{Task, TaskID},
     worker::{Worker, WorkerId, WorkerManager},
 };
 use crate::utils::{
@@ -27,7 +27,14 @@ impl<W: Worker> DispatcherActor<W> {
         joinset: &mut JoinSet<DaftResult<()>>,
     ) -> DispatcherHandle<W::Task> {
         let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
-        let (worker_update_sender, worker_update_receiver) = create_channel(1);
+        let initial_worker_snapshots = dispatcher
+            .worker_manager
+            .workers()
+            .values()
+            .map(WorkerSnapshot::from)
+            .collect::<Vec<_>>();
+        let (worker_update_sender, worker_update_receiver) =
+            tokio::sync::watch::channel(initial_worker_snapshots);
         joinset.spawn(Self::run_dispatcher_loop(
             dispatcher.worker_manager,
             dispatcher_receiver,
@@ -40,7 +47,7 @@ impl<W: Worker> DispatcherActor<W> {
         scheduled_tasks: Vec<ScheduledTask<W::Task>>,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         running_tasks: &mut JoinSet<()>,
-        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskId, WorkerId)>,
+        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskID, WorkerId)>,
     ) -> DaftResult<()> {
         let mut worker_to_tasks = HashMap::new();
 
@@ -67,10 +74,10 @@ impl<W: Worker> DispatcherActor<W> {
     async fn handle_finished_task(
         finished_joinset_id: JoinSetId,
         finished_task_result: DaftResult<()>,
-        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskId, WorkerId)>,
+        running_tasks_by_id: &mut HashMap<JoinSetId, (TaskID, WorkerId)>,
         running_tasks: &mut JoinSet<()>,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
-        worker_update_sender: &Sender<Vec<WorkerSnapshot>>,
+        worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
     ) -> DaftResult<()> {
         // Remove the first task from the running_tasks_by_id map
         finished_task_result?;
@@ -93,7 +100,7 @@ impl<W: Worker> DispatcherActor<W> {
             .values()
             .map(WorkerSnapshot::from)
             .collect::<Vec<_>>();
-        if worker_update_sender.send(worker_snapshots).await.is_err() {
+        if worker_update_sender.send(worker_snapshots).is_err() {
             tracing::debug!("Unable to send worker update, dispatcher handle dropped");
         }
 
@@ -104,7 +111,7 @@ impl<W: Worker> DispatcherActor<W> {
     async fn run_dispatcher_loop(
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         mut task_rx: Receiver<Vec<ScheduledTask<W::Task>>>,
-        worker_update_sender: Sender<Vec<WorkerSnapshot>>,
+        worker_update_sender: tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
     ) -> DaftResult<()>
     where
         <W as Worker>::TaskResultHandle: std::marker::Send,
@@ -117,8 +124,6 @@ impl<W: Worker> DispatcherActor<W> {
             tokio::select! {
                 maybe_tasks = task_rx.recv() => {
                     if let Some(tasks) = maybe_tasks {
-                        tracing::debug!("Received new tasks: {:?}", tasks);
-
                         Self::dispatch_tasks(
                             tasks,
                             &worker_manager,
@@ -126,14 +131,10 @@ impl<W: Worker> DispatcherActor<W> {
                             &mut running_tasks_by_id,
                         )?;
                     } else if !input_exhausted {
-                        tracing::debug!("Input exhausted");
-
                         input_exhausted = true;
                     }
                 }
                 Some((id, finished_task_result)) = running_tasks.join_next_with_id() => {
-                    tracing::debug!("Finished task: {:?}", id);
-
                      Self::handle_finished_task(
                         id,
                         finished_task_result,
@@ -152,14 +153,14 @@ impl<W: Worker> DispatcherActor<W> {
 #[allow(dead_code)]
 pub(super) struct DispatcherHandle<T: Task> {
     dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
-    worker_update_receiver: Receiver<Vec<WorkerSnapshot>>,
+    worker_update_receiver: tokio::sync::watch::Receiver<Vec<WorkerSnapshot>>,
 }
 
 #[allow(dead_code)]
 impl<T: Task> DispatcherHandle<T> {
     fn new(
         dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
-        worker_update_receiver: Receiver<Vec<WorkerSnapshot>>,
+        worker_update_receiver: tokio::sync::watch::Receiver<Vec<WorkerSnapshot>>,
     ) -> Self {
         Self {
             dispatcher_sender,
@@ -175,7 +176,9 @@ impl<T: Task> DispatcherHandle<T> {
     }
 
     pub async fn await_worker_updates(&mut self) -> Option<Vec<WorkerSnapshot>> {
-        self.worker_update_receiver.recv().await
+        self.worker_update_receiver.changed().await.ok()?;
+        let worker_snapshots = self.worker_update_receiver.borrow_and_update().clone();
+        Some(worker_snapshots)
     }
 }
 
@@ -186,7 +189,9 @@ mod tests {
     use super::*;
     use crate::{
         scheduling::{
-            scheduler::{test_utils::setup_workers, SchedulerHandle, SubmittedTask},
+            scheduler::{
+                test_utils::setup_workers, SchedulerHandle, SubmittableTask, SubmittedTask,
+            },
             task::tests::MockTaskFailure,
             tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
             worker::tests::MockWorkerManager,
@@ -231,7 +236,9 @@ mod tests {
 
         let partition_ref = create_mock_partition_ref(100, 100);
         let task = MockTaskBuilder::new(partition_ref.clone()).build();
-        let (schedulable_task, submitted_task) = SchedulerHandle::prepare_task_for_submission(task);
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
 
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
         test_context
@@ -262,8 +269,9 @@ mod tests {
                     .with_task_id(format!("task-{}", i).into())
                     .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(100..200)))
                     .build();
+                let submittable_task = SubmittableTask::new(task);
                 let (schedulable_task, submitted_task) =
-                    SchedulerHandle::prepare_task_for_submission(task);
+                    SchedulerHandle::prepare_task_for_submission(submittable_task);
                 (
                     ScheduledTask::new(schedulable_task, worker_id.clone()),
                     submitted_task,
@@ -304,7 +312,9 @@ mod tests {
         let task = MockTaskBuilder::new(partition_ref.clone())
             .with_cancel_notifier(cancel_notifier)
             .build();
-        let (schedulable_task, submitted_task) = SchedulerHandle::prepare_task_for_submission(task);
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
 
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
         test_context
@@ -327,7 +337,9 @@ mod tests {
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
             .with_failure(MockTaskFailure::Error("test error".to_string()))
             .build();
-        let (schedulable_task, submitted_task) = SchedulerHandle::prepare_task_for_submission(task);
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
 
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
         test_context
@@ -355,7 +367,9 @@ mod tests {
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
 
-        let (schedulable_task, submitted_task) = SchedulerHandle::prepare_task_for_submission(task);
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
         test_context
             .dispatcher_handle
@@ -384,7 +398,9 @@ mod tests {
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
 
-        let (schedulable_task, submitted_task) = SchedulerHandle::prepare_task_for_submission(task);
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id.clone())];
         test_context
             .dispatcher_handle
@@ -395,8 +411,9 @@ mod tests {
 
         let new_task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024)).build();
 
+        let submittable_task = SubmittableTask::new(new_task);
         let (schedulable_task, _submitted_task) =
-            SchedulerHandle::prepare_task_for_submission(new_task);
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
         let result = test_context
             .dispatcher_handle

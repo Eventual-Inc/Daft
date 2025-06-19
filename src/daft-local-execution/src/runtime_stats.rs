@@ -16,22 +16,25 @@ use tracing::{instrument::Instrumented, Instrument};
 
 use crate::{
     channel::{Receiver, Sender},
+    pipeline::NodeInfo,
     progress_bar::OperatorProgressBar,
 };
 
-#[derive(Default)]
 pub struct RuntimeStatsContext {
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
-    name: String,
+    node_info: NodeInfo,
     subscribers: Arc<parking_lot::RwLock<Vec<Box<dyn RuntimeStatsSubscriber>>>>,
 }
 
 pub trait RuntimeStatsSubscriber: Send + Sync {
-    fn on_rows_received(&self, context: &str, count: u64);
-    fn on_rows_emitted(&self, context: &str, count: u64);
-    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64);
+    #[cfg(test)]
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    fn on_rows_received(&self, context: &NodeInfo, count: u64);
+    fn on_rows_emitted(&self, context: &NodeInfo, count: u64);
+    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64);
 }
 
 pub struct OpenTelemetrySubscriber {
@@ -54,19 +57,45 @@ impl OpenTelemetrySubscriber {
 }
 
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
-    fn on_rows_received(&self, context: &str, count: u64) {
-        self.rows_received
-            .add(count, &[KeyValue::new("context", context.to_string())]);
+    #[cfg(test)]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
-    fn on_rows_emitted(&self, context: &str, count: u64) {
-        self.rows_emitted
-            .add(count, &[KeyValue::new("context", context.to_string())]);
+
+    fn on_rows_received(&self, context: &NodeInfo, count: u64) {
+        let mut attributes = vec![
+            KeyValue::new("name", context.name.to_string()),
+            KeyValue::new("id", context.id.to_string()),
+        ];
+
+        for (k, v) in &context.context {
+            attributes.push(KeyValue::new(k.clone(), v.clone()));
+        }
+
+        self.rows_received.add(count, &attributes);
     }
-    fn on_cpu_time_elapsed(&self, context: &str, microseconds: u64) {
-        self.cpu_us.add(
-            microseconds,
-            &[KeyValue::new("context", context.to_string())],
-        );
+    fn on_rows_emitted(&self, context: &NodeInfo, count: u64) {
+        let mut attributes = vec![
+            KeyValue::new("name", context.name.to_string()),
+            KeyValue::new("id", context.id.to_string()),
+        ];
+
+        for (k, v) in &context.context {
+            attributes.push(KeyValue::new(k.clone(), v.clone()));
+        }
+        self.rows_emitted.add(count, &attributes);
+    }
+
+    fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64) {
+        let mut attributes = vec![
+            KeyValue::new("name", context.name.to_string()),
+            KeyValue::new("id", context.id.to_string()),
+        ];
+
+        for (k, v) in &context.context {
+            attributes.push(KeyValue::new(k.clone(), v.clone()));
+        }
+        self.cpu_us.add(microseconds, &attributes);
     }
 }
 
@@ -112,19 +141,26 @@ impl RuntimeStats {
 }
 
 impl RuntimeStatsContext {
-    pub(crate) fn new(name: &str) -> Arc<Self> {
+    pub(crate) fn new_with_subscribers(
+        node_info: NodeInfo,
+        subscribers: Vec<Box<dyn RuntimeStatsSubscriber>>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            rows_received: AtomicU64::new(0),
+            rows_emitted: AtomicU64::new(0),
+            cpu_us: AtomicU64::new(0),
+            node_info,
+            subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
+        })
+    }
+
+    pub(crate) fn new(node_info: NodeInfo) -> Arc<Self> {
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         if should_enable_opentelemetry() {
             subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
         }
 
-        Arc::new(Self {
-            rows_received: AtomicU64::new(0),
-            rows_emitted: AtomicU64::new(0),
-            cpu_us: AtomicU64::new(0),
-            name: name.to_string(),
-            subscribers: Arc::new(parking_lot::RwLock::new(subscribers)),
-        })
+        Self::new_with_subscribers(node_info, subscribers)
     }
     pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
         self.cpu_us.fetch_add(
@@ -132,7 +168,7 @@ impl RuntimeStatsContext {
             std::sync::atomic::Ordering::Relaxed,
         );
         for subscriber in self.subscribers.read().iter() {
-            subscriber.on_cpu_time_elapsed(&self.name, elapsed.as_micros() as u64);
+            subscriber.on_cpu_time_elapsed(&self.node_info, elapsed.as_micros() as u64);
         }
     }
 
@@ -140,7 +176,7 @@ impl RuntimeStatsContext {
         self.rows_received
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
         for subscriber in self.subscribers.read().iter() {
-            subscriber.on_rows_received(&self.name, rows);
+            subscriber.on_rows_received(&self.node_info, rows);
         }
     }
 
@@ -148,7 +184,7 @@ impl RuntimeStatsContext {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
         for subscriber in self.subscribers.read().iter() {
-            subscriber.on_rows_emitted(&self.name, rows);
+            subscriber.on_rows_emitted(&self.node_info, rows);
         }
     }
 
@@ -274,5 +310,85 @@ impl CountingReceiver {
             }
         }
         v
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{any::Any, collections::HashMap, sync::atomic::Ordering, time::Duration};
+
+    use parking_lot::Mutex;
+
+    use super::*;
+    use crate::runtime_stats::RuntimeStatsContext;
+    struct MockSubscriber {
+        rows_received: AtomicU64,
+        rows_emitted: AtomicU64,
+        cpu_us: AtomicU64,
+        messages: Arc<Mutex<Vec<NodeInfo>>>,
+    }
+
+    impl MockSubscriber {
+        fn new() -> Self {
+            Self {
+                rows_received: AtomicU64::new(0),
+                rows_emitted: AtomicU64::new(0),
+                cpu_us: AtomicU64::new(0),
+                messages: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    impl RuntimeStatsSubscriber for MockSubscriber {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn on_rows_received(&self, context: &NodeInfo, count: u64) {
+            self.rows_received.fetch_add(count, Ordering::Relaxed);
+            self.messages.lock().push(context.clone());
+        }
+
+        fn on_rows_emitted(&self, context: &NodeInfo, count: u64) {
+            self.rows_emitted.fetch_add(count, Ordering::Relaxed);
+            self.messages.lock().push(context.clone());
+        }
+
+        fn on_cpu_time_elapsed(&self, context: &NodeInfo, microseconds: u64) {
+            self.cpu_us.fetch_add(microseconds, Ordering::Relaxed);
+            self.messages.lock().push(context.clone());
+        }
+    }
+
+    #[test]
+    fn test_rt_stats_subscriber() {
+        let node_info = NodeInfo {
+            name: Arc::from("test"),
+            id: 1,
+            context: HashMap::new(),
+        };
+        let subscriber = Box::new(MockSubscriber::new());
+        let ctx = RuntimeStatsContext::new_with_subscribers(node_info, vec![subscriber as _]);
+
+        ctx.mark_rows_emitted(100);
+        ctx.record_elapsed_cpu_time(Duration::from_secs(5));
+        ctx.mark_rows_received(200);
+
+        let subscribers = ctx.subscribers.read();
+        let subscriber = &subscribers[0];
+        let subscriber_any = subscriber.as_any();
+        let mock_subscriber = subscriber_any.downcast_ref::<MockSubscriber>().unwrap();
+        let rows_emitted = mock_subscriber.rows_emitted.load(Ordering::Relaxed);
+        let rows_received = mock_subscriber.rows_received.load(Ordering::Relaxed);
+        let cpu_us = mock_subscriber.cpu_us.load(Ordering::Relaxed);
+        let messages = mock_subscriber.messages.lock();
+        assert_eq!(rows_emitted, 100);
+        assert_eq!(rows_received, 200);
+        assert_eq!(cpu_us, 5000000);
+        assert_eq!(messages.len(), 3);
+        for message in messages.iter() {
+            assert_eq!(message.name, Arc::from("test"));
+            assert_eq!(message.id, 1);
+        }
     }
 }

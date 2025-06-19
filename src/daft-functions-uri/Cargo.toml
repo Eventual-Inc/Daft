@@ -1,0 +1,21 @@
+[dependencies]
+bytes = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+futures = {workspace = true}
+serde = {workspace = true}
+tokio = {workspace = true}
+typetag = {workspace = true}
+url = {workspace = true}
+uuid = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-uri"
+edition.workspace = true
+version.workspace = true
