@@ -1945,9 +1945,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def shard(self, strategy: Literal["file"], world_size: int, rank: int) -> "DataFrame":
-        """Shards the leaf scan node of the dataframe using the given sharding strategy.
+        """Shards the descendent scan node of the dataframe using the given sharding strategy.
 
-        Currently if there are multiple leaf scan nodes, this will not work.
+        If there are more than one scan nodes that are descendents of this shard operator,
+        this will not work.
 
         Only "file" strategy is supported for now for file-based sharding.
 
@@ -1955,6 +1956,13 @@ class DataFrame:
             strategy (Literal["file"]): sharding strategy.
             world_size (int): number of shards.
             rank (int): rank of the shard.
+
+        Examples:
+            # doctest: +SKIP
+            >>> import daft
+            >>> df = daft.read_parquet("path/to/parquet/files")
+            >>> sharded_df = df.shard(strategy="file", world_size=3, rank=0)
+            >>> sharded_df.show()
         """
         if strategy != "file":
             raise ValueError("Only file-based sharding is supported")
