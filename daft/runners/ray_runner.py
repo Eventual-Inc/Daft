@@ -1229,11 +1229,6 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> None:
         super().__init__()
 
-        # ray.init does not accept "ray://" prefix for some reason.
-        # We remove it here to avoid issues.
-        if address is not None and address.startswith("ray://"):
-            address = address.replace("ray://", "")
-
         self.ray_address = address
 
         if ray.is_initialized():
