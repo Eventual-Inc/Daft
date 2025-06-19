@@ -81,13 +81,11 @@ impl PySeries {
         PyList::new(py, pyobj_vec_cloned)
     }
 
-    pub fn to_arrow(&self) -> PyResult<PyObject> {
+    pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-        Python::with_gil(|py| {
-            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-            Ok(ffi::to_py_array(py, arrow_array, &pyarrow)?.unbind())
-        })
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        ffi::to_py_array(py, arrow_array, &pyarrow)
     }
 
     pub fn __abs__(&self) -> PyResult<Self> {
