@@ -57,6 +57,7 @@ pub enum LocalPhysicalPlan {
     // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
+    CommitWrite(CommitWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
     #[cfg(feature = "python")]
@@ -107,6 +108,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
+            | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -589,6 +591,27 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn commit_write(
+        input: LocalPhysicalPlanRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let (file_schema, file_info) = match input.as_ref() {
+            Self::PhysicalWrite(PhysicalWrite {
+                file_schema,
+                file_info,
+                ..
+            }) => (file_schema.clone(), file_info.clone()),
+            _ => panic!("CommitWrite must be the followed by a PhysicalWrite"),
+        };
+        Self::CommitWrite(CommitWrite {
+            input,
+            file_schema,
+            file_info,
+            stats_state,
+        })
+        .arced()
+    }
+
     #[cfg(feature = "python")]
     pub fn catalog_write(
         input: LocalPhysicalPlanRef,
@@ -670,6 +693,7 @@ impl LocalPhysicalPlan {
             })
             | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
+            Self::CommitWrite(CommitWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
@@ -740,7 +764,8 @@ impl LocalPhysicalPlan {
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
                 input, ..
             })
-            | Self::PhysicalWrite(PhysicalWrite { input, .. }) => vec![input.clone()],
+            | Self::PhysicalWrite(PhysicalWrite { input, .. })
+            | Self::CommitWrite(CommitWrite { input, .. }) => vec![input.clone()],
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
@@ -784,6 +809,7 @@ impl LocalPhysicalPlan {
                 Self::WindowOrderByOnly(WindowOrderByOnly {  order_by, descending, schema, functions, aliases, .. }) => Self::window_order_by_only(new_child.clone(), order_by.clone(), descending.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
                 Self::TopN(TopN {  sort_by, descending, nulls_first, limit, schema, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, StatsState::NotMaterialized),
                 Self::PhysicalWrite(PhysicalWrite {  data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(new_child.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
+                Self::CommitWrite(CommitWrite {  input, stats_state, .. }) => Self::commit_write(new_child.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
                 Self::DataSink(DataSink {  input, data_sink_info, file_schema, stats_state, .. }) => Self::data_sink(new_child.clone(), data_sink_info.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
@@ -1046,6 +1072,14 @@ pub struct Concat {
 pub struct PhysicalWrite {
     pub input: LocalPhysicalPlanRef,
     pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub file_info: OutputFileInfo<BoundExpr>,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CommitWrite {
+    pub input: LocalPhysicalPlanRef,
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo<BoundExpr>,
     pub stats_state: StatsState,

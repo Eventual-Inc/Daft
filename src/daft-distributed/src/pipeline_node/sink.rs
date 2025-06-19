@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
+use common_file_formats::WriteMode;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{stats::StatsState, SinkInfo};
 use daft_schema::schema::SchemaRef;
@@ -176,7 +177,27 @@ impl DistributedPipelineNode for SinkNode {
             sink_node.create_sink_plan(input)
         };
 
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        let pipelined_node_with_writes =
+            input_node.pipeline_instruction(stage_context, self.clone(), plan_builder);
+        if let SinkInfo::OutputFileInfo(info) = self.sink_info.as_ref()
+            && matches!(
+                info.write_mode,
+                WriteMode::Overwrite | WriteMode::OverwritePartitions
+            )
+        {
+            pipelined_node_with_writes.pipeline_instruction(
+                stage_context,
+                self,
+                move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
+                    Ok(LocalPhysicalPlan::commit_write(
+                        input,
+                        StatsState::NotMaterialized,
+                    ))
+                },
+            )
+        } else {
+            pipelined_node_with_writes
+        }
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {
