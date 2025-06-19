@@ -25,7 +25,7 @@ spark = SparkSession.builder.local().getOrCreate()
 
 # Alternatively, connect to a Ray cluster
 # You can use `ray get-head-ip <cluster_config.yaml>` to get the head ip!
-spark = SparkSession.builder.remote("ray://<HEAD_IP>:6379").getOrCreate()
+spark = SparkSession.builder.remote("ray://<HEAD_IP>:10001").getOrCreate()
 
 # Use spark as you would with the native spark library, but with a daft backend!
 spark.createDataFrame([{"hello": "world"}]).select(col("hello")).show()
