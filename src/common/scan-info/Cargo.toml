@@ -10,7 +10,6 @@ fnv = "1.0.7"
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 typetag = {workspace = true}
-uuid = {workspace = true, features = ["v4"]}
 
 [features]
 python = [

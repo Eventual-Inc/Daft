@@ -1871,7 +1871,6 @@ dependencies = [
  "pyo3",
  "serde",
  "typetag",
- "uuid 1.17.0",
 ]
 
 [[package]]
