@@ -10,6 +10,6 @@ python = ["dep:pyo3"]
 workspace = true
 
 [package]
-edition = "2021"
 name = "common-progress-bar"
-version = "0.1.0"
+edition.workspace = true
+version.workspace = true

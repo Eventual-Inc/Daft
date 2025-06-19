@@ -1827,7 +1827,7 @@ dependencies = [
 
 [[package]]
 name = "common-progress-bar"
-version = "0.1.0"
+version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "indicatif",
