@@ -138,7 +138,7 @@ pub mod rel {
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        Ok(Distinct { plan_id: None, input, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Distinct { plan_id: None, input, stats_state: stats::StatsState::NotMaterialized, columns: None })
     }
 
     /// Creates a new concat relational operator.
