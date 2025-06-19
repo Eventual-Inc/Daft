@@ -1826,6 +1826,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-progress-bar"
+version = "0.1.0"
+dependencies = [
+ "common-error",
+ "indicatif",
+ "pyo3",
+]
+
+[[package]]
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2812,6 +2821,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-progress-bar",
  "common-runtime",
  "common-scan-info",
  "common-system-info",
