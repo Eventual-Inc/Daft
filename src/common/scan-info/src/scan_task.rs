@@ -37,7 +37,7 @@ pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
     fn pushdowns(&self) -> &Pushdowns;
     #[must_use]
     fn schema(&self) -> SchemaRef;
-    fn get_file_path(&self) -> Option<String>;
+    fn get_file_paths(&self) -> Vec<String>;
 }
 
 pub type ScanTaskLikeRef = Arc<dyn ScanTaskLike>;

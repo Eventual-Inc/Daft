@@ -5,7 +5,7 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Shard, Sort as LogicalSort, Source, TopN as LogicalTopN},
+    ops::{Shard, Source},
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -38,7 +38,22 @@ impl PushDownShard {
                     // Naive commuting with unary ops.
                     //
                     // Shard-UnaryOp -> UnaryOp-Shard
-                    LogicalPlan::Repartition(_) | LogicalPlan::Project(_) => {
+                    LogicalPlan::Project(_)
+                    | LogicalPlan::ActorPoolProject(_)
+                    | LogicalPlan::Filter(_)
+                    | LogicalPlan::Limit(_)
+                    | LogicalPlan::Explode(_)
+                    | LogicalPlan::Unpivot(_)
+                    | LogicalPlan::Sort(_)
+                    | LogicalPlan::Repartition(_)
+                    | LogicalPlan::Distinct(_)
+                    | LogicalPlan::Aggregate(_)
+                    | LogicalPlan::Pivot(_)
+                    | LogicalPlan::Sink(_)
+                    | LogicalPlan::Sample(_)
+                    | LogicalPlan::MonotonicallyIncreasingId(_)
+                    | LogicalPlan::Window(_)
+                    | LogicalPlan::TopN(_) => {
                         let new_shard = plan
                             .with_new_children(&[input.arc_children()[0].clone()])
                             .into();
@@ -82,7 +97,10 @@ impl PushDownShard {
                     LogicalPlan::Shard(_) => Err(DaftError::ValueError(
                         "Shards cannot be folded together".to_string(),
                     )),
-                    _ => Ok(Transformed::no(plan)),
+                    op => Err(DaftError::ValueError(format!(
+                        "Shard cannot exist above the non-unary {} operator",
+                        op.name()
+                    ))),
                 }
             }
             _ => Ok(Transformed::no(plan)),

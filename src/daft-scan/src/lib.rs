@@ -492,11 +492,14 @@ impl ScanTaskLike for ScanTask {
         self.schema.clone()
     }
 
-    fn get_file_path(&self) -> Option<String> {
-        self.sources.first().and_then(|s| match s {
-            DataSource::File { path, .. } => Some(path.clone()),
-            _ => None,
-        })
+    fn get_file_paths(&self) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter_map(|s| match s {
+                DataSource::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
     }
 }
 

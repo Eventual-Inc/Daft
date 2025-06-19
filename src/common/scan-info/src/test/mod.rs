@@ -15,6 +15,7 @@ use crate::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeR
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Hash)]
 struct DummyScanTask {
+    pub file_paths: Vec<String>,
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
     pub num_rows: Option<usize>,
@@ -81,8 +82,8 @@ impl ScanTaskLike for DummyScanTask {
         self.schema.clone()
     }
 
-    fn get_file_path(&self) -> Option<String> {
-        None
+    fn get_file_paths(&self) -> Vec<String> {
+        self.file_paths.clone()
     }
 }
 
@@ -90,9 +91,11 @@ impl DisplayAs for DummyScanTask {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         format!(
             "DummyScanTask:
+File Paths: [{file_paths}]
 Schema: {schema}
 Pushdowns: {pushdowns}
 ",
+            file_paths = self.file_paths.join(", "),
             schema = self.schema,
             pushdowns = self.pushdowns.display_as(level)
         )
@@ -140,14 +143,16 @@ impl ScanOperator for DummyScanOperator {
     }
 
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
-        let scan_task = Arc::new(DummyScanTask {
-            schema: self.schema.clone(),
-            pushdowns,
-            num_rows: self.num_rows_per_task,
-        });
-
         Ok((0..self.num_scan_tasks)
-            .map(|_| scan_task.clone() as Arc<dyn ScanTaskLike>)
+            .map(|i| {
+                let scan_task = Arc::new(DummyScanTask {
+                    file_paths: vec![format!("dummy_file_{}.txt", i)],
+                    schema: self.schema.clone(),
+                    pushdowns: pushdowns.clone(),
+                    num_rows: self.num_rows_per_task,
+                });
+                scan_task as Arc<dyn ScanTaskLike>
+            })
             .collect())
     }
 }
