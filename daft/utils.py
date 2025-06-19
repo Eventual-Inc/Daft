@@ -53,7 +53,9 @@ def pydict_to_rows(pydict: dict[str, list[Any]]) -> list[frozenset[tuple[str, An
     ]
 
 
-def freeze(input: dict[Any, Any] | list[Any] | Any) -> frozenset[Any] | tuple[Any, ...] | Any:
+def freeze(
+    input: dict[Any, Any] | list[Any] | Any,
+) -> frozenset[Any] | tuple[Any, ...] | Any:
     """Freezes mutable containers for equality comparison."""
     if isinstance(input, dict):
         return frozenset((key, freeze(value)) for key, value in input.items())
@@ -101,11 +103,8 @@ def map_operator_arrow_semantics(
 
 
 def pyarrow_supports_fixed_shape_tensor() -> bool:
-    """Whether pyarrow supports the fixed_shape_tensor canonical extension type.
-
-    We also check if the version is >= 13.0.0 because there is a bug when using the canonical extension type on < 13.0.0 with ray.
-    """
-    return hasattr(pa, "fixed_shape_tensor") and get_arrow_version() >= (13, 0, 0)
+    """Whether pyarrow supports the fixed_shape_tensor canonical extension type."""
+    return hasattr(pa, "fixed_shape_tensor")
 
 
 # Column utility functions
