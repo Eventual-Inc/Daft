@@ -208,8 +208,9 @@ class LogicalPlanBuilder:
         builder = builder.select([first_col.alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
-    def distinct(self) -> LogicalPlanBuilder:
-        builder = self._builder.distinct()
+    def distinct(self, on: list[Expression]) -> LogicalPlanBuilder:
+        on_pyexprs = [expr._expr for expr in on]
+        builder = self._builder.distinct(on_pyexprs)
         return LogicalPlanBuilder(builder)
 
     def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder:

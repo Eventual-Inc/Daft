@@ -8,9 +8,12 @@ use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+        BoundColumn,
+    },
     functions::python::get_resource_request,
-    WindowExpr, WindowFrame,
+    Column, WindowExpr, WindowFrame,
 };
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
@@ -46,6 +49,7 @@ pub enum LocalPhysicalPlan {
     // ReduceMerge(ReduceMerge),
     UnGroupedAggregate(UnGroupedAggregate),
     HashAggregate(HashAggregate),
+    Dedup(Dedup),
     Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
@@ -97,6 +101,7 @@ impl LocalPhysicalPlan {
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
             | Self::HashAggregate(HashAggregate { stats_state, .. })
+            | Self::Dedup(Dedup { stats_state, .. })
             | Self::Pivot(Pivot { stats_state, .. })
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
@@ -281,6 +286,21 @@ impl LocalPhysicalPlan {
             input,
             aggregations,
             group_by,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub(crate) fn dedup(
+        input: LocalPhysicalPlanRef,
+        columns: Vec<BoundExpr>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::Dedup(Dedup {
+            input,
+            columns,
             schema,
             stats_state,
         })
@@ -632,6 +652,7 @@ impl LocalPhysicalPlan {
             | Self::ActorPoolProject(ActorPoolProject { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
+            | Self::Dedup(Dedup { schema, .. })
             | Self::Pivot(Pivot { schema, .. })
             | Self::Sort(Sort { schema, .. })
             | Self::TopN(TopN { schema, .. })
@@ -706,6 +727,7 @@ impl LocalPhysicalPlan {
             | Self::ActorPoolProject(ActorPoolProject { input, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { input, .. })
             | Self::HashAggregate(HashAggregate { input, .. })
+            | Self::Dedup(Dedup { input, .. })
             | Self::Pivot(Pivot { input, .. })
             | Self::Sort(Sort { input, .. })
             | Self::Sample(Sample { input, .. })
@@ -748,6 +770,7 @@ impl LocalPhysicalPlan {
                 Self::ActorPoolProject(ActorPoolProject {  projection, schema, .. }) => Self::actor_pool_project(new_child.clone(), projection.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::UnGroupedAggregate(UnGroupedAggregate {  aggregations, schema, .. }) => Self::ungrouped_aggregate(new_child.clone(), aggregations.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::HashAggregate(HashAggregate {  aggregations, group_by, schema, .. }) => Self::hash_aggregate(new_child.clone(), aggregations.clone(), group_by.clone(), schema.clone(), StatsState::NotMaterialized),
+                Self::Dedup(Dedup {  columns, schema, .. }) => Self::dedup(new_child.clone(), columns.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Pivot(Pivot {  group_by, pivot_column, value_column, aggregation, names, schema, .. }) => Self::pivot(new_child.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.clone(), names.clone(), schema.clone(), StatsState::NotMaterialized),
                 Self::Sort(Sort {  sort_by, descending, nulls_first, schema, .. }) => Self::sort(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), StatsState::NotMaterialized),
                 Self::Sample(Sample {  fraction, with_replacement, seed, schema, .. }) => Self::sample(new_child.clone(), *fraction, *with_replacement, *seed, StatsState::NotMaterialized),
@@ -956,6 +979,14 @@ pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<BoundAggExpr>,
     pub group_by: Vec<BoundExpr>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Dedup {
+    pub input: LocalPhysicalPlanRef,
+    pub columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

@@ -143,15 +143,15 @@ impl SparkAnalyzer<'_> {
             ..
         } = deduplicate;
 
-        if !column_names.is_empty() {
-            not_yet_implemented!("Deduplicate with column names");
-        }
+        let columns = if column_names.is_empty() {
+            None
+        } else {
+            Some(column_names.into_iter().map(unresolved_col).collect())
+        };
 
         let input = input.required("input")?;
-
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
-
-        plan.distinct().map_err(Into::into)
+        plan.distinct(columns).map_err(Into::into)
     }
 
     async fn sort(&self, sort: Sort) -> ConnectResult<LogicalPlanBuilder> {

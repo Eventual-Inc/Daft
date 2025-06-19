@@ -260,6 +260,10 @@ class MicroPartition:
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
         return MicroPartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
 
+    def dedup(self, columns: ExpressionsProjection) -> MicroPartition:
+        columns_pyexprs = [e._expr for e in columns]
+        return MicroPartition._from_pymicropartition(self._micropartition.dedup(columns_pyexprs))
+
     def pivot(
         self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
     ) -> MicroPartition:
