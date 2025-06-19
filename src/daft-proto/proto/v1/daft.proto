@@ -1,0 +1,779 @@
+syntax = "proto3";
+
+package daft.v1;
+
+// https://en.wikipedia.org/wiki/Unit_type
+message Unit {};
+
+// -------------------------------------------------------------
+//
+//                          SCHEMA
+//
+// -------------------------------------------------------------
+
+message Schema {
+  repeated Field fields = 1;
+}
+
+message DataType {
+  oneof variant {
+    Unit null = 1;
+    Unit boolean = 2;
+    Unit int8 = 3;
+    Unit int16 = 4;
+    Unit int32 = 5;
+    Unit int64 = 6;
+    Unit uint8 = 7;
+    Unit uint16 = 8;
+    Unit uint32 = 9;
+    Unit uint64 = 10;
+    Unit float32 = 11;
+    Unit float64 = 12;
+    Decimal128 decimal128 = 13;
+    Timestamp timestamp = 14;
+    Unit date = 15;
+    Time time = 16;
+    Duration duration = 17;
+    Unit interval = 18;
+    Unit binary = 19;
+    FixedSizeBinary fixed_size_binary = 20;
+    Unit utf8 = 21;
+    FixedSizeList fixed_size_list = 22;
+    List list = 23;
+    Struct struct = 24;
+    Map map = 25;
+    Extension extension = 26;
+    Embedding embedding = 27;
+    Image image = 28;
+    FixedShapeImage fixed_shape_image = 29;
+    Tensor tensor = 30;
+    FixedShapeTensor fixed_shape_tensor = 31;
+    SparseTensor sparse_tensor = 32;
+    FixedShapeSparseTensor fixed_shape_sparse_tensor = 33;
+    Unit python = 34;
+    Unit unknown = 35;
+  }
+
+  message Decimal128 {
+    uint64 precision = 1;
+    uint64 scale = 2;
+  }
+
+  message Timestamp {
+    TimeUnit unit = 1;
+    optional string timezone = 2;
+  }
+
+  message Time {
+    TimeUnit unit = 1;
+  }
+
+  message Duration {
+    TimeUnit unit = 1;
+  }
+
+  message FixedSizeBinary {
+    uint64 size = 1;
+  }
+
+  message FixedSizeList {
+    DataType element_type = 1;
+    uint64 size = 2;
+  }
+
+  message List {
+    DataType element_type = 1;
+  }
+
+  message Struct {
+    repeated Field fields = 1;
+  }
+
+  message Map {
+    DataType key_type = 1;
+    DataType value_type = 2;
+  }
+
+  message Extension {
+    string name = 1;
+    DataType data_type = 2;
+    optional string metadata = 3;
+  }
+
+  message Embedding {
+    DataType element_type = 1;
+    uint64 size = 2;
+  }
+
+  message Image {
+    optional ImageMode mode = 1;
+  }
+
+  message FixedShapeImage {
+    ImageMode mode = 1;
+    uint32 height = 2;
+    uint32 width = 3;
+  }
+
+  message Tensor {
+    DataType element_type = 1;
+  }
+
+  message FixedShapeTensor {
+    DataType element_type = 1;
+    repeated uint64 shape = 2;
+  }
+
+  message SparseTensor {
+    DataType element_type = 1;
+    bool indices_offset = 2;
+  }
+
+  message FixedShapeSparseTensor {
+    DataType element_type = 1;
+    repeated uint64 shape = 2;
+    bool indices_offset = 3;
+  }
+}
+
+enum TimeUnit {
+  TIME_UNIT_UNSPECIFIED = 0;
+  TIME_UNIT_NANOSECONDS = 1;
+  TIME_UNIT_MICROSECONDS = 2;
+  TIME_UNIT_SECONDS = 3;
+}
+
+enum ImageMode {
+  IMAGE_MODE_UNSPECIFIED = 0;
+  IMAGE_MODE_L = 1;
+  IMAGE_MODE_LA = 2;
+  IMAGE_MODE_RGB = 3;
+  IMAGE_MODE_RGBA = 4;
+  IMAGE_MODE_L16 = 5;
+  IMAGE_MODE_LA16 = 6;
+  IMAGE_MODE_RGB16 = 7;
+  IMAGE_MODE_RGBA16 = 8;
+  IMAGE_MODE_RGB32F = 9;
+  IMAGE_MODE_RGBA32F = 10;
+}
+
+message Field {
+  string name = 1;
+  DataType data_type = 2;
+}
+
+
+// -------------------------------------------------------------
+//
+//                       EXPRESSIONS
+//
+// -------------------------------------------------------------
+
+message Expr {
+  oneof variant {
+    Column column = 1;
+    Alias alias = 2;
+    Agg agg = 3;
+    BinaryOp binary_op = 4;
+    Cast cast = 5;
+    Function function = 6;
+    Over over = 7;
+    WindowFunction window_function = 8;
+    Not not = 9;
+    IsNull is_null = 10;
+    NotNull not_null = 11;
+    FillNull fill_null = 12;
+    IsIn is_in = 13;
+    Between between = 14;
+    List list = 15;
+    Literal literal = 16;
+    IfElse if_else = 17;
+    Subquery subquery = 18;
+    SubqueryComp subquery_comp = 19;
+    SubqueryIn subquery_in = 20;
+    SubqueryTest subquery_test = 21;
+  }
+}
+
+message Literal {
+  oneof variant {
+    Unit null = 1;
+    bool boolean = 2;
+    string utf8 = 3;
+    bytes binary = 4;
+    FixedSizeBinary fixed_size_binary = 5;
+    int32 int8 = 6;
+    uint32 uint8 = 7;
+    int32 int16 = 8;
+    uint32 uint16 = 9;
+    int32 int32 = 10;
+    uint32 uint32 = 11;
+    int64 int64 = 12;
+    uint64 uint64 = 13;
+    Timestamp timestamp = 14;
+    int32 date = 15;
+    Time time = 16;
+    Duration duration = 17;
+    Interval interval = 18;
+    double float64 = 19;
+    Decimal decimal = 20;
+    Struct struct = 21;
+  }
+
+  message FixedSizeBinary {
+    bytes value = 1;
+    uint64 size = 2;
+  }
+
+  message Timestamp {
+    int64 value = 1;
+    TimeUnit unit = 2;
+    optional string timezone = 3;
+  }
+
+  message Time {
+    int64 value = 1;
+    TimeUnit unit = 2;
+  }
+
+  message Duration {
+    int64 value = 1;
+    TimeUnit unit = 2;
+  }
+
+  message Interval {
+    int32 months = 1;
+    int32 days = 2;
+    int64 nanoseconds = 3;
+  }
+
+  message Decimal {
+    string value = 1;
+  }
+  message Struct {
+    repeated Field fields = 1;
+    message Field {
+      string name = 1;
+      Literal value = 2;
+    }
+  }
+}
+
+message Column {
+  string name = 1;
+  optional uint64 qualifier = 2;
+}
+
+message Alias {
+  Expr expr = 1;
+  string name = 2;
+}
+
+message BinaryOp {
+  Operator op = 1;
+  Expr lhs = 2;
+  Expr rhs = 3;
+}
+
+message Cast {
+  Expr expr = 1;
+  DataType dtype = 2;
+}
+
+message Not {
+  Expr expr = 1;
+}
+
+message IsNull {
+  Expr expr = 1;
+}
+
+message NotNull {
+  Expr expr = 1;
+}
+
+message FillNull {
+  Expr expr = 1;
+  Expr fill_value = 2;
+}
+
+message IsIn {
+  Expr expr = 1;
+  repeated Expr items = 2;
+}
+
+message Between {
+  Expr expr = 1;
+  Expr lower = 2;
+  Expr upper = 3;
+}
+
+message List {
+  repeated Expr items = 1;
+}
+
+message IfElse {
+  Expr if_true = 1;
+  Expr if_false = 2;
+  Expr predicate = 3;
+}
+
+message Function {
+  oneof descriptor {
+    RsFunction rs = 1;
+    PyFunction py = 2;
+  }
+  Args args = 3;
+
+  // For rust functions (builtins), we only have simple names.
+  message RsFunction {
+    string name = 1;
+  }
+
+  // TODO: Daft does not handle static parameter binding.
+  message Args {
+    repeated Arg args = 1;
+  }
+
+  // TODO: Update param to required after static parameter binding is implemented.
+  message Arg {
+    optional string param = 1;
+    Expr expr = 2;
+  }
+
+  // For python functions (UDF), we need the pickled object and bound args.
+  message PyFunction {
+    string name = 1;
+    uint64 arity = 2;
+    DataType return_type = 3;
+    //--
+    PyObject callable = 4;
+    PyObject callable_init_args = 5; // the __init__ args for runtime initialization
+    PyObject callable_call_args = 6; // the (possibly) closed args from decoration
+    //--
+    optional uint64 concurrency = 7;
+    optional uint64 batch_size = 8;
+    optional uint64 num_cpus = 9;
+    optional uint64 num_gpus = 10;
+    optional uint64 max_memory_bytes = 11;
+  }
+}
+
+message Over {
+  WindowExpr expr = 1;
+  WindowSpec spec = 2;
+}
+
+message WindowFunction {
+  WindowExpr expr = 1;
+}
+
+message WindowExpr {
+  oneof variant {
+    Agg agg = 1;
+    bool row_number = 2;
+    bool rank = 3;
+    bool dense_rank = 4;
+    Offset offset = 5;
+  }
+}
+
+message Offset {
+  Expr input = 1;
+  int32 offset = 2;
+  optional Expr default = 3;
+}
+
+message WindowSpec {
+  repeated Expr partition_by = 1;
+  repeated SortOrder order_by = 2;
+  optional WindowFrame frame = 3;
+}
+
+message SortOrder {
+  Expr expr = 1;
+  bool ascending = 2;
+  bool nulls_first = 3;
+}
+
+message WindowFrame {
+  FrameType type = 1;
+  optional Expr start = 2;
+  optional Expr end = 3;
+}
+
+enum FrameType {
+  FRAME_TYPE_UNSPECIFIED = 0;
+  FRAME_TYPE_ROWS = 1;
+  FRAME_TYPE_RANGE = 2;
+  FRAME_TYPE_GROUPS = 3;
+}
+
+// Daft currently only has scalar subquery coercion so just an input is fine for now.
+message Subquery {
+  Rel input = 1;
+}
+
+// See SQL `<comparison predicate>` and `<quantified comparison predicate>`
+message SubqueryComp {
+  Rel input = 1;
+  repeated Expr args = 2;
+  Comparison comparison = 3;
+  Quantifier quantifier = 4;
+}
+
+// SQL `<comp op>` for use in the `<quantified comparison predicate`
+enum Comparison {
+  COMPARISON_UNSPECIFIED = 0;
+  COMPARISON_EQ = 1;
+  COMPARISON_NE = 2;
+  COMPARISON_LT = 3;
+  COMPARISON_LE = 4;
+  COMPARISON_GT = 5;
+  COMPARISON_GE = 6;
+}
+
+// See SQL `<quantifier>` for use in the `<quantified comparison predicate>`
+enum Quantifier {
+  QUANTIFIER_UNSPECIFIED = 0;
+  QUANTIFIER_ANY = 1;
+  QUANTIFIER_ALL = 2;
+  QUANTIFIER_SOME = 3;
+}
+
+// See SQL `<in predicate>`
+message SubqueryIn {
+  Rel input = 1;
+  repeated Expr args = 2;
+}
+
+// See SQL `<exists predicate>` and `<unique predicate>`.
+message SubqueryTest {
+  Rel input = 1;
+  Test test = 2;
+
+  // EXISTS and UNIQUE are defined by SQL.
+  enum Test {
+    TEST_UNSPECIFIED = 0;
+    TEST_EXISTS = 1;
+    TEST_UNIQUE = 2;
+  }
+}
+
+// Daft models binary operators as their own type, but this should be generalized at some point.
+enum Operator {
+  OPERATOR_UNSPECIFIED = 0;
+  OPERATOR_EQ = 1;
+  OPERATOR_EQ_NULL_SAFE = 2;
+  OPERATOR_NOT_EQ = 3;
+  OPERATOR_LT = 4;
+  OPERATOR_LT_EQ = 5;
+  OPERATOR_GT = 6;
+  OPERATOR_GT_EQ = 7;
+  OPERATOR_PLUS = 8;
+  OPERATOR_MINUS = 9;
+  OPERATOR_MULTIPLY = 10;
+  OPERATOR_TRUE_DIVIDE = 11;
+  OPERATOR_FLOOR_DIVIDE = 12;
+  OPERATOR_MODULUS = 13;
+  OPERATOR_AND = 14;
+  OPERATOR_OR = 15;
+  OPERATOR_XOR = 16;
+  OPERATOR_SHIFT_LEFT = 17;
+  OPERATOR_SHIFT_RIGHT = 18;
+}
+
+enum JoinSide {
+  JOIN_SIDE_UNSPECIFIED = 0;
+  JOIN_SIDE_LEFT = 1;
+  JOIN_SIDE_RIGHT = 2;
+}
+
+
+// -------------------------------------------------------------
+//
+//                         RELATIONS
+//
+// -------------------------------------------------------------
+
+message Rel {
+  oneof variant {
+    RelAggregate aggregate = 1;
+    RelConcat concat = 2;
+    RelDistinct distinct = 3;
+    RelExcept except = 4;
+    RelFilter filter = 5;
+    RelIntersect intersect = 6;
+    RelJoin join = 7;
+    RelLimit limit = 8;
+    RelProject project = 9;
+    RelSink sink = 10;
+    RelSort sort = 11;
+    RelSource source = 12;
+    RelUnion union = 13;
+    RelWindow window = 14;
+    //--
+    RelActorPoolProject actor_pool_project = 15;
+    RelExplode explode = 16;
+    RelMonotonicallyIncreasingId monotonically_increasing_id = 17;
+    RelPivot pivot = 18;
+    RelRepartition repartition = 19;
+    RelSample sample = 20;
+    RelSubqueryAlias subquery_alias = 21;
+    RelTopN top_n = 22;
+    RelUnpivot unpivot = 23;
+  }
+}
+
+message RelSource {
+  Schema schema = 1;
+  SourceInfo info = 2;
+}
+
+message RelProject {
+  Rel input = 1;
+  repeated Expr projections = 2;
+}
+
+// This does not need to be separate, but it reduces impedance mismatch across the type definitions.
+message RelActorPoolProject {
+  Rel input = 1;
+  repeated Expr projections = 2;
+}
+
+message RelFilter {
+  Rel input = 1;
+  Expr predicate = 2;
+}
+
+message RelLimit {
+  Rel input = 1;
+  uint64 limit = 2;
+}
+
+message RelExplode {
+  Rel input = 1;
+  repeated Expr projections = 2;
+}
+
+message RelUnpivot {
+  Rel input = 1;
+}
+
+message RelSort {
+  Rel input = 1;
+}
+
+message RelRepartition {
+  Rel input = 1;
+}
+
+message RelDistinct {
+  Rel input = 1;
+}
+
+message RelAggregate {
+  Rel input = 1;
+  repeated Measure measures = 2;
+  repeated Expr groups = 3;
+}
+
+message RelPivot {
+  Rel input = 1;
+}
+
+message RelConcat {
+  Rel lhs = 1;
+  Rel rhs = 2;
+}
+
+message RelUnion {
+  Rel lhs = 1;
+  Rel rhs = 2;
+  bool is_all = 3;
+  bool is_by_name = 4;
+}
+
+message RelIntersect {
+  Rel lhs = 1;
+  Rel rhs = 2;
+  bool is_all = 3;
+}
+
+message RelExcept {
+  Rel lhs = 1;
+  Rel rhs = 2;
+  bool is_all = 3;
+}
+
+message RelJoin {
+  Rel lhs = 1;
+  Rel rhs = 2;
+}
+
+message RelSink {
+  Rel input = 1;
+}
+
+message RelSample {
+  Rel input = 1;
+}
+
+message RelMonotonicallyIncreasingId {
+  Rel input = 1;
+}
+
+message RelSubqueryAlias {
+  Rel input = 1;
+}
+
+message RelWindow {
+  Rel input = 1;
+}
+
+message RelTopN {
+  Rel input = 1;
+}
+
+message SourceInfo {
+  oneof variant {
+    CacheInfo cache_info = 1;
+    ScanInfo scan_info = 2;
+  }
+
+  message CacheInfo {
+    Schema schema = 1;
+    string cache_key = 2;
+    // cache entry metadata
+    uint64 num_partitions = 3;
+    uint64 num_rows = 4;
+    uint64 size_bytes = 5;
+  }
+
+  message ScanInfo {
+    Schema schema = 1;
+    PartitionFields partitions = 2;
+    Pushdowns pushdowns = 3;
+    ScanTasks tasks = 4;
+  }
+}
+
+message PartitionFields {
+  repeated PartitionField partitions = 1;
+}
+
+message PartitionField {
+  Field field = 1;
+  optional Field source = 2;
+  optional PartitionTransform transform = 3;
+}
+
+message PartitionTransform {
+  oneof variant {
+    Unit identity = 1;
+    Unit year = 2;
+    Unit month = 4;
+    Unit day = 5;
+    Unit hour = 6;
+    Unit void = 7;
+    IcebergBucket iceberg_bucket = 8;
+    IcebergTruncate iceberg_truncate = 9;
+  }
+
+  message IcebergBucket {
+    uint64 buckets = 1;
+  }
+
+  message IcebergTruncate {
+    uint64 width = 2;
+  }
+}
+
+message Pushdowns {
+  // This modeling inherently limits the ability to express composite predicates, and Clark acknowledge this limitation during implementation.
+  // see: TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
+  optional Expr filter = 1;
+  optional Expr partition_filter = 2;
+  optional Columns columns = 3;
+  optional uint64 limit = 4;
+
+  // Columns in pushdowns are not bound in the representation.
+  message Columns {
+    repeated string columns = 1;
+  }
+}
+
+// ScanTasks is just typed list.
+message ScanTasks {
+  repeated ScanTask tasks = 1;
+}
+
+// ScanTask definition could be added later, it's a lot of work.
+message ScanTask {
+  bytes task = 1; // bincode
+}
+
+// See SQL <aggregate function> for details on measure, we will have a filter field at some point.
+message Measure {
+  Agg agg = 1;
+  // The logical plans reify bindings as alias expressions.
+  // This is not desirable and does not accurately model the domain, but
+  // it's fine and I can re-create the binding alias with this optional field.
+  optional string alias = 2;
+  // optional Expr filter = 3;
+}
+
+// See SQL-99 <aggregate function> for variants.
+message Agg {
+  oneof variant {
+    SetFunction set_function = 1;
+    //-- special forms
+    ApproxPercentile approx_percentile = 2;
+    ApproxSketch approx_sketch = 3;
+    MergeSketch merge_sketch = 4;
+    MapGroups map_groups = 5;
+  }
+
+  // avg, max, min, sum, stddev, skew
+  // any, every, some, bool_and, bool_or
+  // count, count_all, count_nulls
+  // any_value
+  // agg_list, agg_set, agg_concat
+  message SetFunction {
+    string name = 1;
+    repeated Expr args = 2;
+    bool is_all = 3;
+  }
+
+  message ApproxPercentile {
+    Expr expr = 1;
+    repeated double percentiles = 2;
+    bool force_list_output = 3;
+  }
+
+  message ApproxSketch {
+    Expr expr = 1;
+    SketchType sketch_type = 2;
+  }
+
+  message MergeSketch {
+    Expr expr = 1;
+    SketchType sketch_type = 2;
+  }
+
+  enum SketchType {
+    SKETCH_TYPE_UNSPECIFIED = 0;
+    SKETCH_TYPE_DD = 1;
+    SKETCH_TYPE_HLL = 2;
+  }
+
+  message MapGroups {
+    Expr func = 1;
+    repeated Expr inputs = 2;
+  }
+}
+
+/// A type to leverage PyObjectWrapper's custom bincode serde.
+message PyObject {
+  bytes object = 1; // bincode
+}

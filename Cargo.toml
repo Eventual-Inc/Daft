@@ -33,6 +33,7 @@ daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = fals
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
+daft-ir = {path = "src/daft-ir", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-local-plan = {path = "src/daft-local-plan", default-features = false}
@@ -41,6 +42,7 @@ daft-micropartition = {path = "src/daft-micropartition", default-features = fals
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-physical-plan = {path = "src/daft-physical-plan", default-features = false}
+daft-proto = {path = "src/daft-proto", default-features = false}
 daft-py-runners = {path = "src/daft-py-runners", default-features = false}
 daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
@@ -85,6 +87,7 @@ python = [
   "daft-functions/python",
   "daft-image/python",
   "daft-io/python",
+  "daft-ir/python",
   "daft-json/python",
   "daft-local-execution/python",
   "daft-local-plan/python",
@@ -185,6 +188,7 @@ members = [
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
+  "src/daft-ir",
   "src/daft-json",
   "src/daft-local-execution",
   "src/daft-local-plan",
@@ -192,6 +196,7 @@ members = [
   "src/daft-micropartition",
   "src/daft-parquet",
   "src/daft-physical-plan",
+  "src/daft-proto",
   "src/daft-py-runners",
   "src/daft-scan",
   "src/daft-scheduler",
@@ -241,9 +246,12 @@ daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
 daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
+daft-io = {path = "src/daft-io"}
+daft-ir = {path = "src/daft-ir"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}
+daft-proto = {path = "src/daft-proto"}
 daft-py-runners = {path = "src/daft-py-runners"}
 daft-recordbatch = {path = "src/daft-recordbatch"}
 daft-scan = {path = "src/daft-scan"}
@@ -270,6 +278,8 @@ parking_lot = "0.12.3"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.5.0"
+prost = "0.13.5"
+prost-types = "0.13.5"
 rand = "^0.8"
 rayon = "1.10.0"
 regex = "1.10.4"
@@ -299,6 +309,7 @@ tokio = {version = "1.37.0", features = [
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
 tonic = "0.12.3"
+tonic-build = "0.12.3"
 tracing = "0.1"
 typed-builder = "0.20.0"
 typetag = "0.2.18"
