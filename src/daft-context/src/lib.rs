@@ -1,5 +1,5 @@
 #![feature(mapped_lock_guards)]
-use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
@@ -13,13 +13,6 @@ use pyo3::prelude::*;
 mod python;
 
 pub mod partition_cache;
-/// Wrapper around the ContextState to provide a thread-safe interface.
-/// IMPORTANT: Do not create this directly, use `get_context` instead.
-/// This is a singleton, and should only be created once.
-#[derive(Debug, Clone)]
-pub struct DaftContext {
-    state: Arc<RwLock<ContextState>>,
-}
 
 #[derive(Debug)]
 struct ContextState {
@@ -81,62 +74,93 @@ impl ContextState {
     }
 }
 
+/// Wrapper around the ContextState to provide a thread-safe interface.
+/// IMPORTANT: Do not create this directly, use `get_context` instead.
+/// This is a singleton, and should only be created once.
+#[derive(Debug, Clone)]
+pub struct DaftContext {
+    /// Private state field - access only through state() and state_mut() methods
+    state: Arc<RwLock<ContextState>>,
+}
+
 #[cfg(feature = "python")]
 impl DaftContext {
     /// Retrieves the runner.
     ///
     /// WARNING: This will set the runner if it has not yet been set.
-    pub fn get_or_create_runner(&self) -> DaftResult<Arc<Runner>> {
-        let mut lock = self
-            .state
-            .write()
-            .expect("Failed to acquire write lock on DaftContext");
-        lock.get_or_create_runner()
+    ///
+    /// This method requires the GIL to be held, as it will need to call into python to create the runner.
+    pub fn get_or_create_runner(&self, py: Python) -> DaftResult<Arc<Runner>> {
+        // DO NOT REMOVE THIS ALLOW_THREADS CALL.
+        // Internally, get_or_create_runner will make a call intpy python that subsequently releases the GIL.
+        // Allowing other threads to acquire this lock, and will cause a deadlock.
+        // See: https://pyo3.rs/main/doc/pyo3/marker/struct.python#deadlocks for a simple example.
+        py.allow_threads(|| self.with_state_mut(|state| state.get_or_create_runner()))
     }
 
     /// Get the current runner, if one has been set.
     pub fn runner(&self) -> Option<Arc<Runner>> {
-        self.state.read().unwrap().runner.clone()
+        self.with_state(|state| state.runner.clone())
     }
 
     /// Set the runner.
     /// IMPORTANT: This can only be set once. Setting it more than once will error.
     pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
-        use Runner::Native;
-        if let Some(current_runner) = self.runner() {
-            match (current_runner.as_ref(), runner.as_ref()) {
-                (Native(_), Native(_)) => Ok(()),
-                _ => Err(DaftError::InternalError(
+        self.with_state_mut(|state| {
+            if state.runner.is_some() {
+                return Err(DaftError::InternalError(
                     "Cannot set runner more than once".to_string(),
-                )),
+                ));
             }
-        } else {
-            let mut state = self.state.write().map_err(|_| {
-                DaftError::InternalError("Failed to acquire write lock on DaftContext".to_string())
-            })?;
-
             state.runner.replace(runner);
             Ok(())
-        }
+        })
     }
 
-    /// Get a read only reference to the state.
-    fn state(&self) -> RwLockReadGuard<'_, ContextState> {
-        self.state.read().unwrap()
+    fn with_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&ContextState) -> R,
+    {
+        let guard = self
+            .state
+            .read()
+            .expect("Failed to acquire read lock on DaftContext");
+        f(&guard)
+    }
+
+    fn with_state_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut ContextState) -> R,
+    {
+        let mut guard = self
+            .state
+            .write()
+            .expect("Failed to acquire write lock on DaftContext");
+        f(&mut guard)
     }
 
     /// get the execution config
     pub fn execution_config(&self) -> Arc<DaftExecutionConfig> {
-        self.state().config.execution.clone()
+        self.with_state(|state| state.config.execution.clone())
     }
 
     /// get the planning config
     pub fn planning_config(&self) -> Arc<DaftPlanningConfig> {
-        self.state().config.planning.clone()
+        self.with_state(|state| state.config.planning.clone())
+    }
+
+    /// set the execution config
+    pub fn set_execution_config(&self, config: Arc<DaftExecutionConfig>) {
+        self.with_state_mut(|state| state.config.execution = config);
+    }
+
+    /// set the planning config
+    pub fn set_planning_config(&self, config: Arc<DaftPlanningConfig>) {
+        self.with_state_mut(|state| state.config.planning = config);
     }
 
     pub fn io_config(&self) -> IOConfig {
-        self.state().config.planning.default_io_config.clone()
+        self.with_state(|state| state.config.planning.default_io_config.clone())
     }
 }
 
@@ -154,11 +178,21 @@ impl DaftContext {
         unimplemented!()
     }
 
-    pub fn state(&self) -> RwLockReadGuard<'_, ContextState> {
+    /// Execute a callback with read access to the state.
+    /// The guard is automatically released when the callback returns.
+    pub fn with_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&ContextState) -> R,
+    {
         unimplemented!()
     }
 
-    pub fn state_mut(&self) -> std::sync::RwLockWriteGuard<'_, ContextState> {
+    /// Execute a callback with mutable access to the state.
+    /// The guard is automatically released when the callback returns.
+    pub fn with_state_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut ContextState) -> R,
+    {
         unimplemented!()
     }
 }

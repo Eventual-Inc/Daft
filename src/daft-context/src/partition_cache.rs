@@ -68,9 +68,9 @@ pub fn put_partition_set_into_cache(
     use daft_micropartition::python::PyMicroPartitionSet;
     use pyo3::{types::PyAnyMethods, Python};
 
-    let runner = get_context().get_or_create_runner()?;
     Python::with_gil(|py| {
         // get runner as python object so we can add a partition to the cache
+        let runner = get_context().get_or_create_runner(py)?;
         let py_runner = runner.to_pyobj(py);
         let py_runner = py_runner.bind(py);
         // TODO chore: replace LocalPartitionSet with MicroPartitionSet
