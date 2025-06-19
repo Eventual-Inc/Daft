@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import uuid
+import warnings
 from collections.abc import Generator, Iterable, Iterator
 from datetime import datetime
 from queue import Full, Queue
@@ -1239,6 +1240,16 @@ class RayRunner(Runner[ray.ObjectRef]):
                     address,
                 )
         else:
+            if address is not None:
+                if not address.endswith("10001"):
+                    warnings.warn(
+                        f"The address to a Ray client server is typically at port :10001, but instead we found: {address}"
+                    )
+                elif address.startswith("ray://"):
+                    warnings.warn(
+                        f"Expected Ray address to start with 'ray://' protocol but found: {address}. Automatically prefixing your address with the protocol to make a Ray connection: ray://{address}"
+                    )
+                    address = "ray://" + address
             ray.init(address=address)
 
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
