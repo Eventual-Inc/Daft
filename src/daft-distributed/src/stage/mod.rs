@@ -97,16 +97,12 @@ impl Stage {
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<RunningStage> {
-        let mut stage_context = StageContext::new(scheduler_handle);
+        let stage_config = StageConfig::new(plan_id, self.id.clone(), config);
+        let mut stage_context = StageExecutionContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let pipeline_node = logical_plan_to_pipeline_node(
-                    plan_id,
-                    self.id.clone(),
-                    plan.clone(),
-                    config,
-                    Arc::new(psets),
-                )?;
+                let pipeline_node =
+                    logical_plan_to_pipeline_node(stage_config, plan.clone(), Arc::new(psets))?;
                 let running_node = pipeline_node.start(&mut stage_context);
                 Ok(RunningStage::new(running_node, stage_context))
             }
@@ -122,15 +118,11 @@ impl Stage {
         bottom_up: bool,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<String> {
+        let stage_config = StageConfig::new(plan_id, self.id.clone(), config);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let pipeline_node = logical_plan_to_pipeline_node(
-                    plan_id,
-                    self.id.clone(),
-                    plan.clone(),
-                    config,
-                    Default::default(),
-                )?;
+                let pipeline_node =
+                    logical_plan_to_pipeline_node(stage_config, plan.clone(), Default::default())?;
                 let display_level = if simple {
                     DisplayLevel::Compact
                 } else {
@@ -153,15 +145,11 @@ impl Stage {
         simple: bool,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<String> {
+        let stage_config = StageConfig::new(plan_id, self.id.clone(), config);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
-                let pipeline_node = logical_plan_to_pipeline_node(
-                    plan_id,
-                    self.id.clone(),
-                    plan.clone(),
-                    config,
-                    Default::default(),
-                )?;
+                let pipeline_node =
+                    logical_plan_to_pipeline_node(stage_config, plan.clone(), Default::default())?;
                 Ok(viz_distributed_pipeline_ascii(
                     pipeline_node.as_ref(),
                     simple,
@@ -180,11 +168,14 @@ impl Stage {
 
 pub(crate) struct RunningStage {
     running_pipeline_node: RunningPipelineNode,
-    stage_context: StageContext,
+    stage_context: StageExecutionContext,
 }
 
 impl RunningStage {
-    fn new(running_pipeline_node: RunningPipelineNode, stage_context: StageContext) -> Self {
+    fn new(
+        running_pipeline_node: RunningPipelineNode,
+        stage_context: StageExecutionContext,
+    ) -> Self {
         Self {
             running_pipeline_node,
             stage_context,
@@ -304,14 +295,29 @@ impl StagePlan {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) struct StageContext {
+#[derive(Debug, Clone)]
+pub(crate) struct StageConfig {
+    pub plan_id: PlanID,
+    pub stage_id: StageID,
+    pub config: Arc<DaftExecutionConfig>,
+}
+
+impl StageConfig {
+    pub fn new(plan_id: PlanID, stage_id: StageID, config: Arc<DaftExecutionConfig>) -> Self {
+        Self {
+            plan_id,
+            stage_id,
+            config,
+        }
+    }
+}
+
+pub(crate) struct StageExecutionContext {
     pub scheduler_handle: SchedulerHandle<SwordfishTask>,
     pub joinset: JoinSet<DaftResult<()>>,
 }
 
-impl StageContext {
-    #[allow(dead_code)]
+impl StageExecutionContext {
     fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
         let joinset = JoinSet::new();
         Self {

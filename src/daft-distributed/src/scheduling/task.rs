@@ -25,7 +25,6 @@ impl TaskResourceRequest {
         self.resource_request.num_cpus().unwrap_or(1.0)
     }
 
-    #[allow(dead_code)]
     pub fn num_gpus(&self) -> f64 {
         self.resource_request.num_gpus().unwrap_or(0.0)
     }
@@ -38,7 +37,7 @@ impl TaskResourceRequest {
 
 pub(crate) type TaskID = Arc<str>;
 pub(crate) type TaskPriority = usize;
-#[allow(dead_code)]
+
 pub(crate) trait Task: Send + Sync + Debug + 'static {
     fn priority(&self) -> TaskPriority;
     fn task_id(&self) -> &str;
@@ -73,7 +72,6 @@ impl<T: Task> From<&T> for TaskDetails {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum SchedulingStrategy {
     Spread,
     // TODO: In the future if we run multiple workers on the same node, we can have a NodeAffinity strategy or a multi-worker affinity strategy
@@ -88,11 +86,9 @@ pub(crate) struct SwordfishTask {
     psets: HashMap<String, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
     context: HashMap<String, String>,
-    notify_token: Option<CancellationToken>,
     task_priority: TaskPriority,
 }
 
-#[allow(dead_code)]
 impl SwordfishTask {
     pub fn new(
         plan: LocalPhysicalPlanRef,
@@ -113,7 +109,6 @@ impl SwordfishTask {
             psets,
             strategy,
             context,
-            notify_token: None,
             task_priority,
         }
     }
@@ -147,10 +142,6 @@ impl SwordfishTask {
         self.plan.name().to_string()
     }
 
-    pub fn notify_token(&self) -> Option<CancellationToken> {
-        self.notify_token.clone()
-    }
-
     pub fn task_priority(&self) -> TaskPriority {
         self.task_priority
     }
@@ -175,7 +166,6 @@ impl Task for SwordfishTask {
 }
 
 pub(crate) trait TaskResultHandle: Send + Sync {
-    #[allow(dead_code)]
     fn get_result(
         &mut self,
     ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static;

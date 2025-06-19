@@ -48,7 +48,6 @@ impl RaySwordfishWorker {
     }
 }
 
-#[allow(dead_code)]
 impl RaySwordfishWorker {
     pub fn mark_task_finished(&self, task_id: &TaskID) {
         self.active_task_details
