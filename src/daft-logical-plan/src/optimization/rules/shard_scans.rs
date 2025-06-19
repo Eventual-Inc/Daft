@@ -79,7 +79,7 @@ mod tests {
         let scan_tasks = scan_operator.to_scan_tasks(Pushdowns::default())?;
 
         let mut file_set = HashSet::new();
-        for i in 1..=world_size {
+        for i in 0..world_size {
             let sharder = Sharder::new(ShardingStrategy::File, world_size, i);
             let filtered = sharder.shard_scan_tasks(&scan_tasks)?;
             for task in filtered {
