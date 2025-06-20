@@ -249,66 +249,31 @@ def test_write_modes_s3_minio_empty_data(
 
 OVERWRITE_PARTITION_TEST_CASES = [
     pytest.param(
-        daft.range(0, 4).with_columns(
-            {
-                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
-                "b": daft.col("id") + 1,
-            }
-        ),
-        daft.range(0, 4).with_columns(
-            {
-                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
-                "b": daft.col("id") + 5,
-            }
-        ),
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("a")),
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("b")),
         {
-            "a": ["a", "a", "b", "b"],
-            "b": [5, 6, 7, 8],
+            "id": [0, 1, 2, 3],
+            "a": ["b", "b", "b", "b"],
         },
         id="overwrite-all",
     ),
     pytest.param(
-        daft.range(0, 4).with_columns(
-            {
-                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
-                "b": daft.col("id") + 1,
-            }
-        ),
-        daft.range(0, 2).with_columns({"a": daft.col("id").map_elements(lambda x: "a"), "b": daft.col("id") + 5}),
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("a")),
+        daft.range(0, 2, partitions=4).with_column("a", daft.lit("b")),
         {
-            "a": ["a", "a", "b", "b"],
-            "b": [5, 6, 3, 4],
+            "id": [0, 1, 2, 3],
+            "a": ["b", "b", "a", "a"],
         },
         id="overwrite-some",
     ),
     pytest.param(
-        daft.range(0, 4).with_columns(
-            {
-                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
-                "b": daft.col("id") + 1,
-            }
-        ),
-        daft.range(2, 6).with_columns(
-            {
-                "a": daft.col("id").map_elements(lambda x: "b" if x < 4 else "c"),
-                "b": daft.col("id") + 7,
-            }
-        ),
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("a")),
+        daft.range(2, 6, partitions=4).with_column("a", daft.lit("b")),
         {
-            "a": ["a", "a", "b", "b", "c", "c"],
-            "b": [1, 2, 9, 10, 11, 12],
+            "id": [0, 1, 2, 3, 4, 5],
+            "a": ["a", "a", "b", "b", "b", "b"],
         },
         id="overwrite-and-append",
-    ),
-    pytest.param(
-        daft.range(0, 10).with_columns({"a": daft.col("id").alias("a"), "b": daft.col("id") + 1}),
-        daft.range(5, 15, partitions=10).with_columns({"a": daft.col("id").alias("a"), "b": daft.col("id") + 2}),
-        {
-            # Up to 4 is not overwritten and b is = a + 1, but 5-14 is overwritten and b is = a + 2
-            "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-            "b": [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-        },
-        id="overwrite-and-append-multiple-partitions",
     ),
 ]
 
@@ -327,9 +292,9 @@ def _run_overwrite_partitions_test(
         path,
         format,
         "overwrite-partitions",
-        ["a"],
+        ["id"],
         io_config,
-        sort_cols=["a", "b"],
+        sort_cols=["id"],
     )
 
     # Check the data
