@@ -2497,7 +2497,6 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
- "common-io-config",
  "common-partitioning",
  "common-py-serde",
  "common-resource-request",

@@ -86,13 +86,17 @@ def arrange_write_mode_test(
 ):
     # Write some existing_data
     write(existing_data, path, format, "append", partition_cols, io_config)
-
+    print(f"Wrote existing data to {path}")
     # Write some new data
     write(new_data, path, format, write_mode, partition_cols, io_config)
+    print(f"Wrote new data to {path}")
 
     # Read back the data
     read_path = path + "/**" if partition_cols is not None else path
-    read_back = read(read_path, format, io_config).collect().sort(sort_cols).to_pydict()
+    read_back = read(read_path, format, io_config).collect()
+    print(f"Read back data from {read_path}")
+    read_back = read_back.sort(sort_cols).to_pydict()
+    print(f"Read back sorted data: {read_back}")
 
     return read_back
 
