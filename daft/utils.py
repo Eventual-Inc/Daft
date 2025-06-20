@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Iterable
 from typing import TYPE_CHECKING, Any, Callable, Union
 
@@ -124,6 +125,28 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
 
     column_iter: Iterable[ColumnInputType] = [columns] if is_column_input(columns) else columns  # type: ignore
     return [col(c) if isinstance(c, str) else c for c in column_iter]
+
+
+def detect_ray_state() -> bool:
+    ray_is_initialized = False
+    ray_is_in_job = False
+    in_ray_worker = False
+    try:
+        import ray
+
+        if ray.is_initialized():
+            ray_is_initialized = True
+            # Check if running inside a Ray worker
+            if ray._private.worker.global_worker.mode == ray.WORKER_MODE:
+                in_ray_worker = True
+        # In a Ray job, Ray might not be initialized yet but we can pick up an environment variable as a heuristic here
+        elif os.getenv("RAY_JOB_ID") is not None:
+            ray_is_in_job = True
+
+    except ImportError:
+        pass
+
+    return not in_ray_worker and (ray_is_initialized or ray_is_in_job)
 
 
 class SyncFromAsyncIterator:

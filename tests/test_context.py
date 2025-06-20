@@ -30,7 +30,10 @@ print(daft.context.get_context()._runner.name)
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", explicit_set_runner_script_native], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", explicit_set_runner_script_native],
+            capture_output=True,
+        )
         assert result.stdout.decode().strip() == "None\nnative"
 
 
@@ -120,7 +123,9 @@ print(daft.context.get_context()._runner.name)
 
     with with_null_env():
         result = subprocess.run(
-            [sys.executable, "-c", autodetect_script], capture_output=True, env={"DAFT_RUNNER": daft_runner_envvar}
+            [sys.executable, "-c", autodetect_script],
+            capture_output=True,
+            env={"DAFT_RUNNER": daft_runner_envvar},
         )
         assert result.stdout.decode().strip() == daft_runner_envvar
 
@@ -135,9 +140,33 @@ print(daft.context.get_context()._runner.name)
 
     with with_null_env():
         result = subprocess.run(
-            [sys.executable, "-c", autodetect_script], capture_output=True, env={"RAY_JOB_ID": "dummy"}
+            [sys.executable, "-c", autodetect_script],
+            capture_output=True,
+            env={"RAY_JOB_ID": "dummy"},
         )
         assert result.stdout.decode().strip() == "ray"
+
+
+def test_get_or_create_runner_from_multiple_threads():
+    concurrent_get_or_create_runner_script = """
+import concurrent.futures
+from daft.context import get_context
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    futures = [
+        executor.submit(lambda: get_context().get_or_create_runner()) for _ in range(10)
+    ]
+
+    results = [future.result() for future in concurrent.futures.as_completed(futures)]
+    print("ok")
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", concurrent_get_or_create_runner_script],
+            capture_output=True,
+        )
+        assert result.stdout.decode().strip() == "ok"
 
 
 # TODO: Figure out why these tests are failing for Py3.8
@@ -203,6 +232,9 @@ daft.context.set_runner_ray()
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", cannot_set_runner_ray_after_py_script], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", cannot_set_runner_ray_after_py_script],
+            capture_output=True,
+        )
         assert result.stdout.decode().strip() in {"native"}
         assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
