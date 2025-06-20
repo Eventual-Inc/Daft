@@ -593,16 +593,10 @@ impl LocalPhysicalPlan {
 
     pub fn commit_write(
         input: LocalPhysicalPlanRef,
+        file_schema: SchemaRef,
+        file_info: OutputFileInfo<BoundExpr>,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
-        let (file_schema, file_info) = match input.as_ref() {
-            Self::PhysicalWrite(PhysicalWrite {
-                file_schema,
-                file_info,
-                ..
-            }) => (file_schema.clone(), file_info.clone()),
-            _ => panic!("CommitWrite must be the followed by a PhysicalWrite"),
-        };
         Self::CommitWrite(CommitWrite {
             input,
             file_schema,
@@ -809,7 +803,7 @@ impl LocalPhysicalPlan {
                 Self::WindowOrderByOnly(WindowOrderByOnly {  order_by, descending, schema, functions, aliases, .. }) => Self::window_order_by_only(new_child.clone(), order_by.clone(), descending.clone(), schema.clone(), StatsState::NotMaterialized, functions.clone(), aliases.clone()),
                 Self::TopN(TopN {  sort_by, descending, nulls_first, limit, schema, .. }) => Self::top_n(new_child.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, StatsState::NotMaterialized),
                 Self::PhysicalWrite(PhysicalWrite {  data_schema, file_schema, file_info, stats_state, .. }) => Self::physical_write(new_child.clone(), data_schema.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
-                Self::CommitWrite(CommitWrite {  input, stats_state, .. }) => Self::commit_write(new_child.clone(), stats_state.clone()),
+                Self::CommitWrite(CommitWrite {  input, stats_state, file_schema, file_info, .. }) => Self::commit_write(new_child.clone(), file_schema.clone(), file_info.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]
                 Self::DataSink(DataSink {  input, data_sink_info, file_schema, stats_state, .. }) => Self::data_sink(new_child.clone(), data_sink_info.clone(), file_schema.clone(), stats_state.clone()),
                 #[cfg(feature = "python")]

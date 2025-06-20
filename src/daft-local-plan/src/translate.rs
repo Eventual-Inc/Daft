@@ -374,7 +374,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         input,
                         data_schema,
                         sink.schema.clone(),
-                        bound_info,
+                        bound_info.clone(),
                         sink.stats_state.clone(),
                     );
                     if matches!(
@@ -383,6 +383,8 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     ) {
                         Ok(LocalPhysicalPlan::commit_write(
                             physical_write,
+                            sink.schema.clone(),
+                            bound_info,
                             sink.stats_state.clone(),
                         ))
                     } else {
