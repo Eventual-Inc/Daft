@@ -32,7 +32,7 @@ impl PyDaftContext {
     }
 
     pub fn get_or_create_runner(&self, py: Python) -> PyResult<PyObject> {
-        let runner = self.inner.get_or_create_runner(py)?;
+        let runner = py.allow_threads(|| self.inner.get_or_create_runner())?;
 
         match runner.as_ref() {
             Runner::Ray(ray) => {
@@ -46,40 +46,40 @@ impl PyDaftContext {
         }
     }
     #[getter(_daft_execution_config)]
-    pub fn get_daft_execution_config(&self) -> PyResult<PyDaftExecutionConfig> {
-        let config = self.inner.execution_config();
+    pub fn get_daft_execution_config(&self, py: Python) -> PyResult<PyDaftExecutionConfig> {
+        let config = py.allow_threads(|| self.inner.execution_config());
         let config = PyDaftExecutionConfig { config };
         Ok(config)
     }
 
     #[getter(_daft_planning_config)]
-    pub fn get_daft_planning_config(&self) -> PyResult<PyDaftPlanningConfig> {
-        let config = self.inner.planning_config();
+    pub fn get_daft_planning_config(&self, py: Python) -> PyResult<PyDaftPlanningConfig> {
+        let config = py.allow_threads(|| self.inner.planning_config());
         let config = PyDaftPlanningConfig { config };
         Ok(config)
     }
 
     #[setter(_daft_execution_config)]
-    pub fn set_daft_execution_config(&self, config: PyDaftExecutionConfig) {
-        self.inner.set_execution_config(config.config);
+    pub fn set_daft_execution_config(&self, py: Python, config: PyDaftExecutionConfig) {
+        py.allow_threads(|| self.inner.set_execution_config(config.config));
     }
 
     #[setter(_daft_planning_config)]
-    pub fn set_daft_planning_config(&self, config: PyDaftPlanningConfig) {
-        self.inner.set_planning_config(config.config);
+    pub fn set_daft_planning_config(&self, py: Python, config: PyDaftPlanningConfig) {
+        py.allow_threads(|| self.inner.set_planning_config(config.config));
     }
 
     #[getter(_runner)]
     pub fn get_runner(&self, py: Python) -> Option<PyObject> {
-        let runner = self.inner.runner();
+        let runner = py.allow_threads(|| self.inner.runner());
         runner.map(|r| r.to_pyobj(py))
     }
 
     #[setter(_runner)]
-    pub fn set_runner(&self, runner: PyObject) -> PyResult<()> {
+    pub fn set_runner(&self, py: Python, runner: PyObject) -> PyResult<()> {
         let runner = Runner::from_pyobj(runner)?;
         let runner = Arc::new(runner);
-        self.inner.set_runner(runner)?;
+        py.allow_threads(|| self.inner.set_runner(runner))?;
         Ok(())
     }
 }

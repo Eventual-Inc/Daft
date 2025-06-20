@@ -88,14 +88,8 @@ impl DaftContext {
     /// Retrieves the runner.
     ///
     /// WARNING: This will set the runner if it has not yet been set.
-    ///
-    /// This method requires the GIL to be held, as it will need to call into python to create the runner.
-    pub fn get_or_create_runner(&self, py: Python) -> DaftResult<Arc<Runner>> {
-        // DO NOT REMOVE THIS ALLOW_THREADS CALL.
-        // Internally, get_or_create_runner will make a call intpy python that subsequently releases the GIL.
-        // Allowing other threads to acquire this lock, and will cause a deadlock.
-        // See: https://pyo3.rs/main/doc/pyo3/marker/struct.python#deadlocks for a simple example.
-        py.allow_threads(|| self.with_state_mut(|state| state.get_or_create_runner()))
+    pub fn get_or_create_runner(&self) -> DaftResult<Arc<Runner>> {
+        self.with_state_mut(|state| state.get_or_create_runner())
     }
 
     /// Get the current runner, if one has been set.
