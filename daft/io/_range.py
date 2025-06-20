@@ -159,13 +159,17 @@ class RangeSource(DataSource):
             partitions (int, optional): The number of partitions to split the range into. Defaults to 1.
         """
         if step == 0:
-            raise ValueError("step cannot be zero")
+            raise ValueError("daft.range() step parameter cannot be zero - use a positive or negative integer")
 
         if step > 0 and start >= end:
-            raise ValueError(f"for positive step {step}, start ({start}) must be less than end ({end})")
+            raise ValueError(
+                f"daft.range() with positive step {step} requires start ({start}) to be less than end ({end})"
+            )
 
         if step < 0 and start <= end:
-            raise ValueError(f"for negative step {step}, start ({start}) must be greater than end ({end})")
+            raise ValueError(
+                f"daft.range() with negative step {step} requires start ({start}) to be greater than end ({end})"
+            )
 
         self._start = start
         self._end = end

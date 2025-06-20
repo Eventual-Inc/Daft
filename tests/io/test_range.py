@@ -131,14 +131,14 @@ def test_range_partitioning_with_negative_step_uneven():
 def test_range_negative_step_validation():
     with pytest.raises(
         ValueError,
-        match="for negative step -2, start \\(5\\) must be greater than end \\(10\\)",
+        match="daft.range\\(\\) with negative step -2 requires start \\(5\\) to be greater than end \\(10\\)",
     ):
         daft.range(5, 10, -2)
 
     # Should raise error when start == end for negative step
     with pytest.raises(
         ValueError,
-        match="for negative step -1, start \\(5\\) must be greater than end \\(5\\)",
+        match="daft.range\\(\\) with negative step -1 requires start \\(5\\) to be greater than end \\(5\\)",
     ):
         daft.range(5, 5, -1)
 
@@ -147,18 +147,21 @@ def test_range_positive_step_validation():
     # Should raise error when start >= end for positive step
     with pytest.raises(
         ValueError,
-        match="for positive step 2, start \\(10\\) must be less than end \\(5\\)",
+        match="daft.range\\(\\) with positive step 2 requires start \\(10\\) to be less than end \\(5\\)",
     ):
         daft.range(10, 5, 2)
 
     # Should raise error when start == end for positive step
     with pytest.raises(
         ValueError,
-        match="for positive step 1, start \\(5\\) must be less than end \\(5\\)",
+        match="daft.range\\(\\) with positive step 1 requires start \\(5\\) to be less than end \\(5\\)",
     ):
         daft.range(5, 5, 1)
 
 
 def test_range_zero_step_validation():
-    with pytest.raises(ValueError, match="step cannot be zero"):
+    with pytest.raises(
+        ValueError,
+        match="daft.range\\(\\) step parameter cannot be zero - use a positive or negative integer",
+    ):
         daft.range(0, 10, 0)
