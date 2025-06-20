@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import ray
 
 import daft
 
@@ -55,6 +56,7 @@ def test_range_partitioning_even():
     assert df.num_partitions() == 2
 
     partitions = list(df.iter_partitions())
+    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 2
 
     assert partitions[0].to_pydict() == {"id": [0, 1, 2, 3, 4]}
@@ -66,6 +68,7 @@ def test_range_partitioning_uneven():
     assert df.num_partitions() == 3
 
     partitions = list(df.iter_partitions())
+    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 3
 
     assert partitions[0].to_pydict() == {"id": [0, 1, 2, 3]}
@@ -78,6 +81,7 @@ def test_range_partitioning_with_step_even():
     assert df.num_partitions() == 4
 
     partitions = list(df.iter_partitions())
+    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 4
 
     assert partitions[0].to_pydict() == {"id": [0, 2, 4]}
@@ -91,6 +95,7 @@ def test_range_partitioning_with_step_uneven():
     assert df.num_partitions() == 3
 
     partitions = list(df.iter_partitions())
+    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 3
 
     assert partitions[0].to_pydict() == {"id": [0, 2, 4]}
@@ -103,6 +108,7 @@ def test_range_partitioning_with_negative_step_even():
     assert df.num_partitions() == 2
 
     partitions = list(df.iter_partitions())
+    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 2
 
     assert partitions[0].to_pydict() == {"id": [10, 8, 6]}
@@ -114,6 +120,7 @@ def test_range_partitioning_with_negative_step_uneven():
     assert df.num_partitions() == 3
 
     partitions = list(df.iter_partitions())
+    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 3
 
     assert partitions[0].to_pydict() == {"id": [15, 13, 11]}
