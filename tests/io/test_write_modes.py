@@ -86,17 +86,13 @@ def arrange_write_mode_test(
 ):
     # Write some existing_data
     write(existing_data, path, format, "append", partition_cols, io_config)
-    print(f"Wrote existing data to {path}")
     # Write some new data
     write(new_data, path, format, write_mode, partition_cols, io_config)
-    print(f"Wrote new data to {path}")
 
     # Read back the data
     read_path = path + "/**" if partition_cols is not None else path
     read_back = read(read_path, format, io_config).collect()
-    print(f"Read back data from {read_path}")
     read_back = read_back.sort(sort_cols).to_pydict()
-    print(f"Read back sorted data: {read_back}")
 
     return read_back
 
@@ -253,8 +249,18 @@ def test_write_modes_s3_minio_empty_data(
 
 OVERWRITE_PARTITION_TEST_CASES = [
     pytest.param(
-        daft.from_pydict({"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}),
-        daft.from_pydict({"a": ["a", "a", "b", "b"], "b": [5, 6, 7, 8]}),
+        daft.range(0, 4).with_columns(
+            {
+                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
+                "b": daft.col("id") + 1,
+            }
+        ),
+        daft.range(0, 4).with_columns(
+            {
+                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
+                "b": daft.col("id") + 5,
+            }
+        ),
         {
             "a": ["a", "a", "b", "b"],
             "b": [5, 6, 7, 8],
@@ -262,8 +268,13 @@ OVERWRITE_PARTITION_TEST_CASES = [
         id="overwrite-all",
     ),
     pytest.param(
-        daft.from_pydict({"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}),
-        daft.from_pydict({"a": ["a", "a"], "b": [5, 6]}),
+        daft.range(0, 4).with_columns(
+            {
+                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
+                "b": daft.col("id") + 1,
+            }
+        ),
+        daft.range(0, 2).with_columns({"a": daft.col("id").map_elements(lambda x: "a"), "b": daft.col("id") + 5}),
         {
             "a": ["a", "a", "b", "b"],
             "b": [5, 6, 3, 4],
@@ -271,8 +282,18 @@ OVERWRITE_PARTITION_TEST_CASES = [
         id="overwrite-some",
     ),
     pytest.param(
-        daft.from_pydict({"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}),
-        daft.from_pydict({"a": ["b", "b", "c", "c"], "b": [9, 10, 11, 12]}),
+        daft.range(0, 4).with_columns(
+            {
+                "a": daft.col("id").map_elements(lambda x: "a" if x < 2 else "b"),
+                "b": daft.col("id") + 1,
+            }
+        ),
+        daft.range(2, 6).with_columns(
+            {
+                "a": daft.col("id").map_elements(lambda x: "b" if x < 4 else "c"),
+                "b": daft.col("id") + 7,
+            }
+        ),
         {
             "a": ["a", "a", "b", "b", "c", "c"],
             "b": [1, 2, 9, 10, 11, 12],
