@@ -1,9 +1,9 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
-atoi_simd = "0.15.5"
+atoi_simd = "0.16.1"
 chrono = {workspace = true}
 csv-async = "1.2.6"
-fast-float = "0.2.0"
+fast-float2 = "0.2.3"
 simdutf8 = {workspace = true}
 
 [lints]
