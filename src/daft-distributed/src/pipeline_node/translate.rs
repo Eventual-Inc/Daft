@@ -88,25 +88,23 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     SourceInfo::PlaceHolder(_) => unreachable!("PlaceHolder should not be present in the logical plan for pipeline node translation"),
                 }
             }
-            LogicalPlan::ActorPoolProject(actor_pool_project) => {
+            LogicalPlan::UDFProject(udf) => {
                 #[cfg(feature = "python")]
                 {
-                    let batch_size = try_get_batch_size_from_udf(&actor_pool_project.projection)?;
-                    let memory_request = get_resource_request(&actor_pool_project.projection)
+                    let batch_size = try_get_batch_size_from_udf(&[udf.project.clone()])?;
+                    let memory_request = get_resource_request(&[udf.project.clone()])
                         .and_then(|req| req.memory_bytes())
                         .map(|m| m as u64)
                         .unwrap_or(0);
-                    let projection = BoundExpr::bind_all(
-                        &actor_pool_project.projection,
-                        &actor_pool_project.input.schema(),
-                    )?;
+                    let projection =
+                        BoundExpr::bind_all(&[udf.project.clone()], &udf.input.schema())?;
                     crate::pipeline_node::actor_udf::ActorUDF::new(
                         &self.stage_config,
                         node_id,
                         projection,
                         batch_size,
                         memory_request,
-                        actor_pool_project.projected_schema.clone(),
+                        udf.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
                     )?
                     .arced()

@@ -25,7 +25,7 @@ use crate::stats::{PlanStats, StatsState};
 pub enum LogicalPlan {
     Source(Source),
     Project(Project),
-    ActorPoolProject(ActorPoolProject),
+    UDFProject(UDFProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -86,7 +86,7 @@ impl LogicalPlan {
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
-            Self::ActorPoolProject(ActorPoolProject {
+            Self::UDFProject(UDFProject {
                 projected_schema, ..
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
@@ -130,9 +130,10 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
-            Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
-                let res = projection.iter().flat_map(get_required_columns).collect();
-                vec![res]
+            Self::UDFProject(UDFProject { project, .. }) => {
+                vec![get_required_columns(project)
+                    .into_iter()
+                    .collect::<IndexSet<_>>()]
             }
             Self::Filter(filter) => {
                 vec![get_required_columns(&filter.predicate)
@@ -262,7 +263,7 @@ impl LogicalPlan {
         match self {
             Self::Source(..) => "Source",
             Self::Project(..) => "Project",
-            Self::ActorPoolProject(..) => "ActorPoolProject",
+            Self::UDFProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
@@ -289,7 +290,7 @@ impl LogicalPlan {
         match self {
             Self::Source(Source { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
-            | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
@@ -328,7 +329,7 @@ impl LogicalPlan {
         match self {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
-            Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
+            Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
@@ -363,7 +364,7 @@ impl LogicalPlan {
         match self {
             Self::Source(source) => source.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
-            Self::ActorPoolProject(projection) => projection.multiline_display(),
+            Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
@@ -392,7 +393,7 @@ impl LogicalPlan {
         match self {
             Self::Source(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
-            Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
+            Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
@@ -424,7 +425,7 @@ impl LogicalPlan {
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
                         input.clone(), projection.clone(),
                     ).unwrap()),
-                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
+                Self::UDFProject(UDFProject {project, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), project.clone(), passthrough_columns.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
@@ -575,7 +576,7 @@ impl LogicalPlan {
         match self {
             Self::Source(Source { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
-            | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
+            | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
@@ -602,9 +603,7 @@ impl LogicalPlan {
         match self.as_ref() {
             Self::Source(source) => Self::Source(source.clone().with_plan_id(plan_id)),
             Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
-            Self::ActorPoolProject(project) => {
-                Self::ActorPoolProject(project.clone().with_plan_id(plan_id))
-            }
+            Self::UDFProject(project) => Self::UDFProject(project.clone().with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.clone().with_plan_id(plan_id)),
             Self::Limit(limit) => Self::Limit(limit.clone().with_plan_id(plan_id)),
             Self::Explode(explode) => Self::Explode(explode.clone().with_plan_id(plan_id)),

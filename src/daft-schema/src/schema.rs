@@ -109,6 +109,12 @@ impl Schema {
         }
     }
 
+    pub fn with_field(&self, field: Field) -> Arc<Self> {
+        let mut new_schema = self.clone();
+        new_schema.append(field);
+        Arc::new(new_schema)
+    }
+
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> Self {
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();

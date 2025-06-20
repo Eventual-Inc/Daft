@@ -1,14 +1,20 @@
-use std::{sync::Arc, vec};
+use std::{sync::Arc, time::Duration, vec};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_pool_num_threads;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
+    common_treenode::TreeNode,
     expr::{bound_expr::BoundExpr, count_udfs},
-    functions::python::{
-        get_resource_request, get_udf_names, try_get_batch_size_from_udf, try_get_concurrency,
+    functions::{
+        python::{
+            get_resource_request, get_udf_names, try_get_batch_size_from_udf, try_get_concurrency,
+            PythonUDF,
+        },
+        FunctionExpr,
     },
+    Expr,
 };
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
@@ -22,58 +28,126 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{intermediate_ops::project, ExecutionRuntimeContext, ExecutionTaskSpawner};
 
 struct UdfHandle {
+    udf_expr: BoundExpr,
+    // Optional PyObject handle to external UDF worker.
+    // Required for ActorPoolUDFs
+    // Optional for stateless UDFs
+    //   - Starts as None indicating that the UDF is run in-line with the thread
+    //   - If excessive GIL contention is detected, the UDF will be moved to an external worker
     #[cfg(feature = "python")]
-    inner: PyObject,
+    inner: Option<PyObject>,
+    // Data used to track GIL contention
+    total_runtime: Duration,
+    total_gil_contention: Duration,
+    num_batches: usize,
 }
 
 impl UdfHandle {
-    fn try_new(projection: &[BoundExpr]) -> DaftResult<Self> {
+    fn no_handle(udf_expr: &BoundExpr) -> Self {
+        Self {
+            udf_expr: udf_expr.clone(),
+            inner: None,
+            total_runtime: Duration::from_secs(0),
+            total_gil_contention: Duration::from_secs(0),
+            num_batches: 0,
+        }
+    }
+
+    fn with_handle(project: &BoundExpr) -> DaftResult<Self> {
+        let mut handle = Self::no_handle(project);
+        handle.create_handle();
+        Ok(handle)
+    }
+
+    fn create_handle(&mut self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
-            let handle = Python::with_gil(|py| {
+            let py_expr = PyExpr::from(self.udf_expr.as_ref().clone());
+            self.inner = Some(Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
                     py.import(pyo3::intern!(py, "daft.execution.udf"))?
                         .getattr(pyo3::intern!(py, "UdfHandle"))?
-                        .call1((projection
-                            .iter()
-                            .map(|expr| PyExpr::from(expr.as_ref().clone()))
-                            .collect::<Vec<_>>(),))?
+                        .call1((py_expr,))?
                         .unbind(),
                 )
-            })?;
-
-            Ok(Self { inner: handle })
+            })?);
         }
 
         #[cfg(not(feature = "python"))]
         {
-            Ok(Self {})
+            panic!("Cannot create a UDF handle without compiling for Python");
         }
+
+        Ok(())
     }
 
-    fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    fn eval_input_with_handle(
+        &self,
+        input: Arc<MicroPartition>,
+        inner: &PyObject,
+    ) -> DaftResult<Arc<MicroPartition>> {
         #[cfg(feature = "python")]
         {
             Python::with_gil(|py| {
-                Ok(self
-                    .inner
+                inner
                     .bind(py)
                     .call_method1(
                         pyo3::intern!(py, "eval_input"),
                         (PyMicroPartition::from(input),),
                     )?
                     .extract::<PyMicroPartition>()?
-                    .into())
+                    .into()
             })
         }
 
         #[cfg(not(feature = "python"))]
         {
             panic!("Cannot evaluate a UDF without compiling for Python");
+        }
+    }
+
+    fn eval_input_inline(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+        // Extract the udf_expr into a PythonUDF and optional name
+        let x = self.udf_expr;
+
+        let mut out_batches = vec![];
+
+        // Iterate over MicroPartition batches
+        for batch in input.get_tables()?.as_ref() {
+            // Get the functions inputs
+            let func_input = batch.eval_expression_list(input_projections.as_slice())?;
+            // Call the UDF, getting the GIL contention time
+            let (result, gil_contention_time) = func.call_udf(func_input)?;
+
+            // Update the state
+            self.total_runtime += gil_contention_time;
+            self.total_gil_contention += gil_contention_time;
+            self.num_batches += 1;
+
+            let mut series = batch.append_column(result)?;
+            out_batches.push(series);
+        }
+
+        // Switch to external process if we hit the GIL contention threshold
+        if self.num_batches > 10
+            && (self.total_gil_contention.as_secs_f64() / self.total_runtime.as_secs_f64()) > 0.2
+        {
+            self.create_handle()?;
+        }
+
+        let out_schema = out_batches[0].schema.clone();
+        Ok(MicroPartition::new_loaded(out_schema, out_batches, None))
+    }
+
+    fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+        if let Some(inner) = &self.inner {
+            self.eval_input_with_handle(input, inner)
+        } else {
+            self.eval_input_inline(input)
         }
     }
 
@@ -122,33 +196,43 @@ impl IntermediateOpState for UdfState {
 }
 
 pub struct UdfOperator {
-    projection: Vec<BoundExpr>,
+    func: PythonUDF,
+    input_projections: Vec<BoundExpr>,
     concurrency: Option<usize>,
     batch_size: Option<usize>,
     memory_request: u64,
 }
 
 impl UdfOperator {
-    pub fn try_new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
-        let projection_unbound = projection
-            .iter()
-            .map(|expr| expr.inner().clone())
-            .collect::<Vec<_>>();
+    pub fn try_new(project: BoundExpr) -> DaftResult<Self> {
+        let project_unbound = project.inner().clone();
 
         // count_udfs counts both actor pool and stateless udfs
-        let num_udfs = count_udfs(&projection_unbound);
+        let num_udfs = count_udfs(&[project_unbound.clone()]);
+        assert_eq!(num_udfs, 1, "Expected only one udf in an udf project");
 
-        assert_eq!(num_udfs, 1, "Expected only one udf in an udf projection");
+        // Unwrap the UDF from the BoundExpr
+        let udf = project_unbound.clone();
+        let Expr::Function {
+            func: FunctionExpr::Python(func),
+            inputs,
+        } = udf.as_ref()
+        else {
+            return Err(DaftError::InternalError(format!(
+                "Expected a Python UDF, got {}",
+                udf
+            )));
+        };
 
-        let concurrency = try_get_concurrency(&projection_unbound);
-        let batch_size = try_get_batch_size_from_udf(&projection_unbound)?;
-
-        let memory_request = get_resource_request(&projection)
+        let concurrency = func.concurrency;
+        let batch_size = func.batch_size;
+        let memory_request = get_resource_request(&[project_unbound.clone()])
             .and_then(|req| req.memory_bytes())
             .map(|m| m as u64)
             .unwrap_or(0);
         Ok(Self {
-            projection,
+            func,
+            input_projections,
             concurrency,
             batch_size,
             memory_request,
@@ -190,10 +274,7 @@ impl IntermediateOperator for UdfOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("UDF Executor:".to_string());
-        res.push(format!(
-            "Projection = [{}]",
-            self.projection.iter().map(|e| e.to_string()).join(", ")
-        ));
+        res.push(format!("UDF = {}", self.func.to_string()));
         res.push(format!(
             "UDFs = [{}]",
             self.projection

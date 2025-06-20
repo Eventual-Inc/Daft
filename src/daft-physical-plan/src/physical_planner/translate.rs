@@ -25,13 +25,12 @@ use daft_functions_list::{count_distinct, distinct};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
-        ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
-        Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-        Join as LogicalJoin, Limit as LogicalLimit,
+        Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
+        Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
         MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
         Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        Unpivot as LogicalUnpivot,
+        UDFProject as LogicalActorPoolProject, Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -118,11 +117,11 @@ pub(super) fn translate_single_logical_node(
                     .arced(),
             )
         }
-        LogicalPlan::ActorPoolProject(LogicalActorPoolProject { projection, .. }) => {
+        LogicalPlan::UDFProject(LogicalActorPoolProject { project, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
                 input_physical,
-                projection.clone(),
+                vec![project.clone()],
             )?)
             .arced())
         }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_logical_plan::ops::ActorPoolProject;
+use daft_logical_plan::ops::UDFProject;
 
 use super::{ProtoResult, ToFromProto};
 use crate::{
@@ -41,9 +41,8 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 Self::Project(project)
             }
             proto::RelVariant::ActorPoolProject(actor_pool_project) => {
-                let actor_pool_project =
-                    ir::rel::ActorPoolProject::from_proto(*actor_pool_project)?;
-                Self::ActorPoolProject(actor_pool_project)
+                let actor_pool_project = ir::rel::UDFProject::from_proto(*actor_pool_project)?;
+                Self::UDFProject(actor_pool_project)
             }
             proto::RelVariant::Filter(filter) => {
                 let filter = ir::rel::Filter::from_proto(*filter)?;
@@ -154,7 +153,7 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let project = project.to_proto()?.into();
                 proto::RelVariant::Project(project)
             }
-            Self::ActorPoolProject(actor_pool_project) => {
+            Self::UDFProject(actor_pool_project) => {
                 let actor_pool_project = actor_pool_project.to_proto()?.into();
                 proto::RelVariant::ActorPoolProject(actor_pool_project)
             }
@@ -531,7 +530,7 @@ impl ToFromProto for ir::rel::Aggregate {
     }
 }
 
-impl ToFromProto for ActorPoolProject {
+impl ToFromProto for UDFProject {
     type Message = proto::RelActorPoolProject;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
@@ -539,13 +538,18 @@ impl ToFromProto for ActorPoolProject {
         Self: Sized,
     {
         let input = ir::rel::LogicalPlan::from_proto(*non_null!(message.input))?;
-        let projections = from_protos(message.projections)?;
-        Ok(ir::rel::new_project_with_actor_pool(input, projections)?)
+        let project = from_proto(message.project)?;
+        let passthrough_columns = from_protos(message.passthrough_columns)?;
+        Ok(ir::rel::new_project_with_udf(
+            input,
+            project,
+            passthrough_columns,
+        )?)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let input = self.input.to_proto()?.into();
-        let projections = to_protos(&self.projection)?;
+        let projections = to_protos(&self.passthrough_columns)?;
         Ok(proto::RelActorPoolProject {
             input: Some(input),
             projections,

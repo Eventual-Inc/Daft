@@ -20,7 +20,7 @@ mod top_n;
 mod unpivot;
 mod window;
 
-pub use actor_pool_project::ActorPoolProject;
+pub use actor_pool_project::UDFProject;
 pub use agg::Aggregate;
 pub use concat::Concat;
 pub use distinct::Distinct;
