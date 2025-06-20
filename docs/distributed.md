@@ -12,7 +12,7 @@ If you want to start a single node ray cluster on your local machine, you can do
 
 ```bash
 pip install ray[default]
-ray start --head --port=6379
+ray start --head
 ```
 
 This should output something like:
@@ -33,13 +33,13 @@ You can take the IP address and port and pass it to Daft with [`set_runner_ray`]
 
 ```python
 >>> import daft
->>> daft.context.set_runner_ray("127.0.0.1:6379")
-DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x100fbd1f0>, _daft_planning_config=<daft.daft.PyDaftPlanningConfig object at 0x100fbd270>, _runner_config=_RayRunnerConfig(address='127.0.0.1:6379', max_task_backlog=None), _disallow_set_runner=True, _runner=None)
+>>> daft.context.set_runner_ray("ray://127.0.0.1:10001")
+DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x100fbd1f0>, _daft_planning_config=<daft.daft.PyDaftPlanningConfig object at 0x100fbd270>, _runner_config=_RayRunnerConfig(address='127.0.0.1:10001', max_task_backlog=None), _disallow_set_runner=True, _runner=None)
 
 >>> df = daft.from_pydict({
 ...   'text': ['hello', 'world']
 ... })
-2024-07-29 15:49:26,610 INFO worker.py:1567 -- Connecting to existing Ray cluster at address: 127.0.0.1:6379...
+2024-07-29 15:49:26,610 INFO worker.py:1567 -- Connecting to existing Ray cluster at address: 127.0.0.1:10001...
 2024-07-29 15:49:26,622 INFO worker.py:1752 -- Connected to Ray cluster.
 
 >>> print(df)
