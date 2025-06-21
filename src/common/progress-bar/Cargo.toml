@@ -1,0 +1,15 @@
+[dependencies]
+common-error = {path = "../error", default-features = false}
+indicatif = "0.17.9"
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = ["dep:pyo3"]
+
+[lints]
+workspace = true
+
+[package]
+name = "common-progress-bar"
+edition.workspace = true
+version.workspace = true
