@@ -331,6 +331,7 @@ impl ExprResolver<'_> {
             partition_by,
             order_by,
             descending: window_spec.descending,
+            nulls_first: window_spec.nulls_first,
             frame: window_spec.frame,
             min_periods: window_spec.min_periods,
         })
