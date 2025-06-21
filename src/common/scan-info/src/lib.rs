@@ -8,6 +8,7 @@ mod pushdowns;
 pub mod python;
 mod scan_operator;
 mod scan_task;
+mod sharder;
 pub mod test;
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -21,6 +22,7 @@ pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
 use serde::{Deserialize, Serialize};
+pub use sharder::{Sharder, ShardingStrategy};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ScanState {
@@ -99,6 +101,16 @@ impl PhysicalScanInfo {
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns,
+        }
+    }
+
+    #[must_use]
+    pub fn with_scan_state(&self, scan_state: ScanState) -> Self {
+        Self {
+            scan_state,
+            source_schema: self.source_schema.clone(),
+            partitioning_keys: self.partitioning_keys.clone(),
+            pushdowns: self.pushdowns.clone(),
         }
     }
 }

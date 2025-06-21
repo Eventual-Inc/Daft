@@ -15,7 +15,10 @@ use super::{
         UnnestScalarSubquery,
     },
 };
-use crate::LogicalPlan;
+use crate::{
+    optimization::rules::{PushDownShard, ShardScans},
+    LogicalPlan,
+};
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -151,6 +154,11 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(PushDownLimit::new())],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
+                // --- Shard pushdowns ---
+                RuleBatch::new(
+                    vec![Box::new(PushDownShard::new())],
+                    RuleExecutionStrategy::Once,
+                ),
                 // --- Simplify expressions before scans are materialized ---
                 RuleBatch::new(
                     vec![Box::new(SimplifyExpressionsRule::new())],
@@ -159,6 +167,11 @@ impl Default for OptimizerBuilder {
                 // --- Materialize scan nodes ---
                 RuleBatch::new(
                     vec![Box::new(MaterializeScans::new())],
+                    RuleExecutionStrategy::Once,
+                ),
+                // --- Shard scans ---
+                RuleBatch::new(
+                    vec![Box::new(ShardScans::new())],
                     RuleExecutionStrategy::Once,
                 ),
                 // --- Enrich logical plan with stats ---
