@@ -202,6 +202,26 @@ def test_daft_iceberg_table_read_table_snapshot(local_iceberg_catalog):
 
 
 @pytest.mark.integration()
+def test_daft_iceberg_table_read_table_with_identifier_and_snapshot(local_iceberg_catalog):
+    catalog_name, pyiceberg_catalog = local_iceberg_catalog
+    tab = pyiceberg_catalog.load_table("default.test_snapshotting")
+
+    snapshots = tab.history()
+    assert len(snapshots) == 2
+
+    table_name = f"{catalog_name}.default.test_snapshotting"
+    catalog_config = pyiceberg_catalog.properties
+
+    for snapshot in snapshots:
+        # TODO: Provide read_table API for reading iceberg with snapshot ID
+        daft_pandas = daft.read_iceberg(
+            table_name, snapshot_id=snapshot.snapshot_id, iceberg_catalog_config=catalog_config
+        ).to_pandas()
+        iceberg_pandas = tab.scan(snapshot_id=snapshot.snapshot_id).to_pandas()
+        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
 @pytest.mark.parametrize("table_name", ["test_positional_mor_deletes", "test_positional_mor_double_deletes"])
 def test_daft_iceberg_table_mor_limit_collect_correct(table_name, local_iceberg_catalog):
     catalog_name, pyiceberg_catalog = local_iceberg_catalog
