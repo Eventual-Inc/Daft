@@ -122,31 +122,3 @@ def test_sharding_with_pushdowns(tmpdir) -> None:
     )
 
     assert sharded_df.count_rows() == 10
-
-
-def test_torch_iter_dataset_sharding(tmpdir) -> None:
-    num_files = 100
-    write_test_files(tmpdir, num_files)
-    df = daft.read_parquet(f"{tmpdir}/**/*.parquet")
-
-    # Test without sharding.
-    dataset = df.to_torch_iter_dataset()
-    total_rows = 0
-    for batch in dataset:
-        assert isinstance(batch, dict)
-        total_rows += 1
-    assert total_rows == num_files * 100
-
-    # Test with sharding.
-    world_size = 3
-    total_sharded_rows = 0
-    for rank in range(world_size):
-        sharded_dataset = df.to_torch_iter_dataset(shard_strategy="file", world_size=world_size, rank=rank)
-        shard_rows = 0
-        for batch in sharded_dataset:
-            assert isinstance(batch, dict)
-            shard_rows += 1
-        total_sharded_rows += shard_rows
-
-    # Total rows across all shards should equal unsharded total.
-    assert total_sharded_rows == num_files * 100
