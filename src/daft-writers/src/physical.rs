@@ -9,6 +9,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
+    json_writer::create_native_json_writer,
     parquet_writer::{create_native_parquet_writer, native_parquet_writer_supported},
     AsyncFileWriter, WriterFactory,
 };
@@ -32,16 +33,23 @@ impl PhysicalWriterFactory {
         native_enabled: bool,
         native_remote_enabled: bool,
     ) -> DaftResult<Self> {
-        let writer_type = if native_enabled
-            && native_parquet_writer_supported(
-                output_file_info.file_format,
-                &output_file_info.root_dir,
-                &file_schema,
-                native_remote_enabled,
-            )? {
-            WriterType::Native
-        } else {
-            WriterType::Pyarrow
+        let writer_type = match output_file_info.file_format {
+            FileFormat::Parquet => {
+                if native_enabled
+                    && native_parquet_writer_supported(
+                        output_file_info.file_format,
+                        &output_file_info.root_dir,
+                        &file_schema,
+                        native_remote_enabled,
+                    )?
+                {
+                    WriterType::Native
+                } else {
+                    WriterType::Pyarrow
+                }
+            }
+            FileFormat::Json if native_enabled => WriterType::Native,
+            _ => WriterType::Pyarrow,
         };
 
         Ok(Self {
@@ -122,6 +130,9 @@ fn create_native_writer(
     match file_format {
         FileFormat::Parquet => {
             create_native_parquet_writer(root_dir, schema, file_idx, partition_values, io_config)
+        }
+        FileFormat::Json => {
+            create_native_json_writer(root_dir, file_idx, partition_values, io_config)
         }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),
