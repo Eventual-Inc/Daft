@@ -28,7 +28,7 @@ struct ImageDecodeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for ImageDecode {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let ImageDecodeArgs {
             input,
             mode,
@@ -64,11 +64,7 @@ impl ScalarUDF for ImageDecode {
         "image_decode"
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let ImageDecodeArgs {
             input,
             mode,

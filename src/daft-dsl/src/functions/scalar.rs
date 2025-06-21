@@ -30,7 +30,7 @@ impl ScalarFunction {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf.function_args_to_field(self.inputs.clone(), schema)
+        self.udf.get_return_type(self.inputs.clone(), schema)
     }
 }
 
@@ -85,22 +85,11 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
         &[]
     }
 
-    #[deprecated = "use evaluate instead"]
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let inputs = FunctionArgs::try_new(
-            inputs
-                .iter()
-                .map(|s| FunctionArg::unnamed(s.clone()))
-                .collect(),
-        )?;
-
-        self.evaluate(inputs)
-    }
     /// This is where the actual logic of the function is implemented.
     /// A simple example would be a string function such as `to_uppercase` that simply takes in a utf8 array and uppercases all values
     /// ```rs, no_run
     /// impl ScalarUDF for MyToUppercase {
-    ///     fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
+    ///     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>
     ///         let s = inputs.required(0)?;
     ///
     ///         let arr = s
@@ -114,9 +103,9 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///     }
     /// }
     /// ```
-    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series>;
+    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
 
-    /// `function_args_to_field` is used during planning to ensure that args and datatypes are compatible.
+    /// `get_return_type_from_args` is used during planning to ensure that args and datatypes are compatible.
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
     /// ```rs, no_run
     /// impl ScalarUDF for MyToUppercase {
@@ -134,28 +123,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     ///     }
     /// }
     /// ```
-    #[allow(deprecated)]
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
-        // for backwards compatibility we add a default implementation.
-        // TODO: move all existing implementations of `to_field` over to `function_args_to_field`
-        // Once that is done, we can name it back to `to_field`.
-        self.to_field(inputs.into_inner().as_slice(), schema)
-    }
-
-    #[deprecated = "use `function_args_to_field` instead"]
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        let inputs = inputs
-            .iter()
-            .map(|e| FunctionArg::unnamed(e.clone()))
-            .collect::<Vec<_>>();
-
-        let inputs = FunctionArgs::new_unchecked(inputs);
-        self.function_args_to_field(inputs, schema)
-    }
+    fn get_return_type(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
 
     fn docstring(&self) -> &'static str {
         "No documentation available"
