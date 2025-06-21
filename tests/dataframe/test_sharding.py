@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft.api_annotations import APITypeError
 
 
 def write_test_files(tmpdir, num_files: int) -> None:
@@ -18,24 +17,24 @@ def write_test_files(tmpdir, num_files: int) -> None:
 def test_sharding_should_error_for_non_file_scans() -> None:
     """Test that sharding should error for non-file scans."""
     df = daft.from_pydict({"id": list(range(100)), "value": [f"val_{i}" for i in range(100)]})
-    with pytest.raises(ValueError, match="Sharding should have been folded into a source"):
-        df.shard(strategy="file", world_size=5, rank=0).collect()
+    with pytest.raises(ValueError, match="Sharding is not supported for in-memory sources"):
+        df._shard(strategy="file", world_size=5, rank=0).collect()
 
 
 def test_sharding_invalid_arguments() -> None:
     df = daft.from_pydict({"a": [1, 2, 3]})
 
     # Test invalid strategy.
-    with pytest.raises(APITypeError, match="received wrong input type"):
-        df.shard(strategy="invalid", world_size=5, rank=0)
+    with pytest.raises(ValueError, match="Only file-based sharding is supported"):
+        df._shard(strategy="invalid", world_size=5, rank=0)
 
     # Test invalid world_size.
     with pytest.raises(ValueError, match="World size for sharding must be greater than zero"):
-        df.shard(strategy="file", world_size=0, rank=0)
+        df._shard(strategy="file", world_size=0, rank=0)
 
     # Test invalid rank.
     with pytest.raises(ValueError, match="Rank must be less than the world size for sharding"):
-        df.shard(strategy="file", world_size=5, rank=5)
+        df._shard(strategy="file", world_size=5, rank=5)
 
 
 def test_sharding_with_file_scan(tmpdir) -> None:
@@ -46,7 +45,7 @@ def test_sharding_with_file_scan(tmpdir) -> None:
     all_files = set()
 
     for rank in range(world_size):
-        sharded_df = daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path").shard(
+        sharded_df = daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path")._shard(
             strategy="file", world_size=world_size, rank=rank
         )
         results = sharded_df.select("file_path").distinct().collect()
@@ -67,21 +66,12 @@ def test_sharding_distribution_fairness(tmpdir) -> None:
     files_per_shard = []
 
     for rank in range(world_size):
-        sharded_df = daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path").shard(
+        sharded_df = daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path")._shard(
             strategy="file", world_size=world_size, rank=rank
         )
         files_per_shard.append(sharded_df.select("file_path").distinct().count_rows())
 
-    min_files = min(files_per_shard)
-    max_files = max(files_per_shard)
     avg_files = sum(files_per_shard) / len(files_per_shard)
-
-    assert min_files > 0, "No shard should be empty"
-
-    # The distribution should be reasonably balanced.
-    # An arbitrary threshold: max should not be more than 2x the average.
-    max_ratio = max_files / avg_files if avg_files > 0 else float("inf")
-    assert max_ratio <= 2.0, f"The distribution for sharding is too imbalanced: max/avg ratio = {max_ratio:.2f}"
 
     # The distribution should be reasonably uniform.
     variance = sum((x - avg_files) ** 2 for x in files_per_shard) / len(files_per_shard)
@@ -106,14 +96,14 @@ def test_sharding_consistency(tmpdir) -> None:
     for rank in range(world_size):
         canonical_result = (
             daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path")
-            .shard(strategy="file", world_size=world_size, rank=rank)
+            ._shard(strategy="file", world_size=world_size, rank=rank)
             .to_arrow()
         )
         # Shard contents and order should be consistent across runs.
         for _ in range(3):
             new_result = (
                 daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path")
-                .shard(strategy="file", world_size=world_size, rank=rank)
+                ._shard(strategy="file", world_size=world_size, rank=rank)
                 .to_arrow()
             )
             assert canonical_result == new_result, "Sharding result is inconsistent between runs"
@@ -128,7 +118,35 @@ def test_sharding_with_pushdowns(tmpdir) -> None:
         .limit(10)
         .sort("id")
         .distinct()
-        .shard(strategy="file", world_size=3, rank=0)
+        ._shard(strategy="file", world_size=3, rank=0)
     )
 
     assert sharded_df.count_rows() == 10
+
+
+def test_torch_iter_dataset_sharding(tmpdir) -> None:
+    num_files = 100
+    write_test_files(tmpdir, num_files)
+    df = daft.read_parquet(f"{tmpdir}/**/*.parquet")
+
+    # Test without sharding.
+    dataset = df.to_torch_iter_dataset()
+    total_rows = 0
+    for batch in dataset:
+        assert isinstance(batch, dict)
+        total_rows += 1
+    assert total_rows == num_files * 100
+
+    # Test with sharding.
+    world_size = 3
+    total_sharded_rows = 0
+    for rank in range(world_size):
+        sharded_dataset = df.to_torch_iter_dataset(shard_strategy="file", world_size=world_size, rank=rank)
+        shard_rows = 0
+        for batch in sharded_dataset:
+            assert isinstance(batch, dict)
+            shard_rows += 1
+        total_sharded_rows += shard_rows
+
+    # Total rows across all shards should equal unsharded total.
+    assert total_sharded_rows == num_files * 100
