@@ -287,10 +287,10 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
             atoi_simd::parse_skipped::<u64>(bytes).ok()
         }),
         Float32 => deserialize_primitive(rows, column, datatype, |bytes| {
-            fast_float::parse::<f32, _>(bytes).ok()
+            fast_float2::parse::<f32, _>(bytes).ok()
         }),
         Float64 => deserialize_primitive(rows, column, datatype, |bytes| {
-            fast_float::parse::<f64, _>(bytes).ok()
+            fast_float2::parse::<f64, _>(bytes).ok()
         }),
         Date32 => deserialize_primitive(rows, column, datatype, |bytes| {
             let mut last_fmt_idx = 0;

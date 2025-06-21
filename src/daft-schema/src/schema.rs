@@ -16,17 +16,18 @@ use crate::{field::Field, prelude::DataType};
 
 pub type SchemaRef = Arc<Schema>;
 
-use derivative::Derivative;
+use educe::Educe;
 
-#[derive(Debug, Display, Serialize, Deserialize, Derivative, Eq, Clone)]
-#[derivative(Hash, PartialEq)]
+#[derive(Debug, Display, Serialize, Deserialize, Educe, Eq, Clone)]
+#[educe(Hash, PartialEq)]
 #[display("{}\n", make_schema_vertical_table(
     self.fields.iter().map(|field| (field.name.clone(), field.dtype.to_string()))
 ))]
 pub struct Schema {
     fields: Vec<Field>,
 
-    #[derivative(Hash = "ignore", PartialEq = "ignore")]
+    #[educe(Hash(ignore))]
+    #[educe(PartialEq(ignore))]
     name_to_indices: HashMap<String, Vec<usize>>,
 }
 

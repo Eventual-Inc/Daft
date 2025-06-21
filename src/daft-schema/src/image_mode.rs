@@ -1,4 +1,3 @@
-#![expect(non_local_definitions, reason = "we want to remove this...")]
 use std::str::FromStr;
 
 use common_error::{DaftError, DaftResult};
