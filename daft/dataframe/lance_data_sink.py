@@ -34,7 +34,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     def __init__(
         self,
         uri: str | pathlib.Path,
-        schema: Schema,
+        schema: Schema | "pa.Schema",
         mode: Literal["create", "append", "overwrite"],
         io_config: IOConfig | None = None,
         **kwargs: Any,
@@ -53,7 +53,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
         self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
 
-        self._pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in schema)
+        self._pyarrow_schema = schema if isinstance(schema, pa.Schema) else schema.to_pyarrow_schema()
 
         try:
             table = lance.dataset(self._table_uri, storage_options=self._storage_options)
