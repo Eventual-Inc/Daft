@@ -1,3 +1,8 @@
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
+
 use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -14,8 +19,19 @@ pub struct PyField {
 #[pymethods]
 impl PyField {
     #[staticmethod]
-    pub fn create(name: &str, data_type: PyDataType) -> PyResult<Self> {
-        Ok(Field::new(name, data_type.dtype).into())
+    #[pyo3(signature = (name, data_type, metadata=None))]
+    pub fn create(
+        name: &str,
+        data_type: PyDataType,
+        metadata: Option<HashMap<String, String>>,
+    ) -> PyResult<Self> {
+        let field = Field::new(name, data_type.dtype);
+        if let Some(md) = metadata {
+            let btree: BTreeMap<String, String> = md.into_iter().collect();
+            Ok(field.with_metadata(Arc::new(btree)).into())
+        } else {
+            Ok(field.into())
+        }
     }
 
     pub fn name(&self) -> PyResult<String> {

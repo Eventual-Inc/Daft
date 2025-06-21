@@ -1296,7 +1296,11 @@ class DataFrame:
         """
         from daft.dataframe.lance_data_sink import LanceDataSink
 
-        sink = LanceDataSink(uri, self.schema(), mode, io_config, **kwargs)
+        if "schema" in kwargs:
+            schema = kwargs.pop("schema")
+        else:
+            schema = self.schema()
+        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
         return self.write_sink(sink)
 
     ###

@@ -29,11 +29,14 @@ fn create_table_cell(value: &str) -> comfy_table::Cell {
 }
 
 pub fn make_schema_vertical_table(
-    fields: impl Iterator<Item = (String, String)>,
+    fields: impl Iterator<Item = (String, String, String)>,
 ) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
-
     let default_width_if_no_tty = 120usize;
+
+    let fields: Vec<_> = fields.collect();
+
+    let has_metadata = fields.iter().any(|(_, _, meta)| !meta.is_empty());
 
     table
         .load_preset(comfy_table::presets::UTF8_FULL)
@@ -43,10 +46,24 @@ pub fn make_schema_vertical_table(
         table.set_width(default_width_if_no_tty as u16);
     }
 
-    let header = vec![create_table_cell("column_name"), create_table_cell("type")];
+    let header = if has_metadata {
+        vec![
+            create_table_cell("column_name"),
+            create_table_cell("type"),
+            create_table_cell("metadata"),
+        ]
+    } else {
+        vec![create_table_cell("column_name"), create_table_cell("type")]
+    };
+
     table.set_header(header);
-    for (name, dtype) in fields {
-        table.add_row(vec![name.clone(), dtype]);
+
+    for (name, dtype, metadata) in fields {
+        if has_metadata {
+            table.add_row(vec![name, dtype, metadata]);
+        } else {
+            table.add_row(vec![name, dtype]);
+        }
     }
     table
 }

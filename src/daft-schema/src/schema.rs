@@ -20,9 +20,26 @@ use derivative::Derivative;
 
 #[derive(Debug, Display, Serialize, Deserialize, Derivative, Eq, Clone)]
 #[derivative(Hash, PartialEq)]
-#[display("{}\n", make_schema_vertical_table(
-    self.fields.iter().map(|field| (field.name.clone(), field.dtype.to_string()))
-))]
+#[display(
+    "{}\n",
+    make_schema_vertical_table(self.fields.iter().map(|field| {
+        let metadata_str = if field.metadata.is_empty() {
+            String::new()
+        } else {
+            let items: Vec<String> = field
+                .metadata
+                .iter()
+                .map(|(k, v)| format!("\"{}\": \"{}\"", k, v))
+                .collect();
+            format!("{{{}}}", items.join(", "))
+        };
+        (
+            field.name.clone(),
+            field.dtype.to_string(),
+            metadata_str,
+        )
+    }))
+)]
 pub struct Schema {
     fields: Vec<Field>,
 
