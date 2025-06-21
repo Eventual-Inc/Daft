@@ -132,6 +132,33 @@ At this point, your debugger should stop on breakpoints in any .rs file located 
 > echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
 > ```
 
+#### Debug Rust with pyO3
+The `--features python` flag is required, meanwhile pyO3 depends on libpython3.*.so.
+You must verify installation of these dynamic libraries. Common locations on different os:
+
+| Operating System        | Package Manager | Architecture      | Library Path Pattern                          |
+|-------------------------|----------------|-------------------|-----------------------------------------------|
+| **Ubuntu/Debian**       | apt            | x86_64            | `/usr/lib/x86_64-linux-gnu/libpython3.x.so.1.0` |
+|                         |                | Other             | `/usr/lib/libpython3.x.so.1.0`                |
+| **Red Hat/CentOS**      | yum/dnf        | x86_64            | `/usr/lib64/libpython3.x.so.1.0`               |
+| **macOS (Homebrew)**    | Homebrew       | Intel             | `/usr/local/opt/python@3.x/lib/libpython3.x.dylib` |
+|                         |                | Apple Silicon     | `/opt/homebrew/opt/python@3.x/lib/libpython3.x.dylib` |
+| **macOS (System)**      | Installer      | All               | `/Library/Frameworks/Python.framework/Versions/3.x/lib/libpython3.x.dylib` |
+
+Set environment variables to locate the Python library:
+
+
+```sh
+export PYO3_PYTHON=".venv/bin/python"
+export PYO3_PYTHON_PYLIB="/usr/lib/x86_64-linux-gnu/libpython3.11.so.1"
+export RUSTFLAGS="-C link-arg=-Wl,-rpath,${PYO3_PYTHON_PYLIB%/*} -C link-arg=-L${PYO3_PYTHON_PYLIB%/*} -C link-arg=-lpython3.11"
+```
+Execute the test after configuration:
+
+```sh
+cargo test -p daft-dsl --features python -- expr::tests
+```
+
 ### Benchmarking
 
 Benchmark tests are located in `tests/benchmarks`. If you would like to run benchmarks, make sure to first do `make build-release` instead of `make build` in order to compile an optimized build of Daft.
