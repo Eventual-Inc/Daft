@@ -1,6 +1,7 @@
 pub mod aggregate;
 pub mod anti_semi_hash_join_probe;
 pub mod blocking_sink;
+pub mod commit_write;
 pub mod concat;
 pub mod cross_join_collect;
 pub mod dedup;

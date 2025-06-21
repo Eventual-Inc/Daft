@@ -187,6 +187,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 node_id,
                 sink.sink_info.clone(),
                 sink.schema.clone(),
+                sink.input.schema(),
                 self.curr_node.pop().unwrap(),
             )
             .arced(),

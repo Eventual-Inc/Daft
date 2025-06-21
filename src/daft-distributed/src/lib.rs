@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 mod pipeline_node;
 mod plan;
 #[cfg(feature = "python")]

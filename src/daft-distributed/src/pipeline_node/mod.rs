@@ -248,8 +248,8 @@ impl RunningPipelineNode {
                     }
                     PipelineOutput::Materialized(materialized_output) => {
                         // make new task for this partition ref
-                        let task = make_new_task_from_materialized_output(
-                            materialized_output,
+                        let task = make_new_task_from_materialized_outputs(
+                            vec![materialized_output],
                             &node,
                             &plan_builder,
                         )?;
@@ -274,32 +274,49 @@ impl RunningPipelineNode {
     }
 }
 
-fn make_new_task_from_materialized_output<F>(
-    materialized_output: MaterializedOutput,
+fn make_new_task_from_materialized_outputs<F>(
+    materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,
 ) -> DaftResult<SubmittableTask<SwordfishTask>>
 where
     F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send + Sync + 'static,
 {
-    let (partition_ref, worker_id) = materialized_output.into_inner();
+    let num_partitions = materialized_outputs.len();
+    let mut total_size_bytes = 0;
+    let mut total_num_rows = 0;
+    let mut partition_refs = vec![];
+    let mut worker_id_counts: HashMap<WorkerId, usize> = HashMap::new();
+
+    for materialized_output in materialized_outputs {
+        let (partition_ref, worker_id) = materialized_output.into_inner();
+        total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
+        total_num_rows += partition_ref.num_rows().unwrap_or(0);
+        partition_refs.push(partition_ref);
+        let count = worker_id_counts.entry(worker_id.clone()).or_insert(0);
+        *count += 1;
+    }
+
+    let worker_id = worker_id_counts
+        .iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(worker_id, _)| worker_id.clone())
+        .unwrap_or_default();
 
     let info = InMemoryInfo::new(
         node.config().schema.clone(),
         node.context().node_id.to_string(),
         None,
-        1,
-        partition_ref
-            .size_bytes()?
-            .expect("The size of the materialized output should be known"),
-        partition_ref.num_rows()?,
+        num_partitions,
+        total_size_bytes,
+        total_num_rows,
         None,
         None,
     );
     let in_memory_source_plan =
         LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
     let plan = plan_builder(in_memory_source_plan)?;
-    let psets = HashMap::from([(node.node_id().to_string(), vec![partition_ref])]);
+    let psets = HashMap::from([(node.node_id().to_string(), partition_refs)]);
 
     let task = SwordfishTask::new(
         plan,
