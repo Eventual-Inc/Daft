@@ -90,23 +90,6 @@ def test_subscripted_datatype_parsing(source, expected):
     assert DataType._infer_type(source) == expected
 
 
-@pytest.mark.parametrize(
-    ["source", "expected"],
-    [
-        # These tests must be run in later version of Python that allow for subscripting of types
-        (list[str], DataType.list(DataType.string())),
-        (dict[str, int], DataType.map(DataType.string(), DataType.int64())),
-        (
-            {"foo": list[str], "bar": int},
-            DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
-        ),
-        (list[list[str]], DataType.list(DataType.list(DataType.string()))),
-    ],
-)
-def test_legacy_subscripted_datatype_parsing(source, expected):
-    assert DataType._infer_type(source) == expected
-
-
 @pytest.mark.parametrize("test_type", all_daft_types)
 def test_is_null(test_type):
     assert test_type.is_null() == (test_type == DataType.null())

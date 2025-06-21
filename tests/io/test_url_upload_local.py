@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 import daft
@@ -67,6 +69,7 @@ def test_upload_local_row_specifc_urls(tmpdir):
         assert path == "file://" + expected
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="Skipping test when run as root user")
 def test_upload_local_no_write_permissions(tmpdir):
     bytes_data = [b"a", b"b", b"c"]
     # We have no write permissions to the first and third paths.
