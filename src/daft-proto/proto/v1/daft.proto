@@ -538,7 +538,8 @@ message RelProject {
 // This does not need to be separate, but it reduces impedance mismatch across the type definitions.
 message RelActorPoolProject {
   Rel input = 1;
-  repeated Expr projections = 2;
+  Expr project = 2;
+  repeated Expr passthrough_columns = 2;
 }
 
 message RelFilter {

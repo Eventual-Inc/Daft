@@ -20,7 +20,7 @@ mod rule;
 mod shard_scans;
 mod simplify_expressions;
 mod simplify_null_filtered_join;
-mod split_actor_pool_projects;
+mod split_udfs;
 mod unnest_subquery;
 
 pub use detect_monotonic_id::DetectMonotonicId;
@@ -45,5 +45,5 @@ pub use rule::OptimizerRule;
 pub use shard_scans::ShardScans;
 pub use simplify_expressions::SimplifyExpressionsRule;
 pub use simplify_null_filtered_join::SimplifyNullFilteredJoin;
-pub use split_actor_pool_projects::SplitActorPoolProjects;
+pub use split_udfs::SplitActorPoolProjects;
 pub use unnest_subquery::{UnnestPredicateSubquery, UnnestScalarSubquery};
