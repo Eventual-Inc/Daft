@@ -813,7 +813,10 @@ mod tests {
         let subscribers = Arc::new(vec![
             mock_subscriber.clone() as Arc<dyn RuntimeStatsSubscriber>
         ]);
-        let throttle_interval = Duration::from_millis(10);
+
+        // Use 500ms for the throttle interval.
+        let throttle_interval = Duration::from_millis(500);
+
         let handler = Arc::new(RuntimeStatsEventHandler::new_impl(
             subscribers,
             throttle_interval,
@@ -822,12 +825,12 @@ mod tests {
         let rt_context = RuntimeStatsContext::new(node_info);
         let producer = RuntimeEventsProducer::new(handler, rt_context);
 
-        // Simulate a fast query that completes in under 500ms
+        // Simulate a fast query that completes within the throttle interval (500ms)
         producer.mark_rows_received(100);
         producer.mark_rows_emitted(50);
         producer.record_elapsed_cpu_time(Duration::from_micros(1000));
 
-        // Wait less than throttle interval (500ms) but enough for processing
+        // Wait less than throttle interval (500ms) but enough for processing (1ms)
         sleep(Duration::from_millis(10)).await;
 
         // The final event should still be observed even though throttle interval wasn't met
