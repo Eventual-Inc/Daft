@@ -102,6 +102,7 @@ impl UdfHandle {
     fn eval_input_inline(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         // Extract the udf_expr into a PythonUDF and optional name
         let inner_expr = self.udf_expr.inner();
+        let (inner_expr, out_name) = inner_expr.unwrap_alias();
         let Expr::Function {
             func: FunctionExpr::Python(func),
             inputs: input_exprs,
@@ -112,6 +113,7 @@ impl UdfHandle {
                 inner_expr
             )));
         };
+
         let input_exprs = BoundExpr::bind_all(input_exprs, input.schema().as_ref())?;
 
         let mut out_batches = vec![];
@@ -121,7 +123,10 @@ impl UdfHandle {
             // Get the functions inputs
             let func_input = batch.eval_expression_list(input_exprs.as_slice())?;
             // Call the UDF, getting the GIL contention time
-            let (result, gil_contention_time) = func.call_udf(func_input.columns())?;
+            let (mut result, gil_contention_time) = func.call_udf(func_input.columns())?;
+            if let Some(out_name) = out_name.as_ref() {
+                result = result.rename(out_name);
+            }
 
             // Update the state
             self.total_runtime += gil_contention_time;

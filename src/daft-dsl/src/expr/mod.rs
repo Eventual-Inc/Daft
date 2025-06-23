@@ -1835,6 +1835,13 @@ impl Expr {
             })?
             .data)
     }
+
+    pub fn unwrap_alias(self: &ExprRef) -> (ExprRef, Option<Arc<str>>) {
+        match self.as_ref() {
+            Self::Alias(expr, name) => (expr.clone(), Some(name.clone())),
+            _ => (self.clone(), None),
+        }
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
