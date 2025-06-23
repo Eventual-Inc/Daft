@@ -541,15 +541,13 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            logical_plan.name()
+        ))),
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),

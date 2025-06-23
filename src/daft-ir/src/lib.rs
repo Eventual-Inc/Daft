@@ -131,6 +131,15 @@ pub mod rel {
         Ok(Limit { plan_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
     }
 
+    /// Creates a new offset relational operator.
+    pub fn new_offset<I>(input: I, offset: u64) -> DaftResult<Offset>
+    where
+        I: Into<Arc<LogicalPlan>>,
+    {
+        let input: Arc<LogicalPlan> = input.into();
+        Ok(Offset { plan_id: None, input, offset, stats_state: stats::StatsState::NotMaterialized })
+    }
+
     /// Creates a new distinct relational operator.
     pub fn new_distinct<I>(input: I) -> DaftResult<Distinct>
     where

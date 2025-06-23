@@ -224,8 +224,12 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
-            | LogicalPlan::Shard(_) => {
-                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
+            | LogicalPlan::Shard(_)
+            | LogicalPlan::Offset(_) => {
+                panic!(
+                    "Logical plan operator {} should be handled by the optimizer",
+                    node.name()
+                )
             }
         };
         self.curr_node.push(output);
