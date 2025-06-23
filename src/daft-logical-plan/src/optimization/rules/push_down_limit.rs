@@ -5,7 +5,10 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
+    ops::{
+        Limit as LogicalLimit, Offset as LogicalOffset, Sort as LogicalSort, Source,
+        TopN as LogicalTopN,
+    },
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -135,6 +138,23 @@ impl PushDownLimit {
                         )?));
 
                         Ok(Transformed::yes(new_plan))
+                    }
+                    // Merge offset value and limit value into Limit, and pushes down Limit through
+                    // Offset.
+                    //
+                    // Limit(x)-Offset(y) -> Offset(y)-Limit(x + y)
+                    LogicalPlan::Offset(LogicalOffset { input, offset, .. }) => {
+                        let limit = limit as u64 + *offset;
+                        let new_limit = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                            input.clone(),
+                            limit,
+                            *eager,
+                        )));
+
+                        let new_offset =
+                            Arc::new(LogicalPlan::Offset(LogicalOffset::new(new_limit, *offset)));
+
+                        Ok(Transformed::yes(new_offset))
                     }
                     _ => Ok(Transformed::no(plan)),
                 }
@@ -355,6 +375,33 @@ mod tests {
         )
         .limit(limit, false)?
         .select(proj)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that merge offset value and limit value into Limit, and pushes down Limit through
+    /// Offset.
+    ///
+    /// Limit(x)-Offset(y) -> Offset(y)-Limit(x + y)
+    #[test]
+    fn test_limit_with_offset() -> DaftResult<()> {
+        let limit = 7;
+        let offset = 10;
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .offset(offset)?
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some((limit + offset) as usize)),
+        )
+        .limit(limit + offset, false)?
+        .offset(offset)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
