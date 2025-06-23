@@ -125,7 +125,7 @@ fn get_builtin_bpe(name: &str) -> Option<DaftBPE> {
 }
 
 // This function is templated because tiktoken-rs uses a special hasher for the HashMap.
-fn parse_tokens<H>(s: &str) -> DaftResult<HashMap<Vec<u8>, usize, H>>
+fn parse_tokens<H>(s: &str) -> DaftResult<HashMap<Vec<u8>, u32, H>>
 where
     H: BuildHasher + Default,
 {
@@ -141,14 +141,14 @@ where
                 let rank: u32 = rank.parse().with_context(|_| RankNumberParseSnafu {
                     rank: rank.to_string(),
                 })?;
-                Ok((token, rank as usize))
+                Ok((token, rank))
             }
             _ => Err(Error::InvalidTokenLine {
                 line: l.to_string(),
             }
             .into()),
         })
-        .collect::<DaftResult<HashMap<Vec<u8>, usize, H>>>()
+        .collect::<DaftResult<HashMap<Vec<u8>, u32, H>>>()
 }
 
 fn get_file_bpe(
@@ -174,8 +174,9 @@ fn get_file_bpe(
     let mut special_hashmap = HashMap::default();
     let mut special_hashset = HashSet::default();
     for (i, token) in special_tokens.into_iter().enumerate() {
-        special_hashmap.insert(token, max_token + 1 + i);
-        special_hashset.insert((max_token + 1 + i) as u32);
+        let idx: u32 = max_token + 1 + i as u32;
+        special_hashmap.insert(token, idx);
+        special_hashset.insert(idx);
     }
 
     let core_bpe = CoreBPE::new(tokens_res, special_hashmap, pattern).map_err(|e| {
@@ -223,12 +224,11 @@ impl DaftBPE {
     // use u32s because there shouldn't be tokens > 4 billion
     // (and other libraries use u32)
     pub fn encode(&self, s: &str, use_special: bool) -> Vec<u32> {
-        let encode_res = if use_special {
+        if use_special {
             self.bpe.encode_with_special_tokens(s)
         } else {
             self.bpe.encode_ordinary(s)
-        };
-        encode_res.into_iter().map(|x| x as u32).collect()
+        }
     }
 
     pub fn decode(&self, tokens: &[u32]) -> DaftResult<String> {
@@ -239,7 +239,7 @@ impl DaftBPE {
         {
             Err(Error::BadToken { token: bad_token }.into())
         } else {
-            let casted_tokens = tokens.iter().map(|x| *x as usize).collect::<Vec<usize>>();
+            let casted_tokens = tokens.to_vec();
             self.bpe
                 .decode(casted_tokens)
                 .map_err(|err| Error::Decode { err: err.into() }.into())
