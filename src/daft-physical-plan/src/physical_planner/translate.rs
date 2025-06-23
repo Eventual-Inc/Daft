@@ -110,6 +110,11 @@ pub(super) fn translate_single_logical_node(
                 panic!("Placeholder should not get to translation. This should have been optimized away");
             }
         },
+        LogicalPlan::Shard(_) => {
+            return Err(DaftError::InternalError(
+                "Sharding should have been folded into a source".to_string(),
+            ));
+        }
         LogicalPlan::Project(LogicalProject { projection, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(

@@ -59,7 +59,8 @@ impl StagePlanBuilder {
             }
             LogicalPlan::Intersect(_)
             | LogicalPlan::Union(_)
-            | LogicalPlan::SubqueryAlias(_) => panic!("Intersect, Union, and SubqueryAlias should be optimized away before planning stages")
+            | LogicalPlan::SubqueryAlias(_)
+            | LogicalPlan::Shard(_) => panic!("Intersect, Union, SubqueryAlias, and Shard should be optimized away before planning stages")
         });
         can_translate
     }

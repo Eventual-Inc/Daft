@@ -491,6 +491,16 @@ impl ScanTaskLike for ScanTask {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
+
+    fn get_file_paths(&self) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter_map(|s| match s {
+                DataSource::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 impl From<ScanTask> for ScanTaskLikeRef {

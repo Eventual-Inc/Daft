@@ -363,6 +363,7 @@ impl PushDownProjection {
                 }
             }
             LogicalPlan::Sort(..)
+            | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
             | LogicalPlan::Limit(..)
             | LogicalPlan::TopN(..)
@@ -1176,6 +1177,7 @@ mod tests {
                 partition_filters: None,
                 columns: Some(Arc::new(vec!["a".to_string()])),
                 filters: None,
+                sharder: None,
             },
         )
         .build();
@@ -1220,6 +1222,7 @@ mod tests {
                     "Feb".to_string(),
                 ])),
                 filters: None,
+                sharder: None,
             },
         )
         .build();

@@ -24,6 +24,7 @@ use crate::stats::{PlanStats, StatsState};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogicalPlan {
     Source(Source),
+    Shard(Shard),
     Project(Project),
     UDFProject(UDFProject),
     Filter(Filter),
@@ -83,6 +84,7 @@ impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
+            Self::Shard(Shard { input, .. }) => input.schema(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
@@ -118,6 +120,7 @@ impl LogicalPlan {
     pub fn required_columns(&self) -> Vec<IndexSet<String>> {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
+            Self::Shard(..) => vec![IndexSet::new()],
             Self::Limit(..) => vec![IndexSet::new()],
             Self::Sample(..) => vec![IndexSet::new()],
             Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
@@ -262,6 +265,7 @@ impl LogicalPlan {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Source(..) => "Source",
+            Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
             Self::UDFProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
@@ -289,6 +293,7 @@ impl LogicalPlan {
     pub fn stats_state(&self) -> &StatsState {
         match self {
             Self::Source(Source { stats_state, .. })
+            | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -328,6 +333,7 @@ impl LogicalPlan {
     pub fn with_materialized_stats(self) -> Self {
         match self {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
+            Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
@@ -363,6 +369,7 @@ impl LogicalPlan {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
+            Self::Shard(shard) => shard.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
@@ -392,6 +399,7 @@ impl LogicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
+            Self::Shard(Shard { input, .. }) => vec![input],
             Self::Project(Project { input, .. }) => vec![input],
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
@@ -422,6 +430,7 @@ impl LogicalPlan {
         match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
+                Self::Shard(Shard { sharder, .. }) => Self::Shard(Shard::new(input.clone(), sharder.clone())),
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
                         input.clone(), projection.clone(),
                     ).unwrap()),
@@ -575,6 +584,7 @@ impl LogicalPlan {
     pub fn plan_id(&self) -> &Option<usize> {
         match self {
             Self::Source(Source { plan_id, .. })
+            | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
             | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
@@ -602,6 +612,7 @@ impl LogicalPlan {
     pub fn with_plan_id(self: Arc<Self>, plan_id: usize) -> Self {
         match self.as_ref() {
             Self::Source(source) => Self::Source(source.clone().with_plan_id(plan_id)),
+            Self::Shard(shard) => Self::Shard(shard.clone().with_plan_id(plan_id)),
             Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
             Self::UDFProject(project) => Self::UDFProject(project.clone().with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.clone().with_plan_id(plan_id)),
@@ -715,6 +726,7 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 }
 
 impl_from_data_struct_for_logical_plan!(Source);
+impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);

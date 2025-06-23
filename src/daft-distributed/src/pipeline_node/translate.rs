@@ -218,8 +218,11 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Window(_) => {
                 todo!("FLOTILLA_MS2: Implement Window")
             }
-            LogicalPlan::SubqueryAlias(_) | LogicalPlan::Union(_) | LogicalPlan::Intersect(_) => {
-                panic!("LogicalPlan::SubqueryAlias, LogicalPlan::Union, and LogicalPlan::Intersect should be handled by the optimizer")
+            LogicalPlan::SubqueryAlias(_)
+            | LogicalPlan::Union(_)
+            | LogicalPlan::Intersect(_)
+            | LogicalPlan::Shard(_) => {
+                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
             }
         };
         self.curr_node.push(output);

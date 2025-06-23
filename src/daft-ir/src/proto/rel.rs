@@ -149,6 +149,9 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let source = source.to_proto()?.into();
                 proto::RelVariant::Source(source)
             }
+            Self::Shard(_) => {
+                not_implemented_err!("shard");
+            }
             Self::Project(project) => {
                 let project = project.to_proto()?.into();
                 proto::RelVariant::Project(project)
