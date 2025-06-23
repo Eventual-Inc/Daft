@@ -2,7 +2,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -30,7 +30,7 @@ def _lancedb_table_factory_function(
 
 
 @PublicAPI
-def read_lance(url: str, io_config: Optional[IOConfig] = None) -> DataFrame:
+def read_lance(url: str, io_config: Optional[IOConfig] = None, version: Optional[Union[str, int]] = None) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
     Args:
@@ -54,6 +54,10 @@ def read_lance(url: str, io_config: Optional[IOConfig] = None) -> DataFrame:
         >>> s3_config = S3Config(region="us-west-2", anonymous=True)
         >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
         >>> df.show()
+
+        Read a local LanceDB table and specify a version:
+        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/", version=1)
+        >>> df.show()
     """
     try:
         import lance
@@ -65,7 +69,7 @@ def read_lance(url: str, io_config: Optional[IOConfig] = None) -> DataFrame:
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = io_config_to_storage_options(io_config, url)
 
-    ds = lance.dataset(url, storage_options=storage_options)
+    ds = lance.dataset(url, storage_options=storage_options, version=version)
     iceberg_operator = LanceDBScanOperator(ds)
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
