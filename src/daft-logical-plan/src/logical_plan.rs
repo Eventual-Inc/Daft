@@ -133,10 +133,18 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
-            Self::UDFProject(UDFProject { project, .. }) => {
-                vec![get_required_columns(project)
-                    .into_iter()
-                    .collect::<IndexSet<_>>()]
+            Self::UDFProject(UDFProject {
+                project,
+                passthrough_columns,
+                ..
+            }) => {
+                let mut res = passthrough_columns
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect::<IndexSet<_>>();
+
+                res.extend(get_required_columns(project).into_iter());
+                vec![res]
             }
             Self::Filter(filter) => {
                 vec![get_required_columns(&filter.predicate)

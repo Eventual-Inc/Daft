@@ -8,6 +8,7 @@ use daft_dsl::{
     ExprRef,
 };
 use daft_schema::schema::SchemaRef;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -91,6 +92,13 @@ impl UDFProject {
             "UDF {} = {}",
             get_udf_names(&self.project).join(", "),
             self.project
+        ));
+        res.push(format!(
+            "Passthrough columns = {}",
+            self.passthrough_columns
+                .iter()
+                .map(|c| c.to_string())
+                .join(", ")
         ));
         res.push(format!("Concurrency = {:?}", self.concurrency()));
         if let Some(resource_request) = self.resource_request() {

@@ -123,6 +123,10 @@ impl OptimizerRule for SplitActorPoolProjects {
             _ => Ok(Transformed::no(node)),
         })?;
 
+        println!(
+            "SplitActorPoolProjects done\n{}",
+            out.data.repr_ascii(false)
+        );
         Ok(out)
     }
 }
@@ -208,7 +212,9 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
                         e.clone()
                     }
                 });
+                println!("TruncateAnyActorPoolUDF");
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
+                println!("TruncateAnyActorPoolUDF done");
                 Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
             _ => Ok(common_treenode::Transformed::no(node)),
@@ -271,7 +277,9 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                         e.clone()
                     }
                 });
+                println!("TruncateAnyActorPoolUDFChildren");
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
+                println!("TruncateAnyActorPoolUDFChildren done");
                 Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
         }
@@ -746,13 +754,13 @@ mod tests {
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
             create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            vec![resolved_col("b")],
+            vec![resolved_col("a")],
         )?)
         .arced();
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
             create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("b"),
-            vec![resolved_col(intermediate_name)],
+            vec![resolved_col("a")],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -803,13 +811,13 @@ mod tests {
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_plan.build(),
             create_actor_pool_udf(vec![resolved_col("a")]).alias(intermediate_name),
-            vec![],
+            vec![], // No additional
         )?)
         .arced();
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected,
             create_actor_pool_udf(vec![resolved_col(intermediate_name)]).alias("a"),
-            vec![resolved_col(intermediate_name)],
+            vec![],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;

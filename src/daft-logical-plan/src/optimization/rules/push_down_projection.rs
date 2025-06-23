@@ -236,17 +236,22 @@ impl PushDownProjection {
             LogicalPlan::UDFProject(upstream_actor_pool_projection) => {
                 let required_columns = &plan.required_columns()[0];
                 if !required_columns.contains(upstream_actor_pool_projection.project.name()) {
-                    // We don't need the ActorPoolProject, just convert to a regular project
+                    // We don't need the UDFProject, just convert to a regular project
                     let new_plan = LogicalPlan::Project(Project::try_new(
                         upstream_actor_pool_projection.input.clone(),
                         upstream_actor_pool_projection.passthrough_columns.clone(),
                     )?)
                     .arced();
                     let new_plan = Arc::new(plan.with_new_children(&[new_plan.into()]));
-                    return Ok(Transformed::yes(new_plan));
+
+                    // Retry optimization now that the upstream node is different.
+                    let new_plan = self
+                        .try_optimize_node(new_plan.clone())?
+                        .or(Transformed::yes(new_plan));
+                    return Ok(new_plan);
                 }
 
-                // Attempt to merge the current Projection into the upstream ActorPoolProject
+                // Attempt to merge the current Projection into the upstream UDFProject
                 // if there aren't any actual computations being performed in the Projection, and
                 // if each upstream column is used only once (no common subtrees)
                 if projection
@@ -293,7 +298,7 @@ impl PushDownProjection {
                             })
                             .collect_vec();
 
-                        // Construct either a new ActorPoolProject or Project, depending on whether the pruned projection still has UDFs
+                        // Construct either a new UDFProject or Project, depending on whether the pruned projection still has UDFs
                         let (udf, others): (Vec<_>, Vec<_>) = new_actor_pool_projections
                             .iter()
                             .cloned()
@@ -321,7 +326,7 @@ impl PushDownProjection {
                     }
                 }
 
-                // Prune columns from the child ActorPoolProjection that are not used in this projection.
+                // Prune columns from the child UDFProjection that are not used in this projection.
                 if required_columns.len() < upstream_schema.names().len() {
                     let pruned_upstream_projections = upstream_actor_pool_projection
                         .passthrough_columns
@@ -329,28 +334,12 @@ impl PushDownProjection {
                         .filter(|&e| required_columns.contains(e.name()))
                         .cloned()
                         .collect::<Vec<_>>();
-
-                    // If all actor pool UDF expressions end up being pruned, the ActorPoolProject should essentially become
-                    // a no-op passthrough projection for the rest of the columns. In this case, we should just get rid of it
-                    // altogether since it serves no purpose.
-                    let all_projections_are_just_colexprs =
-                        pruned_upstream_projections.iter().all(|proj| {
-                            !proj.exists(|e| match e.as_ref() {
-                                Expr::Column(Column::Resolved(..)) => false,
-                                // Check for existence of any non-ColumnExprs
-                                _ => true,
-                            })
-                        });
-                    let new_upstream = if all_projections_are_just_colexprs {
-                        upstream_plan.arc_children()[0].clone()
-                    } else {
-                        LogicalPlan::UDFProject(UDFProject::try_new(
-                            upstream_actor_pool_projection.input.clone(),
-                            upstream_actor_pool_projection.project.clone(),
-                            pruned_upstream_projections,
-                        )?)
-                        .arced()
-                    };
+                    let new_upstream = LogicalPlan::UDFProject(UDFProject::try_new(
+                        upstream_actor_pool_projection.input.clone(),
+                        upstream_actor_pool_projection.project.clone(),
+                        pruned_upstream_projections,
+                    )?)
+                    .arced();
                     let new_plan = Arc::new(plan.with_new_children(&[new_upstream]));
 
                     // Retry optimization now that the upstream node is different.
@@ -597,20 +586,20 @@ impl PushDownProjection {
         }
     }
 
-    fn try_optimize_actor_pool_project(
+    fn try_optimize_udf_project(
         &self,
-        actor_pool_project: &UDFProject,
+        udf_project: &UDFProject,
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        // If this ActorPoolProject prunes columns from its upstream,
+        // If this UDFProject prunes columns from its upstream,
         // then explicitly create a projection to do so.
-        let upstream_plan = &actor_pool_project.input;
+        let upstream_plan = &udf_project.input;
         let upstream_schema = upstream_plan.schema();
 
-        let actor_pool_project_required_cols = &plan.required_columns()[0];
-        if actor_pool_project_required_cols.len() < upstream_schema.names().len() {
+        let udf_project_required_cols = &plan.required_columns()[0];
+        if udf_project_required_cols.len() < upstream_schema.names().len() {
             let new_subprojection: LogicalPlan = {
-                let pushdown_column_exprs = actor_pool_project_required_cols
+                let pushdown_column_exprs = udf_project_required_cols
                     .iter()
                     .map(|s| resolved_col(s.as_str()))
                     .collect::<Vec<_>>();
@@ -618,8 +607,10 @@ impl PushDownProjection {
                 Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
             };
 
-            let new_actor_pool_project = plan.with_new_children(&[new_subprojection.into()]);
-            Ok(Transformed::yes(new_actor_pool_project.into()))
+            println!("try_optimize_udf_project");
+            let new_udf_project = plan.with_new_children(&[new_subprojection.into()]);
+            println!("try_optimize_udf_project done");
+            Ok(Transformed::yes(new_udf_project.into()))
         } else {
             Ok(Transformed::no(plan))
         }
@@ -728,9 +719,9 @@ impl PushDownProjection {
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match plan.as_ref() {
             LogicalPlan::Project(projection) => self.try_optimize_project(projection, plan.clone()),
-            // ActorPoolProjects also do column projection
-            LogicalPlan::UDFProject(actor_pool_project) => {
-                self.try_optimize_actor_pool_project(actor_pool_project, plan.clone())
+            // UDFProjects also do column pruning
+            LogicalPlan::UDFProject(udf_project) => {
+                self.try_optimize_udf_project(udf_project, plan.clone())
             }
             // Aggregations also do column projection
             LogicalPlan::Aggregate(aggregation) => {
@@ -1036,9 +1027,9 @@ mod tests {
         Ok(())
     }
 
-    /// Projection<-ActorPoolProject prunes columns from the ActorPoolProject
+    /// Projection<-UDFProject prunes columns from the UDFProject
     #[test]
-    fn test_projection_pushdown_into_actorpoolproject() -> DaftResult<()> {
+    fn test_projection_pushdown_into_udf_project() -> DaftResult<()> {
         use crate::ops::{Project, UDFProject};
 
         let scan_op = dummy_scan_operator(vec![
@@ -1049,20 +1040,20 @@ mod tests {
         let scan_node = dummy_scan_node(scan_op.clone());
         let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
 
-        // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
-        let actor_pool_project = LogicalPlan::UDFProject(UDFProject::try_new(
+        // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
+        let udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node.build(),
             mock_udf.alias("udf_results"),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
         let project = LogicalPlan::Project(Project::try_new(
-            actor_pool_project,
+            udf_project,
             vec![resolved_col("udf_results")],
         )?)
         .arced();
 
-        let expected_actor_pool_project = LogicalPlan::UDFProject(UDFProject::try_new(
+        let expected_udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
             dummy_scan_node_with_pushdowns(
                 scan_op,
                 Pushdowns::default().with_columns(Some(Arc::new(vec!["c".to_string()]))),
@@ -1073,13 +1064,13 @@ mod tests {
         )?)
         .arced();
 
-        assert_optimized_plan_eq(project, expected_actor_pool_project)?;
+        assert_optimized_plan_eq(project, expected_udf_project)?;
         Ok(())
     }
 
-    /// Projection<-ActorPoolProject<-ActorPoolProject prunes columns from both ActorPoolProjects
+    /// Projection<-UDFProject<-UDFProject prunes columns from both UDFProjects
     #[test]
-    fn test_projection_pushdown_into_double_actorpoolproject() -> DaftResult<()> {
+    fn test_projection_pushdown_into_double_udf_project() -> DaftResult<()> {
         use crate::ops::{Project, UDFProject};
 
         let scan_op = dummy_scan_operator(vec![
@@ -1090,7 +1081,7 @@ mod tests {
         let scan_node = dummy_scan_node(scan_op.clone()).build();
         let mock_udf = create_actor_pool_udf(vec![resolved_col("a")]);
 
-        // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
+        // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
         let plan = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node,
             mock_udf.alias("udf_results_0"),
@@ -1143,9 +1134,9 @@ mod tests {
         Ok(())
     }
 
-    /// Projection<-ActorPoolProject prunes ActorPoolProject entirely if the actor pool UDF column is pruned
+    /// Projection<-UDFProject prunes UDFProject entirely if the UDF column is pruned
     #[test]
-    fn test_projection_pushdown_into_actorpoolproject_completely_removed() -> DaftResult<()> {
+    fn test_projection_pushdown_into_udf_project_completely_removed() -> DaftResult<()> {
         use crate::ops::{Project, UDFProject};
 
         let scan_op = dummy_scan_operator(vec![
@@ -1156,18 +1147,15 @@ mod tests {
         let scan_node = dummy_scan_node(scan_op.clone()).build();
         let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
 
-        // Select only col("a"), so the ActorPoolProject node is now redundant and should be removed
-        let actor_pool_project = LogicalPlan::UDFProject(UDFProject::try_new(
+        // Select only col("a"), so the UDFProject node is now redundant and should be removed
+        let udf_project = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node,
             mock_udf.alias("udf_results"),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
-        let project = LogicalPlan::Project(Project::try_new(
-            actor_pool_project,
-            vec![resolved_col("a")],
-        )?)
-        .arced();
+        let project =
+            LogicalPlan::Project(Project::try_new(udf_project, vec![resolved_col("a")])?).arced();
 
         // Optimized plan will push the projection all the way down into the scan
         let expected_scan = dummy_scan_node_with_pushdowns(
