@@ -68,3 +68,4 @@ site
 
 # added by vim
 *.swp
+*.swo
