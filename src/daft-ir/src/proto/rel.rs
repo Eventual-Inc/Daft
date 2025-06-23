@@ -17,10 +17,10 @@ mod ir {
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
 #[rustfmt::skip]
 mod proto {
-    pub use daft_proto::protos::daft::v1::*;
-    pub use daft_proto::protos::daft::v1::rel::Variant as RelVariant;
-    pub use daft_proto::protos::daft::v1::source_info::Variant as SourceInfoVariant;
-    pub use daft_proto::protos::daft::v1::partition_transform::Variant as PartitionTransformVariant;
+    pub use daft_proto::protos::daft::v2::*;
+    pub use daft_proto::protos::daft::v2::rel::Variant as RelVariant;
+    pub use daft_proto::protos::daft::v2::source_info::Variant as SourceInfoVariant;
+    pub use daft_proto::protos::daft::v2::partition_transform::Variant as PartitionTransformVariant;
 }
 
 #[allow(unused)]

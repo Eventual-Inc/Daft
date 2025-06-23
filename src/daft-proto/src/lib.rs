@@ -11,7 +11,7 @@
 )]
 pub mod protos {
     pub mod daft {
-        pub mod v1 {
+        pub mod v2 {
             include!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/src/generated/daft.v2.rs"

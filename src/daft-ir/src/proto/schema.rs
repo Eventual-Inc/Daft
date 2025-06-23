@@ -10,8 +10,8 @@ mod ir {
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
 #[rustfmt::skip]
 mod proto {
-    pub use daft_proto::protos::daft::v1::*;
-    pub use daft_proto::protos::daft::v1::data_type::Variant as DataTypeVariant;
+    pub use daft_proto::protos::daft::v2::*;
+    pub use daft_proto::protos::daft::v2::data_type::Variant as DataTypeVariant;
 }
 
 /// Conversion logic for daft's Schema.

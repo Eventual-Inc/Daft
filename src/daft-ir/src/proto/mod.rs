@@ -9,7 +9,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 /// The unit type which is used in many type definitions.
-pub(crate) const UNIT: daft_proto::protos::daft::v1::Unit = daft_proto::protos::daft::v1::Unit {};
+pub(crate) const UNIT: daft_proto::protos::daft::v2::Unit = daft_proto::protos::daft::v2::Unit {};
 
 /// This trait defines the from/to protobuf message methods.
 pub trait ToFromProto {
@@ -64,7 +64,7 @@ macro_rules! non_null {
 // todo(conner): better helpers and names
 // Helper to convert a list of proto expressions to new daft ir expressions.
 pub(crate) fn from_protos(
-    exprs: Vec<daft_proto::protos::daft::v1::Expr>,
+    exprs: Vec<daft_proto::protos::daft::v2::Expr>,
 ) -> ProtoResult<Vec<crate::Expr>> {
     exprs.into_iter().map(crate::Expr::from_proto).collect()
 }
@@ -73,7 +73,7 @@ pub(crate) fn from_protos(
 // Helper to convert a list of ExprRef (typically in the ir) to proto expressions.
 pub(crate) fn to_protos(
     exprs: &[crate::ExprRef],
-) -> ProtoResult<Vec<daft_proto::protos::daft::v1::Expr>> {
+) -> ProtoResult<Vec<daft_proto::protos::daft::v2::Expr>> {
     exprs.iter().map(|e| e.to_proto()).collect()
 }
 

@@ -20,10 +20,10 @@ mod ir {
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
 #[rustfmt::skip]
 mod proto {
-    pub use daft_proto::protos::daft::v1::*;
-    pub use daft_proto::protos::daft::v1::agg::Variant as AggVariant;
-    pub use daft_proto::protos::daft::v1::expr::Variant as ExprVariant;
-    pub use daft_proto::protos::daft::v1::literal::Variant as LiteralVariant;
+    pub use daft_proto::protos::daft::v2::*;
+    pub use daft_proto::protos::daft::v2::agg::Variant as AggVariant;
+    pub use daft_proto::protos::daft::v2::expr::Variant as ExprVariant;
+    pub use daft_proto::protos::daft::v2::literal::Variant as LiteralVariant;
 }
 
 impl ToFromProto for ir::Expr {
