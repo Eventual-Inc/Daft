@@ -8,7 +8,7 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::{
-    make_new_task_from_materialized_output, DistributedPipelineNode, PipelineOutput,
+    make_new_task_from_materialized_outputs, DistributedPipelineNode, PipelineOutput,
     RunningPipelineNode,
 };
 use crate::{
@@ -71,8 +71,8 @@ impl LimitNode {
                 }
                 Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
                 Ordering::Greater => {
-                    let task = make_new_task_from_materialized_output(
-                        materialized_output,
+                    let task = make_new_task_from_materialized_outputs(
+                        vec![materialized_output],
                         &(self.clone() as Arc<dyn DistributedPipelineNode>),
                         &move |input| {
                             Ok(LocalPhysicalPlan::limit(
