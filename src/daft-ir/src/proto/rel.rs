@@ -531,7 +531,7 @@ impl ToFromProto for ir::rel::Aggregate {
 }
 
 impl ToFromProto for UDFProject {
-    type Message = proto::RelActorPoolProject;
+    type Message = proto::RelUdfProject;
 
     fn from_proto(message: Self::Message) -> ProtoResult<Self>
     where
@@ -552,7 +552,7 @@ impl ToFromProto for UDFProject {
         let input = self.input.to_proto()?.into();
         let project = self.project.to_proto()?;
         let passthrough_columns = to_protos(&self.passthrough_columns)?;
-        Ok(proto::RelActorPoolProject {
+        Ok(proto::RelUdfProject {
             input: Some(input),
             project: Some(Box::new(project)),
             passthrough_columns,
