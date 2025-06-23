@@ -669,7 +669,7 @@ pub mod subquery_test {
 pub struct Rel {
     #[prost(
         oneof = "rel::Variant",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24"
     )]
     pub variant: ::core::option::Option<rel::Variant>,
 }
@@ -724,6 +724,8 @@ pub mod rel {
         TopN(::prost::alloc::boxed::Box<super::RelTopN>),
         #[prost(message, tag = "23")]
         Unpivot(::prost::alloc::boxed::Box<super::RelUnpivot>),
+        #[prost(message, tag = "24")]
+        Offset(::prost::alloc::boxed::Box<super::RelOffset>),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -761,6 +763,13 @@ pub struct RelLimit {
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
     #[prost(uint64, tag = "2")]
     pub limit: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelOffset {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
+    #[prost(uint64, tag = "2")]
+    pub offset: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelExplode {
@@ -982,6 +991,8 @@ pub struct Pushdowns {
     pub columns: ::core::option::Option<pushdowns::Columns>,
     #[prost(uint64, optional, tag = "4")]
     pub limit: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "5")]
+    pub offset: ::core::option::Option<u64>,
 }
 /// Nested message and enum types in `Pushdowns`.
 pub mod pushdowns {

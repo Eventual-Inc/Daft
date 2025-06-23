@@ -347,6 +347,7 @@ impl PushDownProjection {
             | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
             | LogicalPlan::Limit(..)
+            | LogicalPlan::Offset(..)
             | LogicalPlan::TopN(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)

@@ -16,7 +16,7 @@ use super::{
     },
 };
 use crate::{
-    optimization::rules::{PushDownShard, ShardScans},
+    optimization::rules::{EliminateOffsets, PushDownShard, RewriteOffset, ShardScans},
     LogicalPlan,
 };
 
@@ -144,13 +144,21 @@ impl Default for OptimizerBuilder {
                     // TODO(Clark): Refine this fixed-point policy.
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
-                // --- Limit pushdowns ---
+                // --- Eliminate offsets & Limit pushdowns ---
                 // This needs to be separate from PushDownProjection because otherwise the limit and
                 // projection just keep swapping places, preventing optimization
                 // (see https://github.com/Eventual-Inc/Daft/issues/2616)
                 RuleBatch::new(
-                    vec![Box::new(PushDownLimit::new())],
+                    vec![
+                        Box::new(EliminateOffsets::new()),
+                        Box::new(PushDownLimit::new()),
+                    ],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
+                ),
+                // --- Rewrite offsets ---
+                RuleBatch::new(
+                    vec![Box::new(RewriteOffset::new())],
+                    RuleExecutionStrategy::Once,
                 ),
                 // --- Rewrite projections ---
                 // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.
