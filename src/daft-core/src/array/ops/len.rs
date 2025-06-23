@@ -3,7 +3,7 @@ use std::cmp::min;
 use common_error::DaftResult;
 #[cfg(feature = "python")]
 use common_py_serde::pickle_dumps;
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -28,6 +28,8 @@ where
 impl PythonArray {
     /// Estimate the size of this list by sampling and pickling its objects.
     pub fn size_bytes(&self) -> DaftResult<usize> {
+        use rand::seq::IndexedRandom;
+
         // Sample up to 1MB or 10000 items to determine total size.
         const MAX_SAMPLE_QUANTITY: usize = 10000;
         const MAX_SAMPLE_SIZE: usize = 1024 * 1024;

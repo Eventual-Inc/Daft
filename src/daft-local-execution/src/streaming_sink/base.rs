@@ -17,7 +17,9 @@ use crate::{
     pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::{
+        CountingReceiver, CountingSender, RuntimeStatsContext, RuntimeStatsEventHandler,
+    },
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
 
@@ -113,11 +115,18 @@ impl StreamingSinkNode {
         input_receiver: Receiver<Arc<MicroPartition>>,
         output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
         memory_manager: Arc<MemoryManager>,
     ) -> DaftResult<Box<dyn StreamingSinkState>> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(compute_runtime, memory_manager, rt_context, span);
+        let spawner = ExecutionTaskSpawner::new(
+            compute_runtime,
+            memory_manager,
+            rt_context,
+            rt_stats_handler,
+            span,
+        );
         let mut state = op.make_state();
         while let Some(morsel) = input_receiver.recv().await {
             loop {
@@ -155,6 +164,7 @@ impl StreamingSinkNode {
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
         task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
@@ -166,6 +176,7 @@ impl StreamingSinkNode {
                 input_receiver,
                 output_sender,
                 stats.clone(),
+                rt_stats_handler.clone(),
                 memory_manager.clone(),
             ));
         }
@@ -236,12 +247,17 @@ impl PipelineNode for StreamingSinkNode {
                 child_result_receiver,
                 self.runtime_stats.clone(),
                 progress_bar.clone(),
+                runtime_handle.runtime_stats_handler(),
             ));
         }
 
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone(), progress_bar);
+        let counting_sender = CountingSender::new(
+            destination_sender,
+            self.runtime_stats.clone(),
+            progress_bar,
+            runtime_handle.runtime_stats_handler(),
+        );
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
@@ -259,6 +275,7 @@ impl PipelineNode for StreamingSinkNode {
         );
 
         let memory_manager = runtime_handle.memory_manager();
+        let rt_stats_handler = runtime_handle.runtime_stats_handler();
         runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
@@ -267,6 +284,7 @@ impl PipelineNode for StreamingSinkNode {
                     spawned_dispatch_result.worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
+                    rt_stats_handler.clone(),
                     maintain_order,
                     memory_manager.clone(),
                 );
@@ -288,6 +306,7 @@ impl PipelineNode for StreamingSinkNode {
                     compute_runtime,
                     memory_manager,
                     runtime_stats.clone(),
+                    rt_stats_handler,
                     info_span!("StreamingSink::Finalize"),
                 );
                 let finalized_result = op.finalize(finished_states, &spawner).await??;

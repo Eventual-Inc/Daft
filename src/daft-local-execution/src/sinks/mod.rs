@@ -1,6 +1,8 @@
 pub mod aggregate;
 pub mod blocking_sink;
+pub mod commit_write;
 pub mod cross_join_collect;
+pub mod dedup;
 pub mod grouped_aggregate;
 pub mod hash_join_build;
 pub mod pivot;

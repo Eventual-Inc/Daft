@@ -15,7 +15,6 @@ use crate::{
 };
 
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
-#[allow(dead_code)]
 pub(crate) struct RayTaskResultHandle {
     /// The handle to the RaySwordfishTaskHandle
     handle: PyObject,
@@ -29,7 +28,6 @@ pub(crate) struct RayTaskResultHandle {
 
 impl RayTaskResultHandle {
     /// Create a new TaskHandle from a Python RaySwordfishTaskHandle
-    #[allow(dead_code)]
     pub fn new(
         handle: PyObject,
         coroutine: PyObject,
@@ -142,7 +140,6 @@ pub(crate) struct RaySwordfishTask {
 }
 
 impl RaySwordfishTask {
-    #[allow(dead_code)]
     pub fn new(task: SwordfishTask) -> Self {
         Self { task }
     }

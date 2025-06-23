@@ -15,8 +15,8 @@ use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_physical_plan::{
     logical_to_physical,
     ops::{
-        ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
-        InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
+        ActorPoolProject, Aggregate, BroadcastJoin, Concat, Dedup, EmptyScan, Explode, Filter,
+        HashJoin, InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
         SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, TopN,
         Unpivot,
     },
@@ -722,6 +722,19 @@ fn physical_plan_to_partition_tasks(
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "local_aggregate"))?
                 .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
+            Ok(py_iter.into())
+        }
+        PhysicalPlan::Dedup(Dedup { input, columns, .. }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let columns_as_pyexprs: Vec<PyExpr> = columns
+                .iter()
+                .map(|expr| PyExpr::from(expr.clone()))
+                .collect();
+            let py_iter = py
+                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .getattr(pyo3::intern!(py, "local_dedup"))?
+                .call1((upstream_iter, columns_as_pyexprs))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::Pivot(Pivot {

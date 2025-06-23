@@ -87,20 +87,24 @@ impl OperatorProgressBar {
             return false;
         }
 
-        let prev = self.last_update.load(Ordering::Acquire);
-        let elapsed = (now - self.start_time).as_nanos() as u64;
-        let diff = elapsed.saturating_sub(prev);
+        {
+            {
+                let prev = self.last_update.load(Ordering::Acquire);
+                let elapsed = (now - self.start_time).as_nanos() as u64;
+                let diff = elapsed.saturating_sub(prev);
 
-        // Fast path - check if enough time has passed
-        if diff < Self::UPDATE_INTERVAL {
-            return false;
+                // Fast path - check if enough time has passed
+                if diff < Self::UPDATE_INTERVAL {
+                    return false;
+                }
+
+                // Only calculate remainder if we're actually going to update
+                let remainder = diff % Self::UPDATE_INTERVAL;
+                self.last_update
+                    .store(elapsed - remainder, Ordering::Release);
+                true
+            }
         }
-
-        // Only calculate remainder if we're actually going to update
-        let remainder = diff % Self::UPDATE_INTERVAL;
-        self.last_update
-            .store(elapsed - remainder, Ordering::Release);
-        true
     }
 
     pub fn render(&self) {
@@ -129,7 +133,7 @@ impl ProgressBar for IndicatifProgressBar {
 
     fn close(&self) -> DaftResult<()> {
         self.0
-            .finish_with_message(format!("🎉 Completed. {}", self.));
+            .finish_with_message(format!("🎉 Completed. {}", self.0.message()));
         Ok(())
     }
 }

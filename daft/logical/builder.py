@@ -184,6 +184,10 @@ class LogicalPlanBuilder:
         builder = self._builder.limit(num_rows, eager)
         return LogicalPlanBuilder(builder)
 
+    def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder:
+        builder = self._builder.shard(strategy, world_size, rank)
+        return LogicalPlanBuilder(builder)
+
     def explode(self, explode_expressions: list[Expression]) -> LogicalPlanBuilder:
         explode_pyexprs = [expr._expr for expr in explode_expressions]
         builder = self._builder.explode(explode_pyexprs)
@@ -208,8 +212,9 @@ class LogicalPlanBuilder:
         builder = builder.select([first_col.alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
-    def distinct(self) -> LogicalPlanBuilder:
-        builder = self._builder.distinct()
+    def distinct(self, on: list[Expression]) -> LogicalPlanBuilder:
+        on_pyexprs = [expr._expr for expr in on]
+        builder = self._builder.distinct(on_pyexprs)
         return LogicalPlanBuilder(builder)
 
     def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder:

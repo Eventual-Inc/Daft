@@ -131,6 +131,7 @@ pub(crate) struct ExecutionRuntimeContext {
     default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
     progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
+    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
 }
 
 impl ExecutionRuntimeContext {
@@ -139,12 +140,14 @@ impl ExecutionRuntimeContext {
         default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
         progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
             memory_manager,
             progress_bar_manager,
+            rt_stats_handler,
         }
     }
     pub fn spawn_local(
@@ -192,6 +195,11 @@ impl ExecutionRuntimeContext {
     pub(crate) fn memory_manager(&self) -> Arc<MemoryManager> {
         self.memory_manager.clone()
     }
+
+    #[must_use]
+    pub(crate) fn runtime_stats_handler(&self) -> Arc<RuntimeStatsEventHandler> {
+        self.rt_stats_handler.clone()
+    }
 }
 
 impl Drop for ExecutionRuntimeContext {
@@ -206,6 +214,7 @@ pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
     runtime_context: Arc<RuntimeStatsContext>,
+    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     outer_span: tracing::Span,
 }
 
@@ -214,12 +223,14 @@ impl ExecutionTaskSpawner {
         runtime_ref: RuntimeRef,
         memory_manager: Arc<MemoryManager>,
         runtime_context: Arc<RuntimeStatsContext>,
+        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
         span: tracing::Span,
     ) -> Self {
         Self {
             runtime_ref,
             memory_manager,
             runtime_context,
+            rt_stats_handler,
             outer_span: span,
         }
     }
@@ -238,6 +249,7 @@ impl ExecutionTaskSpawner {
         let timed_fut = TimedFuture::new(
             instrumented,
             self.runtime_context.clone(),
+            self.rt_stats_handler.clone(),
             self.outer_span.clone(),
         );
         let memory_manager = self.memory_manager.clone();
@@ -256,6 +268,7 @@ impl ExecutionTaskSpawner {
         let timed_fut = TimedFuture::new(
             instrumented,
             self.runtime_context.clone(),
+            self.rt_stats_handler.clone(),
             self.outer_span.clone(),
         );
         self.runtime_ref.spawn(timed_fut)
@@ -264,6 +277,8 @@ impl ExecutionTaskSpawner {
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+
+use crate::runtime_stats::RuntimeStatsEventHandler;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

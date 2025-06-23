@@ -445,9 +445,15 @@ impl SQLPlanner<'_> {
 
         match &selection.distinct {
             Some(Distinct::Distinct) => {
-                self.update_plan(|plan| plan.distinct())?;
+                self.update_plan(|plan| plan.distinct(None))?;
             }
-            Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
+            Some(Distinct::On(columns)) => {
+                let columns = columns
+                    .iter()
+                    .map(|c| self.plan_expr(c))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                self.update_plan(|plan| plan.distinct(Some(columns)))?;
+            }
             None => {}
         }
 

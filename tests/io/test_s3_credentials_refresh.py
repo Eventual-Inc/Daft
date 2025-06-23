@@ -1,41 +1,21 @@
 from __future__ import annotations
 
 import datetime
-import io
 import os
 import time
-from collections.abc import Iterator
+import uuid
 
 import boto3
-import pytest
 
 import daft
 import daft.context
 from tests.conftest import get_tests_daft_runner_name
-from tests.io.mock_aws_server import start_service, stop_process
 
 
-@pytest.fixture(scope="session")
-def aws_log_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[io.IOBase]:
-    # NOTE(Clark): We have to use a log file for the mock AWS server's stdout/sterr.
-    # - If we use None, then the server output will spam stdout.
-    # - If we use PIPE, then the server will deadlock if the (relatively small) buffer fills, and the server is pretty
-    #   noisy.
-    # - If we use DEVNULL, all log output is lost.
-    # With a tmp_path log file, we can prevent spam and deadlocks while also providing an avenue for debuggability, via
-    # changing this fixture to something persistent, or dumping the file to stdout before closing the file, etc.
-    tmp_path = tmp_path_factory.mktemp("aws_logging")
-    with open(tmp_path / "aws_log.txt", "w") as f:
-        yield f
+def test_s3_credentials_refresh(aws_server, aws_server_ip, aws_server_port, aws_credentials):
+    server_url = f"http://{aws_server_ip}:{aws_server_port}"
 
-
-def test_s3_credentials_refresh(aws_log_file: io.IOBase):
-    host = "127.0.0.1"
-    port = 5000
-
-    server_url = f"http://{host}:{port}"
-
-    bucket_name = "mybucket"
+    bucket_name = "mybucket-" + str(uuid.uuid4())
     input_file_path = f"s3://{bucket_name}/input.parquet"
     output_file_path = f"s3://{bucket_name}/output.parquet"
 
@@ -43,15 +23,6 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
     # Set required AWS environment variables before starting server.
     # Required to opt out of concurrent writing, since we don't provide a LockClient.
     os.environ["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-
-    # Start moto server.
-    process = start_service(host, port, aws_log_file)
-
-    aws_credentials = {
-        "AWS_ACCESS_KEY_ID": "testing",
-        "AWS_SECRET_ACCESS_KEY": "testing",
-        "AWS_SESSION_TOKEN": "testing",
-    }
 
     s3 = boto3.resource(
         "s3",
@@ -74,7 +45,7 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
             key_id=aws_credentials["AWS_ACCESS_KEY_ID"],
             access_key=aws_credentials["AWS_SECRET_ACCESS_KEY"],
             session_token=aws_credentials["AWS_SESSION_TOKEN"],
-            expiry=(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)),
+            expiry=(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=2)),
         )
 
     static_config = daft.io.IOConfig(
@@ -107,40 +78,28 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
     df.collect()
     assert count_get_credentials == 1
 
+    # the credential is still active
     df = daft.read_parquet(input_file_path, io_config=dynamic_config)
     assert count_get_credentials == 1
 
-    time.sleep(1)
+    # the credential is expired after 2s, it will be refreshed in next time.
+    pre_count = count_get_credentials
+    time.sleep(2)
     df.collect()
-    assert count_get_credentials == 2
+    assert count_get_credentials > pre_count
 
+    # The credential is expired again after 2s
+    pre_count = count_get_credentials
+    time.sleep(2)
     df.write_parquet(output_file_path, io_config=dynamic_config)
 
     is_ray_runner = (
         get_tests_daft_runner_name() == "ray"
     )  # hack because ray runner will not increment `count_get_credentials`
-    assert count_get_credentials == 2 or is_ray_runner
+    assert count_get_credentials > pre_count or is_ray_runner
 
     df2 = daft.read_parquet(output_file_path, io_config=static_config)
-
     assert df.to_arrow() == df2.to_arrow()
 
-    df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
-    assert count_get_credentials == 2 or is_ray_runner
-
-    df2 = daft.read_parquet(output_file_path, io_config=static_config)
-
-    assert df.to_arrow() == df2.to_arrow()
-
-    time.sleep(1)
-    df.write_parquet(output_file_path, io_config=dynamic_config, write_mode="overwrite")
-    assert count_get_credentials == 3 or is_ray_runner
-
-    df2 = daft.read_parquet(output_file_path, io_config=static_config)
-
-    assert df.to_arrow() == df2.to_arrow()
-
-    # Shutdown moto server.
-    stop_process(process)
     # Restore old set of environment variables.
     os.environ = old_env

@@ -29,7 +29,6 @@ use crate::{
     },
 };
 
-#[allow(dead_code)]
 struct SchedulerActor<W: Worker, S: Scheduler<W::Task>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     scheduler: S,

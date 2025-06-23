@@ -7,7 +7,7 @@ use common_io_config::IOConfig;
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use daft_core::prelude::Schema;
 use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
-use derivative::Derivative;
+use educe::Educe;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::PyObject;
@@ -49,8 +49,8 @@ pub enum CatalogType<E = ExprRef> {
 }
 
 #[cfg(feature = "python")]
-#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
-#[derivative(PartialEq, Eq, Hash)]
+#[derive(Educe, Debug, Clone, Serialize, Deserialize)]
+#[educe(PartialEq, Eq, Hash)]
 pub struct IcebergCatalogInfo<E = ExprRef> {
     pub table_name: String,
     pub table_location: String,
@@ -60,15 +60,15 @@ pub struct IcebergCatalogInfo<E = ExprRef> {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
+    #[educe(PartialEq(ignore))]
+    #[educe(Hash(ignore))]
     pub iceberg_schema: Arc<PyObject>,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
+    #[educe(PartialEq(ignore))]
+    #[educe(Hash(ignore))]
     pub iceberg_properties: Arc<PyObject>,
     pub io_config: Option<IOConfig>,
 }
@@ -124,8 +124,8 @@ where
 }
 
 #[cfg(feature = "python")]
-#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
-#[derivative(PartialEq, Eq, Hash)]
+#[derive(Educe, Debug, Clone, Serialize, Deserialize)]
+#[educe(PartialEq, Eq, Hash)]
 pub struct LanceCatalogInfo {
     pub path: String,
     pub mode: String,
@@ -134,8 +134,8 @@ pub struct LanceCatalogInfo {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
+    #[educe(PartialEq(ignore))]
+    #[educe(Hash(ignore))]
     pub kwargs: Arc<PyObject>,
 }
 
@@ -154,16 +154,16 @@ impl LanceCatalogInfo {
 }
 
 #[cfg(feature = "python")]
-#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
-#[derivative(PartialEq, Eq, Hash)]
+#[derive(Educe, Debug, Clone, Serialize, Deserialize)]
+#[educe(PartialEq, Eq, Hash)]
 pub struct DataSinkInfo {
     pub name: String,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
+    #[educe(PartialEq(ignore))]
+    #[educe(Hash(ignore))]
     pub sink: Arc<PyObject>,
 }
 

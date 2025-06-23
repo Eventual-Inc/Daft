@@ -37,6 +37,7 @@ use crate::{
     },
     progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
+    runtime_stats::RuntimeStatsEventHandler,
     ExecutionRuntimeContext,
 };
 
@@ -240,6 +241,7 @@ pub struct NativeExecutor {
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
     pb_manager: Option<Arc<dyn ProgressBarManager>>,
+    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     enable_explain_analyze: bool,
 }
 
@@ -248,8 +250,10 @@ impl Default for NativeExecutor {
         Self {
             cancel: CancellationToken::new(),
             runtime: None,
+            // todo: make progressbar another subscriber instances
             pb_manager: should_enable_progress_bar().then(make_progress_bar_manager),
             enable_explain_analyze: should_enable_explain_analyze(),
+            rt_stats_handler: Arc::new(RuntimeStatsEventHandler::new()),
         }
     }
 }
@@ -290,6 +294,7 @@ impl NativeExecutor {
 
         let rt = self.runtime.clone();
         let pb_manager = self.pb_manager.clone();
+        let stats_handler = self.rt_stats_handler.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
@@ -308,6 +313,7 @@ impl NativeExecutor {
                     cfg.default_morsel_size,
                     memory_manager.clone(),
                     pb_manager,
+                    stats_handler.clone(),
                 );
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
@@ -331,7 +337,7 @@ impl NativeExecutor {
 
             let local_set = tokio::task::LocalSet::new();
             local_set.block_on(&runtime, async {
-                tokio::select! {
+                let result = tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
                         log::info!("Execution engine cancelled");
@@ -342,7 +348,14 @@ impl NativeExecutor {
                         Ok(())
                     }
                     result = execution_task => result,
+                };
+
+                // Flush remaining stats events
+                if let Err(e) = stats_handler.flush().await {
+                    log::warn!("Failed to flush runtime stats: {}", e);
                 }
+
+                result
             })?;
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()

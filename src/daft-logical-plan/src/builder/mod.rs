@@ -11,7 +11,7 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
@@ -326,6 +326,15 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> DaftResult<Self> {
+        let sharder = Sharder::new(
+            ShardingStrategy::from(strategy),
+            world_size as usize,
+            rank as usize,
+        );
+        Ok(self.with_new_plan(ops::Shard::new(self.plan.clone(), sharder)))
+    }
+
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
 
@@ -456,8 +465,13 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(ops::summarize(self)?))
     }
 
-    pub fn distinct(&self) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
+    pub fn distinct(&self, columns: Option<Vec<ExprRef>>) -> DaftResult<Self> {
+        let distinct_resolver = ExprResolver::default();
+        let columns = columns
+            .map(|columns| distinct_resolver.resolve(columns, self.plan.clone()))
+            .transpose()?;
+
+        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone(), columns).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -973,6 +987,10 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.limit(limit, eager)?.into())
     }
 
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {
+        Ok(self.builder.shard(strategy, world_size, rank)?.into())
+    }
+
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         Ok(self.builder.explode(pyexprs_to_exprs(to_explode))?.into())
     }
@@ -1039,8 +1057,13 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.summarize()?.into())
     }
 
-    pub fn distinct(&self) -> PyResult<Self> {
-        Ok(self.builder.distinct()?.into())
+    pub fn distinct(&self, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let columns = if columns.is_empty() {
+            None
+        } else {
+            Some(pyexprs_to_exprs(columns))
+        };
+        Ok(self.builder.distinct(columns)?.into())
     }
 
     #[pyo3(signature = (fraction, with_replacement, seed=None))]

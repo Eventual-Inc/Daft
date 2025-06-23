@@ -305,6 +305,11 @@ impl PyMicroPartition {
         })
     }
 
+    pub fn dedup(&self, py: Python, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let converted_columns = BoundExpr::bind_all(&columns, &self.inner.schema)?;
+        py.allow_threads(|| Ok(self.inner.dedup(converted_columns.as_slice())?.into()))
+    }
+
     pub fn pivot(
         &self,
         py: Python,
