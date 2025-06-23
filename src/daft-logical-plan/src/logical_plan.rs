@@ -267,7 +267,7 @@ impl LogicalPlan {
             Self::Source(..) => "Source",
             Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
-            Self::UDFProject(..) => "ActorPoolProject",
+            Self::UDFProject(..) => "UDFProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
             Self::Explode(..) => "Explode",
