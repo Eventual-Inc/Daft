@@ -2,20 +2,29 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
+use common_file_formats::WriteMode;
+use daft_dsl::ExprRef;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{stats::StatsState, SinkInfo};
+use daft_logical_plan::{stats::StatsState, OutputFileInfo, SinkInfo};
 use daft_schema::schema::SchemaRef;
+use futures::TryStreamExt;
 
-use super::{DistributedPipelineNode, RunningPipelineNode};
+use super::{
+    make_new_task_from_materialized_outputs, DistributedPipelineNode, PipelineOutput,
+    RunningPipelineNode,
+};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
     stage::{StageConfig, StageExecutionContext},
+    utils::channel::{create_channel, Sender},
 };
 
 pub(crate) struct SinkNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     sink_info: Arc<SinkInfo>,
+    data_schema: SchemaRef,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -26,7 +35,8 @@ impl SinkNode {
         stage_config: &StageConfig,
         node_id: NodeID,
         sink_info: Arc<SinkInfo>,
-        schema: SchemaRef,
+        file_schema: SchemaRef,
+        data_schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -36,11 +46,12 @@ impl SinkNode {
             vec![*child.node_id()],
             vec![child.name()],
         );
-        let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
+        let config = PipelineNodeConfig::new(file_schema, stage_config.config.clone());
         Self {
             config,
             context,
             sink_info,
+            data_schema,
             child,
         }
     }
@@ -49,8 +60,11 @@ impl SinkNode {
         Arc::new(self)
     }
 
-    fn create_sink_plan(&self, input: LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
-        let data_schema = input.schema().clone();
+    fn create_sink_plan(
+        &self,
+        input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
+    ) -> DaftResult<LocalPhysicalPlanRef> {
         let file_schema = self.config.schema.clone();
         match self.sink_info.as_ref() {
             SinkInfo::OutputFileInfo(info) => {
@@ -92,6 +106,33 @@ impl SinkNode {
                 StatsState::NotMaterialized,
             )),
         }
+    }
+
+    async fn finish_writes_and_commit(
+        self: Arc<Self>,
+        info: OutputFileInfo<ExprRef>,
+        input: RunningPipelineNode,
+        scheduler: SchedulerHandle<SwordfishTask>,
+        sender: Sender<PipelineOutput<SwordfishTask>>,
+    ) -> DaftResult<()> {
+        let file_schema = self.config.schema.clone();
+        let data_schema = self.data_schema.clone();
+        let materialized_stream = input.materialize(scheduler);
+        let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
+        let task = make_new_task_from_materialized_outputs(
+            materialized,
+            &(self as Arc<dyn DistributedPipelineNode>),
+            &move |input| {
+                Ok(LocalPhysicalPlan::commit_write(
+                    input,
+                    file_schema.clone(),
+                    info.clone().bind(&data_schema)?,
+                    StatsState::NotMaterialized,
+                ))
+            },
+        )?;
+        let _ = sender.send(PipelineOutput::Task(task)).await;
+        Ok(())
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -173,10 +214,31 @@ impl DistributedPipelineNode for SinkNode {
 
         let sink_node = self.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
-            sink_node.create_sink_plan(input)
+            sink_node.create_sink_plan(input, sink_node.data_schema.clone())
         };
 
-        input_node.pipeline_instruction(stage_context, self, plan_builder)
+        let pipelined_node_with_writes =
+            input_node.pipeline_instruction(stage_context, self.clone(), plan_builder);
+        if let SinkInfo::OutputFileInfo(info) = self.sink_info.as_ref()
+            && matches!(
+                info.write_mode,
+                WriteMode::Overwrite | WriteMode::OverwritePartitions
+            )
+        {
+            let sink_node = self.clone();
+            let scheduler = stage_context.scheduler_handle.clone();
+            let (sender, receiver) = create_channel(1);
+            stage_context.joinset.spawn(Self::finish_writes_and_commit(
+                sink_node,
+                info.clone(),
+                pipelined_node_with_writes,
+                scheduler,
+                sender,
+            ));
+            RunningPipelineNode::new(receiver)
+        } else {
+            pipelined_node_with_writes
+        }
     }
 
     fn as_tree_display(&self) -> &dyn TreeDisplay {

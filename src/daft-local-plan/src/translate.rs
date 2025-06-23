@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_file_formats::WriteMode;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
@@ -371,14 +372,27 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             let data_schema = input.schema().clone();
             match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => {
-                    let info = info.clone().bind(&data_schema)?;
-                    Ok(LocalPhysicalPlan::physical_write(
+                    let bound_info = info.clone().bind(&data_schema)?;
+                    let physical_write = LocalPhysicalPlan::physical_write(
                         input,
                         data_schema,
                         sink.schema.clone(),
-                        info,
+                        bound_info.clone(),
                         sink.stats_state.clone(),
-                    ))
+                    );
+                    if matches!(
+                        info.write_mode,
+                        WriteMode::Overwrite | WriteMode::OverwritePartitions
+                    ) {
+                        Ok(LocalPhysicalPlan::commit_write(
+                            physical_write,
+                            sink.schema.clone(),
+                            bound_info,
+                            sink.stats_state.clone(),
+                        ))
+                    } else {
+                        Ok(physical_write)
+                    }
                 }
                 #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(info) => match &info.catalog {

@@ -12,10 +12,11 @@ use common_file_formats::FileFormat;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::join::get_common_join_cols;
 use daft_local_plan::{
-    ActorPoolProject, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate,
-    HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
-    Pivot, Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    ActorPoolProject, CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter,
+    HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
+    PhysicalWrite, Pivot, Project, Sample, Sort, TopN, UnGroupedAggregate, Unpivot,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::{
@@ -40,6 +41,7 @@ use crate::{
         aggregate::AggregateSink,
         anti_semi_hash_join_probe::AntiSemiProbeSink,
         blocking_sink::BlockingSinkNode,
+        commit_write::CommitWriteSink,
         concat::ConcatSink,
         cross_join_collect::CrossJoinCollectSink,
         dedup::DedupSink,
@@ -931,8 +933,19 @@ pub fn physical_plan_to_pipeline(
                 writer_factory,
                 file_info.partition_cols.clone(),
                 file_schema.clone(),
-                Some(file_info.clone()),
             );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
+                .boxed()
+        }
+        LocalPhysicalPlan::CommitWrite(CommitWrite {
+            input,
+            file_schema,
+            file_info,
+            stats_state,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let write_sink = CommitWriteSink::new(file_schema.clone(), file_info.clone());
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
         }
@@ -979,7 +992,6 @@ pub fn physical_plan_to_pipeline(
                 writer_factory,
                 partition_by,
                 file_schema.clone(),
-                None,
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
@@ -999,7 +1011,6 @@ pub fn physical_plan_to_pipeline(
                 writer_factory,
                 None,
                 file_schema.clone(),
-                None,
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
@@ -1019,7 +1030,6 @@ pub fn physical_plan_to_pipeline(
                 writer_factory,
                 None,
                 file_schema.clone(),
-                None,
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
