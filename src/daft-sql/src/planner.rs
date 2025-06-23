@@ -468,6 +468,17 @@ impl SQLPlanner<'_> {
             }
         }
 
+        if let Some(offset) = &query.offset {
+            let offset = self.plan_expr(&offset.value)?;
+            if let Expr::Literal(LiteralValue::Int64(offset)) = offset.as_ref() {
+                self.update_plan(|plan| plan.offset(*offset))?;
+            } else {
+                invalid_operation_err!(
+                    "OFFSET <n> must be a constant integer, instead got: {offset}"
+                );
+            }
+        }
+
         Ok(self.current_plan.clone().unwrap())
     }
 
@@ -1797,9 +1808,6 @@ impl SQLPlanner<'_> {
 fn check_query_features(query: &sqlparser::ast::Query) -> SQLPlannerResult<()> {
     if !query.limit_by.is_empty() {
         unsupported_sql_err!("LIMIT BY");
-    }
-    if query.offset.is_some() {
-        unsupported_sql_err!("OFFSET");
     }
     if query.fetch.is_some() {
         unsupported_sql_err!("FETCH");

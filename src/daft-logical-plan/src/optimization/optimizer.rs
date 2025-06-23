@@ -16,7 +16,7 @@ use super::{
     },
 };
 use crate::{
-    optimization::rules::{PushDownShard, ShardScans},
+    optimization::rules::{EliminateOffsets, ImplementOffset, PushDownShard, ShardScans},
     LogicalPlan,
 };
 
@@ -137,6 +137,7 @@ impl Default for OptimizerBuilder {
                         Box::new(EliminateCrossJoin::new()),
                         Box::new(SimplifyNullFilteredJoin::new()),
                         Box::new(PushDownJoinPredicate::new()),
+                        Box::new(EliminateOffsets::new()),
                     ],
                     // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
                     // at the current node, which would require another batch application in order to have a chance to push
@@ -151,6 +152,11 @@ impl Default for OptimizerBuilder {
                 RuleBatch::new(
                     vec![Box::new(PushDownLimit::new())],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
+                ),
+                // --- Transform limit offset ---
+                RuleBatch::new(
+                    vec![Box::new(ImplementOffset::new())],
+                    RuleExecutionStrategy::Once,
                 ),
                 // --- Rewrite projections ---
                 // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.

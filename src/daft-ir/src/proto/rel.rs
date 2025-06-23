@@ -53,6 +53,10 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let limit = ir::rel::Limit::from_proto(*limit)?;
                 Self::Limit(limit)
             }
+            proto::RelVariant::Offset(offset) => {
+                let offset = ir::rel::Offset::from_proto(*offset)?;
+                Self::Offset(offset)
+            }
             proto::RelVariant::Explode(explode) => {
                 not_implemented_err!("explode");
                 // let explode = ir::rel::Explode::from_proto(*explode)?;
@@ -168,6 +172,10 @@ impl ToFromProto for ir::rel::LogicalPlan {
             Self::Limit(limit) => {
                 let limit = limit.to_proto()?.into();
                 proto::RelVariant::Limit(limit)
+            }
+            Self::Offset(offset) => {
+                let offset = offset.to_proto()?.into();
+                proto::RelVariant::Offset(offset)
             }
             Self::Explode(explode) => {
                 not_implemented_err!("explode");
@@ -340,6 +348,28 @@ impl ToFromProto for ir::rel::Limit {
         Ok(Self::Message {
             input: Some(input),
             limit,
+        })
+    }
+}
+
+impl ToFromProto for ir::rel::Offset {
+    type Message = proto::RelOffset;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        let input = from_proto_arc(message.input)?;
+        let offset = message.offset;
+        Ok(ir::rel::new_offset(input, offset)?)
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        let input = self.input.to_proto()?.into();
+        let offset = self.offset as u64; // !! limit uses a signed int?
+        Ok(Self::Message {
+            input: Some(input),
+            offset,
         })
     }
 }

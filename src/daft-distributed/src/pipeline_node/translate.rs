@@ -135,6 +135,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 node.schema(),
                 self.curr_node.pop().unwrap(),
             )),
+            LogicalPlan::Offset(_) => {
+                todo!("FLOTILLA_MS1: Implement Offset")
+            }
             LogicalPlan::Project(project) => {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
                 ProjectNode::new(

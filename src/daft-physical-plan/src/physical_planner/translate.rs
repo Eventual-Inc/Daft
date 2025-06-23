@@ -28,10 +28,10 @@ use daft_logical_plan::{
         ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
         Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
         Join as LogicalJoin, Limit as LogicalLimit,
-        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
-        Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-        Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        Unpivot as LogicalUnpivot,
+        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Offset as LogicalOffset,
+        Pivot as LogicalPivot, Project as LogicalProject, Repartition as LogicalRepartition,
+        Sample as LogicalSample, Sink as LogicalSink, Sort as LogicalSort, Source,
+        TopN as LogicalTopN, Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -151,6 +151,10 @@ pub(super) fn translate_single_logical_node(
                     .arced(),
             )
         }
+        // FIXME(zhenchao) maybe offset can be pushed down in some scenarios
+        LogicalPlan::Offset(LogicalOffset { .. }) => Err(DaftError::InternalError(String::from(
+            "Offset shouldn't be pushed to the execution layer.",
+        ))),
         LogicalPlan::TopN(LogicalTopN {
             sort_by,
             descending,

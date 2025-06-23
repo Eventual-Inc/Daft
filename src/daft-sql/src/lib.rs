@@ -224,6 +224,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_limit_offset(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 limit 10 offset 17";
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::from(tbl_1)
+            .alias("tbl1")
+            .select(vec![unresolved_col("test").alias("a")])?
+            .limit(10, true)?
+            .offset(17)?
+            .build();
+
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
     fn test_orderby(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
         let sql = "select utf8 from tbl1 order by utf8 desc";
         let plan = planner.plan_sql(sql)?;

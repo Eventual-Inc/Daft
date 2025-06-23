@@ -67,6 +67,10 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 limit.stats_state.clone(),
             ))
         }
+        // FIXME(zhenchao) maybe offset can be pushed down in some scenarios
+        LogicalPlan::Offset(_) => Err(DaftError::InternalError(
+            "Offset shouldn't be pushed to the execution layer.".to_string(),
+        )),
         LogicalPlan::Project(project) => {
             let input = translate(&project.input)?;
 
