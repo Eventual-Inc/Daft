@@ -53,6 +53,9 @@ where
             LogicalPlan::Limit(limit) => json!({
                 "limit": vec![&limit.limit.lit().to_string()],
             }),
+            LogicalPlan::Offset(offset) => json!({
+                "offset": vec![&offset.offset.lit().to_string()],
+            }),
             LogicalPlan::Explode(explode) => json!({
                 "to_explode": explode.to_explode.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
