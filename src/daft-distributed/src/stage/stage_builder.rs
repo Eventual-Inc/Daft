@@ -15,7 +15,7 @@ use super::{
 
 pub(crate) struct StagePlanBuilder {
     stages: HashMap<StageID, Stage>,
-    stage_id_counter: usize,
+    stage_id_counter: StageID,
 }
 
 impl StagePlanBuilder {
@@ -29,7 +29,7 @@ impl StagePlanBuilder {
     fn next_stage_id(&mut self) -> StageID {
         let curr = self.stage_id_counter;
         self.stage_id_counter += 1;
-        StageID(curr)
+        curr
     }
 
     fn can_translate_logical_plan(plan: &LogicalPlanRef) -> bool {
@@ -226,7 +226,7 @@ impl StagePlanBuilder {
         channel_idx: usize,
     ) -> DaftResult<InputChannel> {
         let stage = self.stages.get(&from_stage).ok_or_else(|| {
-            common_error::DaftError::InternalError(format!("Stage {} not found", from_stage.0))
+            common_error::DaftError::InternalError(format!("Stage {} not found", from_stage))
         })?;
 
         let output_channel = &stage.output_channels[channel_idx];

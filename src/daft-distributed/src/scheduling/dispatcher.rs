@@ -7,9 +7,12 @@ use super::{
     task::{Task, TaskID},
     worker::{Worker, WorkerId, WorkerManager},
 };
-use crate::utils::{
-    channel::{create_channel, Receiver, Sender},
-    joinset::{JoinSet, JoinSetId},
+use crate::{
+    statistics::{StatisticsEvent, StatisticsManagerRef},
+    utils::{
+        channel::{create_channel, Receiver, Sender},
+        joinset::{JoinSet, JoinSetId},
+    },
 };
 
 pub(super) struct DispatcherActor<W: Worker> {
@@ -24,6 +27,7 @@ impl<W: Worker> DispatcherActor<W> {
     pub fn spawn_dispatcher_actor(
         dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
+        statistics_manager: StatisticsManagerRef,
     ) -> DispatcherHandle<W::Task> {
         let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
         let initial_worker_snapshots = dispatcher
@@ -38,6 +42,7 @@ impl<W: Worker> DispatcherActor<W> {
             dispatcher.worker_manager,
             dispatcher_receiver,
             worker_update_sender,
+            statistics_manager,
         ));
         DispatcherHandle::new(dispatcher_sender, worker_update_receiver)
     }
@@ -77,6 +82,7 @@ impl<W: Worker> DispatcherActor<W> {
         running_tasks: &mut JoinSet<()>,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+        statistics_manager: &StatisticsManagerRef,
     ) -> DaftResult<()> {
         // Remove the first task from the running_tasks_by_id map
         finished_task_result?;
@@ -84,6 +90,7 @@ impl<W: Worker> DispatcherActor<W> {
             .remove(&finished_joinset_id)
             .expect("Task should be present in running_tasks_by_id");
         worker_manager.mark_task_finished(&task_id, &worker_id);
+        statistics_manager.handle_event(StatisticsEvent::TaskFinished { task_id })?;
 
         // Try to get any other finished tasks
         while let Some((id, finished_task_result)) = running_tasks.try_join_next_with_id() {
@@ -111,6 +118,7 @@ impl<W: Worker> DispatcherActor<W> {
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         mut task_rx: Receiver<Vec<ScheduledTask<W::Task>>>,
         worker_update_sender: tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+        statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()>
     where
         <W as Worker>::TaskResultHandle: std::marker::Send,
@@ -141,6 +149,7 @@ impl<W: Worker> DispatcherActor<W> {
                         &mut running_tasks,
                         &worker_manager,
                         &worker_update_sender,
+                        &statistics_manager,
                     ).await?;
                 }
             }
@@ -209,7 +218,11 @@ mod tests {
 
         let dispatcher = DispatcherActor::new(worker_manager);
         let mut joinset = JoinSet::new();
-        let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(dispatcher, &mut joinset);
+        let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(
+            dispatcher,
+            &mut joinset,
+            StatisticsManagerRef::default(),
+        );
         DispatcherTestContext {
             dispatcher_handle,
             joinset,
@@ -263,7 +276,7 @@ mod tests {
         let (scheduled_tasks, submitted_tasks) = (0..num_tasks)
             .map(|i| {
                 let task = MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 * (i + 1)))
-                    .with_task_id(format!("task-{}", i).into())
+                    .with_task_id(TaskID::from(i))
                     .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(100..200)))
                     .build();
                 let submittable_task = SubmittableTask::new(task);

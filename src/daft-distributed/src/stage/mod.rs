@@ -1,4 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{
+        atomic::{AtomicU32, AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayLevel;
@@ -20,27 +27,16 @@ use crate::{
         PipelineOutput, RunningPipelineNode,
     },
     plan::PlanID,
-    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, TaskID},
+    },
     utils::{joinset::JoinSet, stream::JoinableForwardingStream},
 };
 
 mod stage_builder;
 
-#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
-pub struct StageID(usize);
-
-impl std::fmt::Display for StageID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-#[allow(dead_code)]
-impl StageID {
-    pub fn new(id: usize) -> Self {
-        Self(id)
-    }
-}
+pub(crate) type StageID = u16;
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
 struct ChannelID(usize);
@@ -98,7 +94,8 @@ impl Stage {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<RunningStage> {
         let stage_config = StageConfig::new(plan_id, self.id.clone(), config);
-        let mut stage_context = StageExecutionContext::new(scheduler_handle);
+        let mut stage_context =
+            StageExecutionContext::new(plan_id, self.id.clone(), scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let pipeline_node =
@@ -313,16 +310,59 @@ impl StageConfig {
 }
 
 pub(crate) struct StageExecutionContext {
-    pub scheduler_handle: SchedulerHandle<SwordfishTask>,
-    pub joinset: JoinSet<DaftResult<()>>,
+    scheduler_handle: SchedulerHandle<SwordfishTask>,
+    joinset: JoinSet<DaftResult<()>>,
+    task_id_counter: TaskIDCounter,
 }
 
 impl StageExecutionContext {
-    fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
+    fn new(
+        plan_id: PlanID,
+        stage_id: StageID,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> Self {
         let joinset = JoinSet::new();
         Self {
             scheduler_handle,
             joinset,
+            task_id_counter: TaskIDCounter::new(plan_id, stage_id),
         }
+    }
+
+    pub fn scheduler_handle(&self) -> SchedulerHandle<SwordfishTask> {
+        self.scheduler_handle.clone()
+    }
+
+    pub fn spawn(&mut self, task: impl Future<Output = DaftResult<()>> + Send + 'static) {
+        self.joinset.spawn(task);
+    }
+
+    pub fn task_id_counter(&self) -> TaskIDCounter {
+        self.task_id_counter.clone()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct TaskIDCounter {
+    plan_id: PlanID,
+    stage_id: StageID,
+    counter: Arc<AtomicU32>,
+}
+
+impl TaskIDCounter {
+    pub fn new(plan_id: PlanID, stage_id: StageID) -> Self {
+        Self {
+            plan_id,
+            stage_id,
+            counter: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    pub fn next(&self) -> TaskID {
+        TaskID::new(
+            self.plan_id,
+            self.stage_id,
+            self.counter.fetch_add(1, Ordering::Relaxed),
+        )
     }
 }

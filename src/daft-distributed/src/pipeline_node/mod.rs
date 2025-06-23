@@ -20,7 +20,7 @@ use crate::{
     plan::PlanID,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
-        task::{SchedulingStrategy, SwordfishTask, Task},
+        task::{SchedulingStrategy, SwordfishTask, Task, TaskID},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, StageID},
@@ -151,15 +151,15 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
         self.context().node_name
     }
     #[allow(dead_code)]
-    fn plan_id(&self) -> &PlanID {
-        &self.context().plan_id
+    fn plan_id(&self) -> PlanID {
+        self.context().plan_id
     }
     #[allow(dead_code)]
-    fn stage_id(&self) -> &StageID {
-        &self.context().stage_id
+    fn stage_id(&self) -> StageID {
+        self.context().stage_id
     }
-    fn node_id(&self) -> &NodeID {
-        &self.context().node_id
+    fn node_id(&self) -> NodeID {
+        self.context().node_id
     }
 }
 
@@ -236,7 +236,7 @@ impl RunningPipelineNode {
         F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send + Sync + 'static,
     {
         let (result_tx, result_rx) = create_channel(1);
-
+        let task_id_counter = stage_context.task_id_counter();
         let execution_loop = async move {
             let mut task_or_partition_ref_stream = self.materialize_running();
 
@@ -249,6 +249,7 @@ impl RunningPipelineNode {
                     PipelineOutput::Materialized(materialized_output) => {
                         // make new task for this partition ref
                         let task = make_new_task_from_materialized_output(
+                            task_id_counter.next(),
                             materialized_output,
                             &node,
                             &plan_builder,
@@ -259,7 +260,12 @@ impl RunningPipelineNode {
                     }
                     PipelineOutput::Task(task) => {
                         // append plan to this task
-                        let task = append_plan_to_existing_task(task, &node, &plan_builder)?;
+                        let task = append_plan_to_existing_task(
+                            task_id_counter.next(),
+                            task,
+                            &node,
+                            &plan_builder,
+                        )?;
                         if result_tx.send(PipelineOutput::Task(task)).await.is_err() {
                             break;
                         }
@@ -269,12 +275,13 @@ impl RunningPipelineNode {
             Ok::<(), common_error::DaftError>(())
         };
 
-        stage_context.joinset.spawn(execution_loop);
+        stage_context.spawn(execution_loop);
         Self::new(result_rx)
     }
 }
 
 fn make_new_task_from_materialized_output<F>(
+    task_id: TaskID,
     materialized_output: MaterializedOutput,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,
@@ -302,6 +309,7 @@ where
     let psets = HashMap::from([(node.node_id().to_string(), vec![partition_ref])]);
 
     let task = SwordfishTask::new(
+        task_id,
         plan,
         node.config().execution_config.clone(),
         psets,
@@ -310,12 +318,13 @@ where
             soft: false,
         },
         node.context().to_hashmap(),
-        *node.node_id(),
+        node.node_id(),
     );
     Ok(SubmittableTask::new(task))
 }
 
 fn append_plan_to_existing_task<F>(
+    task_id: TaskID,
     submittable_task: SubmittableTask<SwordfishTask>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,
@@ -331,6 +340,7 @@ where
     let task_priority = submittable_task.task().task_priority();
 
     let task = submittable_task.with_new_task(SwordfishTask::new(
+        task_id,
         new_plan,
         config,
         psets,

@@ -14,7 +14,7 @@ use super::{
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
-    stage::{StageConfig, StageExecutionContext},
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{create_channel, Sender},
 };
 
@@ -39,7 +39,7 @@ impl LimitNode {
             stage_config,
             node_id,
             Self::NODE_NAME,
-            vec![*child.node_id()],
+            vec![child.node_id()],
             vec![child.name()],
         );
         let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
@@ -56,6 +56,7 @@ impl LimitNode {
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
+        task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let mut remaining_limit = self.limit;
         let mut materialized_result_stream = input.materialize(scheduler_handle.clone());
@@ -72,6 +73,7 @@ impl LimitNode {
                 Ordering::Equal => (PipelineOutput::Materialized(materialized_output), true),
                 Ordering::Greater => {
                     let task = make_new_task_from_materialized_output(
+                        task_id_counter.next(),
                         materialized_output,
                         &(self.clone() as Arc<dyn DistributedPipelineNode>),
                         &move |input| {
@@ -155,9 +157,10 @@ impl DistributedPipelineNode for LimitNode {
         let execution_loop = self.execution_loop(
             local_limit_node,
             result_tx,
-            stage_context.scheduler_handle.clone(),
+            stage_context.scheduler_handle(),
+            stage_context.task_id_counter(),
         );
-        stage_context.joinset.spawn(execution_loop);
+        stage_context.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }

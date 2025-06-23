@@ -52,7 +52,7 @@ impl<T: Task> SchedulableTask<T> {
         self.task.priority()
     }
 
-    pub fn task_id(&self) -> &str {
+    pub fn task_id(&self) -> TaskID {
         self.task.task_id()
     }
 
