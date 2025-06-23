@@ -1870,6 +1870,7 @@ dependencies = [
  "daft-algebra",
  "daft-dsl",
  "daft-schema",
+ "fnv",
  "pyo3",
  "serde",
  "typetag",
