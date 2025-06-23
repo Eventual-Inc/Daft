@@ -14,8 +14,8 @@ mod ir {
 
 #[rustfmt::skip]
 mod proto {
-    pub use daft_proto::protos::daft::v2::*;
-    pub use daft_proto::protos::daft::v2::function::Descriptor as FunctionDescriptor;
+    pub use daft_proto::protos::daft::v1::*;
+    pub use daft_proto::protos::daft::v1::function::Descriptor as FunctionDescriptor;
 }
 
 /// Handles switching on the descriptor which is hidden behind the expr type.

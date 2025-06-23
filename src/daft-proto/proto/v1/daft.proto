@@ -513,7 +513,7 @@ message Rel {
     RelUnion union = 13;
     RelWindow window = 14;
     //--
-    RelActorPoolProject actor_pool_project = 15;
+    RelUDFProject udf_project = 15;
     RelExplode explode = 16;
     RelMonotonicallyIncreasingId monotonically_increasing_id = 17;
     RelPivot pivot = 18;
@@ -535,10 +535,10 @@ message RelProject {
   repeated Expr projections = 2;
 }
 
-// This does not need to be separate, but it reduces impedance mismatch across the type definitions.
-message RelActorPoolProject {
+message RelUDFProject {
   Rel input = 1;
-  repeated Expr projections = 2;
+  Expr project = 2;
+  repeated Expr passthrough_columns = 3;
 }
 
 message RelFilter {

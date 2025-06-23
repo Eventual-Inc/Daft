@@ -707,7 +707,7 @@ pub mod rel {
         Window(::prost::alloc::boxed::Box<super::RelWindow>),
         /// --
         #[prost(message, tag = "15")]
-        ActorPoolProject(::prost::alloc::boxed::Box<super::RelActorPoolProject>),
+        UdfProject(::prost::alloc::boxed::Box<super::RelUdfProject>),
         #[prost(message, tag = "16")]
         Explode(::prost::alloc::boxed::Box<super::RelExplode>),
         #[prost(message, tag = "17")]
@@ -740,13 +740,14 @@ pub struct RelProject {
     #[prost(message, repeated, tag = "2")]
     pub projections: ::prost::alloc::vec::Vec<Expr>,
 }
-/// This does not need to be separate, but it reduces impedance mismatch across the type definitions.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RelActorPoolProject {
+pub struct RelUdfProject {
     #[prost(message, optional, boxed, tag = "1")]
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<Rel>>,
-    #[prost(message, repeated, tag = "2")]
-    pub projections: ::prost::alloc::vec::Vec<Expr>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub project: ::core::option::Option<::prost::alloc::boxed::Box<Expr>>,
+    #[prost(message, repeated, tag = "3")]
+    pub passthrough_columns: ::prost::alloc::vec::Vec<Expr>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelFilter {

@@ -17,10 +17,10 @@ mod ir {
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
 #[rustfmt::skip]
 mod proto {
-    pub use daft_proto::protos::daft::v2::*;
-    pub use daft_proto::protos::daft::v2::rel::Variant as RelVariant;
-    pub use daft_proto::protos::daft::v2::source_info::Variant as SourceInfoVariant;
-    pub use daft_proto::protos::daft::v2::partition_transform::Variant as PartitionTransformVariant;
+    pub use daft_proto::protos::daft::v1::*;
+    pub use daft_proto::protos::daft::v1::rel::Variant as RelVariant;
+    pub use daft_proto::protos::daft::v1::source_info::Variant as SourceInfoVariant;
+    pub use daft_proto::protos::daft::v1::partition_transform::Variant as PartitionTransformVariant;
 }
 
 #[allow(unused)]
@@ -40,9 +40,9 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let project = ir::rel::Project::from_proto(*project)?;
                 Self::Project(project)
             }
-            proto::RelVariant::ActorPoolProject(actor_pool_project) => {
-                let actor_pool_project = ir::rel::UDFProject::from_proto(*actor_pool_project)?;
-                Self::UDFProject(actor_pool_project)
+            proto::RelVariant::UdfProject(udf_project) => {
+                let udf_project = ir::rel::UDFProject::from_proto(*udf_project)?;
+                Self::UDFProject(udf_project)
             }
             proto::RelVariant::Filter(filter) => {
                 let filter = ir::rel::Filter::from_proto(*filter)?;
@@ -156,9 +156,9 @@ impl ToFromProto for ir::rel::LogicalPlan {
                 let project = project.to_proto()?.into();
                 proto::RelVariant::Project(project)
             }
-            Self::UDFProject(actor_pool_project) => {
-                let actor_pool_project = actor_pool_project.to_proto()?.into();
-                proto::RelVariant::ActorPoolProject(actor_pool_project)
+            Self::UDFProject(udf_project) => {
+                let udf_project = udf_project.to_proto()?.into();
+                proto::RelVariant::UdfProject(udf_project)
             }
             Self::Filter(filter) => {
                 let filter = filter.to_proto()?.into();
