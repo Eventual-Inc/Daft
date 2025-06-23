@@ -385,11 +385,12 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::UDFProject(UDFProject {
             input,
             project,
+            passthrough_columns,
             stats_state,
             ..
         }) => {
-            let proj_op =
-                UdfOperator::try_new(project.clone()).with_context(|_| PipelineCreationSnafu {
+            let proj_op = UdfOperator::try_new(project.clone(), passthrough_columns.clone())
+                .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package daft.v1;
+package daft.v2;
 
 // https://en.wikipedia.org/wiki/Unit_type
 message Unit {};
@@ -538,7 +538,8 @@ message RelProject {
 // This does not need to be separate, but it reduces impedance mismatch across the type definitions.
 message RelActorPoolProject {
   Rel input = 1;
-  repeated Expr projections = 2;
+  Expr project = 2;
+  repeated Expr passthrough_columns = 3;
 }
 
 message RelFilter {

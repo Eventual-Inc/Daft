@@ -538,7 +538,8 @@ impl ToFromProto for UDFProject {
         Self: Sized,
     {
         let input = ir::rel::LogicalPlan::from_proto(*non_null!(message.input))?;
-        let project = from_proto(message.project)?;
+        let project = message.project;
+        let project = from_proto(project.map(|p| (*p).into()))?;
         let passthrough_columns = from_protos(message.passthrough_columns)?;
         Ok(ir::rel::new_project_with_udf(
             input,
@@ -549,10 +550,12 @@ impl ToFromProto for UDFProject {
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let input = self.input.to_proto()?.into();
-        let projections = to_protos(&self.passthrough_columns)?;
+        let project = self.project.to_proto()?;
+        let passthrough_columns = to_protos(&self.passthrough_columns)?;
         Ok(proto::RelActorPoolProject {
             input: Some(input),
-            projections,
+            project: Some(Box::new(project)),
+            passthrough_columns,
         })
     }
 }
