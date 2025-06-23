@@ -20,7 +20,7 @@ use crate::{
     plan::PlanID,
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
-        task::{SchedulingStrategy, SwordfishTask, Task, TaskID},
+        task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, StageID},
@@ -42,7 +42,7 @@ mod translate;
 mod unpivot;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
-pub(crate) type NodeID = usize;
+pub(crate) type NodeID = u32;
 pub(crate) type NodeName = &'static str;
 
 /// The materialized output of a completed pipeline node.
@@ -119,8 +119,8 @@ impl PipelineNodeContext {
         child_names: Vec<NodeName>,
     ) -> Self {
         Self {
-            plan_id: stage_config.plan_id.clone(),
-            stage_id: stage_config.stage_id.clone(),
+            plan_id: stage_config.plan_id,
+            stage_id: stage_config.stage_id,
             node_id,
             node_name,
             child_ids,
@@ -248,9 +248,9 @@ impl RunningPipelineNode {
                     }
                     PipelineOutput::Materialized(materialized_output) => {
                         // make new task for this partition ref
-                        let task = make_new_task_from_materialized_output(
-                            task_id_counter.next(),
-                            materialized_output,
+                        let task = make_new_task_from_materialized_outputs(
+                            TaskContext::from((node.context(), task_id_counter.next())),
+                            vec![materialized_output],
                             &node,
                             &plan_builder,
                         )?;
@@ -261,7 +261,7 @@ impl RunningPipelineNode {
                     PipelineOutput::Task(task) => {
                         // append plan to this task
                         let task = append_plan_to_existing_task(
-                            task_id_counter.next(),
+                            TaskContext::from((node.context(), task_id_counter.next())),
                             task,
                             &node,
                             &plan_builder,
@@ -280,36 +280,53 @@ impl RunningPipelineNode {
     }
 }
 
-fn make_new_task_from_materialized_output<F>(
-    task_id: TaskID,
-    materialized_output: MaterializedOutput,
+fn make_new_task_from_materialized_outputs<F>(
+    task_context: TaskContext,
+    materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,
 ) -> DaftResult<SubmittableTask<SwordfishTask>>
 where
     F: Fn(LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send + Sync + 'static,
 {
-    let (partition_ref, worker_id) = materialized_output.into_inner();
+    let num_partitions = materialized_outputs.len();
+    let mut total_size_bytes = 0;
+    let mut total_num_rows = 0;
+    let mut partition_refs = vec![];
+    let mut worker_id_counts: HashMap<WorkerId, usize> = HashMap::new();
+
+    for materialized_output in materialized_outputs {
+        let (partition_ref, worker_id) = materialized_output.into_inner();
+        total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
+        total_num_rows += partition_ref.num_rows().unwrap_or(0);
+        partition_refs.push(partition_ref);
+        let count = worker_id_counts.entry(worker_id.clone()).or_insert(0);
+        *count += 1;
+    }
+
+    let worker_id = worker_id_counts
+        .iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(worker_id, _)| worker_id.clone())
+        .unwrap_or_default();
 
     let info = InMemoryInfo::new(
         node.config().schema.clone(),
         node.context().node_id.to_string(),
         None,
-        1,
-        partition_ref
-            .size_bytes()?
-            .expect("The size of the materialized output should be known"),
-        partition_ref.num_rows()?,
+        num_partitions,
+        total_size_bytes,
+        total_num_rows,
         None,
         None,
     );
     let in_memory_source_plan =
         LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
     let plan = plan_builder(in_memory_source_plan)?;
-    let psets = HashMap::from([(node.node_id().to_string(), vec![partition_ref])]);
+    let psets = HashMap::from([(node.node_id().to_string(), partition_refs)]);
 
     let task = SwordfishTask::new(
-        task_id,
+        task_context,
         plan,
         node.config().execution_config.clone(),
         psets,
@@ -324,7 +341,7 @@ where
 }
 
 fn append_plan_to_existing_task<F>(
-    task_id: TaskID,
+    task_context: TaskContext,
     submittable_task: SubmittableTask<SwordfishTask>,
     node: &Arc<dyn DistributedPipelineNode>,
     plan_builder: &F,
@@ -340,7 +357,7 @@ where
     let task_priority = submittable_task.task().task_priority();
 
     let task = submittable_task.with_new_task(SwordfishTask::new(
-        task_id,
+        task_context,
         new_plan,
         config,
         psets,

@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     future::Future,
     sync::{
-        atomic::{AtomicU32, AtomicUsize, Ordering},
+        atomic::{AtomicU32, Ordering},
         Arc,
     },
 };
@@ -93,9 +93,8 @@ impl Stage {
         config: Arc<DaftExecutionConfig>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<RunningStage> {
-        let stage_config = StageConfig::new(plan_id, self.id.clone(), config);
-        let mut stage_context =
-            StageExecutionContext::new(plan_id, self.id.clone(), scheduler_handle);
+        let stage_config = StageConfig::new(plan_id, self.id, config);
+        let mut stage_context = StageExecutionContext::new(scheduler_handle);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let pipeline_node =
@@ -115,7 +114,7 @@ impl Stage {
         bottom_up: bool,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<String> {
-        let stage_config = StageConfig::new(plan_id, self.id.clone(), config);
+        let stage_config = StageConfig::new(plan_id, self.id, config);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let pipeline_node =
@@ -142,7 +141,7 @@ impl Stage {
         simple: bool,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<String> {
-        let stage_config = StageConfig::new(plan_id, self.id.clone(), config);
+        let stage_config = StageConfig::new(plan_id, self.id, config);
         match &self.type_ {
             StageType::MapPipeline { plan } => {
                 let pipeline_node =
@@ -316,16 +315,12 @@ pub(crate) struct StageExecutionContext {
 }
 
 impl StageExecutionContext {
-    fn new(
-        plan_id: PlanID,
-        stage_id: StageID,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-    ) -> Self {
+    fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
         let joinset = JoinSet::new();
         Self {
             scheduler_handle,
             joinset,
-            task_id_counter: TaskIDCounter::new(plan_id, stage_id),
+            task_id_counter: TaskIDCounter::new(),
         }
     }
 
@@ -344,25 +339,17 @@ impl StageExecutionContext {
 
 #[derive(Clone)]
 pub(crate) struct TaskIDCounter {
-    plan_id: PlanID,
-    stage_id: StageID,
     counter: Arc<AtomicU32>,
 }
 
 impl TaskIDCounter {
-    pub fn new(plan_id: PlanID, stage_id: StageID) -> Self {
+    pub fn new() -> Self {
         Self {
-            plan_id,
-            stage_id,
             counter: Arc::new(AtomicU32::new(0)),
         }
     }
 
     pub fn next(&self) -> TaskID {
-        TaskID::new(
-            self.plan_id,
-            self.stage_id,
-            self.counter.fetch_add(1, Ordering::Relaxed),
-        )
+        self.counter.fetch_add(1, Ordering::Relaxed)
     }
 }

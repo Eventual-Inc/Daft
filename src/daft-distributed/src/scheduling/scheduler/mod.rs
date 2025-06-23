@@ -4,7 +4,9 @@ use super::{
     task::{SchedulingStrategy, Task, TaskDetails, TaskID, TaskPriority},
     worker::{Worker, WorkerId},
 };
-use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
+use crate::{
+    pipeline_node::MaterializedOutput, scheduling::task::TaskContext, utils::channel::OneshotSender,
+};
 
 mod default;
 mod linear;
@@ -52,8 +54,8 @@ impl<T: Task> SchedulableTask<T> {
         self.task.priority()
     }
 
-    pub fn task_id(&self) -> TaskID {
-        self.task.task_id()
+    pub fn task_context(&self) -> TaskContext {
+        self.task.task_context()
     }
 
     pub fn into_inner(
@@ -89,17 +91,24 @@ impl<T: Task> Ord for SchedulableTask<T> {
 
 #[derive(Debug)]
 pub(super) struct ScheduledTask<T: Task> {
-    task: SchedulableTask<T>,
+    schedulable_task: SchedulableTask<T>,
     worker_id: WorkerId,
 }
 
 impl<T: Task> ScheduledTask<T> {
     pub fn new(task: SchedulableTask<T>, worker_id: WorkerId) -> Self {
-        Self { task, worker_id }
+        Self {
+            schedulable_task: task,
+            worker_id,
+        }
+    }
+
+    pub fn task(&self) -> &T {
+        &self.schedulable_task.task
     }
 
     pub fn into_inner(self) -> (WorkerId, SchedulableTask<T>) {
-        (self.worker_id, self.task)
+        (self.worker_id, self.schedulable_task)
     }
 }
 

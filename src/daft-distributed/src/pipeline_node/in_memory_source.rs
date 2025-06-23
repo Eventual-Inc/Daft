@@ -11,7 +11,7 @@ use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig},
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskID},
+        task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{create_channel, Sender},
@@ -57,8 +57,10 @@ impl InMemorySourceNode {
         let partition_refs = self.input_psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
 
         for partition_ref in partition_refs {
-            let task =
-                self.make_task_for_partition_refs(vec![partition_ref], task_id_counter.next())?;
+            let task = self.make_task_for_partition_refs(
+                vec![partition_ref],
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )?;
             if result_tx
                 .send(PipelineOutput::Task(SubmittableTask::new(task)))
                 .await
@@ -73,7 +75,7 @@ impl InMemorySourceNode {
     fn make_task_for_partition_refs(
         &self,
         partition_refs: Vec<PartitionRef>,
-        task_id: TaskID,
+        task_context: TaskContext,
     ) -> DaftResult<SwordfishTask> {
         let mut total_size_bytes = 0;
         let mut total_num_rows = 0;
@@ -95,7 +97,7 @@ impl InMemorySourceNode {
             LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
         let task = SwordfishTask::new(
-            task_id,
+            task_context,
             in_memory_source_plan,
             self.config.execution_config.clone(),
             psets,

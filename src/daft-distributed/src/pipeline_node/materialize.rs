@@ -186,7 +186,6 @@ mod tests {
     use crate::{
         scheduling::{
             scheduler::{spawn_default_scheduler_actor, SubmittableTask},
-            task::TaskID,
             tests::{
                 create_mock_partition_ref, setup_workers, MockTask, MockTaskBuilder,
                 MockWorkerManager,
@@ -307,7 +306,7 @@ mod tests {
 
         // Create and submit a mock task
         let task = MockTaskBuilder::new(partitions[2].clone())
-            .with_task_id(TaskID::from(0))
+            .with_task_id(0)
             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
             .build();
         let submitted_task = SubmittableTask::new(task)
@@ -322,7 +321,7 @@ mod tests {
             ))),
             Ok(PipelineOutput::Task(SubmittableTask::new(
                 MockTaskBuilder::new(partitions[1].clone())
-                    .with_task_id(TaskID::from(1))
+                    .with_task_id(1)
                     .with_sleep_duration(Duration::from_millis(task2_sleep_ms))
                     .build(),
             ))),
@@ -368,7 +367,7 @@ mod tests {
                         let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
                         Ok(PipelineOutput::Task(SubmittableTask::new(
                             MockTaskBuilder::new(partitions[i].clone())
-                                .with_task_id(TaskID::from(i))
+                                .with_task_id(i as u32)
                                 .with_sleep_duration(sleep_duration)
                                 .build(),
                         )))
@@ -376,7 +375,7 @@ mod tests {
                     2 => {
                         let sleep_duration = Duration::from_millis(rng.gen_range(200..500));
                         let task = MockTaskBuilder::new(partitions[i].clone())
-                            .with_task_id(TaskID::from(i))
+                            .with_task_id(i as u32)
                             .with_sleep_duration(sleep_duration)
                             .build();
                         let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
@@ -441,13 +440,13 @@ mod tests {
                     ))),
                     1 => Ok(PipelineOutput::Task(SubmittableTask::new(
                         MockTaskBuilder::new(partitions[i].clone())
-                            .with_task_id(TaskID::from(i))
+                            .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build(),
                     ))),
                     2 => {
                         let task = MockTaskBuilder::new(partitions[i].clone())
-                            .with_task_id(TaskID::from(i))
+                            .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build();
                         let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
@@ -494,7 +493,7 @@ mod tests {
 
         // Create and submit a mock task
         let task = MockTaskBuilder::new(partitions[2].clone())
-            .with_task_id(TaskID::from(0))
+            .with_task_id(0)
             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
             .build();
         let submitted_task = SubmittableTask::new(task)
@@ -508,7 +507,7 @@ mod tests {
             ))),
             Ok(PipelineOutput::Task(SubmittableTask::new(
                 MockTaskBuilder::new(partitions[1].clone())
-                    .with_task_id(TaskID::from(1))
+                    .with_task_id(1)
                     .with_sleep_duration(Duration::from_millis(task2_sleep_ms))
                     .build(),
             ))),
@@ -561,7 +560,7 @@ mod tests {
                         let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
                         Ok(PipelineOutput::Task(SubmittableTask::new(
                             MockTaskBuilder::new(partitions[i].clone())
-                                .with_task_id(TaskID::from(i))
+                                .with_task_id(i as u32)
                                 .with_sleep_duration(sleep_duration)
                                 .build(),
                         )))
@@ -569,7 +568,7 @@ mod tests {
                     2 => {
                         let sleep_duration = Duration::from_millis(rng.gen_range(200..500));
                         let task = MockTaskBuilder::new(partitions[i].clone())
-                            .with_task_id(TaskID::from(i))
+                            .with_task_id(i as u32)
                             .with_sleep_duration(sleep_duration)
                             .build();
                         let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
@@ -635,13 +634,13 @@ mod tests {
                     ))),
                     1 => Ok(PipelineOutput::Task(SubmittableTask::new(
                         MockTaskBuilder::new(partitions[i].clone())
-                            .with_task_id(TaskID::from(i))
+                            .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build(),
                     ))),
                     2 => {
                         let task = MockTaskBuilder::new(partitions[i].clone())
-                            .with_task_id(TaskID::from(i))
+                            .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build();
                         let submitted_task = SubmittableTask::new(task).submit(&handle).await?;

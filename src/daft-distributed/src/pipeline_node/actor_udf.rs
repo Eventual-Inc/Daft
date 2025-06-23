@@ -20,7 +20,7 @@ use super::{
 use crate::{
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskID},
+        task::{SchedulingStrategy, SwordfishTask, TaskContext},
         worker::WorkerId,
     },
     stage::{StageConfig, StageExecutionContext, TaskIDCounter},
@@ -222,7 +222,7 @@ impl ActorUDF {
                         vec![materialized_output],
                         worker_id,
                         actors,
-                        task_id_counter.next(),
+                        TaskContext::from((&self.context, task_id_counter.next())),
                     )?;
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
@@ -248,7 +248,7 @@ impl ActorUDF {
                         worker_id,
                         task,
                         actors,
-                        task_id_counter.next(),
+                        TaskContext::from((&self.context, task_id_counter.next())),
                     )?;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
                     running_tasks.spawn(notify_token);
@@ -278,7 +278,7 @@ impl ActorUDF {
         materialized_outputs: Vec<MaterializedOutput>,
         worker_id: WorkerId,
         actors: Vec<PyObjectWrapper>,
-        task_id: TaskID,
+        task_context: TaskContext,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
         // Extract all partitions from materialized outputs
         let mut partitions = Vec::new();
@@ -310,7 +310,7 @@ impl ActorUDF {
             StatsState::NotMaterialized,
         );
         let task = SubmittableTask::new(SwordfishTask::new(
-            task_id,
+            task_context,
             actor_pool_project_plan,
             self.config.execution_config.clone(),
             HashMap::from([(self.context.node_id.to_string(), partitions)]),
@@ -330,7 +330,7 @@ impl ActorUDF {
         worker_id: WorkerId,
         submittable_task: SubmittableTask<SwordfishTask>,
         actors: Vec<PyObjectWrapper>,
-        task_id: TaskID,
+        task_context: TaskContext,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
         let task_plan = submittable_task.task().plan();
         let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
@@ -350,7 +350,7 @@ impl ActorUDF {
         let psets = submittable_task.task().psets().clone();
 
         let task = submittable_task.with_new_task(SwordfishTask::new(
-            task_id,
+            task_context,
             actor_pool_project_plan,
             self.config.execution_config.clone(),
             psets,

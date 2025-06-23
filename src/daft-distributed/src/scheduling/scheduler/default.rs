@@ -2,7 +2,7 @@ use std::collections::{BinaryHeap, HashMap};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskID},
+    task::{SchedulingStrategy, Task, TaskDetails},
     worker::WorkerId,
 };
 
@@ -86,7 +86,7 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
                     .get_mut(&worker_id)
                     .expect("Worker should be present in DefaultScheduler")
                     .active_task_details
-                    .insert(task.task_id(), TaskDetails::from(&task.task));
+                    .insert(task.task_context().task_id, TaskDetails::from(&task.task));
                 scheduled.push(ScheduledTask::new(task, worker_id));
             } else {
                 unscheduled.push(task);
@@ -244,7 +244,7 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 0);
         for scheduled_task in &result {
             if let SchedulingStrategy::WorkerAffinity { worker_id, .. } =
-                &scheduled_task.task.strategy()
+                &scheduled_task.task().strategy()
             {
                 assert_eq!(scheduled_task.worker_id, *worker_id);
             }
@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 0);
         for scheduled_task in &scheduled_tasks {
             if let SchedulingStrategy::WorkerAffinity { worker_id, .. } =
-                &scheduled_task.task.strategy()
+                &scheduled_task.task().strategy()
             {
                 assert_eq!(scheduled_task.worker_id, *worker_id);
             } else {
@@ -367,7 +367,7 @@ mod tests {
         let tasks = vec![
             create_schedulable_task(
                 MockTaskBuilder::default()
-                    .with_task_id(TaskID::from(3))
+                    .with_task_id(3)
                     .with_resource_request(
                         ResourceRequest::try_new_internal(Some(3.0), None, None).unwrap(), // 3 CPUs
                     )
@@ -375,7 +375,7 @@ mod tests {
             ),
             create_schedulable_task(
                 MockTaskBuilder::default()
-                    .with_task_id(TaskID::from(2))
+                    .with_task_id(2)
                     .with_resource_request(
                         ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap(), // 2 CPUs
                     )
@@ -383,7 +383,7 @@ mod tests {
             ),
             create_schedulable_task(
                 MockTaskBuilder::default()
-                    .with_task_id(TaskID::from(1))
+                    .with_task_id(1)
                     .with_resource_request(
                         ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(), // 1 CPU
                     )
@@ -398,11 +398,11 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 0);
         for scheduled_task in &result {
             if scheduled_task.worker_id == worker_1 {
-                assert_eq!(scheduled_task.task.task_id().as_u64(), 1);
+                assert_eq!(scheduled_task.task().task_id(), 1);
             } else if scheduled_task.worker_id == worker_2 {
-                assert_eq!(scheduled_task.task.task_id().as_u64(), 2);
+                assert_eq!(scheduled_task.task().task_id(), 2);
             } else if scheduled_task.worker_id == worker_3 {
-                assert_eq!(scheduled_task.task.task_id().as_u64(), 3);
+                assert_eq!(scheduled_task.task().task_id(), 3);
             }
         }
     }
@@ -436,7 +436,7 @@ mod tests {
         let tasks = vec![
             create_schedulable_task(
                 MockTaskBuilder::default()
-                    .with_task_id(TaskID::from(1))
+                    .with_task_id(1)
                     .with_resource_request(
                         ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(), // 1 CPU
                     )
@@ -444,7 +444,7 @@ mod tests {
             ),
             create_schedulable_task(
                 MockTaskBuilder::default()
-                    .with_task_id(TaskID::from(2))
+                    .with_task_id(2)
                     .with_resource_request(
                         ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap(), // 2 CPUs
                     )
@@ -452,7 +452,7 @@ mod tests {
             ),
             create_schedulable_task(
                 MockTaskBuilder::default()
-                    .with_task_id(TaskID::from(3))
+                    .with_task_id(3)
                     .with_resource_request(
                         ResourceRequest::try_new_internal(Some(3.0), None, None).unwrap(), // 3 CPUs
                     )
@@ -467,11 +467,11 @@ mod tests {
         assert_eq!(scheduler.num_pending_tasks(), 0);
         for scheduled_task in &result {
             if scheduled_task.worker_id == worker_1 {
-                assert_eq!(scheduled_task.task.task_id().as_u64(), 1);
+                assert_eq!(scheduled_task.task().task_id(), 1);
             } else if scheduled_task.worker_id == worker_2 {
-                assert_eq!(scheduled_task.task.task_id().as_u64(), 2);
+                assert_eq!(scheduled_task.task().task_id(), 2);
             } else if scheduled_task.worker_id == worker_3 {
-                assert_eq!(scheduled_task.task.task_id().as_u64(), 3);
+                assert_eq!(scheduled_task.task().task_id(), 3);
             }
         }
     }

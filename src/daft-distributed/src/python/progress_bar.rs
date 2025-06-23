@@ -1,7 +1,22 @@
 use common_error::DaftResult;
 use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
 
-use crate::statistics::{StatisticsEvent, StatisticsSubscriber};
+use crate::{
+    scheduling::task::TaskContext,
+    statistics::{StatisticsEvent, StatisticsSubscriber},
+};
+
+struct BarId(i64);
+
+impl From<&TaskContext> for BarId {
+    fn from(task_context: &TaskContext) -> Self {
+        Self(
+            ((task_context.stage_id as i64) << 48)
+                | ((task_context.plan_id as i64) << 32)
+                | (task_context.node_id as i64),
+        )
+    }
+}
 
 pub(crate) struct FlotillaProgressBar {
     progress_bar_pyobject: PyObject,
@@ -17,34 +32,34 @@ impl FlotillaProgressBar {
         })
     }
 
-    pub fn make_bar_or_update_total(&self, bar_id: i64, bar_name: &str) -> PyResult<()> {
+    fn make_bar_or_update_total(&self, bar_id: BarId, bar_name: &str) -> PyResult<()> {
         Python::with_gil(|py| {
             let progress_bar = self
                 .progress_bar_pyobject
                 .getattr(py, pyo3::intern!(py, "make_bar_or_update_total"))?;
-            progress_bar.call1(py, (bar_id, bar_name))?;
+            progress_bar.call1(py, (bar_id.0, bar_name))?;
             Ok(())
         })
     }
 
-    pub fn update_bar(&self, bar_id: i64) -> PyResult<()> {
+    fn update_bar(&self, bar_id: BarId) -> PyResult<()> {
         Python::with_gil(|py| {
             let progress_bar = self
                 .progress_bar_pyobject
                 .getattr(py, pyo3::intern!(py, "update_bar"))?;
-            progress_bar.call1(py, (bar_id,))?;
+            progress_bar.call1(py, (bar_id.0,))?;
             Ok(())
         })
     }
 
-    pub fn close(&self) {
+    fn close(&self) {
         Python::with_gil(|py| {
             let progress_bar = self
                 .progress_bar_pyobject
                 .getattr(py, pyo3::intern!(py, "close"))
                 .expect("Failed to get close method");
             progress_bar.call0(py).expect("Failed to call close method");
-        })
+        });
     }
 }
 
@@ -57,16 +72,14 @@ impl Drop for FlotillaProgressBar {
 impl StatisticsSubscriber for FlotillaProgressBar {
     fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()> {
         match event {
-            StatisticsEvent::TaskSubmitted { task_id, task_name } => {
-                self.make_bar_or_update_total(
-                    (task_id.stage_id() + task_id.plan_id()) as i64,
-                    task_name,
-                )?;
+            StatisticsEvent::SubmittedTask { context, name } => {
+                self.make_bar_or_update_total(BarId::from(context), name)?;
                 Ok(())
             }
-            StatisticsEvent::TaskScheduled { .. } => Ok(()),
-            StatisticsEvent::TaskFinished { task_id } => {
-                self.update_bar((task_id.stage_id() + task_id.plan_id()) as i64)?;
+            // For progress bar we don't care if it is scheduled, for now.
+            StatisticsEvent::ScheduledTask { .. } => Ok(()),
+            StatisticsEvent::FinishedTask { context } => {
+                self.update_bar(BarId::from(context))?;
                 Ok(())
             }
         }

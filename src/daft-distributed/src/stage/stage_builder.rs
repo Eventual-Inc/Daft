@@ -117,7 +117,7 @@ impl StagePlanBuilder {
                 }
                 let schema = plan.schema();
                 let stage = Stage {
-                    id: stage_id.clone(),
+                    id: stage_id,
                     type_: StageType::HashJoin {
                         plan,
                         left_on,
@@ -131,7 +131,7 @@ impl StagePlanBuilder {
                     ],
                     output_channels: vec![self.create_output_channel(schema, None)?],
                 };
-                self.stages.insert(stage_id.clone(), stage);
+                self.stages.insert(stage_id, stage);
                 Ok(stage_id)
             }
             // For other operations, group into a MapPipeline stage
@@ -194,14 +194,14 @@ impl StagePlanBuilder {
                 // Create a MapPipeline stage
                 let stage_id = self.next_stage_id();
                 let stage = Stage {
-                    id: stage_id.clone(),
+                    id: stage_id,
                     type_: StageType::MapPipeline { plan: new_plan },
                     input_channels,
                     output_channels: vec![self.create_output_channel(schema, None)?],
                 };
 
                 // TODO: Add upstream stage to output channel stages
-                self.stages.insert(stage_id.clone(), stage);
+                self.stages.insert(stage_id, stage);
                 Ok(stage_id)
             }
         }

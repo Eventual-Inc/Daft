@@ -108,9 +108,9 @@ where
                 enqueueable_tasks.push(task);
             }
             for task in &enqueueable_tasks {
-                statistics_manager.handle_event(StatisticsEvent::TaskSubmitted {
-                    task_id: task.task_id(),
-                    task_name: task.task.task_name().clone(),
+                statistics_manager.handle_event(StatisticsEvent::SubmittedTask {
+                    context: task.task_context(),
+                    name: task.task.task_name().clone(),
                 })?;
             }
             scheduler.enqueue_tasks(enqueueable_tasks);
@@ -139,8 +139,8 @@ where
                 tracing::debug!("Dispatching tasks: {:?}", scheduled_tasks);
 
                 for task in &scheduled_tasks {
-                    statistics_manager.handle_event(StatisticsEvent::TaskScheduled {
-                        task_id: task.task.task_id(),
+                    statistics_manager.handle_event(StatisticsEvent::ScheduledTask {
+                        context: task.task().task_context(),
                     })?;
                 }
                 dispatcher_handle.dispatch_tasks(scheduled_tasks).await?;
@@ -417,7 +417,7 @@ mod tests {
         let mut submitted_tasks = Vec::with_capacity(num_tasks);
         for i in 0..num_tasks {
             let task = MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 + 1))
-                .with_task_id(TaskID::from(i))
+                .with_task_id(i as u32)
                 .with_sleep_duration(task_duration)
                 .build();
             let submittable_task = SubmittableTask::new(task);
@@ -468,9 +468,7 @@ mod tests {
                     let task_duration =
                         std::time::Duration::from_millis(rand::thread_rng().gen_range(50..150));
                     let task = MockTaskBuilder::new(create_mock_partition_ref(num_rows, num_bytes))
-                        .with_task_id(TaskID::from(
-                            submitter_id * num_tasks_per_submitter + task_id,
-                        ))
+                        .with_task_id(submitter_id * num_tasks_per_submitter + task_id)
                         .with_sleep_duration(task_duration)
                         .build();
                     let submittable_task = SubmittableTask::new(task);
@@ -544,9 +542,7 @@ mod tests {
                     let num_bytes = rand::thread_rng().gen_range(1024..1024 * 10);
                     let mut task =
                         MockTaskBuilder::new(create_mock_partition_ref(num_rows, num_bytes))
-                            .with_task_id(TaskID::from(
-                                submitter_id * num_tasks_per_submitter + task_id,
-                            ));
+                            .with_task_id(submitter_id * num_tasks_per_submitter + task_id);
 
                     if should_cancel {
                         let task_duration = std::time::Duration::from_millis(1000);
@@ -602,7 +598,7 @@ mod tests {
         let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
-            .with_task_id(TaskID::from(0))
+            .with_task_id(0)
             .with_failure(MockTaskFailure::Error("test error".to_string()))
             .build();
         let submittable_task = SubmittableTask::new(task);
@@ -625,7 +621,7 @@ mod tests {
         let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
-            .with_task_id(TaskID::from(0))
+            .with_task_id(0)
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
         let submittable_task = SubmittableTask::new(task);
