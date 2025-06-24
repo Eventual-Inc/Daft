@@ -1775,14 +1775,14 @@ class NativeExecutor:
         results_buffer_size: int | None,
         context: dict[str, str] | None,
     ) -> AsyncIterator[PyMicroPartition]: ...
-    def repr_ascii(
-        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool
-    ) -> str: ...
+    @staticmethod
+    def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
+    @staticmethod
     def repr_mermaid(
-        self, builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
+        builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
     ) -> str: ...
+    @staticmethod
     def get_relationship_info(
-        self,
         logical_plan_builder: LogicalPlanBuilder,
         daft_execution_config: PyDaftExecutionConfig,
     ) -> RelationshipInformation: ...

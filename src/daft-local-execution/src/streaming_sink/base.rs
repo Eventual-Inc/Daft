@@ -14,7 +14,7 @@ use crate::{
         Sender,
     },
     dispatcher::DispatchSpawner,
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext, MAX_PIPELINE_NAME_LEN},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -226,8 +226,8 @@ impl PipelineNode for StreamingSinkNode {
             .collect()
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> String {
+        format!("{:>1$}", self.name, MAX_PIPELINE_NAME_LEN)
     }
 
     fn start(
@@ -237,7 +237,8 @@ impl PipelineNode for StreamingSinkNode {
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
-            ProgressBarColor::Cyan,
+            ProgressBarColor::Red,
+            self.node_id(),
             self.runtime_stats.clone(),
         );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
@@ -271,7 +272,7 @@ impl PipelineNode for StreamingSinkNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            self.name().as_str(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
@@ -315,7 +316,7 @@ impl PipelineNode for StreamingSinkNode {
                 }
                 Ok(())
             },
-            self.name(),
+            self.name().as_str(),
         );
         Ok(destination_receiver)
     }

@@ -15,7 +15,7 @@ use crate::{
         Sender,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext, MAX_PIPELINE_NAME_LEN},
     progress_bar::ProgressBarColor,
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -239,8 +239,9 @@ impl PipelineNode for IntermediateNode {
             .collect()
     }
 
-    fn name(&self) -> &'static str {
-        self.intermediate_op.name()
+    fn name(&self) -> String {
+        let name = self.intermediate_op.name();
+        format!("{:>1$}", name, MAX_PIPELINE_NAME_LEN)
     }
 
     fn start(
@@ -252,6 +253,7 @@ impl PipelineNode for IntermediateNode {
         let progress_bar = runtime_handle.make_progress_bar(
             self.name(),
             ProgressBarColor::Magenta,
+            self.node_id(),
             self.runtime_stats.clone(),
         );
 
@@ -286,7 +288,7 @@ impl PipelineNode for IntermediateNode {
         );
         runtime_handle.spawn_local(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
-            self.name(),
+            self.name().as_str(),
         );
 
         let mut output_receiver = self.spawn_workers(

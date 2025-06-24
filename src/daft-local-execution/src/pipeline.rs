@@ -64,9 +64,11 @@ use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
+pub const MAX_PIPELINE_NAME_LEN: usize = 18;
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
-    fn name(&self) -> &'static str;
+    fn name(&self) -> String;
     fn start(
         &self,
         maintain_order: bool,
