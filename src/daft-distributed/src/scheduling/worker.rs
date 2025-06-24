@@ -6,6 +6,7 @@ use super::{
     scheduler::SchedulableTask,
     task::{Task, TaskDetails, TaskID, TaskResultHandle, TaskResultHandleAwaiter},
 };
+use crate::scheduling::scheduler::WorkerSnapshot;
 
 pub(crate) type WorkerId = Arc<str>;
 
@@ -44,11 +45,8 @@ pub(crate) trait WorkerManager: Send + Sync {
         Vec<TaskResultHandleAwaiter<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>,
     >;
     fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId);
-    fn workers(&self) -> &HashMap<WorkerId, Self::Worker>;
-    #[allow(dead_code)]
-    fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
-        Ok(())
-    }
+    fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
+    fn try_autoscale(&self, num_cpus: usize) -> DaftResult<()>;
     fn shutdown(&self) -> DaftResult<()>;
 }
 
@@ -116,8 +114,8 @@ pub(super) mod tests {
             }
         }
 
-        fn workers(&self) -> &HashMap<WorkerId, Self::Worker> {
-            &self.workers
+        fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {
+            Ok(self.workers.values().map(WorkerSnapshot::from).collect())
         }
 
         fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {

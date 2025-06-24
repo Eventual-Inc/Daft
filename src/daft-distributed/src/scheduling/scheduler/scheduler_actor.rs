@@ -10,12 +10,11 @@ use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
-use super::{
-    default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler, WorkerSnapshot,
-};
+use super::{default::DefaultScheduler, linear::LinearScheduler, SchedulableTask, Scheduler};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
+        autoscaler::{AutoscalerActor, AutoscalerHandle},
         dispatcher::{DispatcherActor, DispatcherHandle},
         task::{Task, TaskID},
         worker::{Worker, WorkerManager},
@@ -60,26 +59,20 @@ where
     S: Scheduler<W::Task> + Send + 'static,
 {
     fn spawn_scheduler_actor(
-        mut scheduler: Self,
+        scheduler: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
         statistics_manager: StatisticsManagerRef,
     ) -> SchedulerHandle<W::Task> {
         // Spawn a dispatcher actor to handle task dispatch and await task results
-        let initial_worker_snapshots = scheduler
-            .worker_manager
-            .workers()
-            .values()
-            .map(WorkerSnapshot::from)
-            .collect::<Vec<_>>();
-        scheduler
-            .scheduler
-            .update_worker_state(&initial_worker_snapshots);
-        let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager);
+        let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager.clone());
         let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(
             dispatcher_actor,
             joinset,
             statistics_manager.clone(),
         );
+
+        let autoscaler_actor = AutoscalerActor::new(scheduler.worker_manager);
+        let autoscaler_handle = AutoscalerActor::spawn_autoscaler_actor(autoscaler_actor, joinset);
 
         // Spawn the scheduler actor to schedule tasks and dispatch them to the dispatcher
         let (scheduler_sender, scheduler_receiver) = create_channel(10000);
@@ -87,6 +80,7 @@ where
             scheduler.scheduler,
             scheduler_receiver,
             dispatcher_handle,
+            autoscaler_handle,
             statistics_manager,
         ));
         SchedulerHandle::new(scheduler_sender)
@@ -127,6 +121,7 @@ where
         mut scheduler: S,
         mut task_rx: Receiver<SchedulableTask<W::Task>>,
         mut dispatcher_handle: DispatcherHandle<W::Task>,
+        autoscaler_handle: AutoscalerHandle,
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
         let mut input_exhausted = false;
@@ -146,7 +141,15 @@ where
                 dispatcher_handle.dispatch_tasks(scheduled_tasks).await?;
             }
 
-            // 3: Concurrently wait for new tasks or worker updates
+            // 3: Send autoscaling request if needed
+            let autoscaling_request = scheduler.get_autoscaling_request();
+            if let Some(request) = autoscaling_request {
+                tracing::debug!("Sending autoscaling request: {:?}", request);
+
+                autoscaler_handle.send_autoscaling_request(request).await?;
+            }
+
+            // 4: Concurrently wait for new tasks or worker updates
             tokio::select! {
                 maybe_new_task = task_rx.recv() => {
                     Self::handle_new_tasks(maybe_new_task, &mut task_rx, &statistics_manager, &mut scheduler, &mut input_exhausted)?;

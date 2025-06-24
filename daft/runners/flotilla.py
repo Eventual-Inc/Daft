@@ -138,7 +138,7 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-def start_ray_workers() -> list[RaySwordfishWorker]:
+def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     handles = []
     for node in ray.nodes():
         if (
@@ -147,6 +147,7 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
             and "memory" in node["Resources"]
             and node["Resources"]["CPU"] > 0
             and node["Resources"]["memory"] > 0
+            and node["NodeID"] not in existing_worker_ids
         ):
             actor = RaySwordfishActor.options(  # type: ignore
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
@@ -166,6 +167,14 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
             )
 
     return handles
+
+
+def try_autoscale(num_cpus: int) -> None:
+    from ray.autoscaler.sdk import request_resources
+
+    request_resources(
+        num_cpus=num_cpus,
+    )
 
 
 class FlotillaPlanRunner:
