@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicU16, Ordering},
     Arc,
 };
 
@@ -19,13 +19,14 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::{PlanID, PlanRunner};
+pub(crate) use runner::PlanRunner;
 
-static PLAN_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static PLAN_ID_COUNTER: AtomicU16 = AtomicU16::new(0);
+pub(crate) type PlanID = u16;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct DistributedPhysicalPlan {
-    id: String,
+    id: PlanID,
     stage_plan: StagePlan,
 }
 
@@ -38,13 +39,13 @@ impl DistributedPhysicalPlan {
         let stage_plan = StagePlan::from_logical_plan(logical_plan, config)?;
 
         Ok(Self {
-            id: format!("plan_{}", PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed)),
+            id: PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
             stage_plan,
         })
     }
 
-    pub fn id(&self) -> &str {
-        &self.id
+    pub fn id(&self) -> PlanID {
+        self.id
     }
 
     pub fn stage_plan(&self) -> &StagePlan {

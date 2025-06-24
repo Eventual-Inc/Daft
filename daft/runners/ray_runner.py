@@ -955,7 +955,7 @@ class Scheduler(ActorPoolManager):
                                 for result in result_obj_refs:
                                     inflight_ref_to_task[result] = task.id()
 
-                                pbar.mark_task_start(task)
+                                pbar.make_bar_or_update_total(task.stage_id, task.name())
 
                             # Break the dispatch batching/dispatch loop if no more dispatches allowed, or physical plan
                             # needs work for forward progress
@@ -986,7 +986,7 @@ class Scheduler(ActorPoolManager):
                                     for partition in task.partitions():
                                         del inflight_ref_to_task[partition]
 
-                                pbar.mark_task_done(task)
+                                pbar.update_bar(task.stage_id)
                                 del inflight_tasks[task_id]
 
             except StopIteration as e:
