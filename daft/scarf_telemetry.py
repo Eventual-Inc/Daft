@@ -7,6 +7,14 @@ import urllib.parse
 import urllib.request
 
 
+def opted_out() -> bool:
+    return (
+        os.getenv("SCARF_NO_ANALYTICS") in ("true", "1")
+        or os.getenv("DO_NOT_TRACK") in ("true", "1")
+        or os.getenv("DAFT_ANALYTICS_ENABLED") in ("0", "false")
+    )
+
+
 def _track_on_scarf(
     endpoint: str, extra_params: dict[str, str] | None = None
 ) -> tuple[threading.Thread | None, dict[str, str | None]]:
@@ -25,12 +33,13 @@ def _track_on_scarf(
 
     version = get_version()
     build_type = get_build_type()
-    scarf_opt_out = os.getenv("SCARF_NO_ANALYTICS") == "true" or os.getenv("DO_NOT_TRACK") == "true"
-    daft_analytics_disabled = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-    result_container: dict[str, str | None] = {"response_status": None, "extra_value": None}
+    result_container: dict[str, str | None] = {
+        "response_status": None,
+        "extra_value": None,
+    }
 
     # Skip analytics for dev builds or if user opted out
-    if build_type == "dev" or scarf_opt_out or daft_analytics_disabled:
+    if build_type == "dev" or opted_out():
         return None, result_container
 
     def send_request(result_container: dict[str, str | None]) -> None:
@@ -71,7 +80,9 @@ def _track_on_scarf(
     return thread, result_container
 
 
-def track_runner_on_scarf(runner: str) -> tuple[threading.Thread | None, dict[str, str | None]]:
+def track_runner_on_scarf(
+    runner: str,
+) -> tuple[threading.Thread | None, dict[str, str | None]]:
     """Track analytics for Daft usage via Scarf."""
     return _track_on_scarf("daft-runner", {"runner": runner})
 
