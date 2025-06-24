@@ -9,6 +9,7 @@ ignore:
 - src/parquet-format-safe
 - src/generated
 - src/daft-proto
+- src/daft-ir
 
 comment:
   layout: reach, diff, flags, files
