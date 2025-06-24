@@ -5,7 +5,7 @@ Daft is an open-source project and we welcome contributions from the community. 
 ## Quick Start
 
 - **Found a bug?** 🐛 [Report it here](#reporting-issues)
-- **Have a feature idea?** 💡 [Start a discussion](#proposing-features) 
+- **Have a feature idea?** 💡 [Start a discussion](#proposing-features)
 - **Want to make your first PR?** 🚀 [Contribute new code](#contributing-code)
 
 
@@ -33,7 +33,7 @@ When proposing features, please include:
 ## Contributing Code
 
 > **💡 Already set up?**
-> 
+>
 >  See our quick [tutorial](#adding-new-expressions) on how to add a new expression to Daft.
 
 ### Development Environment
