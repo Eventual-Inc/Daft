@@ -107,6 +107,7 @@ def sql_expr(sql: str) -> Expression:
     return Expression._from_pyexpr(_sql_expr(sql))
 
 
+@PublicAPI
 def sql(
     sql: str,
     catalog: Optional[SQLCatalog] = None,
