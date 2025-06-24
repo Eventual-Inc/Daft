@@ -1239,6 +1239,7 @@ class DataFrame:
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
+        schema: Optional[Schema] = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1296,7 +1297,9 @@ class DataFrame:
         """
         from daft.dataframe.lance_data_sink import LanceDataSink
 
-        sink = LanceDataSink(uri, self.schema(), mode, io_config, **kwargs)
+        if schema is None:
+            schema = self.schema()
+        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
         return self.write_sink(sink)
 
     ###
