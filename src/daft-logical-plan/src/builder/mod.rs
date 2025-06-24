@@ -11,7 +11,7 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
@@ -324,6 +324,15 @@ impl LogicalPlanBuilder {
     pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> DaftResult<Self> {
+        let sharder = Sharder::new(
+            ShardingStrategy::from(strategy),
+            world_size as usize,
+            rank as usize,
+        );
+        Ok(self.with_new_plan(ops::Shard::new(self.plan.clone(), sharder)))
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
@@ -976,6 +985,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
         Ok(self.builder.limit(limit, eager)?.into())
+    }
+
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {
+        Ok(self.builder.shard(strategy, world_size, rank)?.into())
     }
 
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {

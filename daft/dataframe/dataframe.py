@@ -1231,6 +1231,7 @@ class DataFrame:
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
+        schema: Optional[Schema] = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1288,7 +1289,9 @@ class DataFrame:
         """
         from daft.dataframe.lance_data_sink import LanceDataSink
 
-        sink = LanceDataSink(uri, self.schema(), mode, io_config, **kwargs)
+        if schema is None:
+            schema = self.schema()
+        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
         return self.write_sink(sink)
 
     ###
@@ -1991,6 +1994,25 @@ class DataFrame:
 
         """
         builder = self._builder.limit(num, eager=False)
+        return DataFrame(builder)
+
+    def _shard(self, strategy: Literal["file"], world_size: int, rank: int) -> "DataFrame":
+        """Shards the descendent scan node of the dataframe using the given sharding strategy.
+
+        If there are more than one scan nodes that are descendents of this shard operator,
+        this will not work.
+
+        Only "file" strategy is supported for now for file-based sharding.
+
+        This is currently an internal API that should be used with dataloading APIs like .to_torch_iter_dataset().
+        """
+        if strategy != "file":
+            raise ValueError("Only file-based sharding is supported")
+        if world_size <= 0:
+            raise ValueError("World size for sharding must be greater than zero")
+        if rank >= world_size:
+            raise ValueError("Rank must be less than the world size for sharding")
+        builder = self._builder.shard(strategy, world_size, rank)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -3405,7 +3427,12 @@ class DataFrame:
         return list(self.iter_rows())
 
     @DataframePublicAPI
-    def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
+    def to_torch_map_dataset(
+        self,
+        shard_strategy: Optional[Literal["file"]] = None,
+        world_size: Optional[int] = None,
+        rank: Optional[int] = None,
+    ) -> "torch.utils.data.Dataset":
         """Convert the current DataFrame into a map-style [Torch Dataset](https://pytorch.org/docs/stable/data.html#map-style-datasets) for use with PyTorch.
 
         This method will materialize the entire DataFrame and block on completion.
@@ -3419,18 +3446,40 @@ class DataFrame:
         Tip:
             This method returns results locally.
             For distributed training, you may want to use [DataFrame.to_ray_dataset()][daft.DataFrame.to_ray_dataset].
+
+        Args:
+            shard_strategy (Optional[Literal["file"]]): Strategy to use for sharding the dataset. Currently only "file" is supported.
+            world_size (Optional[int]): Total number of workers for sharding. Required if shard_strategy is specified.
+            rank (Optional[int]): Rank of current worker for sharding. Required if shard_strategy is specified.
         """
         from daft.dataframe.to_torch import DaftTorchDataset
 
-        return DaftTorchDataset(self.to_pydict(), len(self))
+        if shard_strategy is not None:
+            if world_size is None or rank is None:
+                raise ValueError("world_size and rank must be specified when using sharding")
+            df = self._shard(shard_strategy, world_size, rank)
+        else:
+            df = self
+
+        return DaftTorchDataset(df.to_pydict(), len(df))
 
     @DataframePublicAPI
-    def to_torch_iter_dataset(self) -> "torch.utils.data.IterableDataset":
+    def to_torch_iter_dataset(
+        self,
+        shard_strategy: Optional[Literal["file"]] = None,
+        world_size: Optional[int] = None,
+        rank: Optional[int] = None,
+    ) -> "torch.utils.data.IterableDataset":
         """Convert the current DataFrame into a `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__ for use with PyTorch.
 
         Begins execution of the DataFrame if it is not yet executed.
 
         Items will be returned in pydict format: a dict of `{"column name": value}` for each row in the data.
+
+        Args:
+            shard_strategy (Optional[Literal["file"]]): Strategy to use for sharding the dataset. Currently only "file" is supported.
+            world_size (Optional[int]): Total number of workers for sharding. Required if shard_strategy is specified.
+            rank (Optional[int]): Rank of current worker for sharding. Required if shard_strategy is specified.
 
         Note:
             The produced dataset is meant to be used with the single-process DataLoader,
@@ -3445,7 +3494,17 @@ class DataFrame:
         """
         from daft.dataframe.to_torch import DaftTorchIterableDataset
 
-        return DaftTorchIterableDataset(self)
+        # TODO(desmond): We need to take in the batch size and number of epochs. So that when we shard, we can ensure that each shard produces
+        # the same number of batches without coordination.
+
+        if shard_strategy is not None:
+            if world_size is None or rank is None:
+                raise ValueError("world_size and rank must be specified when using sharding")
+            df = self._shard(shard_strategy, world_size, rank)
+        else:
+            df = self
+
+        return DaftTorchIterableDataset(df)
 
     @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":

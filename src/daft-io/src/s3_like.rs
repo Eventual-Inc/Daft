@@ -216,6 +216,15 @@ const THROTTLING_ERRORS: &[&str] = &[
     "EC2ThrottledException",
 ];
 
+/// volc engine tos
+/// https://www.volcengine.com/docs/6349/74874
+const TOS_THROTTLING_ERRORS: &[&str] = &[
+    "ExceedAccountQPSLimit",
+    "ExceedAccountRateLimit",
+    "ExceedBucketQPSLimit",
+    "ExceedBucketRateLimit",
+];
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
@@ -234,10 +243,16 @@ impl From<Error> for super::Error {
                     path,
                     source: err.into(),
                 },
-                Some(code) if THROTTLING_ERRORS.contains(&code) => super::Error::Throttled {
-                    path,
-                    source: err.into(),
-                },
+                Some(code)
+                    if THROTTLING_ERRORS.contains(&code)
+                        || TOS_THROTTLING_ERRORS.contains(&code) =>
+                // Throttling errors are transient, so we classify them as such
+                {
+                    super::Error::Throttled {
+                        path,
+                        source: err.into(),
+                    }
+                }
                 _ => super::Error::Unhandled {
                     path,
                     msg: DisplayErrorContext(err).to_string(),

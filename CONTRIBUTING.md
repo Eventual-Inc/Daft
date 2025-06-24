@@ -1,17 +1,28 @@
 # Contributing to Daft
 
+Daft is an open-source project and we welcome contributions from the community. Whether you're reporting bugs, proposing features, or contributing code, this guide will help you get started.
+
+## Quick Start
+
+- **Found a bug?** 🐛 [Report it here](#reporting-issues)
+- **Have a feature idea?** 💡 [Start a discussion](#proposing-features)
+- **Want to make your first PR?** 🚀 [Contribute new code](#contributing-code)
+
+
 ## Reporting Issues
 
-To report bugs and issues with Daft, please report in detail:
+To report bugs and issues with Daft, please file an issue on our [issues](https://github.com/Eventual-Inc/Daft/issues) page.
+
+Additionally, please include the following information in your bug report:
 
 1. Operating system
 2. Daft version
 3. Python version
-4. Runner that your code is using
+4. Daft runner (native or Ray)
 
 ## Proposing Features
 
-Please start a GitHub Discussion in our [Ideas channel](https://github.com/Eventual-Inc/Daft/discussions/categories/ideas). Once the feature is clarified, fleshed out and approved, the corresponding issue(s) will be created from the GitHub discussion.
+We highly encourage you to propose new features or ideas. Please start a GitHub Discussion in our [Ideas channel](https://github.com/Eventual-Inc/Daft/discussions/categories/ideas).
 
 When proposing features, please include:
 
@@ -20,6 +31,10 @@ When proposing features, please include:
 3. Corner-case behavior (how should this code behave in various corner-case scenarios)
 
 ## Contributing Code
+
+> **💡 Already set up?**
+>
+>  See our quick [tutorial](#adding-new-expressions) on how to add a new expression to Daft.
 
 ### Development Environment
 
@@ -131,6 +146,47 @@ At this point, your debugger should stop on breakpoints in any .rs file located 
 > ```shell
 > echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
 > ```
+
+### Testing
+
+We run test suites across Python and Rust. Python tests focus on high-level DataFrame and Expression functionality, while Rust tests validate individual kernel implementations at a lower level.
+
+#### Python tests
+Our python tests are located in the `tests` directory, you can run all the tests at once with `make tests`.
+
+To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest]("https://doc.rust-lang.org/cargo/commands/cargo-test.html").
+
+```
+DAFT_RUNNER=native pytest tests/dataframe
+```
+
+#### Rust tests
+Our rust tests are distributed across crates, you can run all tests with `cargo test --no-default-features --workspace`.
+
+To run rust tests that call into Python, the `--features python` flag and libpython3.*.so dynamic libraries are required. Please ensure that these are installed, here's a table of common locations on different os:
+
+| Operating System        | Package Manager | Architecture      | Library Path Pattern                          |
+|-------------------------|----------------|-------------------|-----------------------------------------------|
+| **Ubuntu/Debian**       | apt            | x86_64            | `/usr/lib/x86_64-linux-gnu/libpython3.x.so.1.0` |
+|                         |                | Other             | `/usr/lib/libpython3.x.so.1.0`                |
+| **Red Hat/CentOS**      | yum/dnf        | x86_64            | `/usr/lib64/libpython3.x.so.1.0`               |
+| **macOS (Homebrew)**    | Homebrew       | Intel             | `/usr/local/opt/python@3.x/lib/libpython3.x.dylib` |
+|                         |                | Apple Silicon     | `/opt/homebrew/opt/python@3.x/lib/libpython3.x.dylib` |
+| **macOS (System)**      | Installer      | All               | `/Library/Frameworks/Python.framework/Versions/3.x/lib/libpython3.x.dylib` |
+
+Set environment variables to locate the Python library:
+
+
+```sh
+export PYO3_PYTHON=".venv/bin/python"
+export PYO3_PYTHON_PYLIB="/usr/lib/x86_64-linux-gnu/libpython3.11.so.1"
+export RUSTFLAGS="-C link-arg=-Wl,-rpath,${PYO3_PYTHON_PYLIB%/*} -C link-arg=-L${PYO3_PYTHON_PYLIB%/*} -C link-arg=-lpython3.11"
+```
+Execute the test after configuration:
+
+```sh
+cargo test -p daft-dsl --features python -- expr::tests
+```
 
 ### Benchmarking
 

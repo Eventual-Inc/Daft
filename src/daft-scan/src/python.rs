@@ -281,6 +281,10 @@ pub mod pylib {
             self.can_absorb_select
         }
 
+        fn can_absorb_shard(&self) -> bool {
+            false
+        }
+
         fn multiline_display(&self) -> Vec<String> {
             let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
             lines
@@ -603,7 +607,7 @@ pub mod pylib {
             Arc::new(FileFormatConfig::Parquet(default::Default::default())),
             Arc::new(schema),
             Arc::new(Default::default()),
-            Pushdowns::new(None, None, columns.map(Arc::new), None),
+            Pushdowns::new(None, None, columns.map(Arc::new), None, None),
             None,
         );
         Ok(st.estimate_in_memory_size_bytes(None).unwrap())

@@ -15,7 +15,7 @@ use crate::{
     pipeline_node::{
         explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
         limit::LimitNode, project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode,
-        sink::SinkNode, unpivot::UnpivotNode, DistributedPipelineNode,
+        sink::SinkNode, unpivot::UnpivotNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -32,7 +32,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
 
 struct LogicalPlanToPipelineNodeTranslator {
     stage_config: StageConfig,
-    node_id_counter: usize,
+    node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<Arc<dyn DistributedPipelineNode>>,
 }
@@ -47,7 +47,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         }
     }
 
-    fn get_next_node_id(&mut self) -> usize {
+    fn get_next_node_id(&mut self) -> NodeID {
         self.node_id_counter += 1;
         self.node_id_counter
     }
@@ -187,6 +187,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 node_id,
                 sink.sink_info.clone(),
                 sink.schema.clone(),
+                sink.input.schema(),
                 self.curr_node.pop().unwrap(),
             )
             .arced(),
@@ -220,8 +221,11 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Window(_) => {
                 todo!("FLOTILLA_MS2: Implement Window")
             }
-            LogicalPlan::SubqueryAlias(_) | LogicalPlan::Union(_) | LogicalPlan::Intersect(_) => {
-                panic!("LogicalPlan::SubqueryAlias, LogicalPlan::Union, and LogicalPlan::Intersect should be handled by the optimizer")
+            LogicalPlan::SubqueryAlias(_)
+            | LogicalPlan::Union(_)
+            | LogicalPlan::Intersect(_)
+            | LogicalPlan::Shard(_) => {
+                panic!("Logical plan operators SubqueryAlias, Union, Intersect, and Shard should be handled by the optimizer")
             }
         };
         self.curr_node.push(output);

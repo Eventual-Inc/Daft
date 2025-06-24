@@ -98,7 +98,7 @@ pub(super) mod tests {
                     }
 
                     result.push(TaskResultHandleAwaiter::new(
-                        Arc::from(task.task_id().to_string()),
+                        task.task_context(),
                         worker_id.clone(),
                         MockTaskResultHandle::new(task),
                         result_tx,
@@ -156,10 +156,10 @@ pub(super) mod tests {
         }
 
         pub fn add_active_task(&self, task: &impl Task) {
-            self.active_task_details.lock().unwrap().insert(
-                Arc::from(task.task_id().to_string()),
-                TaskDetails::from(task),
-            );
+            self.active_task_details
+                .lock()
+                .unwrap()
+                .insert(task.task_id(), TaskDetails::from(task));
         }
 
         pub fn shutdown(&self) {

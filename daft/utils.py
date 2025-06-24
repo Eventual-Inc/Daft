@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterator, Iterable
+import os
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.dependencies import pa
@@ -126,38 +126,23 @@ def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expressi
     return [col(c) if isinstance(c, str) else c for c in column_iter]
 
 
-class SyncFromAsyncIterator:
-    """Convert an async iterator to a sync iterator.
+def detect_ray_state() -> bool:
+    ray_is_initialized = False
+    ray_is_in_job = False
+    in_ray_worker = False
+    try:
+        import ray
 
-    Note that the async iterator is created lazily upon first iteration.
-    """
+        if ray.is_initialized():
+            ray_is_initialized = True
+            # Check if running inside a Ray worker
+            if ray._private.worker.global_worker.mode == ray.WORKER_MODE:
+                in_ray_worker = True
+        # In a Ray job, Ray might not be initialized yet but we can pick up an environment variable as a heuristic here
+        elif os.getenv("RAY_JOB_ID") is not None:
+            ray_is_in_job = True
 
-    def __init__(self, async_iter_producer: Callable[[], AsyncIterator[Any]]):
-        self.async_iter_producer = async_iter_producer
-        self.async_iter: Any | None = None
-        self.loop = asyncio.new_event_loop()
-        self.stopped = False
+    except ImportError:
+        pass
 
-    def __iter__(self) -> SyncFromAsyncIterator:
-        if self.stopped:
-            raise StopIteration
-        return self
-
-    def __next__(self) -> Any:
-        if self.stopped:
-            raise StopIteration
-
-        try:
-            return self.loop.run_until_complete(self._get_next())
-        except StopAsyncIteration:
-            self.stopped = True
-            self.loop.close()
-            raise StopIteration
-
-    async def _get_next(self) -> Any:
-        if self.async_iter is None:
-            self.async_iter = self.async_iter_producer()
-        res = await self.async_iter.__anext__()
-        if res is None:
-            raise StopAsyncIteration
-        return res
+    return not in_ray_worker and (ray_is_initialized or ray_is_in_job)

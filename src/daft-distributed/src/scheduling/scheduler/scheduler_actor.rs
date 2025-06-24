@@ -20,6 +20,7 @@ use crate::{
         task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
+    statistics::{StatisticsEvent, StatisticsManagerRef},
     utils::{
         channel::{
             create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
@@ -61,6 +62,7 @@ where
     fn spawn_scheduler_actor(
         mut scheduler: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
+        statistics_manager: StatisticsManagerRef,
     ) -> SchedulerHandle<W::Task> {
         // Spawn a dispatcher actor to handle task dispatch and await task results
         let initial_worker_snapshots = scheduler
@@ -73,7 +75,11 @@ where
             .scheduler
             .update_worker_state(&initial_worker_snapshots);
         let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager);
-        let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(dispatcher_actor, joinset);
+        let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(
+            dispatcher_actor,
+            joinset,
+            statistics_manager.clone(),
+        );
 
         // Spawn the scheduler actor to schedule tasks and dispatch them to the dispatcher
         let (scheduler_sender, scheduler_receiver) = create_channel(10000);
@@ -81,8 +87,39 @@ where
             scheduler.scheduler,
             scheduler_receiver,
             dispatcher_handle,
+            statistics_manager,
         ));
         SchedulerHandle::new(scheduler_sender)
+    }
+
+    fn handle_new_tasks(
+        maybe_new_task: Option<SchedulableTask<W::Task>>,
+        task_rx: &mut Receiver<SchedulableTask<W::Task>>,
+        statistics_manager: &StatisticsManagerRef,
+        scheduler: &mut S,
+        input_exhausted: &mut bool,
+    ) -> DaftResult<()> {
+        // If there are any new tasks, enqueue them all
+        if let Some(new_task) = maybe_new_task {
+            tracing::debug!("Received new task: {:?}", new_task);
+
+            let mut enqueueable_tasks = vec![new_task];
+            while let Ok(task) = task_rx.try_recv() {
+                enqueueable_tasks.push(task);
+            }
+            for task in &enqueueable_tasks {
+                statistics_manager.handle_event(StatisticsEvent::SubmittedTask {
+                    context: task.task_context(),
+                    name: task.task.task_name().clone(),
+                })?;
+            }
+            scheduler.enqueue_tasks(enqueueable_tasks);
+        } else if !*input_exhausted {
+            tracing::debug!("Input exhausted");
+
+            *input_exhausted = true;
+        }
+        Ok(())
     }
 
     #[instrument(name = "FlotillaScheduler", skip_all)]
@@ -90,6 +127,7 @@ where
         mut scheduler: S,
         mut task_rx: Receiver<SchedulableTask<W::Task>>,
         mut dispatcher_handle: DispatcherHandle<W::Task>,
+        statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
         let mut input_exhausted = false;
         // Keep running until the input is exhausted, i.e. no more new tasks, and there are no more pending tasks in the scheduler
@@ -100,26 +138,18 @@ where
             if !scheduled_tasks.is_empty() {
                 tracing::debug!("Dispatching tasks: {:?}", scheduled_tasks);
 
+                for task in &scheduled_tasks {
+                    statistics_manager.handle_event(StatisticsEvent::ScheduledTask {
+                        context: task.task().task_context(),
+                    })?;
+                }
                 dispatcher_handle.dispatch_tasks(scheduled_tasks).await?;
             }
 
             // 3: Concurrently wait for new tasks or worker updates
             tokio::select! {
                 maybe_new_task = task_rx.recv() => {
-                    // If there are any new tasks, enqueue them all
-                    if let Some(new_task) = maybe_new_task {
-                        tracing::debug!("Received new task: {:?}", new_task);
-
-                        let mut enqueueable_tasks = vec![new_task];
-                        while let Ok(task) = task_rx.try_recv() {
-                            enqueueable_tasks.push(task);
-                        }
-                        scheduler.enqueue_tasks(enqueueable_tasks);
-                    } else if !input_exhausted {
-                        tracing::debug!("Input exhausted");
-
-                        input_exhausted = true;
-                    }
+                    Self::handle_new_tasks(maybe_new_task, &mut task_rx, &statistics_manager, &mut scheduler, &mut input_exhausted)?;
                 }
                 Some(snapshots) = dispatcher_handle.await_worker_updates() => {
                     tracing::debug!("Received worker updates: {:?}", snapshots);
@@ -136,18 +166,20 @@ where
 pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
+    statistics_manager: StatisticsManagerRef,
 ) -> SchedulerHandle<W::Task> {
     let scheduler = SchedulerActor::default_scheduler(worker_manager);
-    SchedulerActor::spawn_scheduler_actor(scheduler, joinset)
+    SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
 }
 
 #[allow(dead_code)]
 pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
+    statistics_manager: StatisticsManagerRef,
 ) -> SchedulerHandle<W::Task> {
     let scheduler = SchedulerActor::linear_scheduler(worker_manager);
-    SchedulerActor::spawn_scheduler_actor(scheduler, joinset)
+    SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
 }
 
 #[derive(Debug)]
@@ -171,14 +203,14 @@ impl<T: Task> SchedulerHandle<T> {
     pub fn prepare_task_for_submission(
         submittable_task: SubmittableTask<T>,
     ) -> (SchedulableTask<T>, SubmittedTask) {
-        let task_id = submittable_task.task.task_id().to_string();
+        let task_id = submittable_task.task.task_id();
         let schedulable_task = SchedulableTask::new(
             submittable_task.task,
             submittable_task.result_tx,
             submittable_task.cancel_token.clone(),
         );
         let submitted_task = SubmittedTask::new(
-            Arc::from(task_id),
+            task_id,
             submittable_task.result_rx,
             Some(submittable_task.cancel_token),
             submittable_task.notify_token,
@@ -344,7 +376,11 @@ mod tests {
         let worker_manager = Arc::new(MockWorkerManager::new(workers));
         let scheduler = SchedulerActor::default_scheduler(worker_manager);
         let mut joinset = JoinSet::new();
-        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(scheduler, &mut joinset);
+        let scheduler_handle = SchedulerActor::spawn_scheduler_actor(
+            scheduler,
+            &mut joinset,
+            StatisticsManagerRef::default(),
+        );
         SchedulerActorTestContext {
             scheduler_handle_ref: Arc::new(scheduler_handle),
             joinset,
@@ -381,7 +417,7 @@ mod tests {
         let mut submitted_tasks = Vec::with_capacity(num_tasks);
         for i in 0..num_tasks {
             let task = MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 + 1))
-                .with_task_id(format!("task-{}", i).into())
+                .with_task_id(i as u32)
                 .with_sleep_duration(task_duration)
                 .build();
             let submittable_task = SubmittableTask::new(task);
@@ -432,7 +468,7 @@ mod tests {
                     let task_duration =
                         std::time::Duration::from_millis(rand::thread_rng().gen_range(50..150));
                     let task = MockTaskBuilder::new(create_mock_partition_ref(num_rows, num_bytes))
-                        .with_task_id(format!("submitter-{}:task-{}", submitter_id, task_id).into())
+                        .with_task_id(submitter_id * num_tasks_per_submitter + task_id)
                         .with_sleep_duration(task_duration)
                         .build();
                     let submittable_task = SubmittableTask::new(task);
@@ -506,9 +542,7 @@ mod tests {
                     let num_bytes = rand::thread_rng().gen_range(1024..1024 * 10);
                     let mut task =
                         MockTaskBuilder::new(create_mock_partition_ref(num_rows, num_bytes))
-                            .with_task_id(
-                                format!("submitter-{}:task-{}", submitter_id, task_id).into(),
-                            );
+                            .with_task_id(submitter_id * num_tasks_per_submitter + task_id);
 
                     if should_cancel {
                         let task_duration = std::time::Duration::from_millis(1000);
@@ -564,7 +598,7 @@ mod tests {
         let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
-            .with_task_id(format!("task-{}", 0).into())
+            .with_task_id(0)
             .with_failure(MockTaskFailure::Error("test error".to_string()))
             .build();
         let submittable_task = SubmittableTask::new(task);
@@ -587,7 +621,7 @@ mod tests {
         let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
 
         let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
-            .with_task_id(format!("task-{}", 0).into())
+            .with_task_id(0)
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
         let submittable_task = SubmittableTask::new(task);

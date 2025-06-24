@@ -96,11 +96,9 @@ Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues
 Telemetry
 ---------
 
-To help improve Daft, we collect non-identifiable data via our own analytics as well as Scarf (https://scarf.sh).
+To help improve Daft, we collect non-identifiable data via Scarf (https://scarf.sh).
 
-To disable this behavior, set the following environment variables:
-- ``DAFT_ANALYTICS_ENABLED=0``
-- ``SCARF_NO_ANALYTICS=true`` or ``DO_NOT_TRACK=true``
+To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``.
 
 The data that we collect is:
 
@@ -153,7 +151,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :target: https://github.com/Eventual-Inc/Daft/actions/workflows/pr-test-suite.yml?query=branch:main
    :alt: Github Actions tests
 
-.. |PyPI| image:: https://img.shields.io/pypi/v/getdaft.svg?label=pip&logo=PyPI&logoColor=white
+.. |PyPI| image:: https://img.shields.io/pypi/v/daft.svg?label=pip&logo=PyPI&logoColor=white
    :target: https://pypi.org/project/daft
    :alt: PyPI
 
