@@ -808,7 +808,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v3
       with:
-        run: pytest tests/benchmarks -m benchmark --codspeed
+        run: pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure

@@ -168,10 +168,13 @@ def start_ray_workers() -> list[RaySwordfishWorker]:
     return handles
 
 
-@ray.remote(
-    num_cpus=0,
-)
 class FlotillaPlanRunner:
+    """Core functionality for running distributed physical plans with Flotilla.
+
+    This class contains the business logic for managing plans and their execution,
+    separate from the Ray actor wrapper.
+    """
+
     def __init__(self) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[tuple[ray.ObjectRef, int, int]]] = {}
@@ -212,3 +215,54 @@ class FlotillaPlanRunner:
             metadata_idx=0,
         )
         return materialized_result
+
+
+class LocalFlotillaPlanRunner:
+    """Local wrapper around FlotillaPlanRunnerCore.
+
+    This wrapper provides the same interface as FlotillaPlanRunner but without
+    Ray actor overhead, useful for local testing or when distributed execution
+    is not needed.
+    """
+
+    def __init__(self) -> None:
+        self.loop = asyncio.new_event_loop()
+        self.core = self.loop.run_until_complete(self._make_runner())
+
+    async def _make_runner(self) -> FlotillaPlanRunner:
+        return FlotillaPlanRunner()
+
+    def run_plan(
+        self,
+        plan: DistributedPhysicalPlan,
+        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
+    ) -> None:
+        self.core.run_plan(plan, partition_sets)
+
+    def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
+        """Synchronous version of get_next_partition that internally uses asyncio."""
+        return self.loop.run_until_complete(self.core.get_next_partition(plan_id))
+
+
+@ray.remote(
+    num_cpus=0,
+)
+class RemoteFlotillaPlanRunner:
+    """Ray actor wrapper around FlotillaPlanRunnerCore.
+
+    This actor provides the distributed interface for running plans,
+    while delegating the actual work to the core class.
+    """
+
+    def __init__(self) -> None:
+        self.core = FlotillaPlanRunner()
+
+    def run_plan(
+        self,
+        plan: DistributedPhysicalPlan,
+        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
+    ) -> None:
+        self.core.run_plan(plan, partition_sets)
+
+    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
+        return await self.core.get_next_partition(plan_id)
