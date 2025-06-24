@@ -162,11 +162,9 @@ impl WorkerSnapshot {
         self.total_num_gpus
     }
 
+    // TODO: Potentially include memory as well, and also be able to overschedule tasks.
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
         self.available_num_cpus() >= task.resource_request().num_cpus()
-            && self.available_num_gpus() >= task.resource_request().num_gpus()
-            // For now, we only schedule one task at a time per worker
-            && self.active_task_details.is_empty()
     }
 }
 
