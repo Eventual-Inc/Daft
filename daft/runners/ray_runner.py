@@ -877,7 +877,7 @@ class Scheduler(ActorPoolManager):
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
-        pbar = ProgressBar(use_ray_tqdm=True)
+        pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
         num_cpus_provider = _ray_num_cpus_provider()
 
         start = datetime.now()
