@@ -39,8 +39,8 @@ class Field:
         return f
 
     @staticmethod
-    def create(name: str, dtype: DataType) -> Field:
-        pyfield = _PyField.create(name, dtype._dtype)
+    def create(name: str, dtype: DataType, metadata: dict[str, str] | None = None) -> Field:
+        pyfield = _PyField.create(name, dtype._dtype, metadata)
         return Field._from_pyfield(pyfield)
 
     @property
@@ -82,9 +82,26 @@ class Schema:
         Returns:
             Schema: Converted Daft schema
         """
-        return cls._from_field_name_and_types(
-            [(pa_field.name, DataType.from_arrow_type(pa_field.type)) for pa_field in pa_schema]
-        )
+        # NOTE: This does not retain schema-level metadata, as Daft Schemas do not have a metadata field.
+        fields = []
+        for pa_field in pa_schema:
+            metadata = None
+            if pa_field.metadata:
+                metadata = {k.decode(): v.decode() for k, v in pa_field.metadata.items()}
+            fields.append(Field.create(pa_field.name, DataType.from_arrow_type(pa_field.type), metadata))
+        return cls._from_fields(fields)
+
+    @classmethod
+    def from_field_name_and_types(cls, fields: list[tuple[str, DataType]]) -> Schema:
+        """Creates a Daft Schema from a list of field name and types.
+
+        Args:
+            fields (list[tuple[str, DataType]]): List of field name and types
+
+        Returns:
+            Schema: Daft schema with the provided field names and types
+        """
+        return cls._from_field_name_and_types(fields)
 
     def to_pyarrow_schema(self) -> pa.Schema:
         """Converts a Daft Schema to a PyArrow Schema.
@@ -143,6 +160,10 @@ class Schema:
 
     def __repr__(self) -> str:
         return repr(self._schema)
+
+    def display_with_metadata(self, include_metadata: bool = False) -> str:
+        """Returns a string representation of the schema, optionally including metadata."""
+        return self._schema.display_with_metadata(include_metadata)
 
     def _repr_html_(self) -> str:
         return self._schema._repr_html_()

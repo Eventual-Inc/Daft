@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import os
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.dependencies import pa
@@ -147,40 +146,3 @@ def detect_ray_state() -> bool:
         pass
 
     return not in_ray_worker and (ray_is_initialized or ray_is_in_job)
-
-
-class SyncFromAsyncIterator:
-    """Convert an async iterator to a sync iterator.
-
-    Note that the async iterator is created lazily upon first iteration.
-    """
-
-    def __init__(self, async_iter_producer: Callable[[], AsyncIterator[Any]]):
-        self.async_iter_producer = async_iter_producer
-        self.async_iter: Any | None = None
-        self.loop = asyncio.new_event_loop()
-        self.stopped = False
-
-    def __iter__(self) -> SyncFromAsyncIterator:
-        if self.stopped:
-            raise StopIteration
-        return self
-
-    def __next__(self) -> Any:
-        if self.stopped:
-            raise StopIteration
-
-        try:
-            return self.loop.run_until_complete(self._get_next())
-        except StopAsyncIteration:
-            self.stopped = True
-            self.loop.close()
-            raise StopIteration
-
-    async def _get_next(self) -> Any:
-        if self.async_iter is None:
-            self.async_iter = self.async_iter_producer()
-        res = await self.async_iter.__anext__()
-        if res is None:
-            raise StopAsyncIteration
-        return res

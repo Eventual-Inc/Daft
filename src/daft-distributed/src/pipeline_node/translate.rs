@@ -15,7 +15,7 @@ use crate::{
     pipeline_node::{
         explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
         limit::LimitNode, project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode,
-        sink::SinkNode, unpivot::UnpivotNode, DistributedPipelineNode,
+        sink::SinkNode, unpivot::UnpivotNode, DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -32,7 +32,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
 
 struct LogicalPlanToPipelineNodeTranslator {
     stage_config: StageConfig,
-    node_id_counter: usize,
+    node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<Arc<dyn DistributedPipelineNode>>,
 }
@@ -47,7 +47,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         }
     }
 
-    fn get_next_node_id(&mut self) -> usize {
+    fn get_next_node_id(&mut self) -> NodeID {
         self.node_id_counter += 1;
         self.node_id_counter
     }

@@ -189,8 +189,8 @@ def sql(
     # 1. Add all python DataFrame variables which are in scope.
     if register_globals:
         try:
-            # Caller is back from func, analytics, annotation
-            caller_frame = inspect.currentframe().f_back.f_back.f_back  # type: ignore
+            # Caller is back from func, annotation
+            caller_frame = inspect.currentframe().f_back.f_back  # type: ignore
             caller_vars = {**caller_frame.f_globals, **caller_frame.f_locals}  # type: ignore
         except AttributeError as exc:
             # some interpreters might not implement currentframe; all reasonable
