@@ -96,11 +96,9 @@ Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues
 Telemetry
 ---------
 
-To help improve Daft, we collect non-identifiable data via our own analytics as well as Scarf (https://scarf.sh).
+To help improve Daft, we collect non-identifiable data via Scarf (https://scarf.sh).
 
-To disable this behavior, set the following environment variables:
-- ``DAFT_ANALYTICS_ENABLED=0``
-- ``SCARF_NO_ANALYTICS=true`` or ``DO_NOT_TRACK=true``
+To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``.
 
 The data that we collect is:
 

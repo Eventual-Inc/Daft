@@ -49,11 +49,6 @@ __version__ = get_version()
 # Initialize analytics
 ###
 
-from daft.analytics import init_analytics
-
-user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-analytics_client = init_analytics(get_version(), get_build_type(), user_opted_out)
-analytics_client.track_import()
 track_import_on_scarf()
 
 ###
