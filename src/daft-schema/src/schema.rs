@@ -17,7 +17,7 @@ pub type SchemaRef = Arc<Schema>;
 
 use educe::Educe;
 
-#[derive(Debug, Serialize, Deserialize, Derivative, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Educe, Eq, Clone)]
 #[educe(Hash, PartialEq)]
 pub struct Schema {
     fields: Vec<Field>,
