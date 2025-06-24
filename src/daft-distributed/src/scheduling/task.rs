@@ -6,10 +6,14 @@ use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use daft_local_plan::LocalPhysicalPlanRef;
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 use super::worker::WorkerId;
-use crate::{pipeline_node::MaterializedOutput, utils::channel::OneshotSender};
+use crate::{
+    pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext},
+    plan::PlanID,
+    stage::StageID,
+    utils::channel::OneshotSender,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
@@ -35,14 +39,66 @@ impl TaskResourceRequest {
     }
 }
 
-pub(crate) type TaskID = Arc<str>;
-pub(crate) type TaskPriority = usize;
+pub(crate) type TaskID = u32;
+pub(crate) type TaskName = String;
+pub(crate) type TaskPriority = u32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[allow(clippy::struct_field_names)]
+pub(crate) struct TaskContext {
+    pub plan_id: PlanID,
+    pub stage_id: StageID,
+    pub node_id: NodeID,
+    pub task_id: TaskID,
+}
+
+impl TaskContext {
+    pub fn new(plan_id: PlanID, stage_id: StageID, node_id: NodeID, task_id: TaskID) -> Self {
+        Self {
+            plan_id,
+            stage_id,
+            node_id,
+            task_id,
+        }
+    }
+}
+
+impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
+    fn from((node_context, task_id): (&PipelineNodeContext, TaskID)) -> Self {
+        Self::new(
+            node_context.plan_id,
+            node_context.stage_id,
+            node_context.node_id,
+            task_id,
+        )
+    }
+}
 
 pub(crate) trait Task: Send + Sync + Debug + 'static {
     fn priority(&self) -> TaskPriority;
-    fn task_id(&self) -> &str;
+    fn task_context(&self) -> TaskContext;
     fn resource_request(&self) -> &TaskResourceRequest;
     fn strategy(&self) -> &SchedulingStrategy;
+    fn task_id(&self) -> TaskID {
+        self.task_context().task_id
+    }
+
+    #[allow(dead_code)]
+    fn plan_id(&self) -> PlanID {
+        self.task_context().plan_id
+    }
+
+    #[allow(dead_code)]
+    fn stage_id(&self) -> StageID {
+        self.task_context().stage_id
+    }
+
+    #[allow(dead_code)]
+    fn node_id(&self) -> NodeID {
+        self.task_context().node_id
+    }
+
+    fn task_name(&self) -> TaskName;
 }
 
 #[derive(Debug, Clone)]
@@ -65,7 +121,7 @@ impl TaskDetails {
 impl<T: Task> From<&T> for TaskDetails {
     fn from(task: &T) -> Self {
         Self {
-            id: Arc::from(task.task_id()),
+            id: task.task_id(),
             resource_request: task.resource_request().clone(),
         }
     }
@@ -80,6 +136,7 @@ pub(crate) enum SchedulingStrategy {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SwordfishTask {
+    task_context: TaskContext,
     plan: LocalPhysicalPlanRef,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
@@ -91,6 +148,7 @@ pub(crate) struct SwordfishTask {
 
 impl SwordfishTask {
     pub fn new(
+        task_context: TaskContext,
         plan: LocalPhysicalPlanRef,
         config: Arc<DaftExecutionConfig>,
         psets: HashMap<String, Vec<PartitionRef>>,
@@ -98,11 +156,11 @@ impl SwordfishTask {
         mut context: HashMap<String, String>,
         task_priority: TaskPriority,
     ) -> Self {
-        let task_id = Uuid::new_v4().to_string();
         let resource_request = TaskResourceRequest::new(plan.resource_request());
-        context.insert("task_id".to_string(), task_id);
+        context.insert("task_id".to_string(), task_context.task_id.to_string());
 
         Self {
+            task_context,
             plan,
             resource_request,
             config,
@@ -111,10 +169,6 @@ impl SwordfishTask {
             context,
             task_priority,
         }
-    }
-
-    pub fn id(&self) -> &str {
-        self.context.get("task_id").unwrap()
     }
 
     pub fn strategy(&self) -> &SchedulingStrategy {
@@ -138,8 +192,7 @@ impl SwordfishTask {
     }
 
     pub fn name(&self) -> String {
-        // TODO: Include all operators of the plan in this, not just the root
-        self.plan.name().to_string()
+        self.plan.single_line_display()
     }
 
     pub fn task_priority(&self) -> TaskPriority {
@@ -148,8 +201,12 @@ impl SwordfishTask {
 }
 
 impl Task for SwordfishTask {
-    fn task_id(&self) -> &str {
-        self.id()
+    fn task_context(&self) -> TaskContext {
+        self.task_context
+    }
+
+    fn task_name(&self) -> TaskName {
+        self.name().into()
     }
 
     fn resource_request(&self) -> &TaskResourceRequest {
@@ -173,7 +230,7 @@ pub(crate) trait TaskResultHandle: Send + Sync {
 }
 
 pub(crate) struct TaskResultHandleAwaiter<H: TaskResultHandle> {
-    task_id: TaskID,
+    task_context: TaskContext,
     worker_id: WorkerId,
     handle: H,
     result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
@@ -182,14 +239,14 @@ pub(crate) struct TaskResultHandleAwaiter<H: TaskResultHandle> {
 
 impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
     pub fn new(
-        task_id: TaskID,
+        task_context: TaskContext,
         worker_id: WorkerId,
         handle: H,
         result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
-            task_id,
+            task_context,
             worker_id,
             handle,
             result_sender,
@@ -197,8 +254,8 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
         }
     }
 
-    pub fn task_id(&self) -> &TaskID {
-        &self.task_id
+    pub fn task_context(&self) -> TaskContext {
+        self.task_context
     }
 
     pub fn worker_id(&self) -> &WorkerId {
@@ -267,7 +324,8 @@ pub(super) mod tests {
 
     #[derive(Debug)]
     pub struct MockTask {
-        task_id: TaskID,
+        task_context: TaskContext,
+        task_name: TaskName,
         priority: TaskPriority,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
@@ -285,7 +343,8 @@ pub(super) mod tests {
 
     /// A builder pattern implementation for creating MockTask instances
     pub struct MockTaskBuilder {
-        task_id: TaskID,
+        task_context: TaskContext,
+        task_name: TaskName,
         priority: TaskPriority,
         scheduling_strategy: SchedulingStrategy,
         task_result: Vec<MaterializedOutput>,
@@ -305,7 +364,8 @@ pub(super) mod tests {
         /// Create a new MockTaskBuilder with required parameters
         pub fn new(partition_ref: PartitionRef) -> Self {
             Self {
-                task_id: Arc::from(Uuid::new_v4().to_string()),
+                task_context: TaskContext::default(),
+                task_name: "".into(),
                 priority: 0,
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
@@ -333,7 +393,7 @@ pub(super) mod tests {
 
         /// Set a custom task ID (defaults to a UUID if not specified)
         pub fn with_task_id(mut self, task_id: TaskID) -> Self {
-            self.task_id = task_id;
+            self.task_context.task_id = task_id;
             self
         }
 
@@ -357,7 +417,8 @@ pub(super) mod tests {
         /// Build the MockTask
         pub fn build(self) -> MockTask {
             MockTask {
-                task_id: self.task_id,
+                task_context: self.task_context,
+                task_name: self.task_name,
                 priority: self.priority,
                 scheduling_strategy: self.scheduling_strategy,
                 resource_request: self.resource_request,
@@ -370,12 +431,12 @@ pub(super) mod tests {
     }
 
     impl Task for MockTask {
-        fn priority(&self) -> TaskPriority {
-            self.priority
+        fn task_context(&self) -> TaskContext {
+            self.task_context
         }
 
-        fn task_id(&self) -> &str {
-            &self.task_id
+        fn priority(&self) -> TaskPriority {
+            self.priority
         }
 
         fn resource_request(&self) -> &TaskResourceRequest {
@@ -384,6 +445,10 @@ pub(super) mod tests {
 
         fn strategy(&self) -> &SchedulingStrategy {
             &self.scheduling_strategy
+        }
+
+        fn task_name(&self) -> TaskName {
+            self.task_name.clone()
         }
     }
 

@@ -220,3 +220,31 @@ def test_schema_pyarrow_roundtrip():
     )
 
     assert Schema.from_pyarrow_schema(pa_schema).to_pyarrow_schema() == roundtrip_pa_schema
+
+
+def test_schema_pyarrow_roundtrip_with_metadata():
+    metadata = {
+        "lance-encoding:compression": "zstd",
+        "lance-encoding:compression-level": "3",
+        "lance-encoding:structural-encoding": "miniblock",
+        "lance-encoding:packed": "true",
+    }
+    pa_schema = pa.schema(
+        [
+            pa.field("compressible_strings", pa.string(), metadata=metadata),
+            pa.field("uncompressed_stuff", pa.int64()),
+        ]
+    )
+
+    # Daft seems to default to large_string on conversion, so we create an expected schema with large_string
+    expected_roundtrip_pa_schema = pa.schema(
+        [
+            pa.field("compressible_strings", pa.large_string(), metadata=metadata),
+            pa.field("uncompressed_stuff", pa.int64()),
+        ]
+    )
+
+    daft_schema = Schema.from_pyarrow_schema(pa_schema)
+    roundtrip_pa_schema = daft_schema.to_pyarrow_schema()
+
+    assert roundtrip_pa_schema == expected_roundtrip_pa_schema
