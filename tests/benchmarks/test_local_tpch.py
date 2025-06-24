@@ -10,7 +10,6 @@ from benchmarking.tpch import answers
 if sys.platform == "win32":
     pytest.skip(allow_module_level=True)
 
-import daft.context
 from tests.conftest import get_tests_daft_runner_name
 from tests.integration.conftest import check_answer  # noqa F401
 
@@ -27,8 +26,6 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, q):  # noqa
     get_df, num_parts = get_df
 
     def f():
-        daft.context.set_runner_native()
-
         question = getattr(answers, f"q{q}")
         daft_df = question(get_df)
         return daft_df.to_arrow()
@@ -69,8 +66,6 @@ def test_tpch_sql(tmp_path, check_answer, get_df, benchmark_with_memray, q):  # 
         query = query_file.read()
 
     def f():
-        daft.context.set_runner_native()
-
         daft_df = daft.sql(query, catalog=catalog)
         return daft_df.to_arrow()
 
