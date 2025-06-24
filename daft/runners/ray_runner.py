@@ -1415,16 +1415,25 @@ class RayRunner(Runner[ray.ObjectRef]):
             else:
                 assert self.flotilla_plan_runner is not None
                 plan_id = distributed_plan.id()
-                ray.get(
-                    self.flotilla_plan_runner.run_plan.remote(
-                        distributed_plan, self._part_set_cache.get_all_partition_sets()
+                if self.ray_client_mode:
+                    ray.get(
+                        self.flotilla_plan_runner.run_plan.remote(
+                            distributed_plan, self._part_set_cache.get_all_partition_sets()
+                        )
                     )
-                )
-                while True:
-                    materialized_result = ray.get(self.flotilla_plan_runner.get_next_partition.remote(plan_id))
-                    if materialized_result is None:
-                        break
-                    yield materialized_result
+                    while True:
+                        materialized_result = ray.get(self.flotilla_plan_runner.get_next_partition.remote(plan_id))
+                        if materialized_result is None:
+                            break
+                        yield materialized_result
+                else:
+                    self.flotilla_plan_runner.run_plan(distributed_plan, self._part_set_cache.get_all_partition_sets())
+                    while True:
+                        materialized_result = self.flotilla_plan_runner.get_next_partition(plan_id)
+                        if materialized_result is None:
+                            break
+                        yield materialized_result
+
         else:
             yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
 
