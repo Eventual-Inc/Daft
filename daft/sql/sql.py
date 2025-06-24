@@ -107,7 +107,6 @@ def sql_expr(sql: str) -> Expression:
     return Expression._from_pyexpr(_sql_expr(sql))
 
 
-@PublicAPI
 def sql(
     sql: str,
     catalog: Optional[SQLCatalog] = None,
@@ -190,7 +189,7 @@ def sql(
     if register_globals:
         try:
             # Caller is back from func, analytics, annotation
-            caller_frame = inspect.currentframe().f_back.f_back.f_back  # type: ignore
+            caller_frame = inspect.currentframe().f_back  # type: ignore
             caller_vars = {**caller_frame.f_globals, **caller_frame.f_locals}  # type: ignore
         except AttributeError as exc:
             # some interpreters might not implement currentframe; all reasonable
