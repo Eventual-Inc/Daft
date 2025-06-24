@@ -2849,7 +2849,6 @@ dependencies = [
  "itertools 0.14.0",
  "kanal",
  "log",
- "num-format",
  "opentelemetry",
  "parking_lot 0.12.4",
  "pin-project",
