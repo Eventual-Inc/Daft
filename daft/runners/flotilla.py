@@ -310,17 +310,17 @@ class FlotillaRunnerHandle:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> Generator[RayMaterializedResult, None, None]:
         # Start the plan
-        if isinstance(self.runner, RemoteFlotillaPlanRunner):
-            ray.get(self.runner.run_plan.remote(plan, partition_sets))  # type: ignore
-        else:
+        if isinstance(self.runner, LocalFlotillaPlanRunner):
             self.runner.run_plan(plan, partition_sets)
+        else:
+            ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         # Stream results
         while True:
-            if isinstance(self.runner, RemoteFlotillaPlanRunner):
-                materialized_result = ray.get(self.runner.get_next_partition.remote(plan.id()))  # type: ignore
-            else:
+            if isinstance(self.runner, LocalFlotillaPlanRunner):
                 materialized_result = self.runner.get_next_partition(plan.id())
+            else:
+                materialized_result = ray.get(self.runner.get_next_partition.remote(plan.id()))
 
             if materialized_result is None:
                 break
