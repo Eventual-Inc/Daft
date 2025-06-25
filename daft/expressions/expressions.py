@@ -386,6 +386,16 @@ class Expression:
         else:
             return lit(obj)
 
+    def to_arrow(self) -> pa.Expression:
+        """Converts this expression to a PyArrow expression.
+
+        Returns:
+            pa.Expression: The PyArrow expression corresponding to this Daft expression.
+        """
+        from .arrow_translator import expr_to_arrow
+
+        return expr_to_arrow(self._expr)
+
     @staticmethod
     def udf(
         name: builtins.str,

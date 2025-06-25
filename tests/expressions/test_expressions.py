@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 from datetime import date, datetime, time, timedelta, timezone
 
+import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 import pytz
 
@@ -596,8 +598,6 @@ def test_datetime_lit_pre_epoch(input, expected) -> None:
     ],
 )
 def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
-    import pyarrow as pa
-
     pa_array = pa.array([1], type=pa.timestamp(timeunit))
     pa_table = pa.table({"dt": pa_array})
     mp = MicroPartition.from_arrow(pa_table)
@@ -733,8 +733,6 @@ def test_list_value_counts_fixed_size():
 
 
 def test_list_value_counts_degenerate():
-    import pyarrow as pa
-
     # Create a MicroPartition with an empty list column of specified type
     empty_mp = MicroPartition.from_pydict({"empty_list_col": pa.array([], type=pa.list_(pa.string()))})
 
@@ -801,3 +799,40 @@ def test_drop_nan_no_nans():
     dd = {"n": [1, 1, 2]}
     df = daft.from_pydict(dd)
     assert df.drop_nan().to_pydict() == dd
+
+
+def test_expression_to_arrow_conversion():
+    # col
+    col_expr = col("name")
+    assert col_expr.to_arrow().equals(pc.field("name"))
+
+    # literal
+    test_cases = [
+        (lit(42), pc.scalar(42)),
+        (lit("text"), pc.scalar("text")),
+        (lit(3.14), pc.scalar(3.14)),
+        (lit(True), pc.scalar(True)),
+        (lit(None), pc.scalar(None)),
+    ]
+    for expr, expected in test_cases:
+        assert expr.to_arrow().equals(expected)
+
+    # mathematical expressions
+    math_expr = (col("a") + col("b")) * (col("c") - 10)
+    expected_math = (pc.field("a") + pc.field("b")) * (pc.field("c") - pc.scalar(10))
+    assert math_expr.to_arrow().equals(expected_math)
+
+    # and or expressions
+    expr = (col("age") > 18) & (col("score") < 90.5)
+    expected = (pc.field("age") > pc.scalar(18)) & (pc.field("score") < pc.scalar(90.5))
+    assert expr.to_arrow().equals(expected)
+
+    # or and not expressions
+    nested_expr = ~((col("x") == "active") | (col("y") != "inactive"))
+    expected_nested = ~((pc.field("x") == pc.scalar("active")) | (pc.field("y") != pc.scalar("inactive")))
+    assert nested_expr.to_arrow().equals(expected_nested)
+
+    # not supported expressions
+    date_expr = col("date").dt.year() > 2020
+    with pytest.raises(NotImplementedError):
+        date_expr.to_arrow()

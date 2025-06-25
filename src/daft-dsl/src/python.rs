@@ -604,6 +604,65 @@ impl PyExpr {
         self.expr.hash(&mut hasher);
         hasher.finish()
     }
+
+    pub fn is_column(&self) -> PyResult<bool> {
+        Ok(matches!(*self.expr, Expr::Column(_)))
+    }
+
+    pub fn is_literal(&self) -> PyResult<bool> {
+        Ok(matches!(*self.expr, Expr::Literal(_)))
+    }
+
+    pub fn is_function(&self) -> PyResult<bool> {
+        Ok(matches!(
+            *self.expr,
+            Expr::Function {
+                func: _,
+                inputs: _,
+                ..
+            }
+        ))
+    }
+
+    pub fn operator(&self) -> PyResult<Option<String>> {
+        match &*self.expr {
+            Expr::BinaryOp { op, .. } => Ok(Some(format!("{:?}", op))),
+            Expr::Not(_) => Ok(Some("not".to_string())),
+            _ => Ok(None),
+        }
+    }
+
+    fn children(&self) -> PyResult<Vec<Self>> {
+        match &*self.expr {
+            Expr::BinaryOp { left, right, .. } => {
+                Ok(vec![left.clone().into(), right.clone().into()])
+            }
+            Expr::Not(expr) => Ok(vec![expr.clone().into()]),
+            _ => Ok(vec![]),
+        }
+    }
+
+    pub fn literal_value(&self) -> PyResult<Option<PyObject>> {
+        if let Expr::Literal(lit) = &*self.expr {
+            Python::with_gil(|py| {
+                // Reuse the existing IntoPyObject implementation for LiteralValue.
+                // This is much cleaner and avoids reimplementing the conversion logic.
+                lit.clone()
+                    .into_pyobject(py)
+                    .map(|bound_obj| Some(bound_obj.into()))
+            })
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn column_name(&self) -> PyResult<Option<String>> {
+        if let Expr::Column(col) = &*self.expr {
+            Ok(Some(col.name()))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);
