@@ -10,6 +10,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+import json
 
 import daft
 from daft.context import set_execution_config
@@ -205,18 +206,28 @@ def generate_parquet_file(config: FileConfig, output_path: Path) -> None:
 
 # Test data configurations for different benchmark scenarios
 TEST_CONFIGS = {
+    "01_boolean_heavy": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05),
+    "02_high_nulls": FileConfig(
+            num_rows=2000000,
+            schema=[
+                ColumnSpec("id", ColumnType.INT),
+                ColumnSpec("optional_name", ColumnType.STRING, null_percentage=0.7),
+                ColumnSpec("optional_score", ColumnType.FLOAT, null_percentage=0.8),
+                ColumnSpec("maybe_active", ColumnType.BOOLEAN, null_percentage=0.6),
+                ColumnSpec("sparse_data", ColumnType.LARGE_STRING, null_percentage=0.9),
+            ],
+        ),
+    "03_integer_heavy": FileConfig.from_pattern(num_rows=5000000, pattern="int", repeat=10, null_percentage=0.0),
+    "04_large_strings": FileConfig.from_pattern(
+            num_rows=50000,
+            pattern="int,large_string,large_string,string",
+            repeat=10,
+        ),
     "05_small_mixed": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
         repeat=4,
     ),
-    "04_large_strings": FileConfig.from_pattern(
-        num_rows=50000,
-        pattern="int,large_string,large_string,string",
-        repeat=10,
-    ),
-    "03_integer_heavy": FileConfig.from_pattern(num_rows=5000000, pattern="int", repeat=10, null_percentage=0.0),
-    "01_boolean_heavy": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05),
     "06_wide_table": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
@@ -224,16 +235,7 @@ TEST_CONFIGS = {
         null_percentage=0.1,
         string_avg_length=30,
     ),
-    "02_high_nulls": FileConfig(
-        num_rows=2000000,
-        schema=[
-            ColumnSpec("id", ColumnType.INT),
-            ColumnSpec("optional_name", ColumnType.STRING, null_percentage=0.7),
-            ColumnSpec("optional_score", ColumnType.FLOAT, null_percentage=0.8),
-            ColumnSpec("maybe_active", ColumnType.BOOLEAN, null_percentage=0.6),
-            ColumnSpec("sparse_data", ColumnType.LARGE_STRING, null_percentage=0.9),
-        ],
-    ),
+
     "08_wide_table_with_strings": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
@@ -332,6 +334,48 @@ TEST_CONFIGS = {
         null_percentage=0.1,
         string_avg_length=30,
     ),
+    "21_string_1": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="string",
+        repeat=1,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "22_string_10": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="string",
+        repeat=10,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "23_string_25": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="string",
+        repeat=25,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "24_string_50": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="string",
+        repeat=50,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "25_string_75": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="string",
+        repeat=75,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
+    "26_string_100": FileConfig.from_pattern(
+        num_rows=1000000,
+        pattern="string",
+        repeat=100,
+        null_percentage=0.1,
+        string_avg_length=30,
+    ),
 }
 
 
@@ -386,14 +430,21 @@ def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_di
 
     benchmark_group = f"write_{config_name}-{target}"
 
-    time.sleep(30) # Sleep 30 seconds to get "clean data"
-    start_time = int(time.time())
+    time.sleep(10) # Sleep 30 seconds to get "clean data"
+    start_time = int(time.time()) * 1000
     result_file = benchmark_with_memray(benchmark_write, benchmark_group)
-    end_time = int(time.time())
+    end_time = int(time.time()) * 1000
 
     with open("timing.txt", "a") as timing_file:
-        dashboard_url = f"http://10.242.147.249:19999/v3/spaces/c7i-8xlarge/rooms/local/dashboards/local-custom-dashboard#metrics_correlation=false&after={start_time}000&before={end_time}000&utc=America%2FLos_Angeles&offset=-7&timezoneName=Pacific%20Time%20&modal=&modalTab=&modalParams=&force_play=false"
-        print(f"{config_name}-{target}-{writer}-{dashboard_url}", file=timing_file)
+        timing_data = {
+            "config_name": config_name,
+            "target": target,
+            "writer": writer,
+            "start_time": start_time,
+            "end_time": end_time
+        }
+
+        print(json.dumps(timing_data), file=timing_file)
 
     # Verify the file was written correctly.
     #assert result_file.exists()
