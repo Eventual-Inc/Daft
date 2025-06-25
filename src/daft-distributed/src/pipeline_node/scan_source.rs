@@ -105,7 +105,6 @@ impl ScanSourceNode {
             Default::default(),
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }
@@ -120,7 +119,6 @@ impl ScanSourceNode {
             psets,
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }

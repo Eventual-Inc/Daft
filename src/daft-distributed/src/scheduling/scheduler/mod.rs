@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskID, TaskPriority},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskID},
     worker::{Worker, WorkerId},
 };
 use crate::{
@@ -47,11 +47,6 @@ impl<T: Task> SchedulableTask<T> {
 
     pub fn strategy(&self) -> &SchedulingStrategy {
         self.task.strategy()
-    }
-
-    #[allow(dead_code)]
-    pub fn priority(&self) -> TaskPriority {
-        self.task.priority()
     }
 
     pub fn task_context(&self) -> TaskContext {
