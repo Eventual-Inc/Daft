@@ -159,6 +159,11 @@ impl PartialOrd for SwordfishTaskPriority {
 
 impl Ord for SwordfishTaskPriority {
     fn cmp(&self, other: &Self) -> Ordering {
+        // Rules for swordfish task priority:
+        // 1. Plan ID: Lower plan_id, higher priority
+        // 2. Stage ID: Higher stage_id, higher priority
+        // 3. Node ID: Higher node_id, higher priority
+        // 4. Task ID: Lower task_id, higher priority
         other
             .task_context
             .plan_id
