@@ -1,6 +1,5 @@
 [dependencies]
 arrow2 = {workspace = true}
-async-stream = "0.3.6"
 common-error = {workspace = true, optional = true, features = ["python"]}
 common-file-formats = {workspace = true, optional = true, features = [
   "python"
@@ -13,6 +12,8 @@ daft-context = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-functions = {workspace = true, optional = true, features = ["python"]}
+daft-functions-temporal = {workspace = true, optional = true}
+daft-functions-utf8 = {workspace = true, optional = true, features = ["python"]}
 daft-io = {path = "../daft-io", optional = true, features = ["python"]}
 daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
 daft-micropartition = {workspace = true, optional = true, features = [
@@ -34,8 +35,8 @@ textwrap = "0.16.1"
 tokio = {version = "1.40.0", features = ["full"]}
 tonic = {workspace = true}
 tracing = {workspace = true}
-uuid = {version = "1.10.0", features = ["v4"]}
 snafu.workspace = true
+uuid.workspace = true
 
 [features]
 python = [
@@ -54,7 +55,9 @@ python = [
   "dep:daft-recordbatch",
   "dep:daft-context",
   "dep:daft-catalog",
-  "dep:daft-functions"
+  "dep:daft-functions",
+  "dep:daft-functions-utf8",
+  "dep:daft-functions-temporal"
 ]
 
 [lints]

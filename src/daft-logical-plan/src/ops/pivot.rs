@@ -5,6 +5,7 @@ use daft_core::prelude::*;
 use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
@@ -12,7 +13,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Pivot {
     pub plan_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
@@ -43,21 +44,15 @@ impl Pivot {
 
         let output_schema = {
             let value_col_dtype = value_column.to_field(&input.schema())?.dtype;
-            let pivot_value_fields = names
-                .iter()
-                .map(|f| Field::new(f, value_col_dtype.clone()))
-                .collect::<Vec<_>>();
+            let pivot_value_fields = names.iter().map(|f| Field::new(f, value_col_dtype.clone()));
 
             let group_by_fields = group_by
                 .iter()
                 .map(|expr| expr.to_field(&input.schema()))
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let fields = group_by_fields
-                .into_iter()
-                .chain(pivot_value_fields)
-                .collect::<Vec<_>>();
-            Schema::new(fields)?.into()
+            let fields = group_by_fields.into_iter().chain(pivot_value_fields);
+            Schema::new(fields).into()
         };
 
         Ok(Self {

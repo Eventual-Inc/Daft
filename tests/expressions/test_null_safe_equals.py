@@ -3,7 +3,9 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+from daft.daft import series_lit
 from daft.expressions import col, lit
+from daft.expressions.expressions import Expression
 from daft.recordbatch import MicroPartition
 
 
@@ -27,7 +29,7 @@ def test_null_safe_equals_basic(data, value, expected_values):
 
     # Apply the null-safe equals operation
     result = table.eval_expression_list([col("value").eq_null_safe(lit(value))])
-    result_values = result.get_column("value").to_pylist()
+    result_values = result.get_column_by_name("value").to_pylist()
 
     # Verify results
     assert result_values == expected_values
@@ -67,7 +69,7 @@ def test_null_safe_equals_types(type_name, test_value, test_data, expected_value
 
     # Apply the null-safe equals operation
     result = table.eval_expression_list([col("value").eq_null_safe(lit(test_value))])
-    result_values = result.get_column("value").to_pylist()
+    result_values = result.get_column_by_name("value").to_pylist()
 
     # Verify results
     assert result_values == expected_values, f"Failed for {type_name} comparison"
@@ -119,7 +121,7 @@ def test_null_safe_equals_column_comparison(data, expected_values):
 
     # Apply the null-safe equals operation
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
-    result_values = result.get_column("left").to_pylist()
+    result_values = result.get_column_by_name("left").to_pylist()
 
     # Verify results
     assert result_values == expected_values
@@ -145,7 +147,7 @@ def test_null_safe_equals_in_filter(filter_value, data, expected_ids):
 
     # Apply the filter with null-safe equals
     result = table.filter([col("value").eq_null_safe(lit(filter_value))])
-    result_ids = set(result.get_column("id").to_pylist())
+    result_ids = set(result.get_column_by_name("id").to_pylist())
 
     # Verify results
     assert result_ids == expected_ids
@@ -176,7 +178,7 @@ def test_null_safe_equals_chained_operations(operation, test_value, data, expect
     if operation == "NOT":
         result = table.eval_expression_list([~col("value").eq_null_safe(lit(test_value))])
 
-    result_values = result.get_column("value").to_pylist()
+    result_values = result.get_column_by_name("value").to_pylist()
 
     # Verify results
     assert result_values == expected_values
@@ -198,7 +200,7 @@ def test_null_safe_equals_fixed_size_binary():
 
     # Test column to column comparison
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
-    result_values = result.get_column("left").to_pylist()
+    result_values = result.get_column_by_name("left").to_pylist()
     assert result_values == [True, False, False, False, False, True]  # True for equal values and both-null cases
 
     # Test column to scalar comparisons
@@ -210,12 +212,12 @@ def test_null_safe_equals_fixed_size_binary():
 
     for test_value, expected in test_cases:
         result = table.eval_expression_list([col("left").eq_null_safe(lit(test_value))])
-        result_values = result.get_column("left").to_pylist()
+        result_values = result.get_column_by_name("left").to_pylist()
         assert result_values == expected, f"Failed for test value: {test_value}"
 
         # Test the reverse comparison as well
         result = table.eval_expression_list([col("right").eq_null_safe(lit(test_value))])
-        result_values = result.get_column("right").to_pylist()
+        result_values = result.get_column_by_name("right").to_pylist()
         expected_reverse = [
             True if test_value == b"11111" else False,  # First value is "11111"
             False,  # Second value is "33333"
@@ -259,7 +261,7 @@ def test_no_nulls_all_types(type_name, left_data, right_data, expected_values):
         )
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
-    result_values = result.get_column("left").to_pylist()
+    result_values = result.get_column_by_name("left").to_pylist()
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"
 
@@ -296,7 +298,7 @@ def test_right_nulls_all_types(type_name, left_data, right_data, expected_values
         )
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
-    result_values = result.get_column("left").to_pylist()
+    result_values = result.get_column_by_name("left").to_pylist()
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"
 
@@ -333,7 +335,7 @@ def test_left_nulls_all_types(type_name, left_data, right_data, expected_values)
         )
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
-    result_values = result.get_column("left").to_pylist()
+    result_values = result.get_column_by_name("left").to_pylist()
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"
 
@@ -356,9 +358,15 @@ def test_length_mismatch_all_types(type_name, left_data, right_data):
     right_table = MicroPartition.from_pydict({"value": right_data})
 
     with pytest.raises(ValueError) as exc_info:
-        result = left_table.eval_expression_list([col("value").eq_null_safe(right_table.get_column("value"))])
+        result = left_table.eval_expression_list(
+            [
+                col("value").eq_null_safe(
+                    Expression._from_pyexpr(series_lit(right_table.get_column_by_name("value")._series))
+                )
+            ]
+        )
         # Force evaluation by accessing the result
-        result.get_column("value").to_pylist()
+        result.get_column_by_name("value").to_pylist()
 
     # Verify error message format
     error_msg = str(exc_info.value)
@@ -397,6 +405,6 @@ def test_null_equals_null_all_types(type_name, left_data, right_data, expected_v
         )
 
     result = table.eval_expression_list([col("left").eq_null_safe(col("right"))])
-    result_values = result.get_column("left").to_pylist()
+    result_values = result.get_column_by_name("left").to_pylist()
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"

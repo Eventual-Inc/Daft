@@ -1,13 +1,15 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterator, List, Optional
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, Pushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
+from daft.daft import IOConfig, PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
@@ -17,35 +19,19 @@ if TYPE_CHECKING:
 
 
 def _lancedb_table_factory_function(
-    fragment: "lance.LanceFragment", required_columns: Optional[List[str]]
-) -> Iterator["PyRecordBatch"]:
+    ds: "lance.LanceDataset", fragment_id: int, required_columns: Optional[list[str]]
+) -> Iterator[PyRecordBatch]:
+    fragment = ds.get_fragment(fragment_id)
+    assert fragment is not None, RuntimeError(f"Unable to find lance fragment {fragment_id}")
     return (
-        RecordBatch.from_arrow_record_batches([rb], rb.schema)._table
+        RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
         for rb in fragment.to_batches(columns=required_columns)
     )
 
 
 @PublicAPI
-def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
+def read_lance(url: str, io_config: Optional[IOConfig] = None) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
-
-    .. NOTE::
-        This function requires the use of `LanceDB <https://lancedb.github.io/lancedb/>`_, which is the Python
-        library for the LanceDB project.
-
-        To ensure that this is installed with Daft, you may install: ``pip install daft[lance]``
-
-    Examples:
-    ---------
-    Read a local LanceDB table:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
-        >>> df.show()
-
-    Read a LanceDB table from a public S3 bucket:
-        >>> from daft.io import S3Config
-        >>> s3_config = S3Config(region="us-west-2", anonymous=True)
-        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
-        >>> df.show()
 
     Args:
         url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
@@ -53,6 +39,21 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
+
+    Note:
+        This function requires the use of [LanceDB](https://lancedb.github.io/lancedb/), which is the Python library for the LanceDB project.
+        To ensure that this is installed with Daft, you may install: `pip install daft[lance]`
+
+    Examples:
+        Read a local LanceDB table:
+        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
+        >>> df.show()
+
+        Read a LanceDB table from a public S3 bucket:
+        >>> from daft.io import S3Config
+        >>> s3_config = S3Config(region="us-west-2", anonymous=True)
+        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
+        >>> df.show()
     """
     try:
         import lance
@@ -85,7 +86,7 @@ class LanceDBScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._ds.schema)
 
-    def partitioning_keys(self) -> List[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return []
 
     def can_absorb_filter(self) -> bool:
@@ -97,14 +98,14 @@ class LanceDBScanOperator(ScanOperator):
     def can_absorb_select(self) -> bool:
         return False
 
-    def multiline_display(self) -> List[str]:
+    def multiline_display(self) -> list[str]:
         return [
             self.display_name(),
             f"Schema = {self.schema()}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
-        required_columns: Optional[List[str]]
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        required_columns: Optional[list[str]]
         if pushdowns.columns is None:
             required_columns = None
         else:
@@ -134,7 +135,7 @@ class LanceDBScanOperator(ScanOperator):
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
                 func_name=_lancedb_table_factory_function.__name__,
-                func_args=(fragment, required_columns),
+                func_args=(self._ds, fragment.fragment_id, required_columns),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
                 size_bytes=size_bytes,

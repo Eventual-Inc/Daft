@@ -1,3 +1,4 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
 from typing import Optional
@@ -12,14 +13,9 @@ from daft.logical.builder import LogicalPlanBuilder
 @PublicAPI
 def read_hudi(
     table_uri: str,
-    io_config: Optional["IOConfig"] = None,
+    io_config: Optional[IOConfig] = None,
 ) -> DataFrame:
     """Create a DataFrame from a Hudi table.
-
-    Example:
-        >>> df = daft.read_hudi("some-table-uri")
-        >>> df = df.where(df["foo"] > 5)
-        >>> df.show()
 
     Args:
         table_uri: URI to the Hudi table.
@@ -27,6 +23,11 @@ def read_hudi(
 
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Hudi table.
+
+    Examples:
+        >>> df = daft.read_hudi("some-table-uri")
+        >>> df = df.where(df["foo"] > 5)
+        >>> df.show()
     """
     from daft.hudi.hudi_scan import HudiScanOperator
 

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import datetime
 import uuid
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from daft import Expression, col, lit
 from daft.datatype import DataType
@@ -11,15 +13,18 @@ from daft.recordbatch import MicroPartition
 from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to_path
 
 if TYPE_CHECKING:
-    import pyarrow as pa
+    from collections.abc import Iterator
+
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
     from pyiceberg.typedef import Record as IcebergRecord
 
+    from daft.dependencies import pa, pads, pq
 
-def get_missing_columns(data_schema: "pa.Schema", iceberg_schema: "IcebergSchema") -> ExpressionsProjection:
+
+def get_missing_columns(data_schema: pa.Schema, iceberg_schema: IcebergSchema) -> ExpressionsProjection:
     """Add null values for columns in the schema that are missing from the table."""
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -35,7 +40,7 @@ def get_missing_columns(data_schema: "pa.Schema", iceberg_schema: "IcebergSchema
     return ExpressionsProjection(to_add)
 
 
-def coerce_pyarrow_table_to_schema(pa_table: "pa.Table", schema: "pa.Schema") -> "pa.Table":
+def coerce_pyarrow_table_to_schema(pa_table: pa.Table, schema: pa.Schema) -> pa.Table:
     """Coerces a PyArrow table to the supplied schema.
 
     1. For each field in `pa_table`, cast it to the field in `input_schema` if one with a matching name
@@ -77,7 +82,7 @@ def coerce_pyarrow_table_to_schema(pa_table: "pa.Table", schema: "pa.Schema") ->
     return pa.table(columns, schema=schema)
 
 
-def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSchema") -> Expression:
+def partition_field_to_expr(field: IcebergPartitionField, schema: IcebergSchema) -> Expression:
     from pyiceberg.transforms import (
         BucketTransform,
         DayTransform,
@@ -88,7 +93,7 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
         YearTransform,
     )
 
-    part_col = col(schema.find_field(field.source_id).name)
+    part_col: Expression = col(schema.find_field(field.source_id).name)
 
     if isinstance(field.transform, IdentityTransform):
         transform_expr = part_col
@@ -108,12 +113,14 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
         warnings.warn(f"{field.transform} not implemented, Please make an issue!")
         transform_expr = part_col
 
+    transform_expr = transform_expr.alias(field.name)
+
     # currently the partitioning expressions change the name of the column
     # so we need to alias it back to the original column name
     return transform_expr
 
 
-def to_partition_representation(value: Any):
+def to_partition_representation(value: Any) -> Any:
     """Converts a partition value to the format expected by Iceberg metadata.
 
     Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
@@ -136,7 +143,15 @@ def to_partition_representation(value: Any):
         return value
 
 
-def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id, schema, properties):
+def make_iceberg_data_file(
+    file_path: str,
+    size: int,
+    metadata: pq.FileMetaData,
+    partition_record: IcebergRecord,
+    spec_id: int,
+    schema: IcebergSchema,
+    properties: dict[str, str],
+) -> DataFile:
     import pyiceberg
     from packaging.version import parse
     from pyiceberg.io.pyarrow import (
@@ -194,11 +209,11 @@ def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id,
 
 class IcebergWriteVisitors:
     class FileVisitor:
-        def __init__(self, parent: "IcebergWriteVisitors", partition_record: "IcebergRecord"):
+        def __init__(self, parent: IcebergWriteVisitors, partition_record: IcebergRecord):
             self.parent = parent
             self.partition_record = partition_record
 
-        def __call__(self, written_file):
+        def __call__(self, written_file: pads.WrittenFile) -> None:
             file_path = f"{self.parent.protocol}://{written_file.path}"
             data_file = make_iceberg_data_file(
                 file_path,
@@ -216,16 +231,16 @@ class IcebergWriteVisitors:
         self,
         protocol: str,
         spec_id: int,
-        schema: "IcebergSchema",
-        properties: "IcebergTableProperties",
+        schema: IcebergSchema,
+        properties: IcebergTableProperties,
     ):
-        self.data_files: List[DataFile] = []
+        self.data_files: list[DataFile] = []
         self.protocol = protocol
         self.spec_id = spec_id
         self.schema = schema
         self.properties = properties
 
-    def visitor(self, partition_record: "IcebergRecord") -> "IcebergWriteVisitors.FileVisitor":
+    def visitor(self, partition_record: IcebergRecord) -> IcebergWriteVisitors.FileVisitor:
         return self.FileVisitor(self, partition_record)
 
     def to_metadata(self) -> MicroPartition:
@@ -235,7 +250,7 @@ class IcebergWriteVisitors:
         return MicroPartition.from_pydict({col_name: self.data_files})
 
 
-def make_iceberg_record(partition_values: Optional[Dict[str, Any]]) -> "IcebergRecord":
+def make_iceberg_record(partition_values: dict[str, Any] | None) -> IcebergRecord:
     from pyiceberg.typedef import Record as IcebergRecord
 
     if partition_values:
@@ -246,8 +261,8 @@ def make_iceberg_record(partition_values: Optional[Dict[str, Any]]) -> "IcebergR
 
 
 def partitioned_table_to_iceberg_iter(
-    partitioned: PartitionedTable, root_path: str, schema: "pa.Schema"
-) -> Iterator[Tuple["pa.Table", str, "IcebergRecord"]]:
+    partitioned: PartitionedTable, root_path: str, schema: pa.Schema
+) -> Iterator[tuple[pa.Table, str, IcebergRecord]]:
     partition_values = partitioned.partition_values()
 
     if partition_values:

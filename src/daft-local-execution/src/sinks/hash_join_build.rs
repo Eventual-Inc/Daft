@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{make_probeable_builder, ProbeState, ProbeableBuilder, RecordBatch};
 use itertools::Itertools;
@@ -17,7 +17,7 @@ use crate::{state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
 enum ProbeTableState {
     Building {
         probe_table_builder: Option<Box<dyn ProbeableBuilder>>,
-        projection: Vec<ExprRef>,
+        projection: Vec<BoundExpr>,
         tables: Vec<RecordBatch>,
     },
     Done,
@@ -26,7 +26,7 @@ enum ProbeTableState {
 impl ProbeTableState {
     fn new(
         key_schema: &SchemaRef,
-        projection: Vec<ExprRef>,
+        projection: Vec<BoundExpr>,
         nulls_equal_aware: Option<&Vec<bool>>,
         track_indices: bool,
     ) -> DaftResult<Self> {
@@ -92,7 +92,7 @@ impl BlockingSinkState for ProbeTableState {
 
 pub struct HashJoinBuildSink {
     key_schema: SchemaRef,
-    projection: Vec<ExprRef>,
+    projection: Vec<BoundExpr>,
     nulls_equal_aware: Option<Vec<bool>>,
     track_indices: bool,
     probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
@@ -101,7 +101,7 @@ pub struct HashJoinBuildSink {
 impl HashJoinBuildSink {
     pub(crate) fn new(
         key_schema: SchemaRef,
-        projection: Vec<ExprRef>,
+        projection: Vec<BoundExpr>,
         nulls_equal_aware: Option<Vec<bool>>,
         track_indices: bool,
         probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,

@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9']
-        daft_runner: [py]
+        daft_runner: [ray, native]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -44,6 +44,11 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
     - name: Build Rust Library
       run: |
         source activate

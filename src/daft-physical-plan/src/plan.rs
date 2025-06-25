@@ -27,9 +27,11 @@ pub enum PhysicalPlan {
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
+    TopN(TopN),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     Aggregate(Aggregate),
+    Dedup(Dedup),
     Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
@@ -46,6 +48,8 @@ pub enum PhysicalPlan {
     DeltaLakeWrite(DeltaLakeWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
+    #[cfg(feature = "python")]
+    DataSink(DataSink),
 }
 
 impl PhysicalPlan {
@@ -98,6 +102,17 @@ impl PhysicalPlan {
                 descending.clone(),
             ))
             .into(),
+            Self::TopN(TopN {
+                input,
+                sort_by,
+                descending,
+                ..
+            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
+                input.clustering_spec().num_partitions(),
+                sort_by.clone(),
+                descending.clone(),
+            ))
+            .into(),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.clustering_spec(),
             Self::Aggregate(Aggregate {
                 input,
@@ -126,6 +141,7 @@ impl PhysicalPlan {
                     input.clustering_spec()
                 }
             }
+            Self::Dedup(Dedup { input, .. }) => input.clustering_spec(),
             Self::Pivot(Pivot { input, .. }) => input.clustering_spec(),
             Self::Concat(Concat { input, other }) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(
@@ -182,9 +198,10 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
             #[cfg(feature = "python")]
-            Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
-            }
+            Self::IcebergWrite(_)
+            | Self::DeltaLakeWrite(_)
+            | Self::LanceWrite(_)
+            | Self::DataSink(_) => ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into(),
         }
     }
 
@@ -238,7 +255,7 @@ impl PhysicalPlan {
                     acc_selectivity: input_stats.acc_selectivity * estimated_selectivity,
                 }
             }
-            Self::Limit(Limit { input, limit, .. }) => {
+            Self::Limit(Limit { input, limit, .. }) | Self::TopN(TopN { input, limit, .. }) => {
                 let input_stats = input.approximate_stats();
                 let limit = *limit as usize;
                 let limit_selectivity = if input_stats.num_rows > limit {
@@ -350,6 +367,19 @@ impl PhysicalPlan {
                     }
                 }
             }
+            Self::Dedup(Dedup { input, .. }) => {
+                let input_stats = input.approximate_stats();
+                // TODO we should use schema inference here
+                let est_bytes_per_row = input_stats.size_bytes / (input_stats.num_rows.max(1));
+                // Assume high cardinality for group by columns, and 80% of rows are unique.
+                let est_num_groups = input_stats.num_rows * 4 / 5;
+                ApproxStats {
+                    num_rows: est_num_groups,
+                    size_bytes: est_bytes_per_row * est_num_groups,
+                    acc_selectivity: input_stats.acc_selectivity * est_num_groups as f64
+                        / input_stats.num_rows as f64,
+                }
+            }
             Self::Unpivot(Unpivot { input, values, .. }) => {
                 let input_stats = input.approximate_stats();
                 let num_values = values.len();
@@ -365,9 +395,10 @@ impl PhysicalPlan {
                 ApproxStats::empty()
             }
             #[cfg(feature = "python")]
-            Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
-                ApproxStats::empty()
-            }
+            Self::IcebergWrite(_)
+            | Self::DeltaLakeWrite(_)
+            | Self::LanceWrite(_)
+            | Self::DataSink(_) => ApproxStats::empty(),
         }
     }
 
@@ -383,7 +414,9 @@ impl PhysicalPlan {
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sample(Sample { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
+            Self::TopN(TopN { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
+            Self::Dedup(Dedup { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
@@ -395,6 +428,8 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(DeltaLakeWrite { input, .. }) => vec![input],
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { input, .. }) => vec![input],
+            #[cfg(feature = "python")]
+            Self::DataSink(DataSink { input, .. }) => vec![input],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
@@ -427,6 +462,7 @@ impl PhysicalPlan {
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
+                Self::TopN(TopN { sort_by, descending, nulls_first, limit, num_partitions, .. }) => Self::TopN(TopN::new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *num_partitions)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, names, .. }) => Self::Pivot(Pivot::new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), names.clone())),
@@ -434,6 +470,7 @@ impl PhysicalPlan {
                 Self::Sort(Sort { sort_by, descending, nulls_first,  num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(),nulls_first.clone(), *num_partitions)),
                 Self::ShuffleExchange(ShuffleExchange { strategy, .. }) => Self::ShuffleExchange(ShuffleExchange { input: input.clone(), strategy: strategy.clone() }),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(input.clone(), aggregations.clone(), groupby.clone())),
+                Self::Dedup(Dedup { columns, .. }) => Self::Dedup(Dedup::new(input.clone(), columns.clone())),
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
@@ -444,6 +481,8 @@ impl PhysicalPlan {
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
+                #[cfg(feature = "python")]
+                Self::DataSink(DataSink { schema, data_sink_info, .. }) => Self::DataSink(DataSink::new(schema.clone(), data_sink_info.clone(), input.clone())),
                 Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) | Self::CrossJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
@@ -479,12 +518,14 @@ impl PhysicalPlan {
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
             Self::Limit(..) => "Limit",
+            Self::TopN(..) => "TopN",
             Self::Explode(..) => "Explode",
             Self::Unpivot(..) => "Unpivot",
             Self::Sample(..) => "Sample",
             Self::Sort(..) => "Sort",
             Self::ShuffleExchange(..) => "ShuffleExchange",
             Self::Aggregate(..) => "Aggregate",
+            Self::Dedup(..) => "Dedup",
             Self::Pivot(..) => "Pivot",
             Self::HashJoin(..) => "HashJoin",
             Self::BroadcastJoin(..) => "BroadcastJoin",
@@ -501,6 +542,8 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(..) => "DeltaLakeWrite",
             #[cfg(feature = "python")]
             Self::LanceWrite(..) => "LanceWrite",
+            #[cfg(feature = "python")]
+            Self::DataSink(..) => "DataSinkWrite",
         };
         name.to_string()
     }
@@ -515,12 +558,14 @@ impl PhysicalPlan {
             Self::ActorPoolProject(ap_project) => ap_project.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
+            Self::TopN(top_n) => top_n.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
+            Self::Dedup(dedup) => dedup.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
             Self::HashJoin(hash_join) => hash_join.multiline_display(),
             Self::BroadcastJoin(broadcast_join) => broadcast_join.multiline_display(),
@@ -541,6 +586,8 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(delta_lake_info) => delta_lake_info.multiline_display(),
             #[cfg(feature = "python")]
             Self::LanceWrite(lance_info) => lance_info.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::DataSink(data_sink_info) => data_sink_info.multiline_display(),
         }
     }
 

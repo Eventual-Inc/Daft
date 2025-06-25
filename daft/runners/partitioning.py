@@ -4,7 +4,7 @@ import threading
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
 from uuid import uuid4
 
 from daft.datatype import TimeUnit
@@ -13,6 +13,7 @@ from daft.recordbatch import MicroPartition
 if TYPE_CHECKING:
     import pandas as pd
     import pyarrow as pa
+    from ray import ObjectRef
 
     from daft.daft import PyMicroPartitionSet
     from daft.expressions.expressions import Expression
@@ -112,7 +113,7 @@ class Boundaries:
     sort_by: list[Expression]
     bounds: MicroPartition
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         assert len(self.sort_by) > 0
         assert len(self.bounds) == 2
         assert self.bounds.column_names() == [e.name() for e in self.sort_by]
@@ -165,7 +166,7 @@ class Boundaries:
         return self_upper < other_upper
 
 
-PartitionT = TypeVar("PartitionT")
+PartitionT = TypeVar("PartitionT", bound="Union[ObjectRef, MicroPartition]")
 
 
 class MaterializedResult(Generic[PartitionT]):
@@ -281,7 +282,7 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
     def _from_micropartition_set(pset: PyMicroPartitionSet) -> LocalPartitionSet:
         s = LocalPartitionSet()
         for idx in range(0, pset.num_partitions()):
-            s.set_partition_from_table(idx, MicroPartition._from_pymicropartition(pset.get_partition(idx)))
+            s.set_partition_from_table(idx=idx, part=MicroPartition._from_pymicropartition(pset.get_partition(idx)))
         return s
 
     def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
@@ -366,7 +367,7 @@ class LocalMaterializedResult(MaterializedResult[MicroPartition]):
 @dataclass(eq=False, repr=False)
 class PartitionCacheEntry:
     key: str
-    value: PartitionSet | None
+    value: PartitionSet[Any] | None
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, PartitionCacheEntry) and self.key == other.key
@@ -377,10 +378,10 @@ class PartitionCacheEntry:
     def __repr__(self) -> str:
         return f"PartitionCacheEntry: {self.key}"
 
-    def __getstate__(self):
+    def __getstate__(self) -> str:
         return self.key
 
-    def __setstate__(self, key):
+    def __setstate__(self, key: str) -> None:
         self.key = key
         self.value = None
 
@@ -406,11 +407,11 @@ class PartitionSetCache:
             assert pset_id in self.__uuid_to_partition_set
             return self.__uuid_to_partition_set[pset_id]
 
-    def get_all_partition_sets(self) -> dict[str, PartitionSet]:
+    def get_all_partition_sets(self) -> dict[str, PartitionSet[Any]]:
         with self._lock:
             return {key: entry.value for key, entry in self.__uuid_to_partition_set.items() if entry.value is not None}
 
-    def put_partition_set(self, pset: PartitionSet) -> PartitionCacheEntry:
+    def put_partition_set(self, pset: PartitionSet[Any]) -> PartitionCacheEntry:
         pset_id = uuid4().hex
         part_entry = PartitionCacheEntry(pset_id, pset)
         with self._lock:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.daft import (
     CsvConvertOptions,
@@ -18,14 +18,16 @@ from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.daft import ScanTask as _ScanTask
 from daft.datatype import DataType, TimeUnit
+from daft.dependencies import pa
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.recordbatch.recordbatch import RecordBatch
 from daft.series import Series
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import pandas as pd
-    import pyarrow as pa
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +44,17 @@ class MicroPartition:
     def column_names(self) -> list[str]:
         return self._micropartition.column_names()
 
-    def get_column(self, name: str) -> Series:
-        return Series._from_pyseries(self._micropartition.get_column(name))
+    def get_column_by_name(self, name: str) -> Series:
+        return Series._from_pyseries(self._micropartition.get_column_by_name(name))
+
+    def get_column(self, idx: int) -> Series:
+        return Series._from_pyseries(self._micropartition.get_column(idx))
+
+    def columns(self) -> list[Series]:
+        return [Series._from_pyseries(s) for s in self._micropartition.columns()]
+
+    def get_record_batches(self) -> list[RecordBatch]:
+        return [RecordBatch._from_pyrecordbatch(t) for t in self._micropartition.get_record_batches()]
 
     def size_bytes(self) -> int | None:
         return self._micropartition.size_bytes()
@@ -72,9 +83,9 @@ class MicroPartition:
         return MicroPartition._from_pymicropartition(_PyMicroPartition.from_scan_task(scan_task))
 
     @staticmethod
-    def _from_pytable(pyt: _PyRecordBatch) -> MicroPartition:
+    def _from_pyrecordbatch(pyt: _PyRecordBatch) -> MicroPartition:
         assert isinstance(pyt, _PyRecordBatch)
-        return MicroPartition._from_pymicropartition(_PyMicroPartition.from_tables([pyt]))
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.from_record_batches([pyt]))
 
     @staticmethod
     def _from_pymicropartition(pym: _PyMicroPartition) -> MicroPartition:
@@ -84,13 +95,15 @@ class MicroPartition:
         return tab
 
     @staticmethod
-    def _from_tables(tables: list[RecordBatch]) -> MicroPartition:
-        return MicroPartition._from_pymicropartition(_PyMicroPartition.from_tables([t._table for t in tables]))
+    def _from_record_batches(tables: list[RecordBatch]) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            _PyMicroPartition.from_record_batches([t._recordbatch for t in tables])
+        )
 
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> MicroPartition:
-        table = RecordBatch.from_arrow(arrow_table)
-        return MicroPartition._from_tables([table])
+        record_batch = RecordBatch.from_arrow_table(arrow_table)
+        return MicroPartition._from_record_batches([record_batch])
 
     @staticmethod
     def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> MicroPartition:
@@ -101,12 +114,16 @@ class MicroPartition:
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> MicroPartition:
         table = RecordBatch.from_pandas(pd_df)
-        return MicroPartition._from_tables([table])
+        return MicroPartition._from_record_batches([table])
 
     @staticmethod
-    def from_pydict(data: dict) -> MicroPartition:
+    def from_pydict(data: Mapping[str, Any]) -> MicroPartition:
         table = RecordBatch.from_pydict(data)
-        return MicroPartition._from_tables([table])
+        return MicroPartition._from_record_batches([table])
+
+    @staticmethod
+    def from_ipc_stream(stream: bytes) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.read_from_ipc_stream(stream))
 
     @classmethod
     def concat(cls, to_merge: list[MicroPartition]) -> MicroPartition:
@@ -134,12 +151,15 @@ class MicroPartition:
 
     def to_record_batch(self) -> RecordBatch:
         """Returns the MicroPartition as a RecordBatch."""
-        return RecordBatch._from_pytable(self._micropartition.to_record_batch())
+        return RecordBatch._from_pyrecordbatch(self._micropartition.to_record_batch())
 
-    def to_arrow(self) -> pa.Table:
-        return self.to_record_batch().to_arrow()
+    def to_arrow(self, concat_record_batches: bool = False) -> pa.Table:
+        if len(self) > 0 and not concat_record_batches:
+            return pa.Table.from_batches(rb.to_arrow_record_batch() for rb in self.get_record_batches())
+        else:
+            return self.to_record_batch().to_arrow_table()
 
-    def to_pydict(self) -> dict[str, list]:
+    def to_pydict(self) -> dict[str, list[Any]]:
         return self.to_record_batch().to_pydict()
 
     def to_pylist(self) -> list[dict[str, Any]]:
@@ -155,13 +175,12 @@ class MicroPartition:
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
 
+    def to_ipc_stream(self) -> bytes:
+        return self._micropartition.write_to_ipc_stream()
+
     ###
     # Compute methods (MicroPartition -> MicroPartition)
     ###
-
-    def cast_to_schema(self, schema: Schema) -> MicroPartition:
-        """Casts a MicroPartition into the provided schema."""
-        return MicroPartition._from_pymicropartition(self._micropartition.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in exprs)
@@ -240,6 +259,10 @@ class MicroPartition:
         to_agg_pyexprs = [e._expr for e in to_agg]
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
         return MicroPartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
+
+    def dedup(self, columns: ExpressionsProjection) -> MicroPartition:
+        columns_pyexprs = [e._expr for e in columns]
+        return MicroPartition._from_pymicropartition(self._micropartition.dedup(columns_pyexprs))
 
     def pivot(
         self, group_by: ExpressionsProjection, pivot_column: Expression, values_column: Expression, names: list[str]
@@ -352,7 +375,7 @@ class MicroPartition:
         exprs = [e._expr for e in partition_keys]
         return [
             MicroPartition._from_pymicropartition(t)
-            for t in self._micropartition.partition_by_range(exprs, boundaries._table, descending)
+            for t in self._micropartition.partition_by_range(exprs, boundaries._recordbatch, descending)
         ]
 
     def partition_by_random(self, num_partitions: int, seed: int) -> list[MicroPartition]:
@@ -419,9 +442,9 @@ class MicroPartition:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(self) -> tuple[Callable[[dict[str, Any]], MicroPartition], tuple[dict[str, Series]]]:
         names = self.column_names()
-        return MicroPartition.from_pydict, ({name: self.get_column(name) for name in names},)
+        return MicroPartition.from_pydict, ({name: self.get_column_by_name(name) for name in names},)
 
     @classmethod
     def read_parquet_statistics(

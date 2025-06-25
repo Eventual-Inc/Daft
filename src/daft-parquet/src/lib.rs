@@ -16,7 +16,6 @@ mod statistics;
 pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
 mod stream_reader;
-mod utils;
 
 #[cfg(feature = "python")]
 pub use python::register_modules;
@@ -33,7 +32,7 @@ fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
         .checked_mul(2.try_into().unwrap())
         .unwrap()
         .get() as f64
-        / max(daft_schema.fields.len(), 1) as f64)
+        / max(daft_schema.len(), 1) as f64)
         .ceil() as usize
 }
 
@@ -211,6 +210,12 @@ pub enum Error {
         source: daft_stats::Error,
     },
 
+    #[snafu(display(
+        "Parquet file: {} unable to bind expression to schema\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToBindExpression { path: String, source: DaftError },
+
     #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
     JoinError {
         path: String,
@@ -230,6 +235,7 @@ impl From<Error> for DaftError {
         match err {
             Error::DaftIOError { source } => source.into(),
             Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            Error::UnableToBindExpression { source, .. } => source.into(),
             _ => Self::External(err.into()),
         }
     }

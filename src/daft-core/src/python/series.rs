@@ -6,7 +6,7 @@ use std::{
 
 use common_arrow_ffi as ffi;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
-use daft_schema::python::{PyDataType, PyTimeUnit};
+use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -16,10 +16,7 @@ use pyo3::{
 
 use crate::{
     array::{
-        ops::{
-            as_arrow::AsArrow, trigonometry::TrigonometricFunction, DaftLogical,
-            Utf8NormalizeOptions,
-        },
+        ops::{as_arrow::AsArrow, DaftLogical},
         pseudo_arrow::PseudoArrowArray,
         DataArray,
     },
@@ -84,13 +81,11 @@ impl PySeries {
         PyList::new(py, pyobj_vec_cloned)
     }
 
-    pub fn to_arrow(&self) -> PyResult<PyObject> {
+    pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-        Python::with_gil(|py| {
-            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-            Ok(ffi::to_py_array(py, arrow_array, &pyarrow)?.unbind())
-        })
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        ffi::to_py_array(py, arrow_array, &pyarrow)
     }
 
     pub fn __abs__(&self) -> PyResult<Self> {
@@ -141,165 +136,6 @@ impl PySeries {
         Ok(self.series.floor_div(&other.series)?.into())
     }
 
-    pub fn ceil(&self) -> PyResult<Self> {
-        Ok(self.series.ceil()?.into())
-    }
-
-    pub fn floor(&self) -> PyResult<Self> {
-        Ok(self.series.floor()?.into())
-    }
-
-    pub fn sign(&self) -> PyResult<Self> {
-        Ok(self.series.sign()?.into())
-    }
-
-    pub fn negative(&self) -> PyResult<Self> {
-        Ok(self.series.negative()?.into())
-    }
-
-    pub fn round(&self, decimal: i32) -> PyResult<Self> {
-        if decimal < 0 {
-            return Err(PyValueError::new_err(format!(
-                "decimal value can not be negative: {decimal}"
-            )));
-        }
-        Ok(self.series.round(decimal)?.into())
-    }
-    pub fn clip(&self, min: &Self, max: &Self) -> PyResult<Self> {
-        Ok(self.series.clip(&min.series, &max.series)?.into())
-    }
-
-    pub fn sqrt(&self) -> PyResult<Self> {
-        Ok(self.series.sqrt()?.into())
-    }
-
-    pub fn cbrt(&self) -> PyResult<Self> {
-        Ok(self.series.cbrt()?.into())
-    }
-
-    pub fn sin(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Sin)?
-            .into())
-    }
-
-    pub fn cos(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Cos)?
-            .into())
-    }
-
-    pub fn tan(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Tan)?
-            .into())
-    }
-
-    pub fn csc(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Csc)?
-            .into())
-    }
-
-    pub fn sec(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Sec)?
-            .into())
-    }
-
-    pub fn cot(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Cot)?
-            .into())
-    }
-
-    pub fn sinh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Sinh)?
-            .into())
-    }
-
-    pub fn cosh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Cosh)?
-            .into())
-    }
-
-    pub fn tanh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Tanh)?
-            .into())
-    }
-
-    pub fn arcsin(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcSin)?
-            .into())
-    }
-
-    pub fn arccos(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcCos)?
-            .into())
-    }
-
-    pub fn arctan(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcTan)?
-            .into())
-    }
-
-    pub fn arctan2(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.series.atan2(&other.series)?.into())
-    }
-
-    pub fn degrees(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Degrees)?
-            .into())
-    }
-
-    pub fn radians(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::Radians)?
-            .into())
-    }
-
-    pub fn arctanh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcTanh)?
-            .into())
-    }
-
-    pub fn arccosh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcCosh)?
-            .into())
-    }
-
-    pub fn arcsinh(&self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .trigonometry(&TrigonometricFunction::ArcSinh)?
-            .into())
-    }
-
     pub fn log2(&self) -> PyResult<Self> {
         Ok(self.series.log2()?.into())
     }
@@ -318,14 +154,6 @@ impl PySeries {
 
     pub fn log1p(&self) -> PyResult<Self> {
         Ok(self.series.log1p()?.into())
-    }
-
-    pub fn exp(&self) -> PyResult<Self> {
-        Ok(self.series.exp()?.into())
-    }
-
-    pub fn expm1(&self) -> PyResult<Self> {
-        Ok(self.series.expm1()?.into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
@@ -367,23 +195,6 @@ impl PySeries {
 
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
         Ok(self.series.argsort(descending, nulls_first)?.into())
-    }
-
-    #[pyo3(signature = (seed=None))]
-    pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {
-        let seed_series;
-        let mut seed_array = None;
-        if let Some(s) = seed {
-            if s.series.data_type() != &DataType::UInt64 {
-                return Err(PyValueError::new_err(format!(
-                    "We can only use UInt64 as a seed for hashing, got {}",
-                    s.series.data_type()
-                )));
-            }
-            seed_series = s.series;
-            seed_array = Some(seed_series.u64()?);
-        }
-        Ok(self.series.hash(seed_array)?.into_series().into())
     }
 
     pub fn minhash(
@@ -515,235 +326,6 @@ impl PySeries {
         Ok(self.series.data_type().clone().into())
     }
 
-    pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_endswith(&pattern.series)?.into())
-    }
-
-    pub fn utf8_startswith(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_startswith(&pattern.series)?.into())
-    }
-
-    pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_contains(&pattern.series)?.into())
-    }
-
-    pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_match(&pattern.series)?.into())
-    }
-
-    pub fn utf8_split(&self, pattern: &Self, regex: bool) -> PyResult<Self> {
-        Ok(self.series.utf8_split(&pattern.series, regex)?.into())
-    }
-
-    pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {
-        Ok(self.series.utf8_extract(&pattern.series, index)?.into())
-    }
-
-    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
-        Ok(self.series.utf8_extract_all(&pattern.series, index)?.into())
-    }
-
-    pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_replace(&pattern.series, &replacement.series, regex)?
-            .into())
-    }
-
-    pub fn utf8_length(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_length()?.into())
-    }
-
-    pub fn utf8_length_bytes(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_length_bytes()?.into())
-    }
-
-    pub fn utf8_lower(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_lower()?.into())
-    }
-
-    pub fn utf8_upper(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_upper()?.into())
-    }
-
-    pub fn utf8_lstrip(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_lstrip()?.into())
-    }
-
-    pub fn utf8_rstrip(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_rstrip()?.into())
-    }
-
-    pub fn utf8_reverse(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_reverse()?.into())
-    }
-
-    pub fn utf8_capitalize(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_capitalize()?.into())
-    }
-
-    pub fn utf8_left(&self, nchars: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_left(&nchars.series)?.into())
-    }
-
-    pub fn utf8_right(&self, nchars: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_right(&nchars.series)?.into())
-    }
-
-    pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_find(&substr.series)?.into())
-    }
-
-    pub fn utf8_rpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_rpad(&length.series, &character.series)?
-            .into())
-    }
-
-    pub fn utf8_lpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_lpad(&length.series, &character.series)?
-            .into())
-    }
-
-    pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_repeat(&n.series)?.into())
-    }
-
-    pub fn utf8_like(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_like(&pattern.series)?.into())
-    }
-
-    pub fn utf8_ilike(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_ilike(&pattern.series)?.into())
-    }
-
-    pub fn utf8_substr(&self, start: &Self, length: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_substr(&start.series, &length.series)?
-            .into())
-    }
-
-    pub fn utf8_to_date(&self, format: &str) -> PyResult<Self> {
-        Ok(self.series.utf8_to_date(format)?.into())
-    }
-
-    #[pyo3(signature = (format, timezone=None))]
-    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
-        Ok(self.series.utf8_to_datetime(format, timezone)?.into())
-    }
-
-    pub fn utf8_normalize(
-        &self,
-        remove_punct: bool,
-        lowercase: bool,
-        nfd_unicode: bool,
-        white_space: bool,
-    ) -> PyResult<Self> {
-        let opts = Utf8NormalizeOptions {
-            remove_punct,
-            lowercase,
-            nfd_unicode,
-            white_space,
-        };
-
-        Ok(self.series.utf8_normalize(opts)?.into())
-    }
-
-    pub fn utf8_count_matches(
-        &self,
-        patterns: &Self,
-        whole_word: bool,
-        case_sensitive: bool,
-    ) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_count_matches(&patterns.series, whole_word, case_sensitive)?
-            .into())
-    }
-
-    pub fn is_nan(&self) -> PyResult<Self> {
-        Ok(self.series.is_nan()?.into())
-    }
-
-    pub fn is_inf(&self) -> PyResult<Self> {
-        Ok(self.series.is_inf()?.into())
-    }
-
-    pub fn not_nan(&self) -> PyResult<Self> {
-        Ok(self.series.not_nan()?.into())
-    }
-
-    pub fn fill_nan(&self, fill_value: &Self) -> PyResult<Self> {
-        Ok(self.series.fill_nan(&fill_value.series)?.into())
-    }
-
-    pub fn dt_date(&self) -> PyResult<Self> {
-        Ok(self.series.dt_date()?.into())
-    }
-
-    pub fn dt_day(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day()?.into())
-    }
-
-    pub fn dt_hour(&self) -> PyResult<Self> {
-        Ok(self.series.dt_hour()?.into())
-    }
-
-    pub fn dt_minute(&self) -> PyResult<Self> {
-        Ok(self.series.dt_minute()?.into())
-    }
-
-    pub fn dt_second(&self) -> PyResult<Self> {
-        Ok(self.series.dt_second()?.into())
-    }
-
-    pub fn dt_millisecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_millisecond()?.into())
-    }
-
-    pub fn dt_microsecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_microsecond()?.into())
-    }
-
-    pub fn dt_nanosecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_nanosecond()?.into())
-    }
-
-    pub fn dt_time(&self) -> PyResult<Self> {
-        Ok(self.series.dt_time()?.into())
-    }
-
-    pub fn dt_month(&self) -> PyResult<Self> {
-        Ok(self.series.dt_month()?.into())
-    }
-
-    pub fn dt_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_year()?.into())
-    }
-
-    pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_week()?.into())
-    }
-
-    pub fn dt_day_of_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_year()?.into())
-    }
-
-    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .dt_truncate(interval, &relative_to.series)?
-            .into())
-    }
-
-    pub fn dt_to_unix_epoch(&self, unit: PyTimeUnit) -> PyResult<Self> {
-        Ok(self.series.dt_to_unix_epoch(unit.timeunit)?.into())
-    }
-
     pub fn partitioning_days(&self) -> PyResult<Self> {
         Ok(self.series.partitioning_days()?.into())
     }
@@ -770,25 +352,6 @@ impl PySeries {
 
     pub fn murmur3_32(&self) -> PyResult<Self> {
         Ok(self.series.murmur3_32()?.into_series().into())
-    }
-
-    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
-        Ok(self.series.list_count(mode)?.into_series().into())
-    }
-
-    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
-        Ok(self.series.list_get(&idx.series, &default.series)?.into())
-    }
-
-    pub fn list_slice(&self, start: &Self, end: &Self) -> PyResult<Self> {
-        Ok(self.series.list_slice(&start.series, &end.series)?.into())
-    }
-
-    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .list_sort(&desc.series, &nulls_first.series)?
-            .into())
     }
 
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {

@@ -68,17 +68,7 @@ def test_resource_request_pickle_roundtrip():
     assert new_udf == copy.deepcopy(new_udf)
 
 
-###
-# Assert PyRunner behavior for GPU requests:
-# Fail if requesting more GPUs than is available, but otherwise we do not modify anything
-# about local task execution (tasks have access to all GPUs available on the host,
-# even if they specify more)
-###
-
-
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() not in {"native", "py"}, reason="requires Native or Py Runner to be in use"
-)
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
 def test_requesting_too_many_cpus():
     df = daft.from_pydict(DATA)
 
@@ -92,18 +82,7 @@ def test_requesting_too_many_cpus():
         df.collect()
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py"}, reason="requires PyRunner to be in use")
-def test_requesting_too_many_gpus():
-    df = daft.from_pydict(DATA)
-
-    my_udf_parametrized = my_udf.override_options(num_gpus=len(cuda_visible_devices()) + 1)
-    df = df.with_column("foo", my_udf_parametrized(col("id")))
-
-    with pytest.raises(RuntimeError):
-        df.collect()
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py", "native"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
 def test_requesting_too_much_memory():
     df = daft.from_pydict(DATA)
     system_info = SystemInfo()
@@ -238,11 +217,6 @@ def test_with_column_folded_rayrunner_class():
         "more_memory_request",
         assert_resources_1(col("id"), num_cpus=1, memory=5_000_000),
     )
-    assert_resources_2 = assert_resources.override_options(num_cpus=1, memory_bytes=None)
-    df = df.with_column(
-        "more_cpu_request",
-        assert_resources_2(col("id"), num_cpus=1),
-    )
     df.collect()
 
 
@@ -264,20 +238,6 @@ def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
         result = len(cuda_visible_devices_env.split(","))
     assert result == num_gpus
     return c
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py"}, reason="requires PyRunner to be in use")
-@pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
-def test_with_column_pyrunner_gpu():
-    df = daft.from_pydict(DATA).repartition(5)
-
-    # We set num_gpus=1 on the UDF itself
-    df = df.with_column(
-        "foo",
-        assert_num_cuda_visible_devices(col("id"), num_gpus=len(cuda_visible_devices())),
-    )
-
-    df.collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")

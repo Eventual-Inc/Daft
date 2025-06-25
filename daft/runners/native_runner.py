@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig
+from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, set_compute_runtime_num_worker_threads
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -19,6 +19,8 @@ from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.logical.builder import LogicalPlanBuilder
 
 logger = logging.getLogger(__name__)
@@ -47,8 +49,10 @@ class NativeRunnerIO(runner_io.RunnerIO):
 class NativeRunner(Runner[MicroPartition]):
     name = "native"
 
-    def __init__(self) -> None:
+    def __init__(self, num_threads: int | None = None) -> None:
         super().__init__()
+        if num_threads is not None:
+            set_compute_runtime_num_worker_threads(num_threads)
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return LOCAL_PARTITION_SET_CACHE
@@ -78,9 +82,14 @@ class NativeRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         builder = builder.optimize()
+
+        # NOTE: ENABLE FOR DAFT-PROTO TESTING
+        # builder = _to_from_proto(builder)
+
+        plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
         results_gen = executor.run(
-            builder,
+            plan,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
             daft_execution_config,
             results_buffer_size,
@@ -92,3 +101,12 @@ class NativeRunner(Runner[MicroPartition]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
+
+
+def _to_from_proto(builder: LogicalPlanBuilder) -> LogicalPlanBuilder:
+    """This is a testing utility which mutably roundtrips an *optimized* plan through daft-proto."""
+    from daft.daft import to_from_proto
+    from daft.logical.builder import LogicalPlanBuilder
+
+    print("!! TO-FROM PROTO CALLED !!")
+    return LogicalPlanBuilder(to_from_proto(builder._builder))

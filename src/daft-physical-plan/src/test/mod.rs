@@ -6,7 +6,7 @@ use daft_schema::{field::Field, schema::Schema};
 
 /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
 pub fn dummy_scan_operator(fields: Vec<Field>) -> ScanOperatorRef {
-    let schema = Arc::new(Schema::new(fields).unwrap());
+    let schema = Arc::new(Schema::new(fields));
     ScanOperatorRef(Arc::new(DummyScanOperator {
         schema,
         num_scan_tasks: 1,

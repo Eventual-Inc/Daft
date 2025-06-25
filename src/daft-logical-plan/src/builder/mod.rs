@@ -11,10 +11,14 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
+use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
-use daft_dsl::{left_col, resolved_col, right_col, Column, Expr, ExprRef, UnresolvedColumn};
+use daft_dsl::{
+    left_col, resolved_col, right_col, unresolved_col, Column, Expr, ExprRef, UnresolvedColumn,
+    WindowSpec,
+};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
@@ -30,6 +34,7 @@ use {
 };
 
 use crate::{
+    display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
         self,
@@ -186,7 +191,7 @@ impl LogicalPlanBuilder {
             if let Some(generated_fields) = scan_operator.0.generated_fields() {
                 // We use the non-distinct union here because some scan operators have table schema information that
                 // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
-                Arc::new(schema.non_distinct_union(&generated_fields))
+                Arc::new(schema.non_distinct_union(&generated_fields)?)
             } else {
                 schema
             }
@@ -196,15 +201,14 @@ impl LogicalPlanBuilder {
             columns: Some(columns),
             ..
         }) = &pushdowns
-            && columns.len() < schema_with_generated_fields.fields.len()
+            && columns.len() < schema_with_generated_fields.len()
         {
             let pruned_upstream_schema = schema_with_generated_fields
-                .fields
-                .iter()
-                .filter(|&(name, _)| columns.contains(name))
-                .map(|(_, field)| field.clone())
+                .into_iter()
+                .filter(|field| columns.contains(&field.name))
+                .cloned()
                 .collect::<Vec<_>>();
-            Arc::new(Schema::new(pruned_upstream_schema)?)
+            Arc::new(Schema::new(pruned_upstream_schema))
         } else {
             schema_with_generated_fields
         };
@@ -232,23 +236,20 @@ impl LogicalPlanBuilder {
 
         let columns = expr_resolver.resolve(columns, self.plan.clone())?;
 
-        let fields = &self.schema().fields;
-        let current_col_names = fields
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect::<HashSet<_>>();
+        let schema = self.schema();
+        let current_col_names = schema.field_names().collect::<HashSet<_>>();
         let new_col_name_and_exprs = columns
             .iter()
             .map(|e| (e.name(), e.clone()))
             .collect::<HashMap<_, _>>();
 
-        let mut exprs = fields
-            .iter()
-            .map(|(name, _)| {
+        let mut exprs = schema
+            .field_names()
+            .map(|name| {
                 new_col_name_and_exprs
-                    .get(name.as_str())
+                    .get(name)
                     .cloned()
-                    .unwrap_or_else(|| resolved_col(name.clone()))
+                    .unwrap_or_else(|| resolved_col(name))
             })
             .collect::<Vec<_>>();
 
@@ -266,15 +267,14 @@ impl LogicalPlanBuilder {
     pub fn with_columns_renamed(&self, cols_map: HashMap<String, String>) -> DaftResult<Self> {
         let exprs = self
             .schema()
-            .fields
-            .iter()
-            .map(|(name, _)| {
+            .field_names()
+            .map(|name| {
                 if let Some(new_name) = cols_map.get(name) {
                     // If the column is in the rename map, create an alias expression
-                    resolved_col(name.as_str()).alias(new_name.as_str())
+                    resolved_col(name).alias(new_name.as_str())
                 } else {
                     // Otherwise keep the original column reference
-                    resolved_col(name.as_str())
+                    resolved_col(name)
                 }
             })
             .collect::<Vec<_>>();
@@ -285,25 +285,20 @@ impl LogicalPlanBuilder {
 
     /// Returns the logical operator's columns as a Vec<ExprRef>
     pub fn columns(&self) -> Vec<ExprRef> {
-        self.schema()
-            .fields
-            .iter()
-            .map(|(name, _)| resolved_col(name.clone()))
-            .collect()
+        self.schema().field_names().map(resolved_col).collect()
     }
 
     pub fn exclude(&self, to_exclude: Vec<String>) -> DaftResult<Self> {
-        let to_exclude = HashSet::<_>::from_iter(to_exclude.iter());
+        let to_exclude = HashSet::<_>::from_iter(to_exclude.iter().map(String::as_str));
 
         let exprs = self
             .schema()
-            .fields
-            .iter()
-            .filter_map(|(name, _)| {
+            .field_names()
+            .filter_map(|name| {
                 if to_exclude.contains(name) {
                     None
                 } else {
-                    Some(resolved_col(name.clone()))
+                    Some(resolved_col(name))
                 }
             })
             .collect::<Vec<_>>();
@@ -321,9 +316,23 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn resolve_window_spec(&self, window_spec: WindowSpec) -> DaftResult<WindowSpec> {
+        let expr_resolver = ExprResolver::default();
+        expr_resolver.resolve_window_spec(window_spec, self.plan.clone())
+    }
+
     pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> DaftResult<Self> {
+        let sharder = Sharder::new(
+            ShardingStrategy::from(strategy),
+            world_size as usize,
+            rank as usize,
+        );
+        Ok(self.with_new_plan(ops::Shard::new(self.plan.clone(), sharder)))
     }
 
     pub fn explode(&self, to_explode: Vec<ExprRef>) -> DaftResult<Self> {
@@ -352,9 +361,8 @@ impl LogicalPlanBuilder {
 
             let columns_set = self
                 .schema()
-                .fields
-                .keys()
-                .map(|name| resolved_col(name.clone()))
+                .field_names()
+                .map(resolved_col)
                 .collect::<IndexSet<_>>();
 
             columns_set.difference(&ids_set).cloned().collect()
@@ -457,8 +465,13 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(ops::summarize(self)?))
     }
 
-    pub fn distinct(&self) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
+    pub fn distinct(&self, columns: Option<Vec<ExprRef>>) -> DaftResult<Self> {
+        let distinct_resolver = ExprResolver::default();
+        let columns = columns
+            .map(|columns| distinct_resolver.resolve(columns, self.plan.clone()))
+            .transpose()?;
+
+        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone(), columns).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -706,6 +719,15 @@ impl LogicalPlanBuilder {
         partition_cols: Option<Vec<String>>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
+        let partition_cols = partition_cols
+            .map(|cols| {
+                let expr_resolver = ExprResolver::default();
+
+                let cols = cols.into_iter().map(unresolved_col).collect();
+                expr_resolver.resolve(cols, self.plan.clone())
+            })
+            .transpose()?;
+
         use crate::sink_info::DeltaLakeCatalogInfo;
         let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
             catalog: crate::sink_info::CatalogType::DeltaLake(DeltaLakeCatalogInfo {
@@ -751,6 +773,16 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[cfg(feature = "python")]
+    pub fn datasink_write(&self, name: String, sink: Arc<PyObject>) -> DaftResult<Self> {
+        use crate::sink_info::DataSinkInfo;
+
+        let sink_info = SinkInfo::DataSinkInfo(DataSinkInfo { name, sink });
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
     pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
@@ -768,6 +800,7 @@ impl LogicalPlanBuilder {
                     |builder| builder.reorder_joins(),
                 )
                 .simplify_expressions()
+                .split_granular_projections()
                 .build();
 
             let optimized_plan = optimizer.optimize(
@@ -822,6 +855,7 @@ impl LogicalPlanBuilder {
                 |builder| builder.reorder_joins(),
             )
             .simplify_expressions()
+            .split_granular_projections()
             .build();
 
         let optimized_plan = optimizer.optimize(
@@ -865,6 +899,14 @@ impl LogicalPlanBuilder {
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         use common_display::mermaid::MermaidDisplay;
         self.plan.repr_mermaid(opts)
+    }
+
+    pub fn repr_json(&self, include_schema: bool) -> DaftResult<String> {
+        let mut output = String::new();
+        let mut json_vis = JsonVisitor::new(&mut output);
+        json_vis.with_schema(include_schema);
+        self.plan.visit(&mut json_vis)?;
+        Ok(output)
     }
 }
 
@@ -945,6 +987,10 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.limit(limit, eager)?.into())
     }
 
+    pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {
+        Ok(self.builder.shard(strategy, world_size, rank)?.into())
+    }
+
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         Ok(self.builder.explode(pyexprs_to_exprs(to_explode))?.into())
     }
@@ -1011,8 +1057,13 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.summarize()?.into())
     }
 
-    pub fn distinct(&self) -> PyResult<Self> {
-        Ok(self.builder.distinct()?.into())
+    pub fn distinct(&self, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let columns = if columns.is_empty() {
+            None
+        } else {
+            Some(pyexprs_to_exprs(columns))
+        };
+        Ok(self.builder.distinct(columns)?.into())
     }
 
     #[pyo3(signature = (fraction, with_replacement, seed=None))]
@@ -1282,6 +1333,11 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[pyo3(signature = (name, sink))]
+    pub fn datasink_write(&self, name: String, sink: PyObject) -> PyResult<Self> {
+        Ok(self.builder.datasink_write(name, Arc::new(sink))?.into())
+    }
+
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
     }
@@ -1297,6 +1353,9 @@ impl PyLogicalPlanBuilder {
 
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         self.builder.repr_mermaid(opts)
+    }
+    pub fn repr_json(&self, include_schema: bool) -> PyResult<String> {
+        Ok(self.builder.repr_json(include_schema)?)
     }
 }
 

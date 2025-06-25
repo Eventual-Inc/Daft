@@ -11,6 +11,8 @@ use either::Either;
 
 use super::Array;
 
+#[cfg(feature = "arrow")]
+mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;

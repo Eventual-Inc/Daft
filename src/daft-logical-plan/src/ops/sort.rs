@@ -4,11 +4,12 @@ use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{exprs_to_schema, ExprRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{logical_plan, logical_plan::CreationSnafu, stats::StatsState, LogicalPlan};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sort {
     pub plan_id: Option<usize>,
     // Upstream node.
@@ -36,7 +37,7 @@ impl Sort {
         // TODO(Kevin): make sort by expression names unique so that we can do things like sort(col("a"), col("a") + col("b"))
         let sort_by_schema = exprs_to_schema(&sort_by, input.schema())?;
 
-        for (field, expr) in sort_by_schema.fields.values().zip(sort_by.iter()) {
+        for (field, expr) in sort_by_schema.into_iter().zip(sort_by.iter()) {
             // Disallow sorting by null, binary, and boolean columns.
             // TODO(Clark): This is a port of an existing constraint, we should look at relaxing this.
             if let dt @ (DataType::Null | DataType::Binary) = &field.dtype {

@@ -1,3 +1,4 @@
+pub mod json;
 use std::fmt::{self, Display};
 
 use common_display::{tree::TreeDisplay, DisplayLevel};
@@ -28,14 +29,14 @@ impl Display for crate::LogicalPlan {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use std::sync::Arc;
 
     use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col};
-    use daft_functions::utf8::{endswith, startswith};
+    use daft_functions_utf8::{endswith, startswith};
     use pretty_assertions::assert_eq;
 
     use crate::{
@@ -43,14 +44,11 @@ mod test {
         LogicalPlanRef, SourceInfo,
     };
 
-    fn plan_1() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("text", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+    pub(crate) fn plan_1() -> LogicalPlanRef {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -61,15 +59,12 @@ mod test {
         .arced()
     }
 
-    fn plan_2() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("first_name", DataType::Utf8),
-                Field::new("last_name", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+    pub(crate) fn plan_2() -> LogicalPlanRef {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("first_name", DataType::Utf8),
+            Field::new("last_name", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -94,7 +89,7 @@ mod test {
             )?
             .limit(1000, false)?
             .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 
@@ -132,7 +127,7 @@ Sort6["Sort: Sort by = (col(last_name), ascending, nulls last)"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
 Limit9["Limit: 1000"]
-Filter10["Filter: startswith(col(last_name), lit('S')) & endswith(col(last_name),
+Filter10["Filter: starts_with(col(last_name), lit('S')) & ends_with(col(last_name),
 lit('n'))"]
 Source11["PlaceHolder:
 Num partitions = 0
@@ -165,7 +160,7 @@ Project1 --> Limit0
             )?
             .limit(1000, false)?
             .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 

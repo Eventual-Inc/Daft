@@ -12,6 +12,7 @@ from daft.expressions.testing import expr_structurally_equal
 from daft.recordbatch import MicroPartition
 from daft.series import Series
 from daft.udf import udf
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_udf():
@@ -216,10 +217,11 @@ def test_udf_error():
 
     expr = throw_value_err(col("a"))
 
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         table.eval_expression_list([expr])
-    assert isinstance(exc_info.value.__cause__, ValueError)
-    assert str(exc_info.value.__cause__) == "AN ERROR OCCURRED!"
+
+    assert str(exc_info.value).startswith("AN ERROR OCCURRED!\nUser-defined function ")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -305,6 +307,35 @@ def test_udf_return_tensor(batch_size):
     assert len(result.to_pydict()["x"]) == 3
     for i in range(3):
         np.testing.assert_array_equal(result.to_pydict()["x"][i], np.ones((3, 3)) * i)
+
+
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_return_embedding(batch_size, use_actor_pool):
+    # Create test data
+    table = MicroPartition.from_pydict({"x": [0, 1, 2]})
+
+    # Define UDF that returns an embedding
+    @udf(return_dtype=DataType.embedding(DataType.float32(), 2), batch_size=batch_size)
+    def embedding_udf(x):
+        # Create a 2D embedding for each input value
+        return [np.array([i, i + 1], dtype=np.float32) for i in x.to_pylist()]
+
+    # Apply the UDF
+    if use_actor_pool:
+        embedding_udf = embedding_udf.with_concurrency(2)
+
+    expr = embedding_udf(col("x"))
+    result = table.eval_expression_list([expr])
+
+    # Verify results
+    embeddings = result.to_pydict()["x"]
+    assert len(embeddings) == 3
+
+    # Check each embedding vector
+    np.testing.assert_array_equal(embeddings[0], np.array([0, 1], dtype=np.float32))
+    np.testing.assert_array_equal(embeddings[1], np.array([1, 2], dtype=np.float32))
+    np.testing.assert_array_equal(embeddings[2], np.array([2, 3], dtype=np.float32))
 
 
 @pytest.mark.skip(
@@ -439,3 +470,33 @@ def test_udf_empty(batch_size, use_actor_pool):
 
     result = df.select(identity(col("a")))
     assert result.to_pydict() == {"a": []}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() not in {"native", "ray"},
+    reason="requires Native or Ray Runner to be in use",
+)
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_with_error(use_actor_pool):
+    import re
+
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+
+    @udf(return_dtype=DataType.int64())
+    def fail_hard(a, b):
+        raise ValueError("AN ERROR OCCURRED!")
+
+    if use_actor_pool:
+        fail_hard = fail_hard.with_concurrency(2)
+
+    with pytest.raises(Exception) as exc_info:
+        df.select(fail_hard(col("a"), col("b"))).collect()
+
+    pattern = (
+        r"AN ERROR OCCURRED!\n"
+        r"User-defined function `<function test_udf_with_error\.<locals>\.fail_hard at 0x[0-9a-f]+>` "
+        r"failed when executing on inputs:\s*"
+        r"- a \(Int64, length=3\)\s*"
+        r"- b \(Utf8, length=3\)$"
+    )
+    assert re.search(pattern, str(exc_info.value)), f"String doesn't end with expected pattern: {exc_info.value!s}"

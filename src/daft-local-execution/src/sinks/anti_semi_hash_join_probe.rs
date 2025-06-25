@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{prelude::SchemaRef, series::IntoSeries};
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState, Probeable, RecordBatch};
@@ -55,7 +55,7 @@ impl StreamingSinkState for AntiSemiProbeState {
 }
 
 struct AntiSemiJoinParams {
-    probe_on: Vec<ExprRef>,
+    probe_on: Vec<BoundExpr>,
     is_semi: bool,
 }
 
@@ -70,7 +70,7 @@ impl AntiSemiProbeSink {
     const DEFAULT_GROWABLE_SIZE: usize = 20;
 
     pub fn new(
-        probe_on: Vec<ExprRef>,
+        probe_on: Vec<BoundExpr>,
         join_type: &JoinType,
         output_schema: &SchemaRef,
         probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
@@ -90,7 +90,7 @@ impl AntiSemiProbeSink {
     // This function performs probing for anti-semi joins when the side to keep is the probe side, i.e. we built the probe table
     // on the right side and are streaming the left side.
     fn probe_anti_semi(
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         probe_set: &Arc<dyn Probeable>,
         input: &Arc<MicroPartition>,
         is_semi: bool,
@@ -136,7 +136,7 @@ impl AntiSemiProbeSink {
     // on the left side and we are streaming the right side. In this case, we use a bitmap index to track matches, and only
     // emit a final result at the end.
     fn probe_anti_semi_with_bitmap(
-        probe_on: &[ExprRef],
+        probe_on: &[BoundExpr],
         probe_set: &Arc<dyn Probeable>,
         bitmap_builder: &mut IndexBitmapBuilder,
         input: &Arc<MicroPartition>,
@@ -247,6 +247,7 @@ impl StreamingSink for AntiSemiProbeSink {
                         .expect("AntiSemiProbeState should be used with AntiSemiProbeSink");
                     let (ps, bitmap_builder) =
                         probe_state.get_or_await_probe_state(build_on_left).await;
+
                     if let Some(bm_builder) = bitmap_builder {
                         Self::probe_anti_semi_with_bitmap(
                             &params.probe_on,
@@ -329,14 +330,11 @@ impl StreamingSink for AntiSemiProbeSink {
         runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
+        let default_size = runtime_handle.default_morsel_size();
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(RoundRobinDispatcher::with_fixed_threshold(default_size))
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Arc::new(UnorderedDispatcher::with_fixed_threshold(default_size))
         }
     }
 }

@@ -19,9 +19,8 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<python::PyCatalog>()?;
+    parent.add_class::<python::PySqlCatalog>()?;
     parent.add_function(wrap_pyfunction!(python::sql_exec, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_datatype, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::list_sql_functions, parent)?)?;
@@ -30,7 +29,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
 
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
@@ -47,21 +46,18 @@ mod tests {
 
     #[fixture]
     fn tbl_1() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("test", DataType::Utf8),
-                Field::new("utf8", DataType::Utf8),
-                Field::new("i32", DataType::Int32),
-                Field::new("i64", DataType::Int64),
-                Field::new("f32", DataType::Float32),
-                Field::new("f64", DataType::Float64),
-                Field::new("bool", DataType::Boolean),
-                Field::new("date", DataType::Date),
-                Field::new("time", DataType::Time(TimeUnit::Microseconds)),
-                Field::new("list_utf8", DataType::new_list(DataType::Utf8)),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("test", DataType::Utf8),
+            Field::new("utf8", DataType::Utf8),
+            Field::new("i32", DataType::Int32),
+            Field::new("i64", DataType::Int64),
+            Field::new("f32", DataType::Float32),
+            Field::new("f64", DataType::Float64),
+            Field::new("bool", DataType::Boolean),
+            Field::new("date", DataType::Date),
+            Field::new("time", DataType::Time(TimeUnit::Microseconds)),
+            Field::new("list_utf8", DataType::new_list(DataType::Utf8)),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -74,14 +70,11 @@ mod tests {
 
     #[fixture]
     fn tbl_2() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("text", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-                Field::new("val", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+            Field::new("val", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -94,14 +87,11 @@ mod tests {
 
     #[fixture]
     fn tbl_3() -> LogicalPlanRef {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("first_name", DataType::Utf8),
-                Field::new("last_name", DataType::Utf8),
-                Field::new("id", DataType::Int32),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("first_name", DataType::Utf8),
+            Field::new("last_name", DataType::Utf8),
+            Field::new("id", DataType::Int32),
+        ]));
         LogicalPlan::Source(Source::new(
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
@@ -114,14 +104,23 @@ mod tests {
 
     #[fixture]
     fn planner() -> SQLPlanner<'static> {
-        let session = Session::default();
+        static SESSION: LazyLock<Session> = LazyLock::new(|| {
+            let session = Session::default();
+            // construct views from the tables and attach to the session
+            session
+                .create_temp_table("tbl1", &tbl_1().into(), false)
+                .unwrap();
+            session
+                .create_temp_table("tbl2", &tbl_2().into(), false)
+                .unwrap();
+            session
+                .create_temp_table("tbl3", &tbl_3().into(), false)
+                .unwrap();
 
-        // construct views from the tables and attach to the session
-        _ = session.create_temp_table("tbl1", &tbl_1().into(), false);
-        _ = session.create_temp_table("tbl2", &tbl_2().into(), false);
-        _ = session.create_temp_table("tbl3", &tbl_3().into(), false);
+            session
+        });
 
-        SQLPlanner::new(session.into())
+        SQLPlanner::new(&SESSION)
     }
 
     #[rstest]
@@ -147,36 +146,15 @@ mod tests {
     #[case::join_with_filter("select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0")]
     #[case::from("select tbl2.text from tbl2")]
     #[case::using("select tbl2.text from tbl2 join tbl3 using (id)")]
-    #[case(
-        r"
-    select
-        abs(i32) as abs,
-        ceil(i32) as ceil,
-        floor(i32) as floor,
-        sign(i32) as sign
-    from tbl1"
-    )]
-    #[case("select round(i32, 1) from tbl1")]
-    #[case::clip_int_to_float("select clip(i32, 1.5, 2.5) from tbl1")]
-    #[case::clip_float_to_int("select clip(f32, 1, 2) from tbl1")]
-    #[case::clip_null_lower("select clip(i32, NULL, 2) from tbl1")]
-    #[case::clip_null_upper("select clip(i32, 1, NULL) from tbl1")]
-    #[case::clip_float_null_lower("select clip(f32, NULL, 2.5) from tbl1")]
-    #[case::clip_float_null_upper("select clip(f32, 1.5, NULL) from tbl1")]
-    #[case::clip_float_lower_int_upper("select clip(i32, 1.5, 2) from tbl1")]
-    #[case::clip_int_lower_float_upper("select clip(i32, 1, 2.5) from tbl1")]
-    #[case::clip_float_lower_int_upper_float_col("select clip(f32, 1.5, 2) from tbl1")]
-    #[case::clip_int_lower_float_upper_float_col("select clip(f32, 1, 2.5) from tbl1")]
-    #[case::groupby("select max(i32) from tbl1 group by utf8")]
     #[case::orderby("select * from tbl1 order by i32")]
     #[case::orderby("select * from tbl1 order by i32 desc")]
     #[case::orderby("select * from tbl1 order by i32 asc")]
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
-    #[case::globalagg("select max(i32) from tbl1")]
     #[case::cte("with cte as (select * from tbl1) select * from cte")]
     #[case::double_alias("select * from tbl1 as tbl2, tbl2 as tbl1")]
     #[case::double_alias_qualified("select tbl1.val from tbl1 as tbl2, tbl2 as tbl1")]
+    #[case::interval_arithmetic("select interval '1 day' * 3 from tbl1")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
@@ -351,64 +329,6 @@ mod tests {
             .select(vec![unresolved_col("*")])?
             .build();
         assert_eq!(plan, expected);
-        Ok(())
-    }
-
-    #[rstest]
-    #[case::abs("select abs(i32) as abs from tbl1")]
-    #[case::ceil("select ceil(i32) as ceil from tbl1")]
-    #[case::floor("select floor(i32) as floor from tbl1")]
-    #[case::sign("select sign(i32) as sign from tbl1")]
-    #[case::round("select round(i32, 1) as round from tbl1")]
-    #[case::sqrt("select sqrt(i32) as sqrt from tbl1")]
-    #[case::sin("select sin(i32) as sin from tbl1")]
-    #[case::cos("select cos(i32) as cos from tbl1")]
-    #[case::tan("select tan(i32) as tan from tbl1")]
-    #[case::asin("select asin(i32) as asin from tbl1")]
-    #[case::acos("select acos(i32) as acos from tbl1")]
-    #[case::atan("select atan(i32) as atan from tbl1")]
-    #[case::atan2("select atan2(i32, 1) as atan2 from tbl1")]
-    #[case::radians("select radians(i32) as radians from tbl1")]
-    #[case::degrees("select degrees(i32) as degrees from tbl1")]
-    #[case::log2("select log2(i32) as log2 from tbl1")]
-    #[case::log10("select log10(i32) as log10 from tbl1")]
-    #[case::ln("select ln(i32) as ln from tbl1")]
-    #[case::exp("select exp(i32) as exp from tbl1")]
-    #[case::atanh("select atanh(i32) as atanh from tbl1")]
-    #[case::acosh("select acosh(i32) as acosh from tbl1")]
-    #[case::asinh("select asinh(i32) as asinh from tbl1")]
-    #[case::ends_with("select ends_with(utf8, 'a') as ends_with from tbl1")]
-    #[case::starts_with("select starts_with(utf8, 'a') as starts_with from tbl1")]
-    #[case::contains("select contains(utf8, 'a') as contains from tbl1")]
-    #[case::split("select split(utf8, '.') as split from tbl1")]
-    #[case::replace("select regexp_replace(utf8, 'a', 'b') as replace from tbl1")]
-    #[case::length("select length(utf8) as length from tbl1")]
-    #[case::lower("select lower(utf8) as lower from tbl1")]
-    #[case::upper("select upper(utf8) as upper from tbl1")]
-    #[case::lstrip("select lstrip(utf8) as lstrip from tbl1")]
-    #[case::rstrip("select rstrip(utf8) as rstrip from tbl1")]
-    #[case::reverse("select reverse(utf8) as reverse from tbl1")]
-    #[case::capitalize("select capitalize(utf8) as capitalize from tbl1")]
-    #[case::left("select left(utf8, 1) as left from tbl1")]
-    #[case::right("select right(utf8, 1) as right from tbl1")]
-    #[case::find("select find(utf8, 'a') as find from tbl1")]
-    #[case::rpad("select rpad(utf8, 1, 'a') as rpad from tbl1")]
-    #[case::lpad("select lpad(utf8, 1, 'a') as lpad from tbl1")]
-    #[case::repeat("select repeat(utf8, 1) as repeat from tbl1")]
-    #[case::to_date("select to_date(utf8, 'YYYY-MM-DD') as to_date from tbl1")]
-    #[case::like("select utf8 like 'a' as like from tbl1")]
-    #[case::ilike("select utf8 ilike 'a' as ilike from tbl1")]
-    #[case::datestring("select DATE '2021-08-01' as dt from tbl1")]
-    #[case::datetime("select DATETIME '2021-08-01 00:00:00' as dt from tbl1")]
-    #[case::countstar("select COUNT(*) as count from tbl1")]
-    #[case::countstarlower("select COUNT(*) as count from tbl1")]
-    #[case::count("select COUNT(i32) as count from tbl1")]
-    #[case::countcasing("select CoUnT(i32) as count from tbl1")]
-    // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
-    fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
-        let plan = planner.plan_sql(query);
-        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
-
         Ok(())
     }
 

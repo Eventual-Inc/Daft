@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
+    io::Cursor,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
@@ -23,7 +24,7 @@ use daft_parquet::read::{
 };
 use daft_recordbatch::RecordBatch;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
-use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
 use daft_warc::WarcConvertOptions;
 use futures::{Future, Stream};
 use parquet2::metadata::FileMetaData;
@@ -195,13 +196,7 @@ fn materialize_scan_task(
         FileFormatConfig::Csv(cfg) => {
             let schema_of_file = scan_task.schema.clone();
             let col_names = if !cfg.has_headers {
-                Some(
-                    schema_of_file
-                        .fields
-                        .values()
-                        .map(|f| f.name.as_str())
-                        .collect::<Vec<_>>(),
-                )
+                Some(schema_of_file.field_names().collect::<Vec<_>>())
             } else {
                 None
             };
@@ -338,7 +333,10 @@ fn materialize_scan_task(
 
     table_values = table_values
         .iter()
-        .map(|tbl| tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref()))
+        .map(|tbl| {
+            #[allow(deprecated)]
+            tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref())
+        })
         .collect::<DaftResult<Vec<_>>>()
         .context(DaftCoreComputeSnafu)?;
     Ok((table_values, cast_to_schema))
@@ -360,8 +358,9 @@ impl MicroPartition {
 
         let schema = scan_task.materialized_schema();
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+        #[allow(deprecated)]
         let statistics = statistics
-            .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
+            .cast_to_schema_with_fill(&schema, fill_map.as_ref())
             .expect("Statistics cannot be casted to schema");
         Self {
             schema,
@@ -390,11 +389,15 @@ impl MicroPartition {
             );
         }
 
-        let statistics = statistics.map(|stats| {
-            stats
-                .cast_to_schema(schema.clone())
-                .expect("Statistics cannot be casted to schema")
-        });
+        if let Some(stats) = &statistics {
+            assert_eq!(
+                stats.schema(),
+                schema.as_ref(),
+                "Loaded MicroPartition's statistics schema must match its own schema exactly, found {} vs {}",
+                stats.schema(),
+                schema.as_ref(),
+            );
+        }
 
         // micropartition length is the length of all batches combined
         let length = record_batches
@@ -514,7 +517,17 @@ impl MicroPartition {
             // CASE: Last resort fallback option
             // Perform an eager **data** read
             _ => {
-                let statistics = scan_task.statistics.clone();
+                let statistics = scan_task
+                    .statistics
+                    .clone()
+                    .map(|stats| {
+                        #[allow(deprecated)]
+                        stats
+                            .cast_to_schema(&scan_task.materialized_schema())
+                            .map_err(DaftError::from)
+                    })
+                    .transpose()
+                    .context(DaftCoreComputeSnafu)?;
                 let (tables, schema) = materialize_scan_task(scan_task, Some(io_stats))?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
@@ -635,21 +648,64 @@ impl MicroPartition {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let mut schema_with_id_index_map = self.schema.fields.clone();
-        schema_with_id_index_map.shift_insert(
-            0,
-            column_name.to_string(),
-            Field::new(column_name, DataType::UInt64),
-        );
-        let schema_with_id = Schema {
-            fields: schema_with_id_index_map,
-        };
+        let schema_with_id_index_map = std::iter::once(Field::new(column_name, DataType::UInt64))
+            .chain(self.schema.into_iter().cloned());
+
+        let schema_with_id = Arc::new(Schema::new(schema_with_id_index_map));
+
+        let stats = self.statistics.as_ref().map(|stats| {
+            let columns = std::iter::once(&ColumnRangeStatistics::Missing)
+                .chain(stats)
+                .cloned()
+                .collect();
+
+            TableStatistics::new(columns, schema_with_id.clone())
+        });
 
         Ok(Self::new_loaded(
-            Arc::new(schema_with_id),
+            schema_with_id,
             Arc::new(tables_with_id),
-            self.statistics.clone(),
+            stats,
         ))
+    }
+
+    pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
+        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let schema = self.schema.to_arrow()?;
+        let options = arrow2::io::ipc::write::WriteOptions { compression: None };
+        let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
+        writer.start(&schema, None)?;
+        let tables = self.tables_or_read(IOStatsContext::new("write to stream"))?;
+        for table in tables.iter() {
+            let chunk = table.to_chunk();
+            writer.write(&chunk, None)?;
+        }
+        writer.finish()?;
+        let mut finished_buffer = writer.into_inner();
+        finished_buffer.shrink_to_fit();
+        Ok(finished_buffer)
+    }
+
+    pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
+        let mut cursor = Cursor::new(buffer);
+        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+        let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
+        let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+        let tables = reader
+            .into_iter()
+            .map(|state| {
+                let state = state?;
+                let arrow_chunk = match state {
+                    arrow2::io::ipc::read::StreamState::Some(chunk) => chunk,
+                    _ => panic!("State should not be waiting when reading from IPC buffer"),
+                };
+                let record_batch =
+                    RecordBatch::from_arrow(schema.clone(), arrow_chunk.into_arrays())?;
+                Ok(record_batch)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(Self::new_loaded(schema.into(), Arc::new(tables), None))
     }
 }
 
@@ -658,11 +714,7 @@ fn prune_fields_from_schema(
     columns: Option<&[&str]>,
 ) -> DaftResult<Arc<Schema>> {
     if let Some(columns) = columns {
-        let avail_names = schema
-            .fields
-            .keys()
-            .map(std::string::String::as_str)
-            .collect::<HashSet<_>>();
+        let avail_names = schema.field_names().collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
             if avail_names.contains(col_name) {
@@ -676,13 +728,10 @@ fn prune_fields_from_schema(
             }
         }
         let filtered_columns = schema
-            .as_ref()
-            .fields
-            .values()
+            .into_iter()
             .filter(|field| names_to_keep.contains(field.name.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
-        Ok(Arc::new(Schema::new(filtered_columns)?))
+            .cloned();
+        Ok(Arc::new(Schema::new(filtered_columns)))
     } else {
         Ok(schema)
     }
@@ -738,11 +787,14 @@ pub fn read_csv_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
+                .try_reduce(|s1, s2| s1.non_distinct_union(s2.as_ref()).map(Arc::new))?
                 .unwrap();
             let tables = tables
                 .into_iter()
-                .map(|tbl| tbl.cast_to_schema(&unioned_schema))
+                .map(|tbl| {
+                    #[allow(deprecated)]
+                    tbl.cast_to_schema(&unioned_schema)
+                })
                 .collect::<DaftResult<Vec<_>>>()?;
 
             // Construct MicroPartition from tables and unioned schema
@@ -787,11 +839,14 @@ pub fn read_json_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
+                .try_reduce(|s1, s2| s1.non_distinct_union(s2.as_ref()).map(Arc::new))?
                 .unwrap();
             let tables = tables
                 .into_iter()
-                .map(|tbl| tbl.cast_to_schema(&unioned_schema))
+                .map(|tbl| {
+                    #[allow(deprecated)]
+                    tbl.cast_to_schema(&unioned_schema)
+                })
                 .collect::<DaftResult<Vec<_>>>()?;
 
             // Construct MicroPartition from tables and unioned schema
@@ -901,8 +956,20 @@ fn read_delete_files(
     for table in &tables {
         // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
         // https://iceberg.apache.org/spec/#position-delete-files
-        let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-        let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+        let get_column_by_name = |name| {
+            if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
+                Ok(table.get_column(idx))
+            } else {
+                Err(DaftError::SchemaMismatch(format!(
+                    "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",
+                    table.schema
+                )))
+            }
+        };
+
+        let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
+        let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
         for i in 0..table.len() {
             let file = file_paths.get(i);
@@ -985,7 +1052,7 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
         let unioned_schema = all_tables
             .iter()
             .map(|t| t.schema.clone())
-            .reduce(|l, r| l.non_distinct_union(&r).into());
+            .try_reduce(|l, r| l.non_distinct_union(&r).map(Arc::new))?;
         unioned_schema.expect("we need at least 1 schema")
     };
 
@@ -994,7 +1061,10 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     let fill_map = partition_spec.map(|pspec| pspec.to_fill_map());
     let all_tables = all_tables
         .into_iter()
-        .map(|t| t.cast_to_schema_with_fill(&pruned_daft_schema, fill_map.as_ref()))
+        .map(|t| {
+            #[allow(deprecated)]
+            t.cast_to_schema_with_fill(&pruned_daft_schema, fill_map.as_ref())
+        })
         .collect::<DaftResult<Vec<_>>>()?;
 
     // TODO: we can pass in stats here to optimize downstream workloads such as join. Make sure to correctly
@@ -1074,7 +1144,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
+                let daft_schema = Schema::from(schema);
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1098,7 +1168,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             .iter()
             .map(|m| {
                 let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
+                let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -1110,32 +1180,42 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         .flat_map(|m| m.row_groups.values())
         .flat_map(|rg| rg.columns().iter())
         .any(|col| col.statistics().is_some());
-    let stats = if any_stats_avail {
-        let stat_per_table = metadata
-            .iter()
-            .zip(schemas.iter())
-            .flat_map(|(fm, schema)| {
-                fm.row_groups
-                    .values()
-                    .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
-            })
-            .collect::<DaftResult<Vec<TableStatistics>>>()?;
-        stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?
-    } else {
-        None
-    };
 
     // If statistics are provided by the Parquet file, we create an unloaded MicroPartition
     // by constructing an appropriate ScanTask
-    if let Some(stats) = stats {
+    if any_stats_avail {
         // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
         let scan_task_daft_schema = if let Some(catalog_provided_schema) = catalog_provided_schema {
             catalog_provided_schema
         } else {
             let unioned_schema = schemas
-                .into_iter()
-                .reduce(|l, r| Arc::new(l.non_distinct_union(&r)));
+                .iter()
+                .cloned()
+                .try_reduce(|l, r| l.non_distinct_union(&r).map(Arc::new))?;
             unioned_schema.expect("we need at least 1 schema")
+        };
+
+        let stats = {
+            let stat_per_table = metadata
+                .iter()
+                .zip(schemas.iter())
+                .flat_map(|(fm, schema)| {
+                    fm.row_groups
+                        .values()
+                        .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
+                })
+                .collect::<DaftResult<Vec<TableStatistics>>>()?;
+            stat_per_table
+                .into_iter()
+                .try_reduce(
+                    #[allow(deprecated)]
+                    |a, b| {
+                        let a = a.cast_to_schema(&scan_task_daft_schema)?;
+                        let b = b.cast_to_schema(&scan_task_daft_schema)?;
+                        a.union(&b)
+                    },
+                )?
+                .expect("stats should be available if any_stats_avail = true")
         };
 
         // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
@@ -1205,13 +1285,15 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                     )
                 }),
                 num_rows,
+                None,
             ),
             generated_fields,
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+        #[allow(deprecated)]
         let casted_stats =
-            stats.cast_to_schema_with_fill(scan_task.materialized_schema(), fill_map.as_ref())?;
+            stats.cast_to_schema_with_fill(&scan_task.materialized_schema(), fill_map.as_ref())?;
 
         Ok(MicroPartition::new_unloaded(
             Arc::new(scan_task),
@@ -1357,7 +1439,7 @@ mod tests {
     async fn test_mp_stream() -> DaftResult<()> {
         let columns = vec![Int32Array::from_values("a", vec![1].into_iter()).into_series()];
         let columns2 = vec![Int32Array::from_values("a", vec![2].into_iter()).into_series()];
-        let schema = Schema::new(vec![Field::new("a", DataType::Int32)])?;
+        let schema = Schema::new(vec![Field::new("a", DataType::Int32)]);
 
         let table1 = RecordBatch::from_nonempty_columns(columns)?;
         let table2 = RecordBatch::from_nonempty_columns(columns2)?;

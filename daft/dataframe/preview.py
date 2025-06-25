@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -59,7 +59,7 @@ class PreviewOptions:
 
     _options: dict[str, object]  # normalized options
 
-    def __init__(self, **options) -> None:
+    def __init__(self, **options: Any) -> None:
         self._options = {
             "verbose": options.get("verbose", False),
             "null": options.get("null", "None"),
@@ -70,7 +70,7 @@ class PreviewOptions:
 
     def __repr__(self) -> str:
         """For debugging."""
-        self.serialize()
+        return self.serialize()
 
     def serialize(self) -> str:
         """This lowers the burden to interop with the rust formatter."""
@@ -88,7 +88,7 @@ class PreviewFormatter:
         preview: Preview,
         schema: Schema,
         format: PreviewFormat | None = None,
-        **options,
+        **options: Any,
     ) -> None:
         self._preview = preview
         self._schema = schema
@@ -136,8 +136,10 @@ class PreviewFormatter:
 
         if self._preview.partition is not None:
             if self._format:
-                return self._preview.partition.to_record_batch()._table.preview(self._format, self._options.serialize())
+                return self._preview.partition.to_record_batch()._recordbatch.preview(
+                    self._format, self._options.serialize()
+                )
             else:
-                return self._preview.partition.to_record_batch().__repr__()
+                return self._preview.partition.to_record_batch()._recordbatch.__repr__()
         else:
             return self._schema._truncated_table_string()

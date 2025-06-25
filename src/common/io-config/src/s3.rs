@@ -11,7 +11,7 @@ use aws_credential_types::{
 };
 use chrono::{offset::Utc, DateTime};
 use common_error::DaftResult;
-use derivative::Derivative;
+use educe::Educe;
 use serde::{Deserialize, Serialize};
 
 pub use crate::ObfuscatedString;
@@ -57,12 +57,12 @@ pub trait S3CredentialsProvider: Debug + Send + Sync {
     fn provide_credentials(&self) -> DaftResult<S3Credentials>;
 }
 
-#[derive(Derivative, Clone, Debug, Deserialize, Serialize)]
-#[derivative(PartialEq, Eq, Hash)]
+#[derive(Educe, Clone, Debug, Deserialize, Serialize)]
+#[educe(PartialEq, Eq, Hash)]
 pub struct S3CredentialsProviderWrapper {
     pub provider: Box<dyn S3CredentialsProvider>,
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
+    #[educe(PartialEq(ignore))]
+    #[educe(Hash(ignore))]
     cached_creds: Arc<Mutex<Option<S3Credentials>>>,
 }
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import os
 from typing import TYPE_CHECKING
+from urllib.error import HTTPError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from deltalake.table import DeltaTable
 
@@ -12,14 +14,14 @@ import daft.exceptions
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
-    Pushdowns,
+    PyPartitionField,
+    PyPushdowns,
     S3Config,
     ScanTask,
     StorageConfig,
 )
-from daft.io.aws_config import boto3_client_from_s3_config
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
@@ -27,6 +29,31 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+def get_s3_bucket_region(bucket_name: str) -> str | None:
+    # When making a https request to https://{bucket_name}.s3.amazonaws.com/, aws returns either a 200 response, 403 response, or 404 response.
+    # In the header of the 200 and 403 responses, there is an `x-amz-bucket-region` field from which we can extract the bucket's region.
+    url = f"https://{bucket_name}.s3.amazonaws.com"
+
+    try:
+        req = Request(url, method="HEAD")
+        with urlopen(req) as response:
+            return response.headers.get("x-amz-bucket-region")
+    except HTTPError as e:
+        bucket_region = e.headers.get("x-amz-bucket-region")
+        if bucket_region is None:
+            logger.warning(
+                "Failed to get the S3 bucket region using the given S3 uri. HTTPError error: %s",
+                e,
+            )
+        return bucket_region
+    except Exception as e:
+        logger.warning(
+            "Failed to get the S3 bucket region using the given S3 uri. Error: %s",
+            e,
+        )
+        return None
 
 
 class DeltaLakeScanOperator(ScanOperator):
@@ -44,21 +71,13 @@ class DeltaLakeScanOperator(ScanOperator):
         deltalake_sdk_io_config = storage_config.io_config
         scheme = urlparse(table_uri).scheme
         if scheme == "s3" or scheme == "s3a":
-            # Try to get region from boto3
+            # Try to get the bucket's region.
             if deltalake_sdk_io_config.s3.region_name is None:
-                from botocore.exceptions import BotoCoreError
-
-                try:
-                    client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
-                    response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
-                except BotoCoreError as e:
-                    logger.warning(
-                        "Failed to get the S3 bucket region using existing storage config, will attempt to get it from the environment instead. Error from boto3: %s",
-                        e,
-                    )
-                else:
+                bucket_name = urlparse(table_uri).netloc
+                region = get_s3_bucket_region(bucket_name)
+                if region is not None:
                     deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                        s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
+                        s3=deltalake_sdk_io_config.s3.replace(region_name=region)
                     )
 
             # Try to get config from the environment
@@ -105,7 +124,7 @@ class DeltaLakeScanOperator(ScanOperator):
         self._schema = Schema.from_pyarrow_schema(self._table.schema().to_pyarrow())
         partition_columns = set(self._table.metadata().partition_columns)
         self._partition_keys = [
-            PartitionField(field._field) for field in self._schema if field.name in partition_columns
+            PyPartitionField(field._field) for field in self._schema if field.name in partition_columns
         ]
 
     def schema(self) -> Schema:
@@ -117,7 +136,7 @@ class DeltaLakeScanOperator(ScanOperator):
     def display_name(self) -> str:
         return f"DeltaLakeScanOperator({self._table.metadata().name})"
 
-    def partitioning_keys(self) -> list[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
 
     def multiline_display(self) -> list[str]:
@@ -129,7 +148,7 @@ class DeltaLakeScanOperator(ScanOperator):
             f"Storage config = {self._storage_config}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         import pyarrow as pa
 
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
@@ -191,7 +210,7 @@ class DeltaLakeScanOperator(ScanOperator):
                         # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
                         arrow_arr = pa.array([part_values[field_name].as_py()], type=dtype.field(field_idx).type)
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-                partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)._table
+                partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)._recordbatch
             else:
                 partition_values = None
 
@@ -230,7 +249,7 @@ class DeltaLakeScanOperator(ScanOperator):
                 iceberg_delete_files=None,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
-                stats=stats._table if stats is not None else None,
+                stats=stats._recordbatch if stats is not None else None,
             )
             if st is None:
                 continue

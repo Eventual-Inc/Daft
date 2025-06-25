@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -9,10 +10,10 @@ from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
-    import pyiceberg
+    from pyiceberg.table import Table as PyIcebergTable
 
 
-def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> Optional["IOConfig"]:
+def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> Optional[IOConfig]:
     """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py."""
     from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
@@ -53,13 +54,25 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
 
 @PublicAPI
 def read_iceberg(
-    table: Union[str, "pyiceberg.table.Table"],
+    table: Union[str, "PyIcebergTable"],
     snapshot_id: Optional[int] = None,
-    io_config: Optional["IOConfig"] = None,
+    io_config: Optional[IOConfig] = None,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
-    Example:
+    Args:
+        table (str or pyiceberg.table.Table): [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) created using the PyIceberg library
+        snapshot_id (int, optional): Snapshot ID of the table to query
+        io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
+
+    Returns:
+        DataFrame: a DataFrame with the schema converted from the specified Iceberg table
+
+    Note:
+        This function requires the use of [PyIceberg](https://py.iceberg.apache.org/), which is the Apache Iceberg's
+        official project for Python.
+
+    Examples:
         >>> import pyiceberg
         >>>
         >>> table = pyiceberg.Table(...)
@@ -70,25 +83,14 @@ def read_iceberg(
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
 
-    .. NOTE::
-        This function requires the use of `PyIceberg <https://py.iceberg.apache.org/>`_, which is the Apache Iceberg's
-        official project for Python.
-
-    Args:
-        table (str or pyiceberg.table.Table): `PyIceberg Table <https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table>`__ created using the PyIceberg library
-        snapshot_id (int, optional): Snapshot ID of the table to query
-        io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
-
-    Returns:
-        DataFrame: a DataFrame with the schema converted from the specified Iceberg table
     """
-    import pyiceberg
+    from pyiceberg.table import StaticTable
 
     from daft.iceberg.iceberg_scan import IcebergScanOperator
 
     # support for read_iceberg('path/to/metadata.json')
     if isinstance(table, str):
-        table = pyiceberg.table.StaticTable.from_metadata(metadata_location=table)
+        table = StaticTable.from_metadata(metadata_location=table)
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config

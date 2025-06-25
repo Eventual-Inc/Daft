@@ -466,13 +466,12 @@ fn recursive_optimize_project(
             let expr_name = expr.name().to_string();
             let projection = child
                 .schema()
-                .fields
-                .iter()
-                .filter_map(|(name, _)| {
-                    if name == &expr_name {
+                .field_names()
+                .filter_map(|name| {
+                    if name == expr_name {
                         None
                     } else {
-                        Some(resolved_col(name.clone()))
+                        Some(resolved_col(name))
                     }
                 })
                 .chain(iter::once(expr))
@@ -568,10 +567,10 @@ mod tests {
             func: FunctionExpr::Python(PythonUDF {
                 name: Arc::new("foo".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
-                    inner: RuntimePyObject::new_testing_none(),
-                    init_args: RuntimePyObject::new_testing_none(),
+                    inner: RuntimePyObject::new_none(),
+                    init_args: RuntimePyObject::new_none(),
                 },
-                bound_args: RuntimePyObject::new_testing_none(),
+                bound_args: RuntimePyObject::new_none(),
                 num_expressions: inputs.len(),
                 return_dtype: DataType::Utf8,
                 resource_request: Some(create_resource_request()),

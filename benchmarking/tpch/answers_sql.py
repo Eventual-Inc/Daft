@@ -3,6 +3,8 @@
 You may also run this file directly as such: `python answers_sql.py <path to TPC-H parquet data dir> <question number>`
 """
 
+from __future__ import annotations
+
 import os
 import sys
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{instrument, Span};
@@ -10,7 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, NUM_CPUS};
+use crate::ExecutionTaskSpawner;
 
 enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -44,10 +44,10 @@ impl BlockingSinkState for PivotState {
 }
 
 struct PivotParams {
-    group_by: Vec<ExprRef>,
-    pivot_column: ExprRef,
-    value_column: ExprRef,
-    aggregation: AggExpr,
+    group_by: Vec<BoundExpr>,
+    pivot_column: BoundExpr,
+    value_column: BoundExpr,
+    aggregation: BoundAggExpr,
     names: Vec<String>,
 }
 
@@ -57,10 +57,10 @@ pub struct PivotSink {
 
 impl PivotSink {
     pub fn new(
-        group_by: Vec<ExprRef>,
-        pivot_column: ExprRef,
-        value_column: ExprRef,
-        aggregation: AggExpr,
+        group_by: Vec<BoundExpr>,
+        pivot_column: BoundExpr,
+        value_column: BoundExpr,
+        aggregation: BoundAggExpr,
         names: Vec<String>,
     ) -> Self {
         Self {
@@ -115,10 +115,8 @@ impl BlockingSink for PivotSink {
                         .chain(std::iter::once(&pivot_params.pivot_column))
                         .cloned()
                         .collect::<Vec<_>>();
-                    let agged = concated.agg(
-                        &[Expr::Agg(pivot_params.aggregation.clone()).into()],
-                        &group_by_with_pivot,
-                    )?;
+                    let agged =
+                        concated.agg(&[pivot_params.aggregation.clone()], &group_by_with_pivot)?;
                     let pivoted = Arc::new(agged.pivot(
                         &pivot_params.group_by,
                         pivot_params.pivot_column.clone(),
@@ -154,10 +152,6 @@ impl BlockingSink for PivotSink {
             self.pivot_params.names.iter().join(", ")
         ));
         display
-    }
-
-    fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {

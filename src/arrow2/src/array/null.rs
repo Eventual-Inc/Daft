@@ -110,6 +110,28 @@ impl MutableNullArray {
     }
 }
 
+#[cfg(feature = "arrow")]
+mod arrow {
+    use crate::array::Arrow2Arrow;
+
+    use super::*;
+    use arrow_data::{ArrayData, ArrayDataBuilder};
+    impl Arrow2Arrow for NullArray {
+        /// Convert this array into [`arrow_data::ArrayData`]
+        fn to_data(&self) -> ArrayData {
+            let builder = ArrayDataBuilder::new(arrow_schema::DataType::Null).len(self.len());
+
+            // Safety: safe by construction
+            unsafe { builder.build_unchecked() }
+        }
+
+        /// Create this array from [`ArrayData`]
+        fn from_data(data: &ArrayData) -> Self {
+            Self::new(DataType::Null, data.len())
+        }
+    }
+}
+
 impl From<MutableNullArray> for NullArray {
     fn from(value: MutableNullArray) -> Self {
         value.inner

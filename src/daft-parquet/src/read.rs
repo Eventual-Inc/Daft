@@ -15,7 +15,7 @@ use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
-use daft_dsl::{optimization::get_required_columns, ExprRef};
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns, ExprRef};
 use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
 use futures::{
@@ -291,9 +291,15 @@ async fn read_parquet_single(
     if let Some(predicate) = predicate {
         // If a predicate exists, we need to apply it before a limit and also keep all of the columns that it needs until it is applied
         // TODO ideally pipeline this with IO and before concatenating, rather than after
+        let predicate = BoundExpr::try_new(predicate, &table.schema)?;
         table = table.filter(&[predicate])?;
         if let Some(oc) = columns_to_return {
-            table = table.get_columns(&oc)?;
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
         }
         if let Some(nr) = num_rows_to_return {
             table = table.head(nr)?;
@@ -975,7 +981,7 @@ pub async fn read_parquet_schema_and_metadata(
 
     let metadata = builder.metadata;
     let arrow_schema = infer_schema_with_options(&metadata, Some(schema_inference_options.into()))?;
-    let schema = Schema::try_from(&arrow_schema)?;
+    let schema = arrow_schema.into();
     Ok((schema, metadata))
 }
 
@@ -1197,7 +1203,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let runtime_handle = get_io_runtime(true);
 
-        runtime_handle.block_on(async move {
+        runtime_handle.block_within_async_context(async move {
             let metadata = read_parquet_metadata(&file, io_client, None, None).await?;
             let serialized = bincode::serialize(&metadata).unwrap();
             let deserialized = bincode::deserialize::<FileMetaData>(&serialized).unwrap();
@@ -1224,7 +1230,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into()).unwrap());
         let runtime_handle = get_io_runtime(true);
         let file_metadata = runtime_handle
-            .block_on({
+            .block_within_async_context({
                 let parquet = parquet.clone();
                 let io_client = io_client.clone();
                 async move { read_parquet_metadata(&parquet, io_client, None, None).await }

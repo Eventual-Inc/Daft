@@ -1,4 +1,4 @@
-name: benchmark-distributed-tpch
+name: Benchmark Distributed TPC-H
 
 on:
   workflow_dispatch:
@@ -75,6 +75,7 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+        version: "0.6.17"
     - name: Install Daft and dev dependencies
       run: |
         rm -rf daft

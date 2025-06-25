@@ -4,17 +4,10 @@ build:
   os: "ubuntu-24.04"
   tools:
     python: '3.10'
-    rust: '1.64'
-  jobs:
-    pre_build:
-    - VIRTUAL_ENV=${READTHEDOCS_VIRTUALENV_PATH} make VENV=${READTHEDOCS_VIRTUALENV_PATH} build
 
 python:
   install:
-  - requirements: requirements-docs.txt
+  - requirements: requirements-doc.txt
 
 mkdocs:
-  configuration: docs/mkdocs.yml
-
-formats:
-- htmlzip
+  configuration: mkdocs.yml

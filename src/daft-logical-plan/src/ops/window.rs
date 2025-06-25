@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::{expr::window::WindowSpec, ExprRef};
+use daft_dsl::{expr::window::WindowSpec, WindowExpr};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{LogicalPlan, Result},
@@ -27,14 +29,16 @@ use crate::{
 ///
 /// Multiple window function expressions can be stored in a single Window operator
 /// as long as they share the same window specification.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Window {
     /// An id for the plan.
     pub plan_id: Option<usize>,
     /// The input plan.
     pub input: Arc<LogicalPlan>,
     /// The window functions to compute.
-    pub window_functions: Vec<ExprRef>,
+    pub window_functions: Vec<WindowExpr>,
+    /// The window function names to map to the output schema.
+    pub aliases: Vec<String>,
     /// The window specification (partition by, order by, frame, etc.)
     pub window_spec: WindowSpec,
     /// The output schema.
@@ -46,32 +50,38 @@ pub struct Window {
 impl Window {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        window_functions: Vec<ExprRef>,
+        window_functions: Vec<WindowExpr>,
+        aliases: Vec<String>,
         window_spec: WindowSpec,
     ) -> Result<Self> {
         let input_schema = input.schema();
 
-        let mut fields = input_schema.fields.clone();
+        let fields = input_schema
+            .into_iter()
+            .cloned()
+            .map(Ok)
+            .chain(
+                aliases
+                    .iter()
+                    .zip(window_functions.iter())
+                    .map(|(name, expr)| {
+                        let dtype = expr.to_field(&input_schema)?.dtype;
+                        Ok(Field::new(name, dtype))
+                    }),
+            )
+            .collect::<DaftResult<Vec<_>>>()?;
 
-        for expr in &window_functions {
-            fields.insert(expr.name().to_string(), expr.to_field(&input_schema)?);
-        }
-
-        let schema = Arc::new(Schema::new(fields.values().cloned().collect())?);
+        let schema = Arc::new(Schema::new(fields));
 
         Ok(Self {
             plan_id: None,
             input,
             window_functions,
+            aliases,
             window_spec,
             schema,
             stats_state: StatsState::NotMaterialized,
         })
-    }
-
-    pub fn with_window_functions(mut self, window_functions: Vec<ExprRef>) -> Self {
-        self.window_functions = window_functions;
-        self
     }
 
     pub fn with_materialized_stats(mut self) -> Self {
@@ -86,6 +96,7 @@ impl Window {
             plan_id: id,
             input: self.input.clone(),
             window_functions: self.window_functions.clone(),
+            aliases: self.aliases.clone(),
             window_spec: self.window_spec.clone(),
             schema: self.schema.clone(),
             stats_state: self.stats_state.clone(),
@@ -95,7 +106,11 @@ impl Window {
 
 impl Window {
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut lines = vec![format!("Window: {}", self.window_functions.len())];
+        let mut lines = vec!["Window:".to_string()];
+
+        for (expr, name) in self.window_functions.iter().zip(self.aliases.iter()) {
+            lines.push(format!("  {} as {}", expr, name));
+        }
 
         if !self.window_spec.partition_by.is_empty() {
             let partition_cols = self
@@ -113,24 +128,19 @@ impl Window {
                 .window_spec
                 .order_by
                 .iter()
-                .zip(self.window_spec.ascending.iter())
-                .map(|(e, asc)| format!("{} {}", e.name(), if *asc { "ASC" } else { "DESC" }))
+                .zip(self.window_spec.descending.iter())
+                .map(|(e, desc)| format!("{} {}", e.name(), if *desc { "DESC" } else { "ASC" }))
                 .collect::<Vec<_>>()
                 .join(", ");
             lines.push(format!("  Order by: [{}]", order_cols));
         }
 
         if let Some(frame) = &self.window_spec.frame {
-            let frame_type = match frame.frame_type {
-                daft_dsl::expr::window::WindowFrameType::Rows => "ROWS",
-                daft_dsl::expr::window::WindowFrameType::Range => "RANGE",
-            };
-
             let start = match &frame.start {
-                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding => {
                     "UNBOUNDED PRECEDING".to_string()
                 }
-                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing => {
                     "UNBOUNDED FOLLOWING".to_string()
                 }
                 daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
@@ -138,13 +148,16 @@ impl Window {
                     std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
                     std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
                 },
+                daft_dsl::expr::window::WindowBoundary::RangeOffset(n) => {
+                    format!("RANGE {}", n)
+                }
             };
 
             let end = match &frame.end {
-                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedPreceding => {
                     "UNBOUNDED PRECEDING".to_string()
                 }
-                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing() => {
+                daft_dsl::expr::window::WindowBoundary::UnboundedFollowing => {
                     "UNBOUNDED FOLLOWING".to_string()
                 }
                 daft_dsl::expr::window::WindowBoundary::Offset(n) => match n.cmp(&0) {
@@ -152,16 +165,20 @@ impl Window {
                     std::cmp::Ordering::Less => format!("{} PRECEDING", n.abs()),
                     std::cmp::Ordering::Greater => format!("{} FOLLOWING", n),
                 },
+                daft_dsl::expr::window::WindowBoundary::RangeOffset(n) => {
+                    format!("RANGE {}", n)
+                }
             };
 
-            lines.push(format!(
-                "  Frame: {} BETWEEN {} AND {}",
-                frame_type, start, end
-            ));
+            lines.push(format!("  Frame: BETWEEN {} AND {}", start, end));
         }
 
         if self.window_spec.min_periods != 1 {
             lines.push(format!("  Min periods: {}", self.window_spec.min_periods));
+        }
+
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            lines.push(format!("Stats = {}", stats));
         }
 
         lines

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 import daft
@@ -67,6 +69,7 @@ def test_upload_local_row_specifc_urls(tmpdir):
         assert path == "file://" + expected
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="Skipping test when run as root user")
 def test_upload_local_no_write_permissions(tmpdir):
     bytes_data = [b"a", b"b", b"c"]
     # We have no write permissions to the first and third paths.
@@ -76,7 +79,7 @@ def test_upload_local_no_write_permissions(tmpdir):
     data = {"data": bytes_data, "paths": paths}
     df = daft.from_pydict(data)
     df_raise_error = df.with_column("files", df["data"].url.upload(df["paths"]))
-    with pytest.raises(ValueError, match="Unable to write data to file"):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         df_raise_error.collect()
     # Retry with `on_error` set to `null`.
     df_null = df.with_column("files", df["data"].url.upload(df["paths"], on_error="null"))

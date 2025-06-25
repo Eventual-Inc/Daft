@@ -1,3 +1,4 @@
+pub mod client;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod server;

@@ -9,11 +9,16 @@ use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::Python;
+use pyo3::{
+    types::{PyDict, PyTuple},
+    Bound, IntoPyObject, PyObject, PyResult, Python,
+};
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
 
 use super::FunctionExpr;
+#[cfg(feature = "python")]
+use crate::python::PyExpr;
 use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -23,6 +28,43 @@ pub enum MaybeInitializedUDF {
         inner: RuntimePyObject,
         init_args: RuntimePyObject,
     },
+}
+
+/// rust wrapper around `daft.udf.py:UDF`
+#[derive(Debug, Clone)]
+pub struct WrappedUDFClass {
+    #[cfg(feature = "python")]
+    pub inner: Arc<PyObject>,
+}
+
+#[cfg(feature = "python")]
+impl WrappedUDFClass {
+    pub fn call<'py, A>(
+        &self,
+        py: Python<'py>,
+        args: A,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<PyExpr>
+    where
+        A: IntoPyObject<'py, Target = PyTuple>,
+    {
+        let o = self.inner.call(py, args, kwargs)?;
+        let inner = o.getattr(py, "_expr")?;
+
+        let expr = inner.extract::<PyExpr>(py)?;
+        Ok(expr)
+    }
+
+    pub fn name(&self) -> PyResult<String> {
+        Python::with_gil(|py| {
+            let s: String = self.inner.getattr(py, "name")?.extract(py)?;
+            Ok(if s.contains('.') {
+                s.split('.').next_back().unwrap().to_string()
+            } else {
+                s
+            })
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -43,10 +85,10 @@ impl PythonUDF {
         Self {
             name: Arc::new("dummy_udf".to_string()),
             func: MaybeInitializedUDF::Uninitialized {
-                inner: RuntimePyObject::new_testing_none(),
-                init_args: RuntimePyObject::new_testing_none(),
+                inner: RuntimePyObject::new_none(),
+                init_args: RuntimePyObject::new_none(),
             },
-            bound_args: RuntimePyObject::new_testing_none(),
+            bound_args: RuntimePyObject::new_none(),
             num_expressions: 1,
             return_dtype: DataType::Int64,
             resource_request: None,
@@ -85,27 +127,30 @@ pub fn udf(
 
 /// Generates a ResourceRequest by inspecting an iterator of expressions.
 /// Looks for ResourceRequests on UDFs in each expression presented, and merges ResourceRequests across all expressions.
-pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
+pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
+    exprs: impl IntoIterator<Item = E>,
+) -> Option<ResourceRequest> {
     let merged_resource_requests = exprs
-        .iter()
+        .into_iter()
         .filter_map(|expr| {
             let mut resource_requests = Vec::new();
-            expr.apply(|e| match e.as_ref() {
-                Expr::Function {
-                    func:
-                        FunctionExpr::Python(PythonUDF {
-                            resource_request, ..
-                        }),
-                    ..
-                } => {
-                    if let Some(rr) = resource_request {
-                        resource_requests.push(rr.clone());
+            expr.into()
+                .apply(|e| match e.as_ref() {
+                    Expr::Function {
+                        func:
+                            FunctionExpr::Python(PythonUDF {
+                                resource_request, ..
+                            }),
+                        ..
+                    } => {
+                        if let Some(rr) = resource_request {
+                            resource_requests.push(rr.clone());
+                        }
+                        Ok(TreeNodeRecursion::Continue)
                     }
-                    Ok(TreeNodeRecursion::Continue)
-                }
-                _ => Ok(TreeNodeRecursion::Continue),
-            })
-            .unwrap();
+                    _ => Ok(TreeNodeRecursion::Continue),
+                })
+                .unwrap();
             if resource_requests.is_empty() {
                 None
             } else {
@@ -125,23 +170,24 @@ pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
 /// Gets the concurrency from the first UDF encountered in a given slice of expressions
 ///
 /// NOTE: This function panics if no UDF is found or if the first UDF has no concurrency
-pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
+pub fn get_concurrency<'a, E: Into<&'a ExprRef>>(exprs: impl IntoIterator<Item = E>) -> usize {
     let mut projection_concurrency = None;
     for expr in exprs {
         let mut found_actor_pool_udf = false;
-        expr.apply(|e| match e.as_ref() {
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
-                ..
-            } => {
-                found_actor_pool_udf = true;
-                projection_concurrency =
-                    Some(concurrency.expect("Should have concurrency specified"));
-                Ok(common_treenode::TreeNodeRecursion::Stop)
-            }
-            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-        })
-        .unwrap();
+        expr.into()
+            .apply(|e| match e.as_ref() {
+                Expr::Function {
+                    func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
+                    ..
+                } => {
+                    found_actor_pool_udf = true;
+                    projection_concurrency =
+                        Some(concurrency.expect("Should have concurrency specified"));
+                    Ok(common_treenode::TreeNodeRecursion::Stop)
+                }
+                _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+            })
+            .unwrap();
         if found_actor_pool_udf {
             break;
         }

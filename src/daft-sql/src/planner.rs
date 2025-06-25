@@ -10,13 +10,12 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
     has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
     ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
 };
-use daft_functions::{
-    numeric::{ceil::ceil, floor::floor},
-    utf8::{ilike, like, to_date, to_datetime},
-};
+use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions_utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
     ops::{SetQuantifier, UnionStrategy},
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
@@ -61,6 +60,11 @@ impl<T> Bindings<T> {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+
+    /// Inserts all bindings from the iterator of binding pairs.
+    fn extend<I: IntoIterator<Item = (String, T)>>(&mut self, iter: I) {
+        self.0.extend(iter);
+    }
 }
 
 impl<T> Default for Bindings<T> {
@@ -79,20 +83,15 @@ struct OrderByExprs {
 /// TODO consolidate SQLPlanner state to the single context.
 /// TODO move bound_ctes into per-planner scope since these are a scoped concept.
 #[derive(Default)]
-struct PlannerContext {
-    /// Session provides access to metadata and the path for name resolution.
-    /// TODO move into SQLPlanner once state is flipped.
-    /// TODO consider decoupling session from planner via a resolver trait.
-    session: Rc<Session>,
+pub(crate) struct PlannerContext {
     /// Bindings for common table expressions (cte).
     bound_ctes: Bindings<LogicalPlanBuilder>,
 }
 
 impl PlannerContext {
     /// Creates a new context from the session
-    fn new(session: Rc<Session>) -> Self {
+    fn new() -> Self {
         Self {
-            session,
             bound_ctes: Bindings::default(),
         }
     }
@@ -108,12 +107,11 @@ impl PlannerContext {
 /// TODO flip SQLPlanner to pass scoped state objects rather than being stateful itself.
 /// This gives us control on state management without coupling our scopes to the call stack.
 /// It also eliminates extra references on the shared context and we can remove interior mutability.
-#[derive(Default)]
-pub struct SQLPlanner<'a> {
+pub struct SQLPlanner<'sess> {
     /// Shared context for all planners
-    context: Rc<RefCell<PlannerContext>>,
+    pub(crate) context: Rc<RefCell<PlannerContext>>,
     /// Planner for the outer scope
-    parent: Option<&'a SQLPlanner<'a>>,
+    parent: Option<&'sess SQLPlanner<'sess>>,
     /// In-scope bindings introduced by the current relation's schema
     pub(crate) current_plan: Option<LogicalPlanBuilder>,
     /// Plan that will be used as the right side of the join, used for planning join predicates
@@ -121,32 +119,66 @@ pub struct SQLPlanner<'a> {
     /// Aliases from selection that can be used in other clauses
     /// but may not yet be in the schema of `current_relation`.
     bound_columns: Bindings<ExprRef>,
+    session: &'sess Session,
 }
 
-impl<'a> SQLPlanner<'a> {
-    /// Create a new query planner for the session.
-    pub fn new(session: Rc<Session>) -> Self {
-        let context = PlannerContext::new(session);
-        let context = Rc::new(RefCell::new(context));
-        Self {
-            context,
-            ..Default::default()
-        }
-    }
+// These are split out into separate impls these out so it's a bit easier
+// to reason about the lifetimes
 
+impl<'a> SQLPlanner<'a> {
     fn new_child(&'a self) -> Self {
         Self {
             context: self.context.clone(),
             parent: Some(self),
-            ..Default::default()
+            current_plan: None,
+            right_side_plan: None,
+            bound_columns: Bindings::default(),
+            session: self.session,
+        }
+    }
+}
+
+impl<'sess> SQLPlanner<'sess> {
+    /// Create a new query planner for the session.
+    pub fn new(session: &'sess Session) -> Self {
+        let context = PlannerContext::new();
+        let context = Rc::new(RefCell::new(context));
+        Self {
+            context,
+            parent: None,
+            current_plan: None,
+            right_side_plan: None,
+            bound_columns: Bindings::default(),
+            session,
         }
     }
 
+    /// Borrow the planning session
+    pub(crate) fn session(&self) -> &'sess Session {
+        self.session
+    }
+}
+
+impl SQLPlanner<'_> {
     fn new_with_context(&self) -> Self {
         Self {
             context: self.context.clone(),
-            ..Default::default()
+            parent: None,
+            current_plan: None,
+            right_side_plan: None,
+            bound_columns: Bindings::default(),
+            session: self.session,
         }
+    }
+
+    /// Binds each CTE and returning self for use in a builder pattern.
+    pub fn with_ctes(&mut self, ctes: HashMap<String, LogicalPlanBuilder>) -> &mut Self {
+        // !! IMPORTANT: name resolution requires adding an alias to each CTE !!
+        let ctes_with_alias = ctes
+            .iter()
+            .map(|(alias, plan)| (alias.to_string(), plan.alias(alias.as_str())));
+        self.context.borrow_mut().bound_ctes.extend(ctes_with_alias);
+        self
     }
 
     /// Set `self.current_plan`. Should only be called once per query.
@@ -182,14 +214,16 @@ impl<'a> SQLPlanner<'a> {
 
     /// Get the table associated with the name from the session and wrap in a SubqueryAlias.
     fn get_table(&self, name: &Identifier) -> SQLPlannerResult<LogicalPlanBuilder> {
-        let table = self.session().get_table(name)?;
-        let plan = table.get_logical_plan()?;
-        Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
-    }
-
-    /// Borrow the planning session
-    fn session(&self) -> Ref<'_, Rc<Session>> {
-        Ref::map(self.context.borrow(), |i| &i.session)
+        let name_str = name.to_string();
+        let ctx = self.context.borrow();
+        let cte = ctx.bound_ctes.get(&name_str);
+        if let Some(plan) = cte {
+            Ok(LogicalPlanBuilder::from(plan.clone()).alias(name_str))
+        } else {
+            let table = self.session().get_table(name)?;
+            let plan = table.to_logical_plan()?;
+            Ok(LogicalPlanBuilder::from(plan).alias(name.name()))
+        }
     }
 
     /// Clears the current context used for planning a SQL query
@@ -215,7 +249,6 @@ impl<'a> SQLPlanner<'a> {
             let plan = self.new_with_context().plan_query(&cte.query)?;
 
             let plan = apply_table_alias(plan, &cte.alias)?;
-
             self.context_mut()
                 .bound_ctes
                 .insert(cte.alias.name.value.clone(), plan);
@@ -412,9 +445,15 @@ impl<'a> SQLPlanner<'a> {
 
         match &selection.distinct {
             Some(Distinct::Distinct) => {
-                self.update_plan(|plan| plan.distinct())?;
+                self.update_plan(|plan| plan.distinct(None))?;
             }
-            Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
+            Some(Distinct::On(columns)) => {
+                let columns = columns
+                    .iter()
+                    .map(|c| self.plan_expr(c))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                self.update_plan(|plan| plan.distinct(Some(columns)))?;
+            }
             None => {}
         }
 
@@ -469,8 +508,18 @@ impl<'a> SQLPlanner<'a> {
             .map(|expr| {
                 if has_agg(&expr) {
                     aggs.insert(expr.clone());
-
                     resolved_col(expr.name())
+                // if the projection is the same as one in a groupby, we don't need to reevaluate it again
+                //  just reuse the existing column
+                } else if groupby_exprs.contains(&expr) {
+                    resolved_col(expr.name())
+                // similarly, if its the same as above, but an alias, the same logic applies
+                } else if let Expr::Alias(inner, name) = expr.as_ref() {
+                    if groupby_exprs.contains(inner) {
+                        resolved_col(inner.name()).alias(name.as_ref())
+                    } else {
+                        expr
+                    }
                 } else {
                     expr
                 }
@@ -540,13 +589,12 @@ impl<'a> SQLPlanner<'a> {
             for next in plans {
                 let next_schema = next.schema();
                 let nulled_cols = first_schema
-                    .fields
-                    .iter()
+                    .into_iter()
                     .map(|f| {
-                        if next_schema.has_field(f.0) {
-                            unresolved_col(f.0.clone())
+                        if next_schema.has_field(&f.name) {
+                            unresolved_col(f.name.clone())
                         } else {
-                            null_lit().alias(f.0.clone()).cast(&f.1.dtype)
+                            null_lit().alias(f.name.clone()).cast(&f.dtype)
                         }
                     })
                     .collect::<Vec<_>>();
@@ -704,11 +752,10 @@ impl<'a> SQLPlanner<'a> {
             // but our join returns [common columns, remaining left columns, remaining right columns]
             if matches!(&constraint, JoinConstraint::Using(..)) {
                 let new_schema = left_planner.current_plan_ref().schema();
-                let output_schema = left_schema.non_distinct_union(&new_schema);
+                let output_schema = left_schema.non_distinct_union(&new_schema)?;
                 let output_cols = output_schema
-                    .fields
-                    .keys()
-                    .cloned()
+                    .field_names()
+                    .map(ToString::to_string)
                     .map(resolved_col)
                     .collect();
 
@@ -839,6 +886,24 @@ impl<'a> SQLPlanner<'a> {
         self.plan_table_function(func, &args)
     }
 
+    /// Returns a normalized daft identifier from an sqlparser ObjectName
+    pub(crate) fn normalize(&self, name: &ObjectName) -> SQLPlannerResult<Identifier> {
+        let normalizer = self.session().normalizer();
+        let mut path = vec![];
+        for part in &name.0 {
+            let part = match part.quote_style {
+                Some('"') => part.value.to_string(),
+                None => normalizer(&part.value),
+                Some(c) => unsupported_sql_err!(
+                    "Daft only supports delimited identifiers with double-quotes, found {}",
+                    c
+                ),
+            };
+            path.push(part);
+        }
+        Ok(Identifier::try_new(path)?)
+    }
+
     /// Plan a `FROM <table>` table factor.
     ///
     /// All plans returned by plan_relation_table should have a SubqueryAlias with the table's name.
@@ -846,7 +911,7 @@ impl<'a> SQLPlanner<'a> {
         &self,
         name: &ObjectName,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        let ident = normalize(name);
+        let ident = self.normalize(name)?;
         let table = if ident.has_qualifier() {
             // qualified search of session metadata
             self.get_table(&ident).ok()
@@ -971,10 +1036,7 @@ impl<'a> SQLPlanner<'a> {
     }
 
     fn select_item_to_expr(&mut self, item: &SelectItem) -> SQLPlannerResult<Vec<ExprRef>> {
-        fn wildcard_exclude(
-            schema: SchemaRef,
-            exclusion: &ExcludeSelectItem,
-        ) -> DaftResult<Schema> {
+        fn wildcard_exclude(schema: SchemaRef, exclusion: &ExcludeSelectItem) -> Schema {
             match exclusion {
                 ExcludeSelectItem::Single(column) => schema.exclude(&[&column.to_string()]),
                 ExcludeSelectItem::Multiple(columns) => {
@@ -1002,15 +1064,11 @@ impl<'a> SQLPlanner<'a> {
 
                 if let Some(exclude) = &wildcard_opts.opt_exclude {
                     let schema = self.current_plan_ref().schema();
-                    wildcard_exclude(schema, exclude)
-                        .map(|excluded| {
-                            excluded
-                                .names()
-                                .iter()
-                                .map(|n| unresolved_col(n.as_ref()))
-                                .collect::<Vec<_>>()
-                        })
-                        .map_err(std::convert::Into::into)
+                    Ok(wildcard_exclude(schema, exclude)
+                        .names()
+                        .iter()
+                        .map(|n| unresolved_col(n.as_ref()))
+                        .collect::<Vec<_>>())
                 } else if let Some(current_plan) = &self.current_plan {
                     Ok(current_plan
                         .schema()
@@ -1025,7 +1083,7 @@ impl<'a> SQLPlanner<'a> {
             // TODO: support wildcard struct gets
             SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {
                 check_wildcard_options(wildcard_opts)?;
-                let ident = normalize(object_name);
+                let ident = object_name_to_identifier(object_name);
                 let ident_name = ident.to_string();
                 let Some(current_plan) = self.current_plan.as_ref() else {
                     table_not_found_err!(ident_name);
@@ -1039,7 +1097,7 @@ impl<'a> SQLPlanner<'a> {
                 };
 
                 let columns = if let Some(exclude) = &wildcard_opts.opt_exclude {
-                    Arc::new(wildcard_exclude(subquery_schema.clone(), exclude)?)
+                    Arc::new(wildcard_exclude(subquery_schema.clone(), exclude))
                 } else {
                     // I believe clippy is wrong here. It does not compile without this clone - kevin
                     #[allow(clippy::redundant_clone)]
@@ -1253,30 +1311,50 @@ impl<'a> SQLPlanner<'a> {
                 syntax: _,
                 expr,
             } => {
-                use daft_functions::temporal::{self as dt};
+                use daft_functions_temporal as dt;
                 let expr = self.plan_expr(expr)?;
 
+                fn scalar<UDF: ScalarUDF + 'static>(udf: UDF, input: ExprRef) -> ExprRef {
+                    ScalarFunction::new(udf, vec![input]).into()
+                }
+
                 match field {
-                    DateTimeField::Year => Ok(dt::dt_year(expr)),
-                    DateTimeField::Month => Ok(dt::dt_month(expr)),
-                    DateTimeField::Day => Ok(dt::dt_day(expr)),
+                    DateTimeField::Year => Ok(scalar(dt::Year, expr)),
+                    DateTimeField::Quarter => Ok(scalar(dt::Quarter, expr)),
+                    DateTimeField::Month => Ok(scalar(dt::Month, expr)),
+                    DateTimeField::Day => Ok(scalar(dt::Day, expr)),
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_week" =>
                     {
-                        Ok(dt::dt_day_of_week(expr))
+                        Ok(scalar(dt::DayOfWeek, expr))
+                    }
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "day_of_month" =>
+                    {
+                        Ok(scalar(dt::DayOfMonth, expr))
                     }
                     DateTimeField::Custom(Ident { value, .. })
                         if value.to_lowercase().as_str() == "day_of_year" =>
                     {
-                        Ok(dt::dt_day_of_year(expr))
+                        Ok(scalar(dt::DayOfYear, expr))
                     }
-                    DateTimeField::Date => Ok(dt::dt_date(expr)),
-                    DateTimeField::Hour => Ok(dt::dt_hour(expr)),
-                    DateTimeField::Minute => Ok(dt::dt_minute(expr)),
-                    DateTimeField::Second => Ok(dt::dt_second(expr)),
-                    DateTimeField::Millisecond => Ok(dt::dt_millisecond(expr)),
-                    DateTimeField::Microsecond => Ok(dt::dt_microsecond(expr)),
-                    DateTimeField::Nanosecond => Ok(dt::dt_nanosecond(expr)),
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "week_of_year" =>
+                    {
+                        Ok(scalar(dt::WeekOfYear, expr))
+                    }
+                    DateTimeField::Date => Ok(scalar(dt::Date, expr)),
+                    DateTimeField::Hour => Ok(scalar(dt::Hour, expr)),
+                    DateTimeField::Minute => Ok(scalar(dt::Minute, expr)),
+                    DateTimeField::Second => Ok(scalar(dt::Second, expr)),
+                    DateTimeField::Millisecond => Ok(scalar(dt::Millisecond, expr)),
+                    DateTimeField::Microsecond => Ok(scalar(dt::Microsecond, expr)),
+                    DateTimeField::Nanosecond => Ok(scalar(dt::Nanosecond, expr)),
+                    DateTimeField::Custom(Ident { value, .. })
+                        if value.to_lowercase().as_str() == "unix_date" =>
+                    {
+                        Ok(scalar(dt::UnixDate, expr))
+                    }
                     other => unsupported_sql_err!("EXTRACT ({other})"),
                 }
             }
@@ -1301,7 +1379,7 @@ impl<'a> SQLPlanner<'a> {
                 // SQL substring is one indexed
                 let start = start.sub(lit(1));
 
-                Ok(daft_functions::utf8::substr(expr, start, length))
+                Ok(daft_functions_utf8::substr(expr, start, length))
             }
             SQLExpr::Substring { special: false, .. } => {
                 unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
@@ -1312,7 +1390,7 @@ impl<'a> SQLPlanner<'a> {
             SQLExpr::Nested(e) => self.plan_expr(e),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
             SQLExpr::TypedString { data_type, value } => match data_type {
-                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
+                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), lit("%Y-%m-%d"))),
                 sqlparser::ast::DataType::Timestamp(None, TimezoneInfo::None)
                 | sqlparser::ast::DataType::Datetime(None) => Ok(to_datetime(
                     lit(value.as_str()),
@@ -1674,7 +1752,7 @@ impl<'a> SQLPlanner<'a> {
                 let expr_field = expr.to_field(schema.as_ref())?;
                 match expr_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => {
-                        Ok(daft_functions::list::get(expr, index, null_lit()))
+                        Ok(daft_functions_list::get(expr, index, null_lit()))
                     }
                     DataType::Struct(_) => {
                         if let Some(s) = index.as_literal().and_then(|l| l.as_str()) {
@@ -1702,7 +1780,7 @@ impl<'a> SQLPlanner<'a> {
                         let lower = self.plan_expr(lower)?;
                         let upper = self.plan_expr(upper)?;
                         let expr = self.plan_expr(expr)?;
-                        Ok(daft_functions::list::slice(expr, lower, upper))
+                        Ok(daft_functions_list::slice(expr, lower, upper))
                     }
                     _ => {
                         unsupported_sql_err!("slice with only one bound not yet supported");
@@ -1816,7 +1894,8 @@ fn check_wildcard_options(
 }
 
 pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
-    let planner = SQLPlanner::default();
+    let session = Session::empty();
+    let planner = SQLPlanner::new(&session);
 
     let tokens = Tokenizer::new(&GenericDialect, s.as_ref()).tokenize()?;
 
@@ -1836,12 +1915,13 @@ pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
 
     let fields = fields?;
 
-    let schema = Schema::new(fields)?;
+    let schema = Schema::new(fields);
     Ok(Arc::new(schema))
 }
 
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
-    let mut planner = SQLPlanner::default();
+    let session = Session::empty();
+    let mut planner = SQLPlanner::new(&session);
 
     let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
 
@@ -1877,9 +1957,8 @@ fn compound_ident_to_str(idents: &[Ident]) -> String {
         .join(".")
 }
 
-/// Returns a normalized daft identifier from an sqlparser ObjectName
-pub(crate) fn normalize(name: &ObjectName) -> Identifier {
-    // TODO case-normalization of regular identifiers
+/// TODO remove me once columns use case-normalized names
+pub(crate) fn object_name_to_identifier(name: &ObjectName) -> Identifier {
     Identifier::new(name.0.iter().map(|i| i.value.clone()))
 }
 
@@ -1983,22 +2062,9 @@ mod tests {
             Field::new("County", DataType::Utf8),
             Field::new("Sex", DataType::Utf8),
             Field::new("Count", DataType::Int32),
-        ])
-        .unwrap();
+        ]);
 
         assert_eq!(&*result, &expected);
-    }
-
-    #[test]
-    fn test_duplicate_column_names_in_schema() {
-        // This test checks that sql_schema fails or handles duplicates gracefully.
-        // The planner currently returns errors if schema construction fails, so we expect an Err here.
-        let result = sql_schema("col1 INT, col1 STRING");
-
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Daft error: DaftError::ValueError Attempting to make a Schema with duplicate field names: col1"
-        );
     }
 
     #[test]
@@ -2009,7 +2075,7 @@ mod tests {
     #[test]
     fn test_single_field_schema() {
         let result = sql_schema("col1 INT").unwrap();
-        let expected = Schema::new(vec![Field::new("col1", DataType::Int32)]).unwrap();
+        let expected = Schema::new(vec![Field::new("col1", DataType::Int32)]);
         assert_eq!(&*result, &expected);
     }
 

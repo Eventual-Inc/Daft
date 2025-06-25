@@ -1,20 +1,21 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{pyarrow::PyArrowWriter, FileWriter, WriterFactory};
+use crate::{pyarrow::PyArrowWriter, AsyncFileWriter, WriterFactory};
 
 /// CatalogWriterFactory is a factory for creating Catalog writers, i.e. iceberg, delta writers.
 pub struct CatalogWriterFactory {
-    catalog_info: CatalogType,
+    catalog_info: CatalogType<BoundExpr>,
     native: bool, // TODO: Implement native writer
 }
 
 impl CatalogWriterFactory {
-    pub fn new(catalog_info: CatalogType) -> Self {
+    pub fn new(catalog_info: CatalogType<BoundExpr>) -> Self {
         Self {
             catalog_info,
             native: false,
@@ -30,7 +31,7 @@ impl WriterFactory for CatalogWriterFactory {
         &self,
         file_idx: usize,
         partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         match self.native {
             true => unimplemented!(),
             false => {
@@ -45,8 +46,9 @@ impl WriterFactory for CatalogWriterFactory {
 pub fn create_pyarrow_catalog_writer(
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
-    catalog_info: &CatalogType,
-) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>> {
+    catalog_info: &CatalogType<BoundExpr>,
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
+{
     match catalog_info {
         CatalogType::DeltaLake(DeltaLakeCatalogInfo {
             path,

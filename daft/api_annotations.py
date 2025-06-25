@@ -3,14 +3,22 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
-from typing import Any, Callable, ForwardRef, Literal, TypeVar, Union, get_args, get_origin
+from typing import (
+    Any,
+    Callable,
+    ForwardRef,
+    Literal,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
 else:
     from typing import ParamSpec
 
-from daft.analytics import time_df_method, time_func
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -21,9 +29,9 @@ def DataframePublicAPI(func: Callable[P, T]) -> Callable[P, T]:
 
     @functools.wraps(func)
     def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
+        __tracebackhide__ = True
         type_check_function(func, *args, **kwargs)
-        timed_method = time_df_method(func)
-        return timed_method(*args, **kwargs)
+        return func(*args, **kwargs)
 
     return _wrap
 
@@ -35,8 +43,7 @@ def PublicAPI(func: Callable[P, T]) -> Callable[P, T]:
     def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
         __tracebackhide__ = True
         type_check_function(func, *args, **kwargs)
-        timed_func = time_func(func)
-        return timed_func(*args, **kwargs)
+        return func(*args, **kwargs)
 
     return _wrap
 
@@ -60,12 +67,13 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         if isinstance(T, (str, ForwardRef)):
             return True
 
-        # T is a simple type, like `int`
-        if isinstance(T, type):
+        origin_T = get_origin(T)
+
+        # T is a builtin primitive type, like `int`
+        if origin_T is None:
             return isinstance(value, T)
 
-        # T is a generic type, like `typing.List`
-        origin_T = get_origin(T)
+        # T is a generic type, like `typing.List` or builtin container like `list`
         if isinstance(origin_T, type):
             return isinstance(value, origin_T)
 

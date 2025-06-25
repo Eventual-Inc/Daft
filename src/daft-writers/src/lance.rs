@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_logical_plan::LanceCatalogInfo;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
 use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
 use pyo3::{types::PyAnyMethods, Python};
 
-use crate::{FileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriterFactory};
 
 pub struct LanceWriter {
     is_closed: bool,
@@ -26,11 +27,12 @@ impl LanceWriter {
     }
 }
 
-impl FileWriter for LanceWriter {
+#[async_trait]
+impl AsyncFileWriter for LanceWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         assert!(!self.is_closed, "Cannot write to a closed LanceWriter");
         self.bytes_written += data
             .size_bytes()?
@@ -56,9 +58,9 @@ impl FileWriter for LanceWriter {
                         }),
                     &self.lance_info.kwargs.clone_ref(py),
                 ))?
-                .getattr(pyo3::intern!(py, "to_table"))?
+                .getattr(pyo3::intern!(py, "to_record_batch"))?
                 .call0()?
-                .getattr(pyo3::intern!(py, "_table"))?
+                .getattr(pyo3::intern!(py, "_recordbatch"))?
                 .extract()?;
             self.results.push(written_fragments.into());
             Ok(self.bytes_written)
@@ -73,7 +75,7 @@ impl FileWriter for LanceWriter {
         vec![self.bytes_written]
     }
 
-    fn close(&mut self) -> DaftResult<Self::Result> {
+    async fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Ok(std::mem::take(&mut self.results))
     }
@@ -98,7 +100,7 @@ impl WriterFactory for LanceWriterFactory {
         &self,
         _file_idx: usize,
         _partition_values: Option<&RecordBatch>,
-    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         let writer = LanceWriter::new(self.lance_info.clone());
         Ok(Box::new(writer))
     }

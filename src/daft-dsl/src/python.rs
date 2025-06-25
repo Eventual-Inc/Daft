@@ -12,16 +12,24 @@ use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
+    utils::display::display_decimal128,
 };
+use indexmap::IndexMap;
 use pyo3::{
     exceptions::PyValueError,
+    intern,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
+    types::{PyBool, PyBytes, PyFloat, PyInt, PyNone, PyString},
+    IntoPyObjectExt,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{expr::Expr, ExprRef, LiteralValue};
+use crate::{
+    expr::{Expr, WindowExpr},
+    visitor::accept,
+    ExprRef, LiteralValue, Operator,
+};
 
 #[pyfunction]
 pub fn unresolved_col(name: &str) -> PyExpr {
@@ -54,6 +62,24 @@ pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<P
 #[pyfunction]
 pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Duration(val, tu.timeunit));
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn row_number() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::RowNumber);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn rank() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::Rank);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn dense_rank() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::DenseRank);
     Ok(expr.into())
 }
 
@@ -150,40 +176,41 @@ pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
 
 #[pyfunction]
 pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
+    literal_value(item).map(Expr::Literal).map(Into::into)
+}
+
+pub fn literal_value(item: Bound<PyAny>) -> PyResult<LiteralValue> {
     if item.is_instance_of::<PyBool>() {
         let val = item.extract::<bool>()?;
-        Ok(crate::lit(val).into())
+        Ok(crate::literal_value(val))
     } else if let Ok(int) = item.downcast::<PyInt>() {
         match int.extract::<i64>() {
             Ok(val) => {
                 if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok(crate::lit(val as i32).into())
+                    Ok(crate::literal_value(val as i32))
                 } else {
-                    Ok(crate::lit(val).into())
+                    Ok(crate::literal_value(val))
                 }
             }
             _ => {
                 let val = int.extract::<u64>()?;
-                Ok(crate::lit(val).into())
+                Ok(crate::literal_value(val))
             }
         }
     } else if let Ok(float) = item.downcast::<PyFloat>() {
         let val = float.extract::<f64>()?;
-        Ok(crate::lit(val).into())
+        Ok(crate::literal_value(val))
     } else if let Ok(pystr) = item.downcast::<PyString>() {
-        Ok(crate::lit(
-            pystr
-                .extract::<String>()
-                .expect("could not transform Python string to Rust Unicode"),
-        )
-        .into())
+        Ok(crate::literal_value(pystr.extract::<String>().expect(
+            "could not transform Python string to Rust Unicode",
+        )))
     } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
         let bytes = pybytes.as_bytes();
-        Ok(crate::lit(bytes).into())
+        Ok(crate::literal_value(bytes))
     } else if item.is_none() {
-        Ok(crate::null_lit().into())
+        Ok(LiteralValue::Null)
     } else {
-        Ok(crate::lit::<PyObject>(item.into()).into())
+        Ok(crate::literal_value::<PyObject>(item.into()))
     }
 }
 
@@ -271,6 +298,17 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 pub enum ApproxPercentileInput {
     Single(f64),
     Many(Vec<f64>),
+}
+
+impl PyExpr {
+    /// converts the pyexpr into a `daft.Expression` python instance
+    /// `daft.Expression._from_pyexpr(self)`
+    pub fn into_expr_cls(self, py: Python) -> PyResult<PyObject> {
+        let daft = py.import("daft")?;
+        let expr_cls = daft.getattr("Expression")?;
+        let expr = expr_cls.call_method1("_from_pyexpr", (self,))?;
+        Ok(expr.unbind())
+    }
 }
 
 #[pymethods]
@@ -361,6 +399,10 @@ impl PyExpr {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
     }
 
+    pub fn skew(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().skew().into())
+    }
+
     pub fn agg_list(&self) -> PyResult<Self> {
         Ok(self.expr.clone().agg_list().into())
     }
@@ -374,49 +416,47 @@ impl PyExpr {
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Plus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Plus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Minus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Minus, self.into(), other.expr.clone()).into())
     }
+
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Multiply, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Multiply, self.into(), other.expr.clone()).into())
     }
+
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(
-            crate::Operator::FloorDivide,
-            self.into(),
-            other.expr.clone(),
-        )
-        .into())
+        Ok(crate::binary_op(Operator::FloorDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::TrueDivide, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::TrueDivide, self.into(), other.expr.clone()).into())
     }
 
     pub fn __mod__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Modulus, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Modulus, self.into(), other.expr.clone()).into())
     }
 
     pub fn __and__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::And, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::And, self.into(), other.expr.clone()).into())
     }
 
     pub fn __or__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Or, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Or, self.into(), other.expr.clone()).into())
     }
 
     pub fn __xor__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::Xor, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::Xor, self.into(), other.expr.clone()).into())
     }
 
     pub fn __lshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftLeft, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftLeft, self.into(), other.expr.clone()).into())
     }
 
     pub fn __rshift__(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::ShiftRight, self.into(), other.expr.clone()).into())
+        Ok(crate::binary_op(Operator::ShiftRight, self.into(), other.expr.clone()).into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
@@ -448,7 +488,7 @@ impl PyExpr {
     }
 
     pub fn eq_null_safe(&self, other: &Self) -> PyResult<Self> {
-        Ok(crate::binary_op(crate::Operator::EqNullSafe, self.into(), other.into()).into())
+        Ok(crate::binary_op(Operator::EqNullSafe, self.into(), other.into()).into())
     }
 
     pub fn is_in(&self, other: Vec<Self>) -> PyResult<Self> {
@@ -528,9 +568,41 @@ impl PyExpr {
     }
 
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
+        let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Window(self.expr.clone(), window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
         })
+    }
+
+    #[pyo3(signature = (offset, default=None))]
+    pub fn offset(&self, offset: isize, default: Option<&Self>) -> PyResult<Self> {
+        let default = default.map(|e| e.expr.clone());
+        Ok(Self {
+            expr: Arc::new(Expr::WindowFunction(WindowExpr::Offset {
+                input: self.expr.clone(),
+                offset,
+                default,
+            })),
+        })
+    }
+
+    pub fn accept<'py>(&self, visitor: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        accept(&self.clone(), visitor)
+    }
+
+    pub fn _eq(&self, other: &Self) -> bool {
+        self.expr == other.expr
+    }
+
+    pub fn _ne(&self, other: &Self) -> bool {
+        self.expr != other.expr
+    }
+
+    pub fn _hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.expr.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
@@ -559,5 +631,127 @@ impl From<PyExpr> for crate::ExprRef {
 impl From<&PyExpr> for crate::ExprRef {
     fn from(item: &PyExpr) -> Self {
         item.expr.clone()
+    }
+}
+
+impl<'py> IntoPyObject<'py> for LiteralValue {
+    type Target = PyAny;
+
+    type Output = Bound<'py, Self::Target>;
+
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        fn div_rem(l: i64, r: i64) -> (i64, i64) {
+            (l / r, l % r)
+        }
+
+        match self {
+            Self::Null => Ok(PyNone::get(py).to_owned().into_any()),
+            Self::Boolean(val) => val.into_bound_py_any(py),
+            Self::Utf8(val) => val.into_bound_py_any(py),
+            Self::Binary(val) => val.into_bound_py_any(py),
+            Self::FixedSizeBinary(val, _) => val.into_bound_py_any(py),
+            Self::Int8(val) => val.into_bound_py_any(py),
+            Self::UInt8(val) => val.into_bound_py_any(py),
+            Self::Int16(val) => val.into_bound_py_any(py),
+            Self::UInt16(val) => val.into_bound_py_any(py),
+            Self::Int32(val) => val.into_bound_py_any(py),
+            Self::UInt32(val) => val.into_bound_py_any(py),
+            Self::Int64(val) => val.into_bound_py_any(py),
+            Self::UInt64(val) => val.into_bound_py_any(py),
+            Self::Timestamp(val, time_unit, tz) => {
+                let ts = (val as f64) / (time_unit.to_scale_factor() as f64);
+
+                py.import(intern!(py, "datetime"))?
+                    .getattr(intern!(py, "datetime"))?
+                    .call_method1(intern!(py, "fromtimestamp"), (ts, tz))
+            }
+            Self::Date(val) => py
+                .import(intern!(py, "datetime"))?
+                .getattr(intern!(py, "date"))?
+                .call_method1(intern!(py, "fromtimestamp"), (val,)),
+            Self::Time(val, time_unit) => {
+                let (h, m, s, us) = match time_unit {
+                    TimeUnit::Nanoseconds => {
+                        let (h, rem) = div_rem(val, 60 * 60 * 1_000_000_000);
+                        let (m, rem) = div_rem(rem, 60 * 1_000_000_000);
+                        let (s, rem) = div_rem(rem, 1_000_000_000);
+                        let us = rem / 1_000;
+                        (h, m, s, us)
+                    }
+                    TimeUnit::Microseconds => {
+                        let (h, rem) = div_rem(val, 60 * 60 * 1_000_000);
+                        let (m, rem) = div_rem(rem, 60 * 1_000_000);
+                        let (s, us) = div_rem(rem, 1_000_000);
+                        (h, m, s, us)
+                    }
+                    TimeUnit::Milliseconds => {
+                        let (h, rem) = div_rem(val, 60 * 60 * 1_000);
+                        let (m, rem) = div_rem(rem, 60 * 1_000);
+                        let (s, ms) = div_rem(rem, 1_000);
+                        let us = ms * 1_000;
+                        (h, m, s, us)
+                    }
+                    TimeUnit::Seconds => {
+                        let (h, rem) = div_rem(val, 60 * 60);
+                        let (m, s) = div_rem(rem, 60);
+                        (h, m, s, 0)
+                    }
+                };
+
+                py.import(intern!(py, "datetime"))?
+                    .getattr(intern!(py, "time"))?
+                    .call1((h, m, s, us))
+            }
+            Self::Duration(val, time_unit) => {
+                let (d, s, us) = match time_unit {
+                    TimeUnit::Nanoseconds => {
+                        let (d, rem) = div_rem(val, 24 * 60 * 60 * 1_000_000_000);
+                        let (s, rem) = div_rem(rem, 1_000_000_000);
+                        let us = rem / 1_000;
+                        (d, s, us)
+                    }
+                    TimeUnit::Microseconds => {
+                        let (d, rem) = div_rem(val, 24 * 60 * 60 * 1_000_000);
+                        let (s, us) = div_rem(rem, 1_000_000);
+                        (d, s, us)
+                    }
+                    TimeUnit::Milliseconds => {
+                        let (d, rem) = div_rem(val, 24 * 60 * 60 * 1_000);
+                        let (s, ms) = div_rem(rem, 1_000);
+                        let us = ms * 1_000;
+                        (d, s, us)
+                    }
+                    TimeUnit::Seconds => {
+                        let (d, s) = div_rem(val, 24 * 60 * 60);
+                        (d, s, 0)
+                    }
+                };
+
+                py.import(intern!(py, "datetime"))?
+                    .getattr(intern!(py, "timedelta"))?
+                    .call1((d, s, us))
+            }
+            Self::Interval(_) => {
+                Err(DaftError::NotImplemented("Interval literal to Python".to_string()).into())
+            }
+            Self::Float64(val) => val.into_bound_py_any(py),
+            Self::Decimal(val, p, s) => py
+                .import(intern!(py, "decimal"))?
+                .getattr(intern!(py, "Decimal"))?
+                .call1((display_decimal128(val, p, s),)),
+            Self::Series(series) => py
+                .import(intern!(py, "daft.series"))?
+                .getattr(intern!(py, "Series"))?
+                .getattr(intern!(py, "_from_pyseries"))?
+                .call1((PySeries { series },)),
+            Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
+            Self::Struct(entries) => entries
+                .into_iter()
+                .map(|(f, v)| (f.name, v))
+                .collect::<IndexMap<_, _>>()
+                .into_bound_py_any(py),
+        }
     }
 }

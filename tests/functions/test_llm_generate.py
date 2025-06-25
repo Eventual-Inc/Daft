@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from daft import Expression, Series, lit
 from daft.functions.llm_generate import _vLLMGenerator, llm_generate
+
+vllm = pytest.importorskip("vllm")
 
 
 @patch("vllm.LLM")

@@ -2,11 +2,12 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v1.11.1
+  rev: v1.15.0
   hooks:
   - id: mypy
-    additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
-    files: daft, daft_dashboard
+    args: ['--strict', '--ignore-missing-imports']
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
+    files: daft
     exclude: daft/pickle/.*\.py
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -14,14 +15,10 @@ repos:
   hooks:
   - id: detect-private-key
   - id: trailing-whitespace
-    exclude: (?x)^(docs/source/api_docs/|tests/assets/mvp.csv|.*\.warc|tests/dataframe/test_show.py)$
+    exclude: (?x)^(tests/assets/mvp.csv|.*\.warc|tests/dataframe/test_show.py)$
   - id: end-of-file-fixer
     exclude: |
-      (?x)^(
-          docs/source/api_docs/|
-          docs/source/user_guide/fotw/data/|
-          .*\.warc
-      )$
+      (?x)^(.*\.warc)$
   - id: check-yaml
     exclude: kubernetes-ops
     args:
@@ -31,7 +28,6 @@ repos:
       (?x)^(
           tutorials/.*\.ipynb|
           docs/.*\.ipynb|
-          docs/source/user_guide/fotw/data/|
           .*\.jsonl
       )$
     args:
@@ -61,19 +57,20 @@ repos:
     exclude: static-dashboard-assets
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-      # Ruff version.
+  # Ruff version.
   rev: v0.8.2
   hooks:
-      # Run the linter.
+    # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
-          # Run the formatter.
+    # Run the formatter.
   - id: ruff-format
+    name: Python code Formatting
 
 - repo: local
   hooks:
   - id: fmt
-    name: fmt
+    name: Rust code Formatting
     description: Format files with cargo fmt.
     entry: cargo fmt
     language: system
@@ -99,7 +96,7 @@ repos:
     args: [--workspace, --all-features, --all-targets]
 
   - id: clippy
-    name: clippy
+    name: Rust code Quality check
     description: Lint rust sources
     entry: cargo clippy
     language: system
@@ -107,10 +104,10 @@ repos:
     types: [rust]
     pass_filenames: false
 
-  - id: check-for-rustls
-    name: check-for-rustls
+  - id: check-for-openssl
+    name: check-for-openssl
     description: Lint rust sources
-    entry: ./tools/check_for_rustls.sh
+    entry: ./tools/check_for_openssl.sh
     language: system
     types: [rust]
     pass_filenames: false

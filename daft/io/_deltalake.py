@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -20,22 +21,10 @@ if TYPE_CHECKING:
 def read_deltalake(
     table: Union[str, DataCatalogTable, "UnityCatalogTable"],
     version: Optional[Union[int, str, "datetime"]] = None,
-    io_config: Optional["IOConfig"] = None,
+    io_config: Optional[IOConfig] = None,
     _multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:
     """Create a DataFrame from a Delta Lake table.
-
-    Example:
-        >>> df = daft.read_deltalake("some-table-uri")
-        >>>
-        >>> # Filters on this dataframe can now be pushed into
-        >>> # the read operation from Delta Lake.
-        >>> df = df.where(df["foo"] > 5)
-        >>> df.show()
-
-    .. NOTE::
-        This function requires the use of `deltalake <https://delta-io.github.io/delta-rs/>`_, a Python library for
-        interacting with Delta Lake.
 
     Args:
         table: Either a URI for the Delta Lake table or a :class:`~daft.io.catalog.DataCatalogTable` instance
@@ -50,6 +39,17 @@ def read_deltalake(
 
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Delta Lake table.
+
+    Note:
+        This function requires the use of [deltalake](https://delta-io.github.io/delta-rs/), a Python library for interacting with Delta Lake.
+
+    Examples:
+        >>> df = daft.read_deltalake("some-table-uri")
+        >>>
+        >>> # Filters on this dataframe can now be pushed into
+        >>> # the read operation from Delta Lake.
+        >>> df = df.where(df["foo"] > 5)
+        >>> df.show()
     """
     from daft.delta_lake.delta_lake_scan import DeltaLakeScanOperator
 
@@ -84,7 +84,7 @@ def read_deltalake(
     return DataFrame(builder)
 
 
-def large_dtypes_kwargs(large_dtypes: bool) -> Dict[str, Any]:
+def large_dtypes_kwargs(large_dtypes: bool) -> dict[str, Any]:
     import deltalake
     from packaging.version import parse
 

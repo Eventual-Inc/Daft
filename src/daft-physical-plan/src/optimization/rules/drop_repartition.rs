@@ -89,7 +89,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan = add_repartition(base.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
@@ -111,7 +111,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("b")]);

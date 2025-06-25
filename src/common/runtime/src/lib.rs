@@ -19,8 +19,19 @@ use tokio::{
 static NUM_CPUS: LazyLock<usize> =
     LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
-static COMPUTE_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| *NUM_CPUS);
-static COMPUTE_RUNTIME_MAX_BLOCKING_THREADS: LazyLock<usize> = LazyLock::new(|| 1); // Compute thread should not use blocking threads, limit this to the minimum, i.e. 1
+static COMPUTE_RUNTIME_NUM_WORKER_THREADS: OnceLock<usize> = OnceLock::new();
+
+pub fn get_or_init_compute_runtime_num_worker_threads() -> usize {
+    *COMPUTE_RUNTIME_NUM_WORKER_THREADS.get_or_init(|| *NUM_CPUS)
+}
+
+pub fn set_compute_runtime_num_worker_threads(num_threads: usize) -> DaftResult<()> {
+    COMPUTE_RUNTIME_NUM_WORKER_THREADS
+        .set(num_threads)
+        .map_err(|_| {
+            DaftError::InternalError("Compute runtime num worker threads already set".to_string())
+        })
+}
 
 static THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 static SINGLE_THREADED_IO_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
@@ -107,8 +118,14 @@ impl Runtime {
     /// For example, URL download is an async function, but it is called from a synchronous function in a tokio runtime,
     /// i.e. calling the Expression Evaluator from the Native Executor.
     ///
+    /// Caution:
+    /// If the tokio runtimes of the synchronous function and the asynchronous function are same, that can potentially cause
+    /// a deadlock, so the caller needs to be careful to avoid nested calls that can cause this situation.
+    ///
+    /// Also, the calling runtime thread will not do any other work until this call returns, since it is blocked.
+    ///
     /// In the future, we should refactor the code to be fully async, but for now, this is a workaround.
-    pub fn block_on<F>(&self, future: F) -> DaftResult<F::Output>
+    pub fn block_within_async_context<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -138,20 +155,37 @@ impl Runtime {
     {
         RuntimeTask::new(self.runtime.handle(), future)
     }
+
+    pub fn spawn_blocking<F, R>(&self, f: F) -> RuntimeTask<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        match self.pool_type {
+            PoolType::Compute => {
+                panic!("Cannot spawn blocking task on compute runtime from a non-compute thread");
+            }
+            PoolType::IO | PoolType::Custom(_) => {
+                let mut join_set = JoinSet::new();
+                join_set.spawn_blocking_on(f, self.runtime.handle());
+                RuntimeTask { joinset: join_set }
+            }
+        }
+    }
 }
 
-fn init_compute_runtime() -> RuntimeRef {
+fn init_compute_runtime(num_worker_threads: usize) -> RuntimeRef {
     std::thread::spawn(move || {
         let mut builder = tokio::runtime::Builder::new_multi_thread();
         builder
-            .worker_threads(*COMPUTE_RUNTIME_NUM_WORKER_THREADS)
+            .worker_threads(num_worker_threads)
             .enable_all()
             .thread_name_fn(move || {
                 static COMPUTE_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = COMPUTE_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
                 format!("Compute-Thread-{}", id)
             })
-            .max_blocking_threads(*COMPUTE_RUNTIME_MAX_BLOCKING_THREADS);
+            .max_blocking_threads(1);
         Runtime::new(builder.build().unwrap(), PoolType::Compute)
     })
     .join()
@@ -180,7 +214,9 @@ fn init_io_runtime(multi_thread: bool) -> RuntimeRef {
 }
 
 pub fn get_compute_runtime() -> RuntimeRef {
-    COMPUTE_RUNTIME.get_or_init(init_compute_runtime).clone()
+    COMPUTE_RUNTIME
+        .get_or_init(|| init_compute_runtime(get_or_init_compute_runtime_num_worker_threads()))
+        .clone()
 }
 
 pub fn get_io_runtime(multi_thread: bool) -> RuntimeRef {
@@ -208,6 +244,32 @@ pub fn get_io_pool_num_threads() -> Option<usize> {
         }
         Err(_) => None,
     }
+}
+
+pub fn get_compute_pool_num_threads() -> usize {
+    get_or_init_compute_runtime_num_worker_threads()
+}
+
+// Helper function to combine a stream with a future that returns a result
+pub fn combine_stream<T, E>(
+    stream: impl futures::Stream<Item = Result<T, E>> + Unpin,
+    future: impl Future<Output = Result<(), E>>,
+) -> impl futures::Stream<Item = Result<T, E>> {
+    use futures::{stream::unfold, StreamExt};
+
+    let initial_state = (Some(future), stream);
+
+    unfold(initial_state, |(mut future, mut stream)| async move {
+        future.as_ref()?;
+
+        match stream.next().await {
+            Some(item) => Some((item, (future, stream))),
+            None => match future.take().unwrap().await {
+                Err(error) => Some((Err(error), (None, stream))),
+                Ok(()) => None,
+            },
+        }
+    })
 }
 
 mod tests {
@@ -238,5 +300,14 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         // The strong count should be 1 now
         assert!(Arc::strong_count(&ptr) == 1);
+    }
+
+    #[test]
+    fn can_get_compute_runtime_after_setting_num_threads() {
+        use super::*;
+
+        set_compute_runtime_num_worker_threads(1).unwrap();
+        let runtime = get_compute_runtime();
+        assert!(runtime.runtime.metrics().num_workers() == 1);
     }
 }

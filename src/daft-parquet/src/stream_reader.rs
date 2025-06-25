@@ -2,12 +2,12 @@ use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, RuntimeTask};
+use common_runtime::{combine_stream, get_compute_runtime, RuntimeTask};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::ExprRef;
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
 use daft_io::{CountingReader, IOStatsRef};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{stream::BoxStream, FutureExt, StreamExt};
 use itertools::Itertools;
 use rayon::{
     iter::ParallelIterator,
@@ -21,8 +21,7 @@ use crate::{
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
     stream_reader::read::schema::infer_schema_with_options,
-    utils::combine_stream,
-    UnableToConvertSchemaToDaftSnafu, PARQUET_MORSEL_SIZE,
+    PARQUET_MORSEL_SIZE,
 };
 
 fn prune_fields_from_schema(
@@ -62,8 +61,8 @@ fn arrow_chunk_to_table(
 ) -> DaftResult<RecordBatch> {
     let all_series = arrow_chunk
         .into_iter()
-        .zip(schema_ref.fields.iter())
-        .filter_map(|(mut arr, (f_name, _))| {
+        .zip(schema_ref.field_names())
+        .filter_map(|(mut arr, f_name)| {
             if (*index_so_far + arr.len()) < row_range_start {
                 // No need to process arrays that are less than the start offset
                 return None;
@@ -73,8 +72,7 @@ fn arrow_chunk_to_table(
                 let offset = row_range_start.saturating_sub(*index_so_far);
                 arr = arr.sliced(offset, arr.len() - offset);
             }
-            let series_result =
-                Series::try_from((f_name.as_str(), cast_array_for_daft_if_needed(arr)));
+            let series_result = Series::try_from((f_name, cast_array_for_daft_if_needed(arr)));
             Some(series_result)
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -91,7 +89,7 @@ fn arrow_chunk_to_table(
     }
 
     let mut table = RecordBatch::new_with_size(
-        Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
+        Schema::new(all_series.iter().map(|s| s.field().clone())),
         all_series,
         len,
     )
@@ -120,9 +118,15 @@ fn arrow_chunk_to_table(
 
     // Apply pushdowns if needed
     if let Some(predicate) = predicate {
+        let predicate = BoundExpr::try_new(predicate, &table.schema)?;
         table = table.filter(&[predicate])?;
         if let Some(oc) = &original_columns {
-            table = table.get_columns(oc)?;
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
         }
         if let Some(nr) = original_num_rows {
             table = table.head(nr)?;
@@ -275,10 +279,7 @@ pub fn local_parquet_read_into_column_iters(
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns)?;
-    let daft_schema =
-        Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
-            path: uri.to_string(),
-        })?;
+    let daft_schema = Schema::from(&schema);
 
     let row_ranges = build_row_ranges(
         num_rows,
@@ -371,10 +372,7 @@ pub fn local_parquet_read_into_arrow(
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns)?;
-    let daft_schema =
-        Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
-            path: uri.to_string(),
-        })?;
+    let daft_schema = Schema::from(&schema);
     let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
@@ -508,7 +506,7 @@ pub async fn local_parquet_read_async(
             Ok((
                 metadata,
                 RecordBatch::new_with_size(
-                    Schema::new(converted_arrays.iter().map(|s| s.field().clone()).collect())?,
+                    Schema::new(converted_arrays.iter().map(|s| s.field().clone())),
                     converted_arrays,
                     num_rows_read,
                 )?,
@@ -600,6 +598,7 @@ pub async fn local_parquet_stream(
 
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
+    let parquet_task = parquet_task.map(|x| x?);
     let combined = match maintain_order {
         true => combine_stream(stream_of_streams.flatten(), parquet_task).boxed(),
         false => combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed(),

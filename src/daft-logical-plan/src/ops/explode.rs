@@ -3,6 +3,7 @@ use std::sync::Arc;
 use daft_dsl::{exprs_to_schema, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
@@ -10,7 +11,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Explode {
     pub plan_id: Option<usize>,
     // Upstream node.
@@ -30,19 +31,18 @@ impl Explode {
             let explode_exprs = to_explode
                 .iter()
                 .cloned()
-                .map(daft_functions::list::explode)
+                .map(daft_functions_list::explode)
                 .collect::<Vec<_>>();
 
             let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
 
-            let fields = input
-                .schema()
-                .fields
-                .iter()
-                .map(|(name, field)| explode_schema.fields.get(name).unwrap_or(field))
-                .cloned()
-                .collect::<Vec<_>>();
-            Schema::new(fields)?.into()
+            let input_schema = input.schema();
+            let fields = input_schema
+                .into_iter()
+                .map(|field| explode_schema.get_field(&field.name).unwrap_or(field))
+                .cloned();
+
+            Schema::new(fields).into()
         };
 
         Ok(Self {

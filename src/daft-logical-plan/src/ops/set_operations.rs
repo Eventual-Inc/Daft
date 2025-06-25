@@ -4,22 +4,23 @@ use common_error::DaftError;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::{count_mode::CountMode, join::JoinType, utils::supertype::get_supertype};
 use daft_dsl::{left_col, lit, null_lit, resolved_col, right_col, ExprRef};
-use daft_functions::list::{explode, list_fill};
+use daft_functions_list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use super::{join::JoinPredicate, Aggregate, Concat, Distinct, Filter, Project};
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SetQuantifier {
     All,
     Distinct,
 }
 
 // todo: rename this to something else if we add support for by name for non-union set operations
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UnionStrategy {
     Positional, // e.g. `select * from t1 union select * from t2`
     ByName,     // e.g. `select a1 from t1 union by name select a1 from t2`
@@ -49,16 +50,15 @@ fn intersect_or_except_plan(
 ) -> logical_plan::Result<LogicalPlan> {
     let on_expr = combine_conjunction(
         lhs.schema()
-            .fields
-            .values()
-            .zip(rhs.schema().fields.values())
+            .into_iter()
+            .zip(rhs.schema().fields())
             .map(|(l, r)| left_col(l.clone()).eq_null_safe(right_col(r.clone()))),
     );
 
     let on = JoinPredicate::try_new(on_expr)?;
 
     let join = logical_plan::Join::try_new(lhs, rhs, on, join_type, None);
-    join.map(|j| Distinct::new(j.into()).into())
+    join.map(|j| Distinct::new(j.into(), None).into())
 }
 
 fn check_structurally_equal(
@@ -81,9 +81,8 @@ fn check_structurally_equal(
     // lhs and rhs should have the same type for each field
     // TODO: Support nested types recursively
     if lhs
-        .fields
-        .values()
-        .zip(rhs.fields.values())
+        .into_iter()
+        .zip(rhs.fields())
         .any(|(l, r)| l.dtype != r.dtype)
     {
         return Err(DaftError::SchemaMismatch(format!(
@@ -102,7 +101,7 @@ const V_COL_R: &str = "__v_col_r";
 const V_R_CNT: &str = "__v_r_cnt";
 const V_MIN_COUNT: &str = "__min_count";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Intersect {
     pub plan_id: Option<usize>,
     // Upstream nodes.
@@ -174,17 +173,15 @@ impl Intersect {
             let left_cols = self
                 .lhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .collect::<Vec<ExprRef>>();
             // project the right cols to have the same name as the left cols
             let right_cols = self
                 .rhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .zip(left_cols.iter())
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();
@@ -251,7 +248,7 @@ impl Intersect {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Union {
     pub plan_id: Option<usize>,
     // Upstream nodes.
@@ -312,9 +309,8 @@ impl Union {
                 let (lhs, rhs) = if lhs_schema != rhs_schema {
                     // we need to try to do a type coercion
                     let coerced_fields = lhs_schema
-                        .fields
-                        .values()
-                        .zip(rhs_schema.fields.values())
+                        .into_iter()
+                        .zip(rhs_schema.fields())
                         .map(|(l, r)| {
                             let new_dtype = get_supertype(&l.dtype, &r.dtype).ok_or_else(|| {
                                 logical_plan::Error::CreationError {
@@ -342,12 +338,12 @@ impl Union {
                 let concat = LogicalPlan::Concat(Concat::try_new(lhs, rhs)?);
                 match self.quantifier {
                     SetQuantifier::All => Ok(concat),
-                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced(), None).into()),
                 }
             }
             UnionStrategy::ByName => {
-                let lhs_fields = lhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
-                let rhs_fields = rhs_schema.fields.values().cloned().collect::<IndexSet<_>>();
+                let lhs_fields = lhs_schema.into_iter().cloned().collect::<IndexSet<_>>();
+                let rhs_fields = rhs_schema.into_iter().cloned().collect::<IndexSet<_>>();
                 let all_fields = lhs_fields
                     .union(&rhs_fields)
                     .cloned()
@@ -378,7 +374,7 @@ impl Union {
 
                 match self.quantifier {
                     SetQuantifier::All => Ok(concat),
-                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced(), None).into()),
                 }
             }
         }
@@ -465,17 +461,15 @@ impl Except {
             let left_cols = self
                 .lhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .collect::<Vec<ExprRef>>();
             // project the right cols to have the same name as the left cols
             let right_cols = self
                 .rhs
                 .schema()
-                .fields
-                .keys()
-                .map(|k| resolved_col(k.clone()))
+                .field_names()
+                .map(resolved_col)
                 .zip(left_cols.iter())
                 .map(|(r, l)| r.alias(l.name()))
                 .collect::<Vec<ExprRef>>();

@@ -1,5 +1,5 @@
-name: build-wheel
-run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_old_name }}'
+name: Build Daft wheel
+run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}'
 
 on:
   workflow_call:
@@ -16,9 +16,6 @@ on:
       build_type:
         description: Value to set RUST_DAFT_PKG_BUILD_TYPE to (release, dev, nightly, etc.)
         type: string
-      use_old_name:
-        description: Set to true to build as `getdaft` instead of `daft`
-        type: boolean
 
 env:
   PYTHON_VERSION: 3.11
@@ -32,7 +29,7 @@ defaults:
 
 jobs:
   build:
-    runs-on: ${{ inputs.os }}-latest
+    runs-on: ${{ inputs.os == 'ubuntu' && 'buildjet-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
 
     steps:
     - uses: actions/checkout@v4
@@ -44,7 +41,6 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-      if: ${{ (inputs.os == 'macos') || (inputs.os == 'windows') }} # bun installed on linux in container during build step
     - run: pip install uv
     - run: uv pip install twine yq setuptools_scm
 
@@ -54,10 +50,6 @@ jobs:
         echo "Setting package version to: $VERSION"
         tomlq -i -t ".package.version = \"$VERSION\"" Cargo.toml
         tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
-
-    - name: Patch name to daft if using new name
-      if: ${{ inputs.use_old_name }}
-      run: tomlq -i -t ".project.name = \"getdaft\"" pyproject.toml
 
     - name: Patch name to daft-lts if LTS
       if: ${{ inputs.lts }}
@@ -74,40 +66,43 @@ jobs:
           echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe -mtune=skylake" >> $GITHUB_ENV
         fi
 
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
+
     - name: Build wheels - Mac and Windows x86
       if: ${{ ((inputs.os == 'macos') || (inputs.os == 'windows')) && (inputs.arch == 'x86_64')  }}
       uses: PyO3/maturin-action@v1
       with:
         target: x86_64
         args: --profile release-lto --out dist
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Linux x86
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'x86_64') }}
       uses: PyO3/maturin-action@v1
       with:
         target: x86_64
-        manylinux: 2_28
+        manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
-        before-script-linux: |
-          dnf install -y perl-IPC-Cmd
-          curl -fsSL https://bun.sh/install | bash
-          export BUN_INSTALL="$HOME/.bun"
-          export PATH="$BUN_INSTALL/bin:$PATH"
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Linux aarch64
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'aarch64') }}
       uses: PyO3/maturin-action@v1
       with:
         target: aarch64-unknown-linux-gnu
-        manylinux: 2_28
-        args: --profile release-lto --out dist
-        before-script-linux: |
-          export JEMALLOC_SYS_WITH_LG_PAGE=16
-          apt install -y unzip
-          curl -fsSL https://bun.sh/install | bash
-          export BUN_INSTALL="$HOME/.bun"
-          export PATH="$BUN_INSTALL/bin:$PATH"
+        manylinux: 2_24
+        # only produce sdist for linux x86 to avoid multiple copies
+        args: --profile release-lto --out dist --sdist
+        before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Mac aarch64
       if: ${{ (inputs.os == 'macos') && (inputs.arch == 'aarch64')  }}
@@ -118,9 +113,10 @@ jobs:
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
         CFLAGS: -mtune=apple-m1
+        GITHUB_ACTIONS: true
 
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_old_name }}
+        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}
         path: dist

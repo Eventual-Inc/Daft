@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import pyarrow as pa
 import pytest
 
 import daft
-from tests.conftest import get_tests_daft_runner_name
 from tests.integration.io.conftest import minio_create_bucket
 
 TABLE_NAME = "my_table"
@@ -34,11 +35,10 @@ def test_lancedb_roundtrip(lance_dataset_path):
     df1.write_lance(lance_dataset_path, mode="create")
     df2.write_lance(lance_dataset_path, mode="append")
     df_loaded = daft.read_lance(lance_dataset_path)
+
     assert df_loaded.to_pydict() == df1.concat(df2).to_pydict()
 
 
-# TODO: re-enable test on Ray when fixed
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Lance fails to load credentials on Ray")
 @pytest.mark.integration()
 def test_lancedb_minio(minio_io_config):
     df1 = daft.from_pydict(data1)
@@ -50,3 +50,38 @@ def test_lancedb_minio(minio_io_config):
         df2.write_lance(s3_path, mode="append", io_config=minio_io_config)
         df_loaded = daft.read_lance(s3_path, io_config=minio_io_config)
         assert df_loaded.to_pydict() == df1.concat(df2).to_pydict()
+
+
+def test_lancedb_write_with_schema(lance_dataset_path):
+    """Writing a dataframe to lance with a user-provided schema with lance encodings."""
+    data = {
+        "vector": [1.1, 1.2],
+        "compressible_strings": ["a" * 100, "b" * 100],
+    }
+    df = daft.from_pydict(data)
+
+    pa_schema = pa.schema(
+        [
+            pa.field("vector", pa.float64()),
+            pa.field("compressible_strings", pa.string(), metadata={"lance-encoding:compression": "zstd"}),
+        ]
+    )
+    daft_schema = daft.schema.Schema.from_pyarrow_schema(pa_schema)
+    print(f"\n daft schema:\n {daft_schema}; \n with metadata: \n{daft_schema.display_with_metadata(True)}")
+    assert daft_schema.__repr__() == daft_schema.display_with_metadata(False) + "\n"
+    df.write_lance(lance_dataset_path, schema=daft_schema, mode="create")
+
+    df_loaded = daft.read_lance(lance_dataset_path)
+    assert df_loaded.to_pydict() == df.to_pydict()
+
+    import lance
+
+    ds = lance.dataset(lance_dataset_path)
+    written_pa_schema = ds.schema
+
+    compress_field = written_pa_schema.field("compressible_strings")
+    assert compress_field.type == pa.large_string()
+
+    compress_field_metadata = compress_field.metadata
+    assert compress_field_metadata is not None
+    assert compress_field_metadata[b"lance-encoding:compression"] == b"zstd"

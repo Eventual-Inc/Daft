@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::optimization::get_required_columns;
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
@@ -155,10 +155,8 @@ pub(crate) fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBa
     let new_series = (0..num_columns)
         .into_par_iter()
         .map(|i| {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
+            let series_to_cat: Vec<&Series> =
+                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -238,11 +236,25 @@ async fn read_json_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
+    let daft_schema: SchemaRef = Arc::new(schema.into());
+
+    let include_column_indices = include_columns
+        .map(|include_columns| {
+            include_columns
+                .iter()
+                .map(|name| daft_schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()
+        })
+        .transpose()?;
+
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
-            if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+            let table = table?;
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
+            if let Some(include_column_indices) = &include_column_indices {
+                Ok(filtered.get_columns(include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -272,7 +284,6 @@ async fn read_json_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        let daft_schema = Arc::new(Schema::try_from(&schema)?);
         return RecordBatch::empty(Some(daft_schema));
     }
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
@@ -350,9 +361,17 @@ pub async fn stream_json(
     let filtered_tables = tables.map(move |table| {
         let table = table?;
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
+            let table = table?;
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
             if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+                let include_column_indices = include_columns
+                    .iter()
+                    .map(|name| table.schema.get_index(name))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                Ok(filtered.get_columns(&include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -504,12 +523,12 @@ fn parse_into_column_array_chunk_stream(
     schema: Arc<arrow2::datatypes::Schema>,
     schema_is_projection: bool,
 ) -> DaftResult<impl TableChunkStream + Send> {
-    let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(schema.as_ref())?);
+    let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
     let daft_fields = Arc::new(
         daft_schema
-            .fields
-            .values()
-            .map(|f| Arc::new(f.clone()))
+            .into_iter()
+            .cloned()
+            .map(Arc::new)
             .collect::<Vec<_>>(),
     );
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
@@ -641,7 +660,7 @@ mod tests {
         let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
         assert_eq!(out.schema.to_arrow().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column_by_index(i).unwrap().to_arrow())
+            .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -692,7 +711,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         if compression.is_none() {
@@ -759,7 +778,7 @@ mod tests {
                         Field::new("list", DataType::List(Box::new(DataType::Int64))),
                     ])
                 ),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -795,7 +814,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, Some(5), None);
@@ -833,7 +852,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("petalLength", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -874,7 +893,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -910,7 +929,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -946,7 +965,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -973,7 +992,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, None, None);
@@ -1004,10 +1023,10 @@ mod tests {
                 Field::new("petalLength", DataType::Null),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
-        let null_column = table.get_column("petalLength")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1040,7 +1059,7 @@ mod tests {
             Field::new("petalLength", DataType::Null),
             Field::new("petalWidth", DataType::Float64),
             Field::new("species", DataType::Utf8),
-        ])?;
+        ]);
         let table = read_json(
             file.as_ref(),
             Some(JsonConvertOptions::default().with_schema(Some(schema.into()))),
@@ -1061,10 +1080,10 @@ mod tests {
                 Field::new("petalLength", DataType::Null),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
-        let null_column = table.get_column("petalLength")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1096,7 +1115,7 @@ mod tests {
             Field::new("petalLength", DataType::Float64),
             Field::new("petalWidth", DataType::Float64),
             Field::new("species", DataType::Utf8),
-        ])?;
+        ]);
 
         let table = read_json(
             file.as_ref(),
@@ -1118,10 +1137,10 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
-        let null_column = table.get_column("petalLength")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Float64);
         assert_eq!(null_column.len(), 6);
         assert_eq!(null_column.to_arrow().null_count(), 6);
@@ -1145,7 +1164,7 @@ mod tests {
             Field::new("petalLength", DataType::Boolean),
             Field::new("petalWidth", DataType::Boolean),
             Field::new("species", DataType::Int64),
-        ])?;
+        ]);
         let table = read_json(
             file.as_ref(),
             Some(JsonConvertOptions::default().with_schema(Some(schema.into()))),
@@ -1160,7 +1179,7 @@ mod tests {
         assert_eq!(num_rows, 20);
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
-            let column = table.get_column_by_index(idx)?;
+            let column = table.get_column(idx);
             assert_eq!(column.to_arrow().null_count(), num_rows);
         }
 
@@ -1212,7 +1231,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1247,7 +1266,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1284,7 +1303,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("petalLength", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
 
@@ -1319,7 +1338,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1354,7 +1373,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
@@ -1389,7 +1408,7 @@ mod tests {
                 Field::new("petalLength", DataType::Float64),
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 

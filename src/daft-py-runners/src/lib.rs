@@ -53,35 +53,12 @@ pub struct NativeRunner {
 
 #[cfg(feature = "python")]
 impl NativeRunner {
-    pub fn try_new() -> DaftResult<Self> {
+    pub fn try_new(num_threads: Option<usize>) -> DaftResult<Self> {
         Python::with_gil(|py| {
             let native_runner_module = py.import(intern!(py, "daft.runners.native_runner"))?;
             let native_runner = native_runner_module.getattr(intern!(py, "NativeRunner"))?;
-
-            let instance = native_runner.call0()?;
-            let instance = instance.unbind();
-
-            Ok(Self {
-                pyobj: Arc::new(instance),
-            })
-        })
-    }
-}
-
-#[cfg(feature = "python")]
-#[derive(Debug)]
-pub struct PyRunner {
-    pub pyobj: Arc<PyObject>,
-}
-
-#[cfg(feature = "python")]
-impl PyRunner {
-    pub fn try_new(use_thread_pool: Option<bool>) -> DaftResult<Self> {
-        Python::with_gil(|py| {
-            let native_runner_module = py.import(intern!(py, "daft.runners.pyrunner"))?;
-            let native_runner = native_runner_module.getattr(intern!(py, "PyRunner"))?;
             let kwargs = PyDict::new(py);
-            kwargs.set_item(intern!(py, "use_thread_pool"), use_thread_pool)?;
+            kwargs.set_item(intern!(py, "num_threads"), num_threads)?;
 
             let instance = native_runner.call((), Some(&kwargs))?;
             let instance = instance.unbind();
@@ -99,8 +76,6 @@ pub enum Runner {
     Ray(RayRunner),
     #[cfg(feature = "python")]
     Native(NativeRunner),
-    #[cfg(feature = "python")]
-    Py(PyRunner),
 }
 
 #[cfg(feature = "python")]
@@ -121,12 +96,6 @@ impl Runner {
                     };
                     Ok(Self::Native(native_runner))
                 }
-                "py" => {
-                    let py_runner = PyRunner {
-                        pyobj: Arc::new(obj),
-                    };
-                    Ok(Self::Py(py_runner))
-                }
                 _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
                     "Unknown runner type: {name}"
                 ))),
@@ -138,15 +107,14 @@ impl Runner {
         match self {
             Self::Ray(RayRunner { pyobj }) => pyobj.as_ref(),
             Self::Native(NativeRunner { pyobj }) => pyobj.as_ref(),
-            Self::Py(PyRunner { pyobj }) => pyobj.as_ref(),
         }
     }
-    pub fn run_iter_tables(
+    pub fn run_iter_tables<'py>(
         &self,
-        py: Python<'_>,
+        py: Python<'py>,
         lp: LogicalPlanBuilder,
         results_buffer_size: Option<usize>,
-    ) -> DaftResult<Vec<DaftResult<MicroPartitionRef>>> {
+    ) -> DaftResult<impl Iterator<Item = DaftResult<MicroPartitionRef>> + 'py> {
         let pyobj = self.get_runner_ref();
         let py_lp = PyLogicalPlanBuilder::new(lp);
         let builder = py.import(intern!(py, "daft.logical.builder"))?;
@@ -162,7 +130,7 @@ impl Runner {
         let result = result.bind(py);
         let iter = PyIterator::from_object(result)?;
 
-        let iter = iter.map(|item| {
+        let iter = iter.map(move |item| {
             let item = item?;
             let partition = item.getattr(intern!(py, "_micropartition"))?;
             let partition = partition.extract::<PyMicroPartition>()?;
@@ -170,7 +138,7 @@ impl Runner {
             Ok::<_, DaftError>(partition)
         });
 
-        Ok(iter.collect())
+        Ok(iter)
     }
 
     pub fn to_pyobj(self: Arc<Self>, py: Python) -> PyObject {
@@ -182,22 +150,20 @@ impl Runner {
 #[derive(Debug)]
 pub enum RunnerConfig {
     #[cfg(feature = "python")]
-    Native,
+    Native { num_threads: Option<usize> },
     #[cfg(feature = "python")]
     Ray {
         address: Option<String>,
         max_task_backlog: Option<usize>,
         force_client_mode: Option<bool>,
     },
-    #[cfg(feature = "python")]
-    Py { use_thread_pool: Option<bool> },
 }
 
 #[cfg(feature = "python")]
 impl RunnerConfig {
     pub fn create_runner(self) -> DaftResult<Runner> {
         match self {
-            Self::Native => Ok(Runner::Native(NativeRunner::try_new()?)),
+            Self::Native { num_threads } => Ok(Runner::Native(NativeRunner::try_new(num_threads)?)),
             Self::Ray {
                 address,
                 max_task_backlog,
@@ -207,7 +173,6 @@ impl RunnerConfig {
                 max_task_backlog,
                 force_client_mode,
             )?)),
-            Self::Py { use_thread_pool } => Ok(Runner::Py(PyRunner::try_new(use_thread_pool)?)),
         }
     }
 }

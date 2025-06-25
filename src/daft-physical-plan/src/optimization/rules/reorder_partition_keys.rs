@@ -148,6 +148,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 }
 
                 // these depend solely on their input
+                PhysicalPlan::Dedup(..) |
                 PhysicalPlan::Filter(..) |
                 PhysicalPlan::Limit(..) |
                 PhysicalPlan::Sample(..) |
@@ -160,6 +161,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 // the rest should have been dealt with earlier
                 PhysicalPlan::ShuffleExchange(ShuffleExchange {strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum { .. }, ..}) |
                 PhysicalPlan::Sort(..) |
+                PhysicalPlan::TopN(..) |
                 PhysicalPlan::InMemoryScan(..) |
                 PhysicalPlan::TabularScan(..) |
                 PhysicalPlan::EmptyScan(..) |
@@ -170,7 +172,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::BroadcastJoin(..) |
                 PhysicalPlan::CrossJoin(..) => unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable"),
                 #[cfg(feature = "python")]
-                PhysicalPlan::IcebergWrite(..) | PhysicalPlan::DeltaLakeWrite(..) | PhysicalPlan::LanceWrite(..) => {
+                PhysicalPlan::IcebergWrite(..) | PhysicalPlan::DeltaLakeWrite(..) | PhysicalPlan::LanceWrite(..) | PhysicalPlan::DataSink(..) => {
                     unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable")
                 }
             }
@@ -225,7 +227,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan = add_repartition(base.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
@@ -250,7 +252,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan = add_repartition(plan, 1, vec![resolved_col("a"), resolved_col("b")]);
@@ -276,7 +278,7 @@ mod tests {
                 Field::new("a", DataType::Int32),
                 Field::new("b", DataType::Int32),
                 Field::new("c", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan1 = add_repartition(base1.clone(), 1, vec![resolved_col("a"), resolved_col("b")]);
@@ -286,7 +288,7 @@ mod tests {
                 Field::new("x", DataType::Int32),
                 Field::new("y", DataType::Int32),
                 Field::new("z", DataType::Int32),
-            ])?),
+            ])),
             1,
         );
         let plan2 = add_repartition(base2.clone(), 1, vec![resolved_col("x"), resolved_col("y")]);

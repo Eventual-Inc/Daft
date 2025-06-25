@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{self},
@@ -8,7 +9,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {
     pub plan_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
@@ -26,10 +27,10 @@ impl MonotonicallyIncreasingId {
     ) -> logical_plan::Result<Self> {
         let column_name = column_name.unwrap_or(Self::DEFAULT_COLUMN_NAME);
 
+        let input_schema = input.schema();
         let fields_with_id = std::iter::once(Field::new(column_name, DataType::UInt64))
-            .chain(input.schema().fields.values().cloned())
-            .collect();
-        let schema_with_id = Schema::new(fields_with_id)?;
+            .chain(input_schema.fields().iter().cloned());
+        let schema_with_id = Schema::new(fields_with_id);
 
         Ok(Self {
             plan_id: None,

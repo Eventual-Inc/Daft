@@ -1,0 +1,10 @@
+markdown-exec
+mkdocs-material
+mkdocs-macros-plugin
+mkdocs-simple-hooks
+pymdown-extensions
+mkdocs-material[imaging]
+mkdocstrings-python
+ruff
+mkdocs-minify-plugin
+mkdocs-redirects

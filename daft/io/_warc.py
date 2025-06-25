@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -17,19 +18,12 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_warc(
-    path: Union[str, List[str]],
+    path: Union[str, list[str]],
     io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     _multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:
     """Creates a DataFrame from WARC or gzipped WARC file(s). This is an experimental feature and the API may change in the future.
-
-    Example:
-        >>> df = daft.read_warc("/path/to/file.warc")
-        >>> df = daft.read_warc("/path/to/directory")
-        >>> df = daft.read_warc("/path/to/files-*.warc")
-        >>> df = daft.read_warc("s3://path/to/files-*.warc")
-        >>> df = daft.read_warc("gs://path/to/files-*.warc")
 
     Args:
         path (Union[str, List[str]]): Path to WARC file (allows for wildcards)
@@ -39,10 +33,18 @@ def read_warc(
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame with mandatory metadata columns ("WARC-Record-ID", "WARC-Type", "WARC-Date", "Content-Length"), one optional
             metadata column ("WARC-Identified-Payload-Type"), one column "warc_content" with the raw byte content of the WARC record,
             and one column "warc_headers" with the remaining headers of the WARC record stored as a JSON string.
+
+    Examples:
+        >>> df = daft.read_warc("/path/to/file.warc")
+        >>> df = daft.read_warc("/path/to/directory")
+        >>> df = daft.read_warc("/path/to/files-*.warc")
+        >>> df = daft.read_warc("s3://path/to/files-*.warc")
+        >>> df = daft.read_warc("gs://path/to/files-*.warc")
+
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

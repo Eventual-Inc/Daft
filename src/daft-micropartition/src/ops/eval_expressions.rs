@@ -1,35 +1,25 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::prelude::Schema;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 
-fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
+fn infer_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs
         .iter()
-        .map(|e| e.to_field(schema).context(DaftCoreComputeSnafu))
+        .map(|e| e.inner().to_field(schema).context(DaftCoreComputeSnafu))
         .collect::<crate::Result<Vec<_>>>()?;
 
-    let mut seen: HashSet<String> = HashSet::new();
-    for field in &fields {
-        let name = &field.name;
-        if seen.contains(name) {
-            return Err(DaftError::ValueError(format!(
-                "Duplicate name found when evaluating expressions: {name}"
-            )));
-        }
-        seen.insert(name.clone());
-    }
-    Schema::new(fields)
+    Ok(Schema::new(fields))
 }
 
 impl MicroPartition {
-    pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
+    pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
 
         let expected_schema = infer_schema(exprs, &self.schema)?;
@@ -44,7 +34,7 @@ impl MicroPartition {
         let eval_stats = self
             .statistics
             .as_ref()
-            .map(|table_statistics| table_statistics.eval_expression_list(exprs, &expected_schema))
+            .map(|table_statistics| table_statistics.eval_expression_list(exprs))
             .transpose()?;
 
         Ok(Self::new_loaded(
@@ -56,7 +46,7 @@ impl MicroPartition {
 
     pub async fn par_eval_expression_list(
         &self,
-        exprs: &[ExprRef],
+        exprs: &[BoundExpr],
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
@@ -74,7 +64,7 @@ impl MicroPartition {
         let eval_stats = self
             .statistics
             .as_ref()
-            .map(|table_statistics| table_statistics.eval_expression_list(exprs, &expected_schema))
+            .map(|table_statistics| table_statistics.eval_expression_list(exprs))
             .transpose()?;
 
         Ok(Self::new_loaded(
@@ -84,7 +74,7 @@ impl MicroPartition {
         ))
     }
 
-    pub fn explode(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
+    pub fn explode(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::explode");
 
         let tables = self.tables_or_read(io_stats)?;
@@ -93,32 +83,30 @@ impl MicroPartition {
             .map(|t| t.explode(exprs))
             .collect::<DaftResult<Vec<_>>>()?;
         let expected_new_columns = infer_schema(exprs, &self.schema)?;
+
+        let expected_schema = Arc::new(self.schema.non_distinct_union(&expected_new_columns)?);
+
         let eval_stats = if let Some(stats) = &self.statistics {
-            let mut new_stats = stats.columns.clone();
-            for (name, _) in &expected_new_columns.fields {
-                if let Some(v) = new_stats.get_mut(name) {
-                    *v = ColumnRangeStatistics::Missing;
-                } else {
-                    new_stats.insert(name.to_string(), ColumnRangeStatistics::Missing);
-                }
-            }
-            Some(TableStatistics { columns: new_stats })
+            let new_stats = expected_schema
+                .field_names()
+                .map(|name| {
+                    if expected_new_columns.has_field(name) {
+                        ColumnRangeStatistics::Missing
+                    } else if let [(index, _)] = self.schema.get_fields_with_name(name)[..] {
+                        stats[index].clone()
+                    } else {
+                        ColumnRangeStatistics::Missing
+                    }
+                })
+                .collect();
+
+            Some(TableStatistics::new(new_stats, expected_schema.clone()))
         } else {
             None
         };
 
-        let mut expected_schema =
-            Schema::new(self.schema.fields.values().cloned().collect::<Vec<_>>())?;
-        for (name, field) in expected_new_columns.fields {
-            if let Some(v) = expected_schema.fields.get_mut(&name) {
-                *v = field;
-            } else {
-                expected_schema.fields.insert(name.to_string(), field);
-            }
-        }
-
         Ok(Self::new_loaded(
-            Arc::new(expected_schema),
+            expected_schema,
             Arc::new(evaluated_tables),
             eval_stats,
         ))

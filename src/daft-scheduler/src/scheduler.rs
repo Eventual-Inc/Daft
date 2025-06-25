@@ -9,15 +9,15 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use daft_logical_plan::InMemoryInfo;
 #[cfg(feature = "python")]
-use daft_logical_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+use daft_logical_plan::{DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
 use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_physical_plan::{
     logical_to_physical,
     ops::{
-        ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
-        InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
-        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet,
+        ActorPoolProject, Aggregate, BroadcastJoin, Concat, Dedup, EmptyScan, Explode, Filter,
+        HashJoin, InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
+        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, TopN,
         Unpivot,
     },
     PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
@@ -226,7 +226,12 @@ fn deltalake_write(
             &delta_lake_info.path,
             delta_lake_info.large_dtypes,
             delta_lake_info.version,
-            delta_lake_info.partition_cols.clone(),
+            delta_lake_info.partition_cols.as_ref().map(|cols| {
+                cols.iter()
+                    .cloned()
+                    .map(|col| col.into())
+                    .collect::<Vec<PyExpr>>()
+            }),
             delta_lake_info
                 .io_config
                 .as_ref()
@@ -262,6 +267,19 @@ fn lance_write(
 }
 
 #[cfg(feature = "python")]
+fn data_sink_write(
+    py: Python,
+    upstream_iter: PyObject,
+    data_sink_info: &DataSinkInfo,
+) -> PyResult<PyObject> {
+    let py_iter = py
+        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .getattr(pyo3::intern!(py, "write_data_sink"))?
+        .call1((upstream_iter, &data_sink_info.sink.clone_ref(py)))?;
+    Ok(py_iter.into())
+}
+
+#[cfg(feature = "python")]
 fn physical_plan_to_partition_tasks(
     physical_plan: &PhysicalPlan,
     py: Python,
@@ -269,7 +287,7 @@ fn physical_plan_to_partition_tasks(
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
     use daft_dsl::Expr;
-    use daft_physical_plan::ops::{CrossJoin, ShuffleExchange, ShuffleExchangeStrategy};
+    use daft_physical_plan::ops::{CrossJoin, DataSink, ShuffleExchange, ShuffleExchangeStrategy};
     match physical_plan {
         PhysicalPlan::PreviousStageScan(..) => {
             panic!("PreviousStageScan should be optimized away before reaching the scheduler")
@@ -494,6 +512,35 @@ fn physical_plan_to_partition_tasks(
                 ))?;
             Ok(py_iter.into())
         }
+        PhysicalPlan::TopN(TopN {
+            input,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
+            num_partitions,
+        }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let py_physical_plan =
+                py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?;
+
+            let sort_by_pyexprs: Vec<PyExpr> = sort_by
+                .iter()
+                .map(|expr| PyExpr::from(expr.clone()))
+                .collect();
+            let global_limit_iter = py_physical_plan
+                .getattr(pyo3::intern!(py, "top_n"))?
+                .call1((
+                    upstream_iter,
+                    sort_by_pyexprs,
+                    descending.clone(),
+                    nulls_first.clone(),
+                    *limit,
+                    *num_partitions,
+                ))?;
+            Ok(global_limit_iter.into())
+        }
         PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy }) => {
             let upstream_iter =
                 physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
@@ -675,6 +722,19 @@ fn physical_plan_to_partition_tasks(
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "local_aggregate"))?
                 .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
+            Ok(py_iter.into())
+        }
+        PhysicalPlan::Dedup(Dedup { input, columns, .. }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let columns_as_pyexprs: Vec<PyExpr> = columns
+                .iter()
+                .map(|expr| PyExpr::from(expr.clone()))
+                .collect();
+            let py_iter = py
+                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .getattr(pyo3::intern!(py, "local_dedup"))?
+                .call1((upstream_iter, columns_as_pyexprs))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::Pivot(Pivot {
@@ -946,6 +1006,16 @@ fn physical_plan_to_partition_tasks(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
             lance_info,
+        ),
+        #[cfg(feature = "python")]
+        PhysicalPlan::DataSink(DataSink {
+            schema: _,
+            data_sink_info,
+            input,
+        }) => data_sink_write(
+            py,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            data_sink_info,
         ),
     }
 }

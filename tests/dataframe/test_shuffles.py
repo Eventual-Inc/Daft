@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import tempfile
 from contextlib import contextmanager

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::{Column, ExprRef, ResolvedColumn};
+use daft_dsl::{functions::FunctionArgs, Column, ExprRef, ResolvedColumn};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -269,9 +269,12 @@ fn translate_clustering_spec_expr(
             let new_inputs = func
                 .inputs
                 .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .map(|arg| {
+                    arg.map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                        .transpose()
+                })
                 .collect::<Result<Vec<_>, _>>()?;
-            func.inputs = new_inputs;
+            func.inputs = FunctionArgs::new_unchecked(new_inputs);
             Ok(Expr::ScalarFunction(func).into())
         }
         Expr::Not(child) => {
@@ -329,7 +332,7 @@ fn translate_clustering_spec_expr(
             Ok(expr.in_subquery(subquery.clone()))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
-        Expr::Agg(_) | Expr::Column(..) | Expr::Window(..) => Err(()),
+        Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),
     }
 }
 

@@ -14,15 +14,17 @@ use daft_dsl::{
 };
 use daft_schema::{field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogicalPlan {
     Source(Source),
+    Shard(Shard),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
@@ -43,11 +45,12 @@ pub enum LogicalPlan {
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     SubqueryAlias(SubqueryAlias),
     Window(Window),
+    TopN(TopN),
 }
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubqueryAlias {
     pub plan_id: Option<usize>,
     pub input: LogicalPlanRef,
@@ -81,6 +84,7 @@ impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
+            Self::Shard(Shard { input, .. }) => input.schema(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
@@ -109,12 +113,14 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.schema(),
             Self::Window(Window { schema, .. }) => schema.clone(),
+            Self::TopN(TopN { input, .. }) => input.schema(),
         }
     }
 
     pub fn required_columns(&self) -> Vec<IndexSet<String>> {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
+            Self::Shard(..) => vec![IndexSet::new()],
             Self::Limit(..) => vec![IndexSet::new()],
             Self::Sample(..) => vec![IndexSet::new()],
             Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
@@ -168,15 +174,18 @@ impl LogicalPlan {
                 vec![res]
             }
             Self::Distinct(distinct) => {
-                let res = distinct
-                    .input
-                    .schema()
-                    .fields
-                    .iter()
-                    .map(|(name, _)| name)
-                    .cloned()
-                    .collect();
-                vec![res]
+                if let Some(on) = &distinct.columns {
+                    let res = on.iter().flat_map(get_required_columns).collect();
+                    vec![res]
+                } else {
+                    let res = distinct
+                        .input
+                        .schema()
+                        .field_names()
+                        .map(ToString::to_string)
+                        .collect();
+                    vec![res]
+                }
             }
             Self::Aggregate(aggregate) => {
                 let res = aggregate
@@ -241,12 +250,21 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
+            Self::TopN(top_n) => {
+                let res = top_n
+                    .sort_by
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
         }
     }
 
     pub fn name(&self) -> &'static str {
         match self {
             Self::Source(..) => "Source",
+            Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
@@ -267,12 +285,14 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             Self::SubqueryAlias(..) => "Alias",
             Self::Window(..) => "Window",
+            Self::TopN(..) => "TopN",
         }
     }
 
     pub fn stats_state(&self) -> &StatsState {
         match self {
             Self::Source(Source { stats_state, .. })
+            | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -289,7 +309,8 @@ impl LogicalPlan {
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
-            | Self::Window(Window { stats_state, .. }) => stats_state,
+            | Self::Window(Window { stats_state, .. })
+            | Self::TopN(TopN { stats_state, .. }) => stats_state,
             Self::Intersect(_) => {
                 panic!("Intersect nodes should be optimized away before stats are materialized")
             }
@@ -311,6 +332,7 @@ impl LogicalPlan {
     pub fn with_materialized_stats(self) -> Self {
         match self {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
+            Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
@@ -339,12 +361,14 @@ impl LogicalPlan {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
             Self::Window(plan) => Self::Window(plan.with_materialized_stats()),
+            Self::TopN(plan) => Self::TopN(plan.with_materialized_stats()),
         }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
+            Self::Shard(shard) => shard.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::ActorPoolProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
@@ -367,12 +391,14 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(alias) => alias.multiline_display(),
             Self::Window(window) => window.multiline_display(),
+            Self::TopN(top_n) => top_n.multiline_display(),
         }
     }
 
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
+            Self::Shard(Shard { input, .. }) => vec![input],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
@@ -395,6 +421,7 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => vec![input],
             Self::Window(Window { input, .. }) => vec![input],
+            Self::TopN(TopN { input, .. }) => vec![input],
         }
     }
 
@@ -402,16 +429,17 @@ impl LogicalPlan {
         match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
+                Self::Shard(Shard { sharder, .. }) => Self::Shard(Shard::new(input.clone(), sharder.clone())),
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
-                    input.clone(), projection.clone(),
-                ).unwrap()),
+                        input.clone(), projection.clone(),
+                    ).unwrap()),
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
                 Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
-                Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
+                Self::Distinct(distinct) => Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
@@ -420,10 +448,14 @@ impl LogicalPlan {
                     Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone())),
-                Self::Window(Window { window_functions, window_spec, .. }) => Self::Window(Window::try_new(
+                Self::Window(Window { window_functions, aliases, window_spec, .. }) => Self::Window(Window::try_new(
                     input.clone(),
                     window_functions.clone(),
+                    aliases.clone(),
                     window_spec.clone(),
+                ).unwrap()),
+                Self::TopN(TopN { sort_by, descending, nulls_first, limit, .. }) => Self::TopN(TopN::try_new(
+                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit
                 ).unwrap()),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
                 Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
@@ -551,6 +583,7 @@ impl LogicalPlan {
     pub fn plan_id(&self) -> &Option<usize> {
         match self {
             Self::Source(Source { plan_id, .. })
+            | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
             | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
@@ -570,13 +603,15 @@ impl LogicalPlan {
             | Self::Sample(Sample { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
-            | Self::Window(Window { plan_id, .. }) => plan_id,
+            | Self::Window(Window { plan_id, .. })
+            | Self::TopN(TopN { plan_id, .. }) => plan_id,
         }
     }
 
     pub fn with_plan_id(self: Arc<Self>, plan_id: usize) -> Self {
         match self.as_ref() {
             Self::Source(source) => Self::Source(source.clone().with_plan_id(plan_id)),
+            Self::Shard(shard) => Self::Shard(shard.clone().with_plan_id(plan_id)),
             Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
             Self::ActorPoolProject(project) => {
                 Self::ActorPoolProject(project.clone().with_plan_id(plan_id))
@@ -605,6 +640,7 @@ impl LogicalPlan {
             }
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
             Self::Window(window) => window.with_plan_id(Some(plan_id)),
+            Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
         }
     }
 }
@@ -691,6 +727,7 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 }
 
 impl_from_data_struct_for_logical_plan!(Source);
+impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);
@@ -709,3 +746,4 @@ impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
+impl_from_data_struct_for_logical_plan!(TopN);

@@ -34,6 +34,8 @@ log/
 # Added by pyenv
 .python-version
 
+# Added by mypy
+.mypy_cache
 
 # Zed editor
 .zed/
@@ -61,5 +63,5 @@ out/**
 *.tsbuildinfo
 next-env.d.ts
 
-# added by mkdocs social cards
-.cache
+# docs build
+site

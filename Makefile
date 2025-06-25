@@ -23,7 +23,7 @@ endif
 
 .venv:  ## Set up virtual environment
 ifeq (, $(shell which uv))
-	python3 -m venv $(VENV)
+	$(PYTHON_VERSION) -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
 else
 	uv venv $(VENV) -p $(PYTHON_VERSION)
@@ -62,10 +62,9 @@ build: check-toolchain .venv  ## Compile and install Daft for development
 build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
 
-
 .PHONY: test
 test: .venv build  ## Run tests
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration
 
 .PHONY: doctests
 doctests:
@@ -76,13 +75,38 @@ dsdgen: .venv ## Generate TPC-DS data
 	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
 
 .PHONY: docs
-docs: .venv sphinx-docs ## Build both MkDocs and Sphinx documentation
-	JUPYTER_PLATFORM_DIRS=1 uv run --with-requirements requirements-docs.txt mkdocs build -f docs/mkdocs.yml
+docs: .venv ## Build Daft documentation
+	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs build -f mkdocs.yml
 
-.PHONY: sphinx-docs
-sphinx-docs: .venv ## Build Sphinx API documentation
-	uv run --with-requirements requirements-docs.txt sphinx-build -b html "docs/sphinx/source" "docs/sphinx/_build"
+.PHONY: docs-serve
+docs-serve: .venv ## Build Daft documentation in development server
+	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
+
+.PHONY: daft-proto
+daft-proto: check-toolchain .venv ## Build Daft proto sources to avoid protoc build-time dependency.
+	trap 'mv src/daft-proto/build.rs src/daft-proto/.build.rs' EXIT && mv src/daft-proto/.build.rs src/daft-proto/build.rs && cargo build -p daft-proto
+
+.PHONY: check-format
+check-format: check-toolchain .venv  ## Check if code is properly formatted
+	source $(VENV_BIN)/activate && pre-commit run --all-files
+
+.PHONY: format-check
+format-check: check-format  ## Alias for check-format
+
+format: check-toolchain .venv  ## Format Python and Rust code
+	source $(VENV_BIN)/activate && pre-commit run ruff-format --all-files
+	source $(VENV_BIN)/activate && pre-commit run fmt --all-files
+
+.PHONY: lint
+lint: check-toolchain .venv  ## Lint Python and Rust code
+	source $(VENV_BIN)/activate && pre-commit run ruff --all-files
+	source $(VENV_BIN)/activate && pre-commit run clippy --all-files
+
+.PHONY: precommit
+precommit:  check-toolchain .venv  ## Run all pre-commit hooks
+	source $(VENV_BIN)/activate && pre-commit run --all-files
 
 .PHONY: clean
 clean:
 	rm -rf $(VENV)
+	rm -rf ./target

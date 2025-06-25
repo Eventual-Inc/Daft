@@ -15,23 +15,27 @@ from daft.series import Series
 @pytest.mark.parametrize(
     "input,dtype,expected",
     [
-        ([-1], DataType.date(), [-1]),
-        ([-1, None, 17501], DataType.date(), [-1, None, 17501]),
+        ([-1], DataType.date(), [date(1969, 12, 31)]),
+        ([-1, None, 17501], DataType.date(), [date(1969, 12, 31), None, date(2017, 12, 1)]),
         ([], DataType.date(), []),
         ([None], DataType.date(), [None]),
-        ([1512151975038194111], DataType.timestamp(timeunit=TimeUnit.from_str("ns")), [17501]),
-        ([1512151975038194], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [17501]),
-        ([1512151975038], DataType.timestamp(timeunit=TimeUnit.from_str("ms")), [17501]),
-        ([1512151975], DataType.timestamp(timeunit=TimeUnit.from_str("s")), [17501]),
-        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [-1]),
-        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [-1]),
-        ([-13 * 3_600_000_000], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-12:00"), [-1]),
+        ([1512151975038194111], DataType.timestamp(timeunit=TimeUnit.from_str("ns")), [date(2017, 12, 1)]),
+        ([1512151975038194], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [date(2017, 12, 1)]),
+        ([1512151975038], DataType.timestamp(timeunit=TimeUnit.from_str("ms")), [date(2017, 12, 1)]),
+        ([1512151975], DataType.timestamp(timeunit=TimeUnit.from_str("s")), [date(2017, 12, 1)]),
+        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [date(1969, 12, 31)]),
+        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [date(1969, 12, 31)]),
+        (
+            [-13 * 3_600_000_000],
+            DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-12:00"),
+            [date(1969, 12, 31)],
+        ),
     ],
 )
 def test_partitioning_days(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
     d = s.partitioning.days()
-    assert d.datatype() == DataType.int32()
+    assert d.datatype() == DataType.date()
     assert d.to_pylist() == expected
 
 

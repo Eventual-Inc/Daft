@@ -5,8 +5,8 @@ use daft_core::{
     array::growable::make_growable, join::JoinSide, prelude::*, utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
+    expr::bound_expr::BoundExpr,
     join::{get_common_join_cols, infer_join_schema},
-    ExprRef,
 };
 use hash_join::hash_semi_anti_join;
 
@@ -54,21 +54,21 @@ fn add_non_join_key_columns(
         .collect::<HashSet<_>>();
 
     // TODO(Clark): Parallelize with rayon.
-    for field in left.schema.fields.values() {
+    for field in left.schema.as_ref() {
         if join_keys.contains(&field.name) {
             continue;
         }
-        join_series.push(left.get_column(&field.name)?.take(&lidx)?);
+        join_series.push(get_column_by_name(left, &field.name)?.take(&lidx)?);
     }
 
     drop(lidx);
 
-    for field in right.schema.fields.values() {
+    for field in right.schema.as_ref() {
         if join_keys.contains(&field.name) {
             continue;
         }
 
-        join_series.push(right.get_column(&field.name)?.take(&ridx)?);
+        join_series.push(get_column_by_name(right, &field.name)?.take(&ridx)?);
     }
 
     Ok(join_series)
@@ -78,8 +78,8 @@ impl RecordBatch {
     pub fn hash_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         null_equals_nulls: &[bool],
         how: JoinType,
     ) -> DaftResult<Self> {
@@ -118,8 +118,8 @@ impl RecordBatch {
     pub fn sort_merge_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         is_sorted: bool,
     ) -> DaftResult<Self> {
         // sort first and then call join recursively
@@ -165,8 +165,8 @@ impl RecordBatch {
 
         let mut join_series = get_common_join_cols(&self.schema, &right.schema)
             .map(|name| {
-                let lcol = self.get_column(name)?;
-                let rcol = right.get_column(name)?;
+                let lcol = get_column_by_name(self, name)?;
+                let rcol = get_column_by_name(right, name)?;
 
                 let mut growable =
                     make_growable(name, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
@@ -236,4 +236,33 @@ impl RecordBatch {
 
         Self::new_with_size(join_schema, join_columns, num_rows)
     }
+}
+
+#[deprecated(since = "TBD", note = "name-referenced columns")]
+/// Getting a RecordBatch column by its name is deprecated and should no longer be used.
+///
+/// This is only provided for the purpose of evaluating joins, since the common join key
+/// coalescing behavior currently relies on column names.
+/// Once we refactor joins to not do column merging, we should remove this function.
+pub fn get_column_by_name<'a>(recordbatch: &'a RecordBatch, name: &str) -> DaftResult<&'a Series> {
+    let index = recordbatch.schema.get_index(name)?;
+    Ok(recordbatch.get_column(index))
+}
+
+#[deprecated(since = "TBD", note = "name-referenced columns")]
+/// Getting RecordBatch columns by their names is deprecated and should no longer be used.
+///
+/// This is only provided for the purpose of evaluating joins, since the common join key
+/// coalescing behavior currently relies on column names.
+/// Once we refactor joins to not do column merging, we should remove this function.
+pub fn get_columns_by_name<S: AsRef<str>>(
+    recordbatch: &RecordBatch,
+    names: &[S],
+) -> DaftResult<RecordBatch> {
+    let indices = names
+        .iter()
+        .map(|name| recordbatch.schema.get_index(name.as_ref()))
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    Ok(recordbatch.get_columns(&indices))
 }

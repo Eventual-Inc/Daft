@@ -3,15 +3,17 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
 from daft.daft import get_context as _get_context
 from daft.daft import set_runner_native as _set_runner_native
-from daft.daft import set_runner_py as _set_runner_py
 from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
 
 logger = logging.getLogger(__name__)
@@ -28,11 +30,11 @@ class DaftContext:
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
     @property
-    def _runner(self) -> Runner:
+    def _runner(self) -> Runner[PartitionT]:
         return self._ctx._runner
 
     @_runner.setter
-    def _runner(self, runner: Runner):
+    def _runner(self, runner: Runner[PartitionT]) -> None:
         self._ctx._runner = runner
 
     @staticmethod
@@ -45,7 +47,7 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
-    def get_or_create_runner(self) -> Runner:
+    def get_or_create_runner(self) -> Runner[PartitionT]:
         return self._ctx.get_or_create_runner()
 
     @property
@@ -91,31 +93,7 @@ def set_runner_ray(
     return DaftContext._from_native(py_ctx)
 
 
-def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
-    """Configure Daft to execute dataframes in the local Python interpreter.
-
-    Args:
-        use_thread_pool: If True, uses a thread pool for parallel execution.
-            If False, runs single-threaded. If None, uses system default.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for local Python.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=py
-
-    Deprecated:
-        This execution mode is deprecated. Use set_runner_native() instead for
-        improved local performance with native multi-threading.
-    """
-    py_ctx = _set_runner_py(
-        use_thread_pool=use_thread_pool,
-    )
-
-    return DaftContext._from_native(py_ctx)
-
-
-def set_runner_native() -> DaftContext:
+def set_runner_native(num_threads: int | None = None) -> DaftContext:
     """Configure Daft to execute dataframes using native multi-threaded processing.
 
     This is the default execution mode for Daft.
@@ -126,13 +104,13 @@ def set_runner_native() -> DaftContext:
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
     """
-    py_ctx = _set_runner_native()
+    py_ctx = _set_runner_native(num_threads=num_threads)
 
     return DaftContext._from_native(py_ctx)
 
 
 @contextlib.contextmanager
-def planning_config_ctx(**kwargs):
+def planning_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_planning_config to reset the config to its original setting afternwards."""
     original_config = get_context().daft_planning_config
     try:
@@ -169,7 +147,7 @@ def set_planning_config(
 
 
 @contextlib.contextmanager
-def execution_config_ctx(**kwargs):
+def execution_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_execution_config to reset the config to its original setting afternwards."""
     original_config = get_context()._ctx._daft_execution_config
     try:
@@ -200,18 +178,20 @@ def set_execution_config(
     high_cardinality_aggregation_threshold: float | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
-    enable_native_executor: bool | None = None,
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
     flight_shuffle_dirs: list[str] | None = None,
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
+    native_parquet_writer: bool | None = None,
+    flotilla: bool | None = None,
+    min_cpu_per_task: float | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
     These configuration values
-    are used when a Dataframe is executed (e.g. calls to :meth:`DataFrame.write_*`, :meth:`DataFrame.collect()` or :meth:`DataFrame.show()`).
+    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.getdaft.io/en/stable/api/dataframe/#daft.DataFrame.select)).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -246,13 +226,13 @@ def set_execution_config(
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
-        enable_native_executor: Enables the native executor, Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
+        native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -279,13 +259,14 @@ def set_execution_config(
             high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
-            enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
             flight_shuffle_dirs=flight_shuffle_dirs,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,
+            native_parquet_writer=native_parquet_writer,
+            flotilla=flotilla,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

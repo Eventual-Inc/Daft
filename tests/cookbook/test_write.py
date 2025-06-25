@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import urllib.parse
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 import pyarrow as pa
 import pytest
@@ -81,7 +82,7 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_s
     assert set(output_dict["Borough"]) == boroughs
 
     for path, bor in zip(output_dict["path"], output_dict["Borough"]):
-        assert f"Borough={bor}" in path
+        assert f"Borough={urllib.parse.quote(bor)}" in path
         read_back = daft.read_parquet(path).to_pydict()
         assert all(b == bor for b in read_back["Borough"])
 
@@ -100,7 +101,7 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_s
         (
             daft.col("date").partitioning.days(),
             "date_days",
-            [19723, 19754, 19783, 19814, 19844],
+            [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1), date(2024, 5, 1)],
         ),
         (daft.col("date").partitioning.hours(), "date_hours", [473352, 474096, 474792, 475536, 476256]),
         (daft.col("date").partitioning.months(), "date_months", [648, 649, 650, 651, 652]),

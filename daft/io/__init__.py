@@ -7,6 +7,7 @@ from daft.daft import (
     HTTPConfig,
     S3Config,
     S3Credentials,
+    UnityConfig,
 )
 from daft.io._csv import read_csv
 from daft.io._deltalake import read_deltalake
@@ -20,16 +21,22 @@ from daft.io._warc import read_warc
 from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
+from daft.io.sink import DataSink
+from daft.io.source import DataSource, DataSourceTask
 
 __all__ = [
     "AzureConfig",
     "DataCatalogTable",
     "DataCatalogType",
+    "DataSink",
+    "DataSource",
+    "DataSourceTask",
     "GCSConfig",
     "HTTPConfig",
     "IOConfig",
     "S3Config",
     "S3Credentials",
+    "UnityConfig",
     "_range",
     "from_glob_path",
     "read_csv",

@@ -17,7 +17,7 @@
 
 //! Defines temporal kernels for time and date related functions.
 
-use chrono::{Datelike, Timelike};
+use chrono::{Datelike, NaiveDateTime, Timelike};
 
 use super::arity::unary;
 use crate::{
@@ -103,8 +103,16 @@ pub fn weekday(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
     date_like!(u32_weekday, array, DataType::UInt32)
 }
 
+pub fn day_of_month(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+    date_like!(day, array, DataType::UInt32)
+}
+
 pub fn day_of_year(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
     date_like!(ordinal, array, DataType::UInt32)
+}
+
+pub fn week_of_year(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+    date_like!(u32_iso_week, array, DataType::UInt32)
 }
 
 /// Extracts ISO week of a temporal array as [`PrimitiveArray<u32>`]
@@ -113,8 +121,6 @@ pub fn day_of_year(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
 pub fn iso_week(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
     date_like!(u32_iso_week, array, DataType::UInt32)
 }
-
-
 
 // Macro to avoid repetition in functions, that apply
 // `chrono::Timelike` methods on Arrays
@@ -415,4 +421,108 @@ fn can_time(data_type: &DataType) -> bool {
             | DataType::Date64
             | DataType::Timestamp(_, _)
     )
+}
+
+fn strftime_impl<F, Native: NativeType>(
+    array: &dyn Array,
+    func: F,
+    fmt: &str,
+) -> Result<Utf8Array<i64>>
+where
+    F: Fn(Native) -> NaiveDateTime,
+{
+    let array = array
+        .as_any()
+        .downcast_ref::<PrimitiveArray<Native>>()
+        .unwrap();
+
+    let iter = array
+        .values_iter()
+        .map(|x| func(*x).format(fmt).to_string());
+    let new = Utf8Array::<i64>::from_trusted_len_values_iter(iter);
+    Ok(new.with_validity(array.validity().cloned()))
+}
+
+pub fn strftime(array: &dyn Array, fmt: Option<&str>) -> Result<Utf8Array<i64>> {
+    let logical_type = array.data_type().to_logical_type();
+    let fmt = get_strftime_format(fmt, logical_type)?;
+
+    match logical_type {
+        DataType::Date32 => strftime_impl(array, date32_to_datetime, fmt),
+        DataType::Date64 => strftime_impl(array, date64_to_datetime, fmt),
+        DataType::Timestamp(time_unit, tz) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i64>>()
+                .unwrap();
+            let func = match time_unit {
+                TimeUnit::Second => timestamp_s_to_datetime,
+                TimeUnit::Millisecond => timestamp_ms_to_datetime,
+                TimeUnit::Microsecond => timestamp_us_to_datetime,
+                TimeUnit::Nanosecond => timestamp_ns_to_datetime,
+            };
+            if let Some(tz) = tz {
+                use chrono::TimeZone;
+                let tz = parse_offset_tz(tz).expect("timezone already validated");
+
+                let iter = array.values_iter().map(|x| {
+                    let dt = func(*x);
+                    let dt = tz.from_utc_datetime(&dt);
+                    dt.format(fmt).to_string()
+                });
+                let new = Utf8Array::<i64>::from_trusted_len_values_iter(iter);
+                Ok(new.with_validity(array.validity().cloned()))
+            } else {
+                strftime_impl(array, func, fmt)
+            }
+        }
+        DataType::Time64(tu) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i64>>()
+                .unwrap();
+
+            let iter = array.values_iter().map(|x| {
+                let dt = match tu {
+                    TimeUnit::Second => time32s_to_time(*x as i32),
+                    TimeUnit::Millisecond => time32ms_to_time(*x as i32),
+                    TimeUnit::Microsecond => time64us_to_time(*x),
+                    TimeUnit::Nanosecond => time64ns_to_time(*x),
+                };
+                dt.format(fmt).to_string()
+            });
+            let new = Utf8Array::<i64>::from_trusted_len_values_iter(iter);
+            Ok(new.with_validity(array.validity().cloned()))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn get_strftime_format<'a>(fmt: Option<&'a str>, dtype: &DataType) -> Result<&'a str> {
+    if let Some(fmt) = fmt {
+        return Ok(fmt);
+    }
+
+    let fmt = match dtype {
+        DataType::Timestamp(tu, tz) => match (tu, tz.is_some()) {
+            (TimeUnit::Millisecond, true) => "%FT%T%.3f%:z",
+            (TimeUnit::Millisecond, false) => "%FT%T%.3f",
+            (TimeUnit::Microsecond, true) => "%FT%T%.6f%:z",
+            (TimeUnit::Microsecond, false) => "%FT%T%.6f",
+            (TimeUnit::Nanosecond, true) => "%FT%T%.9f%:z",
+            (TimeUnit::Nanosecond, false) => "%FT%T%.9f",
+            (TimeUnit::Second, true) => "%FT%T%:z",
+            (TimeUnit::Second, false) => "%FT%T",
+        },
+        DataType::Date32 | DataType::Date64 => "%F",
+        DataType::Time32(_) | DataType::Time64(_) => "%T%.f",
+        _ => {
+            let err = format!(
+                "invalid call to `get_strftime_format`; fmt={:?}, dtype={:?}",
+                fmt, dtype
+            );
+            unimplemented!("{}", err)
+        }
+    };
+    Ok(fmt)
 }

@@ -1,10 +1,10 @@
-use std::{future::ready, rc::Rc, sync::Arc};
+use std::{future::ready, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
 use daft_context::get_context;
-use daft_dsl::LiteralValue;
+use daft_dsl::{literals_to_series, LiteralValue};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -38,9 +38,10 @@ impl ConnectSession {
         lp: LogicalPlanBuilder,
     ) -> ConnectResult<BoxStream<DaftResult<Arc<MicroPartition>>>> {
         let runner = get_context().get_or_create_runner()?;
-
         let result_set = tokio::task::spawn_blocking(move || {
-            Python::with_gil(|py| runner.run_iter_tables(py, lp, None))
+            Python::with_gil(|py| {
+                Ok::<_, DaftError>(runner.run_iter_tables(py, lp, None)?.collect::<Vec<_>>())
+            })
         })
         .await??;
 
@@ -288,10 +289,9 @@ impl ConnectSession {
         }
 
         // TODO: converge Session and ConnectSession
-        let session = self.session().clone();
-        let session = Rc::new(session);
+        let session = self.session();
 
-        let mut planner = daft_sql::SQLPlanner::new(session);
+        let mut planner = daft_sql::SQLPlanner::new(&session);
 
         let plan = planner.plan_sql(&sql).wrap_err("Error planning SQL")?;
 
@@ -367,9 +367,7 @@ impl ConnectSession {
         let tbl = RecordBatch::concat(&tbls)?;
         let output = tbl.to_comfy_table(None).to_string();
 
-        let s = LiteralValue::Utf8(output)
-            .into_single_value_series()?
-            .rename("show_string");
+        let s = literals_to_series(&[LiteralValue::Utf8(output)])?.rename("show_string");
 
         let tbl = RecordBatch::from_nonempty_columns(vec![s])?;
         response_builder.arrow_batch_response(&tbl)

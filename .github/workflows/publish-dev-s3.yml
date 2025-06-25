@@ -1,4 +1,4 @@
-name: publish-dev-s3
+name: Build dev package and publish to S3
 
 on:
   workflow_dispatch:
@@ -49,14 +49,12 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
-      use_old_name: ${{ matrix.use_old_name }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu]
         arch: [x86_64, aarch64]
         lts: [false]
-        use_old_name: [false, true]
 
   publish:
     name: Publish wheels to S3

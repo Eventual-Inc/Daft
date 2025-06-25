@@ -30,6 +30,7 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
+    fn can_absorb_shard(&self) -> bool;
     fn multiline_display(&self) -> Vec<String>;
 
     /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations

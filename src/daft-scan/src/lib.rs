@@ -491,6 +491,16 @@ impl ScanTaskLike for ScanTask {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
+
+    fn get_file_paths(&self) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter_map(|s| match s {
+                DataSource::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 impl From<ScanTask> for ScanTaskLikeRef {
@@ -551,7 +561,18 @@ impl ScanTask {
                         acc_size
                             .and_then(|acc_size| curr_size.map(|curr_size| acc_size + curr_size)),
                         acc_stats.and_then(|acc_stats| {
-                            curr_stats.map(|curr_stats| acc_stats.union(&curr_stats).unwrap())
+                            curr_stats
+                                .map(
+                                    #[allow(deprecated)]
+                                    |curr_stats| {
+                                        let acc_stats = acc_stats.cast_to_schema(&schema)?;
+                                        let curr_stats = curr_stats.cast_to_schema(&schema)?;
+                                        acc_stats.union(&curr_stats)
+                                    },
+                                )
+                                .transpose()
+                                .ok()
+                                .flatten()
                         }),
                     )
                 },
@@ -627,24 +648,22 @@ impl ScanTask {
         match (&self.generated_fields, &self.pushdowns.columns) {
             (None, None) => self.schema.clone(),
             _ => {
-                let mut fields = self.schema.fields.clone();
-                // Extend the schema with generated fields.
-                if let Some(generated_fields) = &self.generated_fields {
-                    fields.extend(
-                        generated_fields
-                            .fields
-                            .iter()
-                            .map(|(name, field)| (name.clone(), field.clone())),
-                    );
-                }
+                let schema_with_generated_fields =
+                    if let Some(generated_fields) = &self.generated_fields {
+                        // Extend the schema with generated fields.
+                        Arc::new(self.schema.non_distinct_union(generated_fields).unwrap())
+                    } else {
+                        self.schema.clone()
+                    };
+
+                let mut fields = schema_with_generated_fields.fields().to_vec();
+
                 // Filter the schema based on the pushdown column filters.
                 if let Some(columns) = &self.pushdowns.columns {
-                    fields = fields
-                        .into_iter()
-                        .filter(|(name, _)| columns.contains(name))
-                        .collect();
+                    fields.retain(|field| columns.contains(&field.name));
                 }
-                Arc::new(Schema { fields })
+
+                Arc::new(Schema::new(fields))
             }
         }
     }
@@ -780,9 +799,8 @@ impl ScanTask {
 
             // Calculate size based on materialized schema and WARC column sizes
             let row_size: usize = mat_schema
-                .fields
-                .iter()
-                .map(|(name, _)| warc_column_sizes().get(name.as_str()).copied().unwrap_or(8))
+                .field_names()
+                .map(|name| warc_column_sizes().get(name).copied().unwrap_or(8))
                 .sum();
 
             let estimate = (approx_num_rows * row_size as f64) as usize;
@@ -794,7 +812,9 @@ impl ScanTask {
                 .and_then(|s| {
                     // Derive in-memory size estimate from table stats.
                     self.num_rows().and_then(|num_rows| {
-                        let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
+                        #[allow(deprecated)]
+                        let mat_stats = s.cast_to_schema(&mat_schema).ok()?;
+                        let row_size = mat_stats.estimate_row_size().ok()?;
                         let estimate = (num_rows as f64) * row_size;
                         Some(estimate as usize)
                     })

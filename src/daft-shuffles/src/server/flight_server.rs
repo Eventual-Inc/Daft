@@ -84,7 +84,7 @@ impl FlightService for ShuffleFlightServer {
         let partition_idx = partition_idx_str
             .parse::<usize>()
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let file_paths = self.shuffle_cache.file_paths(partition_idx);
+        let file_paths = self.shuffle_cache.file_paths_for_partition(partition_idx);
 
         let file_path_stream = futures::stream::iter(file_paths);
         let flight_data_stream = file_path_stream
@@ -187,8 +187,8 @@ pub fn start_flight_server(
 
         port_tx.send(port).expect("Failed to send port");
 
-        let incoming =
-            tonic::transport::server::TcpIncoming::from_listener(listener, true, None).unwrap();
+        let incoming = tonic::transport::server::TcpIncoming::from_listener(listener, true, None)
+            .expect("Failed to create TCP incoming connection from listener");
 
         Server::builder()
             .add_service(FlightServiceServer::new(ShuffleFlightServer::new(

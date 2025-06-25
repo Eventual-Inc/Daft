@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
-from functools import reduce
-from typing import TYPE_CHECKING, Generic, Protocol
+from typing import TYPE_CHECKING, Any, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import JoinSide, ResourceRequest
+from daft.daft import JoinSide, PyRecordBatch, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import overwrite_files
-from daft.recordbatch import MicroPartition, recordbatch_io
+from daft.io.sink import WriteResultType
+from daft.recordbatch import MicroPartition, RecordBatch, recordbatch_io
 from daft.runners.partitioning import (
     Boundaries,
     MaterializedResult,
@@ -17,6 +17,7 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionT,
 )
+from daft.series import Series
 
 if TYPE_CHECKING:
     import pathlib
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.io import DataSink
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
 
@@ -71,7 +73,7 @@ class PartitionTask(Generic[PartitionT]):
         """Whether the PartitionT result of this task is available."""
         return self.is_done
 
-    def set_done(self):
+    def set_done(self) -> None:
         """Sets the PartitionTask as done."""
         assert not self.is_done, "Cannot set PartitionTask as done more than once"
         self.is_done = True
@@ -124,7 +126,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         actor_pool_id: str | None = None,
         node_id: str | None = None,
     ) -> None:
-        self.inputs = inputs
+        self.inputs: list[PartitionT] = inputs
         if partial_metadatas is not None:
             self.partial_metadatas = partial_metadatas
         else:
@@ -445,7 +447,7 @@ class OverwriteFiles(SingleOutputInstruction):
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         files_to_overwrite = []
         for input in inputs:
-            files_to_overwrite.extend(input.get_column("path").to_pylist())
+            files_to_overwrite.extend(input.get_column_by_name("path").to_pylist())
         overwrite_files(
             files_to_overwrite,
             self.root_dir,
@@ -455,8 +457,14 @@ class OverwriteFiles(SingleOutputInstruction):
         return [MicroPartition.concat(inputs)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        merged_meta = reduce(lambda a, b: a.merge_with_partial(b), input_metadatas)
-        return [merged_meta]
+        input_rows = [_.num_rows for _ in input_metadatas]
+        input_sizes = [_.size_bytes for _ in input_metadatas]
+        return [
+            PartialPartitionMetadata(
+                num_rows=(sum(input_rows) if all(_ is not None for _ in input_rows) else None),
+                size_bytes=(sum(input_sizes) if all(_ is not None for _ in input_sizes) else None),
+            )
+        ]
 
 
 @dataclass(frozen=True)
@@ -504,7 +512,7 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     version: int
-    partition_cols: list[str] | None
+    partition_cols: ExpressionsProjection | None
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -542,7 +550,7 @@ class WriteLance(SingleOutputInstruction):
     base_path: str
     mode: str
     io_config: IOConfig | None
-    kwargs: dict | None
+    kwargs: dict[str, Any] | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._write_lance(inputs)
@@ -571,6 +579,30 @@ class WriteLance(SingleOutputInstruction):
             io_config=self.io_config,
             kwargs=self.kwargs,
         )
+
+
+@dataclass(frozen=True)
+class DataSinkWrite(SingleOutputInstruction, Generic[WriteResultType]):
+    sink: DataSink[WriteResultType]
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        result_field_name = "write_results"
+        results = list(self.sink.write(iter(inputs)))
+        results_series = Series.from_pylist(results, result_field_name, pyobj="force")
+        series_dict = {result_field_name: results_series._series}
+        rb = RecordBatch._from_pyrecordbatch(PyRecordBatch.from_pylist_series(series_dict))
+        mp = MicroPartition._from_record_batches([rb])
+        return [mp]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # TODO(desmond): We can potentially do something more useful here. For now, copy the implementation for the other writers.
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # we can write more than 1 file per partition
+                size_bytes=None,
+            )
+        ]
 
 
 @dataclass(frozen=True)
@@ -792,6 +824,27 @@ class Aggregate(SingleOutputInstruction):
     def _aggregate(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
+class Dedup(SingleOutputInstruction):
+    columns: ExpressionsProjection
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._dedup(inputs)
+
+    def _dedup(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        return [input.dedup(self.columns)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         # Can't derive anything.

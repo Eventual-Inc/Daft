@@ -10,11 +10,15 @@ use super::{
         EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
-        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
-        UnnestPredicateSubquery, UnnestScalarSubquery,
+        RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
+        SplitActorPoolProjects, SplitGranularProjection, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
-use crate::LogicalPlan;
+use crate::{
+    optimization::rules::{PushDownShard, ShardScans},
+    LogicalPlan,
+};
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -97,6 +101,7 @@ impl Default for OptimizerBuilder {
                 RuleBatch::new(
                     vec![
                         Box::new(LiftProjectFromAgg::new()),
+                        Box::new(RewriteCountDistinct::new()),
                         Box::new(UnnestScalarSubquery::new()),
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
@@ -163,6 +168,11 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(PushDownProjection::new())],
                     RuleExecutionStrategy::FixedPoint(None),
                 ),
+                // --- Shard pushdowns ---
+                RuleBatch::new(
+                    vec![Box::new(PushDownShard::new())],
+                    RuleExecutionStrategy::Once,
+                ),
                 // --- Simplify expressions before scans are materialized ---
                 RuleBatch::new(
                     vec![Box::new(SimplifyExpressionsRule::new())],
@@ -171,6 +181,11 @@ impl Default for OptimizerBuilder {
                 // --- Materialize scan nodes ---
                 RuleBatch::new(
                     vec![Box::new(MaterializeScans::new())],
+                    RuleExecutionStrategy::Once,
+                ),
+                // --- Shard scans ---
+                RuleBatch::new(
+                    vec![Box::new(ShardScans::new())],
                     RuleExecutionStrategy::Once,
                 ),
                 // --- Enrich logical plan with stats ---
@@ -218,6 +233,14 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![Box::new(SimplifyExpressionsRule::new())],
             RuleExecutionStrategy::FixedPoint(None),
+        ));
+        self
+    }
+
+    pub fn split_granular_projections(mut self) -> Self {
+        self.rule_batches.push(RuleBatch::new(
+            vec![Box::new(SplitGranularProjection::new())],
+            RuleExecutionStrategy::Once,
         ));
         self
     }

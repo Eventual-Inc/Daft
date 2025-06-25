@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.context import get_context
 from daft.daft import (
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.table import Table as IcebergTable
 
+    from daft.io import DataSink
     from daft.plan_scheduler.physical_plan_scheduler import (
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,
@@ -31,14 +32,16 @@ if TYPE_CHECKING:
     from daft.runners.partitioning import PartitionCacheEntry
 
 
-def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., LogicalPlanBuilder]):
+def _apply_daft_planning_config_to_initializer(
+    classmethod_func: Callable[..., LogicalPlanBuilder],
+) -> Callable[..., LogicalPlanBuilder]:
     """Decorator to be applied to any @classmethod instantiation method on LogicalPlanBuilder.
 
     This decorator ensures that the current DaftPlanningConfig is applied to the instantiated LogicalPlanBuilder
     """
 
     @functools.wraps(classmethod_func)
-    def wrapper(cls: type[LogicalPlanBuilder], *args, **kwargs):
+    def wrapper(cls: type[LogicalPlanBuilder], *args: Any, **kwargs: Any) -> LogicalPlanBuilder:
         instantiated_logical_plan_builder = classmethod_func(cls, *args, **kwargs)
 
         # Parametrize the builder with the current DaftPlanningConfig
@@ -181,6 +184,10 @@ class LogicalPlanBuilder:
         builder = self._builder.limit(num_rows, eager)
         return LogicalPlanBuilder(builder)
 
+    def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder:
+        builder = self._builder.shard(strategy, world_size, rank)
+        return LogicalPlanBuilder(builder)
+
     def explode(self, explode_expressions: list[Expression]) -> LogicalPlanBuilder:
         explode_pyexprs = [expr._expr for expr in explode_expressions]
         builder = self._builder.explode(explode_pyexprs)
@@ -205,8 +212,9 @@ class LogicalPlanBuilder:
         builder = builder.select([first_col.alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
-    def distinct(self) -> LogicalPlanBuilder:
-        builder = self._builder.distinct()
+    def distinct(self, on: list[Expression]) -> LogicalPlanBuilder:
+        on_pyexprs = [expr._expr for expr in on]
+        builder = self._builder.distinct(on_pyexprs)
         return LogicalPlanBuilder(builder)
 
     def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder:
@@ -268,7 +276,7 @@ class LogicalPlanBuilder:
         builder = self._builder.pivot(group_by_pyexprs, pivot_col._expr, value_col._expr, agg_fn._expr, names)
         return LogicalPlanBuilder(builder)
 
-    def join(  # type: ignore[override]
+    def join(
         self,
         right: LogicalPlanBuilder,
         left_on: list[Expression],
@@ -289,7 +297,7 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
-    def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:  # type: ignore[override]
+    def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
         builder = self._builder.concat(other._builder)
         return LogicalPlanBuilder(builder)
 
@@ -381,7 +389,7 @@ class LogicalPlanBuilder:
         path: str | pathlib.Path,
         mode: str,
         io_config: IOConfig,
-        kwargs: dict | None,
+        kwargs: dict[str, Any] | None,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
         builder = self._builder.lance_write(
@@ -391,4 +399,8 @@ class LogicalPlanBuilder:
             io_config,
             kwargs,
         )
+        return LogicalPlanBuilder(builder)
+
+    def write_datasink(self, name: str, sink: DataSink[Any]) -> LogicalPlanBuilder:
+        builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)

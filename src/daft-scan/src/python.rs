@@ -76,6 +76,7 @@ pub mod pylib {
         python::pylib::{PyPartitionField, PyPushdowns},
         PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
     };
+    use daft_dsl::expr::bound_expr::BoundExpr;
     use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
     use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
@@ -156,7 +157,7 @@ pub mod pylib {
                     hive_partitioning,
                 );
 
-                let operator = executor.block_on(task)??;
+                let operator = executor.block_within_async_context(task)??;
                 let operator = Arc::new(operator);
 
                 Ok(Self {
@@ -280,6 +281,10 @@ pub mod pylib {
             self.can_absorb_select
         }
 
+        fn can_absorb_shard(&self) -> bool {
+            false
+        }
+
         fn multiline_display(&self) -> Vec<String> {
             let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
             lines
@@ -376,9 +381,11 @@ pub mod pylib {
                     pushdowns.as_ref().map(|p| &p.0.partition_filters)
             {
                 let table = &pvalues.record_batch;
-                let eval_pred = table.eval_expression_list(&[partition_filters.clone()])?;
+                let partition_filters =
+                    BoundExpr::try_new(partition_filters.clone(), &table.schema)?;
+                let eval_pred = table.eval_expression_list(&[partition_filters])?;
                 assert_eq!(eval_pred.num_columns(), 1);
-                let series = eval_pred.get_column_by_index(0)?;
+                let series = eval_pred.get_column(0);
                 assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);
                 let boolean = series.bool()?;
                 assert_eq!(boolean.len(), 1);
@@ -600,7 +607,7 @@ pub mod pylib {
             Arc::new(FileFormatConfig::Parquet(default::Default::default())),
             Arc::new(schema),
             Arc::new(Default::default()),
-            Pushdowns::new(None, None, columns.map(Arc::new), None),
+            Pushdowns::new(None, None, columns.map(Arc::new), None, None),
             None,
         );
         Ok(st.estimate_in_memory_size_bytes(None).unwrap())

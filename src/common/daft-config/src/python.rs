@@ -95,13 +95,15 @@ impl PyDaftExecutionConfig {
         high_cardinality_aggregation_threshold=None,
         read_sql_partition_size_bytes=None,
         enable_aqe=None,
-        enable_native_executor=None,
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
-        scantask_splitting_level=None
+        scantask_splitting_level=None,
+        native_parquet_writer=None,
+        flotilla=None,
+        min_cpu_per_task=None,
     ))]
     fn with_config_values(
         &self,
@@ -124,13 +126,15 @@ impl PyDaftExecutionConfig {
         high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
-        enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
+        native_parquet_writer: Option<bool>,
+        flotilla: Option<bool>,
+        min_cpu_per_task: Option<f64>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -197,9 +201,6 @@ impl PyDaftExecutionConfig {
         if let Some(enable_aqe) = enable_aqe {
             config.enable_aqe = enable_aqe;
         }
-        if let Some(enable_native_executor) = enable_native_executor {
-            config.enable_native_executor = enable_native_executor;
-        }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
         }
@@ -232,6 +233,18 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.scantask_splitting_level = scantask_splitting_level;
+        }
+
+        if let Some(native_parquet_writer) = native_parquet_writer {
+            config.native_parquet_writer = native_parquet_writer;
+        }
+
+        if let Some(flotilla) = flotilla {
+            config.flotilla = flotilla;
+        }
+
+        if let Some(min_cpu_per_task) = min_cpu_per_task {
+            config.min_cpu_per_task = min_cpu_per_task;
         }
 
         Ok(Self {
@@ -328,10 +341,6 @@ impl PyDaftExecutionConfig {
         Ok(self.config.enable_aqe)
     }
     #[getter]
-    fn enable_native_executor(&self) -> PyResult<bool> {
-        Ok(self.config.enable_native_executor)
-    }
-    #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
     }
@@ -352,6 +361,16 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn scantask_splitting_level(&self) -> PyResult<i32> {
         Ok(self.config.scantask_splitting_level)
+    }
+
+    #[getter]
+    fn flotilla(&self) -> PyResult<bool> {
+        Ok(self.config.flotilla)
+    }
+
+    #[getter]
+    fn min_cpu_per_task(&self) -> PyResult<f64> {
+        Ok(self.config.min_cpu_per_task)
     }
 }
 

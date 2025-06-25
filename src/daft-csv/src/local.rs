@@ -14,7 +14,7 @@ use daft_core::{
     utils::arrow::cast_array_for_daft_if_needed,
 };
 use daft_decoding::deserialize::deserialize_column;
-use daft_dsl::{optimization::get_required_columns, Expr};
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt};
@@ -176,7 +176,7 @@ pub async fn read_csv_local(
             io_stats,
         )
         .await?;
-        return RecordBatch::empty(Some(Arc::new(Schema::try_from(&schema)?)));
+        return RecordBatch::empty(Some(Arc::new(schema.into())));
     }
     let concated_table = tables_concat(collected_tables)?;
 
@@ -242,12 +242,12 @@ pub async fn stream_csv_local(
         .iter()
         .map(|i| schema.fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(Schema::new(fields_subset)?);
+    let read_schema = Arc::new(Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
         read_schema
-            .fields
-            .values()
-            .map(|f| Arc::new(f.clone()))
+            .into_iter()
+            .cloned()
+            .map(Arc::new)
             .collect::<Vec<_>>(),
     );
 
@@ -900,9 +900,15 @@ where
         let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
         let table = RecordBatch::new_unchecked(read_schema.clone(), chunk, num_rows);
         let table = if let Some(predicate) = &predicate {
+            let predicate = BoundExpr::try_new(predicate.clone(), &read_schema)?;
             let filtered = table.filter(&[predicate.clone()])?;
             if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())?
+                let include_column_indices = include_columns
+                    .iter()
+                    .map(|name| read_schema.get_index(name))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                filtered.get_columns(&include_column_indices)
             } else {
                 filtered
             }

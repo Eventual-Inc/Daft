@@ -33,7 +33,7 @@ pub(crate) fn try_parse_schema(schema: HashMap<String, String>) -> SQLPlannerRes
         let dtype = try_parse_dtype(dtype_str)?;
         fields.push(Field::new(name, dtype));
     }
-    Ok(Schema::new(fields)?)
+    Ok(Schema::new(fields))
 }
 
 /// Converts a sqlparser DataType to a daft DataType
@@ -157,7 +157,11 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         // ---------------------------------
         // struct
         // ---------------------------------
-        SQLDataType::Struct(fields, _) => {
+        SQLDataType::Struct(fields, _brackets) => {
+            // TODO: https://github.com/Eventual-Inc/Daft/issues/4448
+            // if matches!(brackets, StructBracketKind::AngleBrackets) {
+            //     use_instead!(dtype, "STRUCT(fields...)")
+            // }
             let fields = fields
                 .iter()
                 .enumerate()
@@ -261,7 +265,7 @@ pub(crate) fn timeunit_from_precision(prec: Option<u64>) -> SQLPlannerResult<Tim
 
 #[cfg(test)]
 mod test {
-    use daft_core::prelude::{DataType, ImageMode};
+    use daft_core::prelude::{DataType, Field, ImageMode};
     use rstest::rstest;
 
     #[rstest]
@@ -331,6 +335,15 @@ mod test {
             10
         )
     )]
+    // TODO: https://github.com/Eventual-Inc/Daft/issues/4448
+    // #[case(
+    //     "struct(a bool, b int, c string)",
+    //     DataType::Struct(vec![
+    //         Field::new("a", DataType::Boolean),
+    //         Field::new("b", DataType::Int32),
+    //         Field::new("c", DataType::Utf8),
+    //     ])
+    // )]
     fn test_sql_datatype(#[case] sql: &str, #[case] expected: DataType) {
         let result = super::try_parse_dtype(sql).unwrap();
         assert_eq!(result, expected);

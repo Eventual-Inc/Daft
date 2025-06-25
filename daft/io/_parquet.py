@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -17,26 +18,19 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_parquet(
-    path: Union[str, List[str]],
-    row_groups: Optional[List[List[int]]] = None,
+    path: Union[str, list[str]],
+    row_groups: Optional[list[list[int]]] = None,
     infer_schema: bool = True,
-    schema: Optional[Dict[str, DataType]] = None,
-    io_config: Optional["IOConfig"] = None,
+    schema: Optional[dict[str, DataType]] = None,
+    io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
-    schema_hints: Optional[Dict[str, DataType]] = None,
+    schema_hints: Optional[dict[str, DataType]] = None,
     _multithreaded_io: Optional[bool] = None,
     _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s).
-
-    Example:
-        >>> df = daft.read_parquet("/path/to/file.parquet")
-        >>> df = daft.read_parquet("/path/to/directory")
-        >>> df = daft.read_parquet("/path/to/files-*.parquet")
-        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
-        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
 
     Args:
         path (str): Path to Parquet file (allows for wildcards)
@@ -51,8 +45,16 @@ def read_parquet(
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
+
+    Examples:
+        >>> df = daft.read_parquet("/path/to/file.parquet")
+        >>> df = daft.read_parquet("/path/to/directory")
+        >>> df = daft.read_parquet("/path/to/files-*.parquet")
+        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
+        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
+
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

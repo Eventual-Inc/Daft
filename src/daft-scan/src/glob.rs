@@ -6,6 +6,7 @@ use common_runtime::RuntimeRef;
 use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::RecordBatch;
@@ -187,15 +188,15 @@ impl GlobScanOperator {
         let (partitioning_keys, generated_fields) = if partition_fields.is_empty() {
             (vec![], Schema::empty())
         } else {
-            let generated_fields = Schema::new(partition_fields)?;
+            let generated_fields = Schema::new(partition_fields);
             let generated_fields = match user_provided_schema.clone() {
                 Some(hint) => generated_fields.apply_hints(&hint)?,
                 None => generated_fields,
             };
             // Extract partitioning keys only after the user's schema hints have been applied.
-            let partitioning_keys = (&generated_fields.fields)
+            let partitioning_keys = generated_fields
                 .into_iter()
-                .map(|(_, field)| PartitionField::new(field.clone(), None, None))
+                .map(|field| PartitionField::new(field.clone(), None, None))
                 .collect::<Result<Vec<_>, _>>()?;
             (partitioning_keys, generated_fields)
         };
@@ -347,6 +348,10 @@ impl ScanOperator for GlobScanOperator {
         false
     }
 
+    fn can_absorb_shard(&self) -> bool {
+        false
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let condensed_glob_paths = if self.glob_paths.len() <= 7 {
             self.glob_paths.join(", ")
@@ -411,9 +416,8 @@ impl ScanOperator for GlobScanOperator {
         let partition_fields = self
             .partitioning_keys
             .iter()
-            .map(|partition_spec| partition_spec.clone_field())
-            .collect();
-        let partition_schema = Schema::new(partition_fields)?;
+            .map(|partition_spec| partition_spec.clone_field());
+        let partition_schema = Schema::new(partition_fields);
         let (first_filepath, first_metadata) =
             if let Some((first_filepath, first_metadata)) = &self.first_metadata {
                 (Some(first_filepath), Some(first_metadata))
@@ -450,8 +454,12 @@ impl ScanOperator for GlobScanOperator {
                             RecordBatch::from_nonempty_columns(partition_values)?;
                         // If there are partition values, evaluate them against partition filters, if any.
                         if let Some(partition_filters) = &pushdowns.partition_filters {
+                            let partition_filters = BoundExpr::try_new(
+                                partition_filters.clone(),
+                                &partition_values_table.schema,
+                            )?;
                             let filter_result =
-                                partition_values_table.filter(&[partition_filters.clone()])?;
+                                partition_values_table.filter(&[partition_filters])?;
                             if filter_result.is_empty() {
                                 // Skip the current file since it does not satisfy the partition filters.
                                 return Ok(None);

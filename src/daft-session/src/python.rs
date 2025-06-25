@@ -1,13 +1,22 @@
+use std::sync::Arc;
+
 use daft_catalog::{
-    python::{PyCatalogWrapper, PyIdentifier, PyTable, PyTableSource, PyTableWrapper},
+    python::{pyobj_to_catalog, pyobj_to_table, PyIdentifier, PyTableSource},
     Identifier,
 };
+use daft_dsl::functions::python::WrappedUDFClass;
 use pyo3::prelude::*;
 
 use crate::Session;
 
 #[pyclass]
 pub struct PySession(Session);
+
+impl PySession {
+    pub fn session(&self) -> &Session {
+        &self.0
+    }
+}
 
 #[pymethods]
 impl PySession {
@@ -16,14 +25,12 @@ impl PySession {
         Self(Session::empty())
     }
 
-    pub fn attach_catalog(&self, catalog: PyObject, alias: String) -> PyResult<()> {
-        Ok(self
-            .0
-            .attach_catalog(PyCatalogWrapper::wrap(catalog), alias)?)
+    pub fn attach_catalog(&self, catalog: Bound<PyAny>, alias: String) -> PyResult<()> {
+        Ok(self.0.attach_catalog(pyobj_to_catalog(catalog)?, alias)?)
     }
 
-    pub fn attach_table(&self, table: PyObject, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_table(PyTableWrapper::wrap(table), alias)?)
+    pub fn attach_table(&self, table: Bound<PyAny>, alias: String) -> PyResult<()> {
+        Ok(self.0.attach_table(pyobj_to_table(table)?, alias)?)
     }
 
     pub fn detach_catalog(&self, alias: &str) -> PyResult<()> {
@@ -39,10 +46,11 @@ impl PySession {
         name: String,
         source: &PyTableSource,
         replace: bool,
-    ) -> PyResult<PyTable> {
-        let table = self.0.create_temp_table(name, source.as_ref(), replace)?;
-        let table = PyTable::new(table);
-        Ok(table)
+        py: Python,
+    ) -> PyResult<PyObject> {
+        self.0
+            .create_temp_table(name, source.as_ref(), replace)?
+            .to_py(py)
     }
 
     pub fn current_catalog(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
@@ -93,11 +101,21 @@ impl PySession {
     pub fn set_namespace(&self, ident: Option<&PyIdentifier>) -> PyResult<()> {
         Ok(self.0.set_namespace(ident.map(|i| i.as_ref()))?)
     }
-}
 
-impl From<&PySession> for Session {
-    fn from(sess: &PySession) -> Self {
-        sess.0.clone()
+    #[pyo3(signature = (function, alias = None))]
+    pub fn attach_function(&self, function: PyObject, alias: Option<String>) -> PyResult<()> {
+        let wrapped = WrappedUDFClass {
+            inner: Arc::new(function),
+        };
+
+        self.0.attach_function(wrapped, alias)?;
+
+        Ok(())
+    }
+
+    pub fn detach_function(&self, alias: &str) -> PyResult<()> {
+        self.0.detach_function(alias)?;
+        Ok(())
     }
 }
 

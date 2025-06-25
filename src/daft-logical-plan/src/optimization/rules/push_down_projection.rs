@@ -142,18 +142,17 @@ impl PushDownProjection {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
                 let [required_columns] = &plan.required_columns()[..] else {
-                    panic!()
+                    unreachable!()
                 };
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
                             let pruned_upstream_schema = upstream_schema
-                                .fields
-                                .iter()
-                                .filter(|&(name, _)| required_columns.contains(name))
-                                .map(|(_, field)| field.clone())
+                                .into_iter()
+                                .filter(|field| required_columns.contains(&field.name))
+                                .cloned()
                                 .collect::<Vec<_>>();
-                            let schema = Schema::new(pruned_upstream_schema)?;
+                            let schema = Schema::new(pruned_upstream_schema);
                             let new_source: LogicalPlan = Source::new(
                                 schema.into(),
                                 Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
@@ -345,8 +344,10 @@ impl PushDownProjection {
                 }
             }
             LogicalPlan::Sort(..)
+            | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
             | LogicalPlan::Limit(..)
+            | LogicalPlan::TopN(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
             | LogicalPlan::Explode(..) => {
@@ -477,7 +478,8 @@ impl PushDownProjection {
                     projection_dependencies: &IndexSet<String>,
                 ) -> DaftResult<Transformed<LogicalPlanRef>> {
                     let schema = side.schema();
-                    let upstream_names: IndexSet<String> = schema.fields.keys().cloned().collect();
+                    let upstream_names: IndexSet<String> =
+                        schema.field_names().map(ToString::to_string).collect();
 
                     let combined_dependencies: IndexSet<_> = side_dependencies
                         .union(
@@ -530,10 +532,31 @@ impl PushDownProjection {
                     Ok(new_plan)
                 }
             }
-            LogicalPlan::Distinct(_) => {
-                // Cannot push down past a Distinct,
-                // since Distinct implicitly requires all parent columns.
-                Ok(Transformed::no(plan))
+            LogicalPlan::Distinct(distinct) => {
+                if distinct.columns.is_none() {
+                    // Cannot push down past a Distinct if the distinct is on all columns
+                    return Ok(Transformed::no(plan));
+                }
+
+                let plan_req_cols = &plan.required_columns()[0];
+                let distinct_req_cols = &upstream_plan.required_columns()[0];
+
+                // Add a new projection underneath the distinct to pass through columns
+                // used by the distinct & current projection node
+                let new_extra_projection = LogicalPlan::Project(Project::try_new(
+                    distinct.input.clone(),
+                    plan_req_cols
+                        .union(distinct_req_cols)
+                        .map(|e| resolved_col(e.as_str()))
+                        .collect::<Vec<_>>(),
+                )?)
+                .arced();
+
+                let new_distinct = upstream_plan
+                    .with_new_children(&[new_extra_projection.into()])
+                    .arced();
+                let new_plan = plan.with_new_children(&[new_distinct]).arced();
+                Ok(Transformed::yes(new_plan.into()))
             }
             LogicalPlan::Intersect(_) => {
                 // Cannot push down past an Intersect,
@@ -627,7 +650,7 @@ impl PushDownProjection {
                 .expect("we expect 2 set of required columns for join");
             let right_schema = join.right.schema();
 
-            if right_required_cols.len() < right_schema.fields.len() {
+            if right_required_cols.len() < right_schema.len() {
                 let new_subprojection: LogicalPlan = {
                     let pushdown_column_exprs = right_required_cols
                         .iter()
@@ -758,10 +781,10 @@ mod tests {
             func: FunctionExpr::Python(PythonUDF {
                 name: Arc::new("my-udf".to_string()),
                 func: MaybeInitializedUDF::Uninitialized {
-                    inner: RuntimePyObject::new_testing_none(),
-                    init_args: RuntimePyObject::new_testing_none(),
+                    inner: RuntimePyObject::new_none(),
+                    init_args: RuntimePyObject::new_none(),
                 },
-                bound_args: RuntimePyObject::new_testing_none(),
+                bound_args: RuntimePyObject::new_none(),
                 num_expressions: inputs.len(),
                 return_dtype: DataType::Utf8,
                 resource_request: Some(ResourceRequest::default_cpu()),
@@ -1141,6 +1164,7 @@ mod tests {
                 partition_filters: None,
                 columns: Some(Arc::new(vec!["a".to_string()])),
                 filters: None,
+                sharder: None,
             },
         )
         .build();
@@ -1185,6 +1209,7 @@ mod tests {
                     "Feb".to_string(),
                 ])),
                 filters: None,
+                sharder: None,
             },
         )
         .build();

@@ -4,12 +4,12 @@ rustc_version = "0.4.0"
 [dependencies]
 # Faster hashing
 ahash = "0.8"
-arrow-array = {version = "=51.0.0", optional = true}
+arrow-array = {version = "=54.2.1", optional = true}
 # Support conversion to/from arrow-rs
-arrow-buffer = {version = "=53.3.0", optional = true}
-arrow-data = {version = "=51.0.0", optional = true}
+arrow-buffer = {version = "=54.2.1", optional = true}
+arrow-data = {version = "=54.2.1", optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
-arrow-schema = {version = "=51.0.0", optional = true}
+arrow-schema = {version = "=54.2.1", optional = true}
 # to read IPC as a stream
 async-stream = {version = "0.3.6", optional = true}
 # avro support
@@ -66,7 +66,7 @@ serde_json = {version = "^1.0", features = [
   "preserve_order"
 ], optional = true}
 # For SIMD utf8 validation
-simdutf8 = "0.1.4"
+simdutf8 = {workspace = true}
 streaming-iterator = {version = "0.1", optional = true}
 # for division/remainder optimization at runtime
 strength_reduce = {version = "0.2", optional = true}

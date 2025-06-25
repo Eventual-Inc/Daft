@@ -9,14 +9,15 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
 use common_error::DaftResult;
-use common_tracing::refresh_chrome_trace;
-use daft_local_plan::translate;
+use common_tracing::{finish_chrome_trace, flush_opentelemetry_providers, start_chrome_trace};
+use daft_local_plan::{translate, LocalPhysicalPlanRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
 };
-use futures::Stream;
+use futures::{stream::BoxStream, Stream, StreamExt};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -30,10 +31,14 @@ use {
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid},
+    pipeline::{
+        get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
+        viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
+    },
     progress_bar::{make_progress_bar_manager, ProgressBarManager},
     resource_manager::get_or_init_memory_manager,
-    Error, ExecutionRuntimeContext,
+    runtime_stats::RuntimeStatsEventHandler,
+    ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -51,6 +56,28 @@ impl LocalPartitionIterator {
     fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
         let iter = &mut slf.iter;
         Ok(py.allow_threads(|| iter.next().transpose())?)
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyclass(frozen)]
+struct LocalPartitionStream {
+    stream: Arc<Mutex<BoxStream<'static, DaftResult<PyObject>>>>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl LocalPartitionStream {
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+    fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let stream = self.stream.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut stream = stream.lock().await;
+            let part = stream.next().await;
+            Ok(part.transpose()?)
+        })
     }
 }
 
@@ -79,11 +106,11 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (logical_plan_builder, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
     pub fn run<'a>(
         &self,
         py: Python<'a>,
-        logical_plan_builder: &PyLogicalPlanBuilder,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
@@ -107,10 +134,11 @@ impl PyNativeExecutor {
         let out = py.allow_threads(|| {
             self.executor
                 .run(
-                    &logical_plan_builder.builder,
+                    &local_physical_plan.plan,
                     &psets,
                     cfg.config,
                     results_buffer_size,
+                    None,
                 )
                 .map(|res| res.into_iter())
         })?;
@@ -124,6 +152,55 @@ impl PyNativeExecutor {
         }));
         let part_iter = LocalPartitionIterator { iter };
         Ok(part_iter.into_pyobject(py)?.into_any())
+    }
+
+    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, context=None))]
+    pub fn run_async<'a>(
+        &self,
+        py: Python<'a>,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
+        psets: HashMap<String, Vec<PyMicroPartition>>,
+        cfg: PyDaftExecutionConfig,
+        results_buffer_size: Option<usize>,
+        context: Option<HashMap<String, String>>,
+    ) -> PyResult<Bound<'a, PyAny>> {
+        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
+            .into_iter()
+            .map(|(part_id, parts)| {
+                (
+                    part_id,
+                    Arc::new(
+                        parts
+                            .into_iter()
+                            .map(std::convert::Into::into)
+                            .collect::<Vec<Arc<MicroPartition>>>()
+                            .into(),
+                    ),
+                )
+            })
+            .collect();
+        let psets = InMemoryPartitionSetCache::new(&native_psets);
+        let res = py.allow_threads(|| {
+            self.executor.run(
+                &local_physical_plan.plan,
+                &psets,
+                cfg.config,
+                results_buffer_size,
+                context,
+            )
+        })?;
+        let stream = Box::pin(res.into_stream().map(|part| {
+            pyo3::Python::with_gil(|py| {
+                Ok(PyMicroPartition::from(part?)
+                    .into_pyobject(py)?
+                    .unbind()
+                    .into_any())
+            })
+        }));
+        let stream = LocalPartitionStream {
+            stream: Arc::new(Mutex::new(stream)),
+        };
+        Ok(stream.into_pyobject(py)?.into_any())
     }
 
     pub fn repr_ascii(
@@ -147,6 +224,16 @@ impl PyNativeExecutor {
             .executor
             .repr_mermaid(&logical_plan_builder.builder, cfg.config, options))
     }
+
+    pub fn get_relationship_info(
+        &self,
+        logical_plan_builder: &PyLogicalPlanBuilder,
+        cfg: PyDaftExecutionConfig,
+    ) -> PyResult<RelationshipInformation> {
+        Ok(self
+            .executor
+            .get_relationship_info(&logical_plan_builder.builder, cfg.config))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +241,7 @@ pub struct NativeExecutor {
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
     pb_manager: Option<Arc<dyn ProgressBarManager>>,
+    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     enable_explain_analyze: bool,
 }
 
@@ -162,8 +250,10 @@ impl Default for NativeExecutor {
         Self {
             cancel: CancellationToken::new(),
             runtime: None,
+            // todo: make progressbar another subscriber instances
             pb_manager: should_enable_progress_bar().then(make_progress_bar_manager),
             enable_explain_analyze: should_enable_explain_analyze(),
+            rt_stats_handler: Arc::new(RuntimeStatsEventHandler::new()),
         }
     }
 }
@@ -190,20 +280,21 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        logical_plan_builder: &LogicalPlanBuilder,
+        local_physical_plan: &LocalPhysicalPlanRef,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
+        additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
-        let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan)?;
-        refresh_chrome_trace();
+        start_chrome_trace();
         let cancel = self.cancel.clone();
-        let pipeline = physical_plan_to_pipeline(&physical_plan, psets, &cfg)?;
+        let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
+        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
         let pb_manager = self.pb_manager.clone();
+        let stats_handler = self.rt_stats_handler.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
@@ -222,6 +313,7 @@ impl NativeExecutor {
                     cfg.default_morsel_size,
                     memory_manager.clone(),
                     pb_manager,
+                    stats_handler.clone(),
                 );
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
@@ -233,41 +325,19 @@ impl NativeExecutor {
 
                 while let Some(result) = runtime_handle.join_next().await {
                     match result {
-                        Ok(Err(e)) => {
+                        Ok(Err(e)) | Err(e) => {
                             runtime_handle.shutdown().await;
                             return DaftResult::Err(e.into());
                         }
-                        Err(e) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(Error::JoinError { source: e }.into());
-                        }
                         _ => {}
                     }
-                }
-                if enable_explain_analyze {
-                    let curr_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_millis();
-                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                    let mut file = File::create(file_name)?;
-                    writeln!(
-                        file,
-                        "```mermaid\n{}\n```",
-                        viz_pipeline_mermaid(
-                            pipeline.as_ref(),
-                            DisplayLevel::Verbose,
-                            true,
-                            Default::default()
-                        )
-                    )?;
                 }
                 Ok(())
             };
 
             let local_set = tokio::task::LocalSet::new();
             local_set.block_on(&runtime, async {
-                tokio::select! {
+                let result = tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
                         log::info!("Execution engine cancelled");
@@ -278,8 +348,36 @@ impl NativeExecutor {
                         Ok(())
                     }
                     result = execution_task => result,
+                };
+
+                // Flush remaining stats events
+                if let Err(e) = stats_handler.flush().await {
+                    log::warn!("Failed to flush runtime stats: {}", e);
                 }
-            })
+
+                result
+            })?;
+            if enable_explain_analyze {
+                let curr_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis();
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                let mut file = File::create(file_name)?;
+                writeln!(
+                    file,
+                    "```mermaid\n{}\n```",
+                    viz_pipeline_mermaid(
+                        pipeline.as_ref(),
+                        DisplayLevel::Verbose,
+                        true,
+                        Default::default()
+                    )
+                )?;
+            }
+            flush_opentelemetry_providers();
+            finish_chrome_trace();
+            Ok(())
         });
 
         Ok(ExecutionEngineResult {
@@ -296,9 +394,14 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
@@ -311,9 +414,14 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         let display_type = if options.simple {
             DisplayLevel::Compact
@@ -326,6 +434,23 @@ impl NativeExecutor {
             options.bottom_up,
             options.subgraph_options,
         )
+    }
+    fn get_relationship_info(
+        &self,
+        logical_plan_builder: &LogicalPlanBuilder,
+        cfg: Arc<DaftExecutionConfig>,
+    ) -> RelationshipInformation {
+        let logical_plan = logical_plan_builder.build();
+        let physical_plan = translate(&logical_plan).unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
+        get_pipeline_relationship_mapping(&*pipeline_node)
     }
 }
 

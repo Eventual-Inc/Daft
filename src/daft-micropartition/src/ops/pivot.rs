@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
 
@@ -8,9 +8,9 @@ use crate::micropartition::MicroPartition;
 impl MicroPartition {
     pub fn pivot(
         &self,
-        group_by: &[ExprRef],
-        pivot_col: ExprRef,
-        values_col: ExprRef,
+        group_by: &[BoundExpr],
+        pivot_col: BoundExpr,
+        values_col: BoundExpr,
         names: Vec<String>,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::pivot");

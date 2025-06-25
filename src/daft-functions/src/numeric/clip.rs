@@ -1,11 +1,12 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::InferDataType,
-    prelude::{Field, Schema},
-    series::Series,
+    prelude::{DataType, Field, Schema},
+    series::{IntoSeries, Series},
+    with_match_numeric_daft_types,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
+    functions::{FunctionArgs, ScalarFunction, ScalarUDF},
     ExprRef,
 };
 use serde::{Deserialize, Serialize};
@@ -13,48 +14,80 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Clip;
 
+#[derive(FunctionArgs)]
+struct ClipArgs<T> {
+    input: T,
+    #[arg(optional)]
+    min: Option<T>,
+    #[arg(optional)]
+    max: Option<T>,
+}
+
 #[typetag::serde]
 impl ScalarUDF for Clip {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn evaluate(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        let ClipArgs { input, min, max } = inputs.try_into()?;
+
+        let input_dtype = input.data_type();
+        let null_lit = |name: &str| Series::full_null(name, input_dtype, 1);
+
+        let min = min.unwrap_or_else(|| null_lit("min"));
+        let max = max.unwrap_or_else(|| null_lit("max"));
+
+        let output_type = InferDataType::clip_op(
+            &InferDataType::from(input.data_type()),
+            &InferDataType::from(min.data_type()),
+            &InferDataType::from(max.data_type()),
+        )?;
+        match &output_type {
+            output_type if output_type.is_numeric() => {
+                with_match_numeric_daft_types!(output_type, |$T| {
+                    let self_casted = input.cast(output_type)?;
+                    let min_casted = min.cast(output_type)?;
+                    let max_casted = max.cast(output_type)?;
+
+                    let self_downcasted = self_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    let min_downcasted = min_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    let max_downcasted = max_casted.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    Ok(self_downcasted.clip(min_downcasted, max_downcasted)?.into_series())
+                })
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "clip not implemented for {}",
+                dt
+            ))),
+        }
     }
 
     fn name(&self) -> &'static str {
         "clip"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        if inputs.len() != 3 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 3 input arguments (array, min, max), got {}",
-                inputs.len()
-            )));
-        }
-        let array_field = inputs[0].to_field(schema)?;
-        let min_field = inputs[1].to_field(schema)?;
-        let max_field = inputs[2].to_field(schema)?;
+    fn function_args_to_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let ClipArgs { input, min, max } = inputs.try_into()?;
+
+        let input_field = input.to_field(schema)?;
+        let min_field = min.map_or(Ok(Field::new("min", DataType::Null)), |min| {
+            min.to_field(schema)
+        })?;
+        let max_field = max.map_or(Ok(Field::new("max", DataType::Null)), |max| {
+            max.to_field(schema)
+        })?;
 
         let output_type = InferDataType::clip_op(
-            &InferDataType::from(&array_field.dtype),
+            &InferDataType::from(&input_field.dtype),
             &InferDataType::from(&min_field.dtype),
             &InferDataType::from(&max_field.dtype),
         )?;
 
-        Ok(Field::new(array_field.name, output_type))
+        Ok(Field::new(input_field.name, output_type))
     }
-
-    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        if inputs.len() != 3 {
-            return Err(DaftError::ValueError(format!(
-                "Expected 3 input arguments (array, min, max), got {}",
-                inputs.len()
-            )));
-        }
-        let array = &inputs[0];
-        let min = &inputs[1];
-        let max = &inputs[2];
-
-        array.clip(min, max)
+    fn docstring(&self) -> &'static str {
+        "Clips a number to a specified range. If left bound is None, no lower clipping is applied. If right bound is None, no upper clipping is applied. Panics if right bound < left bound."
     }
 }
 

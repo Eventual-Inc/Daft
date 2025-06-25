@@ -18,10 +18,12 @@ impl TreeDisplay for PhysicalPlan {
             Self::Explode(explode) => explode.display_as(level),
             Self::Unpivot(unpivot) => unpivot.display_as(level),
             Self::Sort(sort) => sort.display_as(level),
+            Self::TopN(top_n) => top_n.display_as(level),
             Self::Sample(sample) => sample.display_as(level),
             Self::MonotonicallyIncreasingId(id) => id.display_as(level),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.display_as(level),
             Self::Aggregate(aggr) => aggr.display_as(level),
+            Self::Dedup(dedup) => dedup.display_as(level),
             Self::Pivot(pivot) => pivot.display_as(level),
             Self::Concat(concat) => concat.display_as(level),
             Self::HashJoin(join) => join.display_as(level),
@@ -37,6 +39,8 @@ impl TreeDisplay for PhysicalPlan {
             Self::DeltaLakeWrite(write) => write.display_as(level),
             #[cfg(feature = "python")]
             Self::LanceWrite(write) => write.display_as(level),
+            #[cfg(feature = "python")]
+            Self::DataSink(write) => write.display_as(level),
         }
     }
 

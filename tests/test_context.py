@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import os
 import subprocess
@@ -18,20 +20,6 @@ def with_null_env():
             os.environ["DAFT_RUNNER"] = old_daft_runner
 
 
-def test_explicit_set_runner_py():
-    """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Python."""
-    explicit_set_runner_script = """
-import daft
-print(daft.context.get_context()._runner)
-daft.context.set_runner_py()
-print(daft.context.get_context()._runner.name)
-    """
-
-    with with_null_env():
-        result = subprocess.run([sys.executable, "-c", explicit_set_runner_script], capture_output=True)
-        assert result.stdout.decode().strip() == "None\npy"
-
-
 def test_explicit_set_runner_native():
     """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Native."""
     explicit_set_runner_script_native = """
@@ -42,7 +30,10 @@ print(daft.context.get_context()._runner.name)
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", explicit_set_runner_script_native], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", explicit_set_runner_script_native],
+            capture_output=True,
+        )
         assert result.stdout.decode().strip() == "None\nnative"
 
 
@@ -90,48 +81,22 @@ print(daft.context.get_context()._runner.name)
         assert result.stdout.decode().strip() == "None\nray"
 
 
-def test_switch_local_runners():
-    """Test that a runner can be switched from Python to Native."""
-    switch_local_runners_script = """
-import daft
-print(daft.context.get_context()._runner)
-daft.context.set_runner_py()
-print(daft.context.get_context()._runner.name)
-daft.context.set_runner_native()
-print(daft.context.get_context()._runner.name)
-daft.context.set_runner_py()
-print(daft.context.get_context()._runner.name)
-    """
-
-    with with_null_env():
-        result = subprocess.run([sys.executable, "-c", switch_local_runners_script], capture_output=True)
-        assert result.stdout.decode().strip() == "None\npy\nnative\npy"
-
-
-@pytest.mark.parametrize(
-    "set_local_command",
-    [
-        pytest.param("daft.context.set_runner_native()", id="native_to_ray"),
-        pytest.param("daft.context.set_runner_py()", id="py_to_ray"),
-    ],
-)
-def test_cannot_switch_local_to_ray(set_local_command):
+def test_cannot_switch_local_to_ray():
     """Test that a runner cannot be switched from local to Ray."""
-    script = f"""
+    script = """
 import daft
-{set_local_command}
+daft.context.set_runner_native()
 daft.context.set_runner_ray()
 """
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", script], capture_output=True)
-        assert "RuntimeError: Cannot set runner more than once" in result.stderr.decode().strip()
+        assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
 
 
 @pytest.mark.parametrize(
     "set_new_runner_command",
     [
         pytest.param("daft.context.set_runner_native()", id="ray_to_native"),
-        pytest.param("daft.context.set_runner_py()", id="ray_to_py"),
         pytest.param("daft.context.set_runner_ray()", id="ray_to_ray"),
     ],
 )
@@ -144,10 +109,10 @@ daft.context.set_runner_ray()
 """
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", script], capture_output=True)
-        assert "RuntimeError: Cannot set runner more than once" in result.stderr.decode().strip()
+        assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
 
 
-@pytest.mark.parametrize("daft_runner_envvar", ["py", "ray", "native"])
+@pytest.mark.parametrize("daft_runner_envvar", ["ray", "native"])
 def test_env_var(daft_runner_envvar):
     """Test that environment variables are correctly picked up."""
     autodetect_script = """
@@ -158,7 +123,9 @@ print(daft.context.get_context()._runner.name)
 
     with with_null_env():
         result = subprocess.run(
-            [sys.executable, "-c", autodetect_script], capture_output=True, env={"DAFT_RUNNER": daft_runner_envvar}
+            [sys.executable, "-c", autodetect_script],
+            capture_output=True,
+            env={"DAFT_RUNNER": daft_runner_envvar},
         )
         assert result.stdout.decode().strip() == daft_runner_envvar
 
@@ -173,9 +140,33 @@ print(daft.context.get_context()._runner.name)
 
     with with_null_env():
         result = subprocess.run(
-            [sys.executable, "-c", autodetect_script], capture_output=True, env={"RAY_JOB_ID": "dummy"}
+            [sys.executable, "-c", autodetect_script],
+            capture_output=True,
+            env={"RAY_JOB_ID": "dummy"},
         )
         assert result.stdout.decode().strip() == "ray"
+
+
+def test_get_or_create_runner_from_multiple_threads():
+    concurrent_get_or_create_runner_script = """
+import concurrent.futures
+from daft.context import get_context
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    futures = [
+        executor.submit(lambda: get_context().get_or_create_runner()) for _ in range(10)
+    ]
+
+    results = [future.result() for future in concurrent.futures.as_completed(futures)]
+    print("ok")
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", concurrent_get_or_create_runner_script],
+            capture_output=True,
+        )
+        assert result.stdout.decode().strip() == "ok"
 
 
 # TODO: Figure out why these tests are failing for Py3.8
@@ -203,7 +194,7 @@ print(daft.context.get_context()._runner.name)
 
 #     with with_null_env():
 #         result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
-#         assert result.stdout.decode().strip() in {"py", "native"}
+#         assert result.stdout.decode().strip() in {"native"}
 
 
 # def test_in_ray_worker_launch_query():
@@ -241,6 +232,9 @@ daft.context.set_runner_ray()
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", cannot_set_runner_ray_after_py_script], capture_output=True)
-        assert result.stdout.decode().strip() in {"py", "native"}
-        assert "RuntimeError: Cannot set runner more than once" in result.stderr.decode().strip()
+        result = subprocess.run(
+            [sys.executable, "-c", cannot_set_runner_ray_after_py_script],
+            capture_output=True,
+        )
+        assert result.stdout.decode().strip() in {"native"}
+        assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()

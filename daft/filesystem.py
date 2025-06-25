@@ -9,10 +9,9 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
-from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.dependencies import fsspec, pafs
-from daft.expressions.expressions import col
+from daft.expressions.expressions import ExpressionsProjection, col
 from daft.recordbatch import MicroPartition
 
 logger = logging.getLogger(__name__)
@@ -50,13 +49,13 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
     _CACHED_FSES[(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
 
 
-def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
+def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
     if protocol == "s3" or protocol == "s3a":
         try:
             import botocore.session
         except ImportError:
             logger.error(
-                "Error when importing botocore. install daft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+                "Error when importing botocore. install daft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://docs.getdaft.io/en/latest/install)"
             )
             raise
 
@@ -76,7 +75,7 @@ def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
         klass = fsspec.get_filesystem_class(protocol)
     except ImportError:
         logger.error(
-            "Error when importing dependencies for accessing data with: %s. Please ensure that daft was installed with the appropriate extra dependencies (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)",
+            "Error when importing dependencies for accessing data with: %s. Please ensure that daft was installed with the appropriate extra dependencies (https://docs.getdaft.io/en/latest/install)",
             protocol,
         )
         raise
@@ -202,7 +201,7 @@ def _infer_filesystem(
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
 
-    def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None):
+    def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None) -> None:
         """Helper method used when setting kwargs for pyarrow."""
         if val is not None:
             kwargs[key] = val
@@ -245,6 +244,7 @@ def _infer_filesystem(
     ###
     elif protocol == "file":
         resolved_filesystem = pafs.LocalFileSystem()
+        path = os.path.expanduser(path)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem, None
 
@@ -307,7 +307,7 @@ def _infer_filesystem(
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
 
 
-def _unwrap_protocol(path):
+def _unwrap_protocol(path: str) -> str:
     """Slice off any protocol prefixes on path."""
     parsed = urllib.parse.urlparse(path, allow_fragments=False)  # support '#' in path
     query = "?" + parsed.query if parsed.query else ""  # support '?' in path
@@ -394,11 +394,11 @@ def overwrite_files(
             # The root directory does not exist, so there are no files to delete.
             return
 
-    all_file_paths_df = from_pydict({"path": all_file_paths})
+    all_file_paths_df = MicroPartition.from_pydict({"path": all_file_paths})
 
     # Find the files that were not written to in this run and delete them.
-    to_delete = all_file_paths_df.where(~(col("path").is_in(written_file_paths)))
+    to_delete = all_file_paths_df.filter(ExpressionsProjection([~(col("path").is_in(written_file_paths))]))
 
     # TODO: Look into parallelizing this
-    for entry in to_delete:
-        fs.delete_file(entry["path"])
+    for entry in to_delete.get_column_by_name("path"):
+        fs.delete_file(entry)

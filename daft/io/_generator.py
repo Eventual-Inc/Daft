@@ -1,10 +1,12 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterator, List
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Callable
 
-from daft.daft import Pushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
+from daft.daft import PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
@@ -12,9 +14,9 @@ if TYPE_CHECKING:
     from daft.recordbatch.recordbatch import RecordBatch
 
 
-def _generator_factory_function(func: Callable[[], Iterator["RecordBatch"]]) -> Iterator["PyRecordBatch"]:
+def _generator_factory_function(func: Callable[[], Iterator["RecordBatch"]]) -> Iterator[PyRecordBatch]:
     for table in func():
-        yield table._table
+        yield table._recordbatch
 
 
 def read_generator(
@@ -23,7 +25,16 @@ def read_generator(
 ) -> DataFrame:
     """Create a DataFrame from a generator function.
 
-    Example:
+    Args:
+        generator (Callable[[int, Any], Iterator[RecordBatch]]): a generator function that generates data
+        num_partitions (int): the number of partitions to generate
+        schema (Schema): the schema of the generated data
+        generator_args (Any): additional arguments to pass to the generator
+
+    Returns:
+        DataFrame: a DataFrame containing the generated data
+
+    Examples:
         >>> import daft
         >>> from daft.io._generator import read_generator
         >>> from daft.recordbatch.recordbatch import RecordBatch
@@ -51,15 +62,6 @@ def read_generator(
         ...     .repartition(100, "ints")
         ...     .collect()
         ... )
-
-    Args:
-        generator (Callable[[int, Any], Iterator[RecordBatch]]): a generator function that generates data
-        num_partitions (int): the number of partitions to generate
-        schema (Schema): the schema of the generated data
-        generator_args (Any): additional arguments to pass to the generator
-
-    Returns:
-        DataFrame: a DataFrame containing the generated data
     """
     generator_scan_operator = GeneratorScanOperator(
         generators=generators,
@@ -88,7 +90,7 @@ class GeneratorScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
-    def partitioning_keys(self) -> List[PartitionField]:
+    def partitioning_keys(self) -> list[PyPartitionField]:
         return []
 
     def can_absorb_filter(self) -> bool:
@@ -100,13 +102,13 @@ class GeneratorScanOperator(ScanOperator):
     def can_absorb_select(self) -> bool:
         return False
 
-    def multiline_display(self) -> List[str]:
+    def multiline_display(self) -> list[str]:
         return [
             self.display_name(),
             f"Schema = {self.schema()}",
         ]
 
-    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         for generator in self._generators:
             yield ScanTask.python_factory_func_scan_task(
                 module=_generator_factory_function.__module__,

@@ -5,7 +5,7 @@ use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},
 };
-use daft_dsl::{join::infer_join_schema, ExprRef};
+use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
 use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
@@ -17,8 +17,8 @@ impl MicroPartition {
         &self,
         right: &Self,
         io_stats: Arc<IOStatsContext>,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         how: JoinType,
         table_join: F,
     ) -> DaftResult<Self>
@@ -26,8 +26,8 @@ impl MicroPartition {
         F: FnOnce(
             &RecordBatch,
             &RecordBatch,
-            &[ExprRef],
-            &[ExprRef],
+            &[BoundExpr],
+            &[BoundExpr],
             JoinType,
         ) -> DaftResult<RecordBatch>,
     {
@@ -47,14 +47,10 @@ impl MicroPartition {
                 (_, None) => TruthValue::Maybe,
                 (None, _) => TruthValue::Maybe,
                 (Some(l), Some(r)) => {
-                    let l_eval_stats = l.eval_expression_list(left_on, &self.schema)?;
-                    let r_eval_stats = r.eval_expression_list(right_on, &right.schema)?;
+                    let l_eval_stats = l.eval_expression_list(left_on)?;
+                    let r_eval_stats = r.eval_expression_list(right_on)?;
                     let mut curr_tv = TruthValue::Maybe;
-                    for (lc, rc) in l_eval_stats
-                        .columns
-                        .values()
-                        .zip(r_eval_stats.columns.values())
-                    {
+                    for (lc, rc) in l_eval_stats.into_iter().zip(&r_eval_stats) {
                         if lc.equal(rc)?.to_truth_value() == TruthValue::False {
                             curr_tv = TruthValue::False;
                             break;
@@ -89,17 +85,21 @@ impl MicroPartition {
     pub fn hash_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         null_equals_nulls: Option<Vec<bool>>,
         how: JoinType,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::hash_join");
         let null_equals_nulls = null_equals_nulls.unwrap_or_else(|| vec![false; left_on.len()]);
-        let table_join =
-            |lt: &RecordBatch, rt: &RecordBatch, lo: &[ExprRef], ro: &[ExprRef], _how: JoinType| {
-                RecordBatch::hash_join(lt, rt, lo, ro, null_equals_nulls.as_slice(), _how)
-            };
+
+        let table_join = |lt: &RecordBatch,
+                          rt: &RecordBatch,
+                          lo: &[BoundExpr],
+                          ro: &[BoundExpr],
+                          _how: JoinType| {
+            RecordBatch::hash_join(lt, rt, lo, ro, null_equals_nulls.as_slice(), _how)
+        };
 
         self.join(right, io_stats, left_on, right_on, how, table_join)
     }
@@ -107,15 +107,18 @@ impl MicroPartition {
     pub fn sort_merge_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         is_sorted: bool,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::sort_merge_join");
-        let table_join =
-            |lt: &RecordBatch, rt: &RecordBatch, lo: &[ExprRef], ro: &[ExprRef], _how: JoinType| {
-                RecordBatch::sort_merge_join(lt, rt, lo, ro, is_sorted)
-            };
+        let table_join = |lt: &RecordBatch,
+                          rt: &RecordBatch,
+                          lo: &[BoundExpr],
+                          ro: &[BoundExpr],
+                          _how: JoinType| {
+            RecordBatch::sort_merge_join(lt, rt, lo, ro, is_sorted)
+        };
 
         self.join(
             right,
@@ -131,7 +134,7 @@ impl MicroPartition {
         let io_stats = IOStatsContext::new("MicroPartition::cross_join");
 
         let table_join =
-            |lt: &RecordBatch, rt: &RecordBatch, _: &[ExprRef], _: &[ExprRef], _: JoinType| {
+            |lt: &RecordBatch, rt: &RecordBatch, _: &[BoundExpr], _: &[BoundExpr], _: JoinType| {
                 RecordBatch::cross_join(lt, rt, outer_loop_side)
             };
 

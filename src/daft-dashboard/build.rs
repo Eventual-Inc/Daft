@@ -1,12 +1,32 @@
 use std::process::Command;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
+
+    if !std::path::Path::new(&frontend_dir).is_dir() {
+        if cfg!(debug_assertions) {
+            println!("Dashboard assets not found in {frontend_dir}, skipping dashboard build.");
+            println!("To build dashboard assets: `bun run build` in src/daft-dashboard/frontend.");
+            return Ok(());
+        } else {
+            panic!("Dashboard assets are required for release builds");
+        }
+    }
+
+    // if there's anything in the output directory, remove it
+    if std::fs::exists(out_dir)? {
+        std::fs::remove_dir_all(out_dir)?;
+    }
+
+    // move the frontend assets to the output directory
+    std::fs::rename(frontend_dir, out_dir)?;
+    Ok(())
+}
+
+fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=frontend/src/");
     println!("cargo:rerun-if-changed=frontend/bun.lockb");
-    let out_dir = std::env::var("OUT_DIR")?;
-
-    // always set the env var so that the include_dir! macro doesn't panic
-    println!("cargo:rustc-env=DASHBOARD_ASSETS_DIR={}", out_dir);
+    println!("cargo:rerun-if-changed=build.rs");
 
     // Check if bun is installed
     let bun_available = Command::new("bun")
@@ -51,12 +71,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
 
     // if there's anything in the output directory, remove it
-    if std::fs::metadata(&out_dir).is_ok() {
-        std::fs::remove_dir_all(&out_dir)?;
+    if std::fs::metadata(out_dir).is_ok() {
+        std::fs::remove_dir_all(out_dir)?;
     }
 
     // move the frontend assets to the output directory
     std::fs::rename(frontend_dir, out_dir)?;
     assert!(status.success(), "Failed to build frontend assets");
     Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let out_dir = std::env::var("OUT_DIR")?;
+    // always set the env var so that the include_dir! macro doesn't panic
+    println!("cargo:rustc-env=DASHBOARD_ASSETS_DIR={}", out_dir);
+
+    let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+    if is_ci {
+        ci_main(&out_dir)
+    } else {
+        default_main(&out_dir)
+    }
 }

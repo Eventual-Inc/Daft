@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_file_formats::WriteMode;
+use common_error::DaftResult;
+use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
-use daft_logical_plan::OutputFileInfo;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_writers::{FileWriter, WriterFactory};
+use daft_writers::{AsyncFileWriter, WriterFactory};
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
@@ -16,7 +15,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeContext, ExecutionTaskSpawner, NUM_CPUS,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
 };
 
 #[derive(Debug)]
@@ -30,15 +29,16 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
+    DataSink,
 }
 
 struct WriteState {
-    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 }
 
 impl WriteState {
     pub fn new(
-        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     ) -> Self {
         Self { writer }
     }
@@ -53,10 +53,8 @@ impl BlockingSinkState for WriteState {
 pub(crate) struct WriteSink {
     write_format: WriteFormat,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-    partition_by: Option<Vec<ExprRef>>,
+    partition_by: Option<Vec<BoundExpr>>,
     file_schema: SchemaRef,
-    /// File information is needed for overwriting files.
-    file_info: Option<OutputFileInfo>,
 }
 
 impl WriteSink {
@@ -65,16 +63,14 @@ impl WriteSink {
         writer_factory: Arc<
             dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
         >,
-        partition_by: Option<Vec<ExprRef>>,
+        partition_by: Option<Vec<BoundExpr>>,
         file_schema: SchemaRef,
-        file_info: Option<OutputFileInfo>,
     ) -> Self {
         Self {
             write_format,
             writer_factory,
             partition_by,
             file_schema,
-            file_info,
         }
     }
 }
@@ -95,7 +91,8 @@ impl BlockingSink for WriteSink {
                         .downcast_mut::<WriteState>()
                         .expect("WriteSink should have WriteState")
                         .writer
-                        .write(input)?;
+                        .write(input)
+                        .await?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -110,7 +107,6 @@ impl BlockingSink for WriteSink {
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
-        let file_info = self.file_info.clone();
         spawner
             .spawn(
                 async move {
@@ -120,62 +116,7 @@ impl BlockingSink for WriteSink {
                             .as_any_mut()
                             .downcast_mut::<WriteState>()
                             .expect("State type mismatch");
-                        results.extend(state.writer.close()?);
-                    }
-
-                    if let Some(file_info) = &file_info {
-                        if matches!(
-                            file_info.write_mode,
-                            WriteMode::Overwrite | WriteMode::OverwritePartitions
-                        ) {
-                            #[cfg(feature = "python")]
-                            {
-                                use pyo3::{prelude::*, types::PyList};
-
-                                Python::with_gil(|py| {
-                                    let fs = py.import(pyo3::intern!(py, "daft.filesystem"))?;
-                                    let overwrite_files = fs.getattr("overwrite_files")?;
-                                    let file_paths = results
-                                        .iter()
-                                        .flat_map(|res| {
-                                            let s = res
-                                                .get_column("path")
-                                                .expect("path to be a column");
-                                            s.utf8()
-                                                .expect("path to be utf8")
-                                                .into_iter()
-                                                .filter_map(|s| s.map(|s| s.to_string()))
-                                                .collect::<Vec<_>>()
-                                        })
-                                        .collect::<Vec<_>>();
-                                    let file_paths =
-                                        PyList::new(py, file_paths).expect("file_paths");
-                                    let root_dir = file_info.root_dir.clone();
-                                    let py_io_config = file_info.io_config.clone().map(|io_conf| {
-                                        daft_io::python::IOConfig { config: io_conf }
-                                    });
-                                    let overwrite_partitions = matches!(
-                                        file_info.write_mode,
-                                        WriteMode::OverwritePartitions
-                                    );
-                                    overwrite_files.call1((
-                                        file_paths,
-                                        root_dir,
-                                        py_io_config,
-                                        overwrite_partitions,
-                                    ))?;
-
-                                    PyResult::Ok(())
-                                })
-                                .map_err(DaftError::PyO3Error)?;
-                            }
-                            #[cfg(not(feature = "python"))]
-                            {
-                                unimplemented!(
-                                    "Overwrite mode is not supported without the Python feature."
-                                )
-                            }
-                        }
+                        results.extend(state.writer.close().await?);
                     }
                     let mp = Arc::new(MicroPartition::new_loaded(
                         file_schema,
@@ -200,6 +141,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::Deltalake => "DeltalakeSink",
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
             WriteFormat::Lance => "LanceSink",
+            WriteFormat::DataSink => "DataSink",
         }
     }
 
@@ -217,7 +159,7 @@ impl BlockingSink for WriteSink {
         } else {
             // Unnecessary to buffer by morsel size because we are writing.
             // Writers also have their own internal buffering.
-            Arc::new(UnorderedDispatcher::new(None))
+            Arc::new(UnorderedDispatcher::unbounded())
         }
     }
 
@@ -232,7 +174,7 @@ impl BlockingSink for WriteSink {
 
     fn max_concurrency(&self) -> usize {
         if self.partition_by.is_some() {
-            *NUM_CPUS
+            get_compute_pool_num_threads()
         } else {
             1
         }

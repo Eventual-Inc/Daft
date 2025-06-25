@@ -1,16 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftPlanningConfig;
-use daft_catalog::TableSource;
 use daft_core::python::PyDataType;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
-use daft_session::{python::PySession, Session};
-use pyo3::{prelude::*, IntoPyObjectExt};
+use daft_session::python::PySession;
+use pyo3::{prelude::*, types::PyDict, IntoPyObjectExt};
 
-use crate::{
-    exec::execute_statement, functions::SQL_FUNCTIONS, planner::SQLPlanner, schema::try_parse_dtype,
-};
+use crate::{exec::execute_statement, functions::SQL_FUNCTIONS, schema::try_parse_dtype};
 
 #[pyclass]
 pub struct SQLFunctionStub {
@@ -43,31 +40,23 @@ pub fn sql_exec(
     py: Python<'_>,
     sql: &str,
     session: &PySession,
+    ctes: HashMap<String, PyLogicalPlanBuilder>,
     config: PyDaftPlanningConfig,
 ) -> PyResult<Option<PyObject>> {
-    if let Some(plan) = execute_statement(session.into(), sql)? {
+    // Prepare any externally provided CTEs.
+    let ctes = ctes
+        .into_iter()
+        .map(|(name, builder)| (name, builder.builder))
+        .collect::<HashMap<String, LogicalPlanBuilder>>();
+    // Execute and convert the result to a PyObject to be handled by the python caller.
+    if let Some(plan) = execute_statement(session.session(), sql, ctes)? {
         let builder = LogicalPlanBuilder::new(plan, Some(config.config));
         let builder = PyLogicalPlanBuilder::from(builder);
         let builder = builder.into_py_any(py)?;
-        return Ok(Some(builder));
+        Ok(Some(builder))
+    } else {
+        Ok(None)
     }
-    Ok(None)
-}
-
-#[pyfunction]
-pub fn sql(
-    sql: &str,
-    catalog: PyCatalog,
-    daft_planning_config: PyDaftPlanningConfig,
-) -> PyResult<PyLogicalPlanBuilder> {
-    // TODO deprecated catalog APIs #3819
-    let session = Session::empty();
-    for (name, view) in catalog.tables {
-        session.create_temp_table(name, &TableSource::View(view), true)?;
-    }
-    let mut planner = SQLPlanner::new(session.into());
-    let plan = planner.plan_sql(sql)?;
-    Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
 }
 
 #[pyfunction]
@@ -99,16 +88,18 @@ pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
         .collect()
 }
 
-/// TODO remove once session is merged on python side.
+/// SQLCatalog is DEPRECATED in 0.5 and will be REMOVED in 0.6.
+///
+/// TODO remove once session is removed on python side
 /// PyCatalog is the Python interface to the Catalog.
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone)]
-pub struct PyCatalog {
+pub struct PySqlCatalog {
     tables: HashMap<String, Arc<LogicalPlan>>,
 }
 
 #[pymethods]
-impl PyCatalog {
+impl PySqlCatalog {
     /// Construct an empty PyCatalog.
     #[staticmethod]
     pub fn new() -> Self {
@@ -140,9 +131,19 @@ impl PyCatalog {
     fn __str__(&self) -> String {
         format!("{:?}", self.tables)
     }
+
+    /// Convert the catalog's tables to a Python dictionary
+    fn to_pydict(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let dict = PyDict::new(py);
+        for (name, plan) in &self.tables {
+            let builder = PyLogicalPlanBuilder::from(LogicalPlanBuilder::new(plan.clone(), None));
+            dict.set_item(name, builder)?;
+        }
+        Ok(dict.into())
+    }
 }
 
-impl Default for PyCatalog {
+impl Default for PySqlCatalog {
     fn default() -> Self {
         Self::new()
     }

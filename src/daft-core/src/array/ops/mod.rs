@@ -7,7 +7,6 @@ mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
 mod between;
-mod binary;
 mod bitwise;
 mod bool_agg;
 pub(crate) mod broadcast;
@@ -34,7 +33,6 @@ mod hll_sketch;
 mod if_else;
 mod is_in;
 mod len;
-mod list;
 mod list_agg;
 mod log;
 mod map;
@@ -49,6 +47,7 @@ mod search_sorted;
 mod shift;
 mod sign;
 mod sketch_percentile;
+mod skew;
 mod sort;
 pub(crate) mod sparse_tensor;
 mod sqrt;
@@ -67,7 +66,6 @@ use std::hash::BuildHasher;
 use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
-pub use utf8::{PadPlacement, Utf8NormalizeOptions};
 
 use crate::count_mode::CountMode;
 
@@ -168,6 +166,10 @@ pub trait IntoGroups {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
 }
 
+pub trait IntoUniqueIdxs {
+    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
+}
+
 pub trait DaftCountAggable {
     type Output;
     fn count(&self, mode: CountMode) -> Self::Output;
@@ -254,4 +256,10 @@ pub trait DaftBoolAggable {
     fn bool_or(&self) -> Self::Output;
     fn grouped_bool_and(&self, groups: &GroupIndices) -> Self::Output;
     fn grouped_bool_or(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftSkewAggable {
+    type Output;
+    fn skew(&self) -> Self::Output;
+    fn grouped_skew(&self, groups: &GroupIndices) -> Self::Output;
 }
