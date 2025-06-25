@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum AutoscalerRequest {
     ScaleUp {
         workers: usize,

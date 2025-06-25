@@ -124,6 +124,11 @@ where
         autoscaler_handle: AutoscalerHandle,
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
+        // await worker updates at the start of the loop to initialize the scheduler with the current worker state
+        if let Some(worker_updates) = dispatcher_handle.await_worker_updates().await {
+            scheduler.update_worker_state(&worker_updates);
+        }
+
         let mut input_exhausted = false;
         // Keep running until the input is exhausted, i.e. no more new tasks, and there are no more pending tasks in the scheduler
         while !input_exhausted || scheduler.num_pending_tasks() > 0 {
@@ -641,6 +646,24 @@ mod tests {
             .to_string()
             .contains("test panic"));
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_actor_with_no_workers_can_autoscale() -> DaftResult<()> {
+        let test_context = setup_scheduler_actor_test_context(&[]);
+
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
+            .with_task_id(0)
+            .build();
+        let submittable_task = SubmittableTask::new(task);
+        let submitted_task = submittable_task
+            .submit(&test_context.scheduler_handle_ref)
+            .await?;
+        let result = submitted_task.await?;
+        assert_eq!(result.len(), 1);
+
+        test_context.cleanup().await?;
         Ok(())
     }
 }

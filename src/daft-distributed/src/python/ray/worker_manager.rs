@@ -16,19 +16,12 @@ use crate::scheduling::{
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
 pub(crate) struct RayWorkerManager {
     ray_workers: Arc<Mutex<HashMap<WorkerId, RaySwordfishWorker>>>,
-    task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
 impl RayWorkerManager {
     pub fn try_new() -> DaftResult<Self> {
-        let task_locals = Python::with_gil(|py| {
-            pyo3_async_runtimes::tokio::get_current_locals(py)
-                .expect("Failed to get current task locals")
-        });
-
         Ok(Self {
             ray_workers: Arc::new(Mutex::new(HashMap::new())),
-            task_locals,
         })
     }
 
@@ -69,6 +62,8 @@ impl WorkerManager for RayWorkerManager {
         self.refresh_workers()?;
 
         Python::with_gil(|py| {
+            let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
+
             let mut task_result_handles =
                 Vec::with_capacity(tasks_per_worker.values().map(|v| v.len()).sum());
 
@@ -77,7 +72,7 @@ impl WorkerManager for RayWorkerManager {
                 let handles = workers_guard
                     .get_mut(&worker_id)
                     .expect("Worker should be present in RayWorkerManager")
-                    .submit_tasks(tasks, py, &self.task_locals)?;
+                    .submit_tasks(tasks, py, &task_locals)?;
                 task_result_handles.extend(handles);
             }
             DaftResult::Ok(task_result_handles)

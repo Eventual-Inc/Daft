@@ -60,12 +60,14 @@ pub(super) mod tests {
     /// A mock implementation of the WorkerManager trait for testing
     #[derive(Clone)]
     pub struct MockWorkerManager {
-        workers: HashMap<WorkerId, MockWorker>,
+        workers: Arc<Mutex<HashMap<WorkerId, MockWorker>>>,
     }
 
     impl MockWorkerManager {
         pub fn new(workers: HashMap<WorkerId, MockWorker>) -> Self {
-            Self { workers }
+            Self {
+                workers: Arc::new(Mutex::new(workers)),
+            }
         }
     }
 
@@ -91,7 +93,7 @@ pub(super) mod tests {
                 for task in tasks {
                     let (task, result_tx, cancel_token) = task.into_inner();
                     // Update the worker's active task count
-                    if let Some(worker) = self.workers.get(&worker_id) {
+                    if let Some(worker) = self.workers.lock().unwrap().get(&worker_id) {
                         worker.add_active_task(&task);
                     }
 
@@ -109,22 +111,43 @@ pub(super) mod tests {
         }
 
         fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId) {
-            if let Some(worker) = self.workers.get(worker_id) {
+            if let Some(worker) = self.workers.lock().unwrap().get(worker_id) {
                 worker.mark_task_finished(task_id);
             }
         }
 
         fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {
-            Ok(self.workers.values().map(WorkerSnapshot::from).collect())
+            Ok(self
+                .workers
+                .lock()
+                .unwrap()
+                .values()
+                .map(WorkerSnapshot::from)
+                .collect())
         }
 
-        fn try_autoscale(&self, _num_workers: usize) -> DaftResult<()> {
-            // No-op for mock implementation
+        fn try_autoscale(&self, _num_cpus: usize) -> DaftResult<()> {
+            // add 1 worker for each num_cpus
+            let num_workers = _num_cpus as usize;
+            let mut workers = self.workers.lock().unwrap();
+            let num_existing_workers = workers.len();
+            for i in 0..num_workers {
+                let new_worker_id: WorkerId =
+                    Arc::from(format!("worker{}", num_existing_workers + i + 1));
+                workers.insert(
+                    new_worker_id.clone(),
+                    MockWorker::new(new_worker_id, 1.0, 0.0),
+                );
+            }
             Ok(())
         }
 
         fn shutdown(&self) -> DaftResult<()> {
-            self.workers.values().for_each(|w| w.shutdown());
+            self.workers
+                .lock()
+                .unwrap()
+                .values()
+                .for_each(|w| w.shutdown());
             Ok(())
         }
     }

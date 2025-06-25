@@ -542,4 +542,21 @@ mod tests {
         assert_eq!(*worker_task_counts.get(&worker_1).unwrap(), 1);
         assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
     }
+
+    #[test]
+    fn test_default_scheduler_with_no_workers_can_autoscale() {
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&HashMap::new());
+
+        let tasks = vec![create_spread_task()];
+
+        scheduler.enqueue_tasks(tasks);
+        let result = scheduler.get_schedulable_tasks();
+
+        assert_eq!(result.len(), 0);
+        assert_eq!(scheduler.num_pending_tasks(), 1);
+        assert_eq!(
+            scheduler.get_autoscaling_request(),
+            Some(AutoscalerRequest::ScaleUp { workers: 1 })
+        );
+    }
 }
