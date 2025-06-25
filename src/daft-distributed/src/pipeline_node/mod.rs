@@ -33,6 +33,7 @@ mod explode;
 mod filter;
 mod in_memory_source;
 mod limit;
+mod local_repartition;
 pub(crate) mod materialize;
 mod project;
 mod sample;
