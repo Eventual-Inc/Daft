@@ -68,6 +68,7 @@ class FileConfig:
 
     num_rows: int
     schema: list[ColumnSpec] | None = None
+    partition_count: int | None = None  # Optional partitioning column
 
     @classmethod
     def from_pattern(
@@ -78,6 +79,7 @@ class FileConfig:
         null_percentage: float = 0.0,
         string_avg_length: int = 50,
         large_string_avg_length: int = 2000,
+        partition_count:int | None =  None
     ) -> FileConfig:
         """Create a FileConfig from a pattern string.
 
@@ -88,10 +90,11 @@ class FileConfig:
             null_percentage: Default null percentage for all columns
             string_avg_length: Default length for string columns
             large_string_avg_length: Default length for large string columns
-
+            partition_count: Distinct values for partitioning. If present, will add a column called "partition" with values from 0 to partition_count-1.
         Example:
             FileConfig.from_pattern(1000, "int,string,float", repeat=2)
             # Creates: int, string, float, int, string, float columns
+
         """
         type_mapping = {
             "int": ColumnType.INT,
@@ -103,6 +106,11 @@ class FileConfig:
 
         pattern_types = [type_mapping[t.strip().lower()] for t in pattern.split(",")]
         schema = []
+
+        if partition_count is not None:
+            # Add partition column if specified
+            partition_col = ColumnSpec(name="partition", type=ColumnType.INT, null_percentage=0.0)
+            schema.append(partition_col)
 
         for i in range(repeat):
             for j, col_type in enumerate(pattern_types):
@@ -117,7 +125,7 @@ class FileConfig:
 
                 schema.append(col_spec)
 
-        return cls(num_rows=num_rows, schema=schema)
+        return cls(num_rows=num_rows, schema=schema, partition_count=partition_count)
 
     def get_total_columns(self) -> int:
         if self.schema:
@@ -183,10 +191,16 @@ def generate_parquet_file(config: FileConfig, output_path: Path) -> None:
     names = []
 
     for i, spec in enumerate(config.get_column_specs()):
-        if i % 10 == 0 and i > 0:  # Progress indicator for large datasets
-            print(f"  -> Processing column {i}/{config.get_total_columns()}")
-        arrays.append(generate_column_data(spec, config.num_rows))
-        names.append(spec.name)
+        if spec.name == "partition":
+            # Generate partition column if specified
+            values = [i % config.partition_count for i in range(config.num_rows)]
+            arrays.append(pa.array(values, type=pa.int64()))
+            names.append(spec.name)
+        else:
+            if i % 10 == 0 and i > 0:  # Progress indicator for large datasets
+                print(f"  -> Processing column {i}/{config.get_total_columns()}")
+            arrays.append(generate_column_data(spec, config.num_rows))
+            names.append(spec.name)
 
     # Create PyArrow table.
     table = pa.table(arrays, names=names)
@@ -206,8 +220,8 @@ def generate_parquet_file(config: FileConfig, output_path: Path) -> None:
 
 # Test data configurations for different benchmark scenarios
 TEST_CONFIGS = {
-    "01_boolean_heavy": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05),
-    "02_high_nulls": FileConfig(
+    "27_boolean_heavy_partitioned": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05, partition_count=32),
+    "28_high_nulls_partitioned": FileConfig(
             num_rows=2000000,
             schema=[
                 ColumnSpec("id", ColumnType.INT),
@@ -216,165 +230,189 @@ TEST_CONFIGS = {
                 ColumnSpec("maybe_active", ColumnType.BOOLEAN, null_percentage=0.6),
                 ColumnSpec("sparse_data", ColumnType.LARGE_STRING, null_percentage=0.9),
             ],
+            partition_count=32
         ),
-    "03_integer_heavy": FileConfig.from_pattern(num_rows=5000000, pattern="int", repeat=10, null_percentage=0.0),
-    "04_large_strings": FileConfig.from_pattern(
+    "29_integer_heavy_partitioned": FileConfig.from_pattern(num_rows=5000000, pattern="int", repeat=10, null_percentage=0.0, partition_count=32),
+    "30_large_strings_partitioned": FileConfig.from_pattern(
             num_rows=50000,
             pattern="int,large_string,large_string,string",
             repeat=10,
+            partition_count=32
         ),
-    "05_small_mixed": FileConfig.from_pattern(
+    "31_small_mixed_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
         repeat=4,
+        partition_count=32
     ),
-    "06_wide_table": FileConfig.from_pattern(
+    "32_wide_table_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
         repeat=25,  # 100 columns total
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
 
-    "08_wide_table_with_strings": FileConfig.from_pattern(
+    "33_wide_table_with_strings_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
         repeat=25,  # 100 columns total
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "07_wide_table_no_strings": FileConfig.from_pattern(
+    "34_wide_table_no_strings_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,float,float,boolean",
         repeat=25,  # 100 columns total
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "09_int_1": FileConfig.from_pattern(
+    "35_int_1_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int,string,float,boolean",
         repeat=1,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "10_int_10": FileConfig.from_pattern(
+    "36_int_10_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int",
         repeat=10,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "11_int_25": FileConfig.from_pattern(
+    "37_int_25_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int",
         repeat=25,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "12_int_50": FileConfig.from_pattern(
+    "38_int_50_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int",
         repeat=50,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "13_int_75": FileConfig.from_pattern(
+    "39_int_75_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int",
         repeat=75,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "14_int_100": FileConfig.from_pattern(
+    "40_int_100_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="int",
         repeat=100,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "15_float_1": FileConfig.from_pattern(
+    "41_float_1_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="float",
         repeat=1,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "16_float_10": FileConfig.from_pattern(
+    "42_float_10_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="float",
         repeat=10,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "17_float_25": FileConfig.from_pattern(
+    "43_float_25_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="float",
         repeat=25,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "18_float_50": FileConfig.from_pattern(
+    "44_float_50_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="float",
         repeat=50,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "19_float_75": FileConfig.from_pattern(
+    "45_float_75_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="float",
         repeat=75,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "20_float_100": FileConfig.from_pattern(
+    "46_float_100_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="float",
         repeat=100,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "21_string_1": FileConfig.from_pattern(
+    "47_string_1_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="string",
         repeat=1,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "22_string_10": FileConfig.from_pattern(
+    "48_string_10_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="string",
         repeat=10,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "23_string_25": FileConfig.from_pattern(
+    "49_string_25_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="string",
         repeat=25,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "24_string_50": FileConfig.from_pattern(
+    "50_string_50_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="string",
         repeat=50,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "25_string_75": FileConfig.from_pattern(
+    "51_string_75_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="string",
         repeat=75,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
-    "26_string_100": FileConfig.from_pattern(
+    "52_string_100_partitioned": FileConfig.from_pattern(
         num_rows=1000000,
         pattern="string",
         repeat=100,
         null_percentage=0.1,
         string_avg_length=30,
+        partition_count=32
     ),
 }
 
@@ -424,7 +462,11 @@ def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_di
             output_file = tmp_path / f"{config_name}_{writer}.parquet"
         else:
             output_file = f"s3://eventual-dev-benchmarking-fixtures/write-outputs/{config_name}_{writer}.parquet"
-        df.write_parquet(str(output_file), write_mode="overwrite")
+
+        if config.partition_count is not None:
+            df.write_parquet(str(output_file), write_mode="overwrite", partition_cols="partition")
+        else:
+            df.write_parquet(str(output_file), write_mode="overwrite")
 
         return output_file
 
