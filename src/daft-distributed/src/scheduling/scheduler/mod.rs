@@ -5,7 +5,9 @@ use super::{
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::MaterializedOutput, scheduling::task::TaskContext, utils::channel::OneshotSender,
+    pipeline_node::MaterializedOutput,
+    scheduling::{autoscaler::AutoscalerRequest, task::TaskContext},
+    utils::channel::OneshotSender,
 };
 
 mod default;
@@ -22,6 +24,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>);
     fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>>;
+    fn get_autoscaling_request(&mut self) -> Option<AutoscalerRequest>;
     fn num_pending_tasks(&self) -> usize;
 }
 
@@ -113,7 +116,7 @@ impl<T: Task> ScheduledTask<T> {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct WorkerSnapshot {
+pub(crate) struct WorkerSnapshot {
     worker_id: WorkerId,
     total_num_cpus: f64,
     total_num_gpus: f64,
