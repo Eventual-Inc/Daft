@@ -112,6 +112,7 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
+            | Self::Repartition(Repartition { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -125,7 +126,6 @@ impl LocalPhysicalPlan {
             | Self::DistributedActorPoolProject(DistributedActorPoolProject {
                 stats_state, ..
             })
-            | Self::Repartition(Repartition { stats_state, .. })
             | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }

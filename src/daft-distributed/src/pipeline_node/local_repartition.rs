@@ -16,10 +16,8 @@ use crate::{
 pub(crate) struct LocalRepartitionNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    ids: Vec<BoundExpr>,
-    values: Vec<BoundExpr>,
-    variable_name: String,
-    value_name: String,
+    columns: Vec<BoundExpr>,
+    num_partitions: usize,
     child: Arc<dyn DistributedPipelineNode>,
 }
 
@@ -30,10 +28,8 @@ impl LocalRepartitionNode {
     pub fn new(
         stage_config: &StageConfig,
         node_id: NodeID,
-        ids: Vec<BoundExpr>,
-        values: Vec<BoundExpr>,
-        variable_name: String,
-        value_name: String,
+        columns: Vec<BoundExpr>,
+        num_partitions: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
@@ -48,10 +44,8 @@ impl LocalRepartitionNode {
         Self {
             config,
             context,
-            ids,
-            values,
-            variable_name,
-            value_name,
+            columns,
+            num_partitions,
             child,
         }
     }
@@ -65,14 +59,9 @@ impl LocalRepartitionNode {
         let mut res = vec![];
         res.push(format!(
             "LocalRepartition: {}",
-            self.values.iter().map(|e| e.to_string()).join(", ")
+            self.columns.iter().map(|e| e.to_string()).join(", ")
         ));
-        res.push(format!(
-            "Ids = {}",
-            self.ids.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!("Variable name = {}", self.variable_name));
-        res.push(format!("Value name = {}", self.value_name));
+        res.push(format!("Num partitions = {}", self.num_partitions));
         res
     }
 }
@@ -122,7 +111,8 @@ impl DistributedPipelineNode for LocalRepartitionNode {
         let plan_builder = move |input: LocalPhysicalPlanRef| -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::repartition(
                 input,
-                self_clone.ids.clone(),
+                self_clone.columns.clone(),
+                self_clone.num_partitions,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
             ))

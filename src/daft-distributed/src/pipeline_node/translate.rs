@@ -9,13 +9,14 @@ use daft_dsl::{
     expr::bound_expr::BoundExpr,
     functions::python::{get_resource_request, try_get_batch_size_from_udf},
 };
-use daft_logical_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use crate::{
     pipeline_node::{
         explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
-        limit::LimitNode, project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode,
-        sink::SinkNode, unpivot::UnpivotNode, DistributedPipelineNode, NodeID,
+        limit::LimitNode, local_repartition::LocalRepartitionNode, project::ProjectNode,
+        sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode,
+        DistributedPipelineNode, NodeID,
     },
     stage::StageConfig,
 };
@@ -200,8 +201,24 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Aggregate(_) => {
                 todo!("FLOTILLA_MS2: Implement Aggregate")
             }
-            LogicalPlan::Repartition(_) => {
-                todo!("FLOTILLA_MS2: Implement Repartition")
+            LogicalPlan::Repartition(repartition) => {
+                let RepartitionSpec::Hash(repart_spec) = &repartition.repartition_spec else {
+                    todo!("FLOTILLA_MS2: Support other types of repartition");
+                };
+                let Some(num_partitions) = repart_spec.num_partitions else {
+                    todo!("FLOTILLA_MS2: Support repartitioning into unknown number of partitions");
+                };
+
+                let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
+                LocalRepartitionNode::new(
+                    &self.stage_config,
+                    node_id,
+                    columns,
+                    num_partitions,
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .arced()
             }
             LogicalPlan::Distinct(_) => {
                 todo!("FLOTILLA_MS2: Implement Distinct")

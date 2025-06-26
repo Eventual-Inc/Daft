@@ -7,8 +7,8 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::ExecutionTaskSpawner;
 
@@ -123,7 +123,7 @@ impl BlockingSink for PivotSink {
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
                     )?);
-                    Ok(Some(pivoted))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(pivoted)))
                 },
                 Span::current(),
             )

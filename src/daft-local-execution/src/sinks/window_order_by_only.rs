@@ -11,7 +11,8 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState,
 };
 use crate::ExecutionTaskSpawner;
 
@@ -135,7 +136,9 @@ impl BlockingSink for WindowOrderByOnlySink {
                     if sorted.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                            empty_result,
+                        ))));
                     }
 
                     // Convert to RecordBatch for window operations
@@ -191,7 +194,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         )
                     };
 
-                    Ok(Some(Arc::new(output)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(output))))
                 },
                 Span::current(),
             )

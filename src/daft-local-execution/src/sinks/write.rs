@@ -10,8 +10,8 @@ use daft_writers::{AsyncFileWriter, WriterFactory};
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
@@ -123,7 +123,7 @@ impl BlockingSink for WriteSink {
                         results.into(),
                         None,
                     ));
-                    Ok(Some(mp))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(mp)))
                 },
                 Span::current(),
             )
