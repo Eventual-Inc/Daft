@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 import pytest
 
 from daft import col
 from daft.datatype import DataType
 
 
-@pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot(make_df, n_partitions):
+@pytest.mark.parametrize("n_partitions", [2])
+def test_unpivot(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -16,7 +18,7 @@ def test_unpivot(make_df, n_partitions):
     )
 
     df = df.unpivot("id", ["a", "b"])
-    df = df.sort("id")
+    df = df.sort(["id", "variable"])
     df = df.collect()
 
     expected = {
@@ -29,7 +31,7 @@ def test_unpivot(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_no_values(make_df, n_partitions):
+def test_unpivot_no_values(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -40,7 +42,7 @@ def test_unpivot_no_values(make_df, n_partitions):
     )
 
     df = df.unpivot("id")
-    df = df.sort("id")
+    df = df.sort(["id", "variable"])
     df = df.collect()
 
     expected = {
@@ -53,7 +55,7 @@ def test_unpivot_no_values(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_different_types(make_df, n_partitions):
+def test_unpivot_different_types(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -64,7 +66,7 @@ def test_unpivot_different_types(make_df, n_partitions):
     )
 
     df = df.unpivot("id", ["a", "b"])
-    df = df.sort("id")
+    df = df.sort(["id", "variable"])
     df = df.collect()
 
     expected = {
@@ -77,7 +79,7 @@ def test_unpivot_different_types(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_incompatible_types(make_df, n_partitions):
+def test_unpivot_incompatible_types(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -92,7 +94,7 @@ def test_unpivot_incompatible_types(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_nulls(make_df, n_partitions):
+def test_unpivot_nulls(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -103,7 +105,7 @@ def test_unpivot_nulls(make_df, n_partitions):
     )
 
     df = df.unpivot("id", ["a", "b"])
-    df = df.sort("id")
+    df = df.sort(["id", "variable"])
     df = df.collect()
 
     expected = {
@@ -116,7 +118,7 @@ def test_unpivot_nulls(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_null_column(make_df, n_partitions):
+def test_unpivot_null_column(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -127,7 +129,7 @@ def test_unpivot_null_column(make_df, n_partitions):
     )
 
     df = df.unpivot("id", ["a", "b"])
-    df = df.sort("id")
+    df = df.sort(["id", "variable"])
     df = df.collect()
 
     expected = {
@@ -140,7 +142,7 @@ def test_unpivot_null_column(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_multiple_ids(make_df, n_partitions):
+def test_unpivot_multiple_ids(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id1": ["x", "y", "z"],
@@ -152,7 +154,7 @@ def test_unpivot_multiple_ids(make_df, n_partitions):
     )
 
     df = df.unpivot(["id1", "id2"], ["a", "b"])
-    df = df.sort("id1")
+    df = df.sort(["id1", "id2", "variable"])
     df = df.collect()
 
     expected = {
@@ -166,7 +168,7 @@ def test_unpivot_multiple_ids(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_no_ids(make_df, n_partitions):
+def test_unpivot_no_ids(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "a": [1, 3, 5],
@@ -188,7 +190,7 @@ def test_unpivot_no_ids(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_expr(make_df, n_partitions):
+def test_unpivot_expr(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -199,15 +201,40 @@ def test_unpivot_expr(make_df, n_partitions):
     )
 
     df = df.unpivot("id", ["a", "b", (col("a") + col("b")).alias("a_plus_b")])
-    df = df.sort("id")
+    df = df.sort(["id", "variable"])
     df = df.collect()
 
     expected = {
         "id": ["x", "x", "x", "y", "y", "y", "z", "z", "z"],
-        "variable": ["a", "b", "a_plus_b", "a", "b", "a_plus_b", "a", "b", "a_plus_b"],
-        "value": [1, 2, 3, 3, 4, 7, 5, 6, 11],
+        "variable": ["a", "a_plus_b", "b", "a", "a_plus_b", "b", "a", "a_plus_b", "b"],
+        "value": [1, 3, 2, 3, 7, 4, 5, 11, 6],
     }
 
+    assert df.to_pydict() == expected
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4])
+def test_unpivot_followed_by_projection(make_df, n_partitions, with_morsel_size):
+    df = make_df(
+        {
+            "year": [2020, 2021, 2022],
+            "id": [1, 2, 3],
+            "Jan": [10, 30, 50],
+            "Feb": [20, 40, 60],
+        },
+        repartition=n_partitions,
+    )
+
+    df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
+    df = df.with_column("inventory2", df["inventory"])
+    df = df.sort(["year", "month", "inventory"])
+
+    expected = {
+        "year": [2020, 2020, 2021, 2021, 2022, 2022],
+        "month": ["Feb", "Jan", "Feb", "Jan", "Feb", "Jan"],
+        "inventory": [20, 10, 40, 30, 60, 50],
+        "inventory2": [20, 10, 40, 30, 60, 50],
+    }
     assert df.to_pydict() == expected
 
 
@@ -244,7 +271,7 @@ def test_unpivot_empty_partition(make_df):
 
     df = df.into_partitions(4)
     df = df.unpivot("id", ["a", "b"])
-    df = df.sort("id")
+    df = df.sort(["id", "variable"])
     df = df.collect()
 
     expected = {

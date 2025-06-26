@@ -41,3 +41,12 @@ def test_filter_sql() -> None:
     expected = {"x": [3], "y": [6], "z": [9]}
 
     assert df == expected
+
+
+def test_filter_alias_for_where() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 9, 9]})
+
+    expected = df.where("z = 9 AND y > 5").collect().to_pydict()
+    actual = df.filter("z = 9 AND y > 5").collect().to_pydict()
+
+    assert actual == expected

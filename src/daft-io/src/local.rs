@@ -1,22 +1,27 @@
-use std::io::{SeekFrom, Write};
-use std::ops::Range;
-use std::path::PathBuf;
+use std::{
+    any::Any,
+    io::{SeekFrom, Write},
+    ops::Range,
+    path::PathBuf,
+    sync::Arc,
+};
 
-use crate::object_io::{self, FileMetadata, LSResult};
-use crate::stats::IOStatsRef;
-use crate::FileFormat;
-
-use super::object_io::{GetResult, ObjectSource};
-use super::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
-use futures::stream::BoxStream;
-use futures::StreamExt;
-use futures::TryStreamExt;
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{ResultExt, Snafu};
-use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+use super::{
+    object_io::{GetResult, ObjectSource},
+    Result,
+};
+use crate::{
+    object_io::{self, FileMetadata, LSResult},
+    stats::IOStatsRef,
+    FileFormat,
+};
 
 /// NOTE: We hardcode this even for Windows
 ///
@@ -24,7 +29,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
-pub(crate) struct LocalSource {}
+pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -78,39 +83,42 @@ enum Error {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{
+            UnableToFetchDirectoryEntries, UnableToFetchFileMetadata, UnableToOpenFile,
+            UnableToOpenFileForWriting, UnableToReadBytes, UnableToWriteToFile,
+        };
         match error {
             UnableToOpenFile { path, source } | UnableToFetchDirectoryEntries { path, source } => {
-                use std::io::ErrorKind::*;
+                use std::io::ErrorKind::NotFound;
                 match source.kind() {
-                    NotFound => super::Error::NotFound {
+                    NotFound => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
                 }
             }
             UnableToFetchFileMetadata { path, source } => {
-                use std::io::ErrorKind::*;
+                use std::io::ErrorKind::{IsADirectory, NotFound};
                 match source.kind() {
-                    NotFound | IsADirectory => super::Error::NotFound {
+                    NotFound | IsADirectory => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
                 }
             }
-            UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
+            UnableToReadBytes { path, source } => Self::UnableToReadBytes { path, source },
             UnableToWriteToFile { path, source } | UnableToOpenFileForWriting { path, source } => {
-                super::Error::UnableToWriteToFile { path, source }
+                Self::UnableToWriteToFile { path, source }
             }
-            _ => super::Error::Generic {
+            _ => Self::Generic {
                 store: super::SourceType::File,
                 source: error.into(),
             },
@@ -120,7 +128,7 @@ impl From<Error> for super::Error {
 
 impl LocalSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
-        Ok(LocalSource {}.into())
+        Ok(Self {}.into())
     }
 }
 
@@ -240,13 +248,13 @@ impl ObjectSource for LocalSource {
         })
     }
 
-    async fn iter_dir(
-        &self,
+    async fn iter_dir<'a>(
+        &'a self,
         uri: &str,
         posix: bool,
         _page_size: Option<i32>,
         _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    ) -> super::Result<BoxStream<'a, super::Result<FileMetadata>>> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for local.");
         }
@@ -273,7 +281,7 @@ impl ObjectSource for LocalSource {
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
-                filepath: format!("{}{}", LOCAL_PROTOCOL, uri),
+                filepath: format!("{LOCAL_PROTOCOL}{uri}"),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
             })])
@@ -328,9 +336,13 @@ impl ObjectSource for LocalSource {
         });
         Ok(file_meta_stream.boxed())
     }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
 }
 
-pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
+pub async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
     let path = &local_file.path;
     let mut file = tokio::fs::File::open(path)
         .await
@@ -369,14 +381,13 @@ pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
 }
 
 #[cfg(test)]
-
 mod tests {
-    use std::default;
-    use std::io::Write;
+    use std::{default, io::Write};
 
-    use crate::object_io::{FileMetadata, FileType, ObjectSource};
-    use crate::Result;
-    use crate::{HttpSource, LocalSource};
+    use crate::{
+        object_io::{FileMetadata, FileType, ObjectSource},
+        HttpSource, LocalSource, Result,
+    };
 
     async fn write_remote_parquet_to_local_file(
         f: &mut tempfile::NamedTempFile,

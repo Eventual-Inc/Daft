@@ -1,15 +1,14 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
     IOConfig,
-    NativeStorageConfig,
     ParquetSourceConfig,
-    PythonStorageConfig,
     StorageConfig,
 )
 from daft.dataframe import DataFrame
@@ -19,25 +18,19 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_parquet(
-    path: Union[str, List[str]],
-    row_groups: Optional[List[List[int]]] = None,
+    path: Union[str, list[str]],
+    row_groups: Optional[list[list[int]]] = None,
     infer_schema: bool = True,
-    schema: Optional[Dict[str, DataType]] = None,
-    io_config: Optional["IOConfig"] = None,
-    use_native_downloader: bool = True,
+    schema: Optional[dict[str, DataType]] = None,
+    io_config: Optional[IOConfig] = None,
+    file_path_column: Optional[str] = None,
+    hive_partitioning: bool = False,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
-    schema_hints: Optional[Dict[str, DataType]] = None,
+    schema_hints: Optional[dict[str, DataType]] = None,
     _multithreaded_io: Optional[bool] = None,
     _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
-    """Creates a DataFrame from Parquet file(s)
-
-    Example:
-        >>> df = daft.read_parquet("/path/to/file.parquet")
-        >>> df = daft.read_parquet("/path/to/directory")
-        >>> df = daft.read_parquet("/path/to/files-*.parquet")
-        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
-        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
+    """Creates a DataFrame from Parquet file(s).
 
     Args:
         path (str): Path to Parquet file (allows for wildcards)
@@ -45,14 +38,23 @@ def read_parquet(
         infer_schema (bool): Whether to infer the schema of the Parquet, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
-        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
+        file_path_column: Include the source path(s) as a column with this name. Defaults to None.
+        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
+
+    Examples:
+        >>> df = daft.read_parquet("/path/to/file.parquet")
+        >>> df = daft.read_parquet("/path/to/directory")
+        >>> df = daft.read_parquet("/path/to/files-*.parquet")
+        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
+        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
+
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -64,10 +66,11 @@ def read_parquet(
             "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
         )
 
-    is_ray_runner = context.get_context().is_ray_runner
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
-    multithreaded_io = not is_ray_runner if _multithreaded_io is None else _multithreaded_io
+    multithreaded_io = (
+        (context.get_context().get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
+    )
 
     if isinstance(coerce_int96_timestamp_unit, str):
         coerce_int96_timestamp_unit = TimeUnit.from_str(coerce_int96_timestamp_unit)
@@ -82,10 +85,7 @@ def read_parquet(
     file_format_config = FileFormatConfig.from_parquet_config(
         ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups, chunk_size=_chunk_size)
     )
-    if use_native_downloader:
-        storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
-    else:
-        storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
+    storage_config = StorageConfig(multithreaded_io, io_config)
 
     builder = get_tabular_files_scan(
         path=path,
@@ -93,5 +93,7 @@ def read_parquet(
         schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
+        file_path_column=file_path_column,
+        hive_partitioning=hive_partitioning,
     )
     return DataFrame(builder)

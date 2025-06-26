@@ -1,23 +1,17 @@
-use crate::datatypes::logical::{
-    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-    FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, TensorArray, TimeArray,
-    TimestampArray,
-};
-use crate::datatypes::{BooleanArray, DaftArrayType, DaftLogicalType, Field};
+use std::sync::Arc;
 
 use super::{ArrayWrapper, IntoSeries, Series};
-use crate::array::ops::GroupIndices;
-use crate::series::array_impl::binary_ops::SeriesBinaryOps;
-use crate::series::DaftResult;
-use crate::series::SeriesLike;
-use crate::with_match_integer_daft_types;
-use crate::DataType;
-use std::sync::Arc;
+use crate::{
+    array::{ops::GroupIndices, prelude::*},
+    datatypes::prelude::*,
+    series::{DaftResult, SeriesLike},
+    with_match_integer_daft_types,
+};
 
 impl<L> IntoSeries for LogicalArray<L>
 where
     L: DaftLogicalType,
-    ArrayWrapper<LogicalArray<L>>: SeriesLike,
+    ArrayWrapper<Self>: SeriesLike,
 {
     fn into_series(self) -> Series {
         Series {
@@ -122,16 +116,12 @@ macro_rules! impl_series_like_for_logical_array {
                 Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
-            fn sort(&self, descending: bool) -> DaftResult<Series> {
-                Ok(self.0.sort(descending)?.into_series())
+            fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series> {
+                Ok(self.0.sort(descending, nulls_first)?.into_series())
             }
 
             fn str_value(&self, idx: usize) -> DaftResult<String> {
                 self.0.str_value(idx)
-            }
-
-            fn html_value(&self, idx: usize) -> String {
-                self.0.html_value(idx)
             }
 
             fn take(&self, idx: &Series) -> DaftResult<Series> {
@@ -176,64 +166,35 @@ macro_rules! impl_series_like_for_logical_array {
                 .into_series())
             }
 
-            fn add(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::add(self, rhs)
-            }
-
-            fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::sub(self, rhs)
-            }
-
-            fn mul(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::mul(self, rhs)
-            }
-
-            fn div(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::div(self, rhs)
-            }
-
-            fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::rem(self, rhs)
-            }
-            fn and(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::and(self, rhs)
-            }
-            fn or(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::or(self, rhs)
-            }
-            fn xor(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::xor(self, rhs)
-            }
-            fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::equal(self, rhs)
-            }
-            fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::not_equal(self, rhs)
-            }
-            fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lt(self, rhs)
-            }
-            fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lte(self, rhs)
-            }
-            fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gt(self, rhs)
-            }
-            fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gte(self, rhs)
+            fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                use crate::array::{ops::DaftSetAggable, ListArray};
+                let data_array = match groups {
+                    Some(groups) => self.0.physical.clone().into_series().grouped_set(groups)?,
+                    None => self.0.physical.clone().into_series().set()?,
+                };
+                let new_field = self.field().to_list_field()?;
+                Ok(ListArray::new(
+                    new_field,
+                    data_array.flat_child.cast(self.data_type())?,
+                    data_array.offsets().clone(),
+                    data_array.validity().cloned(),
+                )
+                .into_series())
             }
         }
     };
 }
 
-impl_series_like_for_logical_array!(Decimal128Array);
 impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(TimeArray);
 impl_series_like_for_logical_array!(DurationArray);
+
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(ImageArray);
+impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(TensorArray);
 impl_series_like_for_logical_array!(EmbeddingArray);
-impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(FixedShapeTensorArray);
+impl_series_like_for_logical_array!(SparseTensorArray);
+impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);

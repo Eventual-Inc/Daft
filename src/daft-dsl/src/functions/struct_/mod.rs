@@ -3,9 +3,8 @@ mod get;
 use get::GetEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum StructExpr {
@@ -15,9 +14,8 @@ pub enum StructExpr {
 impl StructExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use StructExpr::*;
         match self {
-            Get(_) => &GetEvaluator {},
+            Self::Get(_) => &GetEvaluator {},
         }
     }
 }

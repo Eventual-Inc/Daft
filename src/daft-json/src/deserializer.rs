@@ -7,7 +7,7 @@ pub type Object<'value> = IndexMap<Cow<'value, str>, Value<'value>>;
 /// Borrowed JSON-DOM Value, consider using the `ValueTrait`
 /// to access its content
 #[derive(Debug, Clone)]
-pub(crate) enum Value<'value> {
+pub enum Value<'value> {
     /// Static values
     Static(StaticNode),
     /// string type

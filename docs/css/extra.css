@@ -1,0 +1,179 @@
+:root {
+  --md-primary-fg-color: #7f007f;
+  --md-accent-fg-color: var(--daft-magenta-light);
+  --daft-magenta: #ff00ff;
+  --daft-magenta-light: #ff00ff40;
+}
+
+/* hide readthedocs flyout for future versions (>0.4.15) */
+readthedocs-flyout {
+  display: none !important;
+}
+
+[data-md-color-scheme=slate][data-md-color-primary=black], [data-md-color-scheme=default] {
+  --md-typeset-a-color: var(--daft-magenta);
+}
+
+/* NOTE ADMONITIONS */
+
+/* use daft pink for note admonitions */
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  border-color: var(--daft-magenta);
+}
+
+/* heading background color for note admonitions */
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  background-color: var(--daft-magenta-light);
+}
+
+/* color of icon (before) & arrow (after) for note admonitions */
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before,
+.md-typeset .note > .admonition-title::after,
+.md-typeset .note > summary::after {
+  background-color: var(--daft-magenta);
+}
+
+/* box shadow on click for expanding boxes for note admonitions */
+.md-typeset .admonition.note:focus-within,
+.md-typeset details.note:focus-within {
+  box-shadow: 0 0 0 .2rem --daft-magenta-light;
+}
+
+/* EXAMPLE ADMONITIONS */
+
+/* use blue for example admonitions */
+.md-typeset .admonition.example,
+.md-typeset details.example {
+  border-color: rgba(68, 138, 255);
+}
+
+/* heading background color for example admonitions */
+.md-typeset .example > .admonition-title,
+.md-typeset .example > summary {
+  background-color: rgba(68, 138, 255, 0.1);
+}
+
+/* colors of icon (before) & arrow (after) for example admonitions */
+.md-typeset .example > .admonition-title::before,
+.md-typeset .example > summary::before,
+.md-typeset .example > .admonition-title::after,
+.md-typeset .example > summary::after {
+  background-color: rgba(68, 138, 255);
+}
+
+/* box shadow on click for expanding boxes for example admonitions */
+.md-typeset .admonition.example:focus-within,
+.md-typeset details.example:focus-within {
+  box-shadow: 0 0 0 .2rem rgba(68, 138, 255, 0.1)
+}
+
+/* use 100% width for tables */
+.md-typeset__table {
+  width: 100%;
+}
+
+.md-typeset__table table:not([class]) {
+  display: table
+}
+
+/* method label */
+code.doc-symbol-method::after {
+  content: "method";
+}
+
+/* don't display >>> */
+.highlight .gp {
+  display: none;
+}
+
+/* body display width */
+.md-grid {
+  max-width: 70rem;
+}
+
+/* spacing between slack & github icon in header*/
+[dir=ltr] .md-header__source {
+  margin-left: 0.3rem;
+}
+
+/* spacing between header and body */
+.md-main__inner {
+  margin-top: 0rem;
+}
+
+.md-sidebar .md-sidebar--primary,
+.md-sidebar .md-sidebar--secondary {
+  top: 110px;
+}
+
+.md-content__inner {
+  padding-top: 1rem;
+}
+
+/* sidebar spacing */
+.md-sidebar {
+  width: 10rem;
+}
+
+[dir=ltr] .md-nav--primary .md-nav__item>.md-nav__link {
+  margin-right: 0rem;
+}
+
+/* font size in secondary nav */
+.md-nav--secondary,
+.md-nav--secondary nav.md-nav {
+  font-size: 0.6rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* spacing between items in secondary nav */
+.md-nav--secondary,
+.md-nav--secondary a.md-nav__link {
+  margin-top: .45em;
+}
+
+/* spacing for secondary nav ToC */
+.md-nav--secondary .md-nav__title {
+  box-shadow: 0 0 .2rem .2rem var(--md-default-bg-color);
+}
+
+/* footer */
+.md-footer__link {
+  margin-bottom: 0.2rem;
+  margin-top: 0.5rem;
+}
+
+.md-footer__title {
+  margin-bottom: 0.5rem;
+}
+
+.md-footer .md-social {
+  padding: 0.2rem 0;
+}
+
+.md-footer__inner.md-grid {
+  max-width: 50rem;
+}
+
+.md-footer-meta__inner.md-grid {
+  max-width: 50rem;
+}
+
+/* readthedocs version selector */
+.md-version__list {
+  display: none;
+}
+
+.md-version__list--active {
+  display: block;
+}
+
+/* don't show version selector in nav on mobile */
+@media (max-width: 768px) {
+  .md-version {
+    display: none !important;
+  }
+}

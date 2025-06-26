@@ -8,7 +8,7 @@ import pytest
 from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection, col
 from daft.logical.schema import Schema
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 DATA = {
     "int": ([1, 2, None], DataType.int64()),
@@ -97,7 +97,7 @@ def test_repr():
     assert (
         without_escape.replace("\r", "")
         == """╭─────────────┬─────────╮
-│ Column Name ┆ Type    │
+│ column_name ┆ type    │
 ╞═════════════╪═════════╡
 │ int         ┆ Int64   │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
@@ -114,11 +114,10 @@ def test_repr():
 def test_repr_html():
     schema = TABLE.schema()
     out_repr = schema._repr_html_()
-    print(out_repr)
     assert (
         out_repr
         == f"""<table class="dataframe">
-<thead><tr><th {TH_STYLE}>Column Name</th><th {TH_STYLE}>Type</th></tr></thead>
+<thead><tr><th {TH_STYLE}>column_name</th><th {TH_STYLE}>type</th></tr></thead>
 <tbody>
 <tr><td {TD_STYLE}>int</td><td {TD_STYLE}>Int64</td></tr>
 <tr><td {TD_STYLE}>float</td><td {TD_STYLE}>Float64</td></tr>
@@ -221,3 +220,31 @@ def test_schema_pyarrow_roundtrip():
     )
 
     assert Schema.from_pyarrow_schema(pa_schema).to_pyarrow_schema() == roundtrip_pa_schema
+
+
+def test_schema_pyarrow_roundtrip_with_metadata():
+    metadata = {
+        "lance-encoding:compression": "zstd",
+        "lance-encoding:compression-level": "3",
+        "lance-encoding:structural-encoding": "miniblock",
+        "lance-encoding:packed": "true",
+    }
+    pa_schema = pa.schema(
+        [
+            pa.field("compressible_strings", pa.string(), metadata=metadata),
+            pa.field("uncompressed_stuff", pa.int64()),
+        ]
+    )
+
+    # Daft seems to default to large_string on conversion, so we create an expected schema with large_string
+    expected_roundtrip_pa_schema = pa.schema(
+        [
+            pa.field("compressible_strings", pa.large_string(), metadata=metadata),
+            pa.field("uncompressed_stuff", pa.int64()),
+        ]
+    )
+
+    daft_schema = Schema.from_pyarrow_schema(pa_schema)
+    roundtrip_pa_schema = daft_schema.to_pyarrow_schema()
+
+    assert roundtrip_pa_schema == expected_roundtrip_pa_schema

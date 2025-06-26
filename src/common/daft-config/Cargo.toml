@@ -1,11 +1,14 @@
 [dependencies]
-bincode = {workspace = true}
 common-io-config = {path = "../io-config", default-features = false}
+common-py-serde = {path = "../py-serde", default-features = false, optional = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-io-config/python"]
+python = ["dep:pyo3", "common-io-config/python", "dep:common-py-serde"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

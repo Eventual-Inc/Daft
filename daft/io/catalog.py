@@ -1,3 +1,4 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,6 +6,7 @@ from enum import Enum
 from typing import Optional
 
 from daft.daft import IOConfig
+from daft.io.aws_config import boto3_client_from_s3_config
 
 
 class DataCatalogType(Enum):
@@ -22,8 +24,7 @@ class DataCatalogType(Enum):
 
 @dataclass
 class DataCatalogTable:
-    """
-    A reference to a table in some database in some data catalog.
+    """A reference to a table in some database in some data catalog.
 
     See :class:`~.DataCatalog`
     """
@@ -33,29 +34,25 @@ class DataCatalogTable:
     table_name: str
     catalog_id: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        import warnings
+
+        warnings.warn(
+            "This API is deprecated in daft >=0.5.0 and will be removed in >=0.6.0. Users should use the new functionality in daft.catalog.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     def table_uri(self, io_config: IOConfig) -> str:
-        """
-        Get the URI of the table in the data catalog.
+        """Get the URI of the table in the data catalog.
 
         Returns:
             str: The URI of the table.
         """
         if self.catalog == DataCatalogType.GLUE:
             # Use boto3 to get the table from AWS Glue Data Catalog.
-            import boto3
+            glue = boto3_client_from_s3_config("glue", io_config.s3)
 
-            s3_config = io_config.s3
-
-            glue = boto3.client(
-                "glue",
-                region_name=s3_config.region_name,
-                use_ssl=s3_config.use_ssl,
-                verify=s3_config.verify_ssl,
-                endpoint_url=s3_config.endpoint_url,
-                aws_access_key_id=s3_config.key_id,
-                aws_secret_access_key=s3_config.access_key,
-                aws_session_token=s3_config.session_token,
-            )
             if self.catalog_id is not None:
                 # Allow cross account access, table.catalog_id should be the target account id
                 glue_table = glue.get_table(

@@ -1,0 +1,329 @@
+name: Nightly package build, S3 publish, and tests
+
+on:
+  schedule:
+  #       ┌───────────── minute (0 - 59)
+  #       │ ┌───────────── hour (0 - 23)
+  #       │ │ ┌───────────── day of the month (1 - 31)
+  #       │ │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+  #       │ │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+  #       │ │ │ │ │
+  - cron: 0 5 * * *
+
+  workflow_dispatch:
+
+env:
+  S3_BUCKET: s3://github-actions-artifacts-bucket/builds/nightly/
+  AWS_REGION: us-west-2
+  CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
+
+  DAFT_ANALYTICS_ENABLED: '0'
+  UV_SYSTEM_PYTHON: 1
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  build:
+    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    uses: ./.github/workflows/build-wheel.yml
+    with:
+      os: ${{ matrix.os }}
+      arch: ${{ matrix.arch }}
+      lts: ${{ matrix.lts }}
+      build_type: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos, windows]
+        arch: [x86_64, aarch64]
+        lts: [false, true]
+
+        exclude:
+        - os: windows
+          arch: aarch64
+        - lts: true
+          arch: aarch64
+
+  publish:
+    name: Publish wheels to S3
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
+    - name: Upload wheels to S3
+      run: aws s3 cp --no-progress --recursive dist/ ${{ env.S3_BUCKET }}
+
+    - name: Install boto3 and packaging
+      run: pip3 install boto3 packaging
+    - name: Generate Python simple repository API files
+      run: python3 .github/ci-scripts/generate_simple_py_index.py ${{ env.S3_BUCKET }}
+    - name: Upload index files to S3
+      run: aws s3 cp --no-progress --recursive dist/indices/ ${{ env.S3_BUCKET }}
+
+    - name: Invalidate Cloudfront cache
+      run: aws cloudfront create-invalidation --distribution-id ${{ env.CLOUDFRONT_DIST_ID }} --paths '/builds/nightly*'
+
+    - name: Print install instructions
+      run: |
+        echo "To install the nightly build, run:"
+        echo "pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly"
+
+  on-failure:
+    name: Send Slack notification on failure
+    runs-on: ubuntu-latest
+    needs: [build, publish]
+    if: ${{ failure() }}
+
+    steps:
+    - uses: slackapi/slack-github-action@v2.0.0
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: Nightly S3 publish <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+  integration-test-tpch:
+    needs: [publish]
+    runs-on: ${{ matrix.runner-name }}
+    timeout-minutes: 15
+    env:
+      package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        runner-name: [ubuntu-latest, ubuntu-24.04-arm]
+        daft-runner: [ray, native]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "0.6.17"
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - name: Setup Virtual Env
+      run: |
+        uv venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          rm -rf daft
+    - uses: actions/cache@v4
+      env:
+        cache-name: cache-tpch-data
+      with:
+        path: data/tpch-dbgen
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+    - name: Run TPCH integration tests
+      run: |
+        pytest tests/integration/test_tpch.py --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] TPCH Integration Tests on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+
+
+  integration-test-io:
+    needs: [publish]
+    runs-on: ${{ matrix.runner-name }}
+    timeout-minutes: 30
+    env:
+      package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        runner-name: [ubuntu-latest, ubuntu-24.04-arm]
+        daft-runner: [ray, native]
+    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
+    # This is used in the step "Assume GitHub Actions AWS Credentials"
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: docker-practice/actions-setup-docker@master
+      timeout-minutes: 15
+      if: runner.os == 'macos'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "0.6.17"
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - name: Setup Virtual Env
+      run: |
+        uv venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          uv pip install -r requirements-dev.txt daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          rm -rf daft
+    - name: Prepare tmpdirs for IO services
+      run: |
+        mkdir -p /tmp/daft-integration-testing/nginx
+        chmod +rw /tmp/daft-integration-testing/nginx
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
+    - name: Spin up IO services
+      uses: isbang/compose-action@v2.0.2
+      with:
+        compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
+        down-flags: --volumes
+    - name: Run IO integration tests
+      run: |
+        pytest tests/integration/io -m 'integration and not benchmark' --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] IO Integration Tests on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+  benchmark-local-tpch:
+    needs: [publish]
+    uses: ./.github/workflows/benchmark-local-tpch.yml
+    with:
+      daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
+    secrets: inherit
+
+  on-local-tpch-failure:
+    name: Send Slack notification on failure
+    runs-on: ubuntu-latest
+    needs: benchmark-local-tpch
+    if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+
+    steps:
+    - uses: slackapi/slack-github-action@v2.0.0
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Local TPC-H benchmarks on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+  benchmark-distributed-tpch:
+    needs: [publish]
+    uses: ./.github/workflows/benchmark-distributed-tpch.yml
+    with:
+      daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
+      scale_factor: 1000
+      num_workers: 4
+    secrets: inherit
+
+  on-distributed-tpch-failure:
+    name: Send Slack notification on failure
+    runs-on: ubuntu-latest
+    needs: benchmark-distributed-tpch
+    if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+
+    steps:
+    - uses: slackapi/slack-github-action@v2.0.0
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Distributed TPC-H benchmarks on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook

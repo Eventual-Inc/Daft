@@ -1,28 +1,32 @@
-use arrow2::array;
+use std::sync::Arc;
 
-use crate::{
-    array::DataArray,
-    datatypes::{
-        logical::{DateArray, Decimal128Array, DurationArray, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, NullArray, Utf8Array,
-    },
-};
+use arrow2::{array, types::months_days_ns};
 
 #[cfg(feature = "python")]
 use crate::array::pseudo_arrow::PseudoArrowArray;
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
+use crate::{
+    array::DataArray,
+    datatypes::{
+        logical::{DateArray, DurationArray, TimeArray, TimestampArray},
+        BinaryArray, BooleanArray, DaftPrimitiveType, FixedSizeBinaryArray, IntervalArray,
+        NullArray, Utf8Array,
+    },
+};
 
 pub trait AsArrow {
     type Output;
 
-    // Retrieve the underlying concrete Arrow2 array.
+    /// This does not correct for the logical types and will just yield the physical type of the array.
+    /// For example, a TimestampArray will yield an arrow Int64Array rather than a arrow Timestamp Array.
+    /// To get a corrected arrow type, see `.to_arrow()`.
     fn as_arrow(&self) -> &Self::Output;
 }
 
 impl<T> AsArrow for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     type Output = array::PrimitiveArray<T::Native>;
 
@@ -59,11 +63,11 @@ impl_asarrow_dataarray!(Utf8Array, array::Utf8Array<i64>);
 impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
 impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
 impl_asarrow_dataarray!(FixedSizeBinaryArray, array::FixedSizeBinaryArray);
+impl_asarrow_dataarray!(IntervalArray, array::PrimitiveArray<months_days_ns>);
 
 #[cfg(feature = "python")]
-impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
+impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<Arc<pyo3::PyObject>>);
 
-impl_asarrow_logicalarray!(Decimal128Array, array::PrimitiveArray<i128>);
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(TimeArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(DurationArray, array::PrimitiveArray<i64>);

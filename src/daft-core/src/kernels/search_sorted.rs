@@ -27,7 +27,7 @@ where {
 
     let mut last_key = keys.iter().next().unwrap_or(None);
     let less = |l: &T, r: &T| l < r || (r != r && l == l);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -90,7 +90,7 @@ fn search_sorted_utf_array<O: Offset>(
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -228,7 +228,7 @@ fn search_sorted_binary_array<O: Offset>(
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -291,7 +291,7 @@ fn search_sorted_fixed_size_binary_array(
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -460,6 +460,44 @@ pub fn build_compare_with_nulls(
     }
 }
 
+pub fn build_nulls_first_compare_with_nulls(
+    left: &dyn Array,
+    right: &dyn Array,
+    reversed: bool,
+    nulls_first: bool,
+) -> Result<DynComparator> {
+    let comparator = build_compare_with_nan(left, right)?;
+    let left_is_valid = build_is_valid(left);
+    let right_is_valid = build_is_valid(right);
+
+    // Determine null ordering based on nulls_first parameter only
+    // If nulls_first = true, nulls should always come before valid values, regardless of reversed
+    let (null_vs_valid, valid_vs_null) = match nulls_first {
+        true => (Ordering::Less, Ordering::Greater), // nulls first, regardless of sort direction
+        false => (Ordering::Greater, Ordering::Less), // nulls last, regardless of sort direction
+    };
+
+    if reversed {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => comparator(i, j).reverse(),
+                (false, true) => null_vs_valid,
+                (false, false) => Ordering::Equal,
+                (true, false) => valid_vs_null,
+            }
+        }))
+    } else {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => comparator(i, j),
+                (false, true) => null_vs_valid,
+                (false, false) => Ordering::Equal,
+                (true, false) => valid_vs_null,
+            }
+        }))
+    }
+}
+
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
 
@@ -536,9 +574,9 @@ pub fn search_sorted_multi_array(
     }
 
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Ordering {
-        for comparator in cmp_list.iter() {
+        for comparator in &cmp_list {
             match comparator(a_idx, b_idx) {
-                Ordering::Equal => continue,
+                Ordering::Equal => {}
                 other => return other,
             }
         }
@@ -571,7 +609,6 @@ pub fn search_sorted(
     keys: &dyn Array,
     input_reversed: bool,
 ) -> Result<PrimitiveArray<u64>> {
-    use PhysicalType::*;
     if sorted_array.data_type() != keys.data_type() {
         let error_string = format!(
             "sorted array data type does not match keys data type: {:?} vs {:?}",
@@ -582,35 +619,37 @@ pub fn search_sorted(
     }
     Ok(match sorted_array.data_type().to_physical_type() {
         // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),
-        Primitive(primitive) => with_match_searching_primitive_type!(primitive, |$T| {
-            search_sorted_primitive_array::<$T>(sorted_array.as_any().downcast_ref().unwrap(), keys.as_any().downcast_ref().unwrap(), input_reversed)
-        }),
-        Utf8 => search_sorted_utf_array::<i32>(
+        PhysicalType::Primitive(primitive) => {
+            with_match_searching_primitive_type!(primitive, |$T| {
+                search_sorted_primitive_array::<$T>(sorted_array.as_any().downcast_ref().unwrap(), keys.as_any().downcast_ref().unwrap(), input_reversed)
+            })
+        }
+        PhysicalType::Utf8 => search_sorted_utf_array::<i32>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         ),
-        LargeUtf8 => search_sorted_utf_array::<i64>(
+        PhysicalType::LargeUtf8 => search_sorted_utf_array::<i64>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         ),
-        Binary => search_sorted_binary_array::<i32>(
+        PhysicalType::Binary => search_sorted_binary_array::<i32>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         ),
-        LargeBinary => search_sorted_binary_array::<i64>(
+        PhysicalType::LargeBinary => search_sorted_binary_array::<i64>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         ),
-        FixedSizeBinary => search_sorted_fixed_size_binary_array(
+        PhysicalType::FixedSizeBinary => search_sorted_fixed_size_binary_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         ),
-        Boolean => search_sorted_boolean_array(
+        PhysicalType::Boolean => search_sorted_boolean_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,

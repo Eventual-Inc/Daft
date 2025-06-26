@@ -9,9 +9,9 @@ pub struct SystemInfo {
 
 impl Default for SystemInfo {
     fn default() -> Self {
-        SystemInfo {
+        Self {
             info: sysinfo::System::new_with_specifics(
-                RefreshKind::new()
+                RefreshKind::nothing()
                     .with_cpu(CpuRefreshKind::everything())
                     .with_memory(MemoryRefreshKind::everything()),
             ),
@@ -19,19 +19,12 @@ impl Default for SystemInfo {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
 impl SystemInfo {
-    #[new]
-    pub fn new() -> Self {
-        Default::default()
+    pub fn calculate_cpu_count(&self) -> Option<u64> {
+        sysinfo::System::physical_core_count().map(|x| x as u64)
     }
 
-    pub fn cpu_count(&self) -> Option<u64> {
-        self.info.physical_core_count().map(|x| x as u64)
-    }
-
-    pub fn total_memory(&self) -> u64 {
+    pub fn calculate_total_memory(&self) -> u64 {
         if let Some(cgroup) = self.info.cgroup_limits() {
             cgroup.total_memory
         } else {
@@ -41,7 +34,27 @@ impl SystemInfo {
 }
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+#[pymethods]
+impl SystemInfo {
+    #[new]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn cpu_count(&self) -> Option<u64> {
+        self.calculate_cpu_count()
+    }
+
+    #[must_use]
+    pub fn total_memory(&self) -> u64 {
+        self.calculate_total_memory()
+    }
+}
+
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<SystemInfo>()?;
     Ok(())
 }

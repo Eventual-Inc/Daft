@@ -1,32 +1,24 @@
-use super::{ArrayWrapper, IntoSeries, Series};
 use std::sync::Arc;
 
-use crate::array::ops::broadcast::Broadcastable;
-use crate::array::ops::DaftListAggable;
-use crate::array::ops::GroupIndices;
-use crate::array::DataArray;
-use crate::datatypes::DaftArrowBackedType;
+use common_error::DaftResult;
 
-use crate::datatypes::FixedSizeBinaryArray;
+use super::{ArrayWrapper, IntoSeries, Series};
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
-use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::{
-    datatypes::{
-        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
-        UInt64Array, UInt8Array, Utf8Array,
+    array::{
+        ops::{broadcast::Broadcastable, DaftListAggable, DaftSetAggable, GroupIndices},
+        prelude::*,
+        DataArray,
     },
+    datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray, IntervalArray},
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
 };
-use common_error::DaftResult;
-
-use crate::datatypes::DataType;
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
 where
-    ArrayWrapper<DataArray<T>>: SeriesLike,
+    ArrayWrapper<Self>: SeriesLike,
 {
     fn into_series(self) -> Series {
         Series {
@@ -126,15 +118,13 @@ macro_rules! impl_series_like_for_data_array {
             fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
                 Ok(self.0.slice(start, end)?.into_series())
             }
-            fn sort(&self, descending: bool) -> DaftResult<Series> {
-                Ok(self.0.sort(descending)?.into_series())
+            fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series> {
+                Ok(self.0.sort(descending, nulls_first)?.into_series())
             }
             fn str_value(&self, idx: usize) -> DaftResult<String> {
                 self.0.str_value(idx)
             }
-            fn html_value(&self, idx: usize) -> String {
-                self.0.html_value(idx)
-            }
+
             fn take(&self, idx: &Series) -> DaftResult<Series> {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
                     Ok(self
@@ -170,49 +160,16 @@ macro_rules! impl_series_like_for_data_array {
                 }
             }
 
-            fn add(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::add(self, rhs)
-            }
-            fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::sub(self, rhs)
-            }
-            fn mul(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::mul(self, rhs)
-            }
-            fn div(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::div(self, rhs)
-            }
-            fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::rem(self, rhs)
-            }
-
-            fn and(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::and(self, rhs)
-            }
-            fn or(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::or(self, rhs)
-            }
-            fn xor(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::xor(self, rhs)
-            }
-
-            fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::equal(self, rhs)
-            }
-            fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::not_equal(self, rhs)
-            }
-            fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lt(self, rhs)
-            }
-            fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lte(self, rhs)
-            }
-            fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gt(self, rhs)
-            }
-            fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gte(self, rhs)
+            fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                match groups {
+                    Some(groups) => self
+                        .0
+                        .clone()
+                        .into_series()
+                        .grouped_set(groups)
+                        .map(|x| x.into_series()),
+                    None => self.0.clone().into_series().set().map(|x| x.into_series()),
+                }
             }
         }
     };
@@ -226,7 +183,6 @@ impl_series_like_for_data_array!(Int8Array);
 impl_series_like_for_data_array!(Int16Array);
 impl_series_like_for_data_array!(Int32Array);
 impl_series_like_for_data_array!(Int64Array);
-impl_series_like_for_data_array!(Int128Array);
 impl_series_like_for_data_array!(UInt8Array);
 impl_series_like_for_data_array!(UInt16Array);
 impl_series_like_for_data_array!(UInt32Array);
@@ -235,5 +191,7 @@ impl_series_like_for_data_array!(Float32Array);
 impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(ExtensionArray);
+impl_series_like_for_data_array!(IntervalArray);
+impl_series_like_for_data_array!(Decimal128Array);
 #[cfg(feature = "python")]
 impl_series_like_for_data_array!(PythonArray);

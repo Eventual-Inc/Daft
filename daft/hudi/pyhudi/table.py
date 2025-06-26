@@ -3,9 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-import pyarrow as pa
-import pyarrow.fs as pafs
-
+from daft.dependencies import pa, pafs
 from daft.filesystem import join_path
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
@@ -32,7 +30,7 @@ class MetaClient:
             self.timeline = Timeline(self.base_path, self.fs)
         return self.timeline
 
-    def get_partition_paths(self, relative=True) -> list[str]:
+    def get_partition_paths(self, relative: bool = True) -> list[str]:
         first_level_full_partition_paths = list_full_sub_dirs(self.base_path, self.fs, excludes=[".hoodie"])
         partition_paths = []
         for p in first_level_full_partition_paths:
@@ -65,7 +63,7 @@ class FileSystemView:
         self.partition_to_file_groups: dict[str, list[FileGroup]] = {}
         self._load_partitions()
 
-    def _load_partitions(self):
+    def _load_partitions(self) -> None:
         partition_paths = self.meta_client.get_partition_paths()
         if not partition_paths:
             self._load_partition("")
@@ -73,7 +71,7 @@ class FileSystemView:
             for partition_path in partition_paths:
                 self._load_partition(partition_path)
 
-    def _load_partition(self, partition_path: str):
+    def _load_partition(self, partition_path: str) -> None:
         file_groups = self.meta_client.get_file_groups(partition_path)
         self.partition_to_file_groups[partition_path] = file_groups
 
@@ -132,7 +130,7 @@ class HudiTableProps:
             raise UnsupportedException(f"Missing required table config: {key}")
         return self._props[key]
 
-    def _validate(self):
+    def _validate(self) -> None:
         if self.get_required_config("hoodie.table.type") != "COPY_ON_WRITE":
             raise UnsupportedException("Only support COPY_ON_WRITE table")
         if self.get_required_config("hoodie.table.version") not in ["5", "6"]:

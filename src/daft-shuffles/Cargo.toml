@@ -1,0 +1,41 @@
+[dependencies]
+arrow-flight = "54.2.1"
+arrow-ipc = "54.2.1"
+arrow2 = {workspace = true, features = ["arrow", "io_flight", "io_ipc_read_async"]}
+async-channel = "2.3.1"
+common-error = {path = "../common/error", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-micropartition = {path = "../daft-micropartition", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+daft-writers = {path = "../daft-writers", default-features = false}
+futures = {workspace = true}
+itertools = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+pyo3-async-runtimes = {workspace = true, optional = true}
+tokio = {workspace = true}
+tonic = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "dep:pyo3-async-runtimes",
+  "common-error/python",
+  "daft-dsl/python",
+  "daft-io/python",
+  "daft-micropartition/python",
+  "daft-recordbatch/python",
+  "daft-schema/python",
+  "daft-writers/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-shuffles"
+edition.workspace = true
+version.workspace = true

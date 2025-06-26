@@ -8,10 +8,12 @@ pub mod arrow2;
 pub mod as_arrow;
 mod between;
 mod bitwise;
+mod bool_agg;
 pub(crate) mod broadcast;
 pub(crate) mod cast;
 mod cbrt;
 mod ceil;
+mod clip;
 mod compare_agg;
 mod comparison;
 mod concat;
@@ -29,11 +31,8 @@ mod hash;
 mod hll_merge;
 mod hll_sketch;
 mod if_else;
-pub(crate) mod image;
 mod is_in;
-mod json;
 mod len;
-mod list;
 mod list_agg;
 mod log;
 mod map;
@@ -48,8 +47,11 @@ mod search_sorted;
 mod shift;
 mod sign;
 mod sketch_percentile;
+mod skew;
 mod sort;
+pub(crate) mod sparse_tensor;
 mod sqrt;
+mod stddev;
 mod struct_;
 mod sum;
 mod take;
@@ -59,12 +61,11 @@ pub mod trigonometry;
 mod truncate;
 mod utf8;
 
-pub use hll_sketch::HLL_SKETCH_DTYPE;
-pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
-
-pub use utf8::{PadPlacement, Utf8NormalizeOptions};
+use std::hash::BuildHasher;
 
 use common_error::DaftResult;
+pub use hll_sketch::HLL_SKETCH_DTYPE;
+pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
 use crate::count_mode::CountMode;
 
@@ -73,6 +74,9 @@ pub trait DaftCompare<Rhs> {
 
     /// equality.
     fn equal(&self, rhs: Rhs) -> Self::Output;
+
+    /// null-safe equality.
+    fn eq_null_safe(&self, rhs: Rhs) -> Self::Output;
 
     /// inequality.
     fn not_equal(&self, rhs: Rhs) -> Self::Output;
@@ -145,7 +149,13 @@ pub trait DaftNotNan {
 
 pub trait DaftMinHash {
     type Output;
-    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> Self::Output;
+    fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        seed: u32,
+        hasher: &impl BuildHasher,
+    ) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;
@@ -154,6 +164,10 @@ pub type GroupIndicesPair = (VecIndices, GroupIndices);
 
 pub trait IntoGroups {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
+}
+
+pub trait IntoUniqueIdxs {
+    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
 }
 
 pub trait DaftCountAggable {
@@ -192,6 +206,12 @@ pub trait DaftMeanAggable {
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
 }
 
+pub trait DaftStddevAggable {
+    type Output;
+    fn stddev(&self) -> Self::Output;
+    fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output;
+}
+
 pub trait DaftCompareAggable {
     type Output;
     fn min(&self) -> Self::Output;
@@ -222,4 +242,24 @@ pub trait DaftHllMergeAggable {
     type Output;
     fn hll_merge(&self) -> Self::Output;
     fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftSetAggable {
+    type Output;
+    fn set(&self) -> Self::Output;
+    fn grouped_set(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftBoolAggable {
+    type Output;
+    fn bool_and(&self) -> Self::Output;
+    fn bool_or(&self) -> Self::Output;
+    fn grouped_bool_and(&self, groups: &GroupIndices) -> Self::Output;
+    fn grouped_bool_or(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftSkewAggable {
+    type Output;
+    fn skew(&self) -> Self::Output;
+    fn grouped_skew(&self, groups: &GroupIndices) -> Self::Output;
 }

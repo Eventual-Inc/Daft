@@ -10,6 +10,14 @@
 #![allow(clippy::borrowed_box)]
 // Allow type complexity warning to avoid API break.
 #![allow(clippy::type_complexity)]
+// New lints
+#![allow(clippy::too_long_first_doc_paragraph)]
+#![allow(clippy::needless_lifetimes)]
+#![allow(clippy::single_match)]
+#![allow(clippy::unnecessary_map_or)]
+#![allow(clippy::manual_div_ceil)]
+#![allow(clippy::map_all_any_identity)]
+#![allow(unexpected_cfgs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 
@@ -37,8 +45,7 @@ pub mod datatypes;
 pub mod ffi;
 pub mod util;
 
-// re-exported because we return `Either` in our public API
-pub use either::Either;
-
 // re-exported to construct dictionaries
 pub use ahash::AHashMap;
+// re-exported because we return `Either` in our public API
+pub use either::Either;

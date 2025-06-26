@@ -1,8 +1,10 @@
-use super::from_arrow::FromArrow;
-use super::DaftMergeSketchAggable;
-use crate::array::ops::GroupIndices;
-use crate::{array::StructArray, datatypes::*};
 use common_error::{DaftError, DaftResult};
+
+use super::{from_arrow::FromArrow, DaftMergeSketchAggable};
+use crate::{
+    array::{ops::GroupIndices, StructArray},
+    datatypes::*,
+};
 
 impl DaftMergeSketchAggable for &StructArray {
     type Output = DaftResult<StructArray>;

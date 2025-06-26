@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-
 import pytest
 
 from daft.datatype import DataType, TimeUnit
@@ -28,6 +26,25 @@ def test_series_date_day_operation() -> None:
 
 
 def test_series_date_month_operation() -> None:
+    from datetime import date
+
+    def date_maker(m):
+        if m is None:
+            return None
+        return date(2023, m, 1)
+
+    input = list(range(1, 10)) + [None, 11, 12]
+
+    input_dates = list(map(date_maker, input))
+    s = Series.from_pylist(input_dates)
+    months = s.dt.month()
+
+    assert months.datatype() == DataType.uint32()
+
+    assert input == months.to_pylist()
+
+
+def test_series_date_quarter_operation() -> None:
     from datetime import date
 
     def date_maker(m):
@@ -247,6 +264,27 @@ def test_series_timestamp_month_operation(tz) -> None:
 
 
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
+def test_series_timestamp_quarter_operation(tz) -> None:
+    from datetime import datetime
+
+    def ts_maker(m):
+        if m is None:
+            return None
+        return datetime(2023, m, 1, 23, 1, 1)
+
+    input = list(range(1, 10)) + [None, 11, 12]
+    expected = [(m + 2) // 3 if m is not None else None for m in input]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms(), timezone=tz))
+    quarters = s.dt.quarter()
+
+    assert quarters.datatype() == DataType.uint32()
+
+    assert expected == quarters.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_year_operation(tz) -> None:
     from datetime import datetime
 
@@ -266,6 +304,46 @@ def test_series_timestamp_year_operation(tz) -> None:
     assert input == years.to_pylist()
 
 
+def test_series_timestamp_unix_date_operation() -> None:
+    from datetime import datetime
+
+    input_ts = [
+        datetime(1978, 1, 1, 1, 1, 1, 0),
+        datetime(2024, 10, 13, 5, 30, 14, 500_000),
+        datetime(2065, 1, 1, 10, 20, 30, 60_000),
+        None,
+    ]
+
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    out = s.dt.unix_date()
+
+    assert out.datatype() == DataType.uint64()
+
+    assert [2922, 20009, 34699, None] == out.to_pylist()
+
+
+def test_series_unix_date_input_date_error() -> None:
+    import re
+    from datetime import date
+
+    input_dates = [date(1978, 1, 1), date(2024, 10, 13), date(2065, 1, 1), None]
+    s = Series.from_pylist(input_dates).cast(DataType.date())
+    expected_error = "DaftError::ComputeError Can only run unix_date() operation on timestamp types, got Date"
+    with pytest.raises(Exception, match=re.escape(expected_error)):
+        s.dt.unix_date()
+
+
+def test_series_unix_date_input_time_error() -> None:
+    import re
+    from datetime import time
+
+    input_times = [time(12, 30, 0), time(23, 59, 59), time(0, 0, 0), None]
+    s = Series.from_pylist(input_times).cast(DataType.time("ns"))
+    expected_error = "DaftError::ComputeError Can only run unix_date() operation on timestamp types, got Time"
+    with pytest.raises(Exception, match=re.escape(expected_error)):
+        s.dt.unix_date()
+
+
 def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):
     from datetime import datetime, timedelta, timezone
 
@@ -279,10 +357,6 @@ def ts_with_tz_maker(y, m, d, h, mi, s, us, tz):
         return datetime(y, m, d, h, mi, s, us, pytz.timezone(tz))
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 8),
-    reason="Timezone conversions via PyArrow are supported in Python 3.8+",
-)
 @pytest.mark.parametrize(
     ["input", "interval", "expected"],
     [
@@ -319,10 +393,6 @@ def test_series_timestamp_truncate_operation(input, interval, expected, tz) -> N
     assert expected_series.to_pylist() == truncated
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 8),
-    reason="Timezone conversions via PyArrow are supported in Python 3.8+",
-)
 @pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "-13:00"])
 @pytest.mark.parametrize(
     ["input", "interval", "expected", "relative_to"],
@@ -360,10 +430,6 @@ def test_series_timestamp_truncate_operation_with_relative_to(tz, input, interva
     assert expected_series.to_pylist() == truncated
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 8),
-    reason="Timezone conversions via PyArrow are supported in Python 3.8+",
-)
 @pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "-13:00"])
 @pytest.mark.parametrize(
     ["input", "interval", "expected", "relative_to"],
@@ -456,3 +522,79 @@ def test_series_timestamp_truncate_operation_invalid_relative_to() -> None:
     with pytest.raises(ValueError):
         # Start time must be a series of timestamps
         input_series.dt.truncate("1 second", Series.from_pylist([1]))
+
+
+@pytest.mark.parametrize(
+    "timeunit,expected",
+    [
+        ("s", 1641092645),
+        ("ms", 1641092645000),
+    ],
+)
+def test_series_to_unix_epoch(timeunit, expected):
+    from datetime import datetime
+
+    input = datetime(2022, 1, 2, 3, 4, 5, 6)
+    input_series = Series.from_pylist([input])
+
+    expected_series = Series.from_pylist([int(expected)])
+    actual_series = input_series.dt.to_unix_epoch(timeunit)
+    assert expected_series.to_pylist() == actual_series.to_pylist()
+
+
+@pytest.mark.parametrize(
+    ("fun", "expected"),
+    [
+        ("day_of_week", 0),
+        ("day_of_month", 1),
+        ("day_of_year", 1),
+        ("week_of_year", 1),
+    ],
+)
+def test_series_day_of_year(fun, expected):
+    from datetime import datetime
+
+    input_series = Series.from_pylist([datetime(2024, 1, 1, 1)])
+    expected_series = Series.from_pylist([expected])
+
+    series = getattr(input_series.dt, fun)()
+    assert expected_series.to_pylist() == series.to_pylist()
+
+
+@pytest.mark.parametrize(
+    ("fun", "expected"),
+    [
+        ("day_of_week", 0),
+        ("day_of_month", 1),
+        ("day_of_year", 1),
+        ("week_of_year", 1),
+    ],
+)
+def test_series_date_day_of_year(fun, expected):
+    from datetime import date
+
+    input_series = Series.from_pylist([date(2024, 1, 1)])
+    expected_series = Series.from_pylist([expected])
+
+    series = getattr(input_series.dt, fun)()
+    assert expected_series.to_pylist() == series.to_pylist()
+
+
+# just a sanity check, more robust tests are in tests/dataframe/test_temporals.py
+def test_series_date_to_string():
+    from datetime import date
+
+    input_series = Series.from_pylist([date(2024, 1, 1)])
+    expected_series = Series.from_pylist(["2024-01-01"])
+    date_as_string = input_series.dt.strftime()
+    assert expected_series.to_pylist() == date_as_string.to_pylist()
+
+
+# just a sanity check, more robust tests are in tests/dataframe/test_temporals.py
+def test_series_timestamp_to_string():
+    from datetime import datetime
+
+    input_series = Series.from_pylist([datetime(2024, 1, 1)]).cast(DataType.timestamp(TimeUnit.s()))
+    expected_series = Series.from_pylist(["2024-01-01T00:00:00"])
+    date_as_string = input_series.dt.strftime()
+    assert expected_series.to_pylist() == date_as_string.to_pylist()

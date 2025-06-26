@@ -2,10 +2,11 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v1.11.1
+  rev: v1.15.0
   hooks:
   - id: mypy
-    additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
+    args: ['--strict', '--ignore-missing-imports']
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
     files: daft
     exclude: daft/pickle/.*\.py
 
@@ -14,21 +15,20 @@ repos:
   hooks:
   - id: detect-private-key
   - id: trailing-whitespace
-    exclude: docs/source/api_docs/
+    exclude: (?x)^(tests/assets/mvp.csv|.*\.warc|tests/dataframe/test_show.py)$
   - id: end-of-file-fixer
     exclude: |
-      (?x)^(
-          docs/source/api_docs/|
-          docs/source/user_guide/fotw/data/
-      )$
+      (?x)^(.*\.warc)$
   - id: check-yaml
     exclude: kubernetes-ops
+    args:
+    - --unsafe
   - id: pretty-format-json
     exclude: |
       (?x)^(
           tutorials/.*\.ipynb|
           docs/.*\.ipynb|
-          docs/source/user_guide/fotw/data/
+          .*\.jsonl
       )$
     args:
     - --autofix
@@ -46,7 +46,7 @@ repos:
     args: [--autofix]
     exclude: Cargo.lock
   - id: pretty-format-yaml
-    args: [--autofix]
+    args: [--autofix, --preserve-quotes]
 
 - repo: https://github.com/codespell-project/codespell
   rev: v2.3.0
@@ -54,21 +54,23 @@ repos:
   - id: codespell
     additional_dependencies:
     - tomli
+    exclude: static-dashboard-assets
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-      # Ruff version.
-  rev: v0.6.2
+  # Ruff version.
+  rev: v0.8.2
   hooks:
-      # Run the linter.
+    # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
-          # Run the formatter.
+    # Run the formatter.
   - id: ruff-format
+    name: Python code Formatting
 
 - repo: local
   hooks:
   - id: fmt
-    name: fmt
+    name: Rust code Formatting
     description: Format files with cargo fmt.
     entry: cargo fmt
     language: system
@@ -82,7 +84,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace]
+    args: [--workspace, --all-targets]
 
   - id: cargo-check-all-features
     name: cargo check (all features)
@@ -91,10 +93,10 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace, --all-features]
+    args: [--workspace, --all-features, --all-targets]
 
   - id: clippy
-    name: clippy
+    name: Rust code Quality check
     description: Lint rust sources
     entry: cargo clippy
     language: system
@@ -102,10 +104,10 @@ repos:
     types: [rust]
     pass_filenames: false
 
-  - id: check-for-rustls
-    name: check-for-rustls
+  - id: check-for-openssl
+    name: check-for-openssl
     description: Lint rust sources
-    entry: ./tools/check_for_rustls.sh
+    entry: ./tools/check_for_openssl.sh
     language: system
     types: [rust]
     pass_filenames: false

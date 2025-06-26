@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::{array::StructArray, Series};
+use crate::{array::StructArray, series::Series};
 
 impl StructArray {
     pub fn get(&self, name: &str) -> DaftResult<Series> {
@@ -36,11 +36,7 @@ mod tests {
     use arrow2::bitmap::Bitmap;
     use common_error::DaftResult;
 
-    use crate::{
-        array::StructArray,
-        datatypes::{Field, Int64Array},
-        DataType, IntoSeries,
-    };
+    use crate::prelude::*;
 
     #[test]
     fn test_struct_get_invalid() -> DaftResult<()> {
@@ -56,7 +52,7 @@ mod tests {
                 "foo",
                 DataType::Struct(vec![Field::new("bar", DataType::Int64)]),
             ),
-            vec![child.clone().into_series()],
+            vec![child.into_series()],
             None,
         );
 
@@ -72,7 +68,7 @@ mod tests {
         assert_eq!(old_child.get(2), None);
         assert_eq!(old_child.get(3), None);
 
-        parent = parent.with_validity(Some(parent_validity.clone()))?;
+        parent = parent.with_validity(Some(parent_validity))?;
 
         let new_child = parent.get("bar")?.i64()?.clone();
         let new_child_validity = new_child

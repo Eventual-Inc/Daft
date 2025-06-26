@@ -15,10 +15,11 @@ pub trait TreeDisplay {
     /// No two nodes should have the same id.
     /// The default implementation uses the node's name and memory address.
     fn id(&self) -> String {
-        let mut s = String::new();
-        s.push_str(&self.get_name());
-        s.push_str(&format!("{:p}", self as *const Self as *const ()));
-        s
+        format!(
+            "{}{:p}",
+            self.get_name(),
+            std::ptr::from_ref::<Self>(self).cast::<()>()
+        )
     }
 
     /// Get the human-readable name of this node.

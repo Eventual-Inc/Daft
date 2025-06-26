@@ -10,8 +10,8 @@ import pytz
 
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
+from daft.recordbatch import MicroPartition
 from daft.series import Series
-from daft.table import MicroPartition
 
 ALL_DTYPES = [
     (DataType.int8(), pa.array([1, 2, None], type=pa.int8())),
@@ -33,6 +33,7 @@ ALL_DTYPES = [
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
 
+ALL_DATATYPES_TERNARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=3))
 
 ALL_TEMPORAL_DTYPES = [
     (
@@ -102,6 +103,28 @@ DECIMAL_DTYPES = [
     (DataType.decimal128(4, 3), pa.array([1, 2, None], type=pa.decimal128(4, 3))),
 ]
 
+ALL_DATATYPES_TERNARY_PAIRS = [
+    ((dt1, data1), (dt2, data2), (dt3, data3))
+    for (dt1, data1), (dt2, data2), (dt3, data3) in itertools.product(ALL_DTYPES, repeat=3)
+]
+
+
+@pytest.fixture(
+    scope="module",
+    params=ALL_DATATYPES_TERNARY_PAIRS,
+    ids=[f"{dt1}-{dt2}-{dt3}" for (dt1, _), (dt2, _), (dt3, _) in ALL_DATATYPES_TERNARY_PAIRS],
+)
+def ternary_data_fixture(request) -> tuple[Series, Series, Series]:
+    """Returns ternary permutation of Series' of all DataType pairs."""
+    (dt1, data1), (dt2, data2), (dt3, data3) = request.param
+    s1 = Series.from_arrow(data1, name="first")
+    assert s1.datatype() == dt1
+    s2 = Series.from_arrow(data2, name="second")
+    assert s2.datatype() == dt2
+    s3 = Series.from_arrow(data3, name="third")
+    assert s3.datatype() == dt3
+    return (s1, s2, s3)
+
 
 @pytest.fixture(
     scope="module",
@@ -109,7 +132,7 @@ DECIMAL_DTYPES = [
     ids=[f"{dt1}-{dt2}" for (dt1, _), (dt2, _) in ALL_DATATYPES_BINARY_PAIRS],
 )
 def binary_data_fixture(request) -> tuple[Series, Series]:
-    """Returns binary permutation of Series' of all DataType pairs"""
+    """Returns binary permutation of Series' of all DataType pairs."""
     (dt1, data1), (dt2, data2) = request.param
     s1 = Series.from_arrow(data1, name="lhs")
     assert s1.datatype() == dt1
@@ -124,7 +147,7 @@ def binary_data_fixture(request) -> tuple[Series, Series]:
     ids=[f"{dt}" for (dt, _) in ALL_DTYPES],
 )
 def unary_data_fixture(request) -> Series:
-    """Returns unary permutation of Series' of all DataType pairs"""
+    """Returns unary permutation of Series' of all DataType pairs."""
     (dt, data) = request.param
     s = Series.from_arrow(data, name="arg")
     assert s.datatype() == dt
@@ -137,7 +160,7 @@ def unary_data_fixture(request) -> Series:
     ids=[f"{dt}" for (dt, _) in DECIMAL_DTYPES],
 )
 def decimal_unary_data_fixture(request) -> Series:
-    """Returns unary permutation of Series' of select decimal DataType pairs"""
+    """Returns unary permutation of Series' of select decimal DataType pairs."""
     (dt, data) = request.param
     s = Series.from_arrow(data, name="arg")
     assert s.datatype() == dt
@@ -150,7 +173,7 @@ def assert_typing_resolve_vs_runtime_behavior(
     run_kernel: Callable[[], Series],
     resolvable: bool,
 ):
-    """Asserts that typing behavior during schema resolution matches behavior during runtime on Series'
+    """Asserts that typing behavior during schema resolution matches behavior during runtime on Series'.
 
     Example Usage:
 
@@ -187,8 +210,13 @@ def assert_typing_resolve_vs_runtime_behavior(
         #     run_kernel()
 
 
+def is_numeric_or_null(dt: DataType) -> bool:
+    """Checks if this type is a numeric or null type."""
+    return dt == DataType.null() or is_numeric(dt)
+
+
 def is_numeric(dt: DataType) -> bool:
-    """Checks if this type is a numeric type"""
+    """Checks if this type is a numeric type."""
     return (
         dt == DataType.int8()
         or dt == DataType.int16()
@@ -204,7 +232,7 @@ def is_numeric(dt: DataType) -> bool:
 
 
 def is_integer(dt: DataType) -> bool:
-    """Checks if this type is an integer type"""
+    """Checks if this type is an integer type."""
     return (
         dt == DataType.int8()
         or dt == DataType.int16()
@@ -218,12 +246,12 @@ def is_integer(dt: DataType) -> bool:
 
 
 def is_signed_integer(dt: DataType) -> bool:
-    """Checks if this type is a signed integer type"""
+    """Checks if this type is a signed integer type."""
     return dt == DataType.int8() or dt == DataType.int16() or dt == DataType.int32() or dt == DataType.int64()
 
 
 def is_comparable(dt: DataType):
-    """Checks if this type is a comparable type"""
+    """Checks if this type is a comparable type."""
     return (
         is_numeric(dt)
         or dt == DataType.bool()
@@ -231,12 +259,12 @@ def is_comparable(dt: DataType):
         or dt == DataType.null()
         or dt == DataType.binary()
         or dt == DataType.fixed_size_binary(1)
-        or dt._is_temporal_type()
+        or dt.is_temporal()
     )
 
 
 def is_numeric_bitwidth_gte_32(dt: DataType):
-    """Checks if type is numeric and above a bitwidth of 32"""
+    """Checks if type is numeric and above a bitwidth of 32."""
     return (
         dt == DataType.int32()
         or dt == DataType.int64()
@@ -248,7 +276,9 @@ def is_numeric_bitwidth_gte_32(dt: DataType):
 
 
 def has_supertype(dt1: DataType, dt2: DataType) -> bool:
-    """Checks if two DataTypes have supertypes - note that this is a simplified
+    """Checks if two DataTypes have supertypes.
+
+    this is a simplified
     version of `supertype.rs`, since it only defines "reachability" within the supertype
     tree in a more human-readable way for testing purposes.
     """
@@ -265,12 +295,12 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
 
         # --- Within type hierarchies ---
         both_numeric = (is_numeric(x) and is_numeric(y)) or ((x == DataType.bool()) and is_numeric(y))
-        both_temporal = x._is_temporal_type() and y._is_temporal_type()
+        both_temporal = x.is_temporal() and y.is_temporal()
 
         # --- Across type hierarchies ---
         date_and_numeric = x == DataType.date() and is_numeric(y)
         time_and_numeric = x == (DataType.time("us") or DataType.time("ns")) and is_numeric(y)
-        timestamp_and_big_numeric = x._is_temporal_type() and is_numeric_bitwidth_gte_32(y)
+        timestamp_and_big_numeric = x.is_temporal() and is_numeric_bitwidth_gte_32(y)
 
         if (
             either_null

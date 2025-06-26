@@ -38,5 +38,16 @@ def test_cosine():
 
     # check if they are approximately equal
     for a, b in zip(res["a"], expected):
-        print("a:", a, "b:", b)
         assert pytest.approx(b) == pytest.approx(a, abs=1e-5)
+
+
+def test_pairwise_cosine_distance():
+    data = {
+        "e1": [[1, 2, 3], [1, 2, 3]],
+        "e2": [[1, 2, 3], [-1, -2, -3]],
+    }
+    df = daft.from_pydict(data)
+    dtype = DataType.fixed_size_list(DataType.float32(), 3)
+    res = df.with_column("distance", df["e1"].cast(dtype).embedding.cosine_distance(df["e2"].cast(dtype))).collect()
+    res = res.to_pydict()
+    assert res["distance"] == [0.0, 2.0]

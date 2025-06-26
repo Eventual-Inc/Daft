@@ -1,5 +1,6 @@
-use indexmap::IndexMap;
 use std::fmt;
+
+use indexmap::IndexMap;
 
 use crate::{tree::TreeDisplay, DisplayLevel};
 
@@ -30,6 +31,8 @@ pub struct SubgraphOptions {
     pub name: String,
     /// The unique id for the subgraph.
     pub subgraph_id: String,
+    /// metadata
+    pub metadata: Option<String>,
 }
 
 impl<T: TreeDisplay> MermaidDisplay for T {
@@ -84,7 +87,7 @@ impl<'a, W> MermaidDisplayVisitor<'a, W> {
     }
 }
 
-impl<'a, W> MermaidDisplayVisitor<'a, W>
+impl<W> MermaidDisplayVisitor<'_, W>
 where
     W: fmt::Write,
 {
@@ -101,7 +104,7 @@ where
         if display.is_empty() {
             return Err(fmt::Error);
         }
-        writeln!(self.output, r#"{}["{}"]"#, id, display)?;
+        writeln!(self.output, r#"{id}["{display}"]"#)?;
 
         self.nodes.insert(node.id(), id);
         Ok(())
@@ -126,7 +129,7 @@ where
     }
 
     fn add_edge(&mut self, parent: String, child: String) -> fmt::Result {
-        writeln!(self.output, r#"{child} --> {parent}"#)
+        writeln!(self.output, r"{child} --> {parent}")
     }
 
     fn fmt_node(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
@@ -145,21 +148,49 @@ where
     }
 
     pub fn fmt(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
-        match &self.subgraph_options {
-            Some(SubgraphOptions { name, subgraph_id }) => {
-                writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
-                self.fmt_node(node)?;
-                writeln!(self.output, "end")?;
+        if let Some(SubgraphOptions {
+            name,
+            subgraph_id,
+            metadata,
+        }) = &self.subgraph_options
+        {
+            writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
+            if self.bottom_up {
+                writeln!(self.output, r"direction BT")?;
+            } else {
+                writeln!(self.output, r"direction TB")?;
             }
-            None => {
-                if self.bottom_up {
-                    writeln!(self.output, "flowchart BT")?;
-                } else {
-                    writeln!(self.output, "flowchart TD")?;
-                }
+            // add metadata to the subgraph
+            let metadata_id = if let Some(metadata) = metadata {
+                let id = format!("{subgraph_id}_metadata");
+                writeln!(self.output, r#"{id}["{metadata}"]"#)?;
+                Some(id)
+            } else {
+                None
+            };
 
-                self.fmt_node(node)?;
+            self.fmt_node(node)?;
+
+            // stack metadata on top of first node with an invisible edge
+            if let Some(metadata_id) = metadata_id {
+                if self.bottom_up {
+                    let first_node_id = self.nodes.values().next().unwrap();
+                    writeln!(self.output, r"{first_node_id} ~~~ {metadata_id}")?;
+                } else {
+                    let last_node_id = self.nodes.values().last().unwrap();
+                    writeln!(self.output, r"{metadata_id} ~~~ {last_node_id}")?;
+                }
             }
+
+            writeln!(self.output, "end")?;
+        } else {
+            if self.bottom_up {
+                writeln!(self.output, "flowchart BT")?;
+            } else {
+                writeln!(self.output, "flowchart TD")?;
+            }
+
+            self.fmt_node(node)?;
         }
         Ok(())
     }

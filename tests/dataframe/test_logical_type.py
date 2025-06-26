@@ -8,10 +8,11 @@ from PIL import Image
 
 import daft
 from daft import DataType, Series, col
-from daft.datatype import DaftExtension
+from daft.datatype import get_super_ext_type
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+DaftExtension = get_super_ext_type()
 
 
 def test_embedding_type_df() -> None:

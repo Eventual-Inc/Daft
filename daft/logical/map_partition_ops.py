@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from typing import TYPE_CHECKING
 
 from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from daft.recordbatch import MicroPartition
 
 
 class MapPartitionOp:
     @abstractmethod
     def get_output_schema(self) -> Schema:
-        """Returns the output schema after running this MapPartitionOp"""
+        """Returns the output schema after running this MapPartitionOp."""
 
     @abstractmethod
     def run(self, input_partition: MicroPartition) -> MicroPartition:
-        """Runs this MapPartitionOp on the supplied vPartition"""
+        """Runs this MapPartitionOp on the supplied vPartition."""
 
 
 class ExplodeOp(MapPartitionOp):

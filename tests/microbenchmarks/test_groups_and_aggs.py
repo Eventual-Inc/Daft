@@ -52,7 +52,6 @@ def test_agg_multipart(benchmark, num_samples, num_partitions) -> None:
 @pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_comparable_agg(benchmark, num_samples) -> None:
     """Test aggregation performance for comparisons against string types."""
-
     data = [str(uuid4()) for _ in range(num_samples)] + ["ffffffff-ffff-ffff-ffff-ffffffffffff"]
     random.shuffle(data)
 
@@ -72,7 +71,6 @@ def test_comparable_agg(benchmark, num_samples) -> None:
 @pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_numeric_agg(benchmark, num_samples) -> None:
     """Test aggregation performance for numeric aggregation ops."""
-
     df = daft.from_pydict({"mycol": np.arange(num_samples)}).collect()
 
     # Run the benchmark.
@@ -90,7 +88,6 @@ def test_numeric_agg(benchmark, num_samples) -> None:
 @pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_groupby(benchmark, num_samples, num_groups) -> None:
     """Test performance of grouping to one group vs many."""
-
     keys = np.arange(num_samples)
     if num_groups is not None:
         keys = keys % num_groups
@@ -124,7 +121,6 @@ def test_groupby(benchmark, num_samples, num_groups) -> None:
 @pytest.mark.parametrize("num_samples", NUM_SAMPLES)
 def test_groupby_string(benchmark, num_samples, num_groups) -> None:
     """Test performance of grouping to one group vs many."""
-
     keys = np.arange(num_samples)
     if num_groups is not None:
         keys = keys % num_groups
@@ -161,7 +157,6 @@ def test_multicolumn_groupby(benchmark, num_columns, num_samples) -> None:
     The group cardinality is the same in both cases;
     a redundant column is used for the multicolumn group.
     """
-
     num_groups = 100
 
     keys = np.arange(num_samples) % num_groups

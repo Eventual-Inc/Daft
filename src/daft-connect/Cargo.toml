@@ -1,0 +1,69 @@
+[dependencies]
+arrow2 = {workspace = true}
+common-error = {workspace = true, optional = true, features = ["python"]}
+common-file-formats = {workspace = true, optional = true, features = [
+  "python"
+]}
+common-runtime = {workspace = true}
+daft-catalog = {path = "../daft-catalog", optional = true, features = [
+  "python"
+]}
+daft-context = {workspace = true, optional = true, features = ["python"]}
+daft-core = {workspace = true, optional = true, features = ["python"]}
+daft-dsl = {workspace = true, optional = true, features = ["python"]}
+daft-functions = {workspace = true, optional = true, features = ["python"]}
+daft-functions-temporal = {workspace = true, optional = true}
+daft-functions-utf8 = {workspace = true, optional = true, features = ["python"]}
+daft-io = {path = "../daft-io", optional = true, features = ["python"]}
+daft-logical-plan = {workspace = true, optional = true, features = ["python"]}
+daft-micropartition = {workspace = true, optional = true, features = [
+  "python"
+]}
+daft-recordbatch = {workspace = true, optional = true, features = ["python"]}
+daft-scan = {workspace = true, optional = true, features = ["python"]}
+daft-schema = {workspace = true, optional = true, features = ["python"]}
+daft-session = {path = "../daft-session", optional = true, features = [
+  "python"
+]}
+daft-sql = {workspace = true, optional = true, features = ["python"]}
+dashmap = "6.1.0"
+futures = "0.3.31"
+itertools = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+spark-connect = {workspace = true}
+textwrap = "0.16.1"
+tokio = {version = "1.40.0", features = ["full"]}
+tonic = {workspace = true}
+tracing = {workspace = true}
+snafu.workspace = true
+uuid.workspace = true
+
+[features]
+python = [
+  "dep:pyo3",
+  "dep:common-error",
+  "dep:common-file-formats",
+  "dep:daft-core",
+  "dep:daft-dsl",
+  "dep:daft-io",
+  "dep:daft-logical-plan",
+  "dep:daft-micropartition",
+  "dep:daft-scan",
+  "dep:daft-schema",
+  "dep:daft-session",
+  "dep:daft-sql",
+  "dep:daft-recordbatch",
+  "dep:daft-context",
+  "dep:daft-catalog",
+  "dep:daft-functions",
+  "dep:daft-functions-utf8",
+  "dep:daft-functions-temporal"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-connect"
+version = {workspace = true}

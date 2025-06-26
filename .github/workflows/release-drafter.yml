@@ -7,6 +7,8 @@ on:
     # branches to consider in the event; optional, defaults to all
     branches:
     - main
+  workflow_dispatch:
+
 
 permissions:
   # write permission is required to create a github release

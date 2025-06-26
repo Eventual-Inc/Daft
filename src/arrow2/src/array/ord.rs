@@ -2,10 +2,7 @@
 
 use std::cmp::Ordering;
 
-use crate::datatypes::*;
-use crate::error::Error;
-use crate::offset::Offset;
-use crate::{array::*, types::NativeType};
+use crate::{array::*, datatypes::*, error::Error, offset::Offset, types::NativeType};
 
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynComparator = Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>;
@@ -157,6 +154,14 @@ macro_rules! dyn_dict {
     }};
 }
 
+fn compare_null() -> DynComparator {
+    Box::new(move |_i: usize, _j: usize| {
+        // nulls do not have a canonical ordering, but it is trivially implemented so that
+        // null arrays can be used in things that depend on `build_compare`
+        Ordering::Less
+    })
+}
+
 /// returns a comparison function that compares values at two different slots
 /// between two [`Array`].
 /// # Example
@@ -243,6 +248,7 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
                 }
             }
         }
+        (Null, Null) => compare_null(),
         (lhs, _) => {
             return Err(Error::InvalidArgumentError(format!(
                 "The data type type {lhs:?} has no natural order"

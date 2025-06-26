@@ -1,4 +1,4 @@
-"""This module tests examples from https://pandas.pydata.org/docs/user_guide/cookbook.html"""
+"""This module tests examples from https://pandas.pydata.org/docs/user_guide/cookbook.html."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from tests.conftest import assert_df_equals
 IF_THEN_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -30, -50]}
 
 
-def test_if_then(repartition_nparts):
+def test_if_then(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(IF_THEN_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
     daft_df = daft_df.with_column("BBB", (col("AAA") >= 5).if_else(-1, col("BBB")))
@@ -27,7 +27,7 @@ def test_if_then(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-def test_if_then_2_cols(repartition_nparts):
+def test_if_then_2_cols(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(IF_THEN_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
     daft_df = daft_df.with_column("BBB", (col("AAA") >= 5).if_else(2000, col("BBB"))).with_column(
@@ -39,7 +39,7 @@ def test_if_then_2_cols(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-def test_if_then_numpy_where(repartition_nparts):
+def test_if_then_numpy_where(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(IF_THEN_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(IF_THEN_DATA)
     daft_df = daft_df.with_column("logic", (col("AAA") > 5).if_else("high", lit("low")))
@@ -55,7 +55,7 @@ def test_if_then_numpy_where(repartition_nparts):
 SPLITTING_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -30, -50]}
 
 
-def test_split_frame_boolean_criterion(repartition_nparts):
+def test_split_frame_boolean_criterion(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(SPLITTING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SPLITTING_DATA)
     daft_df = daft_df.where(col("AAA") <= 5)
@@ -71,7 +71,7 @@ def test_split_frame_boolean_criterion(repartition_nparts):
 BUILDING_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50, -30, -50]}
 
 
-def test_multi_criteria_and(repartition_nparts):
+def test_multi_criteria_and(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
     daft_df = daft_df.where((col("BBB") < 25) & (col("CCC") >= -40)).select(col("AAA"))
@@ -80,7 +80,7 @@ def test_multi_criteria_and(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-def test_multi_criteria_or(repartition_nparts):
+def test_multi_criteria_or(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
     daft_df = daft_df.where((col("BBB") > 25) | (col("CCC") >= -40)).select(col("AAA"))
@@ -89,7 +89,7 @@ def test_multi_criteria_or(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="AAA")
 
 
-def test_multi_criteria_or_assignment(repartition_nparts):
+def test_multi_criteria_or_assignment(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
     daft_df = daft_df.with_column(
@@ -100,7 +100,7 @@ def test_multi_criteria_or_assignment(repartition_nparts):
     assert_df_equals(daft_pd_df, pd_df, sort_key="BBB")
 
 
-def test_select_rows_closest_to_certain_value_using_argsort(repartition_nparts):
+def test_select_rows_closest_to_certain_value_using_argsort(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(BUILDING_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(BUILDING_DATA)
     aValue = 43.0
@@ -118,7 +118,7 @@ SELECTION_DATA = {"AAA": [4, 5, 6, 7], "BBB": [10, 20, 30, 40], "CCC": [100, 50,
 
 
 @pytest.mark.skip(reason="Requires F.row_number() and Expression.is_in(...)")
-def test_splitting_by_row_index(repartition_nparts):
+def test_splitting_by_row_index(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(SELECTION_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
     daft_df = daft_df.where((col("AAA") <= 6) & F.row_number().is_in([0, 2, 4]))  # noqa: F821
@@ -128,7 +128,7 @@ def test_splitting_by_row_index(repartition_nparts):
 
 
 @pytest.mark.skip(reason="Requires F.row_number()")
-def test_splitting_by_row_range(repartition_nparts):
+def test_splitting_by_row_range(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(SELECTION_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(SELECTION_DATA)
     daft_df = daft_df.where((F.row_number() >= 0) & (F.row_number() < 3))  # noqa: F821
@@ -145,7 +145,7 @@ APPLYMAP_DATA = {"AAA": [1, 2, 1, 3], "BBB": [1, 1, 2, 2], "CCC": [2, 1, 3, 1]}
 
 
 @pytest.mark.skip(reason="Requires Expression.applymap((val) => result)")
-def test_efficiently_and_dynamically_creating_new_columns_using_applymap(repartition_nparts):
+def test_efficiently_and_dynamically_creating_new_columns_using_applymap(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(APPLYMAP_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(APPLYMAP_DATA)
     source_cols = pd_df.columns
@@ -165,7 +165,7 @@ MIN_WITH_GROUPBY_DATA = {"AAA": [1, 1, 1, 2, 2, 2, 3, 3], "BBB": [2, 1, 3, 4, 5,
 
 
 @pytest.mark.skip(reason="Requires .first() aggregations")
-def test_keep_other_columns_when_using_min_with_groupby(repartition_nparts):
+def test_keep_other_columns_when_using_min_with_groupby(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(APPLYMAP_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(APPLYMAP_DATA)
     daft_df = daft_df.groupby(col("AAA")).min(col("BBB"))
@@ -202,7 +202,7 @@ GROUPBY_DATA = {
 #     assert_df_equals(daft_df, pd_df, sort_key="animal")
 
 
-def test_applying_to_different_items_in_group(repartition_nparts):
+def test_applying_to_different_items_in_group(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(GROUPBY_DATA).repartition(repartition_nparts)
     pd_df = pd.DataFrame.from_dict(GROUPBY_DATA)
     daft_df = daft_df.with_column(
@@ -238,7 +238,7 @@ JOIN_DATA = {
 }
 
 
-def test_self_join(repartition_nparts):
+def test_self_join(repartition_nparts, with_morsel_size):
     daft_df = daft.from_pydict(JOIN_DATA).repartition(repartition_nparts)
     daft_df = daft_df.with_column("Test_1", col("Test_0") - 1)
     daft_df = daft_df.join(

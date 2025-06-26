@@ -1,14 +1,17 @@
-use crate::deserializer::Value as BorrowedValue;
-use arrow2::array::{
-    Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
-    MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
+use std::{borrow::Borrow, fmt::Write};
+
+use arrow2::{
+    array::{
+        Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
+        MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
+    },
+    bitmap::MutableBitmap,
+    datatypes::{DataType, Field, IntervalUnit, Schema, TimeUnit},
+    error::{Error, Result},
+    offset::Offsets,
+    temporal_conversions,
+    types::{f16, NativeType, Offset},
 };
-use arrow2::bitmap::MutableBitmap;
-use arrow2::datatypes::{DataType, Field, IntervalUnit, Schema, TimeUnit};
-use arrow2::error::{Error, Result};
-use arrow2::offset::Offsets;
-use arrow2::temporal_conversions;
-use arrow2::types::{f16, NativeType, Offset};
 use chrono::{Datelike, Timelike};
 use daft_decoding::deserialize::{
     deserialize_datetime, deserialize_naive_date, deserialize_naive_datetime,
@@ -17,11 +20,11 @@ use daft_decoding::deserialize::{
 use indexmap::IndexMap;
 use num_traits::NumCast;
 use simd_json::StaticNode;
-use std::borrow::Borrow;
-use std::fmt::Write;
+
+use crate::deserializer::Value as BorrowedValue;
 const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 /// Deserialize chunk of JSON records into a chunk of Arrow2 arrays.
-pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
+pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     records: &[A],
     schema: &Schema,
     schema_is_projection: bool,
@@ -35,7 +38,7 @@ pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     for record in records {
         match record.borrow() {
             BorrowedValue::Object(record) => {
-                for (key, value) in record.iter() {
+                for (key, value) in record {
                     let arr = results.get_mut(key.as_ref());
                     if let Some(arr) = arr {
                         deserialize_into(arr, &[value]);
@@ -59,7 +62,7 @@ pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     Ok(results.into_values().map(|mut ma| ma.as_box()).collect())
 }
 
-pub(crate) fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
+pub fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
     match f.data_type() {
         DataType::Null => Box::new(MutableNullArray::new(DataType::Null, 0)),
         DataType::Int8 => Box::new(MutablePrimitiveArray::<i8>::with_capacity(length)),
@@ -123,7 +126,7 @@ pub(crate) fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> 
 }
 
 /// Deserialize `rows` by extending them into the given `target`
-pub(crate) fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
+pub fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn MutableArray>,
     rows: &[A],
 ) {
@@ -131,7 +134,7 @@ pub(crate) fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
         DataType::Null => {
             // TODO(Clark): Return an error if any of rows are not Value::Null.
             for _ in 0..rows.len() {
-                target.push_null()
+                target.push_null();
             }
         }
         DataType::Boolean => generic_deserialize_into(target, rows, deserialize_boolean_into),
@@ -140,17 +143,17 @@ pub(crate) fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
         DataType::Int8 => deserialize_primitive_into::<_, i8>(target, rows),
         DataType::Int16 => deserialize_primitive_into::<_, i16>(target, rows),
         DataType::Int32 | DataType::Interval(IntervalUnit::YearMonth) => {
-            deserialize_primitive_into::<_, i32>(target, rows)
+            deserialize_primitive_into::<_, i32>(target, rows);
         }
         DataType::Date32 | DataType::Time32(_) => deserialize_date_into(target, rows),
         DataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
         }
         DataType::Int64 | DataType::Duration(_) => {
-            deserialize_primitive_into::<_, i64>(target, rows)
+            deserialize_primitive_into::<_, i64>(target, rows);
         }
         DataType::Timestamp(..) | DataType::Date64 | DataType::Time64(_) => {
-            deserialize_datetime_into(target, rows)
+            deserialize_datetime_into(target, rows);
         }
         DataType::UInt8 => deserialize_primitive_into::<_, u8>(target, rows),
         DataType::UInt16 => deserialize_primitive_into::<_, u16>(target, rows),
@@ -167,7 +170,7 @@ pub(crate) fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
             deserialize_utf8_into,
         ),
         DataType::FixedSizeList(_, _) => {
-            generic_deserialize_into(target, rows, deserialize_fixed_size_list_into)
+            generic_deserialize_into(target, rows, deserialize_fixed_size_list_into);
         }
         DataType::List(_) => deserialize_list_into(
             target
@@ -184,7 +187,11 @@ pub(crate) fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
             rows,
         ),
         DataType::Struct(_) => {
-            generic_deserialize_into::<_, MutableStructArray>(target, rows, deserialize_struct_into)
+            generic_deserialize_into::<_, MutableStructArray>(
+                target,
+                rows,
+                deserialize_struct_into,
+            );
         }
         // TODO(Clark): Add support for decimal type.
         // TODO(Clark): Add support for binary and large binary types.
@@ -231,7 +238,7 @@ fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
         match row.borrow() {
             BorrowedValue::String(v) => target.push(Some(v.as_ref())),
             BorrowedValue::Static(StaticNode::Bool(v)) => {
-                target.push(Some(if *v { "true" } else { "false" }))
+                target.push(Some(if *v { "true" } else { "false" }));
             }
             BorrowedValue::Static(node) if !matches!(node, StaticNode::Null) => {
                 write!(scratch, "{node}").unwrap();
@@ -398,7 +405,7 @@ fn deserialize_struct_into<'a, A: Borrow<BorrowedValue<'a>>>(
             .collect::<IndexMap<_, _>>(),
         _ => unreachable!(),
     };
-    rows.iter().for_each(|row| {
+    for row in rows {
         match row.borrow() {
             BorrowedValue::Object(value) => {
                 values.iter_mut().for_each(|(s, inner)| {
@@ -412,8 +419,8 @@ fn deserialize_struct_into<'a, A: Borrow<BorrowedValue<'a>>>(
                     .for_each(|(_, inner)| inner.push(&JSON_NULL_VALUE));
                 target.push(false);
             }
-        };
-    });
+        }
+    }
     // Then deserialize each field's JSON values buffer to the appropriate Arrow2 array.
     //
     // Column ordering invariant - this assumes that values and target.mut_values() have aligned columns;

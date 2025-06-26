@@ -1,36 +1,41 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{array::ops::DaftCompare, join::JoinType};
-use daft_dsl::{join::infer_join_schema, ExprRef};
+use daft_core::{
+    array::ops::DaftCompare,
+    join::{JoinSide, JoinType},
+};
+use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
 use daft_io::IOStatsContext;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
+use daft_stats::TruthValue;
 
 use crate::micropartition::MicroPartition;
-
-use daft_stats::TruthValue;
 
 impl MicroPartition {
     fn join<F>(
         &self,
         right: &Self,
         io_stats: Arc<IOStatsContext>,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         how: JoinType,
         table_join: F,
     ) -> DaftResult<Self>
     where
-        F: FnOnce(&Table, &Table, &[ExprRef], &[ExprRef], JoinType) -> DaftResult<Table>,
+        F: FnOnce(
+            &RecordBatch,
+            &RecordBatch,
+            &[BoundExpr],
+            &[BoundExpr],
+            JoinType,
+        ) -> DaftResult<RecordBatch>,
     {
-        let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on, how)?;
+        let join_schema = infer_join_schema(&self.schema, &right.schema, how)?;
         match (how, self.len(), right.len()) {
-            (JoinType::Inner, 0, _)
-            | (JoinType::Inner, _, 0)
-            | (JoinType::Left, 0, _)
-            | (JoinType::Right, _, 0)
-            | (JoinType::Outer, 0, 0)
-            | (JoinType::Semi, 0, _) => {
+            (JoinType::Inner | JoinType::Left | JoinType::Semi, 0, _)
+            | (JoinType::Inner | JoinType::Right, _, 0)
+            | (JoinType::Outer, 0, 0) => {
                 return Ok(Self::empty(Some(join_schema)));
             }
             _ => {}
@@ -42,15 +47,11 @@ impl MicroPartition {
                 (_, None) => TruthValue::Maybe,
                 (None, _) => TruthValue::Maybe,
                 (Some(l), Some(r)) => {
-                    let l_eval_stats = l.eval_expression_list(left_on, &self.schema)?;
-                    let r_eval_stats = r.eval_expression_list(right_on, &right.schema)?;
+                    let l_eval_stats = l.eval_expression_list(left_on)?;
+                    let r_eval_stats = r.eval_expression_list(right_on)?;
                     let mut curr_tv = TruthValue::Maybe;
-                    for (lc, rc) in l_eval_stats
-                        .columns
-                        .values()
-                        .zip(r_eval_stats.columns.values())
-                    {
-                        if let TruthValue::False = lc.equal(rc)?.to_truth_value() {
+                    for (lc, rc) in l_eval_stats.into_iter().zip(&r_eval_stats) {
+                        if lc.equal(rc)?.to_truth_value() == TruthValue::False {
                             curr_tv = TruthValue::False;
                             break;
                         }
@@ -58,7 +59,7 @@ impl MicroPartition {
                     curr_tv
                 }
             };
-            if let TruthValue::False = tv {
+            if tv == TruthValue::False {
                 return Ok(Self::empty(Some(join_schema)));
             }
         }
@@ -71,7 +72,7 @@ impl MicroPartition {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema))),
             ([lt], [rt]) => {
                 let joined_table = table_join(lt, rt, left_on, right_on, how)?;
-                Ok(MicroPartition::new_loaded(
+                Ok(Self::new_loaded(
                     join_schema,
                     vec![joined_table].into(),
                     None,
@@ -84,27 +85,40 @@ impl MicroPartition {
     pub fn hash_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
+        null_equals_nulls: Option<Vec<bool>>,
         how: JoinType,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::hash_join");
+        let null_equals_nulls = null_equals_nulls.unwrap_or_else(|| vec![false; left_on.len()]);
 
-        self.join(right, io_stats, left_on, right_on, how, Table::hash_join)
+        let table_join = |lt: &RecordBatch,
+                          rt: &RecordBatch,
+                          lo: &[BoundExpr],
+                          ro: &[BoundExpr],
+                          _how: JoinType| {
+            RecordBatch::hash_join(lt, rt, lo, ro, null_equals_nulls.as_slice(), _how)
+        };
+
+        self.join(right, io_stats, left_on, right_on, how, table_join)
     }
 
     pub fn sort_merge_join(
         &self,
         right: &Self,
-        left_on: &[ExprRef],
-        right_on: &[ExprRef],
+        left_on: &[BoundExpr],
+        right_on: &[BoundExpr],
         is_sorted: bool,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::sort_merge_join");
-        let table_join =
-            |lt: &Table, rt: &Table, lo: &[ExprRef], ro: &[ExprRef], _how: JoinType| {
-                Table::sort_merge_join(lt, rt, lo, ro, is_sorted)
-            };
+        let table_join = |lt: &RecordBatch,
+                          rt: &RecordBatch,
+                          lo: &[BoundExpr],
+                          ro: &[BoundExpr],
+                          _how: JoinType| {
+            RecordBatch::sort_merge_join(lt, rt, lo, ro, is_sorted)
+        };
 
         self.join(
             right,
@@ -114,5 +128,16 @@ impl MicroPartition {
             JoinType::Inner,
             table_join,
         )
+    }
+
+    pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::cross_join");
+
+        let table_join =
+            |lt: &RecordBatch, rt: &RecordBatch, _: &[BoundExpr], _: &[BoundExpr], _: JoinType| {
+                RecordBatch::cross_join(lt, rt, outer_loop_side)
+            };
+
+        self.join(right, io_stats, &[], &[], JoinType::Inner, table_join)
     }
 }

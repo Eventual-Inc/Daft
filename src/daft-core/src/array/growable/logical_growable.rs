@@ -2,16 +2,12 @@ use std::marker::PhantomData;
 
 use common_error::DaftResult;
 
-use crate::{
-    datatypes::{
-        logical::LogicalArray, DaftDataType, DaftLogicalType, DateType, Decimal128Type,
-        DurationType, EmbeddingType, Field, FixedShapeImageType, FixedShapeTensorType, ImageType,
-        MapType, TensorType, TimeType, TimestampType,
-    },
-    DataType, IntoSeries, Series,
-};
-
 use super::{Growable, GrowableArray};
+use crate::{
+    array::prelude::*,
+    datatypes::prelude::*,
+    series::{IntoSeries, Series},
+};
 
 pub struct LogicalGrowable<L: DaftLogicalType, G: Growable>
 where
@@ -33,7 +29,7 @@ where
     }
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.physical_growable.add_nulls(additional)
+        self.physical_growable.add_nulls(additional);
     }
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {
@@ -81,7 +77,11 @@ impl_logical_growable!(LogicalTimeGrowable, TimeType);
 impl_logical_growable!(LogicalEmbeddingGrowable, EmbeddingType);
 impl_logical_growable!(LogicalFixedShapeImageGrowable, FixedShapeImageType);
 impl_logical_growable!(LogicalFixedShapeTensorGrowable, FixedShapeTensorType);
+impl_logical_growable!(LogicalSparseTensorGrowable, SparseTensorType);
+impl_logical_growable!(
+    LogicalFixedShapeSparseTensorGrowable,
+    FixedShapeSparseTensorType
+);
 impl_logical_growable!(LogicalImageGrowable, ImageType);
-impl_logical_growable!(LogicalDecimal128Growable, Decimal128Type);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
 impl_logical_growable!(LogicalMapGrowable, MapType);

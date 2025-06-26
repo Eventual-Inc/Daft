@@ -12,12 +12,12 @@ from tests.expressions.typing.conftest import (
     has_supertype,
     is_integer,
     is_numeric,
+    is_numeric_or_null,
 )
 
 
 def plus_type_validation(lhs: DataType, rhs: DataType) -> bool:
-    """Checks whether these input types are resolvable for the + operation"""
-
+    """Checks whether these input types are resolvable for the + operation."""
     # Plus only works for certain types
     for arg in (lhs, rhs):
         if not (is_numeric(arg) or (arg == DataType.string()) or (arg == DataType.bool()) or (arg == DataType.null())):
@@ -42,9 +42,9 @@ def test_plus(binary_data_fixture):
 
 
 def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType, op: ops) -> bool:
-    """Checks whether these input types are resolvable for arithmetic operations"""
+    """Checks whether these input types are resolvable for arithmetic operations."""
     # (temporal - temporal = duration)
-    if lhs._is_temporal_type() and rhs._is_temporal_type() and lhs == rhs and op == ops.sub:
+    if lhs.is_temporal() and rhs.is_temporal() and lhs == rhs and op == ops.sub:
         return True
 
     # (numeric <op> numeric = numeric)
@@ -100,12 +100,21 @@ def test_floor(unary_data_fixture):
     )
 
 
-def test_sign(unary_data_fixture):
+@pytest.mark.parametrize(
+    ("fun"),
+    [
+        "sign",
+        "signum",
+        "negate",
+        "negative",
+    ],
+)
+def test_sign(unary_data_fixture, fun):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
         data=(unary_data_fixture,),
-        expr=col(arg.name()).sign(),
-        run_kernel=lambda: arg.sign(),
+        expr=getattr(col(arg.name()), fun)(),
+        run_kernel=lambda: getattr(arg, fun)(),
         resolvable=is_numeric(arg.datatype()),
     )
 
@@ -117,6 +126,18 @@ def test_round(unary_data_fixture):
         expr=col(arg.name()).round(0),
         run_kernel=lambda: arg.round(0),
         resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_clip(ternary_data_fixture):
+    data, min, max = ternary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=ternary_data_fixture,
+        expr=col(data.name()).clip(col(min.name()), col(max.name())),
+        run_kernel=lambda: data.clip(min, max),
+        resolvable=is_numeric(data.datatype())
+        and is_numeric_or_null(min.datatype())
+        and is_numeric_or_null(max.datatype()),
     )
 
 
@@ -164,13 +185,28 @@ def test_ln(unary_data_fixture):
     )
 
 
+def test_log1p(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).log1p(),
+        run_kernel=lambda: arg.log1p(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
 @pytest.mark.parametrize(
     "fun",
     [
         "sin",
         "cos",
         "tan",
+        "csc",
+        "sec",
         "cot",
+        "sinh",
+        "cosh",
+        "tanh",
         "arcsin",
         "arccos",
         "arctan",
@@ -234,6 +270,16 @@ def test_exp(unary_data_fixture):
         data=(unary_data_fixture,),
         expr=col(arg.name()).exp(),
         run_kernel=lambda: arg.exp(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_expm1(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).expm1(),
+        run_kernel=lambda: arg.expm1(),
         resolvable=is_numeric(arg.datatype()),
     )
 

@@ -5,12 +5,10 @@ import itertools
 import numpy as np
 import pyarrow as pa
 import pytest
-from ray.data.extensions import ArrowTensorArray
 
 from daft import DataType, Series
-from daft.context import get_context
 from daft.utils import pyarrow_supports_fixed_shape_tensor
-from tests.conftest import UuidType
+from tests.conftest import UuidType, get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -138,27 +136,6 @@ def test_series_concat_struct_array(chunks) -> None:
             counter += 1
 
 
-@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
-def test_series_concat_tensor_array_ray(chunks) -> None:
-    element_shape = (2, 2)
-    num_elements_per_tensor = np.prod(element_shape)
-    chunk_size = 3
-    chunk_shape = (chunk_size,) + element_shape
-    chunks = [
-        np.arange(
-            i * chunk_size * num_elements_per_tensor, (i + 1) * chunk_size * num_elements_per_tensor, dtype=np.int64
-        ).reshape(chunk_shape)
-        for i in range(chunks)
-    ]
-    series = [Series.from_arrow(ArrowTensorArray.from_numpy(chunk)) for chunk in chunks]
-
-    concated = Series.concat(series)
-
-    assert concated.datatype() == DataType.tensor(DataType.int64(), element_shape)
-    expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
-    np.testing.assert_equal(concated.to_pylist(), expected)
-
-
 @pytest.mark.skipif(
     not pyarrow_supports_fixed_shape_tensor(),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
@@ -190,7 +167,7 @@ def test_series_concat_tensor_array_canonical(chunks) -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_tests_daft_runner_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])

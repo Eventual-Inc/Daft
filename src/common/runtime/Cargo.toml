@@ -1,0 +1,14 @@
+[dependencies]
+common-error = {path = "../error", default-features = false}
+futures = {workspace = true}
+log = {workspace = true}
+oneshot = "0.1.8"
+tokio = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-runtime"
+version = {workspace = true}

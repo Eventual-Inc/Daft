@@ -4,21 +4,21 @@ rustc_version = "0.4.0"
 [dependencies]
 # Faster hashing
 ahash = "0.8"
-arrow-array = {version = "=51.0.0", optional = true}
+arrow-array = {version = "=54.2.1", optional = true}
 # Support conversion to/from arrow-rs
-arrow-buffer = {version = "=51.0.0", optional = true}
-arrow-data = {version = "=51.0.0", optional = true}
+arrow-buffer = {version = "=54.2.1", optional = true}
+arrow-data = {version = "=54.2.1", optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
-arrow-schema = {version = "=51.0.0", optional = true}
+arrow-schema = {version = "=54.2.1", optional = true}
 # to read IPC as a stream
-async-stream = {version = "0.3.2", optional = true}
+async-stream = {version = "0.3.6", optional = true}
 # avro support
 avro-schema = {version = "0.3", optional = true}
 base64 = {version = "0.21.0", optional = true}
 bytemuck = {version = "1", features = ["derive"]}
 chrono = {version = "0.4.31", default-features = false, features = ["std"]}
 # for timezone support
-chrono-tz = {version = "0.8", optional = true}
+chrono-tz = {version = "0.10", optional = true}
 # used to print columns in a nice columnar format
 comfy-table = {version = "6.0", optional = true, default-features = false}
 # for csv io
@@ -48,7 +48,7 @@ json-deserializer = {version = "0.4.4", optional = true, features = [
 # To efficiently cast numbers to strings
 lexical-core = {version = "0.8", optional = true}
 # for IPC compression
-lz4 = {version = "1.24", optional = true}
+lz4 = {version = "1.28", optional = true}
 # For `LIKE` matching "contains" fast-path
 memchr = {version = "2.6", optional = true}
 # For instruction multiversioning
@@ -58,7 +58,7 @@ num-traits = "0.2"
 orc-format = {version = "0.3.0", optional = true}
 rand = {version = "0.8", optional = true}
 regex = {version = "1.9", optional = true}
-regex-syntax = {version = "0.7", optional = true}
+regex-syntax = {version = "0.8", optional = true}
 # Arrow integration tests support
 serde = {version = "^1.0", features = ["rc", "derive"]}
 serde_derive = {version = "^1.0", optional = true}
@@ -66,10 +66,11 @@ serde_json = {version = "^1.0", features = [
   "preserve_order"
 ], optional = true}
 # For SIMD utf8 validation
-simdutf8 = "0.1.4"
+simdutf8 = {workspace = true}
 streaming-iterator = {version = "0.1", optional = true}
 # for division/remainder optimization at runtime
 strength_reduce = {version = "0.2", optional = true}
+thiserror = {workspace = true}
 zstd = {version = "0.12", optional = true}
 
 # parquet support
@@ -89,7 +90,7 @@ proptest = {version = "1", default-features = false, features = ["std"]}
 # use for flaky testing
 rand = "0.8"
 # use for generating and testing random data samples
-sample-arrow2 = "0.1"
+sample-arrow2 = "0.17"
 sample-std = "0.1"
 sample-test = "0.1"
 # used to test async readers
@@ -250,7 +251,7 @@ version = "0.17.4"
 allowlist = ["compute", "compute_sort", "compute_hash", "compute_nullif"]
 
 [package.metadata.cargo-machete]
-ignored = ["arrow_array", "arrow_buffer", "avro_rs", "criterion", "crossbeam_channel", "flate2", "getrandom", "rustc_version", "sample_arrow2", "sample_std", "sample_test", "tokio", "tokio_util"]
+ignored = ["arrow-array", "arrow-buffer", "avro-rs", "criterion", "crossbeam-channel", "flate2", "getrandom", "rustc_version", "sample-arrow2", "sample-std", "sample-test", "tokio", "tokio-util"]
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = {version = "0.2", features = ["js"]}

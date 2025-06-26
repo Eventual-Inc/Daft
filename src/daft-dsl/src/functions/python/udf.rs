@@ -1,55 +1,13 @@
-use daft_core::DataType;
-
-#[cfg(feature = "python")]
-use pyo3::{types::PyModule, PyAny, PyResult};
-
-use daft_core::{datatypes::Field, schema::Schema, series::Series};
-
-use crate::ExprRef;
-
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
+#[cfg(feature = "python")]
+use pyo3::{
+    types::{PyAnyMethods, PyModule},
+    Bound, PyAny, PyResult,
+};
 
-use super::super::FunctionEvaluator;
-use super::{StatefulPythonUDF, StatelessPythonUDF};
-use crate::functions::FunctionExpr;
-
-impl FunctionEvaluator for StatelessPythonUDF {
-    fn fn_name(&self) -> &'static str {
-        "py_udf"
-    }
-
-    fn to_field(
-        &self,
-        inputs: &[ExprRef],
-        _schema: &Schema,
-        _: &FunctionExpr,
-    ) -> DaftResult<Field> {
-        if inputs.len() != self.num_expressions {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Number of inputs required by UDF {} does not match number of inputs provided: {}",
-                self.num_expressions,
-                inputs.len()
-            )));
-        }
-        match inputs {
-            [] => Err(DaftError::ValueError(
-                "Cannot run UDF with 0 expression arguments".into(),
-            )),
-            [first, ..] => Ok(Field::new(first.name(), self.return_dtype.clone())),
-        }
-    }
-
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        #[cfg(not(feature = "python"))]
-        {
-            panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
-        }
-        #[cfg(feature = "python")]
-        {
-            self.call_udf(inputs)
-        }
-    }
-}
+use super::{super::FunctionEvaluator, PythonUDF};
+use crate::{functions::FunctionExpr, ExprRef};
 
 #[cfg(feature = "python")]
 fn run_udf(
@@ -62,10 +20,10 @@ fn run_udf(
 ) -> DaftResult<Series> {
     use daft_core::python::{PyDataType, PySeries};
 
-    // Convert input Rust &[Series] to wrapped Python Vec<&PyAny>
+    // Convert input Rust &[Series] to wrapped Python Vec<Bound<PyAny>>
     let py_series_module = PyModule::import(py, pyo3::intern!(py, "daft.series"))?;
     let py_series_class = py_series_module.getattr(pyo3::intern!(py, "Series"))?;
-    let pyseries: PyResult<Vec<&PyAny>> = inputs
+    let pyseries: PyResult<Vec<Bound<PyAny>>> = inputs
         .iter()
         .map(|s| {
             py_series_class.call_method(
@@ -77,7 +35,7 @@ fn run_udf(
         .collect();
     let pyseries = pyseries?;
 
-    // Run the function on the converted Vec<&PyAny>
+    // Run the function on the converted Vec<Bound<PyAny>>
     let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.udf"))?;
     let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_udf"))?;
     let result = run_udf_func.call1((
@@ -100,10 +58,12 @@ fn run_udf(
     }
 }
 
-impl StatelessPythonUDF {
+impl PythonUDF {
     #[cfg(feature = "python")]
     pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<Series> {
         use pyo3::Python;
+
+        use crate::functions::python::{py_udf_initialize, MaybeInitializedUDF};
 
         if inputs.len() != self.num_expressions {
             return Err(DaftError::SchemaMismatch(format!(
@@ -114,21 +74,20 @@ impl StatelessPythonUDF {
         }
 
         Python::with_gil(|py| {
-            // Extract the required Python objects to call our run_udf helper
-            let func = self
-                .partial_func
-                .as_ref()
-                .getattr(py, pyo3::intern!(py, "func"))?;
-            let bound_args = self
-                .partial_func
-                .as_ref()
-                .getattr(py, pyo3::intern!(py, "bound_args"))?;
+            let func = match &self.func {
+                MaybeInitializedUDF::Initialized(func) => func.clone().unwrap().clone_ref(py),
+                MaybeInitializedUDF::Uninitialized { inner, init_args } => {
+                    // TODO(Kevin): warn user if initialization is taking too long and ask them to use actor pool UDFs
+
+                    py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())?
+                }
+            };
 
             run_udf(
                 py,
                 inputs,
                 func,
-                bound_args,
+                self.bound_args.clone().unwrap().clone_ref(py),
                 &self.return_dtype,
                 self.batch_size,
             )
@@ -136,17 +95,12 @@ impl StatelessPythonUDF {
     }
 }
 
-impl FunctionEvaluator for StatefulPythonUDF {
+impl FunctionEvaluator for PythonUDF {
     fn fn_name(&self) -> &'static str {
-        "pyclass_udf"
+        "py_udf"
     }
 
-    fn to_field(
-        &self,
-        inputs: &[ExprRef],
-        _schema: &Schema,
-        _: &FunctionExpr,
-    ) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], _: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         if inputs.len() != self.num_expressions {
             return Err(DaftError::SchemaMismatch(format!(
                 "Number of inputs required by UDF {} does not match number of inputs provided: {}",
@@ -165,69 +119,11 @@ impl FunctionEvaluator for StatefulPythonUDF {
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
         #[cfg(not(feature = "python"))]
         {
-            panic!("Cannot evaluate a StatelessPythonUDF without compiling for Python");
+            panic!("Cannot evaluate a PythonUDF without compiling for Python");
         }
-
         #[cfg(feature = "python")]
         {
-            use pyo3::{
-                types::{PyDict, PyTuple},
-                Python,
-            };
-
-            if inputs.len() != self.num_expressions {
-                return Err(DaftError::SchemaMismatch(format!(
-                    "Number of inputs required by UDF {} does not match number of inputs provided: {}",
-                    self.num_expressions,
-                    inputs.len()
-                )));
-            }
-
-            Python::with_gil(|py| {
-                // Extract the required Python objects to call our run_udf helper
-                let func = self
-                    .stateful_partial_func
-                    .as_ref()
-                    .getattr(py, pyo3::intern!(py, "func_cls"))?;
-                let bound_args = self
-                    .stateful_partial_func
-                    .as_ref()
-                    .getattr(py, pyo3::intern!(py, "bound_args"))?;
-
-                // HACK: This is the naive initialization of the class. It is performed once-per-evaluate which is not ideal.
-                // Ideally we need to allow evaluate to somehow take in the **initialized** Python class that is provided by the Actor.
-                // Either that, or the code-path to evaluate a StatefulUDF should bypass `evaluate` entirely and do its own thing.
-                let func = match &self.init_args {
-                    None => func.call0(py)?,
-                    Some(init_args) => {
-                        let init_args = init_args
-                            .as_ref()
-                            .as_ref(py)
-                            .downcast::<PyTuple>()
-                            .expect("init_args should be a Python tuple");
-                        let (args, kwargs) = (
-                            init_args
-                                .get_item(0)?
-                                .downcast::<PyTuple>()
-                                .expect("init_args[0] should be a tuple of *args"),
-                            init_args
-                                .get_item(1)?
-                                .downcast::<PyDict>()
-                                .expect("init_args[1] should be a dict of **kwargs"),
-                        );
-                        func.call(py, args, Some(kwargs))?
-                    }
-                };
-
-                run_udf(
-                    py,
-                    inputs,
-                    func,
-                    bound_args,
-                    &self.return_dtype,
-                    self.batch_size,
-                )
-            })
+            self.call_udf(inputs)
         }
     }
 }

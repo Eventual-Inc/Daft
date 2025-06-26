@@ -2,38 +2,44 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{get_io_client, get_runtime, parse_url, s3_like, stats::IOStatsContext};
     use common_error::DaftResult;
+    use common_runtime::get_io_runtime;
     use futures::TryStreamExt;
-    use pyo3::{
-        prelude::*,
-        types::{PyDict, PyList},
-    };
+    use pyo3::{prelude::*, types::PyDict};
 
-    #[pyfunction]
+    use crate::{get_io_client, parse_url, s3_like, stats::IOStatsContext};
+
+    #[pyfunction(signature = (
+        input,
+        multithreaded_io=None,
+        io_config=None,
+        fanout_limit=None,
+        page_size=None,
+        limit=None
+    ))]
     fn io_glob(
         py: Python,
-        path: String,
+        input: String,
         multithreaded_io: Option<bool>,
         io_config: Option<common_io_config::python::IOConfig>,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
-    ) -> PyResult<&PyList> {
+    ) -> PyResult<Vec<Bound<PyDict>>> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
-        let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
-        let io_stats_handle = io_stats.clone();
+        let io_stats = IOStatsContext::new(format!("io_glob for {input}"));
+        let io_stats_handle = io_stats;
 
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (scheme, path) = parse_url(&path)?;
-            let runtime_handle = get_runtime(multithreaded_io)?;
+            let (_, path) = parse_url(&input)?;
+            let runtime_handle = get_io_runtime(multithreaded_io);
 
-            runtime_handle.block_on_current_thread(async move {
-                let source = io_client.get_source(&scheme).await?;
+            runtime_handle.block_on_current_thread(async {
+                let source = io_client.get_source(&input).await?;
                 let files = source
                     .glob(
                         path.as_ref(),
@@ -49,16 +55,15 @@ mod py {
                 Ok(files)
             })
         });
-        let lsr = lsr?;
         let mut to_rtn = vec![];
-        for file in lsr {
+        for file in lsr? {
             let dict = PyDict::new(py);
             dict.set_item("type", format!("{:?}", file.filetype))?;
             dict.set_item("path", file.filepath)?;
             dict.set_item("size", file.size)?;
             to_rtn.push(dict);
         }
-        Ok(PyList::new(py, to_rtn))
+        Ok(to_rtn)
     }
 
     /// Creates an S3Config from the current environment, auto-discovering variables such as
@@ -66,14 +71,14 @@ mod py {
     #[pyfunction]
     fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {
         let s3_config: DaftResult<common_io_config::S3Config> = py.allow_threads(|| {
-            let runtime = get_runtime(false)?;
+            let runtime = get_io_runtime(false);
             runtime.block_on_current_thread(async { Ok(s3_like::s3_config_from_env().await?) })
         });
         Ok(common_io_config::python::S3Config { config: s3_config? })
     }
 
-    pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
-        common_io_config::python::register_modules(py, parent)?;
+    pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+        common_io_config::python::register_modules(parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
         Ok(())

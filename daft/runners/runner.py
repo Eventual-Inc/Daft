@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Generic, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal
 
-from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionCacheEntry,
@@ -11,19 +11,31 @@ from daft.runners.partitioning import (
     PartitionSetCache,
     PartitionT,
 )
-from daft.runners.runner_io import RunnerIO
-from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.recordbatch import MicroPartition
+    from daft.runners.runner_io import RunnerIO
+
+LOCAL_PARTITION_SET_CACHE = PartitionSetCache()
 
 
 class Runner(Generic[PartitionT]):
+    name: ClassVar[Literal["ray", "native"]]
+
     def __init__(self) -> None:
-        self._part_set_cache = PartitionSetCache()
+        self._part_set_cache = self.initialize_partition_set_cache()
 
     def get_partition_set_from_cache(self, pset_id: str) -> PartitionCacheEntry:
         return self._part_set_cache.get_partition_set(pset_id=pset_id)
 
-    def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
+    def put_partition_set_into_cache(self, pset: PartitionSet[Any]) -> PartitionCacheEntry:
         return self._part_set_cache.put_partition_set(pset=pset)
+
+    @abstractmethod
+    def initialize_partition_set_cache(self) -> PartitionSetCache: ...
 
     @abstractmethod
     def runner_io(self) -> RunnerIO: ...

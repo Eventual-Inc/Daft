@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
@@ -11,19 +11,20 @@ from daft.daft import (
     PySchema,
     ResourceRequest,
     ScanTask,
+    WriteMode,
 )
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionT
-from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.udf import PartialStatefulUDF
+    from daft.io import DataSink
+    from daft.recordbatch import MicroPartition
 
 
 def scan_with_tasks(
@@ -53,7 +54,7 @@ def scan_with_tasks(
 def empty_scan(
     schema: Schema,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    """yield a plan to create an empty Partition"""
+    """Yield a plan to create an empty Partition."""
     scan_step = execution_step.PartitionTaskBuilder[PartitionT](
         inputs=[],
         partial_metadatas=None,
@@ -83,7 +84,7 @@ def project(
 def actor_pool_project(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     projection: list[PyExpr],
-    partial_stateful_udfs: dict[str, PartialStatefulUDF],
+    actor_pool_manager: physical_plan.ActorPoolManager,
     resource_request: ResourceRequest | None,
     num_actors: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -94,7 +95,7 @@ def actor_pool_project(
     return physical_plan.actor_pool_project(
         child_plan=input,
         projection=expr_projection,
-        partial_stateful_udfs=partial_stateful_udfs,
+        actor_pool_manager=actor_pool_manager,
         resource_request=resource_request,
         num_actors=num_actors,
     )
@@ -168,6 +169,20 @@ def local_aggregate(
     )
 
 
+def local_dedup(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    columns: list[PyExpr],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    dedup_step = execution_step.Dedup(
+        columns=ExpressionsProjection([Expression._from_pyexpr(pyexpr) for pyexpr in columns]),
+    )
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=dedup_step,
+        resource_request=ResourceRequest(),
+    )
+
+
 def pivot(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     group_by: list[PyExpr],
@@ -203,6 +218,7 @@ def sort(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     sort_by: list[PyExpr],
     descending: list[bool],
+    nulls_first: list[bool],
     num_partitions: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
@@ -210,11 +226,31 @@ def sort(
         child_plan=input,
         sort_by=expr_projection,
         descending=descending,
+        nulls_first=nulls_first,
         num_partitions=num_partitions,
     )
 
 
-def split_by_hash(
+def top_n(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sort_by: list[PyExpr],
+    descending: list[bool],
+    nulls_first: list[bool],
+    limit: int,
+    num_partitions: int,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
+    return physical_plan.top_n(
+        child_plan=input,
+        sort_by=expr_projection,
+        descending=descending,
+        nulls_first=nulls_first,
+        limit=limit,
+        num_partitions=num_partitions,
+    )
+
+
+def fanout_by_hash(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     num_partitions: int,
     partition_by: list[PyExpr],
@@ -243,6 +279,7 @@ def hash_join(
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
@@ -253,6 +290,7 @@ def hash_join(
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
         how=join_type,
+        null_equals_nulls=null_equals_nulls,
     )
 
 
@@ -303,6 +341,7 @@ def broadcast_join(
     receiver: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
     is_swapped: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -315,11 +354,13 @@ def broadcast_join(
         right_on=right_on_expr_proj,
         how=join_type,
         is_swapped=is_swapped,
+        null_equals_nulls=null_equals_nulls,
     )
 
 
 def write_file(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    write_mode: WriteMode,
     file_format: FileFormat,
     schema: PySchema,
     root_dir: str,
@@ -333,6 +374,7 @@ def write_file(
         expr_projection = None
     return physical_plan.file_write(
         input,
+        write_mode,
         file_format,
         Schema._from_pyschema(schema),
         root_dir,
@@ -347,7 +389,8 @@ def write_iceberg(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    spec_id: int,
+    partition_spec_id: int,
+    partition_cols: list[PyExpr],
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.iceberg_write(
@@ -355,7 +398,8 @@ def write_iceberg(
         base_path=base_path,
         iceberg_schema=iceberg_schema,
         iceberg_properties=iceberg_properties,
-        spec_id=spec_id,
+        partition_spec_id=partition_spec_id,
+        partition_cols=ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols]),
         io_config=io_config,
     )
 
@@ -365,6 +409,7 @@ def write_deltalake(
     path: str,
     large_dtypes: bool,
     version: int,
+    partition_cols: list[PyExpr] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.deltalake_write(
@@ -372,6 +417,7 @@ def write_deltalake(
         path,
         large_dtypes,
         version,
+        ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols]) if partition_cols else None,
         io_config,
     )
 
@@ -381,6 +427,13 @@ def write_lance(
     path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
+    kwargs: dict[str, Any] | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
+
+
+def write_data_sink(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sink: DataSink[Any],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.data_sink_write(input, sink)

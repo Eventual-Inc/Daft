@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from daft.scarf_telemetry import track_import_on_scarf
+
 ###
 # Set up code coverage for when running code coverage with ray
 ###
@@ -37,29 +39,27 @@ def get_build_type() -> str:
 
 
 def refresh_logger() -> None:
-    """Refreshes Daft's internal rust logging to the current python log level"""
+    """Refreshes Daft's internal rust logging to the current python log level."""
     _refresh_logger()
 
 
 __version__ = get_version()
 
-
 ###
 # Initialize analytics
 ###
 
-from daft.analytics import init_analytics
-
-dev_build = get_build_type() == "dev"
-user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-if not dev_build and not user_opted_out:
-    analytics_client = init_analytics(get_version(), get_build_type())
-    analytics_client.track_import()
+track_import_on_scarf()
 
 ###
 # Daft top-level imports
 ###
 
+from daft.catalog import (
+    Catalog,
+    Identifier,
+    Table,
+)
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
     from_arrow,
@@ -71,13 +71,14 @@ from daft.convert import (
 )
 from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
-from daft.logical.schema import Schema
+from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, lit
+from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
     from_glob_path,
+    _range as range,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -86,51 +87,125 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
+    read_warc,
 )
 from daft.series import Series
-from daft.sql.sql import sql, sql_expr
+from daft.session import (
+    Session,
+    attach,
+    attach_catalog,
+    attach_table,
+    create_namespace,
+    create_namespace_if_not_exists,
+    create_table,
+    create_table_if_not_exists,
+    create_temp_table,
+    current_catalog,
+    current_namespace,
+    current_session,
+    detach_catalog,
+    detach_table,
+    drop_namespace,
+    drop_table,
+    get_catalog,
+    get_table,
+    has_catalog,
+    has_namespace,
+    has_table,
+    list_catalogs,
+    list_tables,
+    read_table,
+    set_catalog,
+    set_namespace,
+    set_session,
+    write_table,
+    attach_function,
+    detach_function,
+)
+from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
+from daft.window import Window
 
 to_struct = Expression.to_struct
 
 __all__ = [
-    "from_pylist",
-    "from_pydict",
-    "from_arrow",
-    "from_pandas",
-    "from_ray_dataset",
-    "from_dask_dataframe",
-    "from_glob_path",
-    "read_csv",
-    "read_json",
-    "read_parquet",
-    "read_hudi",
-    "read_iceberg",
-    "read_deltalake",
-    "read_sql",
-    "read_lance",
-    "DataCatalogType",
+    "Catalog",
     "DataCatalogTable",
+    "DataCatalogType",
     "DataFrame",
-    "Expression",
-    "col",
     "DataType",
-    "ImageMode",
+    "Expression",
+    "Identifier",
     "ImageFormat",
-    "lit",
-    "Series",
-    "TimeUnit",
-    "register_viz_hook",
-    "refresh_logger",
-    "udf",
+    "ImageMode",
     "ResourceRequest",
     "Schema",
-    "set_planning_config",
-    "set_execution_config",
-    "planning_config_ctx",
+    "Series",
+    "Session",
+    "Table",
+    "TimeUnit",
+    "Window",
+    "attach",
+    "attach_catalog",
+    "attach_function",
+    "attach_table",
+    "coalesce",
+    "col",
+    "create_namespace",
+    "create_namespace_if_not_exists",
+    "create_table",
+    "create_table_if_not_exists",
+    "create_temp_table",
+    "current_catalog",
+    "current_namespace",
+    "current_session",
+    "detach_catalog",
+    "detach_function",
+    "detach_table",
+    "drop_namespace",
+    "drop_table",
     "execution_config_ctx",
+    "from_arrow",
+    "from_dask_dataframe",
+    "from_glob_path",
+    "from_pandas",
+    "from_pydict",
+    "from_pylist",
+    "from_ray_dataset",
+    "get_catalog",
+    "get_table",
+    "has_catalog",
+    "has_namespace",
+    "has_table",
+    "interval",
+    "list_",
+    "list_catalogs",
+    "list_tables",
+    "lit",
+    "planning_config_ctx",
+    "range",
+    "read_csv",
+    "read_deltalake",
+    "read_hudi",
+    "read_iceberg",
+    "read_json",
+    "read_lance",
+    "read_parquet",
+    "read_sql",
+    "read_table",
+    "read_warc",
+    "refresh_logger",
+    "register_viz_hook",
+    "set_catalog",
+    "set_execution_config",
+    "set_namespace",
+    "set_planning_config",
+    "set_session",
     "sql",
     "sql_expr",
+    "struct",
     "to_struct",
+    "udf",
+    "write_table",
 ]

@@ -1,14 +1,21 @@
 pub mod pylib {
     use std::sync::Arc;
 
-    use daft_core::python::schema::PySchema;
+    use daft_core::python::PySchema;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
-    use daft_table::python::PyTable;
+    use daft_recordbatch::python::PyRecordBatch;
     use pyo3::{pyfunction, PyResult, Python};
 
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        convert_options=None,
+        parse_options=None,
+        read_options=None,
+        io_config=None,
+        multithreaded_io=None
+    ))]
     pub fn read_csv(
         py: Python,
         uri: &str,
@@ -17,7 +24,7 @@ pub mod pylib {
         read_options: Option<CsvReadOptions>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
-    ) -> PyResult<PyTable> {
+    ) -> PyResult<PyRecordBatch> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
 
@@ -39,7 +46,13 @@ pub mod pylib {
         })
     }
 
-    #[pyfunction]
+    #[pyfunction(signature = (
+        uri,
+        parse_options=None,
+        max_bytes=None,
+        io_config=None,
+        multithreaded_io=None
+    ))]
     pub fn read_csv_schema(
         py: Python,
         uri: &str,
@@ -55,13 +68,20 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (schema, _) = crate::metadata::read_csv_schema(
-                uri,
-                parse_options,
-                max_bytes,
-                io_client,
-                Some(io_stats),
-            )?;
+
+            let runtime = common_runtime::get_io_runtime(multithreaded_io.unwrap_or(true));
+
+            let (schema, _) = runtime.block_on_current_thread(async move {
+                crate::metadata::read_csv_schema(
+                    uri,
+                    parse_options,
+                    max_bytes,
+                    io_client,
+                    Some(io_stats),
+                )
+                .await
+            })?;
+
             Ok(Arc::new(schema).into())
         })
     }

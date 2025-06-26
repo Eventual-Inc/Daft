@@ -2,18 +2,17 @@ use std::cell::RefCell;
 
 use serde::ser::SerializeMap;
 
-use crate::{
-    datatypes::{
-        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
-    },
-    DataType, IntoSeries, Series,
-};
-
+use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
-
-use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
+use crate::{
+    datatypes::{
+        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType,
+        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
+        Utf8Array,
+    },
+    series::{IntoSeries, Series},
+};
 
 pub struct IterSer<I>
 where
@@ -29,7 +28,7 @@ where
     <I as IntoIterator>::Item: serde::Serialize,
 {
     fn new(iter: I) -> Self {
-        IterSer {
+        Self {
             iter: RefCell::new(Some(iter)),
         }
     }
@@ -52,7 +51,7 @@ where
     }
 }
 
-impl<T: DaftNumericType> serde::Serialize for DataArray<T> {
+impl<T: DaftPrimitiveType> serde::Serialize for DataArray<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -132,7 +131,11 @@ impl serde::Serialize for ExtensionArray {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
         let values = if let DataType::Extension(_, inner, _) = self.data_type() {
-            Series::try_from(("physical", self.data.to_type(inner.to_arrow().unwrap()))).unwrap()
+            Series::try_from((
+                "physical",
+                self.data.convert_logical_type(inner.to_arrow().unwrap()),
+            ))
+            .unwrap()
         } else {
             panic!("Expected Extension Type!")
         };
@@ -230,6 +233,18 @@ where
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field.as_ref())?;
         s.serialize_entry("values", &self.physical.clone().into_series())?;
+        s.end()
+    }
+}
+
+impl serde::Serialize for IntervalArray {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_map(Some(2))?;
+        s.serialize_entry("field", self.field())?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
         s.end()
     }
 }

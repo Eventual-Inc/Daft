@@ -4,10 +4,10 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
 from daft.utils import pyarrow_supports_fixed_shape_tensor
+from tests.conftest import get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -139,7 +139,7 @@ def test_series_struct_take() -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_tests_daft_runner_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 def test_series_extension_type_take(uuid_ext_type) -> None:

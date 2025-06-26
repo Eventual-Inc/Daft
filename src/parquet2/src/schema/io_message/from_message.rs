@@ -45,10 +45,14 @@
 use parquet_format_safe::Type;
 use types::PrimitiveLogicalType;
 
-use super::super::types::{ParquetType, TimeUnit};
-use super::super::*;
-use crate::error::{Error, Result};
-use crate::schema::types::{GroupConvertedType, PrimitiveConvertedType};
+use super::super::{
+    types::{ParquetType, TimeUnit},
+    *,
+};
+use crate::{
+    error::{Error, Result},
+    schema::types::{GroupConvertedType, PrimitiveConvertedType},
+};
 
 fn is_logical_type(s: &str) -> bool {
     matches!(

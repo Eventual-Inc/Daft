@@ -7,10 +7,10 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
 from daft.utils import pyarrow_supports_fixed_shape_tensor
+from tests.conftest import get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -18,7 +18,7 @@ PYARROW_GE_7_0_0 = ARROW_VERSION >= (7, 0, 0)
 
 
 def get_total_buffer_size(arr: pa.Array) -> int:
-    """Helper to get total buffer size because older versions of Arrow don't have the Array.get_total_buffer_size() method"""
+    """Helper to get total buffer size because older versions of Arrow don't have this method."""
     return sum([buf.size if buf is not None else 0 for buf in arr.buffers()])
 
 
@@ -221,7 +221,7 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_tests_daft_runner_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 @pytest.mark.parametrize("size", [1, 2, 8, 9, 16])

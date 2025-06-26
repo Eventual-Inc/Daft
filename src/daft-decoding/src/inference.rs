@@ -15,6 +15,7 @@ use crate::deserialize::{ALL_NAIVE_DATE_FMTS, ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIME
 /// * parsable to time-aware datetime is mapped to [`DataType::Timestamp`] of milliseconds and parsed offset.
 /// * other utf8 is mapped to [`DataType::Utf8`]
 /// * invalid utf8 is mapped to [`DataType::Binary`]
+#[must_use]
 pub fn infer(bytes: &[u8]) -> arrow2::datatypes::DataType {
     if is_null(bytes) {
         DataType::Null
@@ -32,6 +33,7 @@ pub fn infer(bytes: &[u8]) -> arrow2::datatypes::DataType {
     }
 }
 
+#[must_use]
 pub fn infer_string(string: &str) -> DataType {
     if is_date(string) {
         DataType::Date32
@@ -58,7 +60,7 @@ fn is_boolean(bytes: &[u8]) -> bool {
 }
 
 fn is_float(bytes: &[u8]) -> bool {
-    fast_float::parse::<f64, _>(bytes).is_ok()
+    fast_float2::parse::<f64, _>(bytes).is_ok()
 }
 
 fn is_integer(bytes: &[u8]) -> bool {

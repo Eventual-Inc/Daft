@@ -1,5 +1,26 @@
 from __future__ import annotations
 
-from .expressions import Expression, ExpressionsProjection, col, lit
+from .expressions import (
+    Expression,
+    ExpressionsProjection,
+    col,
+    list_,
+    lit,
+    interval,
+    struct,
+    coalesce,
+)
 
-__all__ = ["Expression", "ExpressionsProjection", "col", "lit"]
+from .visitor import ExpressionVisitor
+
+__all__ = [
+    "Expression",
+    "ExpressionVisitor",
+    "ExpressionsProjection",
+    "coalesce",
+    "col",
+    "interval",
+    "list_",
+    "lit",
+    "struct",
+]

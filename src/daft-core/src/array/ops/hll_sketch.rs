@@ -1,13 +1,10 @@
-use crate::{
-    array::ops::as_arrow::AsArrow,
-    datatypes::{FixedSizeBinaryArray, UInt64Array},
-    DataType,
-};
+use common_error::DaftResult;
 use hyperloglog::{HyperLogLog, NUM_REGISTERS};
 
-use common_error::DaftResult;
-
-use crate::array::ops::{DaftHllSketchAggable, GroupIndices};
+use crate::{
+    array::ops::{as_arrow::AsArrow, DaftHllSketchAggable, GroupIndices},
+    datatypes::{DataType, FixedSizeBinaryArray, UInt64Array},
+};
 
 pub const HLL_SKETCH_DTYPE: DataType = DataType::FixedSizeBinary(NUM_REGISTERS);
 
@@ -31,7 +28,7 @@ impl DaftHllSketchAggable for UInt64Array {
             for &index in group {
                 if let Some(value) = data.get(index as _) {
                     hll.add_already_hashed(value);
-                };
+                }
             }
             bytes.extend(hll.registers.as_ref());
         }

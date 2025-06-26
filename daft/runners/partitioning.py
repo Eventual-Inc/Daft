@@ -4,25 +4,27 @@ import threading
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
 from uuid import uuid4
 
-import pyarrow as pa
-
 from daft.datatype import TimeUnit
-from daft.expressions.expressions import Expression
-from daft.logical.schema import Schema
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
     import pandas as pd
+    import pyarrow as pa
+    from ray import ObjectRef
+
+    from daft.daft import PyMicroPartitionSet
+    from daft.expressions.expressions import Expression
+    from daft.logical.schema import Schema
 
 PartID = int
 
 
 @dataclass(frozen=True)
 class TableReadOptions:
-    """Options for reading a vPartition
+    """Options for reading a vPartition.
 
     Args:
         num_rows: Number of rows to read, or None to read all rows
@@ -35,7 +37,7 @@ class TableReadOptions:
 
 @dataclass(frozen=True)
 class TableParseCSVOptions:
-    """Options for parsing CSVs
+    """Options for parsing CSVs.
 
     Args:
         delimiter: The delimiter to use when parsing CSVs, defaults to ","
@@ -59,7 +61,7 @@ class TableParseCSVOptions:
 
 @dataclass(frozen=True)
 class TableParseParquetOptions:
-    """Options for parsing Parquet files
+    """Options for parsing Parquet files.
 
     Args:
         coerce_int96_timestamp_unit: TimeUnit to use when parsing Int96 fields
@@ -111,7 +113,7 @@ class Boundaries:
     sort_by: list[Expression]
     bounds: MicroPartition
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         assert len(self.sort_by) > 0
         assert len(self.bounds) == 2
         assert self.bounds.column_names() == [e.name() for e in self.sort_by]
@@ -164,7 +166,7 @@ class Boundaries:
         return self_upper < other_upper
 
 
-PartitionT = TypeVar("PartitionT")
+PartitionT = TypeVar("PartitionT", bound="Union[ObjectRef, MicroPartition]")
 
 
 class MaterializedResult(Generic[PartitionT]):
@@ -196,7 +198,8 @@ class MaterializedResult(Generic[PartitionT]):
     @abstractmethod
     def _noop(self, _: PartitionT) -> None:
         """Implement this as a no-op.
-        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
+
+        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes.
         """
         ...
 
@@ -216,25 +219,20 @@ class PartitionSet(Generic[PartitionT]):
     def to_pandas(
         self,
         schema: Schema | None = None,
-        cast_tensors_to_ray_tensor_dtype: bool = False,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
         merged_partition = self._get_merged_micropartition()
         return merged_partition.to_pandas(
             schema=schema,
-            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
 
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Table:
+    def to_arrow(self) -> pa.Table:
         merged_partition = self._get_merged_micropartition()
-        return merged_partition.to_arrow(cast_tensors_to_ray_tensor_dtype)
+        return merged_partition.to_arrow()
 
     def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:
-        """
-        Returns all (partition id, partition) in this PartitionSet,
-        ordered by partition ID.
-        """
+        """Returns all (partition id, partition) in this PartitionSet ordered by partition ID."""
         raise NotImplementedError()
 
     def values(self) -> list[MaterializedResult[PartitionT]]:
@@ -273,10 +271,103 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
 
+class LocalPartitionSet(PartitionSet[MicroPartition]):
+    _partitions: dict[PartID, MaterializedResult[MicroPartition]]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._partitions = {}
+
+    @staticmethod
+    def _from_micropartition_set(pset: PyMicroPartitionSet) -> LocalPartitionSet:
+        s = LocalPartitionSet()
+        for idx in range(0, pset.num_partitions()):
+            s.set_partition_from_table(idx=idx, part=MicroPartition._from_pymicropartition(pset.get_partition(idx)))
+        return s
+
+    def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
+        return sorted(self._partitions.items())
+
+    def _get_merged_micropartition(self) -> MicroPartition:
+        ids_and_partitions = self.items()
+        assert ids_and_partitions[0][0] == 0
+        assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+        return MicroPartition.concat([part.partition() for id, part in ids_and_partitions])
+
+    def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
+        ids_and_partitions = self.items()
+        preview_parts = []
+        for _, mat_result in ids_and_partitions:
+            part: MicroPartition = mat_result.partition()
+            part_len = len(part)
+            if part_len >= num_rows:  # if this part has enough rows, take what we need and break
+                preview_parts.append(part.slice(0, num_rows))
+                break
+            else:  # otherwise, take the whole part and keep going
+                num_rows -= part_len
+                preview_parts.append(part)
+        return preview_parts
+
+    def get_partition(self, idx: PartID) -> MaterializedResult[MicroPartition]:
+        return self._partitions[idx]
+
+    def set_partition(self, idx: PartID, part: MaterializedResult[MicroPartition]) -> None:
+        self._partitions[idx] = part
+
+    def set_partition_from_table(self, idx: PartID, part: MicroPartition) -> None:
+        self._partitions[idx] = LocalMaterializedResult(part, PartitionMetadata.from_table(part))
+
+    def delete_partition(self, idx: PartID) -> None:
+        del self._partitions[idx]
+
+    def has_partition(self, idx: PartID) -> bool:
+        return idx in self._partitions
+
+    def __len__(self) -> int:
+        return sum(len(partition.partition()) for partition in self._partitions.values())
+
+    def size_bytes(self) -> int | None:
+        size_bytes_ = [partition.partition().size_bytes() for partition in self._partitions.values()]
+        size_bytes: list[int] = [size for size in size_bytes_ if size is not None]
+        if len(size_bytes) != len(size_bytes_):
+            return None
+        else:
+            return sum(size_bytes)
+
+    def num_partitions(self) -> int:
+        return len(self._partitions)
+
+    def wait(self) -> None:
+        pass
+
+
+@dataclass
+class LocalMaterializedResult(MaterializedResult[MicroPartition]):
+    _partition: MicroPartition
+    _metadata: PartitionMetadata | None = None
+
+    def partition(self) -> MicroPartition:
+        return self._partition
+
+    def micropartition(self) -> MicroPartition:
+        return self._partition
+
+    def metadata(self) -> PartitionMetadata:
+        if self._metadata is None:
+            self._metadata = PartitionMetadata.from_table(self._partition)
+        return self._metadata
+
+    def cancel(self) -> None:
+        return None
+
+    def _noop(self, _: MicroPartition) -> None:
+        return None
+
+
 @dataclass(eq=False, repr=False)
 class PartitionCacheEntry:
     key: str
-    value: PartitionSet | None
+    value: PartitionSet[Any] | None
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, PartitionCacheEntry) and self.key == other.key
@@ -287,10 +378,10 @@ class PartitionCacheEntry:
     def __repr__(self) -> str:
         return f"PartitionCacheEntry: {self.key}"
 
-    def __getstate__(self):
+    def __getstate__(self) -> str:
         return self.key
 
-    def __setstate__(self, key):
+    def __setstate__(self, key: str) -> None:
         self.key = key
         self.value = None
 
@@ -316,11 +407,11 @@ class PartitionSetCache:
             assert pset_id in self.__uuid_to_partition_set
             return self.__uuid_to_partition_set[pset_id]
 
-    def get_all_partition_sets(self) -> dict[str, PartitionSet]:
+    def get_all_partition_sets(self) -> dict[str, PartitionSet[Any]]:
         with self._lock:
             return {key: entry.value for key, entry in self.__uuid_to_partition_set.items() if entry.value is not None}
 
-    def put_partition_set(self, pset: PartitionSet) -> PartitionCacheEntry:
+    def put_partition_set(self, pset: PartitionSet[Any]) -> PartitionCacheEntry:
         pset_id = uuid4().hex
         part_entry = PartitionCacheEntry(pset_id, pset)
         with self._lock:

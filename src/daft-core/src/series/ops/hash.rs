@@ -1,10 +1,11 @@
-use crate::{
-    datatypes::{Int32Array, UInt64Array},
-    series::Series,
-    with_match_hashable_daft_types, DataType,
-};
 use arrow2::bitmap::Bitmap;
 use common_error::DaftResult;
+
+use crate::{
+    datatypes::{DataType, Int32Array, UInt64Array},
+    series::Series,
+    with_match_hashable_daft_types,
+};
 
 impl Series {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
@@ -17,7 +18,7 @@ impl Series {
 
     pub fn hash_with_validity(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let hash = self.hash(seed)?;
-        let validity = if let DataType::Null = self.data_type() {
+        let validity = if matches!(self.data_type(), DataType::Null) {
             Some(Bitmap::new_zeroed(self.len()))
         } else {
             self.validity().cloned()
@@ -26,7 +27,7 @@ impl Series {
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        use crate::DataType::*;
+        use crate::datatypes::DataType::*;
         match self.data_type() {
             Int8 => self.i8()?.murmur3_32(),
             Int16 => self.i16()?.murmur3_32(),

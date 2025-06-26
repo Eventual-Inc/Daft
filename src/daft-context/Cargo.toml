@@ -1,0 +1,29 @@
+[dependencies]
+arrow2 = {workspace = true}
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-micropartition = {path = "../daft-micropartition", default-features = false}
+daft-py-runners = {workspace = true}
+log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-daft-config/python",
+  "common-error/python",
+  "daft-core/python",
+  "daft-logical-plan/python",
+  "daft-micropartition/python",
+  "daft-py-runners/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-context"
+edition.workspace = true
+version.workspace = true

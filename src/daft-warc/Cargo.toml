@@ -1,0 +1,38 @@
+[dependencies]
+arrow2 = {workspace = true}
+chrono = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+daft-compression = {path = "../daft-compression", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+flate2 = {version = "1.1", features = ["zlib-rs"], default-features = false}
+futures = {workspace = true}
+serde_json = {workspace = true}
+snafu = {workspace = true}
+tokio = {workspace = true}
+tokio-stream = {workspace = true}
+tokio-util = {workspace = true}
+uuid.workspace = true
+
+[features]
+python = [
+  "common-error/python",
+  "daft-core/python",
+  "daft-io/python",
+  "daft-recordbatch/python",
+  "daft-dsl/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-warc"
+version = {workspace = true}
+
+[package.metadata.cargo-machete]
+ignored = ["flate2"]

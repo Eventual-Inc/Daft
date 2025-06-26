@@ -1,18 +1,21 @@
-use crate::series::Series;
-
 use common_error::DaftResult;
+
+use crate::series::Series;
 impl Series {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Series> {
+    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
         self.inner.broadcast(num)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::array::ops::full::FullNull;
-    use crate::datatypes::{DataType, Int64Array, Utf8Array};
-    use crate::series::array_impl::IntoSeries;
     use common_error::DaftResult;
+
+    use crate::{
+        array::ops::full::FullNull,
+        datatypes::{DataType, Int64Array, Utf8Array},
+        series::array_impl::IntoSeries,
+    };
 
     #[test]
     fn broadcast_int() -> DaftResult<()> {

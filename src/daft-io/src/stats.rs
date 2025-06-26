@@ -41,7 +41,7 @@ impl Drop for IOStatsContext {
     }
 }
 
-pub(crate) struct IOStatsByteStreamContextHandle {
+pub struct IOStatsByteStreamContextHandle {
     // do not enable Copy or Clone on this struct
     bytes_read: usize,
     inner: IOStatsRef,
@@ -49,7 +49,7 @@ pub(crate) struct IOStatsByteStreamContextHandle {
 
 impl IOStatsContext {
     pub fn new<S: Into<Cow<'static, str>>>(name: S) -> IOStatsRef {
-        Arc::new(IOStatsContext {
+        Arc::new(Self {
             name: name.into(),
             num_get_requests: atomic::AtomicUsize::new(0),
             num_head_requests: atomic::AtomicUsize::new(0),

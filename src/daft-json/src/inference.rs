@@ -1,16 +1,18 @@
 use std::{borrow::Borrow, collections::HashSet};
 
-use crate::deserializer::{Object, Value as BorrowedValue};
-use arrow2::datatypes::{DataType, Field, Metadata, Schema, TimeUnit};
-use arrow2::error::{Error, Result};
+use arrow2::{
+    datatypes::{DataType, Field, Metadata, Schema, TimeUnit},
+    error::{Error, Result},
+};
 use indexmap::IndexMap;
-
 use simd_json::StaticNode;
+
+use crate::deserializer::{Object, Value as BorrowedValue};
 
 const ITEM_NAME: &str = "item";
 
 /// Infer Arrow2 schema from JSON Value record.
-pub(crate) fn infer_records_schema(record: &BorrowedValue) -> Result<Schema> {
+pub fn infer_records_schema(record: &BorrowedValue) -> Result<Schema> {
     let fields = match record {
         BorrowedValue::Object(record) => record
             .iter()
@@ -95,7 +97,7 @@ fn infer_array(values: &[BorrowedValue]) -> Result<DataType> {
 
 /// Convert each column's set of inferred dtypes to a field with a consolidated dtype, following the coercion rules
 /// defined in coerce_data_type.
-pub(crate) fn column_types_map_to_fields(
+pub fn column_types_map_to_fields(
     column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>>,
 ) -> Vec<arrow2::datatypes::Field> {
     column_types
@@ -114,7 +116,7 @@ pub(crate) fn column_types_map_to_fields(
 /// * Lists and scalars are coerced to a list of a compatible scalar
 /// * Structs contain the union of all fields
 /// * All other types are coerced to `Utf8`
-pub(crate) fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
+pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
     // Drop null dtype from the dtype set.
     datatypes.remove(&DataType::Null);
 
@@ -136,7 +138,7 @@ pub(crate) fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         let fields = datatypes.into_iter().fold(vec![], |mut acc, dt| {
             if let DataType::Struct(new_fields) = dt {
                 acc.extend(new_fields);
-            };
+            }
             acc
         });
         // Group fields by unique names.

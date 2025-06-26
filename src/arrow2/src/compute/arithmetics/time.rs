@@ -316,6 +316,17 @@ pub fn add_interval(
     timestamp: &PrimitiveArray<i64>,
     interval: &PrimitiveArray<months_days_ns>,
 ) -> Result<PrimitiveArray<i64>> {
+    if interval.len() == 1 {
+        let value = interval.get(0);
+        let dtype = interval.data_type().clone();
+        let scalar = PrimitiveScalar::new(dtype, value);
+        return add_interval_scalar(timestamp, &scalar);
+    }
+    if timestamp.len() != interval.len() {
+        return Err(Error::InvalidArgumentError(
+            "Timestamp and interval arrays must have the same length".to_string(),
+        ));
+    }
     match timestamp.data_type().to_logical_type() {
         DataType::Timestamp(time_unit, Some(timezone_str)) => {
             let time_unit = *time_unit;
@@ -431,4 +442,194 @@ pub fn add_interval_scalar(
             "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
         )),
     }
+}
+
+pub fn sub_interval(
+    timestamp: &PrimitiveArray<i64>,
+    interval: &PrimitiveArray<months_days_ns>,
+) -> Result<PrimitiveArray<i64>> {
+    if interval.len() == 1 {
+        let value = interval.get(0);
+        let dtype = interval.data_type().clone();
+        let scalar = PrimitiveScalar::new(dtype, value);
+        return sub_interval_scalar(timestamp, &scalar);
+    }
+    if timestamp.len() != interval.len() {
+        return Err(Error::InvalidArgumentError(
+            "Timestamp and interval arrays must have the same length".to_string(),
+        ));
+    }
+    match timestamp.data_type().to_logical_type() {
+        DataType::Timestamp(time_unit, Some(timezone_str)) => {
+            let time_unit = *time_unit;
+            let timezone = temporal_conversions::parse_offset(timezone_str);
+            match timezone {
+                Ok(timezone) => Ok(binary(
+                    timestamp,
+                    interval,
+                    timestamp.data_type().clone(),
+                    |timestamp, interval| {
+                        temporal_conversions::sub_interval(
+                            timestamp, time_unit, interval, &timezone,
+                        )
+                    },
+                )),
+                #[cfg(feature = "chrono-tz")]
+                Err(_) => {
+                    let timezone = temporal_conversions::parse_offset_tz(timezone_str)?;
+                    Ok(binary(
+                        timestamp,
+                        interval,
+                        timestamp.data_type().clone(),
+                        |timestamp, interval| {
+                            temporal_conversions::sub_interval(
+                                timestamp, time_unit, interval, &timezone,
+                            )
+                        },
+                    ))
+                }
+                #[cfg(not(feature = "chrono-tz"))]
+                _ => Err(Error::InvalidArgumentError(format!(
+                    "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
+                    timezone_str
+                ))),
+            }
+        }
+        DataType::Timestamp(time_unit, None) => {
+            let time_unit = *time_unit;
+            Ok(binary(
+                timestamp,
+                interval,
+                timestamp.data_type().clone(),
+                |timestamp, interval| {
+                    temporal_conversions::sub_naive_interval(timestamp, time_unit, interval)
+                },
+            ))
+        }
+        _ => Err(Error::InvalidArgumentError(
+            "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
+        )),
+    }
+}
+
+/// Adds an interval to a [`DataType::Timestamp`].
+pub fn sub_interval_scalar(
+    timestamp: &PrimitiveArray<i64>,
+    interval: &PrimitiveScalar<months_days_ns>,
+) -> Result<PrimitiveArray<i64>> {
+    let interval = if let Some(interval) = *interval.value() {
+        interval
+    } else {
+        return Ok(PrimitiveArray::<i64>::new_null(
+            timestamp.data_type().clone(),
+            timestamp.len(),
+        ));
+    };
+
+    match timestamp.data_type().to_logical_type() {
+        DataType::Timestamp(time_unit, Some(timezone_str)) => {
+            let time_unit = *time_unit;
+            let timezone = temporal_conversions::parse_offset(timezone_str);
+            match timezone {
+                Ok(timezone) => Ok(unary(
+                    timestamp,
+                    |timestamp| {
+                        temporal_conversions::sub_interval(
+                            timestamp, time_unit, interval, &timezone,
+                        )
+                    },
+                    timestamp.data_type().clone(),
+                )),
+                #[cfg(feature = "chrono-tz")]
+                Err(_) => {
+                    let timezone = temporal_conversions::parse_offset_tz(timezone_str)?;
+                    Ok(unary(
+                        timestamp,
+                        |timestamp| {
+                            temporal_conversions::sub_interval(
+                                timestamp, time_unit, interval, &timezone,
+                            )
+                        },
+                        timestamp.data_type().clone(),
+                    ))
+                }
+                #[cfg(not(feature = "chrono-tz"))]
+                _ => Err(Error::InvalidArgumentError(format!(
+                    "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
+                    timezone_str
+                ))),
+            }
+        }
+        DataType::Timestamp(time_unit, None) => {
+            let time_unit = *time_unit;
+            Ok(unary(
+                timestamp,
+                |timestamp| {
+                    temporal_conversions::sub_naive_interval(timestamp, time_unit, interval)
+                },
+                timestamp.data_type().clone(),
+            ))
+        }
+        _ => Err(Error::InvalidArgumentError(
+            "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
+        )),
+    }
+}
+
+/// Multiplies an interval by a factor.
+pub fn mul_interval(
+    interval: &PrimitiveArray<months_days_ns>,
+    factor: &PrimitiveArray<i32>,
+) -> Result<PrimitiveArray<months_days_ns>> {
+    if factor.len() == 1 {
+        let value = factor.get(0);
+        let dtype = factor.data_type().clone();
+        let scalar = PrimitiveScalar::new(dtype, value);
+        return mul_interval_scalar(interval, &scalar);
+    }
+
+    if interval.len() != factor.len() {
+        return Err(Error::InvalidArgumentError(
+            "Interval and factor arrays must have the same length".to_string(),
+        ));
+    }
+
+    Ok(binary(
+        interval,
+        factor,
+        interval.data_type().clone(),
+        |interval, factor| {
+            months_days_ns::new(
+                interval.months() * factor,
+                interval.days() * factor,
+                interval.ns() * factor as i64,
+            )
+        },
+    ))
+}
+
+pub fn mul_interval_scalar(
+    interval: &PrimitiveArray<months_days_ns>,
+    factor: &PrimitiveScalar<i32>,
+) -> Result<PrimitiveArray<months_days_ns>> {
+    let factor = if let Some(factor) = *factor.value() {
+        factor
+    } else {
+        return Ok(PrimitiveArray::<months_days_ns>::new_null(
+            interval.data_type().clone(),
+            interval.len(),
+        ));
+    };
+
+    Ok(unary(
+        interval,
+        |interval| {
+            months_days_ns::new(
+                interval.months() * factor,
+                interval.days() * factor,
+                interval.ns() * factor as i64,
+            )
+        },
+        interval.data_type().clone(),
+    ))
 }

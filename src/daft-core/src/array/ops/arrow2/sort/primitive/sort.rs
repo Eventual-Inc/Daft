@@ -16,14 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 use arrow2::bitmap::Bitmap;
-use arrow2::buffer::Buffer;
 use arrow2::{
     array::PrimitiveArray,
     bitmap::{utils::SlicesIterator, MutableBitmap},
+    buffer::Buffer,
+    compute::sort::SortOptions,
     types::NativeType,
 };
-
-use arrow2::compute::sort::SortOptions;
 
 /// # Safety
 /// `indices[i] < values.len()` for all i
@@ -55,7 +54,7 @@ where
         values.sort_unstable_by(|x, y| cmp(y, x));
     } else {
         values.sort_unstable_by(cmp);
-    };
+    }
 }
 
 fn sort_nullable<T, F>(
@@ -72,12 +71,12 @@ where
     assert!(limit <= values.len());
     if options.nulls_first && limit < validity.unset_bits() {
         let buffer = vec![T::default(); limit];
-        let bitmap = MutableBitmap::from_trusted_len_iter(std::iter::repeat(false).take(limit));
+        let bitmap = MutableBitmap::from_trusted_len_iter(std::iter::repeat_n(false, limit));
         return (buffer.into(), bitmap.into());
     }
 
-    let nulls = std::iter::repeat(false).take(validity.unset_bits());
-    let valids = std::iter::repeat(true).take(values.len() - validity.unset_bits());
+    let nulls = std::iter::repeat_n(false, validity.unset_bits());
+    let valids = std::iter::repeat_n(true, values.len() - validity.unset_bits());
 
     let mut buffer = Vec::<T>::with_capacity(values.len());
     let mut new_validity = MutableBitmap::with_capacity(values.len());
@@ -90,7 +89,7 @@ where
         // extend buffer with constants followed by non-null values
         buffer.resize(validity.unset_bits(), T::default());
         for (start, len) in slices {
-            buffer.extend_from_slice(&values[start..start + len])
+            buffer.extend_from_slice(&values[start..start + len]);
         }
 
         // sort values
@@ -106,7 +105,7 @@ where
 
         // extend buffer with non-null values
         for (start, len) in slices {
-            buffer.extend_from_slice(&values[start..start + len])
+            buffer.extend_from_slice(&values[start..start + len]);
         }
 
         // sort all non-null values
@@ -121,7 +120,7 @@ where
             // extend remaining with nulls
             buffer.resize(buffer.len() + validity.unset_bits(), T::default());
         }
-    };
+    }
     // values are sorted, we can now truncate the remaining.
     buffer.truncate(limit);
     buffer.shrink_to_fit();
@@ -163,11 +162,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use arrow2::{
+        array::{ord, Array},
+        datatypes::DataType,
+    };
 
-    use arrow2::array::ord;
-    use arrow2::array::Array;
-    use arrow2::datatypes::DataType;
+    use super::*;
 
     fn test_sort_primitive_arrays<T>(
         data: &[Option<T>],
@@ -200,7 +200,7 @@ mod tests {
             .unwrap()
             .clone();
         let output = sort_by(&input, ord::total_cmp, &options, Some(3));
-        assert_eq!(expected, output)
+        assert_eq!(expected, output);
     }
 
     #[test]

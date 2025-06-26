@@ -1,35 +1,26 @@
-#![feature(async_closure)]
-pub mod count_matches;
+#![allow(
+    deprecated,
+    reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
+)]
+pub mod coalesce;
 pub mod distance;
+pub mod float;
 pub mod hash;
-pub mod list_sort;
 pub mod minhash;
+pub mod monotonically_increasing_id;
 pub mod numeric;
+#[cfg(feature = "python")]
+pub mod python;
 pub mod to_struct;
-pub mod tokenize;
-pub mod uri;
 
 use common_error::DaftError;
+use daft_dsl::functions::FunctionModule;
+use hash::HashFunction;
+use minhash::MinHashFunction;
 #[cfg(feature = "python")]
-use pyo3::prelude::*;
+pub use python::register as register_modules;
 use snafu::Snafu;
-
-#[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    // keep in sorted order
-    parent.add_wrapped(wrap_pyfunction!(count_matches::python::utf8_count_matches))?;
-    parent.add_wrapped(wrap_pyfunction!(distance::cosine::python::cosine_distance))?;
-    parent.add_wrapped(wrap_pyfunction!(hash::python::hash))?;
-    parent.add_wrapped(wrap_pyfunction!(list_sort::python::list_sort))?;
-    parent.add_wrapped(wrap_pyfunction!(minhash::python::minhash))?;
-    parent.add_wrapped(wrap_pyfunction!(numeric::cbrt::python::cbrt))?;
-    parent.add_wrapped(wrap_pyfunction!(to_struct::python::to_struct))?;
-    parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_decode))?;
-    parent.add_wrapped(wrap_pyfunction!(tokenize::python::tokenize_encode))?;
-    parent.add_wrapped(wrap_pyfunction!(uri::python::url_download))?;
-    parent.add_wrapped(wrap_pyfunction!(uri::python::url_upload))?;
-    Ok(())
-}
+use to_struct::ToStructFunction;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -38,12 +29,39 @@ pub enum Error {
 }
 
 impl From<Error> for std::io::Error {
-    fn from(err: Error) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, err)
+    fn from(err: Error) -> Self {
+        Self::other(err)
     }
 }
+
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
-        DaftError::External(err.into())
+    fn from(err: Error) -> Self {
+        Self::External(err.into())
+    }
+}
+
+/// TODO chore: cleanup function implementations using error macros
+#[macro_export]
+macro_rules! invalid_argument_err {
+    ($($arg:tt)*)  => {{
+        let msg = format!($($arg)*);
+        return Err(common_error::DaftError::TypeError(msg).into());
+    }};
+}
+
+pub struct HashFunctions;
+
+impl FunctionModule for HashFunctions {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(HashFunction);
+        parent.add_fn(MinHashFunction);
+    }
+}
+
+pub struct StructFunctions;
+
+impl FunctionModule for StructFunctions {
+    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(ToStructFunction);
     }
 }

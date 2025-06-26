@@ -1,12 +1,10 @@
 use common_error::DaftResult;
-
-use crate::{
-    array::ops::{as_arrow::AsArrow, DaftHllMergeAggable},
-    datatypes::{FixedSizeBinaryArray, UInt64Array},
-};
 use hyperloglog::HyperLogLog;
 
-use crate::array::ops::GroupIndices;
+use crate::{
+    array::ops::{as_arrow::AsArrow, DaftHllMergeAggable, GroupIndices},
+    datatypes::{FixedSizeBinaryArray, UInt64Array},
+};
 
 impl DaftHllMergeAggable for FixedSizeBinaryArray {
     type Output = DaftResult<UInt64Array>;

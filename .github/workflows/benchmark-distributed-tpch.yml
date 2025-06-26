@@ -1,0 +1,115 @@
+name: Benchmark Distributed TPC-H
+
+on:
+  workflow_dispatch:
+    inputs:
+      daft_index_url:
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
+        type: string
+        default: ""
+        required: false
+      scale_factor:
+        description: TPC-H scale factor
+        type: number
+        default: 1000
+        required: true
+      num_workers:
+        description: Number of Ray workers
+        type: number
+        default: 4
+        required: true
+  workflow_call:
+    inputs:
+      daft_index_url:
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
+        type: string
+        default: ""
+        required: false
+      scale_factor:
+        description: TPC-H scale factor
+        type: number
+        default: 1000
+        required: true
+      num_workers:
+        description: Number of Ray workers
+        type: number
+        default: 4
+        required: true
+
+
+env:
+  DAFT_INDEX_URL: ${{ inputs.daft_index_url != '' && inputs.daft_index_url || format('https://d1p3klp2t5517h.cloudfront.net/builds/dev/{0}', github.sha) }}
+  AWS_REGION: us-west-2
+
+  TPCH_SCALE_FACTOR: ${{ inputs.scale_factor }}
+  RAY_NUM_WORKERS: ${{ inputs.num_workers }}
+
+  DAFT_ANALYTICS_ENABLED: "0"
+  PYTHON_VERSION: "3.9"
+
+jobs:
+  build:
+    name: Build and publish wheels if necessary
+    if: ${{ inputs.daft_index_url == '' }}
+    uses: ./.github/workflows/publish-dev-s3.yml
+    secrets: inherit
+
+  benchmark:
+    needs: build
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: [self-hosted, linux, x64, job-runner]
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-session-name: DaftDistributedTpchGitHubWorkflow
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        version: "0.6.17"
+    - name: Install Daft and dev dependencies
+      run: |
+        rm -rf daft
+        uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
+        uv pip install gspread ray[default] boto3
+    - name: Write service account secret file
+      run: |
+        mkdir -p ~/.config/gspread
+        cat << EOF > ~/.config/gspread/service_account.json
+        ${{ secrets.GOOGLE_SHEETS_SERVICE_ACCOUNT }}
+        EOF
+    - name: Generate Ray yaml
+      run: |
+        envsubst < .github/assets/tpch-bench.yaml > ray.yaml
+        cat ray.yaml
+    - name: Download private ssh key
+      run: |
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" > ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+    - name: Spin up and connect to ray cluster
+      run: |
+        ray up ray.yaml -y
+        ray dashboard ray.yaml &
+
+    - name: Run benchmark and upload results to Google Sheets
+      run: PYTHONPATH=. python .github/ci-scripts/distributed_tpch.py
+
+    - name: Upload traces
+      uses: actions/upload-artifact@v4
+      with:
+        name: traces
+        path: traces
+
+    - name: Spin down ray cluster
+      if: always()
+      run: ray down ray.yaml -y

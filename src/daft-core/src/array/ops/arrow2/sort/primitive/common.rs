@@ -1,18 +1,22 @@
-use arrow2::array::ord::DynComparator;
-use arrow2::{array::PrimitiveArray, bitmap::Bitmap, types::Index};
+use arrow2::{
+    array::{ord::DynComparator, PrimitiveArray},
+    bitmap::Bitmap,
+    types::Index,
+};
 
 pub fn idx_sort<I, F>(
     validity: Option<&Bitmap>,
     cmp: F,
     length: usize,
     descending: bool,
+    nulls_first: bool,
 ) -> PrimitiveArray<I>
 where
     I: Index,
     F: Fn(&I, &I) -> std::cmp::Ordering,
 {
     let (mut indices, start_idx, end_idx) =
-        generate_initial_indices::<I>(validity, length, descending);
+        generate_initial_indices::<I>(validity, length, nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     if !descending {
@@ -29,14 +33,14 @@ pub fn multi_column_idx_sort<I, F>(
     overall_cmp: F,
     others_cmp: &DynComparator,
     length: usize,
-    first_col_desc: bool,
+    first_col_nulls_first: bool,
 ) -> PrimitiveArray<I>
 where
     I: Index,
     F: Fn(&I, &I) -> std::cmp::Ordering,
 {
     let (mut indices, start_idx, end_idx) =
-        generate_initial_indices::<I>(first_col_validity, length, first_col_desc);
+        generate_initial_indices::<I>(first_col_validity, length, first_col_nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     indices_slice.sort_unstable_by(|a, b| overall_cmp(a, b));
@@ -56,56 +60,58 @@ where
 fn generate_initial_indices<I>(
     validity: Option<&Bitmap>,
     length: usize,
-    descending: bool,
+    nulls_first: bool,
 ) -> (Vec<I>, usize, usize)
 where
     I: Index,
 {
-    let mut start_idx: usize = 0;
-    let mut end_idx: usize = length;
-
     if let Some(validity) = validity {
+        // number of null values
+        let n_nulls = validity.unset_bits();
+        // number of non null values
+        let n_valid = length.saturating_sub(n_nulls);
         let mut indices = vec![I::default(); length];
-        if descending {
-            let mut nulls = 0;
-            let mut valids = 0;
-            validity
-                .iter()
-                .zip(I::range(0, length).unwrap())
-                .for_each(|(is_valid, index)| {
-                    if is_valid {
-                        indices[validity.unset_bits() + valids] = index;
+        let mut nulls = 0;
+        let mut valids = 0;
+        validity
+            .iter()
+            .zip(I::range(0, length).unwrap())
+            .for_each(|(is_not_null, index)| {
+                match (is_not_null, nulls_first) {
+                    // value && nulls first
+                    (true, true) => {
+                        indices[n_nulls + valids] = index;
                         valids += 1;
-                    } else {
+                    }
+                    // value && nulls last
+                    (true, false) => {
+                        indices[valids] = index;
+                        valids += 1;
+                    }
+                    // null && nulls first
+                    (false, true) => {
                         indices[nulls] = index;
                         nulls += 1;
                     }
-                });
-            start_idx = validity.unset_bits();
-        } else {
-            let last_valid_index = length.saturating_sub(validity.unset_bits());
-            let mut nulls = 0;
-            let mut valids = 0;
-            validity
-                .iter()
-                .zip(I::range(0, length).unwrap())
-                .for_each(|(x, index)| {
-                    if x {
-                        indices[valids] = index;
-                        valids += 1;
-                    } else {
-                        indices[last_valid_index + nulls] = index;
+                    // null && nulls last
+                    (false, false) => {
+                        indices[n_valid + nulls] = index;
                         nulls += 1;
                     }
-                });
-            end_idx = last_valid_index;
-        }
+                }
+            });
+
+        // either `descending` or `nulls_first` means that nulls come first
+        let (start_idx, end_idx) = if nulls_first {
+            // since nulls come first, our valid values start at the end of the nulls
+            (n_nulls, length)
+        } else {
+            // since nulls come last, our valid values start at the beginning of the array
+            (0, n_valid)
+        };
+
         (indices, start_idx, end_idx)
     } else {
-        (
-            I::range(0, length).unwrap().collect::<Vec<_>>(),
-            start_idx,
-            end_idx,
-        )
+        (I::range(0, length).unwrap().collect::<Vec<_>>(), 0, length)
     }
 }

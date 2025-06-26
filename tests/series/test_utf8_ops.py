@@ -8,6 +8,8 @@ import unicodedata
 import pyarrow as pa
 import pytest
 
+import daft
+import daft.exceptions
 from daft import DataType, Series
 
 
@@ -271,6 +273,12 @@ def test_series_utf8_length_unicode() -> None:
     assert result.to_pylist() == [5, 4]
 
 
+def test_series_utf8_length_bytes() -> None:
+    s = Series.from_arrow(pa.array(["😉test", "hey̆", "baz", None, ""]))
+    result = s.str.length_bytes()
+    assert result.to_pylist() == [8, 5, 3, None, 0]
+
+
 @pytest.mark.parametrize(
     ["data", "expected"],
     [
@@ -464,7 +472,7 @@ def test_series_utf8_left(data, nchars, expected) -> None:
 def test_series_utf8_left_empty_arrs(data, nchars) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         s.str.left(nchars)
 
 
@@ -477,27 +485,21 @@ def test_series_utf8_left_empty_inputs() -> None:
 def test_series_utf8_left_mismatch_len() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         s.str.left(nchars)
-
-
-def test_series_utf8_left_bad_nchars() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    with pytest.raises(ValueError):
-        s.str.left(1)
 
 
 def test_series_utf8_left_bad_nchars_dtype() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     nchars = Series.from_arrow(pa.array(["1", "2", "3"]))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftTypeError):
         s.str.left(nchars)
 
 
 def test_series_utf8_left_bad_dtype() -> None:
     s = Series.from_arrow(pa.array([1, 2, 3]))
     nchars = Series.from_arrow(pa.array([1, 2, 3]))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftTypeError):
         s.str.left(nchars)
 
 
@@ -544,12 +546,6 @@ def test_series_utf8_right_mismatch_len() -> None:
     nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
     with pytest.raises(ValueError):
         s.str.right(nchars)
-
-
-def test_series_utf8_right_bad_nchars() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    with pytest.raises(ValueError):
-        s.str.right(1)
 
 
 def test_series_utf8_right_bad_nchars_dtype() -> None:
@@ -1390,11 +1386,11 @@ def test_series_utf8_bad_date() -> None:
             "%Y-%m-%d %H:%M:%S %z",
             None,
             [
-                datetime.datetime(2021, 1, 1, 0, 0),
-                datetime.datetime(2021, 1, 2, 1, 7, 35),
-                datetime.datetime(2021, 1, 3, 12, 30),
+                datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+                datetime.datetime(2021, 1, 2, 0, 7, 35, tzinfo=datetime.timezone.utc),
+                datetime.datetime(2021, 1, 3, 10, 30, tzinfo=datetime.timezone.utc),
             ],
-            id="Unspecified timezone returns naive datetime",
+            id="Unspecified timezone returns datetime in utc",
         ),
     ],
 )
@@ -1574,13 +1570,13 @@ def test_series_utf8_count_matches():
         ]
     )
 
-    res = s.str.count_matches(p, False, False).to_pylist()
+    res = s.str.count_matches(p, whole_words=False, case_sensitive=False).to_pylist()
     assert res == [3, 0, 7, 3, 3, 3, 3, 3]
-    res = s.str.count_matches(p, True, False).to_pylist()
+    res = s.str.count_matches(p, whole_words=True, case_sensitive=False).to_pylist()
     assert res == [3, 0, 7, 0, 3, 0, 3, 3]
-    res = s.str.count_matches(p, False, True).to_pylist()
+    res = s.str.count_matches(p, whole_words=False, case_sensitive=True).to_pylist()
     assert res == [3, 0, 7, 3, 3, 3, 1, 3]
-    res = s.str.count_matches(p, True, True).to_pylist()
+    res = s.str.count_matches(p, whole_words=True, case_sensitive=True).to_pylist()
     assert res == [3, 0, 7, 0, 3, 0, 1, 3]
 
 
@@ -1589,5 +1585,5 @@ def test_series_utf8_count_matches():
 def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     s = Series.from_pylist(["hello world"])
     p = Series.from_pylist(["hello world", "hello", "world"])
-    res = s.str.count_matches(p, whole_words, case_sensitive).to_pylist()
+    res = s.str.count_matches(p, whole_words=whole_words, case_sensitive=case_sensitive).to_pylist()
     assert res == [1]

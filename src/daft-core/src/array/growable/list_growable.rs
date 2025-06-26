@@ -1,13 +1,12 @@
 use arrow2::types::Index;
 use common_error::DaftResult;
 
+use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 use crate::{
     array::{growable::make_growable, ListArray},
-    datatypes::Field,
-    DataType, IntoSeries, Series,
+    datatypes::{DataType, Field},
+    series::{IntoSeries, Series},
 };
-
-use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 
 pub struct ListGrowable<'a> {
     name: String,
@@ -61,7 +60,7 @@ impl<'a> ListGrowable<'a> {
     }
 }
 
-impl<'a> Growable for ListGrowable<'a> {
+impl Growable for ListGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let offsets = self.child_arrays_offsets.get(index).unwrap();
         let start_offset = &offsets.buffer()[start];
@@ -72,9 +71,8 @@ impl<'a> Growable for ListGrowable<'a> {
             (end_offset - start_offset).to_usize(),
         );
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.extend(index, start, len),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.extend(index, start, len);
         }
 
         self.growable_offsets
@@ -83,9 +81,8 @@ impl<'a> Growable for ListGrowable<'a> {
     }
 
     fn add_nulls(&mut self, additional: usize) {
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.add_nulls(additional),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.add_nulls(additional);
         }
         self.growable_offsets.extend_constant(additional);
     }

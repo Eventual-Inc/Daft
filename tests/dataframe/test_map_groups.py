@@ -6,7 +6,7 @@ import daft
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_map_groups(make_df, repartition_nparts):
+def test_map_groups(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 2],
@@ -38,7 +38,7 @@ def test_map_groups(make_df, repartition_nparts):
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 3])
 @pytest.mark.parametrize("output_when_empty", [[], [1], [1, 2]])
-def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output_when_empty):
+def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output_when_empty, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 2],
@@ -63,7 +63,7 @@ def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_map_groups_single_group(make_df, repartition_nparts):
+def test_map_groups_single_group(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 1],
@@ -88,7 +88,7 @@ def test_map_groups_single_group(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 11])
-def test_map_groups_double_group_by(make_df, repartition_nparts):
+def test_map_groups_double_group_by(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group_1": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
@@ -118,7 +118,7 @@ def test_map_groups_double_group_by(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_map_groups_compound_input(make_df, repartition_nparts):
+def test_map_groups_compound_input(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 2, 2],
@@ -139,4 +139,39 @@ def test_map_groups_compound_input(make_df, repartition_nparts):
     expected = {"group": [2, 1], "c": [1465, 169]}
 
     daft_cols = daft_df.to_pydict()
+    assert daft_cols == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_map_groups_with_alias(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 2],
+            "a": [1, 3, 3],
+            "b": [5, 6, 7],
+        },
+        repartition=repartition_nparts,
+    )
+
+    @daft.udf(return_dtype=daft.DataType.list(daft.DataType.float64()))
+    def udf(a, b):
+        a, b = a.to_pylist(), b.to_pylist()
+        res = []
+        for i in range(len(a)):
+            res.append(a[i] / sum(a) + b[i])
+        res.sort()
+        return [res]
+
+    daft_df = (
+        daft_df.groupby(daft_df["group"].alias("group_alias"))
+        .map_groups(udf(daft_df["a"], daft_df["b"]))
+        .sort("group_alias", desc=False)
+    )
+    expected = {
+        "group_alias": [1, 2],
+        "a": [[5.25, 6.75], [8.0]],
+    }
+
+    daft_cols = daft_df.to_pydict()
+
     assert daft_cols == expected

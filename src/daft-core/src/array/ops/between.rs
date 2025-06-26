@@ -1,17 +1,18 @@
+use common_error::{DaftError, DaftResult};
+
 use super::{DaftBetween, DaftCompare, DaftLogical};
 use crate::{
     array::DataArray,
-    datatypes::{BooleanArray, DaftNumericType},
+    datatypes::{BooleanArray, DaftPrimitiveType},
 };
-use common_error::{DaftError, DaftResult};
 
-impl<T> DaftBetween<&DataArray<T>, &DataArray<T>> for DataArray<T>
+impl<T> DaftBetween<&Self, &Self> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     type Output = DaftResult<BooleanArray>;
 
-    fn between(&self, lower: &DataArray<T>, upper: &DataArray<T>) -> Self::Output {
+    fn between(&self, lower: &Self, upper: &Self) -> Self::Output {
         let are_two_equal_and_single_one = |v_size, l_size, u_size: usize| {
             [v_size, l_size, u_size]
                 .iter()
@@ -38,8 +39,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{array::ops::DaftBetween, datatypes::Int64Array};
     use common_error::DaftResult;
+
+    use crate::{array::ops::DaftBetween, datatypes::Int64Array};
 
     #[test]
     fn test_between_two_arrays_of_same_size() -> DaftResult<()> {

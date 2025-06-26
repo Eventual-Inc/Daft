@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,8 +31,11 @@ def test_single_non_buffered_plan():
 
     # Manually "complete" the tasks
     task1.set_result([result1])
+    task1.set_done()
     task2.set_result([result2])
+    task2.set_done()
     task3.set_result([result3])
+    task3.set_done()
 
     # Results should be as we expect
     assert next(plan) == result1
@@ -57,7 +62,9 @@ def test_single_non_buffered_plan_done_while_planning():
 
     # Manually "complete" the tasks
     task1.set_result([result1])
+    task1.set_done()
     task2.set_result([result2])
+    task2.set_done()
 
     # On the next iteration, we should receive the result
     assert next(plan) == result1
@@ -70,6 +77,7 @@ def test_single_non_buffered_plan_done_while_planning():
 
     # Manually "complete" the last task
     task3.set_result([result3])
+    task3.set_done()
 
     # Results should be as we expect
     assert next(plan) == result3
@@ -95,8 +103,10 @@ def test_single_plan_with_buffer_slow_tasks():
     # Plan cannot make forward progress until task1 finishes
     assert next(plan) is None
     task2.set_result([result2])
+    task2.set_done()
     assert next(plan) is None
     task1.set_result([result1])
+    task1.set_done()
 
     # Plan should fill its buffer with new tasks before starting to yield results again
     task3 = next(plan)
@@ -106,6 +116,7 @@ def test_single_plan_with_buffer_slow_tasks():
 
     # Finish the last task
     task3.set_result([result3])
+    task3.set_done()
     assert next(plan) == result3
 
     with pytest.raises(StopIteration):
@@ -126,6 +137,7 @@ def test_single_plan_with_buffer_saturation_fast_tasks():
 
     # Finish up on task 1 (task is "fast" and completes so quickly even before the next plan loop call)
     task1.set_result([result1])
+    task1.set_done()
 
     # Plan should fill its buffer completely with new tasks before starting to yield results again
     task2 = next(plan)
@@ -139,7 +151,9 @@ def test_single_plan_with_buffer_saturation_fast_tasks():
 
     # Finish the last task(s)
     task2.set_result([result2])
+    task2.set_done()
     task3.set_result([result3])
+    task3.set_done()
     assert next(plan) == result2
     assert next(plan) == result3
 

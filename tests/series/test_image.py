@@ -9,8 +9,10 @@ import pyarrow as pa
 import pytest
 from PIL import Image, ImageSequence
 
-from daft.datatype import DaftExtension, DataType
+from daft.datatype import DataType, get_super_ext_type
 from daft.series import Series
+
+DaftExtension = get_super_ext_type()
 
 MODE_TO_NP_DTYPE = {
     "L": np.uint8,
@@ -789,7 +791,7 @@ def test_bad_cast_fixed_shape_image():
 def test_on_error_image_decode():
     s = Series.from_pylist([b"not an image"])
 
-    with pytest.raises(NotImplementedError, match="Unimplemented on_error option"):
+    with pytest.raises(Exception, match="Invalid on_error value: NOT IMPLEMENTED"):
         s.image.decode(on_error="NOT IMPLEMENTED")
 
     with pytest.raises(ValueError, match="Decoding image from bytes failed"):

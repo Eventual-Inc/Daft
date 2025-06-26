@@ -1,15 +1,19 @@
 use std::sync::Arc;
 
+use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 
-use crate::array::growable::{Growable, GrowableArray};
-use crate::datatypes::{DaftArrayType, Field};
-use crate::series::Series;
-use crate::DataType;
+use crate::{
+    array::growable::{Growable, GrowableArray},
+    datatypes::{DaftArrayType, DataType, Field},
+    prelude::ListArray,
+    series::Series,
+};
 
 #[derive(Clone, Debug)]
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
+    /// contains all the elements of the nested lists flattened into a single contiguous array.
     pub flat_child: Series,
     validity: Option<arrow2::bitmap::Bitmap>,
 }
@@ -36,23 +40,20 @@ impl FixedSizeListArray {
                         "FixedSizeListArray::new received values with len {} but expected it to match len of validity {} * size: {}",
                         flat_child.len(),
                         validity.len(),
-                        (validity.len() * size),
+                        validity.len() * size,
                     )
                 }
-                if child_dtype.as_ref() != flat_child.data_type() {
-                    panic!(
-                        "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
+                assert!(!(child_dtype.as_ref() != flat_child.data_type()), "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
                         child_dtype,
                         flat_child.data_type(),
-                    )
-                }
+                );
             }
             _ => panic!(
                 "FixedSizeListArray::new expected FixedSizeList datatype, but received field: {}",
                 field
             ),
         }
-        FixedSizeListArray {
+        Self {
             field,
             flat_child,
             validity,
@@ -61,6 +62,13 @@ impl FixedSizeListArray {
 
     pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
         self.validity.as_ref()
+    }
+
+    pub fn null_count(&self) -> usize {
+        match self.validity() {
+            None => 0,
+            Some(validity) => validity.unset_bits(),
+        }
     }
 
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
@@ -89,7 +97,7 @@ impl FixedSizeListArray {
 
         growable
             .build()
-            .map(|s| s.downcast::<FixedSizeListArray>().unwrap().clone())
+            .map(|s| s.downcast::<Self>().unwrap().clone())
     }
 
     pub fn len(&self) -> usize {
@@ -104,10 +112,12 @@ impl FixedSizeListArray {
         &self.field.name
     }
 
+    #[must_use]
     pub fn data_type(&self) -> &DataType {
         &self.field.dtype
     }
 
+    #[must_use]
     pub fn child_data_type(&self) -> &DataType {
         match &self.field.dtype {
             DataType::FixedSizeList(child, _) => child.as_ref(),
@@ -115,6 +125,7 @@ impl FixedSizeListArray {
         }
     }
 
+    #[must_use]
     pub fn rename(&self, name: &str) -> Self {
         Self::new(
             Field::new(name, self.data_type().clone()),
@@ -173,6 +184,37 @@ impl FixedSizeListArray {
             validity,
         ))
     }
+
+    fn generate_offsets(&self) -> OffsetsBuffer<i64> {
+        let size = self.fixed_element_len();
+        let len = self.len();
+
+        // Create new offsets
+        let offsets: Vec<i64> = (0..=len)
+            .map(|i| i64::try_from(i * size).unwrap())
+            .collect();
+
+        OffsetsBuffer::try_from(offsets).expect("Failed to create OffsetsBuffer")
+    }
+
+    pub fn to_list(&self) -> ListArray {
+        let field = &self.field;
+
+        let DataType::FixedSizeList(inner_type, _) = &field.dtype else {
+            unreachable!("Expected FixedSizeListArray, got {:?}", field.dtype);
+        };
+
+        let datatype = DataType::List(inner_type.clone());
+        let mut field = (**field).clone();
+        field.dtype = datatype;
+
+        ListArray::new(
+            field,
+            self.flat_child.clone(),
+            self.generate_offsets(),
+            self.validity.clone(),
+        )
+    }
 }
 
 impl<'a> IntoIterator for &'a FixedSizeListArray {
@@ -222,12 +264,11 @@ impl Iterator for FixedSizeListArrayIter<'_> {
 mod tests {
     use common_error::DaftResult;
 
-    use crate::{
-        datatypes::{Field, Int32Array},
-        DataType, IntoSeries,
-    };
-
     use super::FixedSizeListArray;
+    use crate::{
+        datatypes::{DataType, Field, Int32Array},
+        series::IntoSeries,
+    };
 
     /// Helper that returns a FixedSizeListArray, with each list element at len=3
     fn get_i32_fixed_size_list_array(validity: &[bool]) -> FixedSizeListArray {

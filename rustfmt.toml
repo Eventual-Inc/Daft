@@ -1,0 +1,3 @@
+group_imports = "StdExternalCrate"
+ignore = ["src/arrow2", "src/parquet2"]
+imports_granularity = "Crate"

@@ -206,7 +206,6 @@ use arrow2::{
     buffer::Buffer,
     datatypes::DataType,
 };
-
 use common_error::{DaftError, DaftResult};
 
 pub mod compute;
@@ -221,10 +220,7 @@ pub struct PseudoArrowArray<T> {
 
 impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
     pub fn try_new(values: Buffer<T>, validity: Option<Bitmap>) -> DaftResult<Self> {
-        if validity
-            .clone()
-            .map_or(false, |vd| vd.len() != values.len())
-        {
+        if validity.clone().is_some_and(|vd| vd.len() != values.len()) {
             Err(DaftError::ValueError(format!(
                 "validity mask length {} must match the number of values {}",
                 validity.unwrap().len(),
@@ -299,7 +295,7 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
-        Box::new(PseudoArrowArray {
+        Box::new(Self {
             values: self.values.clone(),
             validity,
         })

@@ -1,29 +1,78 @@
-use arrow2::bitmap::utils::{BitmapIter, ZipValidity};
+use std::{
+    iter::{repeat_n, RepeatN},
+    slice::{ChunksExact, Iter},
+};
 
-use crate::datatypes::{BooleanArray, DaftNumericType};
+use arrow2::{
+    array::ArrayValuesIter,
+    bitmap::utils::{BitmapIter, ZipValidity},
+};
 
-use super::DataArray;
+use crate::{
+    array::{
+        ops::as_arrow::AsArrow,
+        prelude::{NullArray, Utf8Array},
+        DataArray,
+    },
+    datatypes::{BinaryArray, BooleanArray, DaftPrimitiveType, FixedSizeBinaryArray},
+};
 
-use super::ops::as_arrow::AsArrow;
+macro_rules! impl_into_iter {
+    (
+        $array:ty
+        , $into_iter:ty
+        $(,)?
+    ) => {
+        impl<'a> IntoIterator for &'a $array {
+            type IntoIter = $into_iter;
+            type Item = <Self::IntoIter as IntoIterator>::Item;
+
+            #[inline]
+            fn into_iter(self) -> Self::IntoIter {
+                self.as_arrow().into_iter()
+            }
+        }
+    };
+}
+
+// yields `bool`s
+impl_into_iter!(BooleanArray, ZipValidity<bool, BitmapIter<'a>, BitmapIter<'a>>);
+
+// both yield `&[u8]`s
+impl_into_iter!(
+    BinaryArray,
+    ZipValidity<&'a [u8], ArrayValuesIter<'a, arrow2::array::BinaryArray<i64>>, BitmapIter<'a>>,
+);
+impl_into_iter!(
+    FixedSizeBinaryArray,
+    ZipValidity<&'a [u8], ChunksExact<'a, u8>, BitmapIter<'a>>,
+);
+
+// yields `&str`s
+impl_into_iter!(
+    Utf8Array,
+    ZipValidity<&'a str, ArrayValuesIter<'a, arrow2::array::Utf8Array<i64>>, BitmapIter<'a>>,
+);
 
 impl<'a, T> IntoIterator for &'a DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
-    type Item = Option<&'a T::Native>;
-    type IntoIter = ZipValidity<&'a T::Native, std::slice::Iter<'a, T::Native>, BitmapIter<'a>>;
+    type IntoIter = ZipValidity<&'a T::Native, Iter<'a, T::Native>, BitmapIter<'a>>;
+    type Item = <Self::IntoIter as IntoIterator>::Item;
+
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.as_arrow().into_iter()
     }
 }
 
-impl<'a> IntoIterator for &'a BooleanArray {
-    type Item = Option<bool>;
-    type IntoIter = ZipValidity<bool, BitmapIter<'a>, BitmapIter<'a>>;
+impl IntoIterator for &'_ NullArray {
+    type IntoIter = RepeatN<Option<()>>;
+    type Item = <Self::IntoIter as IntoIterator>::Item;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.as_arrow().into_iter()
+        repeat_n(None, self.len())
     }
 }

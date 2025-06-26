@@ -3,13 +3,14 @@ arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 async-compat = {workspace = true}
 async-stream = {workspace = true}
 bytes = {workspace = true}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-error = {path = "../common/error", default-features = false}
-crossbeam-channel = "0.5.1"
+common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
@@ -25,9 +26,13 @@ tokio-util = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
+path_macro = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python", "daft-dsl/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-recordbatch/python", "daft-stats/python", "daft-dsl/python", "common-arrow-ffi/python"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

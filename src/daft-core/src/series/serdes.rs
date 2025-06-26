@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use arrow2::offset::OffsetsBuffer;
+use arrow2::{offset::OffsetsBuffer, types::months_days_ns};
 use serde::{de::Visitor, Deserializer};
 
 use crate::{
@@ -8,11 +8,16 @@ use crate::{
         ops::{as_arrow::AsArrow, full::FullNull},
         ListArray, StructArray,
     },
-    datatypes::logical::{
-        DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-        FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+    datatypes::{
+        logical::{
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+        },
+        *,
     },
-    with_match_daft_types, DataType, IntoSeries, Series,
+    series::{IntoSeries, Series},
+    with_match_daft_types,
 };
 
 impl serde::Serialize for Series {
@@ -67,100 +72,94 @@ impl<'d> serde::Deserialize<'d> for Series {
                     return Err(serde::de::Error::missing_field("values"));
                 }
                 let field = field.ok_or_else(|| serde::de::Error::missing_field("name"))?;
-                use crate::datatypes::*;
-                use DataType::*;
                 match &field.dtype {
-                    Null => Ok(NullArray::full_null(
+                    DataType::Null => Ok(NullArray::full_null(
                         &field.name,
                         &field.dtype,
                         map.next_value::<usize>()?,
                     )
                     .into_series()),
-                    Boolean => Ok(BooleanArray::from((
+                    DataType::Boolean => Ok(BooleanArray::from((
                         field.name.as_str(),
                         map.next_value::<Vec<Option<bool>>>()?.as_slice(),
                     ))
                     .into_series()),
-                    Int8 => Ok(Int8Array::from_iter(
-                        field.name.as_str(),
+                    DataType::Int8 => Ok(Int8Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<i8>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Int16 => Ok(Int16Array::from_iter(
-                        field.name.as_str(),
+                    DataType::Int16 => Ok(Int16Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<i16>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Int32 => Ok(Int32Array::from_iter(
-                        field.name.as_str(),
+                    DataType::Int32 => Ok(Int32Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<i32>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Int64 => Ok(Int64Array::from_iter(
-                        field.name.as_str(),
+                    DataType::Int64 => Ok(Int64Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<i64>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Int128 => Ok(Int128Array::from_iter(
-                        field.name.as_str(),
-                        map.next_value::<Vec<Option<i128>>>()?.into_iter(),
-                    )
-                    .into_series()),
-                    UInt8 => Ok(UInt8Array::from_iter(
-                        field.name.as_str(),
+                    DataType::UInt8 => Ok(UInt8Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<u8>>>()?.into_iter(),
                     )
                     .into_series()),
-                    UInt16 => Ok(UInt16Array::from_iter(
-                        field.name.as_str(),
+                    DataType::UInt16 => Ok(UInt16Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<u16>>>()?.into_iter(),
                     )
                     .into_series()),
-                    UInt32 => Ok(UInt32Array::from_iter(
-                        field.name.as_str(),
+                    DataType::UInt32 => Ok(UInt32Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<u32>>>()?.into_iter(),
                     )
                     .into_series()),
-                    UInt64 => Ok(UInt64Array::from_iter(
-                        field.name.as_str(),
+                    DataType::UInt64 => Ok(UInt64Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<u64>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Float32 => Ok(Float32Array::from_iter(
-                        field.name.as_str(),
+                    DataType::Float32 => Ok(Float32Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<f32>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Float64 => Ok(Float64Array::from_iter(
-                        field.name.as_str(),
+                    DataType::Float64 => Ok(Float64Array::from_iter(
+                        field,
                         map.next_value::<Vec<Option<f64>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Utf8 => Ok(Utf8Array::from_iter(
+                    DataType::Utf8 => Ok(Utf8Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<Cow<str>>>>()?.into_iter(),
                     )
                     .into_series()),
-                    Binary => Ok(BinaryArray::from_iter(
+                    DataType::Binary => Ok(BinaryArray::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
                     )
                     .into_series()),
-                    FixedSizeBinary(size) => Ok(FixedSizeBinaryArray::from_iter(
+                    DataType::FixedSizeBinary(size) => Ok(FixedSizeBinaryArray::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
                         *size,
                     )
                     .into_series()),
-                    Extension(..) => {
+                    DataType::Extension(..) => {
                         let physical = map.next_value::<Series>()?;
                         let physical = physical.to_arrow();
-                        let ext_array = physical.to_type(field.dtype.to_arrow().unwrap());
+                        let ext_array =
+                            physical.convert_logical_type(field.dtype.to_arrow().unwrap());
                         Ok(ExtensionArray::new(Arc::new(field), ext_array)
                             .unwrap()
                             .into_series())
                     }
-                    Map(..) => {
+                    DataType::Map { .. } => {
                         let physical = map.next_value::<Series>()?;
                         Ok(MapArray::new(
                             Arc::new(field),
@@ -168,7 +167,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                         .into_series())
                     }
-                    Struct(..) => {
+                    DataType::Struct(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
                         let validity = all_series
                             .pop()
@@ -181,7 +180,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let validity = validity.map(|v| v.bool().unwrap().as_bitmap().clone());
                         Ok(StructArray::new(Arc::new(field), children, validity).into_series())
                     }
-                    List(..) => {
+                    DataType::List(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
                         let validity = all_series
                             .pop()
@@ -202,7 +201,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .unwrap();
                         Ok(ListArray::new(field, flat_child, offsets, validity).into_series())
                     }
-                    FixedSizeList(..) => {
+                    DataType::FixedSizeList(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
                         let validity = all_series
                             .pop()
@@ -215,16 +214,12 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let validity = validity.map(|v| v.bool().unwrap().as_bitmap().clone());
                         Ok(FixedSizeListArray::new(field, flat_child, validity).into_series())
                     }
-                    Decimal128(..) => {
-                        type PType = <<Decimal128Type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>()?;
-                        Ok(Decimal128Array::new(
-                            field,
-                            physical.downcast::<PType>().unwrap().clone(),
-                        )
-                        .into_series())
-                    }
-                    Timestamp(..) => {
+                    DataType::Decimal128(..) => Ok(Decimal128Array::from_iter(
+                        Arc::new(field.clone()),
+                        map.next_value::<Vec<Option<i128>>>()?.into_iter(),
+                    )
+                    .into_series()),
+                    DataType::Timestamp(..) => {
                         type PType = <<TimestampType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(TimestampArray::new(
@@ -233,7 +228,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                         .into_series())
                     }
-                    Date => {
+                    DataType::Date => {
                         type PType = <<DateType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(
@@ -241,7 +236,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                                 .into_series(),
                         )
                     }
-                    Time(..) => {
+                    DataType::Time(..) => {
                         type PType = <<TimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(
@@ -249,9 +244,10 @@ impl<'d> serde::Deserialize<'d> for Series {
                                 .into_series(),
                         )
                     }
-                    Duration(..) => {
+                    DataType::Duration(..) => {
                         type PType = <<DurationType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
+
                         Ok(
                             DurationArray::new(
                                 field,
@@ -260,7 +256,13 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .into_series(),
                         )
                     }
-                    Embedding(..) => {
+                    DataType::Interval => Ok(IntervalArray::from_iter(
+                        field.name.as_str(),
+                        map.next_value::<Vec<Option<months_days_ns>>>()?.into_iter(),
+                    )
+                    .into_series()),
+
+                    DataType::Embedding(..) => {
                         type PType = <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(EmbeddingArray::new(
@@ -269,7 +271,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                         .into_series())
                     }
-                    Image(..) => {
+                    DataType::Image(..) => {
                         type PType = <<ImageType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(
@@ -277,7 +279,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                                 .into_series(),
                         )
                     }
-                    FixedShapeImage(..) => {
+                    DataType::FixedShapeImage(..) => {
                         type PType = <<FixedShapeImageType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(FixedShapeImageArray::new(
@@ -286,7 +288,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                         .into_series())
                     }
-                    FixedShapeTensor(..) => {
+                    DataType::FixedShapeTensor(..) => {
                         type PType = <<FixedShapeTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(FixedShapeTensorArray::new(
@@ -295,7 +297,25 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                         .into_series())
                     }
-                    Tensor(..) => {
+                    DataType::SparseTensor(..) => {
+                        type PType = <<SparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(SparseTensorArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::FixedShapeSparseTensor(..) => {
+                        type PType = <<FixedShapeSparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(FixedShapeSparseTensorArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::Tensor(..) => {
                         type PType = <<TensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(
@@ -303,10 +323,11 @@ impl<'d> serde::Deserialize<'d> for Series {
                                 .into_series(),
                         )
                     }
-                    Python => {
+                    #[cfg(feature = "python")]
+                    DataType::Python => {
                         panic!("python deserialization not implemented for rust Serde");
                     }
-                    Unknown => {
+                    DataType::Unknown => {
                         panic!("Unable to deserialize Unknown DataType");
                     }
                 }

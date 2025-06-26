@@ -41,12 +41,19 @@ def boto3_get_object_read(path: str, columns: list[str] | None = None) -> pa.Tab
 
 
 def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
-    tbl = daft.table.MicroPartition.read_parquet(path, columns=columns)
+    tbl = daft.recordbatch.MicroPartition.read_parquet(path, columns=columns)
     return tbl.to_arrow()
 
 
 def daft_native_read_to_arrow(path: str, columns: list[str] | None = None) -> pa.Table:
-    return daft.table.read_parquet_into_pyarrow(path, columns=columns)
+    return daft.recordbatch.read_parquet_into_pyarrow(path, columns=columns)
+
+
+def daft_dataframe_read(path: str, columns: list[str] | None = None) -> pa.Table:
+    df = daft.read_parquet(path)
+    if columns is not None:
+        df = df.select(*columns)
+    return df.to_arrow()
 
 
 @pytest.fixture(
@@ -55,16 +62,18 @@ def daft_native_read_to_arrow(path: str, columns: list[str] | None = None) -> pa
         daft_native_read_to_arrow,
         pyarrow_read,
         boto3_get_object_read,
+        daft_dataframe_read,
     ],
     ids=[
         "daft_native_read",
         "daft_native_read_to_arrow",
         "pyarrow",
         "boto3_get_object",
+        "daft_dataframe_read",
     ],
 )
 def read_fn(request):
-    """Fixture which returns the function to read a PyArrow table from a path"""
+    """Fixture which returns the function to read a PyArrow table from a path."""
     return request.param
 
 
@@ -76,12 +85,12 @@ def bulk_read_adapter(func):
 
 
 def daft_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
-    tables = daft.table.Table.read_parquet_bulk(paths, columns=columns)
+    tables = daft.recordbatch.read_parquet_bulk(paths, columns=columns)
     return [t.to_arrow() for t in tables]
 
 
 def daft_into_pyarrow_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
-    return daft.table.read_parquet_into_pyarrow_bulk(paths, columns=columns)
+    return daft.recordbatch.read_parquet_into_pyarrow_bulk(paths, columns=columns)
 
 
 def pyarrow_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
@@ -107,5 +116,5 @@ def boto_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[p
     ],
 )
 def bulk_read_fn(request):
-    """Fixture which returns the function to read a PyArrow table from a path"""
+    """Fixture which returns the function to read a PyArrow table from a path."""
     return request.param

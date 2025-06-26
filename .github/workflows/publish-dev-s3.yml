@@ -1,0 +1,99 @@
+name: Build dev package and publish to S3
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+env:
+  S3_BUCKET: s3://github-actions-artifacts-bucket/builds/dev/${{ github.sha }}/
+  S3_KEY: builds/dev/${{ github.sha }}
+  AWS_REGION: us-west-2
+  CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
+
+jobs:
+  check-exists:
+    name: Check if the commit has already been published to S3
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      build_exists: ${{ steps.check_step.outputs.build_exists }}
+    steps:
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
+    - id: check_step
+      run: |
+        OBJECT_EXISTS=$(aws s3api head-object --bucket github-actions-artifacts-bucket --key ${{ env.S3_KEY }}/index.html > /dev/null 2>&1 && echo "true" || echo "false")
+        if [[ "$OBJECT_EXISTS" = "true" ]]; then
+          echo "Package already exists for this commit, skipping publish. To install, run:"
+          echo "pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/${{ env.S3_KEY }}"
+        fi
+
+        echo "build_exists=$OBJECT_EXISTS" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    needs: check-exists
+    if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
+    uses: ./.github/workflows/build-wheel.yml
+    with:
+      os: ${{ matrix.os }}
+      arch: ${{ matrix.arch }}
+      lts: ${{ matrix.lts }}
+      build_type: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu]
+        arch: [x86_64, aarch64]
+        lts: [false]
+
+  publish:
+    name: Publish wheels to S3
+    needs: [check-exists, build]
+    if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
+    - name: Upload wheels to S3
+      run: aws s3 cp --no-progress --recursive dist/ ${{ env.S3_BUCKET }}
+
+    - name: Install boto3 and packaging
+      run: pip3 install boto3 packaging
+    - name: Generate Python simple repository API files
+      run: python3 .github/ci-scripts/generate_simple_py_index.py ${{ env.S3_BUCKET }}
+    - name: Upload index files to S3
+      run: aws s3 cp --no-progress --recursive dist/indices/ ${{ env.S3_BUCKET }}
+
+    - name: Invalidate Cloudfront cache
+      run: aws cloudfront create-invalidation --distribution-id ${{ env.CLOUDFRONT_DIST_ID }} --paths '/${{ env.S3_KEY }}*'
+
+    - name: Print install instructions
+      run: |
+        echo "To install the dev build, run:"
+        echo "pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/${{ env.S3_KEY }}"

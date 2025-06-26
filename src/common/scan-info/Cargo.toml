@@ -1,0 +1,31 @@
+[dependencies]
+common-daft-config = {path = "../daft-config", default-features = false}
+common-display = {path = "../display", default-features = false}
+common-error = {path = "../error", default-features = false}
+common-file-formats = {path = "../file-formats", default-features = false}
+daft-algebra = {path = "../../daft-algebra", default-features = false}
+daft-dsl = {path = "../../daft-dsl", default-features = false}
+daft-schema = {path = "../../daft-schema", default-features = false}
+fnv = "1.0.7"
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
+typetag = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-daft-config/python",
+  "common-display/python",
+  "common-error/python",
+  "common-file-formats/python",
+  "daft-dsl/python",
+  "daft-schema/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-scan-info"
+version = {workspace = true}

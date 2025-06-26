@@ -1,12 +1,11 @@
 use common_error::DaftResult;
 
+use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 use crate::{
     array::{growable::make_growable, FixedSizeListArray},
-    datatypes::Field,
-    DataType, IntoSeries, Series,
+    datatypes::{DataType, Field},
+    series::{IntoSeries, Series},
 };
-
-use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 
 pub struct FixedSizeListGrowable<'a> {
     name: String,
@@ -55,7 +54,7 @@ impl<'a> FixedSizeListGrowable<'a> {
     }
 }
 
-impl<'a> Growable for FixedSizeListGrowable<'a> {
+impl Growable for FixedSizeListGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.child_growable.extend(
             index,
@@ -63,9 +62,8 @@ impl<'a> Growable for FixedSizeListGrowable<'a> {
             len * self.element_fixed_len,
         );
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.extend(index, start, len),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.extend(index, start, len);
         }
     }
 
@@ -73,9 +71,8 @@ impl<'a> Growable for FixedSizeListGrowable<'a> {
         self.child_growable
             .add_nulls(additional * self.element_fixed_len);
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.add_nulls(additional),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.add_nulls(additional);
         }
     }
 

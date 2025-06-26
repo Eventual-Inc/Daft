@@ -37,7 +37,7 @@ pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
     reader: &'a mut R,
     scratch: Vec<u8>,
     pages_filter: PageFilter,
-    max_header_size: usize,
+    max_page_size: usize,
 ) -> Result<impl Stream<Item = Result<CompressedPage>> + 'a> {
     let page_metadata: PageMetaData = column_metadata.into();
     Ok(_get_page_stream(
@@ -47,7 +47,7 @@ pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
         page_metadata.descriptor,
         scratch,
         pages_filter,
-        max_header_size,
+        max_page_size,
     ))
 }
 
@@ -56,7 +56,7 @@ pub fn get_owned_page_stream_from_column_start<R: AsyncRead + Unpin + Send>(
     reader: R,
     scratch: Vec<u8>,
     pages_filter: PageFilter,
-    max_header_size: usize,
+    max_page_size: usize,
 ) -> Result<impl Stream<Item = Result<CompressedPage>>> {
     let page_metadata: PageMetaData = column_metadata.into();
     Ok(_get_owned_page_stream(
@@ -66,7 +66,7 @@ pub fn get_owned_page_stream_from_column_start<R: AsyncRead + Unpin + Send>(
         page_metadata.descriptor,
         scratch,
         pages_filter,
-        max_header_size,
+        max_page_size,
     ))
 }
 

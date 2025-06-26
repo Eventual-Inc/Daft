@@ -1,8 +1,8 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(io_error_more)]
 #![feature(if_let_guard)]
 mod azure_blob;
+mod counting_reader;
 mod google_cloud;
 #[cfg(feature = "enable_hdfs")]
 mod hdfs;
@@ -11,44 +11,38 @@ mod huggingface;
 mod local;
 mod object_io;
 mod object_store_glob;
-mod s3_like;
+mod retry;
+pub mod s3_like;
 mod stats;
 mod stream_utils;
+#[cfg(feature = "python")]
+mod unity;
+
+use std::sync::LazyLock;
+
 use azure_blob::AzureBlobSource;
-use futures::FutureExt;
+use common_file_formats::FileFormat;
+pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
-use lazy_static::lazy_static;
-mod file_format;
+#[cfg(feature = "python")]
+use unity::UnitySource;
 #[cfg(feature = "python")]
 pub mod python;
-pub use file_format::FileFormat;
 
-pub use common_io_config::{AzureConfig, IOConfig, S3Config};
-pub use object_io::FileMetadata;
-pub use object_io::GetResult;
-use object_io::StreamingRetryParams;
-#[cfg(feature = "python")]
-pub use python::register_modules;
-pub use stats::{IOStatsContext, IOStatsRef};
-use tokio::runtime::RuntimeFlavor;
-use tokio::task::JoinHandle;
-
-use std::future::Future;
-use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
-use std::sync::OnceLock;
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range};
-
-use futures::stream::BoxStream;
-
-use snafu::Snafu;
-use url::ParseError;
-
-use snafu::prelude::*;
+use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use s3_like::S3LikeSource;
+pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
+use futures::stream::BoxStream;
+use object_io::StreamingRetryParams;
+pub use object_io::{FileMetadata, GetResult};
+#[cfg(feature = "python")]
+pub use python::register_modules;
+pub use s3_like::{s3_config_from_env, S3LikeSource, S3MultipartWriter, S3PartBuffer};
+use snafu::{prelude::*, Snafu};
+pub use stats::{IOStatsContext, IOStatsRef};
+use url::ParseError;
 
 #[cfg(feature = "enable_hdfs")]
 use self::hdfs::HDFSSource;
@@ -105,6 +99,12 @@ pub enum Error {
     ))]
     SocketError { path: String, source: DynError },
 
+    #[snafu(display("Throttled when trying to read {}\nDetails:\n{:?}", path, source))]
+    Throttled { path: String, source: DynError },
+
+    #[snafu(display("Misc Transient error trying to read {}\nDetails:\n{:?}", path, source))]
+    MiscTransient { path: String, source: DynError },
+
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
     InvalidUrl {
         path: String,
@@ -150,38 +150,45 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
-        use Error::*;
+    fn from(err: Error) -> Self {
+        use Error::{
+            CachedError, ConnectTimeout, MiscTransient, NotFound, ReadTimeout, SocketError,
+            Throttled, UnableToReadBytes,
+        };
         match err {
-            NotFound { path, source } => DaftError::FileNotFound { path, source },
-            ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
-            ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
-            UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
-            SocketError { .. } => DaftError::SocketError(err.into()),
+            NotFound { path, source } => Self::FileNotFound { path, source },
+            ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
+            ReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
+            SocketError { .. } => Self::SocketError(err.into()),
+            Throttled { .. } => Self::ThrottledIo(err.into()),
+            MiscTransient { .. } => Self::MiscTransient(err.into()),
             // We have to repeat everything above for the case we have an Arc since we can't move the error.
             CachedError { ref source } => match source.as_ref() {
-                NotFound { path, source: _ } => DaftError::FileNotFound {
+                NotFound { path, source: _ } => Self::FileNotFound {
                     path: path.clone(),
                     source: err.into(),
                 },
-                ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
-                ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
-                UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
-                SocketError { .. } => DaftError::SocketError(err.into()),
-                _ => DaftError::External(err.into()),
+                ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
+                ReadTimeout { .. } => Self::ReadTimeout(err.into()),
+                UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
+                SocketError { .. } => Self::SocketError(err.into()),
+                Throttled { .. } => Self::ThrottledIo(err.into()),
+                MiscTransient { .. } => Self::MiscTransient(err.into()),
+                _ => Self::External(err.into()),
             },
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<Error> for std::io::Error {
-    fn from(err: Error) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, err)
+    fn from(err: Error) -> Self {
+        Self::other(err)
     }
 }
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]
 pub struct IOClient {
@@ -191,21 +198,23 @@ pub struct IOClient {
 
 impl IOClient {
     pub fn new(config: Arc<IOConfig>) -> Result<Self> {
-        Ok(IOClient {
+        Ok(Self {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
         })
     }
 
-    async fn get_source(&self, source_type: &SourceType) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+        let (source_type, path) = parse_url(input)?;
+
         {
-            if let Some(client) = self.source_type_to_store.read().await.get(source_type) {
+            if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
                 return Ok(client.clone());
             }
         }
         let mut w_handle = self.source_type_to_store.write().await;
 
-        if let Some(client) = w_handle.get(source_type) {
+        if let Some(client) = w_handle.get(&source_type) {
             return Ok(client.clone());
         }
 
@@ -218,7 +227,8 @@ impl IOClient {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
             }
             SourceType::AzureBlob => {
-                AzureBlobSource::get_client(&self.config.azure).await? as Arc<dyn ObjectSource>
+                AzureBlobSource::get_client(&self.config.azure, &path).await?
+                    as Arc<dyn ObjectSource>
             }
 
             SourceType::GCS => {
@@ -229,10 +239,20 @@ impl IOClient {
             }
             #[cfg(feature = "enable_hdfs")]
             SourceType::HDFS => HDFSSource::get_client().await? as Arc<dyn ObjectSource>,
+            SourceType::Unity => {
+                #[cfg(feature = "python")]
+                {
+                    UnitySource::get_client(&self.config.unity).await? as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    unimplemented!("Unity Catalog source currently requires Python");
+                }
+            }
         };
 
-        if w_handle.get(source_type).is_none() {
-            w_handle.insert(*source_type, new_source.clone());
+        if w_handle.get(&source_type).is_none() {
+            w_handle.insert(source_type, new_source.clone());
         }
         Ok(new_source)
     }
@@ -246,8 +266,7 @@ impl IOClient {
         io_stats: Option<Arc<IOStatsContext>>,
         file_format: Option<FileFormat>,
     ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
-        let (scheme, _) = parse_url(input.as_str())?;
-        let source = self.get_source(&scheme).await?;
+        let source = self.get_source(&input).await?;
         let files = source
             .glob(
                 input.as_str(),
@@ -267,8 +286,8 @@ impl IOClient {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
-        let (scheme, path) = parse_url(&input)?;
-        let source = self.get_source(&scheme).await?;
+        let (_, path) = parse_url(&input)?;
+        let source = self.get_source(&input).await?;
         let get_result = source
             .get(path.as_ref(), range.clone(), io_stats.clone())
             .await?;
@@ -281,9 +300,9 @@ impl IOClient {
         data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> Result<()> {
-        let (scheme, dest) = parse_url(dest)?;
-        let source = self.get_source(&scheme).await?;
-        source.put(dest.as_ref(), data, io_stats.clone()).await
+        let (_, path) = parse_url(dest)?;
+        let source = self.get_source(dest).await?;
+        source.put(path.as_ref(), data, io_stats.clone()).await
     }
 
     pub async fn single_url_get_size(
@@ -291,8 +310,8 @@ impl IOClient {
         input: String,
         io_stats: Option<IOStatsRef>,
     ) -> Result<usize> {
-        let (scheme, path) = parse_url(&input)?;
-        let source = self.get_source(&scheme).await?;
+        let (_, path) = parse_url(&input)?;
+        let source = self.get_source(&input).await?;
         source.get_size(path.as_ref(), io_stats).await
     }
 
@@ -316,16 +335,17 @@ impl IOClient {
 
         match value {
             Some(Ok(bytes)) => Ok(Some(bytes)),
-            Some(Err(err)) => match raise_error_on_failure {
-                true => Err(err),
-                false => {
+            Some(Err(err)) => {
+                if raise_error_on_failure {
+                    Err(err)
+                } else {
                     log::warn!(
                         "Error occurred during url_download at index: {index} {} (falling back to Null)",
                         err
                     );
                     Ok(None)
                 }
-            },
+            }
             None => Ok(None),
         }
     }
@@ -335,6 +355,7 @@ impl IOClient {
         index: usize,
         dest: String,
         data: Option<bytes::Bytes>,
+        raise_error_on_failure: bool,
         io_stats: Option<IOStatsRef>,
     ) -> Result<Option<String>> {
         let value = if let Some(data) = data {
@@ -347,11 +368,15 @@ impl IOClient {
         match value {
             Some(Ok(())) => Ok(Some(dest)),
             Some(Err(err)) => {
-                log::warn!(
-                    "Error occurred during file upload at index: {index} {} (falling back to Null)",
-                    err
-                );
-                Err(err)
+                if raise_error_on_failure {
+                    Err(err)
+                } else {
+                    log::warn!(
+                        "Error occurred during file upload at index: {index} {} (falling back to Null)",
+                        err
+                    );
+                    Ok(None)
+                }
             }
             None => Ok(None),
         }
@@ -368,19 +393,21 @@ pub enum SourceType {
     HF,
     #[cfg(feature = "enable_hdfs")]
     HDFS,
+    Unity,
 }
 
 impl std::fmt::Display for SourceType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            SourceType::File => write!(f, "file"),
-            SourceType::Http => write!(f, "http"),
-            SourceType::S3 => write!(f, "s3"),
-            SourceType::AzureBlob => write!(f, "AzureBlob"),
-            SourceType::GCS => write!(f, "gcs"),
-            SourceType::HF => write!(f, "hf"),
+            Self::File => write!(f, "file"),
+            Self::Http => write!(f, "http"),
+            Self::S3 => write!(f, "s3"),
+            Self::AzureBlob => write!(f, "AzureBlob"),
+            Self::GCS => write!(f, "gcs"),
+            Self::HF => write!(f, "hf"),
             #[cfg(feature = "enable_hdfs")]
-            SourceType::HDFS => write!(f, "hdfs"),
+            Self::HDFS => write!(f, "hdfs"),
+            Self::Unity => write!(f, "UnityCatalog"),
         }
     }
 }
@@ -394,7 +421,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 let expanded = home_dir.join(&input[2..]);
                 let input = expanded.to_str()?;
 
-                Some((SourceType::File, Cow::Owned(format!("file://{}", input))))
+                Some((SourceType::File, Cow::Owned(format!("file://{input}"))))
             })
             .ok_or_else(|| crate::Error::InvalidArgument {
                 msg: "Could not convert expanded path to string".to_string(),
@@ -416,12 +443,13 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     match scheme.as_ref() {
         "file" => Ok((SourceType::File, fixed_input)),
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
-        "s3" | "s3a" => Ok((SourceType::S3, fixed_input)),
+        "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
         #[cfg(feature = "enable_hdfs")]
         "hdfs" => Ok((SourceType::HDFS, fixed_input)),
+        "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
@@ -431,15 +459,8 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 }
 type CacheKey = (bool, Arc<IOConfig>);
 
-static THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-static SINGLE_THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-
-lazy_static! {
-    static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
-    static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
-    static ref CLIENT_CACHE: std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
-        std::sync::RwLock::new(HashMap::new());
-}
+static CLIENT_CACHE: LazyLock<std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>>> =
+    LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
 
 pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
     let read_handle = CLIENT_CACHE.read().unwrap();
@@ -453,110 +474,10 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
-            let client = Arc::new(IOClient::new(config.clone())?);
+            let client = Arc::new(IOClient::new(config)?);
             w_handle.insert(key, client.clone());
             Ok(client)
         }
-    }
-}
-
-pub type RuntimeRef = Arc<Runtime>;
-
-pub struct Runtime {
-    runtime: tokio::runtime::Runtime,
-}
-
-impl Runtime {
-    fn new(runtime: tokio::runtime::Runtime) -> RuntimeRef {
-        Arc::new(Self { runtime })
-    }
-
-    /// Similar to tokio's Runtime::block_on but requires static lifetime + Send
-    /// You should use this when you are spawning IO tasks from an Expression Evaluator or in the Executor
-    pub fn block_on_io_pool<F>(&self, future: F) -> DaftResult<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let (tx, rx) = oneshot::channel();
-        let _join_handle = self.spawn(async move {
-            let task_output = AssertUnwindSafe(future).catch_unwind().await.map_err(|e| {
-                let s = if let Some(s) = e.downcast_ref::<String>() {
-                    s.clone()
-                } else if let Some(s) = e.downcast_ref::<&str>() {
-                    s.to_string()
-                } else {
-                    "unknown internal error".to_string()
-                };
-                DaftError::ComputeError(format!(
-                    "Caught panic when spawning blocking task in io pool {s})"
-                ))
-            });
-
-            if tx.send(task_output).is_err() {
-                log::warn!("Spawned task output ignored: receiver dropped")
-            }
-        });
-        rx.recv().expect("Spawned task transmitter dropped")
-    }
-
-    /// Blocks current thread to compute future. Can not be called in tokio runtime context
-    ///
-    pub fn block_on_current_thread<F: Future>(&self, future: F) -> F::Output {
-        self.runtime.block_on(future)
-    }
-
-    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        self.runtime.spawn(future)
-    }
-}
-
-fn init_runtime(num_threads: usize) -> Arc<Runtime> {
-    std::thread::spawn(move || {
-        Runtime::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(num_threads)
-                .enable_all()
-                .build()
-                .unwrap(),
-        )
-    })
-    .join()
-    .unwrap()
-}
-
-pub fn get_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
-    match multi_thread {
-        false => {
-            let runtime = SINGLE_THREADED_RUNTIME
-                .get_or_init(|| init_runtime(1))
-                .clone();
-            Ok(runtime)
-        }
-        true => {
-            let runtime = THREADED_RUNTIME
-                .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
-                .clone();
-            Ok(runtime)
-        }
-    }
-}
-
-pub fn get_io_pool_num_threads() -> Option<usize> {
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => {
-            match handle.runtime_flavor() {
-                RuntimeFlavor::CurrentThread => Some(1),
-                RuntimeFlavor::MultiThread => Some(*THREADED_RUNTIME_NUM_WORKER_THREADS),
-                // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
-                _ => Some(1),
-            }
-        }
-        Err(_) => None,
     }
 }
 

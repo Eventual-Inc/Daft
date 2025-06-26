@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![allow(clippy::useless_conversion)]
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -46,21 +47,21 @@ fn should_enable_chrome_trace() -> bool {
 
 #[cfg(feature = "python")]
 pub mod pylib {
-    use common_tracing::init_tracing;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
+
+    use common_tracing::{init_opentelemetry_providers, init_tracing};
     use pyo3::prelude::*;
-    lazy_static! {
-        static ref LOG_RESET_HANDLE: pyo3_log::ResetHandle = pyo3_log::init();
-    }
+
+    static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(pyo3_log::init);
 
     #[pyfunction]
     pub fn version() -> &'static str {
-        daft_core::VERSION
+        common_version::VERSION
     }
 
     #[pyfunction]
     pub fn build_type() -> &'static str {
-        daft_core::DAFT_BUILD_TYPE
+        common_version::DAFT_BUILD_TYPE
     }
 
     #[pyfunction]
@@ -71,11 +72,11 @@ pub mod pylib {
     #[pyfunction]
     pub fn refresh_logger(py: Python) -> PyResult<()> {
         use log::LevelFilter;
-        let logging = py.import("logging")?;
+        let logging = py.import(pyo3::intern!(py, "logging"))?;
         let python_log_level = logging
-            .getattr("getLogger")?
+            .getattr(pyo3::intern!(py, "getLogger"))?
             .call0()?
-            .getattr("level")?
+            .getattr(pyo3::intern!(py, "level"))?
             .extract::<usize>()
             .unwrap_or(0);
 
@@ -93,33 +94,85 @@ pub mod pylib {
         Ok(())
     }
 
-    #[pymodule]
-    fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-        refresh_logger(_py)?;
-        init_tracing(crate::should_enable_chrome_trace());
+    #[pyfunction]
+    pub fn set_compute_runtime_num_worker_threads(num_threads: usize) -> PyResult<()> {
+        common_runtime::set_compute_runtime_num_worker_threads(num_threads)?;
+        Ok(())
+    }
 
-        common_daft_config::register_modules(_py, m)?;
-        common_system_info::register_modules(_py, m)?;
-        common_resource_request::register_modules(_py, m)?;
-        daft_core::register_modules(_py, m)?;
-        daft_core::python::register_modules(_py, m)?;
-        daft_local_execution::register_modules(_py, m)?;
-        daft_dsl::register_modules(_py, m)?;
-        daft_table::register_modules(_py, m)?;
-        daft_io::register_modules(_py, m)?;
-        daft_parquet::register_modules(_py, m)?;
-        daft_csv::register_modules(_py, m)?;
-        daft_json::register_modules(_py, m)?;
-        daft_plan::register_modules(_py, m)?;
-        daft_micropartition::register_modules(_py, m)?;
-        daft_scan::register_modules(_py, m)?;
-        daft_scheduler::register_modules(_py, m)?;
-        daft_sql::register_modules(_py, m)?;
-        daft_functions::register_modules(_py, m)?;
+    #[pymodule]
+    fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+        refresh_logger(py)?;
+        init_tracing(crate::should_enable_chrome_trace());
+        init_opentelemetry_providers();
+
+        common_daft_config::register_modules(m)?;
+        common_system_info::register_modules(m)?;
+        common_resource_request::register_modules(m)?;
+        common_file_formats::python::register_modules(m)?;
+        common_scan_info::register_modules(m)?;
+        daft_catalog::register_modules(m)?;
+        daft_connect::register_modules(m)?;
+        daft_context::register_modules(m)?;
+        daft_core::register_modules(m)?;
+        daft_core::python::register_modules(m)?;
+        daft_csv::register_modules(m)?;
+        daft_distributed::register_modules(m)?;
+        daft_dsl::register_modules(m)?;
+        daft_functions::register_modules(m)?;
+        daft_io::register_modules(m)?;
+        daft_ir::register_modules(m)?;
+        daft_json::register_modules(m)?;
+        daft_local_execution::register_modules(m)?;
+        daft_local_plan::register_modules(m)?;
+        daft_logical_plan::register_modules(m)?;
+        daft_parquet::register_modules(m)?;
+        daft_micropartition::register_modules(m)?;
+        daft_recordbatch::register_modules(m)?;
+        daft_scan::register_modules(m)?;
+        daft_scheduler::register_modules(m)?;
+        daft_session::register_modules(m)?;
+        daft_sql::register_modules(m)?;
+        daft_shuffles::python::register_modules(m)?;
+        // Register testing module
+        let testing_module = PyModule::new(m.py(), "testing")?;
+        m.add_submodule(&testing_module)?;
+        daft_scan::python::register_testing_modules(&testing_module)?;
+
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
+        m.add_wrapped(wrap_pyfunction!(set_compute_runtime_num_worker_threads))?;
+
+        daft_dashboard::register_modules(m)?;
+        daft_cli::register_modules(m)?;
+
+        // We need to do this here because it's the only point in the rust codebase that we have access to all crates.
+        let mut functions_registry = daft_dsl::functions::FUNCTION_REGISTRY
+            .write()
+            .expect("Failed to acquire write lock on function registry");
+        functions_registry.register::<daft_functions::numeric::NumericFunctions>();
+        functions_registry.register::<daft_functions::float::FloatFunctions>();
+        functions_registry.register::<daft_functions_uri::UriFunctions>();
+        functions_registry.register::<daft_image::functions::ImageFunctions>();
+        functions_registry.register::<daft_functions_binary::BinaryFunctions>();
+        functions_registry.register::<daft_functions_json::JsonFunctions>();
+        functions_registry.register::<daft_functions_list::ListFunctions>();
+        functions_registry.register::<daft_functions_utf8::Utf8Functions>();
+        functions_registry.register::<daft_functions_json::JsonFunctions>();
+        functions_registry.register::<daft_functions_serde::SerdeFunctions>();
+        functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
+        functions_registry.register::<daft_functions::HashFunctions>();
+        functions_registry.register::<daft_functions::StructFunctions>();
+        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
+        functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
+
+        functions_registry.add_fn(daft_functions::coalesce::Coalesce);
+        functions_registry
+            .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
+        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
+
         Ok(())
     }
 }

@@ -11,12 +11,12 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8']
-        daft_runner: [py]
+        python-version: ['3.9']
+        daft_runner: [ray, native]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -41,7 +41,14 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -r requirements-dev.txt
-
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
     - name: Build Rust Library
       run: |
         source activate
@@ -54,8 +61,8 @@ jobs:
         HYPOTHESIS_MAX_EXAMPLES: 10000
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
-      if: failure()
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
           {
@@ -69,6 +76,5 @@ jobs:
               }
             ]
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook

@@ -1,8 +1,15 @@
 [dependencies]
-lazy_static = {workspace = true}
+common-runtime = {path = "../runtime", default-features = false}
+opentelemetry = {workspace = true}
+opentelemetry-otlp = {workspace = true}
+opentelemetry_sdk = {workspace = true}
 tracing = {workspace = true}
 tracing-chrome = "0.7.2"
+tracing-opentelemetry = {version = "0.30", features = ["default"]}
 tracing-subscriber = "0.3"
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

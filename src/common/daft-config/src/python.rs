@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use pyo3::{prelude::*, PyTypeInfo};
+use common_io_config::python::IOConfig as PyIOConfig;
+use common_py_serde::impl_bincode_py_state_serialization;
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{DaftExecutionConfig, DaftPlanningConfig};
-use common_io_config::python::IOConfig as PyIOConfig;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
@@ -15,28 +16,28 @@ pub struct PyDaftPlanningConfig {
 #[pymethods]
 impl PyDaftPlanningConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
-        PyDaftPlanningConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
-        PyDaftPlanningConfig {
+        Self {
             config: Arc::new(DaftPlanningConfig::from_env()),
         }
     }
 
-    fn with_config_values(
-        &mut self,
-        default_io_config: Option<PyIOConfig>,
-    ) -> PyResult<PyDaftPlanningConfig> {
+    #[pyo3(signature = (default_io_config=None))]
+    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
         }
 
-        Ok(PyDaftPlanningConfig {
+        Ok(Self {
             config: Arc::new(config),
         })
     }
@@ -47,32 +48,9 @@ impl PyDaftPlanningConfig {
             config: self.config.default_io_config.clone(),
         })
     }
-
-    #[getter(enable_actor_pool_projections)]
-    fn enable_actor_pool_projections(&self) -> PyResult<bool> {
-        Ok(self.config.enable_actor_pool_projections)
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
-        let bin_data = bincode::serialize(self.config.as_ref())
-            .expect("DaftPlanningConfig should be serializable to bytes");
-        Ok((
-            Self::type_object(py)
-                .getattr("_from_serialized")?
-                .to_object(py),
-            (bin_data,),
-        ))
-    }
-
-    #[staticmethod]
-    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftPlanningConfig> {
-        let daft_planning_config: DaftPlanningConfig = bincode::deserialize(bin_data.as_slice())
-            .expect("DaftExecutionConfig should be deserializable from bytes");
-        Ok(PyDaftPlanningConfig {
-            config: daft_planning_config.into(),
-        })
-    }
 }
+
+impl_bincode_py_state_serialization!(PyDaftPlanningConfig);
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
@@ -83,22 +61,55 @@ pub struct PyDaftExecutionConfig {
 #[pymethods]
 impl PyDaftExecutionConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
-        PyDaftExecutionConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
-        PyDaftExecutionConfig {
+        Self {
             config: Arc::new(DaftExecutionConfig::from_env()),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        scan_tasks_min_size_bytes=None,
+        scan_tasks_max_size_bytes=None,
+        max_sources_per_scan_task=None,
+        broadcast_join_size_bytes_threshold=None,
+        parquet_split_row_groups_max_files=None,
+        sort_merge_join_sort_with_aligned_boundaries=None,
+        hash_join_partition_size_leniency=None,
+        sample_size_for_sort=None,
+        num_preview_rows=None,
+        parquet_target_filesize=None,
+        parquet_target_row_group_size=None,
+        parquet_inflation_factor=None,
+        csv_target_filesize=None,
+        csv_inflation_factor=None,
+        shuffle_aggregation_default_partitions=None,
+        partial_aggregation_threshold=None,
+        high_cardinality_aggregation_threshold=None,
+        read_sql_partition_size_bytes=None,
+        enable_aqe=None,
+        default_morsel_size=None,
+        shuffle_algorithm=None,
+        pre_shuffle_merge_threshold=None,
+        flight_shuffle_dirs=None,
+        enable_ray_tracing=None,
+        scantask_splitting_level=None,
+        native_parquet_writer=None,
+        flotilla=None,
+        min_cpu_per_task=None,
+    ))]
     fn with_config_values(
         &self,
         scan_tasks_min_size_bytes: Option<usize>,
         scan_tasks_max_size_bytes: Option<usize>,
+        max_sources_per_scan_task: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
         parquet_split_row_groups_max_files: Option<usize>,
         sort_merge_join_sort_with_aligned_boundaries: Option<bool>,
@@ -111,11 +122,20 @@ impl PyDaftExecutionConfig {
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
+        partial_aggregation_threshold: Option<usize>,
+        high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
-        enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
-    ) -> PyResult<PyDaftExecutionConfig> {
+        shuffle_algorithm: Option<&str>,
+        pre_shuffle_merge_threshold: Option<usize>,
+        flight_shuffle_dirs: Option<Vec<String>>,
+        enable_ray_tracing: Option<bool>,
+        scantask_splitting_level: Option<i32>,
+        native_parquet_writer: Option<bool>,
+        flotilla: Option<bool>,
+        min_cpu_per_task: Option<f64>,
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
@@ -123,6 +143,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(scan_tasks_min_size_bytes) = scan_tasks_min_size_bytes {
             config.scan_tasks_min_size_bytes = scan_tasks_min_size_bytes;
+        }
+        if let Some(max_sources_per_scan_task) = max_sources_per_scan_task {
+            config.max_sources_per_scan_task = max_sources_per_scan_task;
         }
         if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
             config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
@@ -164,6 +187,13 @@ impl PyDaftExecutionConfig {
         {
             config.shuffle_aggregation_default_partitions = shuffle_aggregation_default_partitions;
         }
+        if let Some(partial_aggregation_threshold) = partial_aggregation_threshold {
+            config.partial_aggregation_threshold = partial_aggregation_threshold;
+        }
+        if let Some(high_cardinality_aggregation_threshold) = high_cardinality_aggregation_threshold
+        {
+            config.high_cardinality_aggregation_threshold = high_cardinality_aggregation_threshold;
+        }
         if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
@@ -171,14 +201,53 @@ impl PyDaftExecutionConfig {
         if let Some(enable_aqe) = enable_aqe {
             config.enable_aqe = enable_aqe;
         }
-        if let Some(enable_native_executor) = enable_native_executor {
-            config.enable_native_executor = enable_native_executor;
-        }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
         }
+        if let Some(shuffle_algorithm) = shuffle_algorithm {
+            if !matches!(
+                shuffle_algorithm,
+                "map_reduce" | "pre_shuffle_merge" | "flight_shuffle" | "auto"
+            ) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', or 'flight_shuffle'",
+                ));
+            }
+            config.shuffle_algorithm = shuffle_algorithm.to_string();
+        }
+        if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
+            config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
+        }
+        if let Some(flight_shuffle_dirs) = flight_shuffle_dirs {
+            config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
 
-        Ok(PyDaftExecutionConfig {
+        if let Some(enable_ray_tracing) = enable_ray_tracing {
+            config.enable_ray_tracing = enable_ray_tracing;
+        }
+
+        if let Some(scantask_splitting_level) = scantask_splitting_level {
+            if !matches!(scantask_splitting_level, 1 | 2) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "scantask_splitting_level must be 1 or 2",
+                ));
+            }
+            config.scantask_splitting_level = scantask_splitting_level;
+        }
+
+        if let Some(native_parquet_writer) = native_parquet_writer {
+            config.native_parquet_writer = native_parquet_writer;
+        }
+
+        if let Some(flotilla) = flotilla {
+            config.flotilla = flotilla;
+        }
+
+        if let Some(min_cpu_per_task) = min_cpu_per_task {
+            config.min_cpu_per_task = min_cpu_per_task;
+        }
+
+        Ok(Self {
             config: Arc::new(config),
         })
     }
@@ -191,6 +260,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_scan_tasks_max_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.scan_tasks_max_size_bytes)
+    }
+
+    #[getter]
+    fn get_max_sources_per_scan_task(&self) -> PyResult<usize> {
+        Ok(self.config.max_sources_per_scan_task)
     }
 
     #[getter]
@@ -249,6 +323,16 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn get_partial_aggregation_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.partial_aggregation_threshold)
+    }
+
+    #[getter]
+    fn get_high_cardinality_aggregation_threshold(&self) -> PyResult<f64> {
+        Ok(self.config.high_cardinality_aggregation_threshold)
+    }
+
+    #[getter]
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
     }
@@ -257,31 +341,37 @@ impl PyDaftExecutionConfig {
         Ok(self.config.enable_aqe)
     }
     #[getter]
-    fn enable_native_executor(&self) -> PyResult<bool> {
-        Ok(self.config.enable_native_executor)
-    }
-    #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
     }
-
-    fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
-        let bin_data = bincode::serialize(self.config.as_ref())
-            .expect("DaftExecutionConfig should be serializable to bytes");
-        Ok((
-            Self::type_object(py)
-                .getattr("_from_serialized")?
-                .to_object(py),
-            (bin_data,),
-        ))
+    #[getter]
+    fn shuffle_algorithm(&self) -> PyResult<&str> {
+        Ok(self.config.shuffle_algorithm.as_str())
+    }
+    #[getter]
+    fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.pre_shuffle_merge_threshold)
     }
 
-    #[staticmethod]
-    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftExecutionConfig> {
-        let daft_execution_config: DaftExecutionConfig = bincode::deserialize(bin_data.as_slice())
-            .expect("DaftExecutionConfig should be deserializable from bytes");
-        Ok(PyDaftExecutionConfig {
-            config: daft_execution_config.into(),
-        })
+    #[getter]
+    fn enable_ray_tracing(&self) -> PyResult<bool> {
+        Ok(self.config.enable_ray_tracing)
+    }
+
+    #[getter]
+    fn scantask_splitting_level(&self) -> PyResult<i32> {
+        Ok(self.config.scantask_splitting_level)
+    }
+
+    #[getter]
+    fn flotilla(&self) -> PyResult<bool> {
+        Ok(self.config.flotilla)
+    }
+
+    #[getter]
+    fn min_cpu_per_task(&self) -> PyResult<f64> {
+        Ok(self.config.min_cpu_per_task)
     }
 }
+
+impl_bincode_py_state_serialization!(PyDaftExecutionConfig);

@@ -53,8 +53,9 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
         &self,
         page: &'a DataPage,
         _: Option<&'a Self::Dictionary>,
+        is_parent_nullable: bool,
     ) -> Result<Self::State> {
-        let is_optional =
+        let is_optional = is_parent_nullable ||
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
@@ -116,6 +117,7 @@ pub struct NestedIter<I: Pages> {
     rows_remaining: usize,
     chunk_size: Option<usize>,
     values_remaining: usize,
+    is_parent_nullable: bool,
 }
 
 impl<I: Pages> NestedIter<I> {
@@ -125,6 +127,7 @@ impl<I: Pages> NestedIter<I> {
         num_rows: usize,
         chunk_size: Option<usize>,
         num_values: usize,
+        is_parent_nullable: bool,
     ) -> Self {
         Self {
             iter,
@@ -133,6 +136,7 @@ impl<I: Pages> NestedIter<I> {
             rows_remaining: num_rows,
             chunk_size,
             values_remaining: num_values,
+            is_parent_nullable,
         }
     }
 }
@@ -153,6 +157,7 @@ impl<I: Pages> Iterator for NestedIter<I> {
             &mut self.values_remaining,
             &self.init,
             self.chunk_size,
+            self.is_parent_nullable,
             &BooleanDecoder::default(),
         );
         match maybe_state {

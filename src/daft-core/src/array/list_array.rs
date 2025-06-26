@@ -2,15 +2,18 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 
-use crate::array::growable::{Growable, GrowableArray};
-use crate::datatypes::{DaftArrayType, Field};
-use crate::series::Series;
-use crate::DataType;
+use crate::{
+    array::growable::{Growable, GrowableArray},
+    datatypes::{DaftArrayType, DataType, Field},
+    series::Series,
+};
 
 #[derive(Clone, Debug)]
 pub struct ListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
+
+    /// Where each row starts and ends. Null rows usually have the same start/end index, but this is not guaranteed.
     offsets: arrow2::offset::OffsetsBuffer<i64>,
     validity: Option<arrow2::bitmap::Bitmap>,
 }
@@ -36,23 +39,20 @@ impl ListArray {
                 {
                     panic!("ListArray::new validity length does not match computed length from offsets")
                 }
-                if child_dtype.as_ref() != flat_child.data_type() {
-                    panic!(
-                        "ListArray::new expects the child series to have field {}, but received: {}",
-                        child_dtype,
-                        flat_child.data_type(),
-                    )
-                }
-                if *offsets.last() > flat_child.len() as i64 {
-                    panic!("ListArray::new received offsets with last value {}, but child series has length {}", offsets.last(), flat_child.len())
-                }
+                assert!(
+                    !(child_dtype.as_ref() != flat_child.data_type()),
+                    "ListArray::new expects the child series to have field {}, but received: {}",
+                    child_dtype,
+                    flat_child.data_type(),
+                );
+                assert!(*offsets.last() <= flat_child.len() as i64, "ListArray::new received offsets with last value {}, but child series has length {}", offsets.last(), flat_child.len());
             }
             _ => panic!(
                 "ListArray::new expected List datatype, but received field: {}",
                 field
             ),
         }
-        ListArray {
+        Self {
             field,
             flat_child,
             offsets,
@@ -101,7 +101,7 @@ impl ListArray {
 
         growable
             .build()
-            .map(|s| s.downcast::<ListArray>().unwrap().clone())
+            .map(|s| s.downcast::<Self>().unwrap().clone())
     }
 
     pub fn len(&self) -> usize {
@@ -193,6 +193,15 @@ impl<'a> IntoIterator for &'a ListArray {
     type IntoIter = ListArrayIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
+        ListArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
+impl ListArray {
+    pub fn iter(&self) -> ListArrayIter<'_> {
         ListArrayIter {
             array: self,
             idx: 0,

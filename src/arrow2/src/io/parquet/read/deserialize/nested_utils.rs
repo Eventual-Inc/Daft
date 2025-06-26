@@ -252,6 +252,7 @@ pub(super) trait NestedDecoder<'a> {
         &self,
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
+        is_parent_nullable: bool,
     ) -> Result<Self::State>;
 
     /// Initializes a new state
@@ -360,8 +361,9 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     values_remaining: &mut usize,
     decoder: &D,
     chunk_size: Option<usize>,
+    is_parent_nullable: bool,
 ) -> Result<()> {
-    let mut values_page = decoder.build_state(page, dict)?;
+    let mut values_page = decoder.build_state(page, dict, is_parent_nullable)?;
     let mut page = NestedPage::try_new(page)?;
 
     let capacity = chunk_size.unwrap_or(0);
@@ -574,6 +576,7 @@ pub(super) fn next<'a, I, D>(
     values_remaining: &mut usize,
     init: &[InitNested],
     chunk_size: Option<usize>,
+    is_parent_nullable: bool,
     decoder: &D,
 ) -> MaybeNext<Result<(NestedState, D::DecodedState)>>
 where
@@ -624,6 +627,7 @@ where
                 values_remaining,
                 decoder,
                 chunk_size,
+                is_parent_nullable,
             );
             match error {
                 Ok(_) => {}

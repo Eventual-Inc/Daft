@@ -9,7 +9,7 @@ import pytest
 
 import daft
 from daft import DataType
-from daft.context import get_context
+from tests.conftest import get_tests_daft_runner_name
 
 
 class MyObj:
@@ -26,7 +26,7 @@ DATA = {
 }
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_dask_dataframe_all_arrow(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
@@ -44,7 +44,7 @@ def test_to_dask_dataframe_all_arrow(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_dask_dataframe_all_arrow_with_schema(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
@@ -62,7 +62,7 @@ def test_to_dask_dataframe_all_arrow_with_schema(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_dask_dataframe_with_py(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
@@ -80,7 +80,7 @@ def test_to_dask_dataframe_with_py(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_dask_dataframe_with_numpy(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
@@ -101,7 +101,7 @@ def test_to_dask_dataframe_with_numpy(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_dask_dataframe_with_numpy_variable_shaped(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
@@ -122,7 +122,7 @@ def test_to_dask_dataframe_with_numpy_variable_shaped(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_dask_dataframe_all_arrow(n_partitions: int):
     df = pd.DataFrame(DATA)
@@ -134,7 +134,7 @@ def test_from_dask_dataframe_all_arrow(n_partitions: int):
     pd.testing.assert_frame_equal(out_df, df)
 
 
-# @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+# @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.skip()  # dask doesn't seem to work with object types anymore
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_dask_dataframe_tensor(n_partitions: int):
@@ -147,7 +147,7 @@ def test_from_dask_dataframe_tensor(n_partitions: int):
     pd.testing.assert_frame_equal(out_df, df)
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_dask_dataframe_preview(n_partitions: int):
     df = pd.DataFrame(DATA)
@@ -155,10 +155,10 @@ def test_from_dask_dataframe_preview(n_partitions: int):
 
     daft_df = daft.from_dask_dataframe(ddf)
     assert len(daft_df) == 3
-    assert len(daft_df._preview.preview_partition) == 3
+    assert len(daft_df._preview.partition) == 3
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_dask_dataframe_data_longer_than_preview(n_partitions: int):
     df = pd.DataFrame(
@@ -171,4 +171,4 @@ def test_from_dask_dataframe_data_longer_than_preview(n_partitions: int):
 
     daft_df = daft.from_dask_dataframe(ddf)
     assert len(daft_df) == 10
-    assert len(daft_df._preview.preview_partition) == 8
+    assert len(daft_df._preview.partition) == 8

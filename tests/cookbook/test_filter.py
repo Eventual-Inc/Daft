@@ -36,9 +36,8 @@ COL_SUBSET = ["Unique Key", "Complaint Type", "Borough", "Descriptor"]
         ),
     ],
 )
-def test_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Filter the dataframe, retrieve the top N results and select a subset of columns"""
-
+def test_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Filter the dataframe, retrieve the top N results and select a subset of columns."""
     daft_noise_complaints = daft_df_ops(daft_df.repartition(repartition_nparts))
 
     pd_noise_complaints = service_requests_csv_pd_df[
@@ -104,8 +103,8 @@ def test_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_np
         ),
     ],
 )
-def test_complex_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Filter the dataframe with a complex filter and select a subset of columns"""
+def test_complex_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Filter the dataframe with a complex filter and select a subset of columns."""
     daft_noise_complaints_brooklyn = daft_df_ops(daft_df.repartition(repartition_nparts))
 
     pd_noise_complaints_brooklyn = service_requests_csv_pd_df[
@@ -163,8 +162,8 @@ def test_complex_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repart
         ),
     ],
 )
-def test_chain_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Filter the dataframe with a chain of filters and select a subset of columns"""
+def test_chain_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Filter the dataframe with a chain of filters and select a subset of columns."""
     daft_noise_complaints_brooklyn = daft_df_ops(daft_df.repartition(repartition_nparts))
 
     pd_noise_complaints_brooklyn = service_requests_csv_pd_df
@@ -179,7 +178,7 @@ def test_chain_filter(daft_df_ops, daft_df, service_requests_csv_pd_df, repartit
 
 
 def test_filter_on_projection():
-    """Filter the dataframe with on top of a projection"""
+    """Filter the dataframe with on top of a projection."""
     df = daft.from_pydict({"x": [1, 1, 1, 1, 1]})
     df = df.select(col("x") * 2)
     df = df.where(col("x") == 1)

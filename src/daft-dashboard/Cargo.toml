@@ -1,0 +1,24 @@
+[dependencies]
+anyhow = "1.0"
+http-body-util = "0.1"
+hyper = {features = ["full"], version = "1.6"}
+hyper-util = {features = ["tokio"], version = "0.1"}
+include_dir = "0.7.4"
+parking_lot = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+serde_json = "1.0"
+log.workspace = true
+serde.workspace = true
+tokio.workspace = true
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-dashboard"
+edition.workspace = true
+version.workspace = true

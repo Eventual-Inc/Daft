@@ -1,0 +1,122 @@
+name: Build Daft wheel
+run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}'
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: The operating system to build for (ubuntu, macos, or windows)
+        type: string
+      arch:
+        description: The architecture to build for (x86_64 or aarch64)
+        type: string
+      lts:
+        description: Whether to build for long term support
+        type: boolean
+      build_type:
+        description: Value to set RUST_DAFT_PKG_BUILD_TYPE to (release, dev, nightly, etc.)
+        type: string
+
+env:
+  PYTHON_VERSION: 3.11
+  DAFT_ANALYTICS_ENABLED: '0'
+  UV_SYSTEM_PYTHON: 1
+  RUST_DAFT_PKG_BUILD_TYPE: ${{ inputs.build_type }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ${{ inputs.os == 'ubuntu' && 'buildjet-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+    - run: pip install uv
+    - run: uv pip install twine yq setuptools_scm
+
+    - name: Patch package version
+      run: |
+        VERSION="$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)" # replace ".dev" with "-dev" to comply with Cargo SemVer rules
+        echo "Setting package version to: $VERSION"
+        tomlq -i -t ".package.version = \"$VERSION\"" Cargo.toml
+        tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
+
+    - name: Patch name to daft-lts if LTS
+      if: ${{ inputs.lts }}
+      run: tomlq -i -t ".project.name = \"daft-lts\"" pyproject.toml
+
+    - name: Configure RUSTFLAGS for x86
+      if: ${{ (inputs.arch == 'x86_64') }}
+      run: |
+        if [[ "${{ inputs.lts }}" == "true" ]]; then
+          echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b" >> $GITHUB_ENV && \
+          echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16" >> $GITHUB_ENV
+        else
+          echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe -Z tune-cpu=skylake" >> $GITHUB_ENV && \
+          echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe -mtune=skylake" >> $GITHUB_ENV
+        fi
+
+    - name: Build dashboard with Bun
+      working-directory: ./src/daft-dashboard/frontend
+      run: |
+        bun install
+        bun run build
+
+    - name: Build wheels - Mac and Windows x86
+      if: ${{ ((inputs.os == 'macos') || (inputs.os == 'windows')) && (inputs.arch == 'x86_64')  }}
+      uses: PyO3/maturin-action@v1
+      with:
+        target: x86_64
+        args: --profile release-lto --out dist
+      env:
+        GITHUB_ACTIONS: true
+
+    - name: Build wheels - Linux x86
+      if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'x86_64') }}
+      uses: PyO3/maturin-action@v1
+      with:
+        target: x86_64
+        manylinux: 2_24
+        # only produce sdist for linux x86 to avoid multiple copies
+        args: --profile release-lto --out dist --sdist
+      env:
+        GITHUB_ACTIONS: true
+
+    - name: Build wheels - Linux aarch64
+      if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'aarch64') }}
+      uses: PyO3/maturin-action@v1
+      with:
+        target: aarch64-unknown-linux-gnu
+        manylinux: 2_24
+        # only produce sdist for linux x86 to avoid multiple copies
+        args: --profile release-lto --out dist --sdist
+        before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+      env:
+        GITHUB_ACTIONS: true
+
+    - name: Build wheels - Mac aarch64
+      if: ${{ (inputs.os == 'macos') && (inputs.arch == 'aarch64')  }}
+      uses: PyO3/maturin-action@v1
+      with:
+        target: aarch64
+        args: --profile release-lto --out dist
+      env:
+        RUSTFLAGS: -Ctarget-cpu=apple-m1
+        CFLAGS: -mtune=apple-m1
+        GITHUB_ACTIONS: true
+
+    - name: Upload wheels
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}
+        path: dist

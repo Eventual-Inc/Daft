@@ -19,7 +19,7 @@ def gen_aranged_df(num_samples=1_000_000) -> DataFrame:
 
 @pytest.mark.benchmark(group="arithmetic")
 def test_integer_multiplications(gen_aranged_df, benchmark) -> None:
-    """Integer multiplications between 1_000_000 values
+    """Integer multiplications between 1_000_000 values.
 
     Adapted from: https://github.com/duckdb/duckdb/blob/master/benchmark/micro/arithmetic/multiplications.benchmark
     """

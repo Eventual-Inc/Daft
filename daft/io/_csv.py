@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -8,8 +9,6 @@ from daft.daft import (
     CsvSourceConfig,
     FileFormatConfig,
     IOConfig,
-    NativeStorageConfig,
-    PythonStorageConfig,
     StorageConfig,
 )
 from daft.dataframe import DataFrame
@@ -19,9 +18,9 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_csv(
-    path: Union[str, List[str]],
+    path: Union[str, list[str]],
     infer_schema: bool = True,
-    schema: Optional[Dict[str, DataType]] = None,
+    schema: Optional[dict[str, DataType]] = None,
     has_headers: bool = True,
     delimiter: Optional[str] = None,
     double_quote: bool = True,
@@ -29,19 +28,14 @@ def read_csv(
     escape_char: Optional[str] = None,
     comment: Optional[str] = None,
     allow_variable_columns: bool = False,
-    io_config: Optional["IOConfig"] = None,
-    use_native_downloader: bool = True,
-    schema_hints: Optional[Dict[str, DataType]] = None,
+    io_config: Optional[IOConfig] = None,
+    file_path_column: Optional[str] = None,
+    hive_partitioning: bool = False,
+    schema_hints: Optional[dict[str, DataType]] = None,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
-    """Creates a DataFrame from CSV file(s)
-
-    Example:
-        >>> df = daft.read_csv("/path/to/file.csv")
-        >>> df = daft.read_csv("/path/to/directory")
-        >>> df = daft.read_csv("/path/to/files-*.csv")
-        >>> df = daft.read_csv("s3://path/to/files-*.csv")
+    """Creates a DataFrame from CSV file(s).
 
     Args:
         path (str): Path to CSV (allows for wildcards)
@@ -54,11 +48,18 @@ def read_csv(
         comment (str): Character to treat as the start of a comment line, or None to not support comments
         allow_variable_columns (bool): Whether to allow for variable number of columns in the CSV, defaults to False. If set to True, Daft will append nulls to rows with less columns than the schema, and ignore extra columns in rows with more columns
         io_config (IOConfig): Config to be used with the native downloader
-        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
-            is currently experimental.
+        file_path_column: Include the source path(s) as a column with this name. Defaults to None.
+        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
 
-    returns:
+    Returns:
         DataFrame: parsed DataFrame
+
+    Examples:
+        >>> df = daft.read_csv("/path/to/file.csv")
+        >>> df = daft.read_csv("/path/to/directory")
+        >>> df = daft.read_csv("/path/to/files-*.csv")
+        >>> df = daft.read_csv("s3://path/to/files-*.csv")
+
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")
@@ -87,15 +88,15 @@ def read_csv(
         chunk_size=_chunk_size,
     )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
-    if use_native_downloader:
-        storage_config = StorageConfig.native(NativeStorageConfig(True, io_config))
-    else:
-        storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
+    storage_config = StorageConfig(True, io_config)
+
     builder = get_tabular_files_scan(
         path=path,
         infer_schema=infer_schema,
         schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
+        file_path_column=file_path_column,
+        hive_partitioning=hive_partitioning,
     )
     return DataFrame(builder)

@@ -1,7 +1,7 @@
-"""
-Introduces more prefixes into TPCH data files hosted on S3.
+"""Introduces more prefixes into TPCH data files hosted on S3.
+
 This improves S3 read performance. For more details, see:
-https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html
+https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html.
 
 Does this by copying existing files into subfolders, based on file prefix.
 e.g. copies

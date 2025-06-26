@@ -4,12 +4,12 @@ import logging
 from typing import TYPE_CHECKING, Callable
 from urllib.parse import urlparse
 
-import pyarrow as pa
-
+from daft.dependencies import pa
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,20 +55,9 @@ class SQLConnection:
             sql = self.construct_sql_query(sql, limit=0)
         else:
             sql = self.construct_sql_query(sql, limit=infer_schema_length)
-        table = self._execute_sql_query(sql)
+        table = self.execute_sql_query(sql)
         schema = Schema.from_pyarrow_schema(table.schema)
         return schema
-
-    def read(
-        self,
-        sql: str,
-        projection: list[str] | None = None,
-        limit: int | None = None,
-        predicate: str | None = None,
-        partition_bounds: tuple[str, str] | None = None,
-    ) -> pa.Table:
-        sql = self.construct_sql_query(sql, projection, predicate, limit, partition_bounds)
-        return self._execute_sql_query(sql)
 
     def construct_sql_query(
         self,
@@ -78,6 +67,10 @@ class SQLConnection:
         limit: int | None = None,
         partition_bounds: tuple[str, str] | None = None,
     ) -> str:
+        # If all options are None, just return the original sql
+        if projection is None and predicate is None and limit is None and partition_bounds is None:
+            return sql
+
         import sqlglot
 
         target_dialect = self.dialect
@@ -87,13 +80,16 @@ class SQLConnection:
         # sqlglot does not recognize "mssql" as a dialect, it instead recognizes "tsql", which is the SQL dialect for Microsoft SQL Server
         elif target_dialect == "mssql":
             target_dialect = "tsql"
+        # sqlglot does not recognize "awsathena", the dialect registered by PyAthena, SQLAlchemy driver for reading from AWS Athena. It only support "athena"
+        elif target_dialect == "awsathena":
+            target_dialect = "athena"
 
         if not any(target_dialect == supported_dialect.value for supported_dialect in sqlglot.Dialects):
             raise ValueError(
                 f"Unsupported dialect: {target_dialect}, please refer to the documentation for supported dialects."
             )
 
-        query = sqlglot.subquery(sql, "subquery")
+        query = sqlglot.subquery(sql, "subquery", dialect=target_dialect)
 
         if projection is not None:
             query = query.select(*projection)
@@ -130,7 +126,7 @@ class SQLConnection:
                 return True
         return False
 
-    def _execute_sql_query(self, sql: str) -> pa.Table:
+    def execute_sql_query(self, sql: str) -> pa.Table:
         if self._should_use_connectorx():
             return self._execute_sql_query_with_connectorx(sql)
         else:

@@ -1,17 +1,16 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
+use arrow2::bitmap::utils::SlicesIterator;
+use common_error::DaftResult;
+
+use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType},
-    DataType,
+    datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType, DataType},
 };
-use arrow2::bitmap::utils::SlicesIterator;
-use common_error::DaftResult;
-
-use super::{as_arrow::AsArrow, full::FullNull};
 
 impl<T> DataArray<T>
 where
@@ -30,7 +29,6 @@ impl crate::datatypes::PythonArray {
         use pyo3::PyObject;
 
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use crate::datatypes::PythonType;
 
         let mask = mask.as_arrow();
 
@@ -40,7 +38,7 @@ impl crate::datatypes::PythonArray {
                 .map(|x| x.unwrap_or(false))
                 .zip(self.as_arrow().values().iter())
                 .filter_map(|(f, item)| if f { Some(item.clone()) } else { None })
-                .collect::<Vec<PyObject>>()
+                .collect::<Vec<Arc<PyObject>>>()
         };
 
         // Apply the filter mask to the validity bitmap.
@@ -73,7 +71,7 @@ impl crate::datatypes::PythonArray {
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
-        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+        Self::new(self.field().clone().into(), arrow_array)
     }
 }
 

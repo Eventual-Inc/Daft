@@ -3,9 +3,8 @@ mod get;
 use get::GetEvaluator;
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MapExpr {
@@ -15,9 +14,8 @@ pub enum MapExpr {
 impl MapExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use MapExpr::*;
         match self {
-            Get => &GetEvaluator {},
+            Self::Get => &GetEvaluator {},
         }
     }
 }

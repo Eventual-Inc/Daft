@@ -6,7 +6,8 @@ import pytest
 
 import daft
 from daft.daft import CsvConvertOptions
-from daft.table import MicroPartition
+from daft.expressions.expressions import _resolved_col
+from daft.recordbatch import MicroPartition
 
 PRED_PUSHDOWN_FILES = [
     "s3://daft-public-data/test_fixtures/csv-dev/sampled-tpch.csv",
@@ -19,7 +20,7 @@ PRED_PUSHDOWN_FILES = [
     "path, pred, limit",
     product(
         PRED_PUSHDOWN_FILES,
-        [daft.col("L_ORDERKEY") == 7, daft.col("L_ORDERKEY") == 10000, daft.lit(True)],
+        [_resolved_col("L_ORDERKEY") == 7, _resolved_col("L_ORDERKEY") == 10000, daft.lit(True)],
         [None, 1, 1000],
     ),
 )
@@ -42,7 +43,9 @@ def test_csv_filter_pushdowns(path, pred, limit, aws_public_s3_config):
 @pytest.mark.integration()
 @pytest.mark.parametrize(
     "path, pred",
-    product(PRED_PUSHDOWN_FILES, [daft.col("L_ORDERKEY") == 7, daft.col("L_ORDERKEY") == 10000, daft.lit(True)]),
+    product(
+        PRED_PUSHDOWN_FILES, [_resolved_col("L_ORDERKEY") == 7, _resolved_col("L_ORDERKEY") == 10000, daft.lit(True)]
+    ),
 )
 def test_csv_filter_pushdowns_disjoint_predicate(path, pred, aws_public_s3_config):
     with_pushdown = MicroPartition.read_csv(
@@ -57,6 +60,6 @@ def test_csv_filter_pushdowns_disjoint_predicate(path, pred, aws_public_s3_confi
             path, io_config=aws_public_s3_config, convert_options=None, parse_options=None, read_options=None
         )
         .filter([pred])
-        .eval_expression_list([daft.col("L_QUANTITY")])
+        .eval_expression_list([_resolved_col("L_QUANTITY")])
     )
     assert with_pushdown.to_arrow() == after.to_arrow()

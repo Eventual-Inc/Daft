@@ -1,11 +1,15 @@
 [dependencies]
+common-error = {path = "../error"}
 common-hashable-float-wrapper = {path = "../hashable-float-wrapper"}
 common-py-serde = {path = "../py-serde"}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-py-serde/python"]
+python = ["dep:pyo3", "common-py-serde/python", "common-error/python"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

@@ -1,16 +1,25 @@
-use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
+use std::{
+    any::Any,
+    num::ParseIntError,
+    ops::Range,
+    string::FromUtf8Error,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
-
-use hyper::header;
-use lazy_static::lazy_static;
 use regex::Regex;
-use reqwest::header::{CONTENT_LENGTH, RANGE};
+use reqwest_middleware::{
+    reqwest::header::{self, CONTENT_LENGTH, RANGE},
+    ClientBuilder, ClientWithMiddleware,
+};
+use reqwest_retry::{policies::ExponentialBackoff, Jitter, RetryTransientMiddleware};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
+use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
@@ -18,28 +27,24 @@ use crate::{
     FileFormat,
 };
 
-use super::object_io::{GetResult, ObjectSource};
-
 const HTTP_DELIMITER: &str = "/";
 
-lazy_static! {
-    // Taken from: https://stackoverflow.com/a/15926317/3821154
-    static ref HTML_A_TAG_HREF_RE: Regex =
-        Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap();
-}
+static HTML_A_TAG_HREF_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap()
+});
 
 #[derive(Debug, Snafu)]
 enum Error {
     #[snafu(display("Unable to connect to {}: {}", path, source))]
     UnableToConnect {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::Error,
     },
 
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display("Unable to determine size of {}", path))]
@@ -48,11 +53,13 @@ enum Error {
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display("Unable to create Http Client {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
+    UnableToCreateClient {
+        source: reqwest_middleware::reqwest::Error,
+    },
 
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
@@ -70,7 +77,7 @@ enum Error {
     ))]
     UnableToParseUtf8Body {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display(
@@ -86,7 +93,7 @@ enum Error {
 ///
 /// This function will look for `<a href=***>` tags and return all the links that it finds as
 /// absolute URLs
-fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
+fn get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
     let path_url = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
     let metas = HTML_A_TAG_HREF_RE
         .captures_iter(text)
@@ -120,7 +127,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
                     return Ok(None);
                 }
                 _ => (),
-            };
+            }
 
             let filetype = if matched_url.ends_with(HTTP_DELIMITER) {
                 FileType::Directory
@@ -140,26 +147,27 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
     Ok(metas.into_iter().flatten().collect())
 }
 
-pub(crate) struct HttpSource {
-    pub(crate) client: reqwest::Client,
+#[derive(Debug)]
+pub struct HttpSource {
+    pub(crate) client: ClientWithMiddleware,
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{UnableToDetermineSize, UnableToOpenFile};
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404) | Some(410) => super::Error::NotFound {
+                Some(404 | 410) => Self::NotFound {
                     path,
                     source: source.into(),
                 },
-                None | Some(_) => super::Error::UnableToOpenFile {
+                None | Some(_) => Self::UnableToOpenFile {
                     path,
                     source: source.into(),
                 },
             },
-            UnableToDetermineSize { path } => super::Error::UnableToDetermineSize { path },
-            _ => super::Error::Generic {
+            UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
+            _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
             },
@@ -176,14 +184,42 @@ impl HttpSource {
                 .context(UnableToCreateHeaderSnafu)?,
         );
 
-        Ok(HttpSource {
-            client: reqwest::ClientBuilder::default()
-                .pool_max_idle_per_host(70)
-                .default_headers(default_headers)
-                .build()
-                .context(UnableToCreateClientSnafu)?,
+        if let Some(token) = &config.bearer_token {
+            default_headers.append(
+                "Authorization",
+                header::HeaderValue::from_str(&format!("Bearer {}", token.as_string()))
+                    .context(UnableToCreateHeaderSnafu)?,
+            );
         }
-        .into())
+
+        let retry_policy = ExponentialBackoff::builder()
+            .base(2)
+            .jitter(Jitter::Bounded)
+            .retry_bounds(
+                Duration::from_millis(config.retry_initial_backoff_ms),
+                Duration::from_secs(60),
+            )
+            .build_with_max_retries(config.num_tries);
+
+        let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
+            .pool_idle_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(70)
+            .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+            .read_timeout(Duration::from_millis(config.read_timeout_ms))
+            .default_headers(default_headers)
+            .build()
+            .context(UnableToCreateClientSnafu)?;
+
+        // reqwest-retry already comes with a default retry strategy that matches http standards
+        // override it only if you need a custom one due to non standard behavior
+        let retry_middleware = RetryTransientMiddleware::new_with_policy(retry_policy)
+            .with_retry_log_level(tracing::Level::DEBUG);
+
+        let client = ClientBuilder::new(base_client)
+            .with(retry_middleware)
+            .build();
+
+        Ok(Self { client }.into())
     }
 }
 
@@ -212,7 +248,7 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
@@ -252,7 +288,7 @@ impl ObjectSource for HttpSource {
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
 
         let headers = response.headers();
@@ -308,7 +344,7 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu { path })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         // Reconstruct the actual path of the request, which may have been redirected via a 301
@@ -322,14 +358,14 @@ impl ObjectSource for HttpSource {
 
         match response.headers().get("content-type") {
             // If the content-type is text/html, we treat the data on this path as a traversable "directory"
-            Some(header_value) if header_value.to_str().map_or(false, |v| v == "text/html") => {
+            Some(header_value) if header_value.to_str().is_ok_and(|v| v == "text/html") => {
                 let text = response
                     .text()
                     .await
                     .with_context(|_| UnableToParseUtf8BodySnafu {
                         path: path.to_string(),
                     })?;
-                let file_metadatas = _get_file_metadata_from_html(path.as_str(), text.as_str())?;
+                let file_metadatas = get_file_metadata_from_html(path.as_str(), text.as_str())?;
                 Ok(LSResult {
                     files: file_metadatas,
                     continuation_token: None,
@@ -346,6 +382,10 @@ impl ObjectSource for HttpSource {
             }),
         }
     }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -353,9 +393,7 @@ mod tests {
 
     use std::default;
 
-    use crate::object_io::ObjectSource;
-    use crate::HttpSource;
-    use crate::Result;
+    use crate::{object_io::ObjectSource, HttpSource, Result};
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {

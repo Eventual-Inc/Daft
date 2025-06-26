@@ -1,48 +1,54 @@
-use std::borrow::Cow;
-use std::sync::Arc;
+#![expect(
+    clippy::fallible_impl_from,
+    reason = "TODO(andrewgazelka/others): This should really be changed in the future"
+)]
 
-use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field,
-    FixedSizeBinaryArray, NullArray, Utf8Array, Utf8Type,
-};
+use std::{borrow::Cow, sync::Arc};
 
-use crate::array::DataArray;
 use common_error::{DaftError, DaftResult};
+
+use crate::{
+    array::DataArray,
+    datatypes::{
+        BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array, Utf8Type,
+    },
+};
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>
     for DataArray<T>
 {
     fn from(item: (&str, Box<arrow2::array::PrimitiveArray<T::Native>>)) -> Self {
         let (name, array) = item;
-        DataArray::new(Field::new(name, T::get_dtype()).into(), array).unwrap()
+        Self::new(Field::new(name, T::get_dtype()).into(), array).unwrap()
     }
 }
 
 impl From<(&str, Box<arrow2::array::NullArray>)> for NullArray {
     fn from(item: (&str, Box<arrow2::array::NullArray>)) -> Self {
         let (name, array) = item;
-        DataArray::new(Field::new(name, DataType::Null).into(), array).unwrap()
+        Self::new(Field::new(name, DataType::Null).into(), array).unwrap()
     }
 }
 
 impl From<(&str, Box<arrow2::array::Utf8Array<i64>>)> for Utf8Array {
     fn from(item: (&str, Box<arrow2::array::Utf8Array<i64>>)) -> Self {
         let (name, array) = item;
-        DataArray::new(Field::new(name, DataType::Utf8).into(), array).unwrap()
+        Self::new(Field::new(name, DataType::Utf8).into(), array).unwrap()
     }
 }
 
 impl From<(&str, Box<arrow2::array::BinaryArray<i64>>)> for BinaryArray {
     fn from(item: (&str, Box<arrow2::array::BinaryArray<i64>>)) -> Self {
         let (name, array) = item;
-        DataArray::new(Field::new(name, DataType::Binary).into(), array).unwrap()
+        Self::new(Field::new(name, DataType::Binary).into(), array).unwrap()
     }
 }
 
 impl From<(&str, Box<arrow2::array::FixedSizeBinaryArray>)> for FixedSizeBinaryArray {
     fn from(item: (&str, Box<arrow2::array::FixedSizeBinaryArray>)) -> Self {
         let (name, array) = item;
-        DataArray::new(
+        Self::new(
             Field::new(name, DataType::FixedSizeBinary(array.size())).into(),
             array,
         )
@@ -57,7 +63,7 @@ where
     fn from((name, array, length): (&str, I, usize)) -> Self {
         let array = Cow::from(array);
         let array = array.into_owned();
-        DataArray::new(
+        Self::new(
             Field::new(name, DataType::FixedSizeBinary(length)).into(),
             Box::new(arrow2::array::FixedSizeBinaryArray::new(
                 arrow2::datatypes::DataType::FixedSizeBinary(length),
@@ -78,7 +84,7 @@ where
         let arrow_array = Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_slice(
             slice,
         ));
-        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
     }
 }
 
@@ -89,7 +95,7 @@ where
     fn from(item: (&str, Vec<T::Native>)) -> Self {
         let (name, v) = item;
         let arrow_array = Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_vec(v));
-        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
     }
 }
 
@@ -97,7 +103,7 @@ impl From<(&str, &[bool])> for BooleanArray {
     fn from(item: (&str, &[bool])) -> Self {
         let (name, slice) = item;
         let arrow_array = Box::new(arrow2::array::BooleanArray::from_slice(slice));
-        DataArray::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
     }
 }
 
@@ -105,16 +111,16 @@ impl From<(&str, &[Option<bool>])> for BooleanArray {
     fn from(item: (&str, &[Option<bool>])) -> Self {
         let (name, slice) = item;
         let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(
-            slice.iter().cloned(),
+            slice.iter().copied(),
         ));
-        DataArray::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
     }
 }
 
 impl From<(&str, arrow2::array::BooleanArray)> for BooleanArray {
     fn from(item: (&str, arrow2::array::BooleanArray)) -> Self {
         let (name, arrow_array) = item;
-        DataArray::new(
+        Self::new(
             Field::new(name, DataType::Boolean).into(),
             Box::new(arrow_array),
         )
@@ -125,7 +131,7 @@ impl From<(&str, arrow2::array::BooleanArray)> for BooleanArray {
 impl From<(&str, arrow2::bitmap::Bitmap)> for BooleanArray {
     fn from(item: (&str, arrow2::bitmap::Bitmap)) -> Self {
         let (name, bitmap) = item;
-        DataArray::new(
+        Self::new(
             Field::new(name, DataType::Boolean).into(),
             Box::new(arrow2::array::BooleanArray::new(
                 arrow2::datatypes::DataType::Boolean,
@@ -140,21 +146,31 @@ impl From<(&str, arrow2::bitmap::Bitmap)> for BooleanArray {
 impl From<(&str, Box<arrow2::array::BooleanArray>)> for BooleanArray {
     fn from(item: (&str, Box<arrow2::array::BooleanArray>)) -> Self {
         let (name, arrow_array) = item;
-        DataArray::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+    }
+}
+
+impl From<(&str, Vec<arrow2::types::months_days_ns>)> for IntervalArray {
+    fn from(item: (&str, Vec<arrow2::types::months_days_ns>)) -> Self {
+        let (name, vec) = item;
+        let arrow_array =
+            Box::new(arrow2::array::PrimitiveArray::<arrow2::types::months_days_ns>::from_vec(vec));
+        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }
 
 #[cfg(feature = "python")]
-impl From<(&str, Vec<pyo3::PyObject>)> for crate::datatypes::PythonArray {
-    fn from(item: (&str, Vec<pyo3::PyObject>)) -> Self {
+impl From<(&str, Vec<Arc<pyo3::PyObject>>)> for crate::datatypes::PythonArray {
+    fn from(item: (&str, Vec<Arc<pyo3::PyObject>>)) -> Self {
         use crate::array::pseudo_arrow::PseudoArrowArray;
 
         let (name, vec_pyobj) = item;
-        let arrow_array: Box<dyn arrow2::array::Array> = Box::new(
-            PseudoArrowArray::<pyo3::PyObject>::from_pyobj_vec(vec_pyobj),
-        );
+        let arrow_array: Box<dyn arrow2::array::Array> =
+            Box::new(PseudoArrowArray::<Arc<pyo3::PyObject>>::from_pyobj_vec(
+                vec_pyobj,
+            ));
         let field = Field::new(name, DataType::Python);
-        DataArray::new(field.into(), arrow_array).unwrap()
+        Self::new(field.into(), arrow_array).unwrap()
     }
 }
 
@@ -162,7 +178,7 @@ impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
         let arrow_array = Box::new(arrow2::array::Utf8Array::<i64>::from_slice(slice));
-        DataArray::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
     }
 }
 
@@ -170,7 +186,7 @@ impl From<(&str, &[u8])> for BinaryArray {
     fn from(item: (&str, &[u8])) -> Self {
         let (name, slice) = item;
         let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from_slice([slice]));
-        DataArray::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
     }
 }
 
@@ -182,7 +198,7 @@ impl<T: DaftPhysicalType, F: Into<Arc<Field>>> TryFrom<(F, Box<dyn arrow2::array
     fn try_from(item: (F, Box<dyn arrow2::array::Array>)) -> DaftResult<Self> {
         let (field, array) = item;
         let field: Arc<Field> = field.into();
-        DataArray::new(field, array)
+        Self::new(field, array)
     }
 }
 
@@ -210,7 +226,7 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
             data.into(),
             None,
         )?;
-        DataArray::new(
+        Self::new(
             Field::new(name, DataType::Binary).into(),
             Box::new(bin_array),
         )
@@ -221,7 +237,7 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
 impl
     TryFrom<(
         &str,
-        crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>,
+        crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
     )> for crate::datatypes::PythonArray
 {
     type Error = DaftError;
@@ -229,10 +245,10 @@ impl
     fn try_from(
         item: (
             &str,
-            crate::array::pseudo_arrow::PseudoArrowArray<pyo3::PyObject>,
+            crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
         ),
     ) -> DaftResult<Self> {
         let (name, array) = item;
-        DataArray::new(Field::new(name, DataType::Python).into(), Box::new(array))
+        Self::new(Field::new(name, DataType::Python).into(), Box::new(array))
     }
 }

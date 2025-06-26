@@ -10,8 +10,8 @@ from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
 
-def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Loading data from a CSV or Parquet works"""
+def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Loading data from a CSV or Parquet works."""
     pd_slice = service_requests_csv_pd_df
     daft_slice = daft_df.repartition(repartition_nparts)
     daft_pd_df = daft_slice.to_pandas()
@@ -19,7 +19,7 @@ def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
 
 
 def test_load_csv_no_headers(tmp_path: pathlib.Path):
-    """Generate a default set of headers `f0, f1, ... f{n}` when loading a CSV that has no headers"""
+    """Generate a default set of headers `f0, f1, ... f{n}` when loading a CSV that has no headers."""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text("\n".join(pathlib.Path(COOKBOOK_DATA_CSV).read_text().split("\n")[1:]))
     daft_df = daft.read_csv(str(csv), has_headers=False)
@@ -30,7 +30,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
 
 
 def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
-    """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers"""
+    """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a CSV that has no headers."""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text(pathlib.Path(COOKBOOK_DATA_CSV).read_text().replace(",", "\t"))
     daft_df = daft.read_csv(str(csv), delimiter="\t")
@@ -40,7 +40,7 @@ def test_load_csv_tab_delimited(tmp_path: pathlib.Path):
 
 
 def test_load_json(tmp_path: pathlib.Path):
-    """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a JSON file"""
+    """Generate a default set of headers `col_0, col_1, ... col_{n}` when loading a JSON file."""
     json_file = tmp_path / "iris.json"
     pd_df = pd.read_csv(COOKBOOK_DATA_CSV)
     pd_df.to_json(json_file, lines=True, orient="records")

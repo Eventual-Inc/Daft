@@ -1,16 +1,24 @@
 from __future__ import annotations
 
-import pickle
-import random
-import statistics
-from typing import Any, Callable
+import os
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Callable, Union
 
-import pyarrow as pa
+from daft.dependencies import pa
 
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+if TYPE_CHECKING:
+    from daft.expressions import Expression
+
+# Column input type definitions
+ColumnInputType = Union["Expression", str]
+ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
-def in_notebook():
+def get_arrow_version() -> tuple[int, ...]:
+    return tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+
+
+def in_notebook() -> bool:
     """Check if we are in a Jupyter notebook."""
     try:
         from IPython import get_ipython
@@ -24,7 +32,7 @@ def in_notebook():
     return True
 
 
-def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
+def pydict_to_rows(pydict: dict[str, list[Any]]) -> list[frozenset[tuple[str, Any]]]:
     """Converts a dataframe pydict to a list of rows representation.
 
     e.g.
@@ -45,7 +53,9 @@ def pydict_to_rows(pydict: dict[str, list]) -> list[frozenset[tuple[str, Any]]]:
     ]
 
 
-def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
+def freeze(
+    input: dict[Any, Any] | list[Any] | Any,
+) -> frozenset[Any] | tuple[Any, ...] | Any:
     """Freezes mutable containers for equality comparison."""
     if isinstance(input, dict):
         return frozenset((key, freeze(value)) for key, value in input.items())
@@ -55,57 +65,21 @@ def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
         return input
 
 
-def estimate_size_bytes_pylist(pylist: list) -> int:
-    """Estimate the size of this list by sampling and pickling its objects."""
-    if len(pylist) == 0:
-        return 0
-
-    # The pylist is non-empty.
-    # Sample up to 1MB or 10000 items to determine total size.
-    MAX_SAMPLE_QUANTITY = 10000
-    MAX_SAMPLE_SIZE = 1024 * 1024
-
-    sample_candidates = random.sample(pylist, min(len(pylist), MAX_SAMPLE_QUANTITY))
-
-    sampled_sizes = []
-    sample_size_allowed = MAX_SAMPLE_SIZE
-    for sample in sample_candidates:
-        size = len(pickle.dumps(sample))
-        sampled_sizes.append(size)
-        sample_size_allowed -= size
-        if sample_size_allowed <= 0:
-            break
-
-    # Sampling complete.
-    # If we ended up measuring the entire list, just return the exact value.
-    if len(sampled_sizes) == len(pylist):
-        return sum(sampled_sizes)
-
-    # Otherwise, reduce to a one-item estimate and extrapolate.
-    if len(sampled_sizes) == 1:
-        [one_item_size_estimate] = sampled_sizes
-    else:
-        mean, stdev = statistics.mean(sampled_sizes), statistics.stdev(sampled_sizes)
-        one_item_size_estimate = int(mean + stdev)
-
-    return one_item_size_estimate * len(pylist)
-
-
 def map_operator_arrow_semantics_bool(
     operator: Callable[[Any, Any], Any],
-    left_pylist: list,
-    right_pylist: list,
+    left_pylist: list[Any],
+    right_pylist: list[Any],
 ) -> list[bool | None]:
     return [
-        bool(operator(left, right)) if (left is not None and right is not None) else None
+        (bool(operator(left, right)) if (left is not None and right is not None) else None)
         for (left, right) in zip(left_pylist, right_pylist)
     ]
 
 
 def python_list_membership_check(
-    left_pylist: list,
-    right_pylist: list,
-) -> list:
+    left_pylist: list[Any],
+    right_pylist: list[Any],
+) -> list[Any]:
     try:
         right_pyset = set(right_pylist)
         return [elem in right_pyset for elem in left_pylist]
@@ -113,15 +87,15 @@ def python_list_membership_check(
         return [elem in right_pylist for elem in left_pylist]
 
 
-def python_list_between_check(value_pylist: list, lower_pylist: list, upper_pylist: list) -> list:
+def python_list_between_check(value_pylist: list[Any], lower_pylist: list[Any], upper_pylist: list[Any]) -> list[Any]:
     return [value <= upper and value >= lower for value, lower, upper in zip(value_pylist, lower_pylist, upper_pylist)]
 
 
 def map_operator_arrow_semantics(
     operator: Callable[[Any, Any], Any],
-    left_pylist: list,
-    right_pylist: list,
-) -> list:
+    left_pylist: list[Any],
+    right_pylist: list[Any],
+) -> list[Any]:
     return [
         operator(left, right) if (left is not None and right is not None) else None
         for (left, right) in zip(left_pylist, right_pylist)
@@ -130,6 +104,45 @@ def map_operator_arrow_semantics(
 
 def pyarrow_supports_fixed_shape_tensor() -> bool:
     """Whether pyarrow supports the fixed_shape_tensor canonical extension type."""
-    from daft.context import get_context
+    return hasattr(pa, "fixed_shape_tensor")
 
-    return hasattr(pa, "fixed_shape_tensor") and (not get_context().is_ray_runner or ARROW_VERSION >= (13, 0, 0))
+
+# Column utility functions
+def is_column_input(x: Any) -> bool:
+    from daft.expressions import Expression
+
+    return isinstance(x, str) or isinstance(x, Expression)
+
+
+def column_inputs_to_expressions(columns: ManyColumnsInputType) -> list[Expression]:
+    """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
+
+    In addition, they may be strings or Expressions.
+    This method normalizes the inputs to a list of Expressions.
+    """
+    from daft.expressions import col
+
+    column_iter: Iterable[ColumnInputType] = [columns] if is_column_input(columns) else columns  # type: ignore
+    return [col(c) if isinstance(c, str) else c for c in column_iter]
+
+
+def detect_ray_state() -> bool:
+    ray_is_initialized = False
+    ray_is_in_job = False
+    in_ray_worker = False
+    try:
+        import ray
+
+        if ray.is_initialized():
+            ray_is_initialized = True
+            # Check if running inside a Ray worker
+            if ray._private.worker.global_worker.mode == ray.WORKER_MODE:
+                in_ray_worker = True
+        # In a Ray job, Ray might not be initialized yet but we can pick up an environment variable as a heuristic here
+        elif os.getenv("RAY_JOB_ID") is not None:
+            ray_is_in_job = True
+
+    except ImportError:
+        pass
+
+    return not in_ray_worker and (ray_is_initialized or ray_is_in_job)

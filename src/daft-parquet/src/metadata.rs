@@ -4,10 +4,8 @@ use common_error::DaftResult;
 use daft_core::datatypes::Field;
 use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_io::{IOClient, IOStatsRef};
-
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
-use parquet2::schema::types::ParquetType;
-use parquet2::{metadata::RowGroupList, read::deserialize_metadata};
+use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
@@ -26,9 +24,9 @@ impl TreeNode for ParquetTypeWrapper {
         match &self.0 {
             ParquetType::PrimitiveType(..) => Ok(TreeNodeRecursion::Jump),
             ParquetType::GroupType { fields, .. } => {
-                for child in fields.iter() {
+                for child in fields {
                     // TODO: Expensive clone here because of ParquetTypeWrapper type, can we get rid of this?
-                    match op(&ParquetTypeWrapper(child.clone()))? {
+                    match op(&Self(child.clone()))? {
                         TreeNodeRecursion::Continue => {}
                         TreeNodeRecursion::Jump => return Ok(TreeNodeRecursion::Continue),
                         TreeNodeRecursion::Stop => return Ok(TreeNodeRecursion::Stop),
@@ -52,19 +50,15 @@ impl TreeNode for ParquetTypeWrapper {
                 logical_type,
                 converted_type,
                 fields,
-            } => Ok(Transformed::yes(ParquetTypeWrapper(
-                ParquetType::GroupType {
-                    fields: fields
-                        .into_iter()
-                        .map(|child| {
-                            transform(ParquetTypeWrapper(child)).map(|wrapper| wrapper.data.0)
-                        })
-                        .collect::<DaftResult<Vec<_>>>()?,
-                    field_info,
-                    logical_type,
-                    converted_type,
-                },
-            ))),
+            } => Ok(Transformed::yes(Self(ParquetType::GroupType {
+                fields: fields
+                    .into_iter()
+                    .map(|child| transform(Self(child)).map(|wrapper| wrapper.data.0))
+                    .collect::<DaftResult<Vec<_>>>()?,
+                field_info,
+                logical_type,
+                converted_type,
+            }))),
         }
     }
 }
@@ -111,16 +105,15 @@ fn rewrite_parquet_type_with_field_id_mapping(
                         fields.retain(|f| {
                             f.get_field_info()
                                 .id
-                                .map(|field_id| field_id_mapping.contains_key(&field_id))
-                                .unwrap_or(false)
+                                .is_some_and(|field_id| field_id_mapping.contains_key(&field_id))
                         });
                     }
-                };
+                }
 
                 return Ok(Transformed::yes(pq_type));
             }
         }
-    };
+    }
     Ok(Transformed::no(pq_type))
 }
 
@@ -131,10 +124,7 @@ fn apply_field_ids_to_parquet_type(
     field_id_mapping: &BTreeMap<i32, Field>,
 ) -> Option<ParquetType> {
     let field_id = parquet_type.get_field_info().id;
-    if field_id
-        .map(|field_id| field_id_mapping.contains_key(&field_id))
-        .unwrap_or(false)
-    {
+    if field_id.is_some_and(|field_id| field_id_mapping.contains_key(&field_id)) {
         let rewritten_pq_type = ParquetTypeWrapper(parquet_type)
             .transform(&|pq_type| {
                 rewrite_parquet_type_with_field_id_mapping(pq_type, field_id_mapping)
@@ -184,10 +174,10 @@ fn apply_field_ids_to_parquet_file_metadata(
         })
         .collect::<BTreeMap<_, _>>();
 
-    let new_row_groups_list = file_metadata
+    let new_row_groups = file_metadata
         .row_groups
-        .into_values()
-        .map(|rg| {
+        .iter()
+        .map(|(_, rg)| {
             let new_columns = rg
                 .columns()
                 .iter()
@@ -213,9 +203,8 @@ fn apply_field_ids_to_parquet_file_metadata(
                 new_total_uncompressed_size,
             )
         })
-        .collect::<Vec<RowGroupMetaData>>();
-
-    let new_row_groups = RowGroupList::from_iter(new_row_groups_list.into_iter().enumerate());
+        .enumerate()
+        .collect();
 
     Ok(FileMetaData {
         row_groups: new_row_groups,
@@ -269,20 +258,18 @@ pub(crate) async fn read_parquet_metadata(
         });
     }
 
-    let remaining;
-    if footer_len < buffer.len() {
+    let remaining = if footer_len < buffer.len() {
         // the whole metadata is in the bytes we already read
-        remaining = buffer.len() - footer_len;
+        buffer.len() - footer_len
     } else {
         // the end of file read by default is not long enough, read again including the metadata.
-
         let start = size.saturating_sub(footer_len);
         data = io_client
             .single_url_get(uri.into(), Some(start..size), io_stats)
             .await?
             .bytes()
             .await?;
-        remaining = data.len() - footer_len;
+        data.len() - footer_len
     };
 
     let buffer = data.as_ref();

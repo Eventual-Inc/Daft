@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import copy
+import gc
+import os
 from collections import Counter
 from datetime import date, datetime
 
 import numpy as np
+import psutil
 import pyarrow as pa
 import pytest
 
@@ -202,3 +205,112 @@ def test_series_bincode_serdes_on_null_types() -> None:
     assert s.name() == copied_s.name()
     assert s.datatype() == copied_s.datatype()
     assert s.to_pylist() == copied_s.to_pylist()
+
+
+def test_series_numpy_datetime64_datetime():
+    from datetime import datetime
+
+    py_datetimes = [
+        datetime(2020, 10, 1, 12, 30, 45),
+        datetime(2021, 10, 2, 13, 31, 46),
+        datetime(2022, 10, 3, 14, 32, 47),
+        datetime(2023, 10, 4, 15, 33, 48),
+        datetime(2024, 10, 5, 16, 34, 49),
+        datetime(2025, 10, 6, 17, 35, 50),
+    ]
+    for format_ in ["s", "ms", "us", "ns"]:
+        list_from_datetimes = [np.datetime64(dt, format_) for dt in py_datetimes]
+        # test from_pylist
+        s1 = Series.from_pylist(list_from_datetimes)
+        assert s1.to_pylist() == py_datetimes
+        # test from_numpy
+        s2 = Series.from_numpy(np.array(list_from_datetimes))
+        assert s2.to_pylist() == py_datetimes
+
+
+def test_series_numpy_datetime64_date():
+    from datetime import datetime
+
+    py_datetimes = [
+        datetime(2020, 10, 1, 12, 30, 45),
+        datetime(2021, 10, 2, 13, 31, 46),
+        datetime(2022, 10, 3, 14, 32, 47),
+        datetime(2023, 10, 4, 15, 33, 48),
+        datetime(2024, 10, 5, 16, 34, 49),
+        datetime(2025, 10, 6, 17, 35, 50),
+    ]
+    py_dates = [dt.date() for dt in py_datetimes]
+    for format_ in ["D"]:
+        # make list of numpy datetime64
+        list_from_datetimes = [np.datetime64(dt, format_) for dt in py_datetimes]
+        list_from_dates = [np.datetime64(d, format_) for d in py_dates]
+        # test from_pylist
+        s1 = Series.from_pylist(list_from_datetimes)
+        s2 = Series.from_pylist(list_from_dates)
+        assert s1.to_pylist() == py_dates
+        assert s2.to_pylist() == py_dates
+        # test from_numpy
+        s3 = Series.from_numpy(np.array(list_from_datetimes))
+        s4 = Series.from_numpy(np.array(list_from_dates))
+        assert s3.to_pylist() == py_dates
+        assert s4.to_pylist() == py_dates
+
+
+def test_series_iter() -> None:
+    arrow = pa.array([1, 2, 3, None, 5, None])
+    s = Series.from_arrow(arrow)
+    for original, iterated in zip(arrow, s):
+        assert original.as_py() == iterated
+
+
+def get_memory_usage() -> float:
+    """Get the current memory usage in MiB."""
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / (1024 * 1024)
+
+
+def test_series_iter_memory_efficiency() -> None:
+    # Create a Series with 1 million elements.
+    n = 1000_000
+    arrow = pa.array(list(range(n)))
+    s = Series.from_arrow(arrow)
+    sum_using_iter = 0
+    sum_using_pylist = 0
+
+    # Force garbage collection before measurements.
+    gc.collect()
+
+    # Test 1: Using iterator.
+    iter_memory_before = get_memory_usage()
+    iter_peak_memory = 0
+    for i, item in enumerate(s):
+        sum_using_iter += item or 0
+        # Periodically check peak memory usage.
+        if i % 100_000 == 0:
+            current_memory = get_memory_usage() - iter_memory_before
+            iter_peak_memory = max(iter_peak_memory, current_memory)
+
+    current_memory = get_memory_usage() - iter_memory_before
+    iter_peak_memory = max(iter_peak_memory, current_memory)
+
+    # Force garbage collection before the next test.
+    gc.collect()
+
+    # Test 2: Using to_pylist().
+    pylist_memory_before = get_memory_usage()
+    pylist_peak_memory = 0
+    py_list = s.to_pylist()
+    for i, item in enumerate(py_list):
+        sum_using_pylist += item or 0
+        # Periodically check peak memory usage.
+        if i % 100_000 == 0:
+            current_memory = get_memory_usage() - pylist_memory_before
+            pylist_peak_memory = max(pylist_peak_memory, current_memory)
+
+    current_memory = get_memory_usage() - pylist_memory_before
+    pylist_peak_memory = max(pylist_peak_memory, current_memory)
+
+    # Check correctness.
+    assert sum_using_iter == sum_using_pylist
+    # Assert that the iterator uses less memory.
+    assert iter_peak_memory < pylist_peak_memory, "Iterator should use less memory than to_pylist()"

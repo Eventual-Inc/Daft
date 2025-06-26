@@ -1,16 +1,11 @@
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    utils::arrow::cast_array_for_daft_if_needed,
-    Series,
-};
-use daft_dsl::Expr;
-use daft_table::Table;
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_dsl::{expr::bound_expr::BoundExpr, Expr};
+use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
-
 use rayon::{prelude::*, ThreadPoolBuilder};
 use serde_json::value::RawValue;
 use snafu::ResultExt;
@@ -33,7 +28,7 @@ pub fn read_json_local(
     parse_options: Option<JsonParseOptions>,
     read_options: Option<JsonReadOptions>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
     // SAFETY: mmapping is inherently unsafe.
@@ -89,7 +84,7 @@ impl<'a> JsonReader<'a> {
             .and_then(|options| options.schema.as_ref())
         {
             Some(schema) => schema.clone(),
-            None => Arc::new(Schema::try_from(&infer_schema(bytes, None, None)?)?),
+            None => Arc::new(infer_schema(bytes, None, None)?.into()),
         };
 
         let pool = if let Some(max_in_flight) = max_chunks_in_flight {
@@ -116,15 +111,15 @@ impl<'a> JsonReader<'a> {
         })
     }
 
-    pub fn finish(&self) -> DaftResult<Table> {
+    pub fn finish(&self) -> DaftResult<RecordBatch> {
         let mut bytes = self.bytes;
         let mut n_threads = self.n_threads;
         let mut total_rows = 128;
 
         if let Some((mean, std)) = get_line_stats_json(bytes, self.sample_size) {
-            let line_length_upper_bound = mean + 1.1 * std;
+            let line_length_upper_bound = 1.1f32.mul_add(std, mean);
 
-            total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+            total_rows = (bytes.len() as f32 / 0.01f32.mul_add(-std, mean)) as usize;
             if let Some(n_rows) = self.n_rows {
                 total_rows = std::cmp::min(n_rows, total_rows);
                 // the guessed upper bound of the no. of bytes in the file
@@ -132,7 +127,7 @@ impl<'a> JsonReader<'a> {
 
                 if n_bytes < bytes.len() {
                     if let Some(pos) = next_line_position(&bytes[n_bytes..]) {
-                        bytes = &bytes[..n_bytes + pos]
+                        bytes = &bytes[..n_bytes + pos];
                     }
                 }
             }
@@ -153,7 +148,7 @@ impl<'a> JsonReader<'a> {
                     let chunk = &bytes[start..stop];
                     self.parse_json_chunk(chunk, chunk_size)
                 })
-                .collect::<DaftResult<Vec<Table>>>()
+                .collect::<DaftResult<Vec<RecordBatch>>>()
         })?;
 
         let tbl = tables_concat(tbls)?;
@@ -163,15 +158,15 @@ impl<'a> JsonReader<'a> {
             if tbl.len() > limit {
                 return tbl.head(limit);
             }
-        };
+        }
         Ok(tbl)
     }
 
-    fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<Table> {
+    fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<RecordBatch> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
-        let daft_fields = self.schema.fields.values().map(|f| Arc::new(f.clone()));
+        let daft_fields = self.schema.into_iter().cloned().map(Arc::new);
 
         let arrow_schema = self.schema.to_arrow()?;
 
@@ -202,7 +197,7 @@ impl<'a> JsonReader<'a> {
 
             match v {
                 Value::Object(record) => {
-                    for (s, inner) in columns.iter_mut() {
+                    for (s, inner) in &mut columns {
                         match record.get(s) {
                             Some(value) => {
                                 deserialize_into(inner, &[value]);
@@ -212,7 +207,7 @@ impl<'a> JsonReader<'a> {
                                     string: "Field not found in schema".to_string(),
                                 })?;
                             }
-                        };
+                        }
                     }
                 }
                 _ => {
@@ -230,17 +225,15 @@ impl<'a> JsonReader<'a> {
             .zip(daft_fields)
             .map(|(mut ma, fld)| {
                 let arr = ma.as_box();
-                Series::try_from_field_and_arrow_array(
-                    fld.clone(),
-                    cast_array_for_daft_if_needed(arr),
-                )
+                Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = Table::new_unchecked(self.schema.clone(), columns, num_rows);
+        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
 
         if let Some(pred) = &self.predicate {
-            tbl.filter(&[pred.clone()])
+            let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;
+            tbl.filter(&[pred])
         } else {
             Ok(tbl)
         }
@@ -373,8 +366,8 @@ fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
     let n_samples = lengths.len();
     let mean = (n_read as f32) / (n_samples as f32);
     let mut std = 0.0;
-    for &len in lengths.iter() {
-        std += (len as f32 - mean).pow(2.0)
+    for &len in &lengths {
+        std += (len as f32 - mean).pow(2.0);
     }
     std = (std / n_samples as f32).sqrt();
     Some((mean, std))
@@ -443,10 +436,11 @@ fn next_line_position(input: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arrow2::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
     };
+
+    use super::*;
 
     #[test]
     fn test_infer_schema() {
@@ -467,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_infer_schema_empty() {
-        let json = r#""#;
+        let json = r"";
 
         let result = infer_schema(json.as_bytes(), None, None);
         let expected_schema = ArrowSchema::from(vec![]);

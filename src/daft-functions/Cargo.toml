@@ -1,29 +1,25 @@
 [dependencies]
-arrow2 = {workspace = true}
-base64 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
-futures = {workspace = true}
+daft-hash = {workspace = true}
+num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-tiktoken-rs = {workspace = true}
-tokio = {workspace = true}
-typetag = "0.2.16"
-uuid = "1.10.0"
-bytes.workspace = true
+typetag = {workspace = true}
+xxhash-rust = {workspace = true, features = ["xxh64"]}
 serde.workspace = true
 snafu.workspace = true
 
 [features]
 python = [
-  "dep:pyo3",
   "common-error/python",
   "daft-core/python",
-  "daft-io/python",
-  "common-io-config/python"
+  "daft-dsl/python",
+  "dep:pyo3"
 ]
+
+[lints]
+workspace = true
 
 [package]
 name = "daft-functions"

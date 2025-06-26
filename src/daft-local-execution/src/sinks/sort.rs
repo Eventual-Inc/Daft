@@ -1,65 +1,142 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use itertools::Itertools;
+use tracing::{instrument, Span};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use crate::pipeline::PipelineResultType;
-pub struct SortSink {
-    sort_by: Vec<ExprRef>,
-    descending: Vec<bool>,
-    state: SortState,
-}
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
+};
+use crate::ExecutionTaskSpawner;
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
-    #[allow(dead_code)]
-    Done(Arc<MicroPartition>),
+    Done,
+}
+
+impl SortState {
+    fn push(&mut self, part: Arc<MicroPartition>) {
+        if let Self::Building(ref mut parts) = self {
+            parts.push(part);
+        } else {
+            panic!("SortSink should be in Building state");
+        }
+    }
+
+    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+        let res = if let Self::Building(ref mut parts) = self {
+            std::mem::take(parts)
+        } else {
+            panic!("SortSink should be in Building state");
+        };
+        *self = Self::Done;
+        res
+    }
+}
+
+impl BlockingSinkState for SortState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+struct SortParams {
+    sort_by: Vec<BoundExpr>,
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
+}
+pub struct SortSink {
+    params: Arc<SortParams>,
 }
 
 impl SortSink {
-    pub fn new(sort_by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
+    pub fn new(sort_by: Vec<BoundExpr>, descending: Vec<bool>, nulls_first: Vec<bool>) -> Self {
         Self {
-            sort_by,
-            descending,
-            state: SortState::Building(vec![]),
+            params: Arc::new(SortParams {
+                sort_by,
+                descending,
+                nulls_first,
+            }),
         }
-    }
-    pub fn boxed(self) -> Box<dyn BlockingSink> {
-        Box::new(self)
     }
 }
 
 impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::sink")]
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        if let SortState::Building(parts) = &mut self.state {
-            parts.push(input.clone());
-        } else {
-            panic!("SortSink should be in Building state");
-        }
-        Ok(BlockingSinkStatus::NeedMoreInput)
+    fn sink(
+        &self,
+        input: Arc<MicroPartition>,
+        mut state: Box<dyn BlockingSinkState>,
+        _spawner: &ExecutionTaskSpawner,
+    ) -> BlockingSinkSinkResult {
+        state
+            .as_any_mut()
+            .downcast_mut::<SortState>()
+            .expect("SortSink should have sort state")
+            .push(input);
+        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
-        if let SortState::Building(parts) = &mut self.state {
-            assert!(
-                !parts.is_empty(),
-                "We can not finalize SortSink with no data"
-            );
-            let concated =
-                MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
-            let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
-            self.state = SortState::Done(sorted.clone());
-            Ok(Some(sorted.into()))
-        } else {
-            panic!("SortSink should be in Building state");
-        }
+    fn finalize(
+        &self,
+        states: Vec<Box<dyn BlockingSinkState>>,
+        spawner: &ExecutionTaskSpawner,
+    ) -> BlockingSinkFinalizeResult {
+        let params = self.params.clone();
+        spawner
+            .spawn(
+                async move {
+                    let parts = states.into_iter().flat_map(|mut state| {
+                        let state = state
+                            .as_any_mut()
+                            .downcast_mut::<SortState>()
+                            .expect("State type mismatch");
+                        state.finalize()
+                    });
+                    let concated = MicroPartition::concat(parts)?;
+                    let sorted = Arc::new(concated.sort(
+                        &params.sort_by,
+                        &params.descending,
+                        &params.nulls_first,
+                    )?);
+                    Ok(Some(sorted))
+                },
+                Span::current(),
+            )
+            .into()
     }
+
     fn name(&self) -> &'static str {
-        "SortResult"
+        "Sort"
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut lines = vec![];
+        assert!(!self.params.sort_by.is_empty());
+        let pairs = self
+            .params
+            .sort_by
+            .iter()
+            .zip(self.params.descending.iter())
+            .zip(self.params.nulls_first.iter())
+            .map(|((sb, d), nf)| {
+                format!(
+                    "({}, {}, {})",
+                    sb,
+                    if *d { "descending" } else { "ascending" },
+                    if *nf { "nulls first" } else { "nulls last" }
+                )
+            })
+            .join(", ");
+        lines.push(format!("Sort: Sort by = {}", pairs));
+        lines
+    }
+
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+        Ok(Box::new(SortState::Building(Vec::new())))
     }
 }

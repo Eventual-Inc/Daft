@@ -1,0 +1,23 @@
+[dependencies]
+daft-catalog = {path = "../daft-catalog"}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl"}
+daft-logical-plan = {path = "../daft-logical-plan"}
+pyo3 = {workspace = true, optional = true}
+uuid.workspace = true
+
+[features]
+python = [
+  "dep:pyo3",
+  "daft-catalog/python",
+  "daft-core/python",
+  "daft-logical-plan/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-session"
+edition.workspace = true
+version.workspace = true

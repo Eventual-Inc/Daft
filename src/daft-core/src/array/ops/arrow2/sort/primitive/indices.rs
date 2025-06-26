@@ -10,6 +10,7 @@ pub fn indices_sorted_unstable_by<I, T, F>(
     array: &PrimitiveArray<T>,
     cmp: F,
     descending: bool,
+    nulls_first: bool,
 ) -> PrimitiveArray<I>
 where
     I: Index,
@@ -29,6 +30,7 @@ where
             },
             array.len(),
             descending,
+            nulls_first,
         )
     }
 }

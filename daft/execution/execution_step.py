@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import itertools
-import pathlib
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Generic, Protocol
+from typing import TYPE_CHECKING, Any, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
+from daft.daft import JoinSide, PyRecordBatch, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical.map_partition_ops import MapPartitionOp
-from daft.logical.schema import Schema
+from daft.filesystem import overwrite_files
+from daft.io.sink import WriteResultType
+from daft.recordbatch import MicroPartition, RecordBatch, recordbatch_io
 from daft.runners.partitioning import (
     Boundaries,
     MaterializedResult,
@@ -17,11 +17,18 @@ from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionT,
 )
-from daft.table import MicroPartition, table_io
+from daft.series import Series
 
 if TYPE_CHECKING:
+    import pathlib
+
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.io import DataSink
+    from daft.logical.map_partition_ops import MapPartitionOp
+    from daft.logical.schema import Schema
 
 
 ID_GEN = itertools.count()
@@ -43,6 +50,20 @@ class PartitionTask(Generic[PartitionT]):
     num_results: int
     stage_id: int
     partial_metadatas: list[PartialPartitionMetadata]
+
+    # Indicates that this PartitionTask must be executed on the executor with the supplied ID
+    # This is used when a specific executor (e.g. an Actor pool) must be provisioned and used for the task
+    actor_pool_id: str | None
+
+    # Indicates that the metadata of the result partition should be cached when the task is done
+    cache_metadata_on_done: bool = True
+
+    # Indicates if the PartitionTask is "done" or not
+    is_done: bool = False
+
+    # Desired node_id to schedule this task on
+    node_id: str | None = None
+
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -50,14 +71,29 @@ class PartitionTask(Generic[PartitionT]):
 
     def done(self) -> bool:
         """Whether the PartitionT result of this task is available."""
-        raise NotImplementedError()
+        return self.is_done
+
+    def set_done(self) -> None:
+        """Sets the PartitionTask as done."""
+        assert not self.is_done, "Cannot set PartitionTask as done more than once"
+        self.is_done = True
+        if self.cache_metadata_on_done:
+            self.cache_metadata()
 
     def cancel(self) -> None:
         """If possible, cancel the execution of this PartitionTask."""
         raise NotImplementedError()
 
+    def cache_metadata(self) -> None:
+        """Cache the metadata of the result partition."""
+        raise NotImplementedError()
+
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
-        """Set the result of this Task. For use by the Task executor."""
+        """Set the result of this Task. For use by the Task executor.
+
+        NOTE: A PartitionTask may contain a `result` without being `.done()`. This is because
+        results can potentially contain futures which are yet to be completed.
+        """
         raise NotImplementedError
 
     def is_empty(self) -> bool:
@@ -87,8 +123,10 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         inputs: list[PartitionT],
         partial_metadatas: list[PartialPartitionMetadata] | None,
         resource_request: ResourceRequest = ResourceRequest(),
+        actor_pool_id: str | None = None,
+        node_id: str | None = None,
     ) -> None:
-        self.inputs = inputs
+        self.inputs: list[PartitionT] = inputs
         if partial_metadatas is not None:
             self.partial_metadatas = partial_metadatas
         else:
@@ -96,6 +134,8 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.resource_request: ResourceRequest = resource_request
         self.instructions: list[Instruction] = list()
         self.num_results = len(inputs)
+        self.actor_pool_id = actor_pool_id
+        self.node_id = node_id
 
     def add_instruction(
         self,
@@ -113,7 +153,9 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         """Whether this partition task is guaranteed to result in an empty partition."""
         return len(self.partial_metadatas) > 0 and all(meta.num_rows == 0 for meta in self.partial_metadatas)
 
-    def finalize_partition_task_single_output(self, stage_id: int) -> SingleOutputPartitionTask[PartitionT]:
+    def finalize_partition_task_single_output(
+        self, stage_id: int, cache_metadata_on_done: bool = True
+    ) -> SingleOutputPartitionTask[PartitionT]:
         """Create a SingleOutputPartitionTask from this PartitionTaskBuilder.
 
         Returns a "frozen" version of this PartitionTask that cannot have instructions added.
@@ -133,9 +175,14 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=1,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
+            actor_pool_id=self.actor_pool_id,
+            node_id=self.node_id,
+            cache_metadata_on_done=cache_metadata_on_done,
         )
 
-    def finalize_partition_task_multi_output(self, stage_id: int) -> MultiOutputPartitionTask[PartitionT]:
+    def finalize_partition_task_multi_output(
+        self, stage_id: int, cache_metadata_on_done: bool = True
+    ) -> MultiOutputPartitionTask[PartitionT]:
         """Create a MultiOutputPartitionTask from this PartitionTaskBuilder.
 
         Same as finalize_partition_task_single_output, except the output of this PartitionTask is a list of partitions.
@@ -153,6 +200,9 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=self.num_results,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
+            actor_pool_id=self.actor_pool_id,
+            node_id=self.node_id,
+            cache_metadata_on_done=cache_metadata_on_done,
         )
 
     def __str__(self) -> str:
@@ -170,14 +220,12 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
 
     # When available, the partition created from running the PartitionTask.
     _result: None | MaterializedResult[PartitionT] = None
+    _partition_metadata: None | PartitionMetadata = None
 
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._result is None, f"Cannot set result twice. Result is already {self._result}"
         [partition] = result
         self._result = partition
-
-    def done(self) -> bool:
-        return self._result is not None
 
     def result(self) -> MaterializedResult[PartitionT]:
         assert self._result is not None, "Cannot call .result() on a PartitionTask that is not done"
@@ -192,13 +240,22 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         """Get the PartitionT resulting from running this PartitionTask."""
         return self.result().partition()
 
+    def cache_metadata(self) -> None:
+        assert self._result is not None, "Cannot cache metadata without a result"
+        if self._partition_metadata is not None:
+            return
+
+        [partial_metadata] = self.partial_metadatas
+        self._partition_metadata = self.result().metadata().merge_with_partial(partial_metadata)
+
     def partition_metadata(self) -> PartitionMetadata:
         """Get the metadata of the result partition.
 
         (Avoids retrieving the actual partition itself if possible.)
         """
-        [partial_metadata] = self.partial_metadatas
-        return self.result().metadata().merge_with_partial(partial_metadata)
+        self.cache_metadata()
+        assert self._partition_metadata is not None
+        return self._partition_metadata
 
     def micropartition(self) -> MicroPartition:
         """Get the raw vPartition of the result."""
@@ -213,19 +270,19 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
 
 @dataclass
 class MultiOutputPartitionTask(PartitionTask[PartitionT]):
-    """A PartitionTask that is ready to run. More instructions cannot be added.
+    """A PartitionTask that is ready to run.
+
+    More instructions cannot be added.
     This PartitionTask will return a list of any number of partitions.
     """
 
     # When available, the partitions created from running the PartitionTask.
     _results: None | list[MaterializedResult[PartitionT]] = None
+    _partition_metadatas: None | list[PartitionMetadata] = None
 
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
         self._results = result
-
-    def done(self) -> bool:
-        return self._results is not None
 
     def cancel(self) -> None:
         if self._results is not None:
@@ -237,16 +294,24 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._results is not None
         return [result.partition() for result in self._results]
 
+    def cache_metadata(self) -> None:
+        assert self._results is not None, "Cannot cache metadata without a result"
+        if self._partition_metadatas is not None:
+            return
+
+        self._partition_metadatas = [
+            result.metadata().merge_with_partial(partial_metadata)
+            for result, partial_metadata in zip(self._results, self.partial_metadatas)
+        ]
+
     def partition_metadatas(self) -> list[PartitionMetadata]:
         """Get the metadata of the result partitions.
 
         (Avoids retrieving the actual partition itself if possible.)
         """
-        assert self._results is not None
-        return [
-            result.metadata().merge_with_partial(partial_metadata)
-            for result, partial_metadata in zip(self._results, self.partial_metadatas)
-        ]
+        self.cache_metadata()
+        assert self._partition_metadatas is not None
+        return self._partition_metadatas
 
     def micropartition(self, index: int) -> MicroPartition:
         """Get the raw vPartition of the result."""
@@ -362,7 +427,7 @@ class WriteFile(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_tabular(
+        return recordbatch_io.write_tabular(
             input,
             path=self.root_dir,
             schema=self.schema,
@@ -374,11 +439,41 @@ class WriteFile(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class OverwriteFiles(SingleOutputInstruction):
+    overwrite_partitions: bool
+    root_dir: str | pathlib.Path
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        files_to_overwrite = []
+        for input in inputs:
+            files_to_overwrite.extend(input.get_column_by_name("path").to_pylist())
+        overwrite_files(
+            files_to_overwrite,
+            self.root_dir,
+            self.io_config,
+            self.overwrite_partitions,
+        )
+        return [MicroPartition.concat(inputs)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        input_rows = [_.num_rows for _ in input_metadatas]
+        input_sizes = [_.size_bytes for _ in input_metadatas]
+        return [
+            PartialPartitionMetadata(
+                num_rows=(sum(input_rows) if all(_ is not None for _ in input_rows) else None),
+                size_bytes=(sum(input_sizes) if all(_ is not None for _ in input_sizes) else None),
+            )
+        ]
+
+
+@dataclass(frozen=True)
 class WriteIceberg(SingleOutputInstruction):
     base_path: str
     iceberg_schema: IcebergSchema
     iceberg_properties: IcebergTableProperties
-    spec_id: int
+    partition_spec_id: int
+    partition_cols: ExpressionsProjection
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -401,12 +496,13 @@ class WriteIceberg(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_iceberg(
+        return recordbatch_io.write_iceberg(
             input,
             base_path=self.base_path,
             schema=self.iceberg_schema,
             properties=self.iceberg_properties,
-            spec_id=self.spec_id,
+            partition_spec_id=self.partition_spec_id,
+            partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
 
@@ -416,6 +512,7 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     version: int
+    partition_cols: ExpressionsProjection | None
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -438,11 +535,12 @@ class WriteDeltaLake(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_deltalake(
+        return recordbatch_io.write_deltalake(
             input,
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
             version=self.version,
+            partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
 
@@ -452,7 +550,7 @@ class WriteLance(SingleOutputInstruction):
     base_path: str
     mode: str
     io_config: IOConfig | None
-    kwargs: dict | None
+    kwargs: dict[str, Any] | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._write_lance(inputs)
@@ -474,13 +572,37 @@ class WriteLance(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_lance(
+        return recordbatch_io.write_lance(
             input,
             base_path=self.base_path,
             mode=self.mode,
             io_config=self.io_config,
             kwargs=self.kwargs,
         )
+
+
+@dataclass(frozen=True)
+class DataSinkWrite(SingleOutputInstruction, Generic[WriteResultType]):
+    sink: DataSink[WriteResultType]
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        result_field_name = "write_results"
+        results = list(self.sink.write(iter(inputs)))
+        results_series = Series.from_pylist(results, result_field_name, pyobj="force")
+        series_dict = {result_field_name: results_series._series}
+        rb = RecordBatch._from_pyrecordbatch(PyRecordBatch.from_pylist_series(series_dict))
+        mp = MicroPartition._from_record_batches([rb])
+        return [mp]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # TODO(desmond): We can potentially do something more useful here. For now, copy the implementation for the other writers.
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # we can write more than 1 file per partition
+                size_bytes=None,
+            )
+        ]
 
 
 @dataclass(frozen=True)
@@ -530,11 +652,25 @@ class Project(SingleOutputInstruction):
         ]
 
 
+@dataclass(frozen=True)
+class ActorPoolProject(SingleOutputInstruction):
+    projection: ExpressionsProjection
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        raise NotImplementedError("UDFProject instruction cannot be run from outside an Actor. Please file an issue.")
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # UDFs can potentially change cardinality
+                size_bytes=None,
+                boundaries=None,  # TODO: figure out if the actor pool UDF projection changes boundaries
+            )
+        ]
+
+
 def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
-    """
-    If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
-    expression, then invalidate the boundary.
-    """
+    """If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary expression, then invalidate the boundary."""
     proj_all_names = projection.to_name_set()
     proj_names_needing_compute = proj_all_names - projection.input_mapping().keys()
     for i, e in enumerate(boundaries.sort_by):
@@ -700,6 +836,27 @@ class Aggregate(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class Dedup(SingleOutputInstruction):
+    columns: ExpressionsProjection
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._dedup(inputs)
+
+    def _dedup(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        return [input.dedup(self.columns)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
 class Pivot(SingleOutputInstruction):
     group_by: ExpressionsProjection
     pivot_col: Expression
@@ -750,6 +907,7 @@ class Unpivot(SingleOutputInstruction):
 class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
+    null_equals_nulls: list[bool] | None
     how: JoinType
     is_swapped: bool
 
@@ -772,6 +930,7 @@ class HashJoin(SingleOutputInstruction):
             right,
             left_on=self.left_on,
             right_on=self.right_on,
+            null_equals_nulls=self.null_equals_nulls,
             how=self.how,
         )
         return [result]
@@ -854,12 +1013,15 @@ class ReduceMergeAndSort(ReduceInstruction):
     sort_by: ExpressionsProjection
     descending: list[bool]
     bounds: MicroPartition
+    nulls_first: list[bool] | None = None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_merge_and_sort(inputs)
 
     def _reduce_merge_and_sort(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        partition = MicroPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
+        partition = MicroPartition.concat(inputs).sort(
+            self.sort_by, descending=self.descending, nulls_first=self.nulls_first
+        )
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
@@ -879,6 +1041,7 @@ class ReduceToQuantiles(ReduceInstruction):
     num_quantiles: int
     sort_by: ExpressionsProjection
     descending: list[bool]
+    nulls_first: list[bool] | None = None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_to_quantiles(inputs)
@@ -886,8 +1049,11 @@ class ReduceToQuantiles(ReduceInstruction):
     def _reduce_to_quantiles(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         merged = MicroPartition.concat(inputs)
 
+        nulls_first = self.nulls_first if self.nulls_first is not None else self.descending
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
-        merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending)
+        merged_sorted = merged.sort(
+            self.sort_by.to_column_expressions(), descending=self.descending, nulls_first=nulls_first
+        )
 
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
@@ -899,6 +1065,52 @@ class ReduceToQuantiles(ReduceInstruction):
                 size_bytes=None,
             )
         ]
+
+
+def calculate_cross_join_stats(
+    left_meta: PartialPartitionMetadata, right_meta: PartialPartitionMetadata
+) -> tuple[int | None, int | None]:
+    """Given the left and right partition metadata, returns the expected (num rows, size bytes) of the cross join output."""
+    left_rows, left_bytes = left_meta.num_rows, left_meta.size_bytes
+    right_rows, right_bytes = right_meta.num_rows, right_meta.size_bytes
+
+    if left_rows is not None and right_rows is not None:
+        num_rows = left_rows * right_rows
+
+        if left_bytes is not None and right_bytes is not None:
+            size_bytes = left_bytes * right_rows + right_bytes * left_rows
+        else:
+            size_bytes = None
+    else:
+        num_rows = None
+        size_bytes = None
+
+    return num_rows, size_bytes
+
+
+@dataclass(frozen=True)
+class CrossJoin(SingleOutputInstruction):
+    outer_loop_side: JoinSide
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._cross_join(inputs)
+
+    def _cross_join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        left, right = inputs
+        result = left.cross_join(
+            right,
+            self.outer_loop_side,
+        )
+        return [result]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        left_meta, right_meta = input_metadatas
+
+        num_rows, size_bytes = calculate_cross_join_stats(left_meta, right_meta)
+
+        boundaries = left_meta.boundaries if self.outer_loop_side == JoinSide.Left else right_meta.boundaries
+
+        return [PartialPartitionMetadata(num_rows=num_rows, size_bytes=size_bytes, boundaries=boundaries)]
 
 
 @dataclass(frozen=True)
@@ -956,7 +1168,7 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
         if self._num_outputs == 1:
             return [input]
 
-        table_boundaries = boundaries.to_table()
+        table_boundaries = boundaries.to_record_batch()
         partitioned_tables = input.partition_by_range(self.sort_by, table_boundaries, self.descending)
 
         # Pad the partitioned_tables with empty tables if fewer than self._num_outputs were returned
@@ -1012,3 +1224,33 @@ class FanoutSlices(FanoutInstruction):
             )
 
         return results
+
+
+@dataclass(frozen=True)
+class FanoutEvenSlices(FanoutInstruction):
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        results = []
+
+        input_length = len(input)
+        num_outputs = self.num_outputs()
+
+        chunk_size, remainder = divmod(input_length, num_outputs)
+        ptr = 0
+        for output_idx in range(self.num_outputs()):
+            end = ptr + chunk_size + 1 if output_idx < remainder else ptr + chunk_size
+            results.append(input.slice(ptr, end))
+            ptr = end
+        assert ptr == input_length
+
+        return results
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # TODO: Derive this based on the ratios of num rows
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in range(self._num_outputs)
+        ]

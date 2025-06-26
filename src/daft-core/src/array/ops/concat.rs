@@ -1,10 +1,11 @@
-use arrow2::array::Array;
+use std::sync::Arc;
 
-use crate::{array::DataArray, datatypes::DaftPhysicalType};
+use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]
 use crate::array::pseudo_arrow::PseudoArrowArray;
+use crate::{array::DataArray, datatypes::DaftPhysicalType};
 
 macro_rules! impl_variable_length_concat {
     ($fn_name:ident, $arrow_type:ty, $create_fn: ident) => {
@@ -90,25 +91,25 @@ where
                         .iter()
                         .map(|s| {
                             s.as_any()
-                                .downcast_ref::<PseudoArrowArray<PyObject>>()
+                                .downcast_ref::<PseudoArrowArray<Arc<PyObject>>>()
                                 .unwrap()
                         })
                         .collect(),
                 ));
-                DataArray::new(field.clone(), cat_array)
+                Self::new(field.clone(), cat_array)
             }
-            crate::DataType::Utf8 => {
+            crate::datatypes::DataType::Utf8 => {
                 let cat_array = utf8_concat(arrow_arrays.as_slice())?;
-                DataArray::new(field.clone(), cat_array)
+                Self::new(field.clone(), cat_array)
             }
-            crate::DataType::Binary => {
+            crate::datatypes::DataType::Binary => {
                 let cat_array = binary_concat(arrow_arrays.as_slice())?;
-                DataArray::new(field.clone(), cat_array)
+                Self::new(field.clone(), cat_array)
             }
             _ => {
                 let cat_array: Box<dyn Array> =
                     arrow2::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
-                DataArray::try_from((field.clone(), cat_array))
+                Self::try_from((field.clone(), cat_array))
             }
         }
     }

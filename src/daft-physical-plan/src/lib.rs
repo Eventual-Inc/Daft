@@ -1,9 +1,19 @@
-#[allow(unused)]
-mod local_plan;
-mod translate;
+#![feature(assert_matches)]
+#![feature(let_chains)]
 
-pub use local_plan::{
-    Concat, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
-    LocalPhysicalPlanRef, PhysicalScan, PhysicalWrite, Project, Sort, UnGroupedAggregate,
+mod display;
+pub mod ops;
+mod optimization;
+mod physical_planner;
+mod plan;
+mod treenode;
+
+#[cfg(test)]
+mod test;
+
+pub use physical_planner::{
+    extract_agg_expr, logical_to_physical, populate_aggregation_stages,
+    populate_aggregation_stages_bound, AdaptivePlanner, MaterializedResults, QueryStageOutput,
+    StageStats,
 };
-pub use translate::translate;
+pub use plan::{PhysicalPlan, PhysicalPlanRef};

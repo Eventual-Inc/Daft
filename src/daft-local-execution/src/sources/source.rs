@@ -1,53 +1,93 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
+use common_error::DaftResult;
+use daft_core::prelude::SchemaRef;
 use daft_io::{IOStatsContext, IOStatsRef};
+use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
-    channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
-    ExecutionRuntimeHandle,
+    channel::{create_channel, Receiver},
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
+    progress_bar::ProgressBarColor,
+    runtime_stats::{CountingSender, RuntimeStatsContext},
+    ExecutionRuntimeContext,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, Arc<MicroPartition>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
-pub(crate) trait Source: Send + Sync {
+#[async_trait]
+pub trait Source: Send + Sync {
     fn name(&self) -> &'static str;
-    fn get_data(
+    fn multiline_display(&self) -> Vec<String>;
+    async fn get_data(
         &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
         io_stats: IOStatsRef,
-    ) -> crate::Result<SourceStream<'static>>;
+    ) -> DaftResult<SourceStream<'static>>;
+    fn schema(&self) -> &SchemaRef;
 }
 
-struct SourceNode {
-    source: Box<dyn Source>,
+pub(crate) struct SourceNode {
+    source: Arc<dyn Source>,
     runtime_stats: Arc<RuntimeStatsContext>,
+    plan_stats: StatsState,
     io_stats: IOStatsRef,
+    node_info: NodeInfo,
+}
+
+impl SourceNode {
+    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
+        let info = ctx.next_node_info(source.name());
+        let runtime_stats = RuntimeStatsContext::new(info.clone());
+        let io_stats = IOStatsContext::new(source.name());
+        Self {
+            source,
+            runtime_stats,
+            plan_stats,
+            io_stats,
+            node_info: info,
+        }
+    }
+
+    pub fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
+    }
 }
 
 impl TreeDisplay for SourceNode {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-        writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
+        use common_display::DisplayLevel;
         match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
+            DisplayLevel::Compact => {
+                writeln!(display, "{}", self.source.name()).unwrap();
+            }
+            level => {
+                let multiline_display = self.source.multiline_display().join("\n");
+                writeln!(display, "{}", multiline_display).unwrap();
 
-                writeln!(display).unwrap();
-                rt_result.display(&mut display, false, true, false).unwrap();
-                let bytes_read = self.io_stats.load_bytes_read();
-                writeln!(
-                    display,
-                    "bytes read = {}",
-                    bytes_to_human_readable(bytes_read)
-                )
-                .unwrap();
+                if let StatsState::Materialized(stats) = &self.plan_stats {
+                    writeln!(display, "Stats = {}", stats).unwrap();
+                }
+
+                if matches!(level, DisplayLevel::Verbose) {
+                    let rt_result = self.runtime_stats.result();
+
+                    writeln!(display).unwrap();
+                    rt_result.display(&mut display, false, true, false).unwrap();
+                    let bytes_read = self.io_stats.load_bytes_read();
+                    writeln!(
+                        display,
+                        "Bytes read = {}",
+                        bytes_to_human_readable(bytes_read)
+                    )
+                    .unwrap();
+                }
             }
         }
         display
@@ -68,39 +108,54 @@ impl PipelineNode for SourceNode {
         vec![]
     }
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel> {
-        let mut source_stream =
-            self.source
-                .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
-
-        let mut channel = PipelineChannel::new(1, maintain_order);
-        let counting_sender = channel.get_next_sender_with_stats(&self.runtime_stats);
-        runtime_handle.spawn(
+        runtime_handle: &mut ExecutionRuntimeContext,
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Blue,
+            false,
+            self.runtime_stats.clone(),
+        );
+        let source = self.source.clone();
+        let io_stats = self.io_stats.clone();
+        let (destination_sender, destination_receiver) = create_channel(0);
+        let counting_sender = CountingSender::new(
+            destination_sender,
+            self.runtime_stats.clone(),
+            progress_bar,
+            runtime_handle.rt_stats_handler.clone(),
+        );
+        runtime_handle.spawn_local(
             async move {
+                let mut has_data = false;
+                let mut source_stream = source.get_data(maintain_order, io_stats).await?;
                 while let Some(part) = source_stream.next().await {
-                    let _ = counting_sender.send(part.into()).await;
+                    has_data = true;
+                    if counting_sender.send(part?).await.is_err() {
+                        return Ok(());
+                    }
+                }
+                if !has_data {
+                    let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
+                    let _ = counting_sender.send(empty).await;
                 }
                 Ok(())
             },
             self.name(),
         );
-        Ok(channel)
+        Ok(destination_receiver)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }
-}
 
-impl From<Box<dyn Source>> for Box<dyn PipelineNode> {
-    fn from(source: Box<dyn Source>) -> Self {
-        let name = source.name();
-        Box::new(SourceNode {
-            source,
-            runtime_stats: RuntimeStatsContext::new(),
-            io_stats: IOStatsContext::new(name),
-        })
+    fn node_id(&self) -> usize {
+        self.node_info.id
+    }
+
+    fn plan_id(&self) -> Arc<str> {
+        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 }

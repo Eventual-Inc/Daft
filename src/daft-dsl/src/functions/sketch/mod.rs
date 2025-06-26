@@ -1,12 +1,10 @@
 mod percentile;
 
 use percentile::PercentileEvaluator;
-
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HashableVecPercentiles(pub Vec<f64>);
@@ -15,7 +13,7 @@ impl std::hash::Hash for HashableVecPercentiles {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0
             .iter()
-            .for_each(|p| p.to_be_bytes().iter().for_each(|&b| state.write_u8(b)))
+            .for_each(|p| p.to_be_bytes().iter().for_each(|&b| state.write_u8(b)));
     }
 }
 
@@ -32,9 +30,8 @@ pub enum SketchExpr {
 impl SketchExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use SketchExpr::*;
         match self {
-            Percentile { .. } => &PercentileEvaluator {},
+            Self::Percentile { .. } => &PercentileEvaluator {},
         }
     }
 }
@@ -45,7 +42,7 @@ pub fn sketch_percentile(input: ExprRef, percentiles: &[f64], force_list_output:
             percentiles: HashableVecPercentiles(percentiles.to_vec()),
             force_list_output,
         }),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
     .into()
 }

@@ -1,21 +1,23 @@
-use std::io::Write;
-use std::ops::Range;
+use std::{any::Any, io::Write, ops::Range, sync::Arc};
 
-use crate::object_io::{self, FileMetadata, LSResult};
-use crate::stats::IOStatsRef;
-use crate::FileFormat;
-
-use super::object_io::{GetResult, ObjectSource};
-use super::Result;
 use async_trait::async_trait;
-use futures::stream::{self, BoxStream};
-use futures::TryStreamExt;
-use futures::{AsyncReadExt, AsyncSeekExt, StreamExt};
-use snafu::{IntoError, OptionExt, ResultExt, Snafu};
-use std::sync::Arc;
-
+use futures::{
+    stream::{self, BoxStream},
+    AsyncReadExt, AsyncSeekExt, StreamExt, TryStreamExt,
+};
 use hdrs::{Client, ClientBuilder};
+use snafu::{IntoError, OptionExt, ResultExt, Snafu};
 use url::Url;
+
+use super::{
+    object_io::{GetResult, ObjectSource},
+    Result,
+};
+use crate::{
+    object_io::{self, FileMetadata, LSResult},
+    stats::IOStatsRef,
+    FileFormat,
+};
 
 pub(crate) struct HDFSSource {}
 
@@ -75,15 +77,15 @@ enum Error {
     InvalidFilePath { path: String },
 }
 
-fn _get_fs_for(uri: &str) -> Result<Arc<Client>> {
-    let name_node = _get_namenode_url(uri)?;
+fn get_fs_for(uri: &str) -> Result<Arc<Client>> {
+    let name_node = get_namenode_url(uri)?;
     let client = ClientBuilder::new(&name_node)
         .connect()
         .context(UnableToConnectSnafu { path: uri })?;
     Ok(Arc::new(client))
 }
 
-fn _get_namenode_url(uri: &str) -> Result<String> {
+fn get_namenode_url(uri: &str) -> Result<String> {
     let parsed = match Url::parse(uri) {
         Ok(parsed) => Ok(parsed),
         Err(_) => Err(Error::InvalidFilePath { path: uri.into() }),
@@ -99,7 +101,7 @@ fn _get_namenode_url(uri: &str) -> Result<String> {
     Ok(name_node)
 }
 
-fn _get_path_for(uri: &str) -> Result<String> {
+fn get_path_for(uri: &str) -> Result<String> {
     match Url::parse(uri) {
         Ok(parsed) => Ok(parsed.path().into()),
         Err(_) => Err(Error::InvalidFilePath { path: uri.into() }.into()),
@@ -110,18 +112,18 @@ impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
         match error {
-            UnableToConnect { path, source } => super::Error::ConnectTimeout {
+            UnableToConnect { path, source } => Self::ConnectTimeout {
                 path,
                 source: source.into(),
             },
             UnableToOpenFile { path, source } | UnableToFetchDirectoryEntries { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
-                    NotFound => super::Error::NotFound {
+                    NotFound => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
@@ -130,21 +132,21 @@ impl From<Error> for super::Error {
             UnableToFetchFileMetadata { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
-                    NotFound | IsADirectory => super::Error::NotFound {
+                    NotFound | IsADirectory => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
                 }
             }
-            UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
+            UnableToReadBytes { path, source } => Self::UnableToReadBytes { path, source },
             UnableToWriteToFile { path, source } | UnableToOpenFileForWriting { path, source } => {
-                super::Error::UnableToWriteToFile { path, source }
+                Self::UnableToWriteToFile { path, source }
             }
-            _ => super::Error::Generic {
+            _ => Self::Generic {
                 store: super::SourceType::File,
                 source: error.into(),
             },
@@ -154,7 +156,7 @@ impl From<Error> for super::Error {
 
 impl HDFSSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
-        Ok(HDFSSource {}.into())
+        Ok(Self {}.into())
     }
 }
 
@@ -166,8 +168,8 @@ impl ObjectSource for HDFSSource {
         range: Option<Range<usize>>,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let fs = _get_fs_for(uri)?;
-        let path = _get_path_for(uri)?;
+        let fs = get_fs_for(uri)?;
+        let path = get_path_for(uri)?;
         let path = &path;
         let len = fs
             .metadata(uri)
@@ -221,8 +223,8 @@ impl ObjectSource for HDFSSource {
         data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        let fs = _get_fs_for(uri)?;
-        let path = _get_path_for(uri)?;
+        let fs = get_fs_for(uri)?;
+        let path = get_path_for(uri)?;
         let path = &path;
         let mut file = fs
             .open_file()
@@ -237,8 +239,8 @@ impl ObjectSource for HDFSSource {
     }
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let fs = _get_fs_for(uri)?;
-        let path = _get_path_for(uri)?;
+        let fs = get_fs_for(uri)?;
+        let path = get_path_for(uri)?;
         let path = &path;
         let meta = fs.metadata(path).context(UnableToFetchFileMetadataSnafu {
             path: uri.to_string(),
@@ -287,16 +289,16 @@ impl ObjectSource for HDFSSource {
         })
     }
 
-    async fn iter_dir(
-        &self,
+    async fn iter_dir<'a>(
+        &'a self,
         uri: &str,
         _posix: bool,
         _page_size: Option<i32>,
         _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let fs = _get_fs_for(uri)?;
-        let path = _get_path_for(uri)?;
-        let name_node = _get_namenode_url(uri)?;
+    ) -> super::Result<BoxStream<'a, super::Result<FileMetadata>>> {
+        let fs = get_fs_for(uri)?;
+        let path = get_path_for(uri)?;
+        let name_node = get_namenode_url(uri)?;
         let path = &path;
         let meta = fs
             .metadata(path)
@@ -353,6 +355,10 @@ impl ObjectSource for HDFSSource {
         .boxed();
         Ok(file_meta_stream)
     }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -360,9 +366,7 @@ impl ObjectSource for HDFSSource {
 mod tests {
     use std::default;
 
-    use crate::object_io::ObjectSource;
-    use crate::Result;
-    use crate::{HDFSSource, HttpSource};
+    use crate::{object_io::ObjectSource, HDFSSource, HttpSource, Result};
 
     async fn write_remote_parquet_to_hdfs_file(path: &str) -> Result<bytes::Bytes> {
         let parquet_file_path = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";

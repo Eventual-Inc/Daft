@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 from fsspec.implementations.local import LocalFileSystem
 
 from daft.daft import io_glob
+from daft.exceptions import DaftCoreException
 
 
 def local_recursive_list(fs, path) -> list:
@@ -165,3 +167,44 @@ def test_missing_file_path(tmp_path, include_protocol):
         p = "file://" + p
     with pytest.raises(FileNotFoundError, match="/c/cc/ddd not found"):
         io_glob(p)
+
+
+@pytest.mark.parametrize("include_protocol", [False, True])
+def test_invalid_double_asterisk_usage_local(tmp_path, include_protocol):
+    d = tmp_path / "dir"
+    d.mkdir()
+
+    path = str(d) + "/**.pq"
+    if include_protocol:
+        path = "file://" + path
+
+    expected_correct_path = str(d) + "/**/*.pq"
+    if include_protocol:
+        expected_correct_path = "file://" + expected_correct_path
+
+    # Need to escape these or the regex matcher will complain
+    expected_correct_path = re.escape(expected_correct_path)
+
+    with pytest.raises(DaftCoreException, match=expected_correct_path):
+        io_glob(path)
+
+
+@pytest.mark.parametrize("include_protocol", [False, True])
+def test_literal_double_asterisk_file(tmp_path, include_protocol):
+    d = tmp_path / "dir"
+    d.mkdir()
+    file_with_literal_name = d / "*.pq"
+    file_with_literal_name.touch()
+
+    path = str(d) + "/\\**.pq"
+    if include_protocol:
+        path = "file://" + path
+
+    fs = LocalFileSystem()
+    fs_result = fs.ls(str(d), detail=True)
+    fs_result = [f for f in fs_result if f["name"] == str(file_with_literal_name)]
+
+    daft_ls_result = io_glob(path)
+
+    assert len(daft_ls_result) == 1
+    compare_local_result(daft_ls_result, fs_result)

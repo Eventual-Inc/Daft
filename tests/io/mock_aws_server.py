@@ -29,7 +29,8 @@ def start_service(host: str, port: int, log_file: io.IOBase):
     for _ in range(0, 100):
         output = process.poll()
         if output is not None:
-            print(f"moto_server exited status {output}")
+            stdout, stderr = process.communicate()
+            print(f"moto_server exited status {output}.\n\nstdout: {stdout}\n\nstderr: {stderr}")
             pytest.fail("Cannot start mock AWS server")
 
         try:

@@ -1,0 +1,26 @@
+[dependencies]
+arrow2 = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+log = {workspace = true}
+num-traits = "0.2.19"
+serde = {workspace = true}
+typetag = {workspace = true}
+base64.workspace = true
+
+[dependencies.image]
+default-features = false
+features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
+version = "0.25.5"
+
+[features]
+python = ["common-error/python"]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-image"
+edition.workspace = true
+version.workspace = true

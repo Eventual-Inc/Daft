@@ -1,16 +1,23 @@
+use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
-    io::csv::read_async::{read_rows, AsyncReaderBuilder, ByteRecord},
+    io::csv::{
+        read_async,
+        read_async::{read_rows, AsyncReaderBuilder},
+    },
 };
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
 use csv_async::AsyncReader;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_dsl::optimization::get_required_columns;
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
-use daft_table::Table;
+use daft_compression::CompressionCodec;
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_decoding::deserialize::deserialize_column;
+use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
+use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
+use daft_recordbatch::RecordBatch;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator},
@@ -27,16 +34,21 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::ArrowSnafu;
-use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_compression::CompressionCodec;
-use daft_decoding::deserialize::deserialize_column;
+use crate::{
+    metadata::read_csv_schema_single, ArrowSnafu, CsvConvertOptions, CsvParseOptions,
+    CsvReadOptions,
+};
 
-trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<ByteRecord>>> {}
-impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<ByteRecord>>> {}
+trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<read_async::ByteRecord>>> {}
+impl<S> ByteRecordChunkStream for S where
+    S: Stream<Item = super::Result<Vec<read_async::ByteRecord>>>
+{
+}
+
+use crate::local::{read_csv_local, stream_csv_local};
 
 type TableChunkResult =
-    super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
+    super::Result<Context<JoinHandle<DaftResult<RecordBatch>>, super::JoinSnafu, super::Error>>;
 trait TableStream: Stream<Item = TableChunkResult> {}
 impl<S> TableStream for S where S: Stream<Item = TableChunkResult> {}
 
@@ -50,8 +62,8 @@ pub fn read_csv(
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
+) -> DaftResult<RecordBatch> {
+    let runtime_handle = get_io_runtime(multithreaded_io);
     runtime_handle.block_on_current_thread(async {
         read_csv_single_into_table(
             uri,
@@ -77,13 +89,13 @@ pub fn read_csv_bulk(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
-) -> DaftResult<Vec<Table>> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
+) -> DaftResult<Vec<RecordBatch>> {
+    let runtime_handle = get_io_runtime(multithreaded_io);
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
             let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
-                uri.to_string(),
+                (*uri).to_string(),
                 convert_options.clone(),
                 parse_options.clone(),
                 read_options.clone(),
@@ -142,24 +154,38 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-    let stream = stream_csv_single(
-        &uri,
-        convert_options,
-        parse_options,
-        read_options,
-        io_client,
-        io_stats,
-        max_chunks_in_flight,
-    )
-    .await?;
-
-    Ok(Box::pin(stream))
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let uri = uri.as_str();
+    let (source_type, _) = parse_url(uri)?;
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        let stream = stream_csv_local(
+            uri,
+            convert_options,
+            parse_options.unwrap_or_default(),
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await?;
+        Ok(Box::pin(stream))
+    } else {
+        let stream = stream_csv_single(
+            uri,
+            convert_options,
+            parse_options,
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await?;
+        Ok(Box::pin(stream))
+    }
 }
 
-// Parallel version of table concat
-// get rid of this once Table APIs are parallel
-fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -183,20 +209,19 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     let new_series = (0..num_columns)
         .into_par_iter()
         .map(|i| {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
+            let series_to_cat: Vec<&Series> =
+                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new_with_size(
+    RecordBatch::new_with_size(
         first_table.schema.clone(),
         new_series,
-        tables.iter().map(|t| t.len()).sum(),
+        tables.iter().map(daft_recordbatch::RecordBatch::len).sum(),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv_single_into_table(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
@@ -205,7 +230,22 @@ async fn read_csv_single_into_table(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
+) -> DaftResult<RecordBatch> {
+    let (source_type, _) = parse_url(uri)?;
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        return read_csv_local(
+            uri,
+            convert_options,
+            parse_options.unwrap_or_default(),
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await;
+    }
+
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -220,11 +260,11 @@ async fn read_csv_single_into_table(
         (None, _) => None,
         (co, None) => co,
         (Some(mut co), Some(predicate)) => {
-            if let Some(ref mut include_columns) = co.include_columns {
+            if let Some(ref mut co_include_columns) = co.include_columns {
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
-                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                    if co_include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                        co_include_columns.push(rc);
                     }
                 }
             }
@@ -243,6 +283,7 @@ async fn read_csv_single_into_table(
         io_stats,
     )
     .await?;
+
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
     // with the parsing of chunks on the rayon threadpool.
     let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
@@ -272,13 +313,26 @@ async fn read_csv_single_into_table(
     };
 
     let schema: arrow2::datatypes::Schema = schema_fields.into();
-    let schema = Arc::new(Schema::try_from(&schema)?);
+    let schema: SchemaRef = Arc::new(schema.into());
+
+    let include_column_indices = include_columns
+        .map(|include_columns| {
+            include_columns
+                .iter()
+                .map(|name| schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()
+        })
+        .transpose()?;
 
     let filtered_tables = tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
-            if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+            let table = table?;
+
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
+            if let Some(include_column_indices) = &include_column_indices {
+                Ok(filtered.get_columns(include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -308,7 +362,7 @@ async fn read_csv_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        return Table::empty(Some(schema));
+        return RecordBatch::empty(Some(schema));
     }
 
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
@@ -323,7 +377,7 @@ async fn read_csv_single_into_table(
     }
 }
 
-async fn stream_csv_single(
+pub async fn stream_csv_single(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
@@ -331,7 +385,7 @@ async fn stream_csv_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -350,7 +404,7 @@ async fn stream_csv_single(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -386,9 +440,17 @@ async fn stream_csv_single(
     let filtered_tables = tables.map(move |table| {
         let table = table?;
         if let Some(predicate) = &predicate {
-            let filtered = table?.filter(&[predicate.clone()])?;
+            let table = table?;
+            let predicate = BoundExpr::try_new(predicate.clone(), &table.schema)?;
+
+            let filtered = table.filter(&[predicate])?;
             if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())
+                let include_column_indices = include_columns
+                    .iter()
+                    .map(|name| table.schema.get_index(name))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                Ok(filtered.get_columns(&include_column_indices))
             } else {
                 Ok(filtered)
             }
@@ -422,10 +484,10 @@ async fn read_csv_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
-    let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
-    {
-        Some(schema) => (schema.to_arrow()?, None, None),
-        None => {
+    let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
+        if let Some(schema) = convert_options.schema {
+            (schema.to_arrow()?, None, None)
+        } else {
             let (schema, read_stats) = read_csv_schema_single(
                 uri,
                 parse_options.clone(),
@@ -440,8 +502,7 @@ async fn read_csv_single_into_stream(
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
-        }
-    };
+        };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names {
         schema = schema
@@ -555,7 +616,7 @@ where
                 estimated_rows_per_desired_chunk.max(8).min(num_rows - total_rows_read)
             };
             let mut chunk_buffer = vec![
-                ByteRecord::with_capacity(record_buffer_size, num_fields);
+                read_async::ByteRecord::with_capacity(record_buffer_size, num_fields);
                 chunk_size_rows
             ];
 
@@ -574,7 +635,7 @@ where
 
             chunk_buffer.truncate(rows_read);
             if rows_read > 0 {
-                yield chunk_buffer
+                yield chunk_buffer;
             }
         }
     }
@@ -592,12 +653,12 @@ fn parse_into_column_array_chunk_stream(
         .iter()
         .map(|i| fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(daft_core::schema::Schema::new(fields_subset)?);
+    let read_schema = Arc::new(daft_core::prelude::Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
         read_schema
-            .fields
-            .values()
-            .map(|f| Arc::new(f.clone()))
+            .into_iter()
+            .cloned()
+            .map(Arc::new)
             .collect::<Vec<_>>(),
     );
 
@@ -625,8 +686,8 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
-                    let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
-                    Ok(Table::new_unchecked(read_schema, chunk, num_rows))
+                    let num_rows = chunk.first().map_or(0, daft_core::series::Series::len);
+                    Ok(RecordBatch::new_unchecked(read_schema, chunk, num_rows))
                 })();
                 let _ = send.send(result);
             });
@@ -636,7 +697,7 @@ fn parse_into_column_array_chunk_stream(
     }))
 }
 
-fn fields_to_projection_indices(
+pub fn fields_to_projection_indices(
     fields: &[arrow2::datatypes::Field],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
@@ -662,30 +723,26 @@ fn fields_to_projection_indices(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
-
     use arrow2::io::csv::read::{
         deserialize_batch, deserialize_column, infer, infer_schema, read_rows, ByteRecord,
         ReaderBuilder,
     };
+    use common_error::{DaftError, DaftResult};
     use daft_core::{
-        datatypes::Field,
-        schema::Schema,
+        prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-        DataType,
     };
     use daft_io::{IOClient, IOConfig};
-    use daft_table::Table;
+    use daft_recordbatch::RecordBatch;
     use rstest::rstest;
 
-    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-
     use super::read_csv;
+    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 
     #[allow(clippy::too_many_arguments)]
     fn check_equal_local_arrow2(
         path: &str,
-        out: &Table,
+        out: &RecordBatch,
         has_header: bool,
         delimiter: Option<char>,
         double_quote: bool,
@@ -737,7 +794,7 @@ mod tests {
         let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
         assert_eq!(out.schema.to_arrow().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column_by_index(i).unwrap().to_arrow())
+            .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -769,7 +826,7 @@ mod tests {
         let file = format!(
             "{}/test/iris_tiny.csv{}",
             env!("CARGO_MANIFEST_DIR"),
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
@@ -787,7 +844,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         if compression.is_none() {
@@ -830,10 +887,9 @@ mod tests {
         ];
         let table = read_csv(
             file.as_ref(),
-            Some(
-                CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
-            ),
+            Some(CsvConvertOptions::default().with_column_names(Some(
+                column_names.iter().map(|s| (*s).to_string()).collect(),
+            ))),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
@@ -850,7 +906,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -901,7 +957,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -952,7 +1008,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1002,7 +1058,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1050,7 +1106,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1098,7 +1154,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1145,7 +1201,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1193,7 +1249,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1236,7 +1292,9 @@ mod tests {
             file.as_ref(),
             Some(
                 CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_column_names(Some(
+                        column_names.iter().map(|s| (*s).to_string()).collect(),
+                    ))
                     .with_include_columns(Some(vec![
                         "petal.length".to_string(),
                         "petal.width".to_string(),
@@ -1255,7 +1313,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1303,7 +1361,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1351,7 +1409,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1399,7 +1457,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1438,7 +1496,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1481,10 +1539,10 @@ mod tests {
                 Field::new("petal.length", DataType::Null),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
-        let null_column = table.get_column("petal.length")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1515,7 +1573,7 @@ mod tests {
             Field::new("petal.length", DataType::Null),
             Field::new("petal.width", DataType::Float64),
             Field::new("variety", DataType::Utf8),
-        ])?;
+        ]);
 
         let table = read_csv(
             file.as_ref(),
@@ -1537,10 +1595,10 @@ mod tests {
                 Field::new("petal.length", DataType::Null),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
-        let null_column = table.get_column("petal.length")?;
+        let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
@@ -1576,7 +1634,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
         check_equal_local_arrow2(
@@ -1612,7 +1670,7 @@ mod tests {
             Field::new("petal.length", DataType::Boolean),
             Field::new("petal.width", DataType::Boolean),
             Field::new("variety", DataType::Int64),
-        ])?;
+        ]);
         let table = read_csv(
             file.as_ref(),
             Some(CsvConvertOptions::default().with_schema(Some(schema.into()))),
@@ -1627,7 +1685,7 @@ mod tests {
         assert_eq!(num_rows, 20);
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
-            let column = table.get_column_by_index(idx)?;
+            let column = table.get_column(idx);
             assert_eq!(column.to_arrow().null_count(), num_rows);
         }
 
@@ -1693,18 +1751,18 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
+            ])
             .into(),
         );
 
         // First 4 cols should have no nulls
-        assert_eq!(table.get_column("sepal.length")?.to_arrow().null_count(), 0);
-        assert_eq!(table.get_column("sepal.width")?.to_arrow().null_count(), 0);
-        assert_eq!(table.get_column("petal.length")?.to_arrow().null_count(), 0);
-        assert_eq!(table.get_column("petal.width")?.to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(0).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(1).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(2).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(3).to_arrow().null_count(), 0);
 
         // Last col should have 3 nulls because of the missing data
-        assert_eq!(table.get_column("variety")?.to_arrow().null_count(), 3);
+        assert_eq!(table.get_column(4).to_arrow().null_count(), 3);
 
         Ok(())
     }
@@ -1780,7 +1838,7 @@ mod tests {
                 Field::new("column_2", DataType::Float64),
                 Field::new("column_3", DataType::Float64),
                 Field::new("column_4", DataType::Float64),
-            ])?
+            ])
             .into(),
         );
 
@@ -1805,7 +1863,7 @@ mod tests {
             Field::new("petal.length", DataType::Float64),
             Field::new("petal.width", DataType::Float64),
             Field::new("variety", DataType::Utf8),
-        ])?;
+        ]);
 
         let table = read_csv(
             file.as_ref(),
@@ -1825,7 +1883,7 @@ mod tests {
         assert_eq!(table.len(), 3);
 
         assert_eq!(
-            table.get_column("variety")?.to_arrow(),
+            table.get_column(4).to_arrow(),
             Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
                 None,
                 Some("Seratosa"),
@@ -1862,7 +1920,7 @@ mod tests {
     ) -> DaftResult<()> {
         let file = format!(
             "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv{}",
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
@@ -1877,7 +1935,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8)
-            ])?
+            ])
             .into(),
         );
 
@@ -1896,10 +1954,9 @@ mod tests {
         let column_names = ["a", "b"];
         let table = read_csv(
             file,
-            Some(
-                CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
-            ),
+            Some(CsvConvertOptions::default().with_column_names(Some(
+                column_names.iter().map(|s| (*s).to_string()).collect(),
+            ))),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
@@ -1913,7 +1970,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8)
-            ])?
+            ])
             .into(),
         );
 
@@ -1934,7 +1991,9 @@ mod tests {
             file,
             Some(
                 CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_column_names(Some(
+                        column_names.iter().map(|s| (*s).to_string()).collect(),
+                    ))
                     .with_include_columns(Some(vec!["b".to_string()])),
             ),
             Some(CsvParseOptions::default().with_has_header(false)),
@@ -1947,7 +2006,7 @@ mod tests {
         assert_eq!(table.len(), 100);
         assert_eq!(
             table.schema,
-            Schema::new(vec![Field::new("b", DataType::Utf8)])?.into(),
+            Schema::new(vec![Field::new("b", DataType::Utf8)]).into(),
         );
 
         Ok(())
@@ -1978,7 +2037,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8)
-            ])?
+            ])
             .into(),
         );
 
@@ -2007,7 +2066,7 @@ mod tests {
         assert_eq!(table.len(), 100);
         assert_eq!(
             table.schema,
-            Schema::new(vec![Field::new("b", DataType::Utf8)])?.into(),
+            Schema::new(vec![Field::new("b", DataType::Utf8)]).into(),
         );
 
         Ok(())

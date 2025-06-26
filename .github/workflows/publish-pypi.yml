@@ -1,0 +1,79 @@
+name: Build and publish package to PyPI
+
+on:
+  push:
+    tags:
+    - v*
+
+env:
+  PYTHON_VERSION: 3.11
+  UV_SYSTEM_PYTHON: 1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    uses: ./.github/workflows/build-wheel.yml
+    with:
+      os: ${{ matrix.os }}
+      arch: ${{ matrix.arch }}
+      lts: ${{ matrix.lts }}
+      build_type: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos, windows]
+        arch: [x86_64, aarch64]
+        lts: [false, true]
+
+        exclude:
+        - os: windows
+          arch: aarch64
+        - lts: true
+          arch: aarch64
+
+  publish:
+    name: Publish wheels to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing. It is also tied to the name of the workflow file, so do not change the file name without changing the OIDC config.
+    needs: build
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Publish package distributions to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        skip-existing: true
+
+  on-failure:
+    name: Send Slack notification on failure
+    runs-on: ubuntu-latest
+    needs: [build, publish]
+    if: ${{ failure() }}
+
+    steps:
+    - uses: slackapi/slack-github-action@v2.0.0
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook

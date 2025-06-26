@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat_n, sync::Arc};
 
 use arrow2::offset::OffsetsBuffer;
 #[cfg(feature = "python")]
@@ -11,7 +11,7 @@ use crate::{
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
     },
-    Series,
+    series::Series,
 };
 
 pub trait FullNull {
@@ -25,18 +25,17 @@ where
 {
     /// Creates a DataArray<T> of size `length` that is filled with all nulls.
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        if dtype != &T::get_dtype() && !matches!(T::get_dtype(), DataType::Unknown) {
-            panic!(
-                "Cannot create DataArray from dtype: {dtype} with physical type: {}",
-                T::get_dtype()
-            );
-        }
+        assert!(
+            !(dtype != &T::get_dtype() && !matches!(T::get_dtype(), DataType::Unknown)),
+            "Cannot create DataArray from dtype: {dtype} with physical type: {}",
+            T::get_dtype()
+        );
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
-            let py_none = Python::with_gil(|py: Python| py.None());
+            let py_none = Arc::new(Python::with_gil(|py: Python| py.None()));
 
-            return DataArray::new(
+            return Self::new(
                 field.into(),
                 Box::new(PseudoArrowArray::from_pyobj_vec(vec![py_none; length])),
             )
@@ -45,7 +44,7 @@ where
 
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
-            Ok(arrow_dtype) => DataArray::<T>::new(
+            Ok(arrow_dtype) => Self::new(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
                 arrow2::array::new_null_array(arrow_dtype, length),
             )
@@ -58,7 +57,7 @@ where
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
-            return DataArray::new(
+            return Self::new(
                 field.into(),
                 Box::new(PseudoArrowArray::from_pyobj_vec(vec![])),
             )
@@ -67,7 +66,7 @@ where
 
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
-            Ok(arrow_dtype) => DataArray::<T>::new(
+            Ok(arrow_dtype) => Self::new(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
                 arrow2::array::new_empty_array(arrow_dtype),
             )
@@ -100,7 +99,7 @@ where
 
 impl FullNull for FixedSizeListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::FixedSizeList(child_dtype, size) => {
@@ -131,7 +130,7 @@ impl FullNull for FixedSizeListArray {
 
 impl FullNull for ListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::List(child_dtype) => {
@@ -139,8 +138,7 @@ impl FullNull for ListArray {
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
-                    OffsetsBuffer::try_from(repeat(0).take(length + 1).collect::<Vec<_>>())
-                        .unwrap(),
+                    OffsetsBuffer::try_from(repeat_n(0, length + 1).collect::<Vec<_>>()).unwrap(),
                     Some(validity),
                 )
             }
@@ -165,7 +163,7 @@ impl FullNull for ListArray {
 
 impl FullNull for StructArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat_n(false, length));
         match dtype {
             DataType::Struct(children) => {
                 let field = Field::new(name, dtype.clone());
@@ -200,8 +198,7 @@ mod tests {
 
     use crate::{
         array::{ops::full::FullNull, FixedSizeListArray, StructArray},
-        datatypes::Field,
-        DataType,
+        datatypes::{DataType, Field},
     };
 
     #[test]

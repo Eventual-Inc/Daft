@@ -22,7 +22,7 @@ def test_minio_parquet_bulk_readback(minio_io_config):
         for path in target_paths:
             pq.write_table(pa_table, path, filesystem=fs)
 
-        readback = daft.table.read_parquet_into_pyarrow_bulk(target_paths, io_config=minio_io_config)
+        readback = daft.recordbatch.read_parquet_into_pyarrow_bulk(target_paths, io_config=minio_io_config)
         assert len(readback) == len(target_paths)
         for tab in readback:
             assert tab.to_pydict() == data
@@ -35,7 +35,11 @@ def test_minio_parquet_read_no_files(minio_io_config):
         fs.touch("s3://data-engineering-prod/foo/file.txt")
 
         with pytest.raises(FileNotFoundError, match="Glob path had no matches:"):
-            daft.read_parquet("s3://data-engineering-prod/foo/**.parquet", io_config=minio_io_config)
+            # Need to have a special character within the test path to trigger the matching logic
+            daft.read_parquet(
+                "s3://data-engineering-prod/foo/this-should-not-match-anything-and-this-file-should-not-exist-*.parquet",
+                io_config=minio_io_config,
+            )
 
 
 @pytest.mark.integration()

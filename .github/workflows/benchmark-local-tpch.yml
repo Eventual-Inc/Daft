@@ -1,0 +1,74 @@
+name: Benchmark Local TPC-H
+
+on:
+  workflow_dispatch:
+    inputs:
+      daft_index_url:
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
+        default: ""
+        required: false
+  workflow_call:
+    inputs:
+      daft_index_url:
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
+        type: string
+        default: ""
+        required: false
+
+env:
+  DAFT_INDEX_URL: ${{ inputs.daft_index_url != '' && inputs.daft_index_url || format('https://d1p3klp2t5517h.cloudfront.net/builds/dev/{0}', github.sha) }}
+  AWS_REGION: us-west-2
+
+  DAFT_ANALYTICS_ENABLED: "0"
+  PYTHON_VERSION: "3.9"
+
+jobs:
+  build:
+    name: Build and publish wheels if necessary
+    if: ${{ inputs.daft_index_url == '' }}
+    uses: ./.github/workflows/publish-dev-s3.yml
+    secrets: inherit
+
+  benchmark:
+    needs: build
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: [self-hosted, linux, arm64, bench-tpch]
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Mount local SSD to /tmp
+      run: |
+        sudo mkfs.ext4 /dev/nvme2n1
+        sudo mount -t ext4 /dev/nvme2n1 /tmp
+        sudo chmod 777 /tmp
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-session-name: DaftLocalTpchGitHubWorkflow
+    - name: Download TPC-H data (100SF)
+      run: aws s3 cp s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet /tmp/tpch-data --recursive --no-progress
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        version: "0.6.17"
+    - name: Install Daft and dev dependencies
+      run: |
+        rm -rf daft
+        uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
+        uv pip install gspread
+    - name: Write service account secret file
+      run: |
+        mkdir -p ~/.config/gspread
+        cat << EOF > ~/.config/gspread/service_account.json
+        ${{ secrets.GOOGLE_SHEETS_SERVICE_ACCOUNT }}
+        EOF
+    - name: Run benchmark and upload results to Google Sheets
+      run: PYTHONPATH=. DAFT_RUNNER=native python .github/ci-scripts/local_tpch.py

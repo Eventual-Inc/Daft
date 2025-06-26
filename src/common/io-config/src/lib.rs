@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -6,6 +8,7 @@ mod config;
 mod gcs;
 mod http;
 mod s3;
+mod unity;
 
 use std::{
     fmt::{Debug, Display},
@@ -16,14 +19,19 @@ use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use crate::{
-    azure::AzureConfig, config::IOConfig, gcs::GCSConfig, http::HTTPConfig, s3::S3Config,
-    s3::S3Credentials,
+    azure::AzureConfig,
+    config::IOConfig,
+    gcs::GCSConfig,
+    http::HTTPConfig,
+    s3::{S3Config, S3Credentials},
+    unity::UnityConfig,
 };
 
 #[derive(Clone)]
 pub struct ObfuscatedString(Secret<String>);
 
 impl ObfuscatedString {
+    #[must_use]
     pub fn as_string(&self) -> &String {
         self.0.expose_secret()
     }
@@ -39,7 +47,7 @@ impl Eq for ObfuscatedString {}
 
 impl Hash for ObfuscatedString {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.expose_secret().hash(state)
+        self.0.expose_secret().hash(state);
     }
 }
 
@@ -70,12 +78,20 @@ impl<'de> Deserialize<'de> for ObfuscatedString {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(ObfuscatedString(s.into()))
+        Ok(Self(s.into()))
     }
 }
 
 impl From<String> for ObfuscatedString {
     fn from(value: String) -> Self {
-        ObfuscatedString(value.into())
+        Self(value.into())
+    }
+}
+
+impl std::str::FromStr for ObfuscatedString {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_string().into()))
     }
 }

@@ -1,18 +1,19 @@
-use std::ops::Range;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{any::Any, ops::Range, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
-use futures::stream::{BoxStream, Stream};
-use futures::StreamExt;
-
+use futures::{
+    stream::{BoxStream, Stream},
+    StreamExt,
+};
 use tokio::sync::OwnedSemaphorePermit;
 
-use crate::local::{collect_file, LocalFile};
-use crate::stats::IOStatsRef;
-use crate::FileFormat;
+use crate::{
+    local::{collect_file, LocalFile},
+    stats::IOStatsRef,
+    FileFormat,
+};
 
 pub struct StreamingRetryParams {
     source: Arc<dyn ObjectSource>,
@@ -76,7 +77,7 @@ where
 
 impl GetResult {
     pub async fn bytes(self) -> super::Result<Bytes> {
-        use GetResult::*;
+        use GetResult::{File, Stream};
         let mut get_result = self;
         match get_result {
             File(f) => collect_file(f).await,
@@ -89,10 +90,10 @@ impl GetResult {
                 let mut result = collect_bytes(stream, size, permit).await; // drop permit to ensure quota
                 for attempt in 1..NUM_TRIES {
                     match result {
-                        Err(super::Error::SocketError { .. })
-                        | Err(super::Error::UnableToReadBytes { .. })
-                            if let Some(rp) = &retry_params =>
-                        {
+                        Err(
+                            super::Error::SocketError { .. }
+                            | super::Error::UnableToReadBytes { .. },
+                        ) if let Some(rp) = &retry_params => {
                             let jitter = rand::thread_rng()
                                 .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
                                 as u64;
@@ -108,7 +109,7 @@ impl GetResult {
                                 .source
                                 .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
                                 .await?;
-                            if let GetResult::Stream(stream, size, permit, _) = get_result {
+                            if let Self::Stream(stream, size, permit, _) = get_result {
                                 result = collect_bytes(stream, size, permit).await;
                             } else {
                                 unreachable!("Retrying a stream should always be a stream");
@@ -122,17 +123,18 @@ impl GetResult {
         }
     }
 
+    #[must_use]
     pub fn with_retry(self, params: StreamingRetryParams) -> Self {
         match self {
-            GetResult::File(..) => self,
-            GetResult::Stream(s, size, permit, _) => {
-                GetResult::Stream(s, size, permit, Some(Box::new(params)))
+            Self::File(..) => self,
+            Self::Stream(s, size, permit, _) => {
+                Self::Stream(s, size, permit, Some(Box::new(params)))
             }
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileType {
     File,
     Directory,
@@ -147,7 +149,7 @@ impl TryFrom<std::fs::FileType> for FileType {
         } else if value.is_file() {
             Ok(Self::File)
         } else if value.is_symlink() {
-            Err(DaftError::InternalError(format!("Symlinks should never be encountered when constructing FileMetadata, but got: {:?}", value)))
+            Err(DaftError::InternalError(format!("Symlinks should never be encountered when constructing FileMetadata, but got: {value:?}")))
         } else {
             unreachable!(
                 "Can only be a directory, file, or symlink, but got: {:?}",
@@ -157,7 +159,7 @@ impl TryFrom<std::fs::FileType> for FileType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileMetadata {
     pub filepath: String,
     pub size: Option<u64>,
@@ -172,7 +174,7 @@ pub struct LSResult {
 use async_stream::stream;
 
 #[async_trait]
-pub(crate) trait ObjectSource: Sync + Send {
+pub trait ObjectSource: Sync + Send {
     async fn get(
         &self,
         uri: &str,
@@ -208,13 +210,13 @@ pub(crate) trait ObjectSource: Sync + Send {
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult>;
 
-    async fn iter_dir(
-        &self,
+    async fn iter_dir<'a>(
+        &'a self,
         uri: &str,
         posix: bool,
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    ) -> super::Result<BoxStream<'a, super::Result<FileMetadata>>> {
         let uri = uri.to_string();
         let s = stream! {
             let lsr = self.ls(&uri, posix, None, page_size, io_stats.clone()).await?;
@@ -233,4 +235,6 @@ pub(crate) trait ObjectSource: Sync + Send {
         };
         Ok(s.boxed())
     }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }

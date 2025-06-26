@@ -1,18 +1,17 @@
 use std::{mem::swap, sync::Arc};
 
+use super::Growable;
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{Field, PythonArray, PythonType},
-    DataType, IntoSeries, Series,
+    datatypes::{DataType, Field, PythonArray, PythonType},
+    series::{IntoSeries, Series},
 };
-
-use super::Growable;
 
 pub struct PythonGrowable<'a> {
     name: String,
     dtype: DataType,
     arr_refs: Vec<&'a DataArray<PythonType>>,
-    buffer: Vec<pyo3::PyObject>,
+    buffer: Vec<Arc<pyo3::PyObject>>,
 }
 
 impl<'a> PythonGrowable<'a> {
@@ -31,7 +30,7 @@ impl<'a> PythonGrowable<'a> {
     }
 }
 
-impl<'a> Growable for PythonGrowable<'a> {
+impl Growable for PythonGrowable<'_> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let arr = self.arr_refs.get(index).unwrap();
@@ -39,9 +38,9 @@ impl<'a> Growable for PythonGrowable<'a> {
         let slice_to_copy = arr
             .data()
             .as_any()
-            .downcast_ref::<PseudoArrowArray<pyo3::PyObject>>()
+            .downcast_ref::<PseudoArrowArray<Arc<pyo3::PyObject>>>()
             .unwrap();
-        let pynone = pyo3::Python::with_gil(|py| py.None());
+        let pynone = Arc::new(pyo3::Python::with_gil(|py| py.None()));
         for obj in slice_to_copy.iter() {
             match obj {
                 None => self.buffer.push(pynone.clone()),
@@ -51,18 +50,18 @@ impl<'a> Growable for PythonGrowable<'a> {
     }
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        let pynone = pyo3::Python::with_gil(|py| py.None());
+        let pynone = Arc::new(pyo3::Python::with_gil(|py| py.None()));
         for _ in 0..additional {
             self.buffer.push(pynone.clone());
         }
     }
     #[inline]
     fn build(&mut self) -> common_error::DaftResult<Series> {
-        let mut buf: Vec<pyo3::PyObject> = vec![];
+        let mut buf: Vec<Arc<pyo3::PyObject>> = vec![];
         swap(&mut self.buffer, &mut buf);
 
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
-        let arr = PseudoArrowArray::<pyo3::PyObject>::from_pyobj_vec(buf);
+        let arr = PseudoArrowArray::from_pyobj_vec(buf);
         Ok(DataArray::<PythonType>::new(field, Box::new(arr))?.into_series())
     }
 }

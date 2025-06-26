@@ -1,19 +1,18 @@
-use crate::datatypes::DataType;
-use crate::datatypes::TimeUnit;
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+
+use crate::datatypes::{DataType, TimeUnit};
 
 // TODO: Deprecate this logic soon!
 
 fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
-    use TimeUnit::*;
     match (tu_l, tu_r) {
-        (Nanoseconds, Microseconds) => Microseconds,
-        (_, Milliseconds) => Milliseconds,
+        (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => TimeUnit::Microseconds,
+        (_, TimeUnit::Milliseconds) => TimeUnit::Milliseconds,
         _ => *tu_l,
     }
 }
 
+/// Computes the supertype of two types.
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     match get_supertype(l, r) {
         Some(dt) => Ok(dt),
@@ -23,157 +22,168 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     }
 }
 
+/// Computes the supertype of a collection.
+pub fn try_get_collection_supertype<'a, I>(types: I) -> DaftResult<DataType>
+where
+    I: IntoIterator<Item = &'a DataType>,
+{
+    let mut dtype = DataType::Null;
+    for type_ in types {
+        dtype = try_get_supertype(&dtype, type_)?;
+    }
+    Ok(dtype)
+}
+
+#[must_use]
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
-        use DataType::*;
-
         if l == r {
             return Some(l.clone());
         }
 
         match (l, r) {
             #[cfg(feature = "python")]
-            // The supertype of anything and Python is Python.
-            (_, Python) => Some(Python),
+            // The supertype of anything and DataType::Python is DataType::Python.
+            (_, DataType::Python) => Some(DataType::Python),
 
-            (Int8, Boolean) => Some(Int8),
-            (Int8, Int16) => Some(Int16),
-            (Int8, Int32) => Some(Int32),
-            (Int8, Int64) => Some(Int64),
-            (Int8, UInt8) => Some(Int16),
-            (Int8, UInt16) => Some(Int32),
-            (Int8, UInt32) => Some(Int64),
-            (Int8, UInt64) => Some(Float64), // Follow numpy
-            (Int8, Float32) => Some(Float32),
-            (Int8, Float64) => Some(Float64),
+            (DataType::Int8, DataType::Boolean) => Some(DataType::Int8),
+            (DataType::Int8, DataType::Int16) => Some(DataType::Int16),
+            (DataType::Int8, DataType::Int32) => Some(DataType::Int32),
+            (DataType::Int8, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Int8, DataType::UInt8) => Some(DataType::Int16),
+            (DataType::Int8, DataType::UInt16) => Some(DataType::Int32),
+            (DataType::Int8, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int8, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int8, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Int8, DataType::Float64) => Some(DataType::Float64),
 
-            (Int16, Boolean) => Some(Int16),
-            (Int16, Int8) => Some(Int16),
-            (Int16, Int32) => Some(Int32),
-            (Int16, Int64) => Some(Int64),
-            (Int16, UInt8) => Some(Int16),
-            (Int16, UInt16) => Some(Int32),
-            (Int16, UInt32) => Some(Int64),
-            (Int16, UInt64) => Some(Float64), // Follow numpy
-            (Int16, Float32) => Some(Float32),
-            (Int16, Float64) => Some(Float64),
+            (DataType::Int16, DataType::Boolean) => Some(DataType::Int16),
+            (DataType::Int16, DataType::Int8) => Some(DataType::Int16),
+            (DataType::Int16, DataType::Int32) => Some(DataType::Int32),
+            (DataType::Int16, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Int16, DataType::UInt8) => Some(DataType::Int16),
+            (DataType::Int16, DataType::UInt16) => Some(DataType::Int32),
+            (DataType::Int16, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int16, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Int16, DataType::Float64) => Some(DataType::Float64),
 
-            (Int32, Boolean) => Some(Int32),
-            (Int32, Int8) => Some(Int32),
-            (Int32, Int16) => Some(Int32),
-            (Int32, Int64) => Some(Int64),
-            (Int32, UInt8) => Some(Int32),
-            (Int32, UInt16) => Some(Int32),
-            (Int32, UInt32) => Some(Int64),
-            (Int32, UInt64) => Some(Float64),  // Follow numpy
-            (Int32, Float32) => Some(Float64), // Follow numpy
-            (Int32, Float64) => Some(Float64),
+            (DataType::Int32, DataType::Boolean) => Some(DataType::Int32),
+            (DataType::Int32, DataType::Int8) => Some(DataType::Int32),
+            (DataType::Int32, DataType::Int16) => Some(DataType::Int32),
+            (DataType::Int32, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Int32, DataType::UInt8) => Some(DataType::Int32),
+            (DataType::Int32, DataType::UInt16) => Some(DataType::Int32),
+            (DataType::Int32, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int32, DataType::UInt64) => Some(DataType::Float64),  // Follow numpy
+            (DataType::Int32, DataType::Float32) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int32, DataType::Float64) => Some(DataType::Float64),
 
-            (Int64, Boolean) => Some(Int64),
-            (Int64, Int8) => Some(Int64),
-            (Int64, Int16) => Some(Int64),
-            (Int64, Int32) => Some(Int64),
-            (Int64, UInt8) => Some(Int64),
-            (Int64, UInt16) => Some(Int64),
-            (Int64, UInt32) => Some(Int64),
-            (Int64, UInt64) => Some(Float64),  // Follow numpy
-            (Int64, Float32) => Some(Float64), // Follow numpy
-            (Int64, Float64) => Some(Float64),
+            (DataType::Int64, DataType::Boolean) => Some(DataType::Int64),
+            (DataType::Int64, DataType::Int8) => Some(DataType::Int64),
+            (DataType::Int64, DataType::Int16) => Some(DataType::Int64),
+            (DataType::Int64, DataType::Int32) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt8) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt16) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Int64, DataType::UInt64) => Some(DataType::Float64),  // Follow numpy
+            (DataType::Int64, DataType::Float32) => Some(DataType::Float64), // Follow numpy
+            (DataType::Int64, DataType::Float64) => Some(DataType::Float64),
 
-            (UInt16, UInt8) => Some(UInt16),
-            (UInt16, UInt32) => Some(UInt32),
-            (UInt16, UInt64) => Some(UInt64),
+            (DataType::UInt16, DataType::UInt8) => Some(DataType::UInt16),
+            (DataType::UInt16, DataType::UInt32) => Some(DataType::UInt32),
+            (DataType::UInt16, DataType::UInt64) => Some(DataType::UInt64),
 
-            (UInt8, UInt32) => Some(UInt32),
-            (UInt8, UInt64) => Some(UInt64),
-            (UInt32, UInt64) => Some(UInt64),
+            (DataType::UInt8, DataType::UInt32) => Some(DataType::UInt32),
+            (DataType::UInt8, DataType::UInt64) => Some(DataType::UInt64),
+            (DataType::UInt32, DataType::UInt64) => Some(DataType::UInt64),
 
-            (Boolean, UInt8) => Some(UInt8),
-            (Boolean, UInt16) => Some(UInt16),
-            (Boolean, UInt32) => Some(UInt32),
-            (Boolean, UInt64) => Some(UInt64),
+            (DataType::Boolean, DataType::UInt8) => Some(DataType::UInt8),
+            (DataType::Boolean, DataType::UInt16) => Some(DataType::UInt16),
+            (DataType::Boolean, DataType::UInt32) => Some(DataType::UInt32),
+            (DataType::Boolean, DataType::UInt64) => Some(DataType::UInt64),
 
-            (Float32, UInt8) => Some(Float32),
-            (Float32, UInt16) => Some(Float32),
-            (Float32, UInt32) => Some(Float64),
-            (Float32, UInt64) => Some(Float64),
+            (DataType::Float32, DataType::UInt8) => Some(DataType::Float32),
+            (DataType::Float32, DataType::UInt16) => Some(DataType::Float32),
+            (DataType::Float32, DataType::UInt32) => Some(DataType::Float64),
+            (DataType::Float32, DataType::UInt64) => Some(DataType::Float64),
 
-            (Float64, UInt8) => Some(Float64),
-            (Float64, UInt16) => Some(Float64),
-            (Float64, UInt32) => Some(Float64),
-            (Float64, UInt64) => Some(Float64),
+            (DataType::Float64, DataType::UInt8) => Some(DataType::Float64),
+            (DataType::Float64, DataType::UInt16) => Some(DataType::Float64),
+            (DataType::Float64, DataType::UInt32) => Some(DataType::Float64),
+            (DataType::Float64, DataType::UInt64) => Some(DataType::Float64),
 
-            (Float64, Float32) => Some(Float64),
+            (DataType::Float64, DataType::Float32) => Some(DataType::Float64),
 
-            (Date, UInt8) => Some(Int64),
-            (Date, UInt16) => Some(Int64),
-            (Date, UInt32) => Some(Int64),
-            (Date, UInt64) => Some(Int64),
-            (Date, Int8) => Some(Int32),
-            (Date, Int16) => Some(Int32),
-            (Date, Int32) => Some(Int32),
-            (Date, Int64) => Some(Int64),
-            (Date, Float32) => Some(Float32),
-            (Date, Float64) => Some(Float64),
-            (Date, Timestamp(tu, tz)) => Some(Timestamp(*tu, tz.clone())),
+            (DataType::Date, DataType::UInt8) => Some(DataType::Int64),
+            (DataType::Date, DataType::UInt16) => Some(DataType::Int64),
+            (DataType::Date, DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Date, DataType::UInt64) => Some(DataType::Int64),
+            (DataType::Date, DataType::Int8) => Some(DataType::Int32),
+            (DataType::Date, DataType::Int16) => Some(DataType::Int32),
+            (DataType::Date, DataType::Int32) => Some(DataType::Int32),
+            (DataType::Date, DataType::Int64) => Some(DataType::Int64),
+            (DataType::Date, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Date, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Date, DataType::Timestamp(tu, tz)) => Some(DataType::Timestamp(*tu, tz.clone())),
 
-            (Timestamp(_, _), UInt32) => Some(Int64),
-            (Timestamp(_, _), UInt64) => Some(Int64),
-            (Timestamp(_, _), Int32) => Some(Int64),
-            (Timestamp(_, _), Int64) => Some(Int64),
-            (Timestamp(_, _), Float32) => Some(Float64),
-            (Timestamp(_, _), Float64) => Some(Float64),
-            (Timestamp(tu, tz), Date) => Some(Timestamp(*tu, tz.clone())),
+            (DataType::Timestamp(_, _), DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Timestamp(_, _), DataType::UInt64) => Some(DataType::Int64),
+            (DataType::Timestamp(_, _), DataType::Int32) => Some(DataType::Int64),
+            (DataType::Timestamp(_, _), DataType::Int64) => Some(DataType::Int64),
+            (DataType::Timestamp(_, _), DataType::Float32) => Some(DataType::Float64),
+            (DataType::Timestamp(_, _), DataType::Float64) => Some(DataType::Float64),
+            (DataType::Timestamp(tu, tz), DataType::Date) => Some(DataType::Timestamp(*tu, tz.clone())),
 
-            (Duration(_), UInt32) => Some(Int64),
-            (Duration(_), UInt64) => Some(Int64),
-            (Duration(_), Int32) => Some(Int64),
-            (Duration(_), Int64) => Some(Int64),
-            (Duration(_), Float32) => Some(Float64),
-            (Duration(_), Float64) => Some(Float64),
+            (DataType::Duration(_), DataType::UInt32) => Some(DataType::Int64),
+            (DataType::Duration(_), DataType::UInt64) => Some(DataType::Int64),
+            (DataType::Duration(_), DataType::Int32) => Some(DataType::Int64),
+            (DataType::Duration(_), DataType::Int64) => Some(DataType::Int64),
+            (DataType::Duration(_), DataType::Float32) => Some(DataType::Float64),
+            (DataType::Duration(_), DataType::Float64) => Some(DataType::Float64),
 
-            (Time(_), Int32) => Some(Int64),
-            (Time(_), Int64) => Some(Int64),
-            (Time(_), Float32) => Some(Float64),
-            (Time(_), Float64) => Some(Float64),
+            (DataType::Time(_), DataType::Int32) => Some(DataType::Int64),
+            (DataType::Time(_), DataType::Int64) => Some(DataType::Int64),
+            (DataType::Time(_), DataType::Float32) => Some(DataType::Float64),
+            (DataType::Time(_), DataType::Float64) => Some(DataType::Float64),
 
-            (Duration(lu), Timestamp(ru, Some(tz))) | (Timestamp(lu, Some(tz)), Duration(ru)) => {
+            (DataType::Duration(lu), DataType::Timestamp(ru, Some(tz))) | (DataType::Timestamp(lu, Some(tz)), DataType::Duration(ru)) => {
                 if tz.is_empty() {
-                    Some(Timestamp(get_time_units(lu, ru), None))
+                    Some(DataType::Timestamp(get_time_units(lu, ru), None))
                 } else {
-                    Some(Timestamp(get_time_units(lu, ru), Some(tz.clone())))
+                    Some(DataType::Timestamp(get_time_units(lu, ru), Some(tz.clone())))
                 }
             }
-            (Duration(lu), Timestamp(ru, None)) | (Timestamp(lu, None), Duration(ru)) => {
-                Some(Timestamp(get_time_units(lu, ru), None))
+            (DataType::Duration(lu), DataType::Timestamp(ru, None)) | (DataType::Timestamp(lu, None), DataType::Duration(ru)) => {
+                Some(DataType::Timestamp(get_time_units(lu, ru), None))
             }
-            (Duration(_), Date) | (Date, Duration(_)) => Some(Date),
-            (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
+            (DataType::Duration(_), DataType::Date) | (DataType::Date, DataType::Duration(_)) => Some(DataType::Date),
+            (DataType::Duration(lu), DataType::Duration(ru)) => Some(DataType::Duration(get_time_units(lu, ru))),
 
             // Some() timezones that are non equal
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
-            (Timestamp(tu_l, Some(tz_l)), Timestamp(tu_r, Some(tz_r)))
+            (DataType::Timestamp(tu_l, Some(tz_l)), DataType::Timestamp(tu_r, Some(tz_r)))
                 if !tz_l.is_empty()
                     && !tz_r.is_empty() && tz_l != tz_r =>
             {
                 let tu = get_time_units(tu_l, tu_r);
-                Some(Timestamp(tu, Some("UTC".to_string())))
+                Some(DataType::Timestamp(tu, Some("UTC".to_string())))
             }
             // None and Some("<tz>") timezones
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
-            (Timestamp(tu_l, tz_l), Timestamp(tu_r, tz_r)) if
+            (DataType::Timestamp(tu_l, tz_l), DataType::Timestamp(tu_r, tz_r)) if
                 // both are none
                 tz_l.is_none() && tz_r.is_none()
                 // both have the same time zone
                 || (tz_l.is_some() && (tz_l == tz_r)) => {
                 let tu = get_time_units(tu_l, tu_r);
-                Some(Timestamp(tu, tz_r.clone()))
+                Some(DataType::Timestamp(tu, tz_r.clone()))
             }
 
             //TODO(sammy): add time, struct related dtypes
-            (Boolean, Float32) => Some(Float32),
-            (Boolean, Float64) => Some(Float64),
-            (List(inner_left_dtype), List(inner_right_dtype)) => {
+            (DataType::Boolean, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Boolean, DataType::Float64) => Some(DataType::Float64),
+            (DataType::List(inner_left_dtype), DataType::List(inner_right_dtype)) => {
                 let inner_st = get_supertype(inner_left_dtype.as_ref(), inner_right_dtype.as_ref())?;
                 Some(DataType::List(Box::new(inner_st)))
             }
@@ -194,17 +204,14 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             // }
 
             // every known type can be casted to a string except binary
-            (dt, Utf8) if !matches!(&dt, &Binary | &FixedSizeBinary(_)) => Some(Utf8),
-            (dt, Null) => Some(dt.clone()), // Drop Null Type
+            (dt, DataType::Utf8) if !matches!(&dt, &DataType::Binary | &DataType::FixedSizeBinary(_) | &DataType::List(_)) => Some(DataType::Utf8),
+            (dt, DataType::Null) => Some(dt.clone()), // Drop DataType::Null Type
 
 
             _ => None,
         }
     }
-    match inner(l, r) {
-        Some(dt) => Some(dt),
-        None => inner(r, l),
-    }
+    inner(l, r).or_else(|| inner(r, l))
 }
 
 #[cfg(test)]

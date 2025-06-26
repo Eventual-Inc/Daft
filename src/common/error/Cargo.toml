@@ -1,11 +1,20 @@
 [dependencies]
-arrow2 = {workspace = true}
+arrow-schema = {version = "54.2.1", optional = true}
+arrow2 = {workspace = true, features = ["io_parquet"]}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
 serde_json = {workspace = true}
+thiserror = {workspace = true}
+
+[dev-dependencies]
+parquet2 = {workspace = true}
 
 [features]
+arrow = ["arrow2/arrow", "dep:arrow-schema"]
 python = ["dep:pyo3"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

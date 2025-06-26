@@ -141,4 +141,108 @@ mod tests {
             panic!()
         };
     }
+
+    #[test]
+    fn test_bool_bitpacked() {
+        let bit_width = 1usize;
+        let length = 4;
+        let values = [
+            2, 0, 0, 0, // Length indicator as u32.
+            0b00000011, // Bitpacked indicator with 1 value (1 << 1 | 1).
+            0b00001101, // Values (true, false, true, true).
+        ];
+        let expected = &[1, 0, 1, 1];
+
+        let mut decoder = Decoder::new(&values[4..], bit_width);
+
+        if let Ok(HybridEncoded::Bitpacked(values)) = decoder.next().unwrap() {
+            assert_eq!(values, &[0b00001101]);
+
+            let result = bitpacked::Decoder::<u8>::try_new(values, bit_width, length)
+                .unwrap()
+                .collect::<Vec<_>>();
+            assert_eq!(result, expected);
+        } else {
+            panic!("Expected bitpacked encoding");
+        }
+    }
+
+    #[test]
+    fn test_bool_rle() {
+        let bit_width = 1usize;
+        let length = 4;
+        let values = [
+            2, 0, 0, 0, // Length indicator as u32.
+            0b00001000, // RLE indicator (4 << 1 | 0).
+            true as u8  // Value to repeat.
+        ];
+
+        let mut decoder = Decoder::new(&values[4..], bit_width);
+
+        if let Ok(HybridEncoded::Rle(value, run_length)) = decoder.next().unwrap() {
+            assert_eq!(value, &[1u8]);  // true encoded as 1.
+            assert_eq!(run_length, length); // Repeated 4 times.
+        } else {
+            panic!("Expected RLE encoding");
+        }
+    }
+
+    #[test]
+    fn test_bool_mixed_rle() {
+        let bit_width = 1usize;
+        let values = [
+            4, 0, 0, 0, // Length indicator as u32.
+            0b00000011, // Bitpacked indicator with 1 value (1 << 1 | 1).
+            0b00001101, // Values (true, false, true, true).
+            0b00001000, // RLE indicator (4 << 1 | 0)
+            false as u8 // RLE value
+        ];
+
+        let mut decoder = Decoder::new(&values[4..], bit_width);
+
+        // Decode bitpacked values.
+        if let Ok(HybridEncoded::Bitpacked(values)) = decoder.next().unwrap() {
+            assert_eq!(values, &[0b00001101]);
+        } else {
+            panic!("Expected bitpacked encoding");
+        }
+
+        // Decode RLE values.
+        if let Ok(HybridEncoded::Rle(value, run_length)) = decoder.next().unwrap() {
+            assert_eq!(value, &[0u8]); // false encoded as 0.
+            assert_eq!(run_length, 4);
+        } else {
+            panic!("Expected RLE encoding");
+        }
+    }
+
+    #[test]
+    fn test_bool_nothing_encoded() {
+        let bit_width = 1usize;
+        let values = [0, 0, 0, 0]; // Length indicator only.
+
+        let mut decoder = Decoder::new(&values[4..], bit_width);
+        assert!(decoder.next().is_none());
+    }
+
+    #[test]
+    fn test_bool_invalid_encoding() {
+        let bit_width = 1usize;
+        let values = [
+            2, 0, 0, 0, // Length indicator as u32.
+            0b00000101, // Bitpacked indicator with 1 value (2 << 1 | 1).
+            true as u8 // Incomplete encoding (should have another u8).
+        ];
+
+        let mut decoder = Decoder::new(&values[4..], bit_width);
+
+        if let Ok(HybridEncoded::Bitpacked(values)) = decoder.next().unwrap() {
+            assert_eq!(values, &[1u8]);
+        } else {
+            panic!("Expected bitpacked encoding");
+        }
+
+        // Next call should return None since we've exhausted the buffer.
+        assert!(decoder.next().is_none());
+    }
 }

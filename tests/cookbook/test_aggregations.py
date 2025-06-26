@@ -10,10 +10,11 @@ from daft.datatype import DataType
 from daft.expressions import col
 from daft.udf import udf
 from tests.conftest import assert_df_equals
+from tests.dataframe.test_aggregations import _assert_all_hashable
 
 
-def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Sums across an entire column for the entire table"""
+def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Sums across an entire column for the entire table."""
     daft_df = daft_df.repartition(repartition_nparts).sum(col("Unique Key").alias("unique_key_sum"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_sum": service_requests_csv_pd_df["Unique Key"].sum()}]
@@ -22,8 +23,8 @@ def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
-def test_approx_percentiles(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Computes approx percentile across an entire column for the entire table"""
+def test_approx_percentiles(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Computes approx percentile across an entire column for the entire table."""
     daft_df = daft_df.repartition(repartition_nparts).agg(
         col("Unique Key").alias("unique_key_median").approx_percentiles([0.25, 0.5, 0.75])
     )
@@ -37,8 +38,8 @@ def test_approx_percentiles(daft_df, service_requests_csv_pd_df, repartition_npa
     )
 
 
-def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Averages across a column for entire table"""
+def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Averages across a column for entire table."""
     daft_df = daft_df.repartition(repartition_nparts).mean(col("Unique Key").alias("unique_key_mean"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_mean": service_requests_csv_pd_df["Unique Key"].mean()}]
@@ -47,8 +48,8 @@ def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
 
 
-def test_min(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """min across a column for entire table"""
+def test_min(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Min across a column for entire table."""
     daft_df = daft_df.repartition(repartition_nparts).min(col("Unique Key").alias("unique_key_min"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_min": service_requests_csv_pd_df["Unique Key"].min()}]
@@ -57,8 +58,8 @@ def test_min(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_min")
 
 
-def test_max(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """max across a column for entire table"""
+def test_max(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Max across a column for entire table."""
     daft_df = daft_df.repartition(repartition_nparts).max(col("Unique Key").alias("unique_key_max"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_max": service_requests_csv_pd_df["Unique Key"].max()}]
@@ -67,8 +68,8 @@ def test_max(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_max")
 
 
-def test_count(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """count a column for entire table"""
+def test_count(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Count a column for entire table."""
     daft_df = daft_df.repartition(repartition_nparts).count(col("Unique Key").alias("unique_key_count"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_count": service_requests_csv_pd_df["Unique Key"].count()}]
@@ -78,8 +79,8 @@ def test_count(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_count")
 
 
-def test_list(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """list agg a column for entire table"""
+def test_list(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """List agg a column for entire table."""
     daft_df = daft_df.repartition(repartition_nparts).agg_list(col("Unique Key").alias("unique_key_list")).collect()
     unique_key_list = service_requests_csv_pd_df["Unique Key"].to_list()
 
@@ -88,8 +89,23 @@ def test_list(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert set(result_list[0]) == set(unique_key_list)
 
 
-def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Averages across a column for entire table"""
+@pytest.mark.parametrize("npartitions", [1, 2])
+def test_set(make_df, npartitions, with_morsel_size):
+    df = make_df(
+        {
+            "values": [1, 2, 2, 3, 3, 3],
+        },
+        repartition=npartitions,
+    )
+    df = df.agg([col("values").agg_set().alias("set")])
+    df.collect()
+    result = df.to_pydict()["set"][0]
+    _assert_all_hashable(result, "test_set")
+    assert set(result) == {1, 2, 3}
+
+
+def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Averages across a column for entire table."""
     daft_df = daft_df.repartition(repartition_nparts).agg(
         [
             col("Unique Key").mean().alias("unique_key_mean"),
@@ -112,8 +128,8 @@ def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_mean")
 
 
-def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
-    """Sums across an entire column for the entire table filtered by a certain condition"""
+def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
+    """Sums across an entire column for the entire table filtered by a certain condition."""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .where(col("Borough") == "BROOKLYN")
@@ -139,8 +155,8 @@ def test_filtered_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """Sums across groups"""
+def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Sums across groups."""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).sum(col("Unique Key"))
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key").reset_index()
     daft_pd_df = daft_df.to_pandas()
@@ -154,8 +170,8 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_approx_percentile_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """Computes approx percentile across groups"""
+def test_approx_percentile_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Computes approx percentile across groups."""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
@@ -180,8 +196,8 @@ def test_approx_percentile_groupby(daft_df, service_requests_csv_pd_df, repartit
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_mean_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """Sums across groups"""
+def test_mean_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Sums across groups."""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).mean(col("Unique Key"))
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).mean("Unique Key").reset_index()
     daft_pd_df = daft_df.to_pandas()
@@ -195,8 +211,8 @@ def test_mean_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, k
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_count_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """count across groups"""
+def test_count_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Count across groups."""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).count()
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).count().reset_index()
     for cname in service_requests_csv_pd_df:
@@ -213,8 +229,8 @@ def test_count_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, 
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """min across groups"""
+def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Min across groups."""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
@@ -234,8 +250,8 @@ def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_max_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """max across groups"""
+def test_max_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Max across groups."""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
@@ -255,8 +271,8 @@ def test_max_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
         pytest.param(["Borough", "Complaint Type"], id="NumGroupSortKeys:2"),
     ],
 )
-def test_sum_groupby_sorted(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """Test sorting after a groupby"""
+def test_sum_groupby_sorted(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Test sorting after a groupby."""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
@@ -277,8 +293,8 @@ def test_sum_groupby_sorted(daft_df, service_requests_csv_pd_df, repartition_npa
         pytest.param(["Borough", "Complaint Type"], id="NumGroupSortKeys:2"),
     ],
 )
-def test_map_groups(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
-    """Test map_groups"""
+def test_map_groups(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
+    """Test map_groups."""
 
     @udf(return_dtype=DataType.float64())
     def average_resolution_time(created_date, closed_date):

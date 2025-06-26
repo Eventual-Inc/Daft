@@ -83,6 +83,21 @@ def test_sample_with_replacement(make_df, valid_data: list[dict[str, float]]) ->
     assert all(col[0] == col[1] for col in df.to_pydict().values())
 
 
+def test_sample_without_replacement(make_df, valid_data: list[dict[str, float]]) -> None:
+    # Sample without replacement should return different rows each time.
+    # Valid data has 3 rows, so 10 iterations should be enough to test this.
+    for _ in range(10):
+        df = make_df(valid_data)
+        df = df.sample(fraction=0.5, with_replacement=False)
+        df.collect()
+
+        assert len(df) == 2
+        assert df.column_names == list(valid_data[0].keys())
+        # Check that the two rows are different.
+        pylist = df.to_pylist()
+        assert pylist[0] != pylist[1]
+
+
 def test_sample_with_concat(make_df, valid_data: list[dict[str, float]]) -> None:
     df1 = make_df(valid_data)
     df2 = make_df(valid_data)

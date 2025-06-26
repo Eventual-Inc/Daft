@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
+if TYPE_CHECKING:
+    from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
 
 
 def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:
-    """
-    Converts the Daft IOConfig to a storage options dict that the object_store crate
-    understands. The object_store crate is used by many Rust-backed Python libraries such as
+    """Converts the Daft IOConfig to a storage options dict that the object_store crate understands.
+
+    The object_store crate is used by many Rust-backed Python libraries such as
     delta-rs and lance.
 
     This function takes as input the table_uri, which it uses to determine the backend to be used.
@@ -44,6 +46,8 @@ def _s3_config_to_storage_options(s3_config: S3Config) -> dict[str, str]:
         storage_options["connect_timeout"] = str(s3_config.connect_timeout_ms) + "ms"
     if s3_config.anonymous:
         storage_options["skip_signature"] = "true"
+    if s3_config.force_virtual_addressing:
+        storage_options["virtual_hosted_style_request"] = "true"
     return storage_options
 
 

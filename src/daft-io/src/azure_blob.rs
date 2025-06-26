@@ -1,15 +1,20 @@
+use std::{any::Any, ops::Range, sync::Arc};
+
 use async_trait::async_trait;
-use azure_core::{auth::TokenCredential, new_http_client};
-use azure_identity::{ClientSecretCredential, DefaultAzureCredential};
+use azure_core::auth::TokenCredential;
+use azure_identity::{
+    ClientSecretCredential, DefaultAzureCredentialBuilder, TokenCredentialOptions,
+};
 use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
     blob::operations::GetBlobResponse,
     container::{operations::BlobItem, Container},
     prelude::*,
 };
+use common_io_config::AzureConfig;
+use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
-use std::{ops::Range, sync::Arc};
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
@@ -17,7 +22,6 @@ use crate::{
     stream_utils::io_stats_on_bytestream,
     FileFormat, GetResult,
 };
-use common_io_config::AzureConfig;
 
 const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
@@ -65,9 +69,21 @@ enum Error {
     NotAFile { path: String },
 }
 
+#[derive(Builder)]
+#[builder(setter(into))]
+struct ParsedAzureUri {
+    pub protocol: String,
+    #[builder(setter(strip_option), default)]
+    pub account_name: Option<String>,
+    #[builder(setter(strip_option), default)]
+    pub container_and_key: Option<(String, String)>,
+}
+
 /// Parse an Azure URI into its components.
-/// Returns (protocol, (container, key) if exists).
-fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>)> {
+/// Returns (protocol, (container, key) if exists, storage account if exists).
+fn parse_azure_uri(uri: &str) -> super::Result<ParsedAzureUri> {
+    let mut builder = ParsedAzureUriBuilder::default();
+
     let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
     // "Container" is Azure's name for Bucket.
@@ -80,56 +96,62 @@ fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>
     // It also supports PROTOCOL://account.dfs.core.windows.net/container/path-part/file
     // but it is not documented
     // https://github.com/fsspec/adlfs/blob/5c24b2e886fc8e068a313819ce3db9b7077c27e3/adlfs/spec.py#L364
-    let username = uri.username();
-    let container_and_key = if username.is_empty() {
-        match uri.host_str() {
-            Some(host) if host.ends_with(AZURE_STORE_SUFFIX) => uri
-                .path()
-                .split_once('/')
-                .map(|(c, k)| (c.into(), k.into())),
-            Some(host) => Some((host.into(), uri.path().into())),
-            None => None,
+    if let Some(host) = uri.host_str() {
+        if host.ends_with(AZURE_STORE_SUFFIX) {
+            match uri.username() {
+                "" => {
+                    if let Some((container, key)) = uri.path().split_once('/') {
+                        builder.container_and_key((container.into(), key.into()));
+                    }
+                }
+                username => {
+                    builder.container_and_key((username.into(), uri.path().into()));
+                }
+            }
+
+            let account_name_len = host.len() - AZURE_STORE_SUFFIX.len();
+            builder.account_name(&host[..account_name_len]);
+        } else {
+            builder.container_and_key((host.into(), uri.path().into()));
         }
-    } else {
-        Some((username.into(), uri.path().into()))
-    };
+    }
 
     // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
     // NB: It's unclear if there is a semantic difference between the protocols
     // or if there is a standard for the behaviour either;
     // here, we will treat them both the same, but persist whichever protocol string was used.
-    let protocol = uri.scheme();
+    builder.protocol(uri.scheme());
 
-    Ok((protocol.into(), container_and_key))
+    Ok(builder.build().unwrap())
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{NotAFile, NotFound, UnableToOpenFile, UnableToReadBytes};
         match error {
             UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
                 match source.as_http_error().map(|v| v.status().into()) {
-                    Some(404) | Some(410) => super::Error::NotFound {
+                    Some(404 | 410) => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    Some(401) => super::Error::Unauthorized {
+                    Some(401) => Self::Unauthorized {
                         store: super::SourceType::AzureBlob,
                         path,
                         source: source.into(),
                     },
-                    None | Some(_) => super::Error::UnableToOpenFile {
+                    None | Some(_) => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
                 }
             }
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            NotAFile { path } => super::Error::NotAFile { path },
-            _ => super::Error::Generic {
+            NotAFile { path } => Self::NotAFile { path },
+            _ => Self::Generic {
                 store: super::SourceType::AzureBlob,
                 source: error.into(),
             },
@@ -137,13 +159,17 @@ impl From<Error> for super::Error {
     }
 }
 
-pub(crate) struct AzureBlobSource {
+pub struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
 }
 
 impl AzureBlobSource {
-    pub async fn get_client(config: &AzureConfig) -> super::Result<Arc<Self>> {
-        let storage_account = if let Some(storage_account) = &config.storage_account {
+    pub async fn get_client(config: &AzureConfig, uri: &str) -> super::Result<Arc<Self>> {
+        let parsed_uri = parse_azure_uri(uri)?;
+
+        let storage_account = if let Some(account_name) = parsed_uri.account_name {
+            account_name
+        } else if let Some(storage_account) = &config.storage_account {
             storage_account.clone()
         } else if let Ok(storage_account) = std::env::var("AZURE_STORAGE_ACCOUNT") {
             storage_account
@@ -152,10 +178,11 @@ impl AzureBlobSource {
             return Err(Error::StorageAccountNotSet.into());
         };
 
-        let access_key = config
-            .access_key
-            .clone()
-            .or_else(|| std::env::var("AZURE_STORAGE_KEY").ok().map(|v| v.into()));
+        let access_key = config.access_key.clone().or_else(|| {
+            std::env::var("AZURE_STORAGE_KEY")
+                .ok()
+                .map(std::convert::Into::into)
+        });
         let sas_token = config
             .sas_token
             .clone()
@@ -168,7 +195,7 @@ impl AzureBlobSource {
         let storage_credentials = if config.anonymous {
             StorageCredentials::anonymous()
         } else if let Some(access_key) = access_key {
-            StorageCredentials::access_key(&storage_account, access_key.as_string())
+            StorageCredentials::access_key(&storage_account, access_key.as_string().clone())
         } else if let Some(sas_token) = sas_token {
             StorageCredentials::sas_token(sas_token)
                 .map_err(|e| Error::AzureGeneric { source: e })?
@@ -178,22 +205,28 @@ impl AzureBlobSource {
             && let Some(client_id) = &config.client_id
             && let Some(client_secret) = &config.client_secret
         {
+            let options = TokenCredentialOptions::default();
+
             StorageCredentials::token_credential(Arc::new(ClientSecretCredential::new(
-                new_http_client(),
+                options.http_client(),
+                options
+                    .authority_host()
+                    .expect("default authority host should be valid"),
                 tenant_id.clone(),
                 client_id.clone(),
                 client_secret.as_string().clone(),
-                Default::default(),
             )))
         } else {
-            let default_creds = Arc::new(DefaultAzureCredential::default());
+            let default_creds = DefaultAzureCredentialBuilder::new()
+                .build()
+                .with_context(|_| AzureGenericSnafu {})?;
 
             if default_creds
-                .get_token(AZURE_STORAGE_RESOURCE)
+                .get_token(std::slice::from_ref(&AZURE_STORAGE_RESOURCE))
                 .await
                 .is_ok()
             {
-                StorageCredentials::token_credential(default_creds)
+                StorageCredentials::token_credential(Arc::new(default_creds))
             } else {
                 log::warn!("Azure credentials resolution failed. Defaulting to anonymous mode.");
                 StorageCredentials::anonymous()
@@ -201,21 +234,23 @@ impl AzureBlobSource {
         };
         let endpoint_url = if let Some(endpoint_url) = &config.endpoint_url {
             Some(endpoint_url.clone())
-        } else if let Ok(endpoint_url) = std::env::var("AZURE_ENDPOINT_URL") {
-            Some(endpoint_url)
         } else {
-            None
+            std::env::var("AZURE_ENDPOINT_URL").ok()
         };
         let blob_client = if let Some(endpoint_url) = endpoint_url {
             ClientBuilder::with_location(
-                CloudLocation::Custom { uri: endpoint_url },
+                CloudLocation::Custom {
+                    uri: endpoint_url,
+                    account: storage_account,
+                },
                 storage_credentials,
             )
             .blob_service_client()
         } else if config.use_fabric_endpoint {
             ClientBuilder::with_location(
                 CloudLocation::Custom {
-                    uri: format!("https://{}.blob.fabric.microsoft.com", storage_account),
+                    uri: format!("https://{storage_account}.blob.fabric.microsoft.com"),
+                    account: storage_account,
                 },
                 storage_credentials,
             )
@@ -224,7 +259,7 @@ impl AzureBlobSource {
             BlobServiceClient::new(storage_account, storage_credentials)
         };
 
-        Ok(AzureBlobSource {
+        Ok(Self {
             blob_client: blob_client.into(),
         }
         .into())
@@ -249,14 +284,14 @@ impl AzureBlobSource {
         responses_stream
             .map(move |response| {
                 if let Some(is) = io_stats.clone() {
-                    is.mark_list_requests(1)
+                    is.mark_list_requests(1);
                 }
                 (response, protocol.clone())
             })
             .flat_map(move |(response, protocol)| match response {
                 Ok(response) => {
                     let containers = response.containers.into_iter().map(move |container| {
-                        Ok(self._container_to_file_metadata(protocol.as_str(), &container))
+                        Ok(self.container_to_file_metadata(protocol.as_str(), &container))
                     });
                     futures::stream::iter(containers).boxed()
                 }
@@ -293,14 +328,14 @@ impl AzureBlobSource {
             "{}{AZURE_DELIMITER}",
             prefix.trim_end_matches(&AZURE_DELIMITER)
         );
-        let full_path = format!("{}://{}{}", protocol, container_name, prefix);
+        let full_path = format!("{protocol}://{container_name}{prefix}");
         let full_path_with_trailing_delimiter = format!(
             "{}://{}{}",
             protocol, container_name, &prefix_with_delimiter
         );
 
         let mut unchecked_results = self
-            ._list_directory_delimiter_stream(
+            .list_directory_delimiter_stream(
                 &container_client,
                 &protocol,
                 &container_name,
@@ -332,10 +367,10 @@ impl AzureBlobSource {
 
         // Make sure the stream is pollable even if empty,
         // since we will chain it later with the two items we already popped.
-        let unchecked_results = if !stream_exhausted {
-            unchecked_results
-        } else {
+        let unchecked_results = if stream_exhausted {
             futures::stream::iter(vec![]).boxed()
+        } else {
+            unchecked_results
         };
 
         match &maybe_first_two_items[..] {
@@ -351,7 +386,7 @@ impl AzureBlobSource {
                                 .trim_end_matches(&AZURE_DELIMITER) // "/upper/blah"
                                 .trim_end_matches(|c: char| c.to_string() != AZURE_DELIMITER); // "/upper/"
 
-                            let upper_results_stream = self._list_directory_delimiter_stream(
+                            let upper_results_stream = self.list_directory_delimiter_stream(
                                 &container_client,
                                 &protocol,
                                 &container_name,
@@ -398,7 +433,7 @@ impl AzureBlobSource {
         }
     }
 
-    async fn _list_directory_delimiter_stream(
+    async fn list_directory_delimiter_stream(
         &self,
         container_client: &ContainerClient,
         protocol: &str,
@@ -429,20 +464,15 @@ impl AzureBlobSource {
         responses_stream
             .map(move |response| {
                 if let Some(is) = io_stats.clone() {
-                    is.mark_list_requests(1)
+                    is.mark_list_requests(1);
                 }
                 (response, protocol.clone(), container_name.clone())
             })
             .flat_map(move |(response, protocol, container_name)| match response {
                 Ok(response) => {
-                    let paths_data =
-                        response.blobs.items.into_iter().map(move |blob_item| {
-                            Ok(self._blob_item_to_file_metadata(
-                                &protocol,
-                                &container_name,
-                                &blob_item,
-                            ))
-                        });
+                    let paths_data = response.blobs.items.into_iter().map(move |blob_item| {
+                        Ok(self.blob_item_to_file_metadata(&protocol, &container_name, &blob_item))
+                    });
                     futures::stream::iter(paths_data).boxed()
                 }
                 Err(error) => {
@@ -457,7 +487,7 @@ impl AzureBlobSource {
             .boxed()
     }
 
-    fn _container_to_file_metadata(&self, protocol: &str, container: &Container) -> FileMetadata {
+    fn container_to_file_metadata(&self, protocol: &str, container: &Container) -> FileMetadata {
         // NB: Cannot pass through to Azure client's .url() methods here
         // because they return URIs of a very different format (https://.../container/path).
         FileMetadata {
@@ -467,7 +497,7 @@ impl AzureBlobSource {
         }
     }
 
-    fn _blob_item_to_file_metadata(
+    fn blob_item_to_file_metadata(
         &self,
         protocol: &str,
         container_name: &str,
@@ -496,11 +526,13 @@ impl ObjectSource for AzureBlobSource {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let (_, container_and_key) = parse_azure_uri(uri)?;
-        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
-            path: uri.into(),
-            source: url::ParseError::EmptyHost,
-        })?;
+        let parsed_uri = parse_azure_uri(uri)?;
+        let (container, key) = parsed_uri
+            .container_and_key
+            .ok_or_else(|| Error::InvalidUrl {
+                path: uri.into(),
+                source: url::ParseError::EmptyHost,
+            })?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
@@ -527,7 +559,7 @@ impl ObjectSource for AzureBlobSource {
                 .into()
             });
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         Ok(GetResult::Stream(
             io_stats_on_bytestream(Box::pin(stream), io_stats),
@@ -547,11 +579,13 @@ impl ObjectSource for AzureBlobSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let (_, container_and_key) = parse_azure_uri(uri)?;
-        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
-            path: uri.into(),
-            source: url::ParseError::EmptyHost,
-        })?;
+        let parsed_uri = parse_azure_uri(uri)?;
+        let (container, key) = parsed_uri
+            .container_and_key
+            .ok_or_else(|| Error::InvalidUrl {
+                path: uri.into(),
+                source: url::ParseError::EmptyHost,
+            })?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
@@ -564,7 +598,7 @@ impl ObjectSource for AzureBlobSource {
             .await
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
 
         Ok(metadata.blob.properties.content_length as usize)
@@ -595,24 +629,24 @@ impl ObjectSource for AzureBlobSource {
         .await
     }
 
-    async fn iter_dir(
-        &self,
+    async fn iter_dir<'a>(
+        &'a self,
         uri: &str,
         posix: bool,
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let (protocol, container_and_key) = parse_azure_uri(uri)?;
+    ) -> super::Result<BoxStream<'a, super::Result<FileMetadata>>> {
+        let parsed_uri = parse_azure_uri(uri)?;
 
-        match container_and_key {
+        match parsed_uri.container_and_key {
             // List containers.
             None => Ok(self
-                .list_containers_stream(protocol.as_str(), io_stats)
+                .list_containers_stream(parsed_uri.protocol.as_str(), io_stats)
                 .await),
             // List a path within a container.
             Some((container_name, key)) => Ok(self
                 .list_directory_stream(
-                    protocol.as_str(),
+                    parsed_uri.protocol.as_str(),
                     container_name.as_str(),
                     key.as_str(),
                     posix,
@@ -652,5 +686,9 @@ impl ObjectSource for AzureBlobSource {
             files,
             continuation_token: None,
         })
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }

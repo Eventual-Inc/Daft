@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Generator
+from typing import Any, Literal, Protocol
 
 import pandas as pd
 import pyarrow as pa
 import pytest
 
 import daft
-from daft.table import MicroPartition
+import daft.context
+from daft.recordbatch import MicroPartition
 
 # import all conftest
 from tests.integration.io.conftest import *
@@ -25,6 +28,16 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as an integration test that runs with external dependencies"
     )
+
+
+def get_tests_daft_runner_name() -> Literal["ray"] | Literal["native"]:
+    """Test utility that checks the environment variable for the runner that is being used for the test."""
+    name = os.getenv("DAFT_RUNNER")
+    assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
+    name = name.lower()
+
+    assert name in {"ray", "native"}, f"Runner name not recognized: {name}"
+    return name
 
 
 class UuidType(pa.ExtensionType):
@@ -77,8 +90,41 @@ def join_strategy(request):
 
 
 @pytest.fixture(scope="function")
-def make_df(data_source, tmp_path) -> daft.Dataframe:
-    """Makes a dataframe when provided with data"""
+def make_spark_df(spark_session):
+    def _make_spark_df(data: dict[str, Any]):
+        fields = [name for name in data]
+        rows = list(zip(*[data[name] for name in fields]))
+        return spark_session.createDataFrame(rows, fields)
+
+    yield _make_spark_df
+
+
+@pytest.fixture(scope="function")
+def assert_spark_equals(spark_session):
+    def _assert_spark_dfs_eq(df1, df2):
+        if isinstance(df1, daft.DataFrame):
+            df1 = df1.to_pandas()
+        else:
+            df1 = df1.toPandas()
+        if isinstance(df2, daft.DataFrame):
+            df2 = df2.to_pandas()
+        else:
+            df2 = df2.toPandas()
+
+        assert df1.equals(df2)
+
+    yield _assert_spark_dfs_eq
+
+
+class MakeDF(Protocol):
+    def __call__(
+        self, data: pa.Table | dict | list, repartition: int = 1, repartition_columns: list[str] = []
+    ) -> daft.DataFrame: ...
+
+
+@pytest.fixture(scope="function")
+def make_df(data_source, tmp_path) -> Generator[MakeDF, None, None]:
+    """Makes a dataframe when provided with data."""
 
     def _make_df(
         data: pa.Table | dict | list,
@@ -106,11 +152,11 @@ def make_df(data_source, tmp_path) -> daft.Dataframe:
             import pyarrow.parquet as papq
 
             name = str(uuid.uuid4())
-            daft_table = MicroPartition.from_arrow(pa_table)
+            daft_recordbatch = MicroPartition.from_arrow(pa_table)
             partitioned_tables = (
-                daft_table.partition_by_random(repartition, 0)
+                daft_recordbatch.partition_by_random(repartition, 0)
                 if len(repartition_columns) == 0
-                else daft_table.partition_by_hash([daft.col(c) for c in repartition_columns], repartition)
+                else daft_recordbatch.partition_by_hash([daft.col(c) for c in repartition_columns], repartition)
             )
             for i, tbl in enumerate(partitioned_tables):
                 tmp_file = tmp_path / (name + f"-{i}")
@@ -148,7 +194,7 @@ def assert_df_equals(
         sort_key_list: list[str] = [sort_key] if isinstance(sort_key, str) else sort_key
         for key in sort_key_list:
             assert key in daft_pd_df.columns, (
-                f"DaFt Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
+                f"Daft Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
                 "breaking, but our testing utilities require sorting on this key in order to compare your "
                 "Dataframe against the expected Pandas Dataframe."
             )
@@ -170,3 +216,25 @@ def assert_df_equals(
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
+
+
+def check_answer(df: daft.DataFrame, expected_answer: dict[str, Any], is_sorted: bool = False):
+    daft_df = df.to_pandas()
+    expected_df = daft.from_pydict(expected_answer).to_pandas()
+    # when this is an empty result, no need to check data types.
+    check_dtype = not expected_df.empty
+    if is_sorted:
+        assert_df_equals(daft_df, expected_df, assert_ordering=True, check_dtype=check_dtype)
+    else:
+        sort_keys = df.column_names
+        assert_df_equals(daft_df, expected_df, sort_key=sort_keys, assert_ordering=False, check_dtype=check_dtype)
+
+
+@pytest.fixture(
+    scope="function",
+    params=[1, None] if get_tests_daft_runner_name() == "native" else [None],
+)
+def with_morsel_size(request):
+    morsel_size = request.param
+    with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
+        yield morsel_size

@@ -42,4 +42,4 @@ pub type Dictionaries = AHashMap<i64, Box<dyn Array>>;
 pub(crate) type Node<'a> = arrow_format::ipc::FieldNodeRef<'a>;
 pub(crate) type IpcBuffer<'a> = arrow_format::ipc::BufferRef<'a>;
 pub(crate) type Compression<'a> = arrow_format::ipc::BodyCompressionRef<'a>;
-pub(crate) type Version = arrow_format::ipc::MetadataVersion;
+pub type Version = arrow_format::ipc::MetadataVersion;

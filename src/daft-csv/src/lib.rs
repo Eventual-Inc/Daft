@@ -1,10 +1,12 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(test)]
+extern crate test;
 use common_error::DaftError;
 use snafu::Snafu;
 
+pub mod local;
 pub mod metadata;
 pub mod options;
 #[cfg(feature = "python")]
@@ -43,17 +45,17 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::IOError { source } => source.into(),
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::IOError { source: err }
+        Self::IOError { source: err }
     }
 }
 
@@ -68,11 +70,11 @@ impl From<Error> for pyo3::PyErr {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<CsvConvertOptions>()?;
     parent.add_class::<CsvParseOptions>()?;
     parent.add_class::<CsvReadOptions>()?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv))?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv_schema))?;
+    parent.add_function(wrap_pyfunction!(python::pylib::read_csv, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::pylib::read_csv_schema, parent)?)?;
     Ok(())
 }

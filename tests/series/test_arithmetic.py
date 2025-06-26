@@ -9,17 +9,31 @@ import pytest
 from daft import DataType, Series
 
 arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
-arrow_string_types = [pa.string(), pa.large_string()]
+arrow_decimal_types = [pa.decimal128(4, 0), pa.decimal128(5, 1)]
 arrow_float_types = [pa.float32(), pa.float64()]
+arrow_number_types = arrow_int_types + arrow_decimal_types + arrow_float_types
+arrow_string_types = [pa.string(), pa.large_string()]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
+def arrow_number_combinations():
+    for left in arrow_number_types:
+        for right in arrow_number_types:
+            # we can't perform all ops on decimal and 64 bit ints
+            if pa.types.is_decimal(left) and (pa.types.is_int64(right) or pa.types.is_uint64(right)):
+                continue
+            if pa.types.is_decimal(right) and (pa.types.is_int64(left) or pa.types.is_uint64(left)):
+                continue
+
+            yield (left, right)
+
+
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_array(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([1, 4, 1, 5, None, None])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = pa.array([1, 4, 1, 5, None, None], type=r_dtype)
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype), name="left")
-    right = Series.from_arrow(r_arrow.cast(r_dtype), name="right")
+    left = Series.from_arrow(l_arrow, name="left")
+    right = Series.from_arrow(r_arrow, name="right")
 
     add = left + right
     assert add.name() == left.name()
@@ -35,20 +49,25 @@ def test_arithmetic_numbers_array(l_dtype, r_dtype) -> None:
 
     div = left / right
     assert div.name() == left.name()
-    assert div.to_pylist() == [1.0, 0.5, 3.0, None, None, None]
+    assert div.cast(DataType.float64()).to_pylist() == [1.0, 0.5, 3.0, None, None, None]
 
-    # mod = (l % r)
-    # assert mod.name() == l.name()
-    # assert mod.to_pylist() == [0, 2, 0, None, None, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left // right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [1, 0, 3, None, None, None]
+
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [0, 2, 0, None, None, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1])
-    r_arrow = pa.array([1, 4, 1, 5, None, None])
+    l_arrow = pa.array([1], type=l_dtype)
+    r_arrow = pa.array([1, 4, 1, 5, None, None], type=r_dtype)
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype), name="left")
-    right = Series.from_arrow(r_arrow.cast(r_dtype), name="right")
+    left = Series.from_arrow(l_arrow, name="left")
+    right = Series.from_arrow(r_arrow, name="right")
 
     add = left + right
     assert add.name() == left.name()
@@ -65,20 +84,25 @@ def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
 
     div = left / right
     assert div.name() == left.name()
-    assert div.to_pylist() == [1.0, 0.25, 1.0, 0.2, None, None]
+    assert div.cast(DataType.float64()).to_pylist() == [1.0, 0.25, 1.0, 0.2, None, None]
 
-    mod = left % right
-    assert mod.name() == left.name()
-    assert mod.to_pylist() == [0, 1, 0, 1, None, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left // right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [1, 0, 1, 0, None, None]
+
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [0, 1, 0, 1, None, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_right_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([1])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = pa.array([1], type=r_dtype)
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype), name="left")
-    right = Series.from_arrow(r_arrow.cast(r_dtype), name="right")
+    left = Series.from_arrow(l_arrow, name="left")
+    right = Series.from_arrow(r_arrow, name="right")
 
     add = left + right
     assert add.name() == left.name()
@@ -95,19 +119,24 @@ def test_arithmetic_numbers_right_scalar(l_dtype, r_dtype) -> None:
 
     div = left / right
     assert div.name() == left.name()
-    assert div.to_pylist() == [1.0, 2.0, 3.0, None, 5.0, None]
+    assert div.cast(DataType.float64()).to_pylist() == [1.0, 2.0, 3.0, None, 5.0, None]
 
-    mod = left % right
-    assert mod.name() == left.name()
-    assert mod.to_pylist() == [0, 0, 0, None, 0, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left // right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [1, 2, 3, None, 5, None]
+
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [0, 0, 0, None, 0, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_null_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
     r_arrow = pa.array([None], type=r_dtype)
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype), name="left")
+    left = Series.from_arrow(l_arrow, name="left")
     right = Series.from_arrow(r_arrow, name="right")
 
     add = left + right
@@ -127,9 +156,14 @@ def test_arithmetic_numbers_null_scalar(l_dtype, r_dtype) -> None:
     assert div.name() == left.name()
     assert div.to_pylist() == [None, None, None, None, None, None]
 
-    mod = left % right
-    assert mod.name() == left.name()
-    assert mod.to_pylist() == [None, None, None, None, None, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left / right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [None, None, None, None, None, None]
+
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [None, None, None, None, None, None]
 
 
 @pytest.mark.parametrize(
@@ -208,6 +242,9 @@ def test_comparisons_bad_right_value() -> None:
         left / right
 
     with pytest.raises(TypeError, match="another Series"):
+        left // right
+
+    with pytest.raises(TypeError, match="another Series"):
         left * right
 
     with pytest.raises(TypeError, match="another Series"):
@@ -232,6 +269,9 @@ def test_arithmetic_numbers_array_mismatch_length() -> None:
 
     with pytest.raises(ValueError, match="different lengths"):
         left / right
+
+    with pytest.raises(ValueError, match="different lengths"):
+        left // right
 
     with pytest.raises(ValueError, match="different lengths"):
         left % right
@@ -263,6 +303,11 @@ class FakeFive:
             other = 5
         return 5 % other
 
+    def __floordiv__(self, other):
+        if isinstance(other, FakeFive):
+            other = 5
+        return 5 // other
+
 
 @pytest.mark.parametrize(
     ["op", "expected_datatype", "expected", "expected_self"],
@@ -272,6 +317,7 @@ class FakeFive:
         (operator.mul, DataType.int64(), [10, None, None], [25, 25, None]),
         (operator.truediv, DataType.float64(), [2.5, None, None], [1.0, 1.0, None]),
         (operator.mod, DataType.int64(), [1, None, None], [0, 0, None]),
+        (operator.floordiv, DataType.int64(), [2, None, None], [1.0, 1.0, None]),
     ],
 )
 def test_arithmetic_pyobjects(op, expected_datatype, expected, expected_self) -> None:
@@ -281,3 +327,17 @@ def test_arithmetic_pyobjects(op, expected_datatype, expected, expected_self) ->
     assert op(fake_fives, values).datatype() == expected_datatype
     assert op(fake_fives, values).to_pylist() == expected
     assert op(fake_fives, fake_fives).to_pylist() == expected_self
+
+
+@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types, repeat=2))
+def test_mod_series(l_dtype, r_dtype) -> None:
+    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    r_arrow = pa.array([1, 4, 1, 5, None, None])
+
+    left = Series.from_arrow(l_arrow.cast(l_dtype), name="left")
+    right = Series.from_arrow(r_arrow.cast(r_dtype), name="right")
+
+    mod = left % right
+    assert mod.name() == left.name()
+    assert mod.datatype().is_integer()
+    assert mod.to_pylist() == [0, 2, 0, None, None, None]

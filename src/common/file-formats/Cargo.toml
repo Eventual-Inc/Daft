@@ -1,0 +1,18 @@
+[dependencies]
+common-error = {path = "../error", default-features = false}
+common-py-serde = {path = "../py-serde", default-features = false}
+daft-schema = {path = "../../daft-schema", default-features = false}
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
+serde_json = {workspace = true, optional = true}
+
+[features]
+python = ["dep:pyo3", "dep:serde_json", "common-error/python", "common-py-serde/python", "daft-schema/python"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-file-formats"
+version = {workspace = true}

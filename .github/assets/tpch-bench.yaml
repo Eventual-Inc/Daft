@@ -1,0 +1,48 @@
+cluster_name: ci-benchmark-tpch-sf-${TPCH_SCALE_FACTOR}_${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}
+
+provider:
+  type: aws
+  region: us-west-2
+  cache_stopped_nodes: false
+  security_group:
+    GroupName: ray-autoscaler-c1
+
+auth:
+  ssh_user: ec2-user
+  ssh_private_key: ~/.ssh/ci-github-actions-ray-cluster-key.pem
+
+max_workers: ${RAY_NUM_WORKERS}
+available_node_types:
+  ray.head.default:
+    resources: {"CPU": 0}
+    node_config:
+      KeyName: ci-github-actions-ray-cluster-key
+      InstanceType: i8g.4xlarge
+      ImageId: ami-0345469b8a1ca112a
+      IamInstanceProfile:
+        Name: ray-autoscaler-v1
+
+  ray.worker.default:
+    min_workers: ${RAY_NUM_WORKERS}
+    max_workers: ${RAY_NUM_WORKERS}
+    resources: {}
+    node_config:
+      KeyName: ci-github-actions-ray-cluster-key
+      InstanceType: i8g.4xlarge
+      ImageId: ami-0345469b8a1ca112a
+      IamInstanceProfile:
+        Name: ray-autoscaler-v1
+
+setup_commands:
+# mount NVME to /tmp
+- sudo mkfs.ext4 /dev/nvme1n1
+- sudo mount -t ext4 /dev/nvme1n1 /tmp
+- sudo chmod 777 /tmp
+
+# install UV and dependencies
+- curl -LsSf https://astral.sh/uv/install.sh | sh
+- uv venv --python 3.9
+- echo "source ~/.venv/bin/activate" >> ~/.bashrc
+- source .venv/bin/activate
+- uv pip install pip ray[default] --no-progress
+- uv pip install daft --no-progress --pre --extra-index-url ${DAFT_INDEX_URL}

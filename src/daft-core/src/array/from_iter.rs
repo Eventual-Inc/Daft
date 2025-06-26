@@ -1,20 +1,62 @@
-use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, Field, FixedSizeBinaryArray, Utf8Array,
+use std::sync::Arc;
+
+use arrow2::{
+    array::{MutablePrimitiveArray, PrimitiveArray},
+    types::months_days_ns,
 };
+use common_error::DaftResult;
 
 use super::DataArray;
+use crate::{
+    array::prelude::*,
+    datatypes::{prelude::*, DaftPrimitiveType},
+};
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
-    pub fn from_iter(
-        name: &str,
+    pub fn from_iter<F: Into<Arc<Field>>>(
+        field: F,
         iter: impl arrow2::trusted_len::TrustedLen<Item = Option<T::Native>>,
     ) -> Self {
-        let arrow_array =
-            Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_trusted_len_iter(iter));
-        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+        // this is a workaround to prevent overflow issues when dealing with i128 and decimal
+        // typical behavior would be the result array would always be Decimal(32, 32)
+        let field = field.into();
+        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow().unwrap());
+        array.extend_trusted_len(iter);
+        let data_array: PrimitiveArray<_> = array.into();
+        Self::new(field, data_array.boxed()).unwrap()
+    }
+
+    pub fn from_values_iter<F: Into<Arc<Field>>>(
+        field: F,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = T::Native>,
+    ) -> Self {
+        // this is a workaround to prevent overflow issues when dealing with i128 and decimal
+        // typical behavior would be the result array would always be Decimal(32, 32)
+        let field = field.into();
+        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow().unwrap());
+        array.extend_trusted_len_values(iter);
+        let data_array: PrimitiveArray<_> = array.into();
+        Self::new(field, data_array.boxed()).unwrap()
+    }
+
+    pub fn from_regular_iter<F, I>(field: F, iter: I) -> DaftResult<Self>
+    where
+        F: Into<Arc<Field>>,
+        I: Iterator<Item = Option<T::Native>>,
+    {
+        let field = field.into();
+        let data_type = field.dtype.to_arrow()?;
+        let mut array = MutablePrimitiveArray::<T::Native>::from(data_type);
+        let (_, upper_bound) = iter.size_hint();
+        if let Some(upper_bound) = upper_bound {
+            array.reserve(upper_bound);
+        }
+        array.extend(iter);
+        let array = PrimitiveArray::from(array).boxed();
+        Self::new(field, array)
     }
 }
 
@@ -24,7 +66,11 @@ impl Utf8Array {
         iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_iter(iter));
-        DataArray::new(Field::new(name, crate::DataType::Utf8).into(), arrow_array).unwrap()
+        Self::new(
+            Field::new(name, crate::datatypes::DataType::Utf8).into(),
+            arrow_array,
+        )
+        .unwrap()
     }
 }
 
@@ -36,14 +82,13 @@ impl BinaryArray {
         let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
             iter,
         ));
-        DataArray::new(
-            Field::new(name, crate::DataType::Binary).into(),
+        Self::new(
+            Field::new(name, crate::datatypes::DataType::Binary).into(),
             arrow_array,
         )
         .unwrap()
     }
 }
-
 impl FixedSizeBinaryArray {
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,
@@ -51,8 +96,8 @@ impl FixedSizeBinaryArray {
         size: usize,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::FixedSizeBinaryArray::from_iter(iter, size));
-        DataArray::new(
-            Field::new(name, crate::DataType::FixedSizeBinary(size)).into(),
+        Self::new(
+            Field::new(name, crate::datatypes::DataType::FixedSizeBinary(size)).into(),
             arrow_array,
         )
         .unwrap()
@@ -65,10 +110,83 @@ impl BooleanArray {
         iter: impl arrow2::trusted_len::TrustedLen<Item = Option<bool>>,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(iter));
-        DataArray::new(
-            Field::new(name, crate::DataType::Boolean).into(),
+        Self::new(
+            Field::new(name, crate::datatypes::DataType::Boolean).into(),
             arrow_array,
         )
         .unwrap()
+    }
+}
+
+impl<T> DataArray<T>
+where
+    T: DaftNumericType,
+{
+    pub fn from_values(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = T::Native>,
+    ) -> Self {
+        let arrow_array = Box::new(
+            arrow2::array::PrimitiveArray::<T::Native>::from_trusted_len_values_iter(iter),
+        );
+        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+    }
+}
+
+impl Utf8Array {
+    pub fn from_values<S: AsRef<str>>(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = S>,
+    ) -> Self {
+        let arrow_array =
+            Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_values_iter(iter));
+        Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
+    }
+}
+
+impl BinaryArray {
+    pub fn from_values<S: AsRef<[u8]>>(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = S>,
+    ) -> Self {
+        let arrow_array =
+            Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_values_iter(iter));
+        Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
+    }
+}
+
+impl BooleanArray {
+    pub fn from_values(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = bool>,
+    ) -> Self {
+        let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_values_iter(
+            iter,
+        ));
+        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+    }
+}
+
+impl IntervalArray {
+    pub fn from_iter<S: Into<months_days_ns>>(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
+    ) -> Self {
+        let arrow_array = Box::new(arrow2::array::MonthsDaysNsArray::from_trusted_len_iter(
+            iter.map(|x| x.map(|x| x.into())),
+        ));
+        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
+    }
+}
+
+impl IntervalArray {
+    pub fn from_values<S: Into<months_days_ns>>(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = S>,
+    ) -> Self {
+        let arrow_array = Box::new(
+            arrow2::array::MonthsDaysNsArray::from_trusted_len_values_iter(iter.map(|x| x.into())),
+        );
+        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }

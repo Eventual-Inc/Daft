@@ -1,0 +1,69 @@
+/**
+ * Skipped minification because the original files appears to be already minified.
+ * Original file: /npm/@docsearch/css@3.9.0/dist/style.css
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+/*! @docsearch/css 3.9.0 | MIT License | © Algolia, Inc. and contributors | https://docsearch.algolia.com */
+
+
+:root{
+    --docsearch-primary-color: var(--daft-magenta) !important;
+    --docsearch-logo-color: var(--daft-magenta) !important;
+}
+
+.DocSearch-Button{
+    width: 11rem !important;
+}
+
+.DocSearch-Button .DocSearch-Search-Icon{
+    color: var(--md-primary-fg-color) !important;
+}
+
+.DocSearch-Button-Placeholder{
+    font-size: 0.8rem !important;
+    padding:0 12px 0 12px !important;
+}
+
+.DocSearch-Button:active,.DocSearch-Button:focus,.DocSearch-Button:hover{
+    color: var(--md-primary-fg-color) !important;
+}
+
+.DocSearch-Button-Key{
+    background: none !important;
+    border: 0.06rem solid var(--docsearch-muted-color) !important;
+    box-shadow: none !important;
+    padding:2px 0 !important;
+    top:0px !important;
+    font-weight: 600 !important;
+    height: 20px !important;
+}
+
+.DocSearch-Commands-Key{
+    background: none !important;
+    border: 0.05rem solid var(--docsearch-muted-color) !important;
+    box-shadow:none !important;
+    padding:1px 0 !important;
+}
+
+.DocSearch-Hit-title{
+    font-size:1.2em !important;
+    padding: 2px 0 !important;
+}
+
+.DocSearch-Hit-path{
+    font-size: 1em !important;
+    pad: 2px 0 !important;
+}
+
+.DocSearch-Input{
+    font-size:1.4em !important;
+}
+
+.DocSearch-Label {
+    font-size: 1em !important;
+}
+
+.DocSearch-Help {
+    font-size: 1em !important
+}

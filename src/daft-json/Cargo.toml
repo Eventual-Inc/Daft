@@ -1,18 +1,19 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_json"]}
+arrow2 = {workspace = true}
 chrono = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
 daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 memchr = "2.7.2"
-memmap2 = "0.9.4"
+memmap2 = "0.9.5"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
@@ -34,9 +35,12 @@ python = [
   "common-py-serde/python",
   "daft-core/python",
   "daft-io/python",
-  "daft-table/python",
+  "daft-recordbatch/python",
   "daft-dsl/python"
 ]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

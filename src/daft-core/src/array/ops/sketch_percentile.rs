@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{FixedSizeListArray, StructArray},
-    datatypes::{Field, Float64Array},
-    DataType, IntoSeries, Series,
-};
-
 use arrow2::array::{MutablePrimitiveArray, PrimitiveArray};
 use common_error::DaftResult;
 
 use super::from_arrow::FromArrow;
+use crate::{
+    array::{FixedSizeListArray, StructArray},
+    datatypes::{DataType, Field, Float64Array},
+    series::{IntoSeries, Series},
+};
 
 impl StructArray {
     pub fn sketch_percentile(
@@ -26,9 +25,10 @@ impl StructArray {
             .iter()
             .for_each(|sketch| match sketch {
                 None => {
-                    flat_child.extend_trusted_len(
-                        std::iter::repeat::<Option<f64>>(None).take(percentiles.len()),
-                    );
+                    flat_child.extend_trusted_len(std::iter::repeat_n::<Option<f64>>(
+                        None,
+                        percentiles.len(),
+                    ));
                 }
                 Some(sketch) => flat_child
                     .extend_trusted_len(percentiles.iter().map(|&p| sketch.quantile(p).unwrap())),

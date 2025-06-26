@@ -1,16 +1,16 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use common_error::DaftResult;
+
+use super::{
+    DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
+    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
+    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
+};
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{DaftLogicalType, DateType, Field},
     with_match_daft_logical_primitive_types,
-};
-use common_error::DaftResult;
-
-use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
-    TimeType, TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -37,14 +37,15 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
             field.dtype
         );
         assert_eq!(
-            physical.data_type(),
-            &field.dtype.to_physical(),
+            physical.data_type().to_physical(),
+            field.dtype.to_physical(),
             "Logical field {} expected {} for Physical Array, got {}",
             &field,
-            &field.dtype.to_physical(),
-            physical.data_type()
+            field.dtype.to_physical(),
+            physical.data_type().to_physical()
         );
-        LogicalArrayImpl {
+
+        Self {
             physical,
             field,
             marker_: PhantomData,
@@ -152,10 +153,28 @@ impl MapArray {
 
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
+        let inner_struct_arrow_dtype = match &arrow_dtype {
+            arrow2::datatypes::DataType::Map(field, _) => field.data_type().clone(),
+            _ => unreachable!("Expected map type"),
+        };
+        let inner_struct_array = self
+            .physical
+            .flat_child
+            .struct_()
+            .expect("Expected struct array");
+        let arrow_field = Box::new(arrow2::array::StructArray::new(
+            inner_struct_arrow_dtype,
+            inner_struct_array
+                .children
+                .iter()
+                .map(|s| s.to_arrow())
+                .collect(),
+            inner_struct_array.validity().cloned(),
+        ));
         Box::new(arrow2::array::MapArray::new(
             arrow_dtype,
             self.physical.offsets().try_into().unwrap(),
-            self.physical.flat_child.to_arrow(),
+            arrow_field,
             self.physical.validity().cloned(),
         ))
     }
@@ -163,7 +182,7 @@ impl MapArray {
 
 pub type LogicalArray<L> =
     LogicalArrayImpl<L, <<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>;
-pub type Decimal128Array = LogicalArray<Decimal128Type>;
+// pub type Decimal128Array = LogicalArray<Decimal128Type>;
 pub type DateArray = LogicalArray<DateType>;
 pub type TimeArray = LogicalArray<TimeType>;
 pub type DurationArray = LogicalArray<DurationType>;
@@ -172,8 +191,11 @@ pub type TimestampArray = LogicalArray<TimestampType>;
 pub type TensorArray = LogicalArray<TensorType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
+pub type SparseTensorArray = LogicalArray<SparseTensorType>;
+pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
+
 pub trait DaftImageryType: DaftLogicalType {}
 
 impl DaftImageryType for ImageType {}

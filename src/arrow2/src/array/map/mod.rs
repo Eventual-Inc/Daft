@@ -1,3 +1,4 @@
+use super::{new_empty_array, specification::try_check_offsets_bounds, Array, ListArray};
 use crate::{
     bitmap::Bitmap,
     datatypes::{DataType, Field},
@@ -5,8 +6,8 @@ use crate::{
     offset::OffsetsBuffer,
 };
 
-use super::{new_empty_array, specification::try_check_offsets_bounds, Array};
-
+#[cfg(feature = "arrow")]
+mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -41,20 +42,27 @@ impl MapArray {
         try_check_offsets_bounds(&offsets, field.len())?;
 
         let inner_field = Self::try_get_field(&data_type)?;
-        if let DataType::Struct(inner) = inner_field.data_type() {
-            if inner.len() != 2 {
-                return Err(Error::InvalidArgumentError(
-                    "MapArray's inner `Struct` must have 2 fields (keys and maps)".to_string(),
-                ));
-            }
-        } else {
+
+        let inner_data_type = inner_field.data_type();
+        let DataType::Struct(inner) = inner_data_type else {
             return Err(Error::InvalidArgumentError(
-                "MapArray expects `DataType::Struct` as its inner logical type".to_string(),
+                format!("MapArray expects `DataType::Struct` as its inner logical type, but found {inner_data_type:?}"),
             ));
+        };
+
+        let inner_len = inner.len();
+        if inner_len != 2 {
+            let msg = format!(
+                "MapArray's inner `Struct` must have 2 fields (keys and maps), but found {} fields",
+                inner_len
+            );
+            return Err(Error::InvalidArgumentError(msg));
         }
-        if field.data_type() != inner_field.data_type() {
+
+        let field_data_type = field.data_type();
+        if field_data_type != inner_field.data_type() {
             return Err(Error::InvalidArgumentError(
-                "MapArray expects `field.data_type` to match its inner DataType".to_string(),
+                format!("MapArray expects `field.data_type` to match its inner DataType, but found \n{field_data_type:?}\nvs\n\n\n{inner_field:?}"),
             ));
         }
 
@@ -194,6 +202,57 @@ impl MapArray {
 
 impl Array for MapArray {
     impl_common_array!();
+
+    fn convert_logical_type(&self, target_data_type: DataType) -> Box<dyn Array> {
+        let is_target_map = matches!(target_data_type, DataType::Map { .. });
+
+        let DataType::Map(current_field, _) = self.data_type() else {
+            unreachable!(
+                "Expected MapArray to have Map data type, but found {:?}",
+                self.data_type()
+            );
+        };
+
+        if is_target_map {
+            // For Map-to-Map conversions, we can clone
+            // (same top level representation we are still a Map). and then change the subtype in
+            // place.
+            let mut converted_array = self.to_boxed();
+            converted_array.change_type(target_data_type);
+            return converted_array;
+        }
+
+        // Target type is a LargeList, so we need to convert to a ListArray before converting
+        let DataType::LargeList(target_field) = &target_data_type else {
+            panic!("MapArray can only be converted to Map or LargeList, but target type is {target_data_type:?}");
+        };
+
+
+        let current_physical_type = current_field.data_type.to_physical_type();
+        let target_physical_type = target_field.data_type.to_physical_type();
+
+        if current_physical_type != target_physical_type {
+            panic!(
+                "Inner physical types must be equal for conversion. Current: {:?}, Target: {:?}",
+                current_physical_type, target_physical_type
+            );
+        }
+
+        let mut converted_field = self.field.clone();
+        converted_field.change_type(target_field.data_type.clone());
+
+        let original_offsets = self.offsets().clone();
+        let converted_offsets = unsafe { original_offsets.map_unchecked(|offset| offset as i64) };
+
+        let converted_list = ListArray::new(
+            target_data_type,
+            converted_offsets,
+            converted_field,
+            self.validity.clone(),
+        );
+
+        Box::new(converted_list)
+    }
 
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()

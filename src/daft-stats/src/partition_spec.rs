@@ -1,32 +1,31 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+};
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
 use daft_dsl::{ExprRef, Literal};
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PartitionSpec {
-    pub keys: Table,
+    pub keys: RecordBatch,
 }
 
 impl PartitionSpec {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Keys = {}", self.keys));
         res
     }
 
+    #[must_use]
     pub fn to_fill_map(&self) -> HashMap<&str, ExprRef> {
         self.keys
-            .schema
-            .fields
+            .columns()
             .iter()
-            .map(|(col, _)| {
-                (
-                    col.as_str(),
-                    self.keys.get_column(col).unwrap().clone().lit(),
-                )
-            })
+            .map(|column| (column.name(), column.clone().lit()))
             .collect()
     }
 }
@@ -39,9 +38,9 @@ impl PartialEq for PartitionSpec {
         }
 
         // Assuming exact matches in field names and types, now compare each field's values
-        for field_name in self.keys.schema.as_ref().fields.keys() {
-            let self_column = self.keys.get_column(field_name).unwrap();
-            let other_column = other.keys.get_column(field_name).unwrap();
+        for i in 0..self.keys.num_columns() {
+            let self_column = self.keys.get_column(i);
+            let other_column = other.keys.get_column(i);
             if let Some(value_eq) = self_column.equal(other_column).unwrap().get(0) {
                 if !value_eq {
                     return false;
@@ -69,3 +68,15 @@ impl PartialEq for PartitionSpec {
 }
 
 impl Eq for PartitionSpec {}
+
+// Manually implement Hash to ensure consistency with `PartialEq`.
+impl Hash for PartitionSpec {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.keys.schema.hash(state);
+
+        for column in self.keys.columns() {
+            let column_hashes = column.hash(None).expect("Failed to hash column");
+            column_hashes.into_iter().for_each(|h| h.hash(state));
+        }
+    }
+}

@@ -6,7 +6,7 @@ import pytest
 
 import daft
 from daft import DataFrame
-from daft.table import MicroPartition
+from daft.recordbatch import MicroPartition
 
 NUM_ROWS = 1_000_000
 
@@ -110,7 +110,7 @@ def generate_list_params() -> tuple[dict, daft.Expression, list]:
     ],
 )
 def test_if_else(test_data_generator, benchmark) -> None:
-    """If_else between NUM_ROWS values"""
+    """If_else between NUM_ROWS values."""
     data, expr, expected = test_data_generator()
     table = MicroPartition.from_pydict(data)
 

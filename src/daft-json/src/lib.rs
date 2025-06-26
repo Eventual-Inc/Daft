@@ -1,4 +1,3 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(trait_upcasting)]
 use common_error::DaftError;
@@ -50,28 +49,28 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::IOError { source } => source.into(),
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::IOError { source: err }
+        Self::IOError { source: err }
     }
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<JsonConvertOptions>()?;
     parent.add_class::<JsonParseOptions>()?;
     parent.add_class::<JsonReadOptions>()?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_json))?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_json_schema))?;
+    parent.add_function(wrap_pyfunction!(python::pylib::read_json, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::pylib::read_json_schema, parent)?)?;
     Ok(())
 }

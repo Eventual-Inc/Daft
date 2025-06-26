@@ -1,36 +1,28 @@
-use std::{
-    collections::HashSet,
-    fs::File,
-    io::{Read, Seek},
-    sync::Arc,
-};
+use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
-use arrow2::io::parquet::read;
+use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    utils::arrow::cast_array_for_daft_if_needed,
-    Series,
-};
-use daft_dsl::ExprRef;
-use daft_io::IOStatsRef;
-use daft_table::Table;
-use futures::{stream::BoxStream, StreamExt};
+use common_runtime::{combine_stream, get_compute_runtime, RuntimeTask};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_io::{CountingReader, IOStatsRef};
+use daft_recordbatch::RecordBatch;
+use futures::{stream::BoxStream, FutureExt, StreamExt};
 use itertools::Itertools;
 use rayon::{
-    iter::IntoParallelRefMutIterator,
+    iter::ParallelIterator,
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
+    determine_parquet_parallelism,
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
-    UnableToConvertSchemaToDaftSnafu,
+    stream_reader::read::schema::infer_schema_with_options,
+    PARQUET_MORSEL_SIZE,
 };
-
-use crate::stream_reader::read::schema::infer_schema_with_options;
-use rayon::iter::ParallelIterator;
 
 fn prune_fields_from_schema(
     schema: arrow2::datatypes::Schema,
@@ -54,136 +46,187 @@ fn prune_fields_from_schema(
     }
 }
 
-pub(crate) fn arrow_column_iters_to_table_iter(
-    arr_iters: ArrowChunkIters,
+#[allow(clippy::too_many_arguments)]
+fn arrow_chunk_to_table(
+    arrow_chunk: ArrowChunk,
+    schema_ref: &SchemaRef,
+    uri: &str,
     row_range_start: usize,
+    index_so_far: &mut usize,
+    delete_rows: Option<&[i64]>,
+    curr_delete_row_idx: &mut usize,
+    predicate: Option<ExprRef>,
+    original_columns: Option<&[String]>,
+    original_num_rows: Option<usize>,
+) -> DaftResult<RecordBatch> {
+    let all_series = arrow_chunk
+        .into_iter()
+        .zip(schema_ref.field_names())
+        .filter_map(|(mut arr, f_name)| {
+            if (*index_so_far + arr.len()) < row_range_start {
+                // No need to process arrays that are less than the start offset
+                return None;
+            }
+            if *index_so_far < row_range_start {
+                // Slice arrays that are partially needed
+                let offset = row_range_start.saturating_sub(*index_so_far);
+                arr = arr.sliced(offset, arr.len() - offset);
+            }
+            let series_result = Series::try_from((f_name, cast_array_for_daft_if_needed(arr)));
+            Some(series_result)
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    let len = all_series
+        .first()
+        .map(daft_core::series::Series::len)
+        .expect("All series should not be empty when creating table from parquet chunks");
+    if all_series.iter().any(|s| s.len() != len) {
+        return Err(super::Error::ParquetColumnsDontHaveEqualRows {
+            path: uri.to_string(),
+        }
+        .into());
+    }
+
+    let mut table = RecordBatch::new_with_size(
+        Schema::new(all_series.iter().map(|s| s.field().clone())),
+        all_series,
+        len,
+    )
+    .with_context(|_| super::UnableToCreateTableFromChunkSnafu {
+        path: uri.to_string(),
+    })?;
+
+    // Apply delete rows if needed
+    if let Some(delete_rows) = &delete_rows
+        && !delete_rows.is_empty()
+    {
+        let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
+        while *curr_delete_row_idx < delete_rows.len()
+            && delete_rows[*curr_delete_row_idx] < *index_so_far as i64 + len as i64
+        {
+            let table_row = delete_rows[*curr_delete_row_idx] as usize - *index_so_far;
+            unsafe {
+                selection_mask.set_unchecked(table_row, false);
+            }
+            *curr_delete_row_idx += 1;
+        }
+        let selection_mask: BooleanArray = ("selection_mask", Bitmap::from(selection_mask)).into();
+        table = table.mask_filter(&selection_mask.into_series())?;
+    }
+    *index_so_far += len;
+
+    // Apply pushdowns if needed
+    if let Some(predicate) = predicate {
+        let predicate = BoundExpr::try_new(predicate, &table.schema)?;
+        table = table.filter(&[predicate])?;
+        if let Some(oc) = &original_columns {
+            let oc_indices = oc
+                .iter()
+                .map(|name| table.schema.get_index(name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            table = table.get_columns(&oc_indices);
+        }
+        if let Some(nr) = original_num_rows {
+            table = table.head(nr)?;
+        }
+    }
+    Ok(table)
+}
+
+/// Spawns a task that reads the column iterators and converts them into a table.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_column_iters_to_table_task(
+    arr_iters: ArrowChunkIters,
+    rg_range: RowGroupRange,
     schema_ref: SchemaRef,
     uri: String,
     predicate: Option<ExprRef>,
     original_columns: Option<Vec<String>>,
     original_num_rows: Option<usize>,
-) -> impl Iterator<Item = DaftResult<Table>> {
-    pub struct ParallelLockStepIter {
-        pub iters: ArrowChunkIters,
-    }
-    impl Iterator for ParallelLockStepIter {
-        type Item = arrow2::error::Result<ArrowChunk>;
+    delete_rows: Option<Vec<i64>>,
+    output_sender: tokio::sync::mpsc::Sender<DaftResult<RecordBatch>>,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    channel_size: usize,
+) -> RuntimeTask<DaftResult<()>> {
+    let (arrow_chunk_senders, mut arrow_chunk_receivers): (Vec<_>, Vec<_>) = arr_iters
+        .iter()
+        .map(|_| tokio::sync::mpsc::channel(channel_size))
+        .unzip();
 
-        fn next(&mut self) -> Option<Self::Item> {
-            self.iters.par_iter_mut().map(|iter| iter.next()).collect()
+    let compute_runtime = get_compute_runtime();
+
+    let deserializer_handles = arrow_chunk_senders
+        .into_iter()
+        .zip(arr_iters)
+        .map(|(sender, arr_iter)| {
+            let deserialization_task = async move {
+                for arr in arr_iter {
+                    if sender.send(arr?).await.is_err() {
+                        break;
+                    }
+                }
+                DaftResult::Ok(())
+            };
+            compute_runtime.spawn(deserialization_task)
+        })
+        .collect::<Vec<_>>();
+
+    compute_runtime.spawn(async move {
+        if deserializer_handles.is_empty() {
+            let empty = RecordBatch::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
+            let _ = output_sender.send(empty).await;
+            return Ok(());
         }
-    }
-    let par_lock_step_iter = ParallelLockStepIter { iters: arr_iters };
 
-    // Keep track of the current index in the row group so we can throw away arrays that are not needed
-    // and slice arrays that are partially needed.
-    let mut index_so_far = 0;
-    let owned_schema_ref = schema_ref.clone();
-    par_lock_step_iter.into_iter().map(move |chunk| {
-        let chunk = chunk.with_context(|_| {
-            super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
-        })?;
-        let all_series = chunk
+        let mut curr_delete_row_idx = 0;
+        // Keep track of the current index in the row group so we can throw away arrays that are not needed
+        // and slice arrays that are partially needed.
+        let mut index_so_far = 0;
+        loop {
+            let chunk =
+                futures::future::join_all(arrow_chunk_receivers.iter_mut().map(|s| s.recv()))
+                    .await
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+            if chunk.len() != deserializer_handles.len() {
+                break;
+            }
+            let table = arrow_chunk_to_table(
+                chunk,
+                &schema_ref,
+                &uri,
+                rg_range.start,
+                &mut index_so_far,
+                delete_rows.as_deref(),
+                &mut curr_delete_row_idx,
+                predicate.clone(),
+                original_columns.as_deref(),
+                original_num_rows,
+            )?;
+
+            if output_sender.send(Ok(table)).await.is_err() {
+                break;
+            }
+        }
+
+        futures::future::try_join_all(deserializer_handles)
+            .await?
             .into_iter()
-            .zip(owned_schema_ref.as_ref().fields.iter())
-            .filter_map(|(mut arr, (f_name, _))| {
-                if (index_so_far + arr.len()) < row_range_start {
-                    // No need to process arrays that are less than the start offset
-                    return None;
-                }
-                if index_so_far < row_range_start {
-                    // Slice arrays that are partially needed
-                    let offset = row_range_start.saturating_sub(index_so_far);
-                    arr = arr.sliced(offset, arr.len() - offset);
-                }
-                let series_result =
-                    Series::try_from((f_name.as_str(), cast_array_for_daft_if_needed(arr)));
-                Some(series_result)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+            .collect::<DaftResult<()>>()?;
 
-        let len = all_series[0].len();
-        if all_series.iter().any(|s| s.len() != len) {
-            return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.clone() }.into());
-        }
-        index_so_far += len;
-
-        let mut table = Table::new_with_size(owned_schema_ref.clone(), all_series, len)
-            .with_context(|_| super::UnableToCreateTableFromChunkSnafu { path: uri.clone() })?;
-        // Apply pushdowns if needed
-        if let Some(predicate) = &predicate {
-            table = table.filter(&[predicate.clone()])?;
-            if let Some(oc) = &original_columns {
-                table = table.get_columns(oc)?;
-            }
-            if let Some(nr) = original_num_rows {
-                table = table.head(nr)?;
-            }
-        }
-        Ok(table)
+        drop(permit);
+        DaftResult::Ok(())
     })
 }
 
-struct CountingReader<R> {
-    reader: R,
-    count: usize,
-    io_stats: Option<IOStatsRef>,
-}
-
-impl<R> CountingReader<R> {
-    fn update_count(&mut self) {
-        if let Some(ios) = &self.io_stats {
-            ios.mark_bytes_read(self.count);
-            self.count = 0;
-        }
-    }
-}
-
-impl<R> Read for CountingReader<R>
-where
-    R: Read + Seek,
-{
-    #[inline]
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let read = self.reader.read(buf)?;
-        self.count += read;
-        Ok(read)
-    }
-    #[inline]
-    fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {
-        let read = self.reader.read_vectored(bufs)?;
-        self.count += read;
-        Ok(read)
-    }
-    #[inline]
-    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-        let read = self.reader.read_to_end(buf)?;
-        self.count += read;
-        Ok(read)
-    }
-}
-
-impl<R> Seek for CountingReader<R>
-where
-    R: Read + Seek,
-{
-    #[inline]
-    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        self.reader.seek(pos)
-    }
-}
-
-impl<R> Drop for CountingReader<R> {
-    fn drop(&mut self) {
-        self.update_count()
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_read_into_column_iters(
+#[allow(clippy::type_complexity)]
+pub fn local_parquet_read_into_column_iters(
     uri: &str,
     columns: Option<&[String]>,
-    start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     predicate: Option<ExprRef>,
@@ -200,8 +243,8 @@ pub(crate) fn local_parquet_read_into_column_iters(
     const LOCAL_PROTOCOL: &str = "file://";
     let uri = uri
         .strip_prefix(LOCAL_PROTOCOL)
-        .map(|s| s.to_string())
-        .unwrap_or(uri.to_string());
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| uri.to_string());
 
     let reader = File::open(uri.clone()).with_context(|_| super::InternalIOSnafu {
         path: uri.to_string(),
@@ -220,11 +263,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
             file_size: size as usize,
         });
     }
-    let mut reader = CountingReader {
-        reader,
-        count: 0,
-        io_stats,
-    };
+    let mut reader = CountingReader::new(reader, io_stats);
 
     let metadata = match metadata {
         Some(m) => m,
@@ -235,21 +274,18 @@ pub(crate) fn local_parquet_read_into_column_iters(
             })?,
     };
 
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns)?;
-    let daft_schema =
-        Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
-            path: uri.to_string(),
-        })?;
+    let daft_schema = Schema::from(&schema);
 
     let row_ranges = build_row_ranges(
         num_rows,
-        start_offset.unwrap_or(0),
+        0,
         row_groups,
-        predicate.clone(),
+        predicate,
         &daft_schema,
         &metadata,
         &uri,
@@ -285,7 +321,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_read_into_arrow(
+pub fn local_parquet_read_into_arrow(
     uri: &str,
     columns: Option<&[String]>,
     start_offset: Option<usize>,
@@ -331,16 +367,13 @@ pub(crate) fn local_parquet_read_into_arrow(
     };
 
     // and infer a [`Schema`] from the `metadata`.
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns)?;
-    let daft_schema =
-        Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
-            path: uri.to_string(),
-        })?;
-    let chunk_size = chunk_size.unwrap_or(128 * 1024);
+    let daft_schema = Schema::from(&schema);
+    let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
     let num_expected_arrays = f32::ceil(max_rows as f32 / chunk_size as f32) as usize;
@@ -389,7 +422,6 @@ pub(crate) fn local_parquet_read_into_arrow(
             if (curr_index + arr.len()) < row_range.start {
                 // throw arrays less than what we need
                 curr_index += arr.len();
-                continue;
             } else if curr_index < row_range.start {
                 let offset = row_range.start.saturating_sub(curr_index);
                 arrays_so_far.push(arr.sliced(offset, arr.len() - offset));
@@ -425,7 +457,7 @@ pub(crate) fn local_parquet_read_into_arrow(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn local_parquet_read_async(
+pub async fn local_parquet_read_async(
     uri: &str,
     columns: Option<Vec<String>>,
     start_offset: Option<usize>,
@@ -435,7 +467,7 @@ pub(crate) async fn local_parquet_read_async(
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     chunk_size: Option<usize>,
-) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, Table)> {
+) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, RecordBatch)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
     rayon::spawn(move || {
@@ -473,8 +505,8 @@ pub(crate) async fn local_parquet_read_async(
                 .collect::<Result<Vec<_>, _>>()?;
             Ok((
                 metadata,
-                Table::new_with_size(
-                    Schema::new(converted_arrays.iter().map(|s| s.field().clone()).collect())?,
+                RecordBatch::new_with_size(
+                    Schema::new(converted_arrays.iter().map(|s| s.field().clone())),
                     converted_arrays,
                     num_rows_read,
                 )?,
@@ -487,28 +519,28 @@ pub(crate) async fn local_parquet_read_async(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_stream(
+pub async fn local_parquet_stream(
     uri: &str,
     original_columns: Option<Vec<String>>,
     columns: Option<Vec<String>>,
-    start_offset: Option<usize>,
     original_num_rows: Option<usize>,
     num_rows: Option<usize>,
+    delete_rows: Option<Vec<i64>>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     maintain_order: bool,
     io_stats: Option<IOStatsRef>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<(
     Arc<parquet2::metadata::FileMetaData>,
-    BoxStream<'static, DaftResult<Table>>,
+    BoxStream<'static, DaftResult<RecordBatch>>,
 )> {
-    let chunk_size = 128 * 1024;
+    let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
         uri,
         columns.as_deref(),
-        start_offset,
         num_rows,
         row_groups.as_deref(),
         predicate.clone(),
@@ -518,73 +550,64 @@ pub(crate) fn local_parquet_stream(
         io_stats,
     )?;
 
-    // Create a channel for each row group to send the processed tables to the stream
-    // Each channel is expected to have a number of chunks equal to the number of chunks in the row group
-    let (senders, receivers): (Vec<_>, Vec<_>) = row_ranges
-        .iter()
-        .map(|rg_range| {
-            let expected_num_chunks =
-                f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
-            crossbeam_channel::bounded(expected_num_chunks)
-        })
-        .unzip();
+    // We use a semaphore to limit the number of concurrent row group deserialization tasks.
+    // Set the maximum number of concurrent tasks to ceil(number of available threads / columns).
+    let num_parallel_tasks = determine_parquet_parallelism(&schema_ref);
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
     let owned_uri = uri.to_string();
-    let table_iters =
-        column_iters
-            .into_iter()
-            .zip(row_ranges)
-            .map(move |(rg_col_iter_result, rg_range)| {
-                let rg_col_iter = rg_col_iter_result?;
-                let table_iter = arrow_column_iters_to_table_iter(
-                    rg_col_iter,
-                    rg_range.start,
-                    schema_ref.clone(),
-                    owned_uri.clone(),
-                    predicate.clone(),
-                    original_columns.clone(),
-                    original_num_rows,
-                );
-                DaftResult::Ok(table_iter)
-            });
+    let compute_runtime = get_compute_runtime();
 
-    rayon::spawn(move || {
-        // Once a row group has been read into memory and we have the column iterators,
-        // we can start processing them in parallel.
-        let par_table_iters = table_iters.zip(senders).par_bridge();
+    let (output_senders, output_receivers): (Vec<_>, Vec<_>) = row_ranges
+        .iter()
+        .map(|_| tokio::sync::mpsc::channel(1))
+        .unzip();
 
-        // For each vec of column iters, iterate through them in parallel lock step such that each iteration
-        // produces a chunk of the row group that can be converted into a table.
-        par_table_iters.for_each(move |(table_iter_result, tx)| {
-            let table_iter = match table_iter_result {
-                Ok(t) => t,
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return;
-                }
-            };
-            for table_result in table_iter {
-                let table_err = table_result.is_err();
-                if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result) {
-                    panic!("Parquet stream channel should not be full")
-                }
-                if table_err {
-                    break;
-                }
+    let parquet_task = compute_runtime.spawn(async move {
+        let mut table_tasks = Vec::with_capacity(row_ranges.len());
+        for ((column_iters, sender), rg_range) in column_iters.zip(output_senders).zip(row_ranges) {
+            if let Err(e) = column_iters {
+                let _ = sender.send(Err(e.into())).await;
+                break;
             }
-        });
+
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let table_task = spawn_column_iters_to_table_task(
+                column_iters.unwrap(),
+                rg_range,
+                schema_ref.clone(),
+                owned_uri.clone(),
+                predicate.clone(),
+                original_columns.clone(),
+                original_num_rows,
+                delete_rows.clone(),
+                sender,
+                permit,
+                max(PARQUET_MORSEL_SIZE / chunk_size, 1),
+            );
+            table_tasks.push(table_task);
+        }
+
+        futures::future::try_join_all(table_tasks)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<()>>()?;
+
+        DaftResult::Ok(())
     });
 
-    let result_stream = futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
-
-    match maintain_order {
-        true => Ok((metadata, Box::pin(result_stream.flatten()))),
-        false => Ok((metadata, Box::pin(result_stream.flatten_unordered(None)))),
-    }
+    let stream_of_streams =
+        futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
+    let parquet_task = parquet_task.map(|x| x?);
+    let combined = match maintain_order {
+        true => combine_stream(stream_of_streams.flatten(), parquet_task).boxed(),
+        false => combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed(),
+    };
+    Ok((metadata, combined))
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn local_parquet_read_into_arrow_async(
+pub async fn local_parquet_read_into_arrow_async(
     uri: &str,
     columns: Option<Vec<String>>,
     start_offset: Option<usize>,

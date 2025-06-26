@@ -17,13 +17,12 @@
 //!
 //! Most arrays contain a [`MutableArray`] counterpart that is neither clonable nor sliceable, but
 //! can be operated in-place.
-use std::any::Any;
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
-use crate::error::Result;
 use crate::{
     bitmap::{Bitmap, MutableBitmap},
     datatypes::DataType,
+    error::Result,
 };
 
 mod physical_binary;
@@ -54,6 +53,21 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// specifies whether the array slot is valid or not (null).
     /// When the validity is [`None`], all slots are valid.
     fn validity(&self) -> Option<&Bitmap>;
+
+    /// Returns an iterator over the direct children of this Array.
+    ///
+    /// This method is useful for accessing child Arrays in composite types such as struct arrays.
+    /// By default, it returns an empty iterator, as most array types do not have child arrays.
+    ///
+    /// # Returns
+    /// A boxed iterator yielding mutable references to child Arrays.
+    ///
+    /// # Examples
+    /// For a StructArray, this would return an iterator over its field arrays.
+    /// For most other array types, this returns an empty iterator.
+    fn direct_children<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut dyn Array> + 'a> {
+        Box::new(core::iter::empty())
+    }
 
     /// The number of null slots on this [`Array`].
     /// # Implementation
@@ -144,46 +158,51 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Clone a `&dyn Array` to an owned `Box<dyn Array>`.
     fn to_boxed(&self) -> Box<dyn Array>;
 
-    /// Overwrites [`Array`]'s type with a different logical type.
+    /// Changes the logical type of this array in-place.
     ///
-    /// This function is useful to assign a different [`DataType`] to the array.
-    /// Used to change the arrays' logical type (see example). This updates the array
-    /// in place and does not clone the array.
-    /// # Example
-    /// ```rust,ignore
-    /// use arrow2::array::Int32Array;
-    /// use arrow2::datatypes::DataType;
+    /// This method modifies the array's `DataType` without changing its underlying data.
+    /// It's useful for reinterpreting the logical meaning of the data (e.g., from Int32 to Date32).
     ///
-    /// let &mut array = Int32Array::from(&[Some(1), None, Some(2)])
-    /// array.to(DataType::Date32);
-    /// assert_eq!(
-    ///    format!("{:?}", array),
-    ///    "Date32[1970-01-02, None, 1970-01-03]"
-    /// );
-    /// ```
+    /// # Arguments
+    /// * `data_type` - The new [`DataType`] to assign to this array.
+    ///
     /// # Panics
-    /// Panics iff the `data_type`'s [`PhysicalType`] is not equal to array's `PhysicalType`.
+    /// Panics if the new `data_type`'s [`PhysicalType`] is not equal to the array's current [`PhysicalType`].
+    ///
+    /// # Example
+    /// ```
+    /// # use arrow2::array::{Array, Int32Array};
+    /// # use arrow2::datatypes::DataType;
+    /// let mut array = Int32Array::from(&[Some(1), None, Some(2)]);
+    /// array.change_type(DataType::Date32);
+    /// assert_eq!(array.data_type(), &DataType::Date32);
+    /// ```
     fn change_type(&mut self, data_type: DataType);
 
-    /// Returns a new [`Array`] with a different logical type.
+    /// Creates a new [`Array`] with a different logical type.
     ///
-    /// This function is useful to assign a different [`DataType`] to the array.
-    /// Used to change the arrays' logical type (see example). Unlike, this clones the array
-    /// in order to return a new array.
-    /// # Example
-    /// ```rust,ignore
-    /// use arrow2::array::Int32Array;
-    /// use arrow2::datatypes::DataType;
+    /// This method returns a new array with the specified `DataType`, leaving the original array unchanged.
+    /// It's useful for creating a new view of the data with a different logical interpretation.
     ///
-    /// let array = Int32Array::from(&[Some(1), None, Some(2)]).to(DataType::Date32);
-    /// assert_eq!(
-    ///    format!("{:?}", array),
-    ///    "Date32[1970-01-02, None, 1970-01-03]"
-    /// );
-    /// ```
+    /// # Arguments
+    /// * `data_type` - The [`DataType`] for the new array.
+    ///
+    /// # Returns
+    /// A new `Box<dyn Array>` with the specified `DataType`.
+    ///
     /// # Panics
-    /// Panics iff the `data_type`'s [`PhysicalType`] is not equal to array's `PhysicalType`.
-    fn to_type(&self, data_type: DataType) -> Box<dyn Array> {
+    /// Panics if the new `data_type`'s [`PhysicalType`] is not equal to the array's current [`PhysicalType`].
+    ///
+    /// # Example
+    /// ```
+    /// # use arrow2::array::Int32Array;
+    /// # use arrow2::datatypes::DataType;
+    /// let array = Int32Array::from(&[Some(1), None, Some(2)]);
+    /// let new_array = array.convert_logical_type(DataType::Date32);
+    /// assert_eq!(new_array.data_type(), &DataType::Date32);
+    /// assert_eq!(array.data_type(), &DataType::Int32); // Original array unchanged
+    /// ```
+    fn convert_logical_type(&self, data_type: DataType) -> Box<dyn Array> {
         let mut new = self.to_boxed();
         new.change_type(data_type);
         new
@@ -444,6 +463,115 @@ pub fn new_null_array(data_type: DataType, length: usize) -> Box<dyn Array> {
         }
     }
 }
+
+/// Trait providing bi-directional conversion between arrow2 [`Array`] and arrow-rs [`ArrayData`]
+///
+/// [`ArrayData`]: arrow_data::ArrayData
+#[cfg(feature = "arrow")]
+pub trait Arrow2Arrow: Array {
+    /// Convert this [`Array`] into [`ArrayData`]
+    fn to_data(&self) -> arrow_data::ArrayData;
+
+    /// Create this [`Array`] from [`ArrayData`]
+    fn from_data(data: &arrow_data::ArrayData) -> Self;
+}
+
+#[cfg(feature = "arrow")]
+macro_rules! to_data_dyn {
+    ($array:expr, $ty:ty) => {{
+        let f = |x: &$ty| x.to_data();
+        general_dyn!($array, $ty, f)
+    }};
+}
+
+#[cfg(feature = "arrow")]
+impl From<Box<dyn Array>> for arrow_array::ArrayRef {
+    fn from(value: Box<dyn Array>) -> Self {
+        value.as_ref().into()
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<&dyn Array> for arrow_array::ArrayRef {
+    fn from(value: &dyn Array) -> Self {
+        arrow_array::make_array(to_data(value))
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<arrow_array::ArrayRef> for Box<dyn Array> {
+    fn from(value: arrow_array::ArrayRef) -> Self {
+        value.as_ref().into()
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl From<&dyn arrow_array::Array> for Box<dyn Array> {
+    fn from(value: &dyn arrow_array::Array) -> Self {
+        from_data(&value.to_data())
+    }
+}
+
+/// Convert an arrow2 [`Array`] to [`arrow_data::ArrayData`]
+#[cfg(feature = "arrow")]
+pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
+    use crate::datatypes::PhysicalType::*;
+    match array.data_type().to_physical_type() {
+        Null => to_data_dyn!(array, NullArray),
+        Boolean => to_data_dyn!(array, BooleanArray),
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            to_data_dyn!(array, PrimitiveArray<$T>)
+        }),
+        Binary => to_data_dyn!(array, BinaryArray<i32>),
+        LargeBinary => to_data_dyn!(array, BinaryArray<i64>),
+        FixedSizeBinary => to_data_dyn!(array, FixedSizeBinaryArray),
+        Utf8 => to_data_dyn!(array, Utf8Array::<i32>),
+        LargeUtf8 => to_data_dyn!(array, Utf8Array::<i64>),
+        List => to_data_dyn!(array, ListArray::<i32>),
+        LargeList => to_data_dyn!(array, ListArray::<i64>),
+        FixedSizeList => to_data_dyn!(array, FixedSizeListArray),
+        Struct => to_data_dyn!(array, StructArray),
+        Union => to_data_dyn!(array, UnionArray),
+        Dictionary(key_type) => {
+            match_integer_type!(key_type, |$T| {
+                to_data_dyn!(array, DictionaryArray::<$T>)
+            })
+        }
+        Map => to_data_dyn!(array, MapArray),
+    }
+}
+
+/// Convert an [`arrow_data::ArrayData`] to arrow2 [`Array`]
+#[cfg(feature = "arrow")]
+pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
+    use crate::datatypes::PhysicalType::*;
+    let data_type: DataType = data.data_type().clone().into();
+    match data_type.to_physical_type() {
+        Null => Box::new(NullArray::from_data(data)),
+        Boolean => Box::new(BooleanArray::from_data(data)),
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            Box::new(PrimitiveArray::<$T>::from_data(data))
+        }),
+        Binary => Box::new(BinaryArray::<i32>::from_data(data)),
+        LargeBinary => Box::new(BinaryArray::<i64>::from_data(data)),
+        FixedSizeBinary => Box::new(FixedSizeBinaryArray::from_data(data)),
+        Utf8 => Box::new(Utf8Array::<i32>::from_data(data)),
+        LargeUtf8 => Box::new(Utf8Array::<i64>::from_data(data)),
+        List => Box::new(ListArray::<i32>::from_data(data)),
+        LargeList => Box::new(ListArray::<i64>::from_data(data)),
+        FixedSizeList => Box::new(FixedSizeListArray::from_data(data)),
+        Struct => Box::new(StructArray::from_data(data)),
+        Union => Box::new(UnionArray::from_data(data)),
+        Dictionary(key_type) => {
+            match_integer_type!(key_type, |$T| {
+                Box::new(DictionaryArray::<$T>::from_data(data))
+            })
+        }
+        Map => Box::new(MapArray::from_data(data)),
+    }
+}
+
+
 macro_rules! clone_dyn {
     ($array:expr, $ty:ty) => {{
         let f = |x: &$ty| Box::new(x.clone());
@@ -634,14 +762,21 @@ macro_rules! impl_common_array {
         fn change_type(&mut self, data_type: DataType) {
             if data_type.to_physical_type() != self.data_type().to_physical_type() {
                 panic!(
-                    "Converting array with logical type {:?} to logical type {:?} failed, physical types do not match: {:?} -> {:?}",
+                    "Cannot change array type from {:?} to {:?}",
                     self.data_type(),
-                    data_type,
-                    self.data_type().to_physical_type(),
-                    data_type.to_physical_type(),
+                    data_type
                 );
             }
-            self.data_type = data_type;
+
+            self.data_type = data_type.clone();
+            let mut children = self.direct_children();
+
+            data_type.direct_children(|child| {
+                let Some(child_elem) = children.next() else {
+                    return;
+                };
+                child_elem.change_type(child.clone());
+            })
         }
     };
 }
@@ -710,17 +845,15 @@ pub mod dyn_ord;
 pub mod growable;
 pub mod ord;
 
-pub(crate) use iterator::ArrayAccessor;
-pub use iterator::ArrayValuesIter;
-
-pub use equal::equal;
-pub use fmt::{get_display, get_value_display};
-
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
+pub use equal::equal;
 pub use fixed_size_binary::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray};
 pub use fixed_size_list::{FixedSizeListArray, MutableFixedSizeListArray};
+pub use fmt::{get_display, get_value_display};
+pub(crate) use iterator::ArrayAccessor;
+pub use iterator::ArrayValuesIter;
 pub use list::{ListArray, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray};
@@ -729,9 +862,7 @@ pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 
-pub(crate) use self::ffi::offset_buffers_children_dictionary;
-pub(crate) use self::ffi::FromFfi;
-pub(crate) use self::ffi::ToFfi;
+pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
 /// This is similar to [`Extend`], but accepted the creation to error.
@@ -773,4 +904,97 @@ pub unsafe trait GenericBinaryArray<O: crate::offset::Offset>: Array {
     fn values(&self) -> &[u8];
     /// The offsets of the array
     fn offsets(&self) -> &[O];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        array::{
+            BooleanArray, Int32Array, Int64Array, ListArray, StructArray,
+        },
+        datatypes::{DataType, Field, TimeUnit},
+    };
+
+    #[test]
+    fn test_int32_to_date32() {
+        let array = Int32Array::from_slice([1, 2, 3]);
+        let result = array.convert_logical_type(DataType::Date32);
+        assert_eq!(result.data_type(), &DataType::Date32);
+    }
+
+    #[test]
+    fn test_int64_to_timestamp() {
+        let array = Int64Array::from_slice([1000, 2000, 3000]);
+        let result = array.convert_logical_type(DataType::Timestamp(TimeUnit::Millisecond, None));
+        assert_eq!(
+            result.data_type(),
+            &DataType::Timestamp(TimeUnit::Millisecond, None)
+        );
+    }
+
+    #[test]
+    fn test_boolean_to_boolean() {
+        let array = BooleanArray::from_slice([true, false, true]);
+        let result = array.convert_logical_type(DataType::Boolean);
+        assert_eq!(result.data_type(), &DataType::Boolean);
+    }
+
+    #[test]
+    fn test_list_to_list() {
+        let values = Int32Array::from_slice([1, 2, 3, 4, 5]);
+        let offsets = vec![0, 2, 5];
+        let list_array = ListArray::try_new(
+            DataType::List(Box::new(Field::new("item", DataType::Int32, true))),
+            offsets.try_into().unwrap(),
+            Box::new(values),
+            None,
+        )
+        .unwrap();
+        let result = list_array.convert_logical_type(DataType::List(Box::new(Field::new(
+            "item",
+            DataType::Int32,
+            true,
+        ))));
+        assert_eq!(
+            result.data_type(),
+            &DataType::List(Box::new(Field::new("item", DataType::Int32, true)))
+        );
+    }
+
+    #[test]
+    fn test_struct_to_struct() {
+        let boolean = BooleanArray::from_slice([true, false, true]);
+        let int = Int32Array::from_slice([1, 2, 3]);
+        let struct_array = StructArray::try_new(
+            DataType::Struct(vec![
+                Field::new("b", DataType::Boolean, true),
+                Field::new("i", DataType::Int32, true),
+            ]),
+            vec![
+                Box::new(boolean) as Box<dyn Array>,
+                Box::new(int) as Box<dyn Array>,
+            ],
+            None,
+        )
+        .unwrap();
+        let result = struct_array.convert_logical_type(DataType::Struct(vec![
+            Field::new("b", DataType::Boolean, true),
+            Field::new("i", DataType::Int32, true),
+        ]));
+        assert_eq!(
+            result.data_type(),
+            &DataType::Struct(vec![
+                Field::new("b", DataType::Boolean, true),
+                Field::new("i", DataType::Int32, true),
+            ])
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_conversion() {
+        let array = Int32Array::from_slice([1, 2, 3]);
+        array.convert_logical_type(DataType::Utf8);
+    }
 }

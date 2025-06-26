@@ -68,7 +68,7 @@ impl ReadPlanPass for SplitLargeRequestPass {
         }
 
         let mut new_ranges = vec![];
-        for range in ranges.iter() {
+        for range in &ranges {
             if (range.end - range.start) > self.split_threshold {
                 let mut curr_start = range.start;
                 while curr_start < range.end {
@@ -99,8 +99,8 @@ struct RangeCacheEntry {
 impl RangeCacheEntry {
     async fn get_or_wait(&self, range: Range<usize>) -> std::result::Result<Bytes, daft_io::Error> {
         {
-            let mut _guard = self.state.lock().await;
-            match &mut *_guard {
+            let mut guard = self.state.lock().await;
+            match &mut *guard {
                 RangeCacheState::InFlight(f) => {
                     // TODO(sammy): thread in url for join error
                     let v = f
@@ -112,7 +112,7 @@ impl RangeCacheEntry {
                         .as_ref()
                         .map(|b| b.slice(range))
                         .map_err(|e| daft_io::Error::CachedError { source: e.clone() });
-                    *_guard = RangeCacheState::Ready(v);
+                    *guard = RangeCacheState::Ready(v);
                     sliced
                 }
                 RangeCacheState::Ready(v) => v
@@ -124,7 +124,7 @@ impl RangeCacheEntry {
     }
 }
 
-pub(crate) struct ReadPlanner {
+pub struct ReadPlanner {
     source: String,
     ranges: RangeList,
     passes: Vec<Box<dyn ReadPlanPass>>,
@@ -132,7 +132,7 @@ pub(crate) struct ReadPlanner {
 
 impl ReadPlanner {
     pub fn new(source: &str) -> Self {
-        ReadPlanner {
+        Self {
             source: source.into(),
             ranges: vec![],
             passes: vec![],
@@ -148,7 +148,7 @@ impl ReadPlanner {
     }
 
     pub fn run_passes(&mut self) -> super::Result<()> {
-        for pass in self.passes.iter() {
+        for pass in &self.passes {
             let (changed, ranges) = pass.run(&self.ranges)?;
             if changed {
                 self.ranges = ranges;
@@ -193,7 +193,7 @@ impl ReadPlanner {
     }
 }
 
-pub(crate) struct RangesContainer {
+pub struct RangesContainer {
     ranges: Vec<Arc<RangeCacheEntry>>,
 }
 
@@ -242,7 +242,7 @@ impl RangesContainer {
                 current_pos += end_offset - start_offset;
                 curr_index = index + 1;
             }
-        };
+        }
         while current_pos < range.end && curr_index < self.ranges.len() {
             let entry = self.ranges[curr_index].clone();
             let start = entry.start;
@@ -280,7 +280,7 @@ impl RangesContainer {
 impl Display for ReadPlanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "ReadPlanBuilder: {} ranges", self.ranges.len())?;
-        for range in self.ranges.iter() {
+        for range in &self.ranges {
             writeln!(
                 f,
                 "{}-{}, {}",

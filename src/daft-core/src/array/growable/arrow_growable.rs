@@ -1,21 +1,14 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use arrow2::types::months_days_ns;
 use common_error::DaftResult;
 
-use crate::{
-    array::{
-        ops::{as_arrow::AsArrow, from_arrow::FromArrow},
-        DataArray,
-    },
-    datatypes::{
-        BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
-        FixedSizeBinaryType, Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type,
-        Int8Type, NullType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
-    },
-    DataType, IntoSeries, Series,
-};
-
 use super::Growable;
+use crate::{
+    array::prelude::*,
+    datatypes::prelude::*,
+    series::{IntoSeries, Series},
+};
 
 pub struct ArrowBackedDataArrayGrowable<
     'a,
@@ -40,7 +33,7 @@ where
 
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.arrow2_growable.extend_validity(additional)
+        self.arrow2_growable.extend_validity(additional);
     }
 
     #[inline]
@@ -54,7 +47,7 @@ where
 pub type ArrowNullGrowable<'a> =
     ArrowBackedDataArrayGrowable<'a, NullType, arrow2::array::growable::GrowableNull>;
 
-impl<'a> ArrowNullGrowable<'a> {
+impl ArrowNullGrowable<'_> {
     pub fn new(name: &str, dtype: &DataType) -> Self {
         let arrow2_growable = arrow2::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
         Self {
@@ -120,11 +113,6 @@ impl_arrow_backed_data_array_growable!(
     arrow2::array::growable::GrowablePrimitive<'a, i64>
 );
 impl_arrow_backed_data_array_growable!(
-    ArrowInt128Growable,
-    Int128Type,
-    arrow2::array::growable::GrowablePrimitive<'a, i128>
-);
-impl_arrow_backed_data_array_growable!(
     ArrowUInt8Growable,
     UInt8Type,
     arrow2::array::growable::GrowablePrimitive<'a, u8>
@@ -169,6 +157,17 @@ impl_arrow_backed_data_array_growable!(
     Utf8Type,
     arrow2::array::growable::GrowableUtf8<'a, i64>
 );
+impl_arrow_backed_data_array_growable!(
+    ArrowMonthDayNanoIntervalGrowable,
+    IntervalType,
+    arrow2::array::growable::GrowablePrimitive<'a, months_days_ns>
+);
+
+impl_arrow_backed_data_array_growable!(
+    ArrowDecimal128Growable,
+    Decimal128Type,
+    arrow2::array::growable::GrowablePrimitive<'a, i128>
+);
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type
 pub struct ArrowExtensionGrowable<'a> {
@@ -200,14 +199,14 @@ impl<'a> ArrowExtensionGrowable<'a> {
     }
 }
 
-impl<'a> Growable for ArrowExtensionGrowable<'a> {
+impl Growable for ArrowExtensionGrowable<'_> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        self.child_growable.extend(index, start, len)
+        self.child_growable.extend(index, start, len);
     }
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.child_growable.extend_validity(additional)
+        self.child_growable.extend_validity(additional);
     }
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {

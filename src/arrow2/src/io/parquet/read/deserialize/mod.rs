@@ -154,7 +154,7 @@ where
     }
 
     nested::columns_to_iter_recursive(
-        columns, types, field, init, num_rows, chunk_size, num_values,
+        columns, types, field, init, num_rows, chunk_size, num_values, false,
     )
 }
 
@@ -242,7 +242,7 @@ where
 {
     Ok(Box::new(
         nested::columns_to_iter_recursive(
-            columns, types, field, init, num_rows, chunk_size, num_values,
+            columns, types, field, init, num_rows, chunk_size, num_values, false,
         )?
         .map(|x| x.map(|x| x.1)),
     ))

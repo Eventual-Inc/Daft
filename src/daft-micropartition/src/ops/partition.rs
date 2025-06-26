@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
 
@@ -12,7 +12,10 @@ fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
         return v;
     }
     let len = v[0].len();
-    let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
+    let mut iters: Vec<_> = v
+        .into_iter()
+        .map(std::iter::IntoIterator::into_iter)
+        .collect();
     (0..len)
         .map(|_| {
             iters
@@ -24,26 +27,17 @@ fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 }
 
 impl MicroPartition {
-    fn vec_part_tables_to_mps(
-        &self,
-        part_tables: Vec<Vec<Table>>,
-    ) -> DaftResult<Vec<MicroPartition>> {
+    fn vec_part_tables_to_mps(&self, part_tables: Vec<Vec<RecordBatch>>) -> DaftResult<Vec<Self>> {
         let part_tables = transpose2(part_tables);
         Ok(part_tables
             .into_iter()
-            .map(|v| {
-                MicroPartition::new_loaded(
-                    self.schema.clone(),
-                    Arc::new(v),
-                    self.statistics.clone(),
-                )
-            })
+            .map(|v| Self::new_loaded(self.schema.clone(), Arc::new(v), self.statistics.clone()))
             .collect())
     }
 
     pub fn partition_by_hash(
         &self,
-        exprs: &[ExprRef],
+        exprs: &[BoundExpr],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_hash");
@@ -88,8 +82,8 @@ impl MicroPartition {
 
     pub fn partition_by_range(
         &self,
-        partition_keys: &[ExprRef],
-        boundaries: &Table,
+        partition_keys: &[BoundExpr],
+        boundaries: &RecordBatch,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_range");
@@ -112,7 +106,10 @@ impl MicroPartition {
         self.vec_part_tables_to_mps(part_tables)
     }
 
-    pub fn partition_by_value(&self, partition_keys: &[ExprRef]) -> DaftResult<(Vec<Self>, Self)> {
+    pub fn partition_by_value(
+        &self,
+        partition_keys: &[BoundExpr],
+    ) -> DaftResult<(Vec<Self>, Self)> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_value");
 
         let tables = self.concat_or_get(io_stats)?;
@@ -123,15 +120,15 @@ impl MicroPartition {
             return Ok((vec![], pkeys));
         }
         let table = tables.first().unwrap();
+
         let (tables, values) = table.partition_by_value(partition_keys)?;
 
         let mps = tables
             .into_iter()
-            .map(|t| MicroPartition::new_loaded(self.schema.clone(), Arc::new(vec![t]), None))
+            .map(|t| Self::new_loaded(self.schema.clone(), Arc::new(vec![t]), None))
             .collect::<Vec<_>>();
 
-        let values =
-            MicroPartition::new_loaded(values.schema.clone(), Arc::new(vec![values]), None);
+        let values = Self::new_loaded(values.schema.clone(), Arc::new(vec![values]), None);
 
         Ok((mps, values))
     }

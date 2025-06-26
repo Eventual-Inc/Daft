@@ -1,6 +1,7 @@
+use std::sync::LazyLock;
+
 use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
-use lazy_static::lazy_static;
 use serde_arrow::{
     schema::{SchemaLike, SerdeArrowSchema, TracingOptions},
     utils::{Item, Items},
@@ -16,27 +17,33 @@ enum Error {
 
 impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
-        use Error::*;
+        use Error::DeserializationError;
         match value {
             DeserializationError { source } => {
-                DaftError::ComputeError(format!("Deserialization error: {}", source))
+                Self::ComputeError(format!("Deserialization error: {source}"))
             }
         }
     }
 }
 
-lazy_static! {
-    static ref ARROW2_DDSKETCH_ITEM_FIELDS: Vec<arrow2::datatypes::Field> =
-        SerdeArrowSchema::from_type::<Item<Option<DDSketch>>>(TracingOptions::default())
-            .unwrap()
-            .to_arrow2_fields()
-            .unwrap();
+static ARROW2_DDSKETCH_ITEM_FIELDS: LazyLock<Vec<arrow2::datatypes::Field>> = LazyLock::new(|| {
+    SerdeArrowSchema::from_type::<Item<Option<DDSketch>>>(TracingOptions::default())
+        .unwrap()
+        .to_arrow2_fields()
+        .unwrap()
+});
 
-    /// The corresponding arrow2 DataType of Vec<DDSketch> when serialized as an arrow2 array
-    pub static ref ARROW2_DDSKETCH_DTYPE: arrow2::datatypes::DataType = ARROW2_DDSKETCH_ITEM_FIELDS.first().unwrap().data_type().clone();
-}
+/// The corresponding arrow2 DataType of Vec<DDSketch> when serialized as an arrow2 array
+pub static ARROW2_DDSKETCH_DTYPE: LazyLock<arrow2::datatypes::DataType> = LazyLock::new(|| {
+    ARROW2_DDSKETCH_ITEM_FIELDS
+        .first()
+        .unwrap()
+        .data_type()
+        .clone()
+});
 
 /// Converts a Vec<Option<DDSketch>> into an arrow2 Array
+#[must_use]
 pub fn into_arrow2(sketches: Vec<Option<DDSketch>>) -> Box<dyn arrow2::array::Array> {
     if sketches.is_empty() {
         return arrow2::array::StructArray::new_empty(ARROW2_DDSKETCH_DTYPE.clone()).to_boxed();
@@ -64,21 +71,22 @@ pub fn from_arrow2(
     item_vec
         .map(|item_vec| item_vec.into_iter().map(|item| item.0).collect())
         .with_context(|_| DeserializationSnafu {})
-        .map_err(|e| e.into())
+        .map_err(std::convert::Into::into)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{from_arrow2, into_arrow2};
     use common_error::DaftResult;
     use sketches_ddsketch::{Config, DDSketch};
+
+    use crate::{from_arrow2, into_arrow2};
 
     #[test]
     fn test_roundtrip_single() -> DaftResult<()> {
         let mut sketch = DDSketch::new(Config::default());
 
         for i in 0..10 {
-            sketch.add(i as f64);
+            sketch.add(f64::from(i));
         }
 
         let expected_min = sketch.min();

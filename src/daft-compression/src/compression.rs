@@ -1,8 +1,9 @@
+use std::{path::PathBuf, pin::Pin};
+
 use async_compression::tokio::bufread::{
     BrotliDecoder, BzDecoder, DeflateDecoder, GzipDecoder, LzmaDecoder, XzDecoder, ZlibDecoder,
     ZstdDecoder,
 };
-use std::{path::PathBuf, pin::Pin};
 use tokio::io::{AsyncBufRead, AsyncRead};
 use url::Url;
 
@@ -19,11 +20,17 @@ pub enum CompressionCodec {
 }
 
 impl CompressionCodec {
+    #[must_use]
     pub fn from_uri(uri: &str) -> Option<Self> {
         let url = Url::parse(uri);
-        let path = match &url {
-            Ok(url) => url.path(),
-            _ => uri,
+        let path = if let Some(stripped) = uri.strip_prefix("file://") {
+            // Handle file URLs properly by stripping the scheme.
+            stripped
+        } else {
+            match &url {
+                Ok(url) => url.path(),
+                _ => uri,
+            }
         };
         let extension = PathBuf::from(path)
             .extension()?
@@ -31,8 +38,9 @@ impl CompressionCodec {
             .to_string();
         Self::from_extension(extension.as_ref())
     }
+    #[must_use]
     pub fn from_extension(extension: &str) -> Option<Self> {
-        use CompressionCodec::*;
+        use CompressionCodec::{Brotli, Bz, Deflate, Gzip, Lzma, Xz, Zlib, Zstd};
         match extension {
             "br" => Some(Brotli),
             "bz2" => Some(Bz),
@@ -51,12 +59,20 @@ impl CompressionCodec {
         &self,
         reader: T,
     ) -> Pin<Box<dyn AsyncRead + Send>> {
-        use CompressionCodec::*;
+        use CompressionCodec::{Brotli, Bz, Deflate, Gzip, Lzma, Xz, Zlib, Zstd};
         match self {
             Brotli => Box::pin(BrotliDecoder::new(reader)),
             Bz => Box::pin(BzDecoder::new(reader)),
             Deflate => Box::pin(DeflateDecoder::new(reader)),
-            Gzip => Box::pin(GzipDecoder::new(reader)),
+            Gzip => {
+                // With async-compression, compressed files with multiple concatenated members
+                // might be incorrectly read as an early EOF. Setting multiple_members(true)
+                // ensures that the reader will continue to read until the end of the file.
+                // For more details, see: https://github.com/Nullus157/async-compression/issues/153
+                let mut decoder = GzipDecoder::new(reader);
+                decoder.multiple_members(true);
+                Box::pin(decoder)
+            }
             Lzma => Box::pin(LzmaDecoder::new(reader)),
             Xz => Box::pin(XzDecoder::new(reader)),
             Zlib => Box::pin(ZlibDecoder::new(reader)),

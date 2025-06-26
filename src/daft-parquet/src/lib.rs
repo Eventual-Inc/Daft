@@ -1,8 +1,10 @@
-#![feature(async_closure)]
 #![feature(let_chains)]
 #![feature(result_flattening)]
 
+use std::{cmp::max, num::NonZeroUsize};
+
 use common_error::DaftError;
+use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
 mod file;
@@ -14,17 +16,37 @@ mod statistics;
 pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
 mod stream_reader;
+
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
+// This is the default size of an emitted morsel from the parquet reader
+const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
+
+// This function determines the number of parallel deserialize tasks to use when reading parquet files
+// It is calculated by taking 2x the number of cores available (to ensure pipelining), and dividing
+// by the number of columns in the schema.
+fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
+    (std::thread::available_parallelism()
+        .unwrap_or(NonZeroUsize::new(2).unwrap())
+        .checked_mul(2.try_into().unwrap())
+        .unwrap()
+        .get() as f64
+        / max(daft_schema.len(), 1) as f64)
+        .ceil() as usize
+}
+
 #[derive(Debug, Snafu)]
 pub enum Error {
+    #[snafu(display("{source}"))]
+    Arrow2Error { source: arrow2::error::Error },
+
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
 
     #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]
     FileReadTimeout { path: String, duration_ms: i64 },
-    #[snafu(display("Internal IO Error when Opening: {path}:\nDetails:\n{source}"))]
+    #[snafu(display("Internal IO Error when opening: {path}:\nDetails:\n{source}"))]
     InternalIOError {
         path: String,
         source: std::io::Error,
@@ -188,6 +210,12 @@ pub enum Error {
         source: daft_stats::Error,
     },
 
+    #[snafu(display(
+        "Parquet file: {} unable to bind expression to schema\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToBindExpression { path: String, source: DaftError },
+
     #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
     JoinError {
         path: String,
@@ -203,18 +231,19 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::DaftIOError { source } => source.into(),
-            Error::FileReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
-            _ => DaftError::External(err.into()),
+            Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            Error::UnableToBindExpression { source, .. } => source.into(),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::DaftIOError { source: err }
+        Self::DaftIOError { source: err }
     }
 }
 

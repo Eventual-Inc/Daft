@@ -1,0 +1,28 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+jaq-core = {workspace = true}
+jaq-json = {workspace = true, features = ["serde_json"]}
+jaq-std = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+typetag = {workspace = true}
+
+[features]
+python = [
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-json"
+edition.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]
+version.workspace = true

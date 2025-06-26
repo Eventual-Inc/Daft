@@ -44,7 +44,7 @@ impl MicroPartition {
             }
         }
 
-        Ok(MicroPartition::new_loaded(
+        Ok(Self::new_loaded(
             self.schema.clone(),
             slices_tables.into(),
             self.statistics.clone(),

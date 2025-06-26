@@ -1,13 +1,17 @@
+use std::cmp::min;
+
+use common_error::DaftResult;
+#[cfg(feature = "python")]
+use common_py_serde::pickle_dumps;
+use rand::{rngs::StdRng, SeedableRng};
+
+use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::DaftArrowBackedType,
 };
-use common_error::DaftResult;
-
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-
-use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
@@ -22,20 +26,61 @@ where
 
 #[cfg(feature = "python")]
 impl PythonArray {
+    /// Estimate the size of this list by sampling and pickling its objects.
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
+        use rand::seq::IndexedRandom;
 
-        let vector = self.as_arrow().values().to_vec();
-        Python::with_gil(|py| {
-            let daft_utils = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?;
-            let estimate_size_bytes_pylist =
-                daft_utils.getattr(pyo3::intern!(py, "estimate_size_bytes_pylist"))?;
-            let size_bytes: usize = estimate_size_bytes_pylist
-                .call1((PyList::new(py, vector),))?
-                .extract()?;
-            Ok(size_bytes)
-        })
+        // Sample up to 1MB or 10000 items to determine total size.
+        const MAX_SAMPLE_QUANTITY: usize = 10000;
+        const MAX_SAMPLE_SIZE: usize = 1024 * 1024;
+
+        if self.is_empty() {
+            return Ok(0);
+        }
+
+        let values = self.as_arrow().values();
+
+        let mut rng = StdRng::seed_from_u64(0);
+        let sample_candidates =
+            values.choose_multiple(&mut rng, min(values.len(), MAX_SAMPLE_QUANTITY));
+
+        let mut sample_size_allowed = MAX_SAMPLE_SIZE;
+        let mut sampled_sizes = Vec::with_capacity(sample_candidates.len());
+        for c in sample_candidates {
+            let size = pickle_dumps(c)?.len();
+            sampled_sizes.push(size);
+            sample_size_allowed = sample_size_allowed.saturating_sub(size);
+
+            if sample_size_allowed == 0 {
+                break;
+            }
+        }
+
+        if sampled_sizes.len() == values.len() {
+            // Sampling complete.
+            // If we ended up measuring the entire list, just return the exact value.
+
+            Ok(sampled_sizes.into_iter().sum())
+        } else {
+            // Otherwise, reduce to a one-item estimate and extrapolate.
+
+            let one_item_size_estimate = if sampled_sizes.len() == 1 {
+                sampled_sizes[0]
+            } else {
+                let sampled_len = sampled_sizes.len() as f64;
+
+                let mean: f64 = sampled_sizes.iter().map(|&x| x as f64).sum::<f64>() / sampled_len;
+                let stdev: f64 = sampled_sizes
+                    .iter()
+                    .map(|&x| ((x as f64) - mean).powi(2))
+                    .sum::<f64>()
+                    / sampled_len;
+
+                (mean + stdev) as usize
+            };
+
+            Ok(one_item_size_estimate * values.len())
+        }
     }
 }
 

@@ -1,0 +1,100 @@
+# This workflow will build the Daft docs and optionally publishes them to Netlify
+# for easy previews.
+
+name: Build docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docgen:
+    runs-on: ubuntu-latest
+    env:
+      python-version: '3.10'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-build
+        cache-all-crates: 'true'
+    - name: Set up Python ${{ env.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          pyproject.toml
+          requirements-dev.txt
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+        pip install uv
+    - name: Install dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source venv/bin/activate
+          uv pip install -r requirements-dev.txt
+    - name: Build Daft in development mode and generate docs
+      run: |
+        source activate
+        maturin develop
+        mkdocs build
+    - name: Upload built docs
+      uses: actions/upload-artifact@v4
+      with:
+        name: html-docs
+        path: site
+  docpublish:
+    runs-on: ubuntu-latest
+    needs: docgen
+    # Only publish to netlify on:
+    # 1. If the previous doc building step didn't fail
+    # 2. If this is a PR from the current repo (since it needs access to secrets)
+    # 3. If it has the `documentation` label
+    if: |
+      success() &&
+      (github.event.pull_request != null) &&
+      (github.event.pull_request.head.repo.full_name == github.repository) &&
+      contains(github.event.pull_request.labels.*.name, 'docs')
+    steps:
+    - name: Download built HTML docs
+      uses: actions/download-artifact@v4
+      with:
+        name: html-docs
+        path: ./built_html
+    - name: Add a robots.txt to disable indexing of docs
+      run: |
+        echo "User-agent: *" > ./built_html/robots.txt
+        echo "Disallow: /" >> ./built_html/robots.txt
+    - name: Deploy to Netlify
+      uses: nwtgck/actions-netlify@v3.0
+      with:
+        publish-dir: ./built_html
+        production-branch: main
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        enable-pull-request-comment: true
+        enable-commit-comment: false
+        overwrites-pull-request-comment: true
+        enable-github-deployment: false
+        alias: deploy-preview-${{ github.event.number }}
+        deploy-message: 'Deploy preview for PR #${{ github.event.number }} (current built commit: ${{ github.sha }})'
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    timeout-minutes: 1

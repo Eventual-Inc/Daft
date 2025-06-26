@@ -1,7 +1,10 @@
-use std::ops::Neg;
-use std::panic::RefUnwindSafe;
+use std::{
+    ops::{Add, Neg, Sub},
+    panic::RefUnwindSafe,
+};
 
 use bytemuck::{Pod, Zeroable};
+use serde::{Deserialize, Serialize};
 
 use super::PrimitiveType;
 
@@ -87,11 +90,19 @@ native_type!(f64, PrimitiveType::Float64);
 native_type!(i128, PrimitiveType::Int128);
 
 /// The in-memory representation of the DayMillisecond variant of arrow's "Interval" logical type.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod)]
+#[derive(
+    Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod, Serialize, Deserialize,
+)]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct days_ms(pub i32, pub i32);
 
+impl From<(i32, i32)> for days_ms {
+    #[inline]
+    fn from((days, milliseconds): (i32, i32)) -> Self {
+        Self(days, milliseconds)
+    }
+}
 impl days_ms {
     /// A new [`days_ms`].
     #[inline]
@@ -179,7 +190,9 @@ impl NativeType for days_ms {
 }
 
 /// The in-memory representation of the MonthDayNano variant of the "Interval" logical type.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod)]
+#[derive(
+    Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod, Serialize, Deserialize,
+)]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct months_days_ns(pub i32, pub i32, pub i64);
@@ -207,6 +220,13 @@ impl months_days_ns {
     #[inline]
     pub fn ns(&self) -> i64 {
         self.2
+    }
+}
+
+impl From<(i32, i32, i64)> for months_days_ns {
+    #[inline]
+    fn from((months, days, nanoseconds): (i32, i32, i64)) -> Self {
+        Self(months, days, nanoseconds)
     }
 }
 
@@ -327,6 +347,32 @@ impl Neg for months_days_ns {
     #[inline(always)]
     fn neg(self) -> Self::Output {
         Self::new(-self.months(), -self.days(), -self.ns())
+    }
+}
+
+impl Add for months_days_ns {
+    type Output = Self;
+
+    #[inline(always)]
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(
+            self.months() + rhs.months(),
+            self.days() + rhs.days(),
+            self.ns() + rhs.ns(),
+        )
+    }
+}
+
+impl Sub for months_days_ns {
+    type Output = Self;
+
+    #[inline(always)]
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(
+            self.months().checked_sub(rhs.months()).unwrap_or(0),
+            self.days().checked_sub(rhs.days()).unwrap_or(0),
+            self.ns().checked_sub(rhs.ns()).unwrap_or(0),
+        )
     }
 }
 

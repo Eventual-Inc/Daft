@@ -1,11 +1,7 @@
+use std::sync::Arc;
+
 use arrow2::array::PrimitiveArray;
-use daft_core::{
-    datatypes::{
-        logical::{DateArray, Decimal128Array, TimestampArray},
-        BinaryArray, BooleanArray, Int128Array, Int32Array, Int64Array, Utf8Array,
-    },
-    DataType, IntoSeries, Series,
-};
+use daft_core::prelude::*;
 use daft_stats::ColumnRangeStatistics;
 use parquet2::{
     schema::types::{PhysicalType, PrimitiveConvertedType, TimeUnit},
@@ -15,10 +11,10 @@ use parquet2::{
 };
 use snafu::{OptionExt, ResultExt};
 
-use super::{DaftStatsSnafu, MissingParquetColumnStatisticsSnafu, Wrap};
-
-use super::utils::*;
-use super::UnableToParseUtf8FromBinarySnafu;
+use super::{
+    utils::{convert_i128, convert_i96_to_i64_timestamp},
+    DaftStatsSnafu, MissingParquetColumnStatisticsSnafu, UnableToParseUtf8FromBinarySnafu, Wrap,
+};
 
 impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
     type Error = super::Error;
@@ -133,17 +129,13 @@ fn make_decimal_column_range_statistics(
     }
     let l = convert_i128(lower, lower.len());
     let u = convert_i128(upper, upper.len());
-    let lower = Int128Array::from(("lower", [l].as_slice()));
-    let upper = Int128Array::from(("upper", [u].as_slice()));
-    let daft_type = daft_core::datatypes::DataType::Decimal128(p, s);
 
-    let lower = Decimal128Array::new(
-        daft_core::datatypes::Field::new("lower", daft_type.clone()),
-        lower,
-    )
-    .into_series();
-    let upper = Decimal128Array::new(daft_core::datatypes::Field::new("upper", daft_type), upper)
-        .into_series();
+    let daft_type = daft_core::datatypes::DataType::Decimal128(p, s);
+    let lower_field = Arc::new(daft_core::datatypes::Field::new("lower", daft_type.clone()));
+    let upper_field = Arc::new(daft_core::datatypes::Field::new("upper", daft_type));
+
+    let lower = Decimal128Array::from_iter(lower_field, std::iter::once(Some(l))).into_series();
+    let upper = Decimal128Array::from_iter(upper_field, std::iter::once(Some(u))).into_series();
 
     Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
@@ -395,7 +387,7 @@ fn convert_int96_column_range_statistics(
     Ok(ColumnRangeStatistics::Missing)
 }
 
-pub(crate) fn parquet_statistics_to_column_range_statistics(
+pub fn parquet_statistics_to_column_range_statistics(
     pq_stats: &dyn Statistics,
     daft_dtype: &DataType,
 ) -> Result<ColumnRangeStatistics, super::Error> {

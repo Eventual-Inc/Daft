@@ -18,21 +18,21 @@ impl<'a> ArrowBitmapGrowable<'a> {
             Some(bm) => {
                 let (bm_data, bm_start, _bm_len) = bm.as_slice();
                 self.mutable_bitmap
-                    .extend_from_slice(bm_data, bm_start + start, len)
+                    .extend_from_slice(bm_data, bm_start + start, len);
             }
         }
     }
 
     pub fn add_nulls(&mut self, additional: usize) {
-        self.mutable_bitmap.extend_constant(additional, false)
+        self.mutable_bitmap.extend_constant(additional, false);
     }
 
     pub fn build(self) -> arrow2::bitmap::Bitmap {
-        self.mutable_bitmap.clone().into()
+        self.mutable_bitmap.into()
     }
 }
 
-impl<'a> Default for ArrowBitmapGrowable<'a> {
+impl Default for ArrowBitmapGrowable<'_> {
     fn default() -> Self {
         ArrowBitmapGrowable::new(vec![], 0)
     }

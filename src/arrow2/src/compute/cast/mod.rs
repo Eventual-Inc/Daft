@@ -334,6 +334,9 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
         (Int64, Duration(_)) => true,
         (Duration(_), Int64) => true,
         (Interval(_), Interval(IntervalUnit::MonthDayNano)) => true,
+        (Map(from_field, from_sorted), Map(to_field, to_sorted)) if !*to_sorted || *from_sorted => {
+            can_cast_types(&from_field.data_type, &to_field.data_type)
+        }
         (_, _) => false,
     }
 }
@@ -506,16 +509,16 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
         (Extension(_, from_inner, _), Extension(_, to_inner, _)) => {
-            let new_arr = cast(array.to_type(*from_inner.clone()).as_ref(), to_inner, options)?;
-            Ok(new_arr.to_type(to_type.clone()))
+            let new_arr = cast(array.convert_logical_type(*from_inner.clone()).as_ref(), to_inner, options)?;
+            Ok(new_arr.convert_logical_type(to_type.clone()))
         }
         (Extension(_, from_inner, _), _) => {
-            let new_arr = cast(array.to_type(*from_inner.clone()).as_ref(), to_type, options)?;
+            let new_arr = cast(array.convert_logical_type(*from_inner.clone()).as_ref(), to_type, options)?;
             Ok(new_arr)
         }
         (_, Extension(_, to_inner, _)) => {
             let new_arr = cast(array, to_inner, options)?;
-            Ok(new_arr.to_type(to_type.clone()))
+            Ok(new_arr.convert_logical_type(to_type.clone()))
         }
         (Struct(from_fields), Struct(to_fields)) => match (from_fields.len(), to_fields.len()) {
             (from_len, to_len) if from_len == to_len => {
@@ -1052,6 +1055,15 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
         }
         (Interval(IntervalUnit::YearMonth), Interval(IntervalUnit::MonthDayNano)) => {
             primitive_dyn!(array, months_to_months_days_ns)
+        }
+        (Map(_, from_sorted), Map(to_field, to_sorted)) => {
+            if !*from_sorted && *to_sorted {
+                Err(Error::NotYetImplemented(format!("Cannot cast from map with unsorted keys to another map with sorted keys: {from_type:?}, {to_type:?}")))
+            } else {
+                let downcasted = array.as_any().downcast_ref::<MapArray>().unwrap();
+                let new_field = cast(downcasted.field().as_ref(), &to_field.data_type, options)?;
+                Ok(Box::new(MapArray::new(to_type.clone(), downcasted.offsets().clone(), new_field, downcasted.validity().cloned())))
+            }
         }
         (_, _) => Err(Error::NotYetImplemented(format!(
             "Casting from {from_type:?} to {to_type:?} not supported",

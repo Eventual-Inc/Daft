@@ -1,14 +1,11 @@
+use common_error::DaftResult;
+use num_traits::Float;
+
+use super::{as_arrow::AsArrow, DaftIsInf, DaftIsNan, DaftNotNan};
 use crate::{
     array::DataArray,
     datatypes::{BooleanArray, BooleanType, DaftFloatType, DaftNumericType, NullType},
 };
-use common_error::DaftResult;
-use num_traits::Float;
-
-use super::DaftIsInf;
-use super::{DaftIsNan, DaftNotNan};
-
-use super::as_arrow::AsArrow;
 
 impl<T> DaftIsNan for DataArray<T>
 where

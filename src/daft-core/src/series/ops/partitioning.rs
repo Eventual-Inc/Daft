@@ -1,10 +1,6 @@
-use crate::array::ops::as_arrow::AsArrow;
-use crate::datatypes::logical::TimestampArray;
-use crate::datatypes::{Int32Array, Int64Array, TimeUnit};
-use crate::series::array_impl::IntoSeries;
-use crate::with_match_integer_daft_types;
-use crate::{datatypes::DataType, series::Series};
 use common_error::{DaftError, DaftResult};
+
+use crate::{array::ops::as_arrow::AsArrow, prelude::*, with_match_integer_daft_types};
 
 impl Series {
     pub fn partitioning_years(&self) -> DaftResult<Self> {
@@ -46,7 +42,7 @@ impl Series {
                 ((&years_since_1970 * &months_in_year)? + months_of_this_year)? - month_of_epoch
             }
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run partitioning_years() operation on temporal types, got {}",
+                "Can only run partitioning_months() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }?;
@@ -56,26 +52,20 @@ impl Series {
     }
 
     pub fn partitioning_days(&self) -> DaftResult<Self> {
-        let result = match self.data_type() {
+        let value = match self.data_type() {
             DataType::Date => Ok(self.clone()),
-            DataType::Timestamp(_, None) => {
-                let ts_array = self.downcast::<TimestampArray>()?;
-                Ok(ts_array.date()?.into_series())
-            }
-
-            DataType::Timestamp(tu, Some(_)) => {
+            DataType::Timestamp(tu, _) => {
                 let array = self.cast(&DataType::Timestamp(*tu, None))?;
                 let ts_array = array.downcast::<TimestampArray>()?;
                 Ok(ts_array.date()?.into_series())
             }
-
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run partitioning_days() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }?;
 
-        Ok(result.rename(format!("{}_days", self.name())))
+        Ok(value.rename(format!("{}_days", self.name())))
     }
 
     pub fn partitioning_hours(&self) -> DaftResult<Self> {
@@ -125,12 +115,13 @@ impl Series {
             }
             DataType::Decimal128(..) => Ok(self.decimal128()?.iceberg_truncate(w)?.into_series()),
             DataType::Utf8 => Ok(self.utf8()?.iceberg_truncate(w)?.into_series()),
+            DataType::Binary => Ok(self.binary()?.iceberg_truncate(w)?.into_series()),
             _ =>  Err(DaftError::ComputeError(format!(
-                "Can only run partitioning_iceberg_truncate() operation on integers, decimal and string, got {}",
+                "Can only run partitioning_iceberg_truncate() operation on integers, decimal, string, and binary, got {}",
                 self.data_type()
             ))),
         }?;
 
-        Ok(trunc.rename(format!("{}_truncate", self.name())))
+        Ok(trunc.rename(format!("{}_trunc", self.name())))
     }
 }

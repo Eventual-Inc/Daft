@@ -8,18 +8,12 @@ import pytest
 
 import daft
 from daft import DataFrame
-from daft.context import _RayRunnerConfig, get_context
-
-
-def is_using_remote_runner() -> bool:
-    runner_config = get_context().runner_config
-    return isinstance(runner_config, _RayRunnerConfig) and runner_config.address is not None
+from tests.conftest import get_tests_daft_runner_name
 
 
 @pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)], ids=["1x64mib", "8x8mib", "64x1mib"])
 def gen_simple_csvs(request) -> str:
     """Creates some CSVs in a directory. Returns the name of the directory."""
-
     num_files, mibs_per_file = request.param
 
     _8bytes = b"aaa,bbb\n"
@@ -43,7 +37,7 @@ def gen_simple_csvs(request) -> str:
         yield tmpdirname, num_files * mibs_per_file * 1024 * 128
 
 
-@pytest.mark.skipif(is_using_remote_runner(), reason="requires local runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires local runner")
 @pytest.mark.benchmark(group="file_read")
 def test_csv_read(gen_simple_csvs, benchmark):
     csv_dir, num_rows = gen_simple_csvs
@@ -60,7 +54,7 @@ def test_csv_read(gen_simple_csvs, benchmark):
 @pytest.mark.benchmark(group="file_read")
 @pytest.mark.parametrize("prune", [True, False])
 def test_s3_parquet_read_1x64mb(benchmark, prune):
-    parquet_glob = "s3://daft-public-data/test_fixtures/parquet/*"
+    parquet_glob = "s3://daft-public-data/test_fixtures/parquet/95c7fba0-265d-440b-88cb-2897047fc5f9-0.parquet"
     expected_rows = 1500000
 
     def bench() -> DataFrame:

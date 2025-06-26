@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-
 import pyarrow as pa
 import pytest
 
@@ -10,10 +8,10 @@ from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
 from tests.utils import assert_pyarrow_tables_equal
 
-PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-PYTHON_LT_3_8 = sys.version_info[:2] < (3, 8)
+PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
 pytestmark = pytest.mark.skipif(
-    PYARROW_LE_8_0_0 or PYTHON_LT_3_8, reason="deltalake only supported if pyarrow >= 8.0.0 and python >= 3.8"
+    PYARROW_LOWER_BOUND_SKIP,
+    reason="deltalake not supported on older versions of pyarrow",
 )
 
 
@@ -94,3 +92,25 @@ def test_deltalake_read_row_group_splits_with_limit(tmp_path, base_table):
         df = df.limit(2)
         df.collect()
         assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
+
+
+def test_deltalake_read_versioned(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
+    path = tmp_path / "some_table"
+    deltalake.write_deltalake(path, base_table)
+
+    updated_columns = base_table.columns + [pa.array(["x", "y", "z"])]
+    updated_column_names = base_table.column_names + ["new_column"]
+    updated_table = pa.Table.from_arrays(updated_columns, names=updated_column_names)
+    deltalake.write_deltalake(path, updated_table, mode="overwrite", schema_mode="overwrite")
+
+    for version in [None, 1]:
+        df = daft.read_deltalake(str(path), version=version)
+        expected_schema = Schema.from_pyarrow_schema(deltalake.DeltaTable(path).schema().to_pyarrow())
+        assert df.schema() == expected_schema
+        assert_pyarrow_tables_equal(df.to_arrow(), updated_table)
+
+    df = daft.read_deltalake(str(path), version=0)
+    expected_schema = Schema.from_pyarrow_schema(deltalake.DeltaTable(path, version=0).schema().to_pyarrow())
+    assert df.schema() == expected_schema
+    assert_pyarrow_tables_equal(df.to_arrow(), base_table)

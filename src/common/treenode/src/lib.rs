@@ -517,7 +517,7 @@ pub trait TreeNodeRewriter: Sized {
 }
 
 /// Controls how [`TreeNode`] recursions should proceed.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub enum TreeNodeRecursion {
     /// Continue recursion with the next node.
     Continue,
@@ -540,38 +540,29 @@ pub enum TreeNodeRecursion {
 impl TreeNodeRecursion {
     /// Continues visiting nodes with `f` depending on the current [`TreeNodeRecursion`]
     /// value and the fact that `f` is visiting the current node's children.
-    pub fn visit_children<F: FnOnce() -> Result<TreeNodeRecursion>>(
-        self,
-        f: F,
-    ) -> Result<TreeNodeRecursion> {
+    pub fn visit_children<F: FnOnce() -> Result<Self>>(self, f: F) -> Result<Self> {
         match self {
-            TreeNodeRecursion::Continue => f(),
-            TreeNodeRecursion::Jump => Ok(TreeNodeRecursion::Continue),
-            TreeNodeRecursion::Stop => Ok(self),
+            Self::Continue => f(),
+            Self::Jump => Ok(Self::Continue),
+            Self::Stop => Ok(self),
         }
     }
 
     /// Continues visiting nodes with `f` depending on the current [`TreeNodeRecursion`]
     /// value and the fact that `f` is visiting the current node's sibling.
-    pub fn visit_sibling<F: FnOnce() -> Result<TreeNodeRecursion>>(
-        self,
-        f: F,
-    ) -> Result<TreeNodeRecursion> {
+    pub fn visit_sibling<F: FnOnce() -> Result<Self>>(self, f: F) -> Result<Self> {
         match self {
-            TreeNodeRecursion::Continue | TreeNodeRecursion::Jump => f(),
-            TreeNodeRecursion::Stop => Ok(self),
+            Self::Continue | Self::Jump => f(),
+            Self::Stop => Ok(self),
         }
     }
 
     /// Continues visiting nodes with `f` depending on the current [`TreeNodeRecursion`]
     /// value and the fact that `f` is visiting the current node's parent.
-    pub fn visit_parent<F: FnOnce() -> Result<TreeNodeRecursion>>(
-        self,
-        f: F,
-    ) -> Result<TreeNodeRecursion> {
+    pub fn visit_parent<F: FnOnce() -> Result<Self>>(self, f: F) -> Result<Self> {
         match self {
-            TreeNodeRecursion::Continue => f(),
-            TreeNodeRecursion::Jump | TreeNodeRecursion::Stop => Ok(self),
+            Self::Continue => f(),
+            Self::Jump | Self::Stop => Ok(self),
         }
     }
 }
@@ -594,7 +585,7 @@ impl TreeNodeRecursion {
 /// - [`TreeNode::transform_down`],
 /// - [`TreeNode::transform_up`],
 /// - [`TreeNode::transform_down_up`]
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Transformed<T> {
     pub data: T,
     pub transformed: bool,
@@ -631,6 +622,32 @@ impl<T> Transformed<T> {
         f(self.data).map(|data| Transformed::new(data, self.transformed, self.tnr))
     }
 
+    /// Returns self if self is transformed, otherwise returns other.
+    #[must_use]
+    pub fn or(self, other: Self) -> Self {
+        if self.transformed {
+            self
+        } else {
+            other
+        }
+    }
+
+    /// Maps a `Transformed<T>` to `Transformed<U>`,
+    /// by supplying a function to apply to a contained Yes value
+    /// as well as a function to apply to a contained No value.
+    #[inline]
+    pub fn map_yes_no<U, Y: FnOnce(T) -> U, N: FnOnce(T) -> U>(
+        self,
+        yes_op: Y,
+        no_op: N,
+    ) -> Transformed<U> {
+        if self.transformed {
+            Transformed::yes(yes_op(self.data))
+        } else {
+            Transformed::no(no_op(self.data))
+        }
+    }
+
     /// Maps the [`Transformed`] object to the result of the given `f`.
     pub fn transform_data<U, F: FnOnce(T) -> Result<Transformed<U>>>(
         self,
@@ -645,10 +662,7 @@ impl<T> Transformed<T> {
     /// Maps the [`Transformed`] object to the result of the given `f` depending on the
     /// current [`TreeNodeRecursion`] value and the fact that `f` is changing the current
     /// node's children.
-    pub fn transform_children<F: FnOnce(T) -> Result<Transformed<T>>>(
-        mut self,
-        f: F,
-    ) -> Result<Transformed<T>> {
+    pub fn transform_children<F: FnOnce(T) -> Result<Self>>(mut self, f: F) -> Result<Self> {
         match self.tnr {
             TreeNodeRecursion::Continue => {
                 return f(self.data).map(|mut t| {
@@ -667,10 +681,7 @@ impl<T> Transformed<T> {
     /// Maps the [`Transformed`] object to the result of the given `f` depending on the
     /// current [`TreeNodeRecursion`] value and the fact that `f` is changing the current
     /// node's sibling.
-    pub fn transform_sibling<F: FnOnce(T) -> Result<Transformed<T>>>(
-        self,
-        f: F,
-    ) -> Result<Transformed<T>> {
+    pub fn transform_sibling<F: FnOnce(T) -> Result<Self>>(self, f: F) -> Result<Self> {
         match self.tnr {
             TreeNodeRecursion::Continue | TreeNodeRecursion::Jump => f(self.data).map(|mut t| {
                 t.transformed |= self.transformed;
@@ -683,10 +694,7 @@ impl<T> Transformed<T> {
     /// Maps the [`Transformed`] object to the result of the given `f` depending on the
     /// current [`TreeNodeRecursion`] value and the fact that `f` is changing the current
     /// node's parent.
-    pub fn transform_parent<F: FnOnce(T) -> Result<Transformed<T>>>(
-        self,
-        f: F,
-    ) -> Result<Transformed<T>> {
+    pub fn transform_parent<F: FnOnce(T) -> Result<Self>>(self, f: F) -> Result<Self> {
         match self.tnr {
             TreeNodeRecursion::Continue => f(self.data).map(|mut t| {
                 t.transformed |= self.transformed;
@@ -728,6 +736,20 @@ pub trait TreeNodeIterator: Iterator {
         self,
         f: F,
     ) -> Result<Transformed<Vec<Self::Item>>>;
+
+    /// Apples `f` to each item in this iterator
+    ///
+    /// # Returns
+    /// Error if `f` returns an error
+    ///
+    /// Ok(Transformed) such that:
+    /// 1. `transformed` is true if any return from `f` had transformed true
+    /// 2. `data` from the last invocation of `f`
+    /// 3. `tnr` from the last invocation of `f` or `Continue` if the iterator is empty
+    fn map_and_collect<F: FnMut(Self::Item) -> Result<Transformed<Self::Item>>>(
+        self,
+        f: F,
+    ) -> Result<Transformed<Vec<Self::Item>>>;
 }
 
 impl<I: Iterator> TreeNodeIterator for I {
@@ -763,6 +785,23 @@ impl<I: Iterator> TreeNodeIterator for I {
         .collect::<Result<Vec<_>>>()
         .map(|data| Transformed::new(data, transformed, tnr))
     }
+
+    fn map_and_collect<F: FnMut(Self::Item) -> Result<Transformed<Self::Item>>>(
+        self,
+        mut f: F,
+    ) -> Result<Transformed<Vec<Self::Item>>> {
+        let mut tnr = TreeNodeRecursion::Continue;
+        let mut transformed = false;
+        self.map(|item| {
+            f(item).map(|result| {
+                tnr = result.tnr;
+                transformed |= result.transformed;
+                result.data
+            })
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|data| Transformed::new(data, transformed, tnr))
+    }
 }
 
 /// Transformation helper to process a heterogeneous sequence of tree node containing
@@ -784,7 +823,7 @@ impl<I: Iterator> TreeNodeIterator for I {
 /// Ok(Transformed<(data0, ..., dataN)>) such that:
 /// 1. `transformed` is true if any of the transformations had transformed true
 /// 2. `(data0, ..., dataN)`, where `data0` is the `Transformed.data` from `F0` and
-///     `data1` ... `dataN` are from either `EXPR` or the `Transformed.data` of `F`
+///    `data1` ... `dataN` are from either `EXPR` or the `Transformed.data` of `F`
 /// 3. `tnr` from `F0` or the last invocation of `F`
 #[macro_export]
 macro_rules! map_until_stop_and_collect {
@@ -833,7 +872,9 @@ impl<T> TransformedResult<T> for Result<Transformed<T>> {
 }
 
 /// Helper trait for implementing [`TreeNode`] that have children stored as
-/// `Arc`s. If some trait object, such as `dyn T`, implements this trait,
+/// `Arc`s.
+///
+/// If some trait object, such as `dyn T`, implements this trait,
 /// its related `Arc<dyn T>` will automatically implement [`TreeNode`].
 pub trait DynTreeNode {
     /// Returns all children of the specified `TreeNode`.
@@ -857,7 +898,9 @@ impl<T: DynTreeNode + ?Sized> TreeNode for Arc<T> {
         f: F,
     ) -> Result<Transformed<Self>> {
         let children = self.arc_children();
-        if !children.is_empty() {
+        if children.is_empty() {
+            Ok(Transformed::no(self))
+        } else {
             let new_children = children.into_iter().map_until_stop_and_collect(f)?;
             // Propagate up `new_children.transformed` and `new_children.tnr`
             // along with the node containing transformed children.
@@ -866,14 +909,14 @@ impl<T: DynTreeNode + ?Sized> TreeNode for Arc<T> {
             } else {
                 Ok(Transformed::new(self, false, new_children.tnr))
             }
-        } else {
-            Ok(Transformed::no(self))
         }
     }
 }
 
 /// Instead of implementing [`TreeNode`], it's recommended to implement a [`ConcreteTreeNode`] for
-/// trees that contain nodes with payloads. This approach ensures safe execution of algorithms
+/// trees that contain nodes with payloads.
+///
+/// This approach ensures safe execution of algorithms
 /// involving payloads, by enforcing rules for detaching and reattaching child nodes.
 pub trait ConcreteTreeNode: Sized {
     /// Provides read-only access to child nodes.
@@ -899,13 +942,13 @@ impl<T: ConcreteTreeNode> TreeNode for T {
         f: F,
     ) -> Result<Transformed<Self>> {
         let (new_self, children) = self.take_children();
-        if !children.is_empty() {
+        if children.is_empty() {
+            Ok(Transformed::no(new_self))
+        } else {
             let new_children = children.into_iter().map_until_stop_and_collect(f)?;
             // Propagate up `new_children.transformed` and `new_children.tnr` along with
             // the node containing transformed children.
             new_children.map_data(|new_children| new_self.with_new_children(new_children))
-        } else {
-            Ok(Transformed::no(new_self))
         }
     }
 }
@@ -914,9 +957,8 @@ impl<T: ConcreteTreeNode> TreeNode for T {
 mod tests {
     use std::fmt::Display;
 
-    use crate::Result;
     use crate::{
-        Transformed, TreeNode, TreeNodeIterator, TreeNodeRecursion, TreeNodeRewriter,
+        Result, Transformed, TreeNode, TreeNodeIterator, TreeNodeRecursion, TreeNodeRewriter,
         TreeNodeVisitor,
     };
 
@@ -927,7 +969,7 @@ mod tests {
     }
 
     impl<T> TestTreeNode<T> {
-        fn new(children: Vec<TestTreeNode<T>>, data: T) -> Self {
+        fn new(children: Vec<Self>, data: T) -> Self {
             Self { children, data }
         }
     }
@@ -1007,7 +1049,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1078,7 +1120,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1112,7 +1154,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1164,7 +1206,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1219,7 +1261,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1246,7 +1288,7 @@ mod tests {
             "f_down(a)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1280,7 +1322,7 @@ mod tests {
     fn f_down_stop_on_e_visits() -> Vec<String> {
         vec!["f_down(j)", "f_down(i)", "f_down(f)", "f_down(e)"]
             .into_iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect()
     }
 
@@ -1325,7 +1367,7 @@ mod tests {
             "f_up(a)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1373,7 +1415,7 @@ mod tests {
             "f_up(e)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 

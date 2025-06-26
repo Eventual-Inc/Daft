@@ -1,13 +1,12 @@
-version: '3.7'
 services:
   trino:
-    image: trinodb/trino
+    image: trinodb/trino:467
     container_name: trino
     ports:
     - 8080:8080
 
   postgres:
-    image: postgres:latest
+    image: postgres:17.2
     container_name: postgres
     environment:
       POSTGRES_DB: postgres
@@ -19,7 +18,7 @@ services:
     - postgres_data:/var/lib/postgresql/data
 
   mysql:
-    image: mysql:latest
+    image: mysql:9.1
     container_name: mysql
     environment:
       MYSQL_DATABASE: mysql
@@ -31,6 +30,18 @@ services:
     volumes:
     - mysql_data:/var/lib/mysql
 
+  azuresqledge:
+    image: mcr.microsoft.com/azure-sql-edge:2.0.0
+    container_name: azuresqledge
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "StrongPassword!"
+    ports:
+    - 1433:1433
+    volumes:
+    - azuresqledge_data:/var/opt/mssql
+
 volumes:
   postgres_data:
   mysql_data:
+  azuresqledge_data:

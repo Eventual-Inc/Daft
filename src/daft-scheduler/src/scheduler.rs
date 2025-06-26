@@ -1,33 +1,43 @@
+use std::sync::Arc;
+
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
+use common_file_formats::FileFormat;
+#[cfg(feature = "python")]
+use common_file_formats::WriteMode;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_plan::{logical_to_physical, PhysicalPlan, PhysicalPlanRef, QueryStageOutput};
-
+use daft_dsl::ExprRef;
+use daft_logical_plan::InMemoryInfo;
+#[cfg(feature = "python")]
+use daft_logical_plan::{DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+#[cfg(feature = "python")]
+use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
+use daft_physical_plan::{
+    logical_to_physical,
+    ops::{
+        ActorPoolProject, Aggregate, BroadcastJoin, Concat, Dedup, EmptyScan, Explode, Filter,
+        HashJoin, InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
+        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, TopN,
+        Unpivot,
+    },
+    PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
+};
 use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
     common_io_config::IOConfig,
-    daft_core::python::schema::PySchema,
-    daft_core::schema::SchemaRef,
+    daft_core::prelude::SchemaRef,
+    daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
-    daft_dsl::Expr,
-    daft_io::FileFormat,
-    daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
+    daft_logical_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
-    pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},
-    std::collections::HashMap,
+    pyo3::{
+        pyclass, pymethods,
+        types::{PyAnyMethods, PyDict, PyList},
+        Bound, Py, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
+    },
 };
-
-use daft_dsl::ExprRef;
-use daft_plan::InMemoryInfo;
-use std::sync::Arc;
-
-use daft_plan::physical_ops::*;
-
-#[cfg(feature = "python")]
-use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
@@ -51,7 +61,7 @@ impl PhysicalPlanScheduler {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python<'_>,
+        py: Python,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
@@ -75,20 +85,25 @@ impl PhysicalPlanScheduler {
         Ok(self.plan().repr_mermaid(options))
     }
 
+    pub fn to_json_string(&self) -> PyResult<String> {
+        serde_json::to_string(&self.plan())
+            .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+    }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
         &self,
         py: Python,
-        psets: HashMap<String, Vec<PyObject>>,
+        psets: Bound<PyDict>,
+        actor_pool_manager: PyObject,
     ) -> PyResult<PyObject> {
-        physical_plan_to_partition_tasks(self.plan().as_ref(), py, &psets)
+        physical_plan_to_partition_tasks(self.plan().as_ref(), py, &psets, &actor_pool_manager)
     }
 }
 
 #[cfg(feature = "python")]
 #[pyclass]
 struct StreamingPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send>,
+    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
 }
 
 #[cfg(feature = "python")]
@@ -97,7 +112,7 @@ impl StreamingPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
         let iter = &mut slf.iter;
         Ok(py.allow_threads(|| iter.next().transpose())?)
     }
@@ -116,7 +131,7 @@ impl From<QueryStageOutput> for PhysicalPlanScheduler {
 #[cfg(feature = "python")]
 #[pyclass]
 struct PartitionIterator {
-    parts: Vec<PyObject>,
+    parts: Py<PyList>,
     index: usize,
 }
 
@@ -126,45 +141,45 @@ impl PartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Bound<PyAny>> {
         let index = slf.index;
         slf.index += 1;
-        slf.parts.get(index).map(|part| part.clone_ref(slf.py()))
+        slf.parts.bind(slf.py()).get_item(index).ok()
     }
+}
+
+#[cfg(feature = "python")]
+fn exprs_to_pyexprs(exprs: &[ExprRef]) -> Vec<PyExpr> {
+    exprs.iter().map(|e| e.clone().into()).collect()
 }
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn tabular_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
+    write_mode: &WriteMode,
     file_format: &FileFormat,
     schema: &SchemaRef,
     root_dir: &String,
-    compression: &Option<String>,
-    partition_cols: &Option<Vec<ExprRef>>,
-    io_config: &Option<IOConfig>,
+    compression: Option<&String>,
+    partition_cols: Option<&Vec<ExprRef>>,
+    io_config: Option<&IOConfig>,
 ) -> PyResult<PyObject> {
-    let part_cols = partition_cols.as_ref().map(|cols| {
-        cols.iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<PyExpr>>()
-    });
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_file"))?
         .call1((
             upstream_iter,
+            *write_mode,
             *file_format,
             PySchema::from(schema.clone()),
             root_dir,
-            compression.clone(),
-            part_cols,
-            io_config
-                .as_ref()
-                .map(|cfg| common_io_config::python::IOConfig {
-                    config: cfg.clone(),
-                }),
+            compression,
+            partition_cols.map(|cols| exprs_to_pyexprs(cols)),
+            io_config.map(|cfg| common_io_config::python::IOConfig {
+                config: cfg.clone(),
+            }),
         ))?;
     Ok(py_iter.into())
 }
@@ -172,7 +187,7 @@ fn tabular_write(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn iceberg_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
     iceberg_info: &IcebergCatalogInfo,
 ) -> PyResult<PyObject> {
@@ -182,9 +197,10 @@ fn iceberg_write(
         .call1((
             upstream_iter,
             &iceberg_info.table_location,
-            &iceberg_info.iceberg_schema,
-            &iceberg_info.iceberg_properties,
-            iceberg_info.spec_id,
+            &iceberg_info.iceberg_schema.clone_ref(py),
+            &iceberg_info.iceberg_properties.clone_ref(py),
+            iceberg_info.partition_spec_id,
+            exprs_to_pyexprs(&iceberg_info.partition_cols),
             iceberg_info
                 .io_config
                 .as_ref()
@@ -198,7 +214,7 @@ fn iceberg_write(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn deltalake_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
     delta_lake_info: &DeltaLakeCatalogInfo,
 ) -> PyResult<PyObject> {
@@ -210,6 +226,12 @@ fn deltalake_write(
             &delta_lake_info.path,
             delta_lake_info.large_dtypes,
             delta_lake_info.version,
+            delta_lake_info.partition_cols.as_ref().map(|cols| {
+                cols.iter()
+                    .cloned()
+                    .map(|col| col.into())
+                    .collect::<Vec<PyExpr>>()
+            }),
             delta_lake_info
                 .io_config
                 .as_ref()
@@ -222,7 +244,7 @@ fn deltalake_write(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn lance_write(
-    py: Python<'_>,
+    py: Python,
     upstream_iter: PyObject,
     lance_info: &LanceCatalogInfo,
 ) -> PyResult<PyObject> {
@@ -239,24 +261,43 @@ fn lance_write(
                 .map(|cfg| common_io_config::python::IOConfig {
                     config: cfg.clone(),
                 }),
-            lance_info.kwargs.clone(),
+            lance_info.kwargs.clone_ref(py),
         ))?;
+    Ok(py_iter.into())
+}
+
+#[cfg(feature = "python")]
+fn data_sink_write(
+    py: Python,
+    upstream_iter: PyObject,
+    data_sink_info: &DataSinkInfo,
+) -> PyResult<PyObject> {
+    let py_iter = py
+        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .getattr(pyo3::intern!(py, "write_data_sink"))?
+        .call1((upstream_iter, &data_sink_info.sink.clone_ref(py)))?;
     Ok(py_iter.into())
 }
 
 #[cfg(feature = "python")]
 fn physical_plan_to_partition_tasks(
     physical_plan: &PhysicalPlan,
-    py: Python<'_>,
-    psets: &HashMap<String, Vec<PyObject>>,
+    py: Python,
+    psets: &Bound<PyDict>,
+    actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
+    use daft_dsl::Expr;
+    use daft_physical_plan::ops::{CrossJoin, DataSink, ShuffleExchange, ShuffleExchangeStrategy};
     match physical_plan {
+        PhysicalPlan::PreviousStageScan(..) => {
+            panic!("PreviousStageScan should be optimized away before reaching the scheduler")
+        }
         PhysicalPlan::InMemoryScan(InMemoryScan {
             in_memory_info: InMemoryInfo { cache_key, .. },
             ..
         }) => {
             let partition_iter = PartitionIterator {
-                parts: psets[cache_key].clone(),
+                parts: psets.get_item(cache_key)?.extract()?,
                 index: 0usize,
             };
             let py_iter = py
@@ -271,7 +312,7 @@ fn physical_plan_to_partition_tasks(
                 .getattr(pyo3::intern!(py, "scan_with_tasks"))?
                 .call1((scan_tasks
                     .iter()
-                    .map(|scan_task| PyScanTask(scan_task.clone()))
+                    .map(|scan_task| PyScanTask(scan_task.clone().as_any_arc().downcast().unwrap()))
                     .collect::<Vec<PyScanTask>>(),))?;
             Ok(py_iter.into())
         }
@@ -296,7 +337,8 @@ fn physical_plan_to_partition_tasks(
                 input, projection, ..
             },
         ) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let projection_pyexprs: Vec<PyExpr> = projection
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
@@ -317,37 +359,8 @@ fn physical_plan_to_partition_tasks(
                 input, projection, ..
             },
         ) => {
-            use daft_dsl::{
-                common_treenode::TreeNode,
-                functions::{
-                    python::{PythonUDF, StatefulPythonUDF},
-                    FunctionExpr,
-                },
-            };
-
-            // Extract any StatefulUDFs from the projection
-            let mut py_partial_udfs = HashMap::new();
-            projection.iter().for_each(|e| {
-                e.apply(|child| {
-                    if let Expr::Function {
-                        func:
-                            FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                                name,
-                                stateful_partial_func: py_partial_udf,
-                                ..
-                            })),
-                        ..
-                    } = child.as_ref()
-                    {
-                        py_partial_udfs
-                            .insert(name.as_ref().to_string(), py_partial_udf.as_ref().clone());
-                    }
-                    Ok(daft_dsl::common_treenode::TreeNodeRecursion::Continue)
-                })
-                .unwrap();
-            });
-
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "actor_pool_project"))?
@@ -357,14 +370,18 @@ fn physical_plan_to_partition_tasks(
                         .iter()
                         .map(|expr| PyExpr::from(expr.clone()))
                         .collect::<Vec<_>>(),
-                    py_partial_udfs,
+                    actor_pool_manager,
                     app.resource_request(),
+                    app.concurrency(),
                 ))?;
             Ok(py_iter.into())
         }
 
-        PhysicalPlan::Filter(Filter { input, predicate }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+        PhysicalPlan::Filter(Filter {
+            input, predicate, ..
+        }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let expressions_mod = py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;
             let py_predicate = expressions_mod
                 .getattr(pyo3::intern!(py, "Expression"))?
@@ -393,7 +410,8 @@ fn physical_plan_to_partition_tasks(
             eager,
             num_partitions,
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let py_physical_plan = py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
             let global_limit_iter = py_physical_plan
                 .getattr(pyo3::intern!(py, "global_limit"))?
@@ -403,7 +421,8 @@ fn physical_plan_to_partition_tasks(
         PhysicalPlan::Explode(Explode {
             input, to_explode, ..
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let explode_pyexprs: Vec<PyExpr> = to_explode
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
@@ -422,7 +441,8 @@ fn physical_plan_to_partition_tasks(
             value_name,
             ..
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let ids_pyexprs: Vec<PyExpr> =
                 ids.iter().map(|expr| PyExpr::from(expr.clone())).collect();
             let values_pyexprs: Vec<PyExpr> = values
@@ -447,7 +467,8 @@ fn physical_plan_to_partition_tasks(
             with_replacement,
             seed,
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "sample"))?
@@ -458,7 +479,8 @@ fn physical_plan_to_partition_tasks(
             input,
             column_name,
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "monotonically_increasing_id"))?
@@ -469,9 +491,11 @@ fn physical_plan_to_partition_tasks(
             input,
             sort_by,
             descending,
+            nulls_first,
             num_partitions,
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let sort_by_pyexprs: Vec<PyExpr> = sort_by
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
@@ -483,67 +507,200 @@ fn physical_plan_to_partition_tasks(
                     upstream_iter,
                     sort_by_pyexprs,
                     descending.clone(),
+                    nulls_first.clone(),
                     *num_partitions,
                 ))?;
             Ok(py_iter.into())
         }
-        PhysicalPlan::Split(Split {
+        PhysicalPlan::TopN(TopN {
             input,
-            input_num_partitions,
-            output_num_partitions,
-        }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "split"))?
-                .call1((upstream_iter, *input_num_partitions, *output_num_partitions))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::Flatten(Flatten { input }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "flatten_plan"))?
-                .call1((upstream_iter,))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::FanoutRandom(FanoutRandom {
-            input,
+            sort_by,
+            descending,
+            nulls_first,
+            limit,
             num_partitions,
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "fanout_random"))?
-                .call1((upstream_iter, *num_partitions))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::FanoutByHash(FanoutByHash {
-            input,
-            num_partitions,
-            partition_by,
-        }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let partition_by_pyexprs: Vec<PyExpr> = partition_by
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let py_physical_plan =
+                py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?;
+
+            let sort_by_pyexprs: Vec<PyExpr> = sort_by
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
                 .collect();
-            let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-                .getattr(pyo3::intern!(py, "split_by_hash"))?
-                .call1((upstream_iter, *num_partitions, partition_by_pyexprs))?;
-            Ok(py_iter.into())
+            let global_limit_iter = py_physical_plan
+                .getattr(pyo3::intern!(py, "top_n"))?
+                .call1((
+                    upstream_iter,
+                    sort_by_pyexprs,
+                    descending.clone(),
+                    nulls_first.clone(),
+                    *limit,
+                    *num_partitions,
+                ))?;
+            Ok(global_limit_iter.into())
         }
-        PhysicalPlan::FanoutByRange(_) => unimplemented!(
-            "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
-        ),
-        PhysicalPlan::ReduceMerge(ReduceMerge { input }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-                .getattr(pyo3::intern!(py, "reduce_merge"))?
-                .call1((upstream_iter,))?;
-            Ok(py_iter.into())
+        PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let input_num_partitions = input.clustering_spec().num_partitions();
+            match strategy {
+                ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec } => {
+                    let mapped = match target_spec.as_ref() {
+                        daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
+                            let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
+                                .by
+                                .iter()
+                                .map(|expr| PyExpr::from(expr.clone()))
+                                .collect();
+                            py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                                .getattr(pyo3::intern!(py, "fanout_by_hash"))?
+                                .call1((
+                                    upstream_iter,
+                                    hash_clustering_config.num_partitions,
+                                    partition_by_pyexprs,
+                                ))?
+                        }
+                        daft_logical_plan::ClusteringSpec::Random(random_clustering_config) => py
+                            .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                            .getattr(pyo3::intern!(py, "fanout_random"))?
+                            .call1((upstream_iter, random_clustering_config.num_partitions()))?,
+                        daft_logical_plan::ClusteringSpec::Range(_) => {
+                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                        }
+                        daft_logical_plan::ClusteringSpec::Unknown(_) => {
+                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                        }
+                    };
+                    let reduced = py
+                        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                        .getattr(pyo3::intern!(py, "reduce_merge"))?
+                        .call1((mapped,))?;
+                    Ok(reduced.into())
+                }
+                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                    target_spec,
+                    pre_shuffle_merge_threshold,
+                } => {
+                    let merged = py
+                        .import(pyo3::intern!(
+                            py,
+                            "daft.execution.shuffles.pre_shuffle_merge"
+                        ))?
+                        .getattr(pyo3::intern!(py, "pre_shuffle_merge"))?
+                        .call1((upstream_iter, *pre_shuffle_merge_threshold))?;
+                    let mapped = match target_spec.as_ref() {
+                        daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
+                            let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
+                                .by
+                                .iter()
+                                .map(|expr| PyExpr::from(expr.clone()))
+                                .collect();
+                            py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                                .getattr(pyo3::intern!(py, "fanout_by_hash"))?
+                                .call1((
+                                    merged,
+                                    hash_clustering_config.num_partitions,
+                                    partition_by_pyexprs,
+                                ))?
+                        }
+                        daft_logical_plan::ClusteringSpec::Random(random_clustering_config) => py
+                            .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                            .getattr(pyo3::intern!(py, "fanout_random"))?
+                            .call1((merged, random_clustering_config.num_partitions()))?,
+                        daft_logical_plan::ClusteringSpec::Range(_) => {
+                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                        }
+                        daft_logical_plan::ClusteringSpec::Unknown(_) => {
+                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                        }
+                    };
+                    let reduced = py
+                        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                        .getattr(pyo3::intern!(py, "reduce_merge"))?
+                        .call1((mapped,))?;
+                    Ok(reduced.into())
+                }
+                ShuffleExchangeStrategy::FlightShuffle {
+                    target_spec,
+                    shuffle_dirs,
+                } => {
+                    let shuffled = match target_spec.as_ref() {
+                        daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
+                            let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
+                                .by
+                                .iter()
+                                .map(|expr| PyExpr::from(expr.clone()))
+                                .collect();
+                            py.import(pyo3::intern!(
+                                py,
+                                "daft.execution.shuffles.flight_shuffle.flight_shuffle"
+                            ))?
+                            .getattr(pyo3::intern!(py, "flight_shuffle"))?
+                            .call1((
+                                upstream_iter,
+                                hash_clustering_config.num_partitions,
+                                shuffle_dirs,
+                                Some(partition_by_pyexprs),
+                            ))?
+                        }
+                        daft_logical_plan::ClusteringSpec::Random(random_clustering_config) => py
+                            .import(pyo3::intern!(
+                                py,
+                                "daft.execution.shuffles.flight_shuffle.flight_shuffle"
+                            ))?
+                            .getattr(pyo3::intern!(py, "flight_shuffle"))?
+                            .call1((
+                                upstream_iter,
+                                random_clustering_config.num_partitions(),
+                                shuffle_dirs,
+                            ))?,
+                        daft_logical_plan::ClusteringSpec::Range(_) => {
+                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                        }
+                        daft_logical_plan::ClusteringSpec::Unknown(_) => {
+                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                        }
+                    };
+                    Ok(shuffled.into())
+                }
+                ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
+                    target_num_partitions,
+                } => {
+                    match target_num_partitions.cmp(&input_num_partitions) {
+                        std::cmp::Ordering::Equal => Ok(upstream_iter),
+                        std::cmp::Ordering::Greater => {
+                            // Split if more outputs than inputs
+                            let split = py
+                                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "split"))?
+                                .call1((
+                                    upstream_iter,
+                                    input_num_partitions,
+                                    *target_num_partitions,
+                                ))?;
+                            let flattened = py
+                                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "flatten_plan"))?
+                                .call1((split,))?;
+                            Ok(flattened.into())
+                        }
+                        std::cmp::Ordering::Less => {
+                            // Coalesce if fewer outputs than inputs
+                            let coalesced = py
+                                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "coalesce"))?
+                                .call1((
+                                    upstream_iter,
+                                    input_num_partitions,
+                                    *target_num_partitions,
+                                ))?;
+                            Ok(coalesced.into())
+                        }
+                    }
+                }
+            }
         }
         PhysicalPlan::Aggregate(Aggregate {
             aggregations,
@@ -551,7 +708,8 @@ fn physical_plan_to_partition_tasks(
             input,
             ..
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let aggs_as_pyexprs: Vec<PyExpr> = aggregations
                 .iter()
                 .map(|agg_expr| PyExpr::from(Expr::Agg(agg_expr.clone())))
@@ -566,6 +724,19 @@ fn physical_plan_to_partition_tasks(
                 .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
             Ok(py_iter.into())
         }
+        PhysicalPlan::Dedup(Dedup { input, columns, .. }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let columns_as_pyexprs: Vec<PyExpr> = columns
+                .iter()
+                .map(|expr| PyExpr::from(expr.clone()))
+                .collect();
+            let py_iter = py
+                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .getattr(pyo3::intern!(py, "local_dedup"))?
+                .call1((upstream_iter, columns_as_pyexprs))?;
+            Ok(py_iter.into())
+        }
         PhysicalPlan::Pivot(Pivot {
             input,
             group_by,
@@ -573,7 +744,8 @@ fn physical_plan_to_partition_tasks(
             value_column,
             names,
         }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let groupbys_as_pyexprs: Vec<PyExpr> = group_by
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
@@ -592,21 +764,11 @@ fn physical_plan_to_partition_tasks(
                 ))?;
             Ok(py_iter.into())
         }
-        PhysicalPlan::Coalesce(Coalesce {
-            input,
-            num_from,
-            num_to,
-        }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let py_iter = py
-                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "coalesce"))?
-                .call1((upstream_iter, *num_from, *num_to))?;
-            Ok(py_iter.into())
-        }
         PhysicalPlan::Concat(Concat { other, input }) => {
-            let upstream_input_iter = physical_plan_to_partition_tasks(input, py, psets)?;
-            let upstream_other_iter = physical_plan_to_partition_tasks(other, py, psets)?;
+            let upstream_input_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let upstream_other_iter =
+                physical_plan_to_partition_tasks(other, py, psets, actor_pool_manager)?;
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "concat"))?
@@ -618,11 +780,14 @@ fn physical_plan_to_partition_tasks(
             right,
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             ..
         }) => {
-            let upstream_left_iter = physical_plan_to_partition_tasks(left, py, psets)?;
-            let upstream_right_iter = physical_plan_to_partition_tasks(right, py, psets)?;
+            let upstream_left_iter =
+                physical_plan_to_partition_tasks(left, py, psets, actor_pool_manager)?;
+            let upstream_right_iter =
+                physical_plan_to_partition_tasks(right, py, psets, actor_pool_manager)?;
             let left_on_pyexprs: Vec<PyExpr> = left_on
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
@@ -639,6 +804,7 @@ fn physical_plan_to_partition_tasks(
                     upstream_right_iter,
                     left_on_pyexprs,
                     right_on_pyexprs,
+                    null_equals_nulls.clone(),
                     *join_type,
                 ))?;
             Ok(py_iter.into())
@@ -653,8 +819,9 @@ fn physical_plan_to_partition_tasks(
             left_is_larger,
             needs_presort,
         }) => {
-            let left_iter = physical_plan_to_partition_tasks(left, py, psets)?;
-            let right_iter = physical_plan_to_partition_tasks(right, py, psets)?;
+            let left_iter = physical_plan_to_partition_tasks(left, py, psets, actor_pool_manager)?;
+            let right_iter =
+                physical_plan_to_partition_tasks(right, py, psets, actor_pool_manager)?;
             let left_on_pyexprs: Vec<PyExpr> = left_on
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
@@ -695,11 +862,14 @@ fn physical_plan_to_partition_tasks(
             receiver: right,
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             is_swapped,
         }) => {
-            let upstream_left_iter = physical_plan_to_partition_tasks(left, py, psets)?;
-            let upstream_right_iter = physical_plan_to_partition_tasks(right, py, psets)?;
+            let upstream_left_iter =
+                physical_plan_to_partition_tasks(left, py, psets, actor_pool_manager)?;
+            let upstream_right_iter =
+                physical_plan_to_partition_tasks(right, py, psets, actor_pool_manager)?;
             let left_on_pyexprs: Vec<PyExpr> = left_on
                 .iter()
                 .map(|expr| PyExpr::from(expr.clone()))
@@ -716,9 +886,26 @@ fn physical_plan_to_partition_tasks(
                     upstream_right_iter,
                     left_on_pyexprs,
                     right_on_pyexprs,
+                    null_equals_nulls.clone(),
                     *join_type,
                     *is_swapped,
                 ))?;
+            Ok(py_iter.into())
+        }
+        PhysicalPlan::CrossJoin(CrossJoin {
+            left,
+            right,
+            outer_loop_side,
+            ..
+        }) => {
+            let upstream_left_iter =
+                physical_plan_to_partition_tasks(left, py, psets, actor_pool_manager)?;
+            let upstream_right_iter =
+                physical_plan_to_partition_tasks(right, py, psets, actor_pool_manager)?;
+            let py_iter = py
+                .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .getattr(pyo3::intern!(py, "cross_join"))?
+                .call1((upstream_left_iter, upstream_right_iter, *outer_loop_side))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::TabularWriteParquet(TabularWriteParquet {
@@ -726,6 +913,7 @@ fn physical_plan_to_partition_tasks(
             file_info:
                 OutputFileInfo {
                     root_dir,
+                    write_mode,
                     file_format,
                     partition_cols,
                     compression,
@@ -734,19 +922,21 @@ fn physical_plan_to_partition_tasks(
             input,
         }) => tabular_write(
             py,
-            physical_plan_to_partition_tasks(input, py, psets)?,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            write_mode,
             file_format,
             schema,
             root_dir,
-            compression,
-            partition_cols,
-            io_config,
+            compression.as_ref(),
+            partition_cols.as_ref(),
+            io_config.as_ref(),
         ),
         PhysicalPlan::TabularWriteCsv(TabularWriteCsv {
             schema,
             file_info:
                 OutputFileInfo {
                     root_dir,
+                    write_mode,
                     file_format,
                     partition_cols,
                     compression,
@@ -755,19 +945,21 @@ fn physical_plan_to_partition_tasks(
             input,
         }) => tabular_write(
             py,
-            physical_plan_to_partition_tasks(input, py, psets)?,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            write_mode,
             file_format,
             schema,
             root_dir,
-            compression,
-            partition_cols,
-            io_config,
+            compression.as_ref(),
+            partition_cols.as_ref(),
+            io_config.as_ref(),
         ),
         PhysicalPlan::TabularWriteJson(TabularWriteJson {
             schema,
             file_info:
                 OutputFileInfo {
                     root_dir,
+                    write_mode,
                     file_format,
                     partition_cols,
                     compression,
@@ -776,13 +968,14 @@ fn physical_plan_to_partition_tasks(
             input,
         }) => tabular_write(
             py,
-            physical_plan_to_partition_tasks(input, py, psets)?,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            write_mode,
             file_format,
             schema,
             root_dir,
-            compression,
-            partition_cols,
-            io_config,
+            compression.as_ref(),
+            partition_cols.as_ref(),
+            io_config.as_ref(),
         ),
         #[cfg(feature = "python")]
         PhysicalPlan::IcebergWrite(IcebergWrite {
@@ -791,7 +984,7 @@ fn physical_plan_to_partition_tasks(
             input,
         }) => iceberg_write(
             py,
-            physical_plan_to_partition_tasks(input, py, psets)?,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
             iceberg_info,
         ),
         #[cfg(feature = "python")]
@@ -801,7 +994,7 @@ fn physical_plan_to_partition_tasks(
             input,
         }) => deltalake_write(
             py,
-            physical_plan_to_partition_tasks(input, py, psets)?,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
             delta_lake_info,
         ),
         #[cfg(feature = "python")]
@@ -811,8 +1004,18 @@ fn physical_plan_to_partition_tasks(
             input,
         }) => lance_write(
             py,
-            physical_plan_to_partition_tasks(input, py, psets)?,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
             lance_info,
+        ),
+        #[cfg(feature = "python")]
+        PhysicalPlan::DataSink(DataSink {
+            schema: _,
+            data_sink_info,
+            input,
+        }) => data_sink_write(
+            py,
+            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
+            data_sink_info,
         ),
     }
 }

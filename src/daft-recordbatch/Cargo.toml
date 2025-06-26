@@ -1,0 +1,43 @@
+[dependencies]
+arrow-array = {version = "54.2.1"}
+arrow2 = {workspace = true, features = ["arrow"]}
+comfy-table = {workspace = true}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
+common-display = {path = "../common/display", default-features = false}
+common-error = {path = "../common/error", default-features = false, features = ["arrow"]}
+common-py-serde = {path = "../common/py-serde", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-functions-list = {path = "../daft-functions-list", default-features = false}
+daft-image = {path = "../daft-image", default-features = false}
+futures = {workspace = true}
+html-escape = {workspace = true}
+indexmap = {workspace = true}
+num-traits = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+rand = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+
+[features]
+arrow = ["arrow2/arrow"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python",
+  "common-arrow-ffi/python",
+  "common-display/python",
+  "common-py-serde/python",
+  "daft-image/python",
+  "daft-functions-list/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-recordbatch"
+version = {workspace = true}

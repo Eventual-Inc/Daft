@@ -1,10 +1,10 @@
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_core::schema::SchemaRef;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
-    daft_core::python::schema::PySchema,
+    daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
     pyo3::{pyclass, pyclass::CompareOp, pymethods, PyObject, PyResult, Python},
 };
@@ -21,6 +21,7 @@ pub struct CsvConvertOptions {
 }
 
 impl CsvConvertOptions {
+    #[must_use]
     pub fn new_internal(
         limit: Option<usize>,
         include_columns: Option<Vec<String>>,
@@ -37,6 +38,7 @@ impl CsvConvertOptions {
         }
     }
 
+    #[must_use]
     pub fn with_limit(self, limit: Option<usize>) -> Self {
         Self {
             limit,
@@ -47,6 +49,7 @@ impl CsvConvertOptions {
         }
     }
 
+    #[must_use]
     pub fn with_include_columns(self, include_columns: Option<Vec<String>>) -> Self {
         Self {
             limit: self.limit,
@@ -57,6 +60,7 @@ impl CsvConvertOptions {
         }
     }
 
+    #[must_use]
     pub fn with_column_names(self, column_names: Option<Vec<String>>) -> Self {
         Self {
             limit: self.limit,
@@ -67,6 +71,7 @@ impl CsvConvertOptions {
         }
     }
 
+    #[must_use]
     pub fn with_schema(self, schema: Option<SchemaRef>) -> Self {
         Self {
             limit: self.limit,
@@ -98,6 +103,7 @@ impl CsvConvertOptions {
     /// * `predicate` - Expression to filter rows applied before the limit
     #[new]
     #[pyo3(signature = (limit=None, include_columns=None, column_names=None, schema=None, predicate=None))]
+    #[must_use]
     pub fn new(
         limit: Option<usize>,
         include_columns: Option<Vec<String>>,
@@ -109,7 +115,7 @@ impl CsvConvertOptions {
             limit,
             include_columns,
             column_names,
-            schema.map(|s| s.into()),
+            schema.map(std::convert::Into::into),
             predicate.map(|p| p.expr),
         )
     }
@@ -143,7 +149,7 @@ impl CsvConvertOptions {
     }
 
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self))
+        Ok(format!("{self:?}"))
     }
 }
 impl_bincode_py_state_serialization!(CsvConvertOptions);
@@ -162,6 +168,7 @@ pub struct CsvParseOptions {
 }
 
 impl CsvParseOptions {
+    #[must_use]
     pub fn new_internal(
         has_header: bool,
         delimiter: u8,
@@ -176,9 +183,9 @@ impl CsvParseOptions {
             delimiter,
             double_quote,
             quote,
-            allow_variable_columns,
             escape_char,
             comment,
+            allow_variable_columns,
         }
     }
 
@@ -202,14 +209,17 @@ impl CsvParseOptions {
         ))
     }
 
+    #[must_use]
     pub fn with_has_header(self, has_header: bool) -> Self {
         Self { has_header, ..self }
     }
 
+    #[must_use]
     pub fn with_delimiter(self, delimiter: u8) -> Self {
         Self { delimiter, ..self }
     }
 
+    #[must_use]
     pub fn with_double_quote(self, double_quote: bool) -> Self {
         Self {
             double_quote,
@@ -217,10 +227,12 @@ impl CsvParseOptions {
         }
     }
 
+    #[must_use]
     pub fn with_quote(self, quote: u8) -> Self {
         Self { quote, ..self }
     }
 
+    #[must_use]
     pub fn with_escape_char(self, escape_char: Option<u8>) -> Self {
         Self {
             escape_char,
@@ -228,10 +240,12 @@ impl CsvParseOptions {
         }
     }
 
+    #[must_use]
     pub fn with_comment(self, comment: Option<u8>) -> Self {
         Self { comment, ..self }
     }
 
+    #[must_use]
     pub fn with_variable_columns(self, allow_variable_columns: bool) -> Self {
         Self {
             allow_variable_columns,
@@ -291,7 +305,7 @@ impl CsvParseOptions {
     }
 
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self))
+        Ok(format!("{self:?}"))
     }
 }
 
@@ -316,6 +330,7 @@ pub struct CsvReadOptions {
 }
 
 impl CsvReadOptions {
+    #[must_use]
     pub fn new_internal(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
         Self {
             buffer_size,
@@ -323,6 +338,7 @@ impl CsvReadOptions {
         }
     }
 
+    #[must_use]
     pub fn with_buffer_size(self, buffer_size: Option<usize>) -> Self {
         Self {
             buffer_size,
@@ -330,6 +346,7 @@ impl CsvReadOptions {
         }
     }
 
+    #[must_use]
     pub fn with_chunk_size(self, chunk_size: Option<usize>) -> Self {
         Self {
             buffer_size: self.buffer_size,
@@ -355,6 +372,7 @@ impl CsvReadOptions {
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
     #[pyo3(signature = (buffer_size=None, chunk_size=None))]
+    #[must_use]
     pub fn new(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
         Self::new_internal(buffer_size, chunk_size)
     }
@@ -368,7 +386,7 @@ impl CsvReadOptions {
     }
 
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self))
+        Ok(format!("{self:?}"))
     }
 }
 impl_bincode_py_state_serialization!(CsvReadOptions);

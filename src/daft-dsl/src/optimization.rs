@@ -2,14 +2,12 @@ use std::collections::HashMap;
 
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 
-use crate::{ExprRef, Operator};
-
-use super::expr::Expr;
+use crate::{expr::ResolvedColumn, Column, Expr, ExprRef};
 
 pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
     e.apply(&mut |expr: &ExprRef| {
-        if let Expr::Column(ref name) = &**expr {
+        if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(ref name))) = &**expr {
             cols.push(name.to_string());
         }
         Ok(TreeNodeRecursion::Continue)
@@ -33,8 +31,14 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::NotNull(..)
         | Expr::FillNull(..)
         | Expr::IsIn { .. }
+        | Expr::List { .. }
         | Expr::Between { .. }
-        | Expr::IfElse { .. } => true,
+        | Expr::IfElse { .. }
+        | Expr::Subquery { .. }
+        | Expr::InSubquery { .. }
+        | Expr::Exists(..)
+        | Expr::Over(..)
+        | Expr::WindowFunction(..) => true,
     }
 }
 
@@ -44,7 +48,7 @@ pub fn replace_columns_with_expressions(
 ) -> ExprRef {
     let transformed = expr
         .transform(&|e: ExprRef| {
-            if let Expr::Column(ref name) = e.as_ref()
+            if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(ref name))) = e.as_ref()
                 && let Some(tgt) = replace_map.get(name.as_ref())
             {
                 Ok(Transformed::yes(tgt.clone()))
@@ -54,31 +58,4 @@ pub fn replace_columns_with_expressions(
         })
         .expect("Error occurred when rewriting column expressions");
     transformed.data
-}
-
-pub fn split_conjuction(expr: &ExprRef) -> Vec<&ExprRef> {
-    let mut splits = vec![];
-    _split_conjuction(expr, &mut splits);
-    splits
-}
-
-fn _split_conjuction<'a>(expr: &'a ExprRef, out_exprs: &mut Vec<&'a ExprRef>) {
-    match expr.as_ref() {
-        Expr::BinaryOp {
-            op: Operator::And,
-            left,
-            right,
-        } => {
-            _split_conjuction(left, out_exprs);
-            _split_conjuction(right, out_exprs);
-        }
-        Expr::Alias(inner_expr, ..) => _split_conjuction(inner_expr, out_exprs),
-        _ => {
-            out_exprs.push(expr);
-        }
-    }
-}
-
-pub fn conjuct<T: IntoIterator<Item = ExprRef>>(exprs: T) -> Option<ExprRef> {
-    exprs.into_iter().reduce(|acc, expr| acc.and(expr))
 }

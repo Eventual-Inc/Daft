@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import itertools
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pyarrow as pa
 import pytest
@@ -43,8 +43,7 @@ def test_temporal_arithmetic_with_same_type() -> None:
 
 
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_temporal_file_roundtrip(format, use_native_downloader) -> None:
+def test_temporal_file_roundtrip(format) -> None:
     data = {
         "date32": pa.array([1], pa.date32()),
         "date64": pa.array([1], pa.date64()),
@@ -86,10 +85,10 @@ def test_temporal_file_roundtrip(format, use_native_downloader) -> None:
     with tempfile.TemporaryDirectory() as dirname:
         if format == "csv":
             df.write_csv(dirname)
-            df_readback = daft.read_csv(dirname, use_native_downloader=use_native_downloader).collect()
+            df_readback = daft.read_csv(dirname).collect()
         elif format == "parquet":
             df.write_parquet(dirname)
-            df_readback = daft.read_parquet(dirname, use_native_downloader=use_native_downloader).collect()
+            df_readback = daft.read_parquet(dirname).collect()
 
         assert df.to_pydict() == df_readback.to_pydict()
 
@@ -145,6 +144,33 @@ def test_python_duration() -> None:
 
     res = df.to_pydict()["duration"][0]
     assert res == duration
+
+
+def test_temporal_arithmetic_with_duration_lit() -> None:
+    df = daft.from_pydict(
+        {
+            "duration": [timedelta(days=1)],
+            "date": [datetime(2021, 1, 1)],
+            "timestamp": [datetime(2021, 1, 1)],
+        }
+    )
+
+    df = df.select(
+        (df["date"] + timedelta(days=1)).alias("add_date"),
+        (df["date"] - timedelta(days=1)).alias("sub_date"),
+        (df["timestamp"] + timedelta(days=1)).alias("add_timestamp"),
+        (df["timestamp"] - timedelta(days=1)).alias("sub_timestamp"),
+        (df["duration"] + timedelta(days=1)).alias("add_dur"),
+        (df["duration"] - timedelta(days=1)).alias("sub_dur"),
+    )
+
+    result = df.to_pydict()
+    assert result["add_date"] == [datetime(2021, 1, 2)]
+    assert result["sub_date"] == [datetime(2020, 12, 31)]
+    assert result["add_timestamp"] == [datetime(2021, 1, 2)]
+    assert result["sub_timestamp"] == [datetime(2020, 12, 31)]
+    assert result["add_dur"] == [timedelta(days=2)]
+    assert result["sub_dur"] == [timedelta(0)]
 
 
 @pytest.mark.parametrize(
@@ -283,3 +309,444 @@ def test_join_timestamp_same_timezone(tu1, tu2, tz_repr):
         "x": [1],
         "y": [4],
     }
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        (
+            (col("datetimes") + daft.interval(years=1)),
+            [
+                datetime(2022, 1, 1, 0, 0),
+                datetime(2022, 1, 2, 0, 0),
+                datetime(2021, 3, 1, 0, 0),
+                datetime(2021, 2, 28, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(months=1)),
+            [
+                datetime(2021, 2, 1, 0, 0),
+                datetime(2021, 2, 2, 0, 0),
+                datetime(2020, 3, 29, 0, 0),
+                datetime(2020, 3, 28, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(days=1)),
+            [
+                datetime(2021, 1, 2, 0, 0),
+                datetime(2021, 1, 3, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+                datetime(2020, 2, 29, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(hours=1)),
+            [
+                datetime(2021, 1, 1, 1, 0),
+                datetime(2021, 1, 2, 1, 0),
+                datetime(2020, 2, 29, 1, 0),
+                datetime(2020, 2, 28, 1, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(minutes=1)),
+            [
+                datetime(2021, 1, 1, 0, 1),
+                datetime(2021, 1, 2, 0, 1),
+                datetime(2020, 2, 29, 0, 1),
+                datetime(2020, 2, 28, 0, 1),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(seconds=1)),
+            [
+                datetime(2021, 1, 1, 0, 0, 1),
+                datetime(2021, 1, 2, 0, 0, 1),
+                datetime(2020, 2, 29, 0, 0, 1),
+                datetime(2020, 2, 28, 0, 0, 1),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(millis=1)),
+            [
+                datetime(2021, 1, 1, 0, 0, 0, 1000),
+                datetime(2021, 1, 2, 0, 0, 0, 1000),
+                datetime(2020, 2, 29, 0, 0, 0, 1000),
+                datetime(2020, 2, 28, 0, 0, 0, 1000),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(years=1)),
+            [
+                datetime(2020, 1, 2, 0, 0),
+                datetime(2020, 1, 3, 0, 0),
+                datetime(2019, 2, 28, 0, 0),
+                datetime(2019, 2, 27, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(months=1)),
+            [
+                datetime(2020, 12, 1, 0, 0),
+                datetime(2020, 12, 2, 0, 0),
+                datetime(2020, 1, 31, 0, 0),
+                datetime(2020, 1, 30, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(days=1)),
+            [
+                datetime(2021, 1, 2, 0, 0),
+                datetime(2021, 1, 3, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+                datetime(2020, 2, 29, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(hours=1)),
+            [
+                datetime(2020, 12, 31, 23, 0),
+                datetime(2021, 1, 1, 23, 0),
+                datetime(2020, 2, 28, 23, 0),
+                datetime(2020, 2, 27, 23, 0),
+            ],
+        ),
+        (
+            col("datetimes") - daft.interval(minutes=1),
+            [
+                datetime(2020, 12, 31, 23, 59),
+                datetime(2021, 1, 1, 23, 59),
+                datetime(2020, 2, 28, 23, 59),
+                datetime(2020, 2, 27, 23, 59),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(seconds=1)),
+            [
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 1, 1, 23, 59, 59),
+                datetime(2020, 2, 28, 23, 59, 59),
+                datetime(2020, 2, 27, 23, 59, 59),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(millis=1)),
+            [
+                datetime(2020, 12, 31, 23, 59, 59, 999000),
+                datetime(2021, 1, 1, 23, 59, 59, 999000),
+                datetime(2020, 2, 28, 23, 59, 59, 999000),
+                datetime(2020, 2, 27, 23, 59, 59, 999000),
+            ],
+        ),
+    ],
+)
+def test_intervals(op, expected):
+    datetimes = [
+        datetime(2021, 1, 1, 0, 0, 0),
+        datetime(2021, 1, 2, 0, 0, 0),
+        # add a datetime with a leap event
+        datetime(2020, 2, 29, 0, 0, 0),
+        # and another one that should land on a leap event
+        datetime(2020, 2, 28, 0, 0, 0),
+    ]
+    actual = (
+        daft.from_pydict(
+            {
+                "datetimes": datetimes,
+            }
+        )
+        .select(op)
+        .collect()
+        .to_pydict()
+    )
+    expected = {"datetimes": expected}
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        date(2020, 1, 1),  # explicit date
+        "2020-01-01",  # implicit coercion
+    ],
+)
+def test_date_comparison(value):
+    date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
+    date_df = date_df.with_column("date", col("date_str").str.to_date("%Y-%m-%d"))
+    actual = date_df.filter(col("date") == value).select("date").to_pydict()
+
+    expected = {"date": [date(2020, 1, 1)]}
+
+    assert actual == expected
+
+
+def test_date_and_datetime_day_of_week():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(df["date"].dt.day_of_week().alias("date_dow"), df["datetime"].dt.day_of_week().alias("datetime_dow"))
+
+    expected = {"date_dow": [2, 3, 4], "datetime_dow": [2, 3, 4]}
+
+    assert df.to_pydict() == expected
+
+
+def test_date_and_datetime_day_of_month():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(
+        df["date"].dt.day_of_month().alias("date_dom"), df["datetime"].dt.day_of_month().alias("datetime_dom")
+    )
+
+    expected = {"date_dom": [1, 31, 31], "datetime_dom": [1, 31, 31]}
+
+    assert df.to_pydict() == expected
+
+
+def test_date_and_datetime_day_of_year():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(df["date"].dt.day_of_year().alias("date_doy"), df["datetime"].dt.day_of_year().alias("datetime_doy"))
+
+    expected = {"date_doy": [1, 366, 365], "datetime_doy": [1, 366, 365]}
+
+    assert df.to_pydict() == expected
+
+
+def test_date_and_datetime_week_of_year():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+
+    df = df.select(
+        df["date"].dt.week_of_year().alias("date_woy"), df["datetime"].dt.week_of_year().alias("datetime_woy")
+    )
+
+    expected = {"date_woy": [1, 53, 52], "datetime_woy": [1, 53, 52]}
+
+    assert df.to_pydict() == expected
+
+
+def test_date_to_unix_epoch():
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+            "datetime": [
+                datetime(2020, 1, 1, 0, 0, 0),
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 12, 31, 23, 59, 59),
+            ],
+        }
+    )
+    actual = df.select(
+        df["date"].dt.to_unix_epoch().alias("date_epoch"),
+        df["date"].dt.to_unix_epoch("s").alias("date_epoch_s"),
+        df["date"].dt.to_unix_epoch("ms").alias("date_epoch_ms"),
+        df["date"].dt.to_unix_epoch("us").alias("date_epoch_us"),
+        df["date"].dt.to_unix_epoch("ns").alias("date_epoch_ns"),
+        df["datetime"].dt.to_unix_epoch().alias("datetime_epoch"),
+        df["datetime"].dt.to_unix_epoch("s").alias("datetime_epoch_s"),
+        df["datetime"].dt.to_unix_epoch("ms").alias("datetime_epoch_ms"),
+        df["datetime"].dt.to_unix_epoch("us").alias("datetime_epoch_us"),
+        df["datetime"].dt.to_unix_epoch("ns").alias("datetime_epoch_ns"),
+    ).to_pydict()
+
+    expected = {
+        "date_epoch": [1577836800, 1609372800, 1640908800],
+        "date_epoch_s": [1577836800, 1609372800, 1640908800],
+        "date_epoch_ms": [1577836800000, 1609372800000, 1640908800000],
+        "date_epoch_us": [1577836800000000, 1609372800000000, 1640908800000000],
+        "date_epoch_ns": [1577836800000000000, 1609372800000000000, 1640908800000000000],
+        "datetime_epoch": [1577836800, 1609459199, 1640995199],
+        "datetime_epoch_s": [1577836800, 1609459199, 1640995199],
+        "datetime_epoch_ms": [1577836800000, 1609459199000, 1640995199000],
+        "datetime_epoch_us": [1577836800000000, 1609459199000000, 1640995199000000],
+        "datetime_epoch_ns": [1577836800000000000, 1609459199000000000, 1640995199000000000],
+    }
+
+    assert actual == expected
+
+
+def test_date_to_string():
+    df = daft.from_pydict(
+        {
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+            "datetimes": [
+                datetime(2023, 1, 1, 12, 1),
+                datetime(2023, 1, 2, 12, 0, 0, 0),
+                datetime(2023, 1, 3, 12, 0, 0, 999_999),
+            ],
+        }
+    )
+
+    df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
+
+    actual = df.select(
+        daft.col("dates").dt.strftime().alias("iso_date"),
+        daft.col("dates").dt.strftime(format="%m/%d/%Y").alias("custom_date"),
+        daft.col("datetimes_s").dt.strftime().alias("iso_datetime"),
+        daft.col("datetimes_s").dt.strftime(format="%Y/%m/%d %H:%M:%S").alias("custom_datetime"),
+    ).to_pydict()
+
+    expected = {
+        "iso_date": ["2023-01-01", "2023-01-02", "2023-01-03"],
+        "custom_date": ["01/01/2023", "01/02/2023", "01/03/2023"],
+        "iso_datetime": ["2023-01-01T12:01:00", "2023-01-02T12:00:00", "2023-01-03T12:00:00"],
+        "custom_datetime": ["2023/01/01 12:01:00", "2023/01/02 12:00:00", "2023/01/03 12:00:00"],
+    }
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["s", "ms", "us", "ns", "seconds", "milliseconds", "microseconds", "nanoseconds"],
+)
+def test_date_to_unix_epoch_valid_timeunits(timeunit):
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1), date(2020, 12, 31), date(2021, 12, 31)],
+        }
+    )
+    try:
+        df.select(
+            df["date"].dt.to_unix_epoch(timeunit).alias("date_epoch"),
+        ).to_pydict()
+    except ValueError:
+        pytest.fail(f"to_unix_epoch with timeunit {timeunit} raised an exception.")
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["second", "millis", "nanos", "millisecond", "nanosecond", "millis", "micros"],
+)
+def test_date_to_unix_epoch_invalid_timeunits(timeunit):
+    df = daft.from_pydict(
+        {
+            "date": [date(2020, 1, 1)],
+        }
+    )
+    try:
+        df.select(
+            df["date"].dt.to_unix_epoch(timeunit).alias("date_epoch"),
+        ).to_pydict()
+        pytest.fail(f"to_unix_epoch with timeunit {timeunit} did not raise an exception.")
+    except ValueError:
+        pass
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        ("%Y-%m-%d", ["2023-01-01", "2023-01-02", "2023-01-03"]),
+        ("%m/%d/%Y", ["01/01/2023", "01/02/2023", "01/03/2023"]),
+        ("%Y/%m/%d %H:%M:%S", ["2023/01/01 12:01:00", "2023/01/02 12:00:00", "2023/01/03 12:00:00"]),
+        ("%c", ["Sun Jan  1 12:01:00 2023", "Mon Jan  2 12:00:00 2023", "Tue Jan  3 12:00:00 2023"]),
+        ("%x", ["01/01/23", "01/02/23", "01/03/23"]),
+    ],
+)
+def test_datetime_to_string(fmt, expected):
+    df = daft.from_pydict(
+        {
+            "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
+            "datetimes": [
+                datetime(2023, 1, 1, 12, 1),
+                datetime(2023, 1, 2, 12, 0, 0, 0),
+                datetime(2023, 1, 3, 12, 0, 0, 999_999),
+            ],
+        }
+    )
+    df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
+
+    actual = df.select(
+        daft.col("datetimes").dt.strftime(fmt).alias("formatted_datetime"),
+    ).to_pydict()
+
+    expected = {
+        "formatted_datetime": expected,
+    }
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "fmt,expected",
+    [
+        ("%H-%M-%S", ["01-02-03", "02-03-04", "03-04-05"]),
+        ("%H:%M:%S", ["01:02:03", "02:03:04", "03:04:05"]),
+        ("H:%H, M:%M, S:%S", ["H:01, M:02, S:03", "H:02, M:03, S:04", "H:03, M:04, S:05"]),
+    ],
+)
+def test_time_to_string(fmt, expected):
+    from datetime import time
+
+    df = daft.from_pydict(
+        {
+            "times": [time(1, 2, 3), time(2, 3, 4), time(3, 4, 5)],
+        }
+    )
+
+    actual = df.select(
+        daft.col("times").dt.strftime(fmt).alias("formatted_time"),
+    ).to_pydict()
+
+    expected = {
+        "formatted_time": expected,
+    }
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        1,
+        True,
+        "foo",
+        1.0,
+        [1],
+        [True],
+        [1.0],
+    ],
+)
+def test_datetime_to_string_errors(value):
+    df = daft.from_pydict({"invalid": [value]})
+
+    with pytest.raises(daft.exceptions.DaftCoreException):
+        df.select(daft.col("invalid").dt.strftime(format="%Y-%m-%d")).to_pydict()

@@ -6,13 +6,14 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft.datatype import DaftExtension, DataType
+from daft.datatype import DataType, get_super_ext_type
 from daft.series import Series
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 from tests.utils import ANSI_ESCAPE
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
+DaftExtension = get_super_ext_type()
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)

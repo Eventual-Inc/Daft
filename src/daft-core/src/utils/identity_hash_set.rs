@@ -1,4 +1,4 @@
-use std::hash::{BuildHasherDefault, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 pub type IdentityBuildHasher = BuildHasherDefault<IdentityHasher>;
 
@@ -25,5 +25,17 @@ impl Hasher for IdentityHasher {
     #[inline]
     fn write_u64(&mut self, i: u64) {
         self.hash = i;
+    }
+}
+
+#[derive(Eq, PartialEq)]
+pub struct IndexHash {
+    pub idx: u64,
+    pub hash: u64,
+}
+
+impl Hash for IndexHash {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash);
     }
 }

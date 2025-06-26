@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::Series;
+use daft_core::series::Series;
 use daft_io::IOStatsContext;
-use daft_table::Table;
+use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
 
@@ -19,7 +19,7 @@ impl MicroPartition {
         match tables.as_slice() {
             // Fallback onto `[empty_table]` behavior
             [] => {
-                let empty_table = Table::empty(Some(self.schema.clone()))?;
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()))?;
                 let taken = empty_table.take(idx)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-import pyarrow as pa
 from sortedcontainers import SortedDict
 
-from daft.hudi.pyhudi.utils import FsFileMetadata
+from daft.dependencies import pa
+
+if TYPE_CHECKING:
+    from daft.hudi.pyhudi.utils import FsFileMetadata
 
 
 @dataclass(init=False)
@@ -39,11 +42,11 @@ class BaseFile:
         return self.metadata.colstats_schema
 
     @property
-    def min_values(self):
+    def min_values(self) -> list[int | None]:
         return self.metadata.min_values
 
     @property
-    def max_values(self):
+    def max_values(self) -> list[int | None]:
         return self.metadata.max_values
 
 
@@ -64,15 +67,15 @@ class FileSlice:
     base_file: BaseFile
 
     @property
-    def files_metadata(self):
+    def files_metadata(self) -> tuple[str, int, int, str]:
         return self.base_file.path, self.base_file.size, self.base_file.num_records, self.partition_path
 
     @property
-    def colstats_min_max(self):
+    def colstats_min_max(self) -> tuple[list[int | None], list[int | None]]:
         return self.base_file.min_values, self.base_file.max_values
 
     @property
-    def colstats_schema(self):
+    def colstats_schema(self) -> pa.Schema:
         return self.base_file.colstats_schema
 
 
@@ -82,7 +85,7 @@ class FileGroup:
     partition_path: str
     file_slices: SortedDict[str, FileSlice] = field(default_factory=SortedDict)
 
-    def add_base_file(self, base_file: BaseFile):
+    def add_base_file(self, base_file: BaseFile) -> None:
         ct = base_file.commit_time
         if ct in self.file_slices:
             self.file_slices.get(ct).base_file = base_file

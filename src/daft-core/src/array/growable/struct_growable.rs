@@ -1,12 +1,11 @@
 use common_error::DaftResult;
 
+use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 use crate::{
     array::{growable::make_growable, StructArray},
-    datatypes::Field,
-    DataType, IntoSeries, Series,
+    datatypes::{DataType, Field},
+    series::{IntoSeries, Series},
 };
-
-use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 
 pub struct StructGrowable<'a> {
     name: String,
@@ -62,15 +61,14 @@ impl<'a> StructGrowable<'a> {
     }
 }
 
-impl<'a> Growable for StructGrowable<'a> {
+impl Growable for StructGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         for child_growable in &mut self.children_growables {
-            child_growable.extend(index, start, len)
+            child_growable.extend(index, start, len);
         }
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.extend(index, start, len),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.extend(index, start, len);
         }
     }
 
@@ -79,9 +77,8 @@ impl<'a> Growable for StructGrowable<'a> {
             child_growable.add_nulls(additional);
         }
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.add_nulls(additional),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.add_nulls(additional);
         }
     }
 

@@ -1,9 +1,11 @@
+#[must_use]
 pub fn bytes_to_human_readable(byte_count: usize) -> String {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
+
     if byte_count == 0 {
         return "0 B".to_string();
     }
 
-    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
     let base = byte_count.ilog2() / 10; // log2(1024) = 10
 
     let index = std::cmp::min(base, (UNITS.len() - 1) as u32);

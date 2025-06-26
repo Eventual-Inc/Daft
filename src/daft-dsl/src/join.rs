@@ -1,116 +1,97 @@
-use std::sync::Arc;
-
-use common_error::{DaftError, DaftResult};
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    JoinType,
-};
+use common_error::DaftResult;
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use indexmap::IndexSet;
 
-use crate::{Expr, ExprRef};
+use crate::{deduplicate_expr_names, ExprRef};
 
-/// Get the columns between the two sides of the join that should be merged in the order of the join keys.
-/// Join keys should only be merged if they are column expressions.
-pub fn get_common_join_keys<'a>(
-    left_on: &'a [ExprRef],
-    right_on: &'a [ExprRef],
-) -> impl Iterator<Item = &'a Arc<str>> {
-    left_on.iter().zip(right_on.iter()).filter_map(|(l, r)| {
-        if let (Expr::Column(l_name), Expr::Column(r_name)) = (&**l, &**r)
-            && l_name == r_name
-        {
-            Some(l_name)
-        } else {
-            None
-        }
-    })
+pub fn get_common_join_cols<'a>(
+    left_schema: &'a SchemaRef,
+    right_schema: &'a SchemaRef,
+) -> impl Iterator<Item = &'a str> {
+    left_schema
+        .field_names()
+        .filter(|name| right_schema.has_field(name))
 }
 
 /// Infer the schema of a join operation
-///
-/// This function assumes that the only common field names between the left and right schemas are the join fields,
-/// which is valid because the right columns are renamed during the construction of a join logical operation.
 pub fn infer_join_schema(
     left_schema: &SchemaRef,
     right_schema: &SchemaRef,
-    left_on: &[ExprRef],
-    right_on: &[ExprRef],
-    how: JoinType,
+    join_type: JoinType,
 ) -> DaftResult<SchemaRef> {
-    if left_on.len() != right_on.len() {
-        return Err(DaftError::ValueError(format!(
-            "Length of left_on does not match length of right_on for Join {} vs {}",
-            left_on.len(),
-            right_on.len()
-        )));
-    }
-
-    if matches!(how, JoinType::Anti | JoinType::Semi) {
+    if matches!(join_type, JoinType::Anti | JoinType::Semi) {
         Ok(left_schema.clone())
     } else {
-        let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
-            .map(|k| k.to_string())
-            .collect();
+        let common_cols = get_common_join_cols(left_schema, right_schema).collect::<IndexSet<_>>();
 
-        // common join fields, then unique left fields, then unique right fields
-        let fields: Vec<_> = common_join_keys
+        // common columns, then unique left fields, then unique right fields
+        let fields = common_cols
             .iter()
             .map(|name| {
-                left_schema
-                    .get_field(name)
-                    .expect("Common join key should exist in left schema")
-            })
-            .chain(left_schema.fields.iter().filter_map(|(name, field)| {
-                if common_join_keys.contains(name) {
-                    None
-                } else {
-                    Some(field)
-                }
-            }))
-            .chain(right_schema.fields.iter().filter_map(|(name, field)| {
-                if common_join_keys.contains(name) {
-                    None
-                } else if left_schema.fields.contains_key(name) {
-                    unreachable!("Right schema should have renamed columns")
-                } else {
-                    Some(field)
-                }
-            }))
-            .cloned()
-            .collect();
+                let left_field = left_schema.get_field(name).unwrap();
+                let right_field = right_schema.get_field(name).unwrap();
 
-        Ok(Schema::new(fields)?.into())
+                Ok(match join_type {
+                    JoinType::Inner => left_field.clone(),
+                    JoinType::Left => left_field.clone(),
+                    JoinType::Right => right_field.clone(),
+                    JoinType::Outer => {
+                        let supertype = try_get_supertype(&left_field.dtype, &right_field.dtype)?;
+
+                        Field::new(*name, supertype)
+                    }
+                    JoinType::Anti | JoinType::Semi => unreachable!(),
+                })
+            })
+            .chain(
+                left_schema
+                    .into_iter()
+                    .chain(right_schema.fields())
+                    .filter_map(|field| {
+                        if common_cols.contains(field.name.as_str()) {
+                            None
+                        } else {
+                            Some(field.clone())
+                        }
+                    })
+                    .map(Ok),
+            )
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(Schema::new(fields).into())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::col;
+/// Casts join keys to the same types and make their names unique.
+pub fn normalize_join_keys(
+    left_on: Vec<ExprRef>,
+    right_on: Vec<ExprRef>,
+    left_schema: SchemaRef,
+    right_schema: SchemaRef,
+) -> DaftResult<(Vec<ExprRef>, Vec<ExprRef>)> {
+    let (left_on, right_on) = left_on
+        .into_iter()
+        .zip(right_on)
+        .map(|(mut l, mut r)| {
+            let l_dtype = l.to_field(&left_schema)?.dtype;
+            let r_dtype = r.to_field(&right_schema)?.dtype;
 
-    use super::*;
+            let supertype = try_get_supertype(&l_dtype, &r_dtype)?;
 
-    #[test]
-    fn test_get_common_join_keys() {
-        let left_on: &[ExprRef] = &[
-            col("a"),
-            col("b_left"),
-            col("c").alias("c_new"),
-            col("d").alias("d_new"),
-            col("e").add(col("f")),
-        ];
+            if l_dtype != supertype {
+                l = l.cast(&supertype);
+            }
 
-        let right_on: &[ExprRef] = &[
-            col("a"),
-            col("b_right"),
-            col("c"),
-            col("d").alias("d_new"),
-            col("e"),
-        ];
+            if r_dtype != supertype {
+                r = r.cast(&supertype);
+            }
 
-        let common_join_keys = get_common_join_keys(left_on, right_on)
-            .map(|k| k.to_string())
-            .collect::<Vec<_>>();
+            Ok((l, r))
+        })
+        .collect::<DaftResult<(Vec<_>, Vec<_>)>>()?;
 
-        assert_eq!(common_join_keys, vec!["a"]);
-    }
+    let left_on = deduplicate_expr_names(&left_on);
+    let right_on = deduplicate_expr_names(&right_on);
+
+    Ok((left_on, right_on))
 }

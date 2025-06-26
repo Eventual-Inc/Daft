@@ -1,5 +1,5 @@
-"""
-This file contains physical plan building blocks.
+"""This file contains physical plan building blocks.
+
 To get a physical plan for a logical plan, see physical_plan_factory.py.
 
 Conceptually, a physical plan decides what steps, and the order of steps, to run to build some target.
@@ -14,23 +14,23 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 from __future__ import annotations
 
 import collections
+import contextlib
 import itertools
 import logging
 import math
-import pathlib
+from abc import abstractmethod
 from collections import deque
+from collections.abc import Generator, Iterable, Iterator
 from typing import (
     TYPE_CHECKING,
-    Generator,
+    Any,
     Generic,
-    Iterable,
-    Iterator,
     TypeVar,
     Union,
 )
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
+from daft.daft import JoinSide, ResourceRequest, WriteMode
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -39,24 +39,28 @@ from daft.execution.execution_step import (
     PartitionTaskBuilder,
     ReduceInstruction,
     SingleOutputPartitionTask,
+    calculate_cross_join_stats,
 )
 from daft.expressions import ExpressionsProjection
-from daft.logical.schema import Schema
+from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionT,
 )
-from daft.table.micropartition import MicroPartition
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
 if TYPE_CHECKING:
+    import pathlib
+
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.udf import PartialStatefulUDF
+    from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.io import DataSink
+    from daft.logical.schema import Schema
 
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
@@ -66,14 +70,14 @@ InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], Partiti
 MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], MaterializedResult[PartitionT]]]
 
 
-def _stage_id_counter():
+def _stage_id_counter() -> Iterator[int]:
     counter = 0
     while True:
         counter += 1
         yield counter
 
 
-stage_id_counter = _stage_id_counter()
+stage_id_counter: Iterator[int] = _stage_id_counter()
 
 
 def partition_read(
@@ -88,6 +92,7 @@ def partition_read(
 
 def file_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
+    write_mode: WriteMode,
     file_format: FileFormat,
     schema: Schema,
     root_dir: str | pathlib.Path,
@@ -96,22 +101,52 @@ def file_write(
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into files described by `write_info`."""
-
-    yield from (
-        step.add_instruction(
-            execution_step.WriteFile(
-                file_format=file_format,
-                schema=schema,
+    if write_mode == WriteMode.Overwrite or write_mode == WriteMode.OverwritePartitions:
+        stage_id = next(stage_id_counter)
+        write_tasks: list[SingleOutputPartitionTask[PartitionT]] = []
+        for step in child_plan:
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.add_instruction(
+                    execution_step.WriteFile(
+                        file_format=file_format,
+                        schema=schema,
+                        root_dir=root_dir,
+                        compression=compression,
+                        partition_cols=partition_cols,
+                        io_config=io_config,
+                    ),
+                ).finalize_partition_task_single_output(stage_id=stage_id)
+                write_tasks.append(step)
+            yield step
+        while any(not _.done() for _ in write_tasks):
+            yield None
+        partition_metadatas = [task.partition_metadata() for task in write_tasks]
+        inputs = [task.partition() for task in write_tasks]
+        yield PartitionTaskBuilder[PartitionT](
+            inputs=inputs, partial_metadatas=list(partition_metadatas)
+        ).add_instruction(
+            execution_step.OverwriteFiles(
+                overwrite_partitions=write_mode == WriteMode.OverwritePartitions,
                 root_dir=root_dir,
-                compression=compression,
-                partition_cols=partition_cols,
                 io_config=io_config,
-            ),
+            )
         )
-        if isinstance(step, PartitionTaskBuilder)
-        else step
-        for step in child_plan
-    )
+    else:
+        yield from (
+            step.add_instruction(
+                execution_step.WriteFile(
+                    file_format=file_format,
+                    schema=schema,
+                    root_dir=root_dir,
+                    compression=compression,
+                    partition_cols=partition_cols,
+                    io_config=io_config,
+                ),
+            )
+            if isinstance(step, PartitionTaskBuilder)
+            else step
+            for step in child_plan
+        )
 
 
 def iceberg_write(
@@ -119,18 +154,19 @@ def iceberg_write(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    spec_id: int,
+    partition_spec_id: int,
+    partition_cols: ExpressionsProjection,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
-
     yield from (
         step.add_instruction(
             execution_step.WriteIceberg(
                 base_path=base_path,
                 iceberg_schema=iceberg_schema,
                 iceberg_properties=iceberg_properties,
-                spec_id=spec_id,
+                partition_spec_id=partition_spec_id,
+                partition_cols=partition_cols,
                 io_config=io_config,
             ),
         )
@@ -145,16 +181,17 @@ def deltalake_write(
     base_path: str,
     large_dtypes: bool,
     version: int,
+    partition_cols: ExpressionsProjection | None,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
-
     yield from (
         step.add_instruction(
             execution_step.WriteDeltaLake(
                 base_path=base_path,
                 large_dtypes=large_dtypes,
                 version=version,
+                partition_cols=partition_cols,
                 io_config=io_config,
             ),
         )
@@ -169,10 +206,9 @@ def lance_write(
     base_path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
+    kwargs: dict[str, Any] | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into lance data files described by `write_info`."""
-
     yield from (
         step.add_instruction(
             execution_step.WriteLance(
@@ -188,34 +224,147 @@ def lance_write(
     )
 
 
+def data_sink_write(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    sink: DataSink[Any],
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Write the results of `child_plan` into a custom write sink described by `sink`."""
+    yield from (
+        step.add_instruction(execution_step.DataSinkWrite(sink)) if isinstance(step, PartitionTaskBuilder) else step
+        for step in child_plan
+    )
+
+
 def pipeline_instruction(
     child_plan: InProgressPhysicalPlan[PartitionT],
     pipeable_instruction: Instruction,
-    resource_request: execution_step.ResourceRequest,
+    resource_request: ResourceRequest,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Apply an instruction to the results of `child_plan`."""
-
     yield from (
         step.add_instruction(pipeable_instruction, resource_request) if isinstance(step, PartitionTaskBuilder) else step
         for step in child_plan
     )
 
 
+class ActorPoolManager:
+    @abstractmethod
+    @contextlib.contextmanager
+    def actor_pool_context(
+        self,
+        name: str,
+        actor_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
+        num_actors: int,
+        projection: ExpressionsProjection,
+    ) -> Iterator[str]:
+        """Creates a pool of actors which can execute work, and yield a context in which the pool can be used.
+
+        Also yields a `str` ID which clients can use to refer to the actor pool when submitting tasks.
+
+        Note that attempting to do work outside this context will result in errors!
+
+        Args:
+            name: Name of the actor pool for debugging/observability
+            resource_request: Requested amount of resources for each actor
+            num_actors: Number of actors to spin up
+            projection: Projection to be run on the incoming data (contains actor pool UDFs as well as other stateless expressions such as aliases)
+        """
+        ...
+
+
 def actor_pool_project(
     child_plan: InProgressPhysicalPlan[PartitionT],
     projection: ExpressionsProjection,
-    partial_stateful_udfs: dict[str, PartialStatefulUDF],
-    resource_request: execution_step.ResourceRequest,
+    actor_pool_manager: ActorPoolManager,
+    resource_request: ResourceRequest,
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    raise NotImplementedError("Execution of ActorPoolProjects not yet implemented")
+    stage_id = next(stage_id_counter)
+
+    from daft.daft import get_udf_names
+
+    udf_names = "-".join(name for expr in projection for name in get_udf_names(expr._expr))
+    actor_pool_name = f"{udf_names}-stage={stage_id}"
+
+    # Keep track of materializations of the children tasks
+    child_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+
+    # Keep track of materializations of the actor_pool tasks
+    actor_pool_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+
+    # Perform separate accounting for the tasks' resource request and the actors' resource request:
+    # * When spinning up an actor, we consider resources that are required for the persistent state in an actor (namely, GPUs and memory)
+    # * When running a task, we consider resources that are required for placement of tasks (namely CPUs)
+    task_resource_request = ResourceRequest(num_cpus=resource_request.num_cpus)
+    actor_resource_request = ResourceRequest(
+        num_gpus=resource_request.num_gpus, memory_bytes=resource_request.memory_bytes
+    )
+
+    with actor_pool_manager.actor_pool_context(
+        actor_pool_name,
+        actor_resource_request,
+        task_resource_request,
+        num_actors,
+        projection,
+    ) as actor_pool_id:
+        child_plan_exhausted = False
+
+        # Loop until the child plan is exhausted and there is no more work in the pipeline
+        while not (child_plan_exhausted and len(child_materializations) == 0 and len(actor_pool_materializations) == 0):
+            # Exhaustively pop ready child_steps and submit them to be run on the actor_pool
+            while len(child_materializations) > 0 and child_materializations[0].done():
+                next_ready_child = child_materializations.popleft()
+                actor_project_step = (
+                    PartitionTaskBuilder[PartitionT](
+                        inputs=[next_ready_child.partition()],
+                        partial_metadatas=[next_ready_child.partition_metadata()],
+                        actor_pool_id=actor_pool_id,
+                    )
+                    .add_instruction(
+                        instruction=execution_step.ActorPoolProject(projection),
+                        resource_request=task_resource_request,
+                    )
+                    .finalize_partition_task_single_output(
+                        stage_id=stage_id,
+                    )
+                )
+                actor_pool_materializations.append(actor_project_step)
+                yield actor_project_step
+
+            # Exhaustively pop ready actor_pool steps and bubble it upwards as the start of a new pipeline
+            while len(actor_pool_materializations) > 0 and actor_pool_materializations[0].done():
+                next_ready_actor_pool_task = actor_pool_materializations.popleft()
+                new_pipeline_starter_task = PartitionTaskBuilder[PartitionT](
+                    inputs=[next_ready_actor_pool_task.partition()],
+                    partial_metadatas=[next_ready_actor_pool_task.partition_metadata()],
+                    resource_request=ResourceRequest(),
+                )
+                yield new_pipeline_starter_task
+
+            # No more child work to be done: if there is pending work in the pipeline we yield None
+            if child_plan_exhausted:
+                if len(child_materializations) > 0 or len(actor_pool_materializations) > 0:
+                    yield None
+
+            # Attempt to schedule child work
+            else:
+                try:
+                    child_step = next(child_plan)
+                except StopIteration:
+                    child_plan_exhausted = True
+                else:
+                    # Finalize and yield the child step to be run if it is a PartitionTaskBuilder
+                    if isinstance(child_step, PartitionTaskBuilder):
+                        child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
+                        child_materializations.append(child_step)
+                    yield child_step
 
 
 def monotonically_increasing_id(
     child_plan: InProgressPhysicalPlan[PartitionT], column_name: str
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Apply a monotonically_increasing_id instruction to the results of `child_plan`."""
-
     partition_counter = (
         0  # This counter gives each partition a monotonically increasing int to use as the leftmost 28 bits of the id
     )
@@ -234,85 +383,123 @@ def hash_join(
     right_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Hash-based pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
+    left_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+    right_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
 
-    # Materialize the steps from the left and right sources to get partitions.
-    # As the materializations complete, emit new steps to join each left and right partition.
-    left_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    right_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    stage_id = next(stage_id_counter)
-    yield_left = True
+    left_stage_id = next(stage_id_counter)
+    right_stage_id = next(stage_id_counter)
+    hash_join_stage_id = next(stage_id_counter)
 
-    while True:
-        # Emit new join steps if we have left and right partitions ready.
-        while (
-            len(left_requests) > 0 and len(right_requests) > 0 and left_requests[0].done() and right_requests[0].done()
-        ):
-            next_left = left_requests.popleft()
-            next_right = right_requests.popleft()
+    # First, fully materialize the left side of the join
+    for step in left_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            step = step.finalize_partition_task_single_output(stage_id=left_stage_id)
+            left_tasks[len(left_tasks)] = step
+        yield step
 
-            # Calculate memory request for task.
-            left_size_bytes = next_left.partition_metadata().size_bytes
-            right_size_bytes = next_right.partition_metadata().size_bytes
-            if left_size_bytes is None and right_size_bytes is None:
-                size_bytes = None
-            elif left_size_bytes is None and right_size_bytes is not None:
-                # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
-                size_bytes = 2 * right_size_bytes
-            elif right_size_bytes is None and left_size_bytes is not None:
-                # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
-                size_bytes = 2 * left_size_bytes
-            elif left_size_bytes is not None and right_size_bytes is not None:
-                size_bytes = left_size_bytes + right_size_bytes
+    def create_join_step(
+        left_task: SingleOutputPartitionTask[PartitionT], right_task: SingleOutputPartitionTask[PartitionT]
+    ) -> SingleOutputPartitionTask[PartitionT]:
+        """Helper function to create a join step for a pair of tasks."""
+        left_size_bytes = left_task.partition_metadata().size_bytes
+        right_size_bytes = right_task.partition_metadata().size_bytes
 
-            join_step = PartitionTaskBuilder[PartitionT](
-                inputs=[next_left.partition(), next_right.partition()],
-                partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
+        # Calculate memory request for task
+        if left_size_bytes is None and right_size_bytes is None:
+            size_bytes = None
+        elif left_size_bytes is None and right_size_bytes is not None:
+            size_bytes = 2 * right_size_bytes  # Assume left ≈ right size
+        elif right_size_bytes is None and left_size_bytes is not None:
+            size_bytes = 2 * left_size_bytes  # Assume right ≈ left size
+        elif left_size_bytes is not None and right_size_bytes is not None:
+            size_bytes = left_size_bytes + right_size_bytes
+
+        join_step = (
+            PartitionTaskBuilder[PartitionT](
+                inputs=[left_task.partition(), right_task.partition()],
+                partial_metadatas=[left_task.partition_metadata(), right_task.partition_metadata()],
                 resource_request=ResourceRequest(memory_bytes=size_bytes),
-            ).add_instruction(
+            )
+            .add_instruction(
                 instruction=execution_step.HashJoin(
                     left_on=left_on,
                     right_on=right_on,
+                    null_equals_nulls=null_equals_nulls,
                     how=how,
                     is_swapped=False,
                 )
             )
-            yield join_step
+            .finalize_partition_task_single_output(stage_id=hash_join_stage_id)
+        )
+        return join_step
 
-        # Exhausted all ready inputs; execute a single child step to get more join inputs.
-        # Choose whether to execute from left child or right child (whichever one is more behind)
-        if len(left_requests) < len(right_requests):
-            next_plan, next_requests = left_plan, left_requests
-        elif len(left_requests) > len(right_requests):
-            next_plan, next_requests = right_plan, right_requests
-        elif len(left_requests) == len(right_requests):
-            # Both plans have progressed equally; alternate between the two plans to avoid starving either one
-            next_plan, next_requests = (left_plan, left_requests) if yield_left else (right_plan, right_requests)
-            yield_left = not yield_left
+    join_tasks: dict[int, SingleOutputPartitionTask[PartitionT]] = {}
+    right_partition_counter = 0
+    next_join_partition_to_emit = 0
+    while True:
+        # Check if we have any join tasks that are ready to be emitted
+        while next_join_partition_to_emit in join_tasks and join_tasks[next_join_partition_to_emit].done():
+            to_emit = join_tasks.pop(next_join_partition_to_emit)
+            size_bytes = to_emit.partition_metadata().size_bytes
+            yield PartitionTaskBuilder[PartitionT](
+                inputs=[to_emit.partition()],
+                partial_metadatas=[to_emit.partition_metadata()],
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
+            )
+            next_join_partition_to_emit += 1
 
-        try:
-            step = next(next_plan)
-            if isinstance(step, PartitionTaskBuilder):
-                step = step.finalize_partition_task_single_output(stage_id=stage_id)
-                next_requests.append(step)
-            yield step
+        # Find all partitions that are ready to be joined
+        ready_partitions = [
+            partition_num
+            for partition_num in left_tasks.keys() & right_tasks.keys()  # Intersection of keys
+            if left_tasks[partition_num].done() and right_tasks[partition_num].done()
+        ]
 
-        except StopIteration:
-            # Left and right child plans have completed.
-            # Are we still waiting for materializations to complete? (We will emit more joins from them).
-            if len(left_requests) + len(right_requests) > 0:
-                logger.debug(
-                    "join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
-                    left_requests,
-                    right_requests,
-                )
-                yield None
+        if len(ready_partitions) > 0:
+            # Process all ready pairs
+            for partition in ready_partitions:
+                left_task = left_tasks.pop(partition)
+                right_task = right_tasks.pop(partition)
+                join_task = create_join_step(left_task, right_task)
+                join_tasks[partition] = join_task
+                yield join_task
+        else:
+            try:
+                # Process next right plan step
+                step = next(right_plan)
+                if isinstance(step, PartitionTaskBuilder):
+                    step = step.finalize_partition_task_single_output(stage_id=right_stage_id)
+                    right_tasks[right_partition_counter] = step
+                    right_partition_counter += 1
+                yield step
 
-            # Otherwise, we are entirely done.
-            else:
-                return
+            except StopIteration:
+                if left_tasks or right_tasks:
+                    logger.debug(
+                        "join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
+                        left_tasks,
+                        right_tasks,
+                    )
+                    yield None
+                else:
+                    break
+
+    # Emit the remaining join tasks in order of partition number
+    while len(join_tasks) > 0:
+        while not join_tasks[next_join_partition_to_emit].done():
+            yield None
+        to_emit = join_tasks.pop(next_join_partition_to_emit)
+        size_bytes = to_emit.partition_metadata().size_bytes
+        yield PartitionTaskBuilder[PartitionT](
+            inputs=[to_emit.partition()],
+            partial_metadatas=[to_emit.partition_metadata()],
+            resource_request=ResourceRequest(memory_bytes=size_bytes),
+        )
+        next_join_partition_to_emit += 1
 
 
 def _create_broadcast_join_step(
@@ -320,6 +507,7 @@ def _create_broadcast_join_step(
     receiver_part: SingleOutputPartitionTask[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
     is_swapped: bool,
 ) -> PartitionTaskBuilder[PartitionT]:
@@ -365,6 +553,7 @@ def _create_broadcast_join_step(
         instruction=execution_step.BroadcastJoin(
             left_on=left_on,
             right_on=right_on,
+            null_equals_nulls=null_equals_nulls,
             how=how,
             is_swapped=is_swapped,
         )
@@ -376,11 +565,11 @@ def broadcast_join(
     receiver_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
     is_swapped: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Broadcast join all partitions from the broadcaster child plan to each partition in the receiver child plan."""
-
     # Materialize the steps from the broadcaster and receiver sources to get partitions.
     # As the receiver-side materializations complete, emit new steps to join each broadcaster and receiver partition.
     stage_id = next(stage_id_counter)
@@ -418,7 +607,15 @@ def broadcast_join(
         # Broadcast all broadcaster partitions to each new receiver partition that was materialized on this dispatch loop.
         while receiver_requests and receiver_requests[0].done():
             receiver_part = receiver_requests.popleft()
-            yield _create_broadcast_join_step(broadcaster_parts, receiver_part, left_on, right_on, how, is_swapped)
+            yield _create_broadcast_join_step(
+                broadcaster_parts,
+                receiver_part,
+                left_on,
+                right_on,
+                null_equals_nulls,
+                how,
+                is_swapped,
+            )
 
         # Execute single child step to pull in more input partitions.
         try:
@@ -438,9 +635,80 @@ def broadcast_join(
                 return
 
 
+def cross_join(
+    left_plan: InProgressPhysicalPlan[PartitionT],
+    right_plan: InProgressPhysicalPlan[PartitionT],
+    outer_loop_side: JoinSide,
+) -> InProgressPhysicalPlan[PartitionT]:
+    stage_id = next(stage_id_counter)
+
+    outer_plan, inner_plan = (left_plan, right_plan) if outer_loop_side == JoinSide.Left else (right_plan, left_plan)
+
+    # Materialize inner side first
+    inner_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    for step in inner_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            step = step.finalize_partition_task_single_output(stage_id=stage_id)
+            inner_requests.append(step)
+        yield step
+
+    outer_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    while True:
+        while outer_requests and outer_requests[0].done():
+            next_outer = outer_requests.popleft()
+
+            for next_inner in inner_requests:
+                while not next_inner.done():
+                    logger.debug(
+                        "cross join blocked on completion of inner side of join.\n inner sources: %s",
+                        inner_requests,
+                    )
+                    yield None
+
+                next_left, next_right = (
+                    (next_outer, next_inner) if outer_loop_side == JoinSide.Left else (next_inner, next_outer)
+                )
+
+                # Calculate memory request for task.
+                left_meta = next_left.partition_metadata()
+                right_meta = next_right.partition_metadata()
+
+                size_bytes = None
+
+                # If left or right side metadata missing, assume that left and right side are ~ the same size.
+                for first, second in [(left_meta, right_meta), (left_meta, left_meta), (right_meta, right_meta)]:
+                    _, size_bytes = calculate_cross_join_stats(first, second)
+                    if size_bytes is not None:
+                        break
+
+                join_step = PartitionTaskBuilder[PartitionT](
+                    inputs=[next_left.partition(), next_right.partition()],
+                    partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
+                    resource_request=ResourceRequest(memory_bytes=size_bytes),
+                ).add_instruction(instruction=execution_step.CrossJoin(outer_loop_side=outer_loop_side))
+
+                yield join_step
+
+        # Execute single child step to pull in more outer partitions.
+        try:
+            step = next(outer_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                outer_requests.append(step)
+            yield step
+        except StopIteration:
+            if outer_requests:
+                logger.debug(
+                    "broadcast join blocked on completion of receiver side of join.\n receiver sources: %s",
+                    outer_requests,
+                )
+                yield None
+            else:
+                return
+
+
 class MergeJoinTaskTracker(Generic[PartitionT]):
-    """
-    Tracks merge-join tasks for each larger-side partition.
+    """Tracks merge-join tasks for each larger-side partition.
 
     Merge-join tasks are added to the tracker, and the tracker handles empty tasks, finalizing PartitionTaskBuilders,
     determining whether tasks are ready to be executed, checking whether tasks are done, and deciding whether a coalesce
@@ -466,8 +734,7 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
         self._stage_id = stage_id
 
     def add_task(self, part_id: str, task: PartitionTaskBuilder[PartitionT]) -> None:
-        """
-        Add a merge-join task to the tracker for the provided larger-side partition.
+        """Add a merge-join task to the tracker for the provided larger-side partition.
 
         This task needs to be unfinalized, i.e. a PartitionTaskBuilder.
         """
@@ -490,9 +757,7 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
             self._finalized_tasks[part_id].append(task.finalize_partition_task_single_output(self._stage_id))
 
     def finalize(self, part_id: str) -> None:
-        """
-        Indicates to the tracker that we are done adding merge-join tasks for this partition.
-        """
+        """Indicates to the tracker that we are done adding merge-join tasks for this partition."""
         # All finalized tasks should have been yielded before the tracker.finalize() call.
         finalized_tasks = self._finalized_tasks.pop(part_id, deque())
         assert len(finalized_tasks) == 0
@@ -502,8 +767,9 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
     def yield_ready(
         self, part_id: str
     ) -> Iterator[SingleOutputPartitionTask[PartitionT] | PartitionTaskBuilder[PartitionT]]:
-        """
-        Returns an iterator of all tasks for this partition that are ready for execution. Each merge-join task will be
+        """Returns an iterator of all tasks for this partition that are ready for execution.
+
+        Each merge-join task will be
         yielded once, even across multiple calls.
         """
         assert self._is_contained(part_id)
@@ -519,8 +785,9 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
             yield self._task_staging.pop(part_id)
 
     def pop_uncoalesced(self, part_id: str) -> deque[SingleOutputPartitionTask[PartitionT]] | None:
-        """
-        Returns all tasks for this partition that need to be coalesced. If this partition only involved a single
+        """Returns all tasks for this partition that need to be coalesced.
+
+        If this partition only involved a single
         merge-join task (i.e. we don't need to coalesce), this this function will return None.
 
         NOTE: tracker.finalize(part_id) must be called before this function.
@@ -529,9 +796,7 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
         return self._uncoalesced_tasks.pop(part_id, None)
 
     def all_tasks_done_for_partition(self, part_id: str) -> bool:
-        """
-        Return whether all merge-join tasks for this partition are done.
-        """
+        """Return whether all merge-join tasks for this partition are done."""
         assert self._is_contained(part_id)
         if part_id in self._task_staging:
             # Unfinalized tasks are trivially "done".
@@ -544,9 +809,7 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
         )
 
     def all_tasks_done(self) -> bool:
-        """
-        Return whether all merge-join tasks for all partitions are done.
-        """
+        """Return whether all merge-join tasks for all partitions are done."""
         return all(
             self.all_tasks_done_for_partition(part_id)
             for part_id in itertools.chain(
@@ -555,9 +818,7 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
         )
 
     def _is_contained(self, part_id: str) -> bool:
-        """
-        Return whether the provided partition is being tracked by this tracker.
-        """
+        """Return whether the provided partition is being tracked by this tracker."""
         return part_id in self._task_staging or part_id in self._finalized_tasks or part_id in self._uncoalesced_tasks
 
 
@@ -571,9 +832,7 @@ def _emit_merge_joins_on_window(
     right_on: ExpressionsProjection,
     how: JoinType,
 ) -> Iterator[PartitionTaskBuilder[PartitionT] | PartitionTask[PartitionT]]:
-    """
-    Emits merge-join steps of next_part with each partition in other_window.
-    """
+    """Emits merge-join steps of next_part with each partition in other_window."""
     # Emit a merge-join step for all partitions in the other window that intersect with this new partition.
     for other_next_part in other_window:
         memory_bytes = _memory_bytes_for_merge(next_part, other_next_part)
@@ -632,13 +891,11 @@ def merge_join_sorted(
     how: JoinType,
     left_is_larger: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """
-    Merge the sorted partitions from `left_plan` and `right_plan` together.
+    """Merge the sorted partitions from `left_plan` and `right_plan` together.
 
     This assumes that `left_plan` and `right_plan` are both sorted on the join key(s), although with potentially
     different range partitionings (partition boundaries).
     """
-
     # Large vs. smaller side of join.
     larger_plan = left_plan if left_is_larger else right_plan
     smaller_plan = right_plan if left_is_larger else left_plan
@@ -828,10 +1085,7 @@ def merge_join_sorted(
 def _is_strictly_bounded_above_by(
     lower_part: SingleOutputPartitionTask[PartitionT], upper_part: SingleOutputPartitionTask[PartitionT]
 ) -> bool:
-    """
-    Returns whether lower_part is strictly bounded above by upper part; i.e., whether lower_part's upper bound is
-    strictly less than upper_part's upper bound.
-    """
+    """Returns whether lower_part is strictly bounded above by upper part."""
     lower_boundaries = lower_part.partition_metadata().boundaries
     upper_boundaries = upper_part.partition_metadata().boundaries
     assert lower_boundaries is not None and upper_boundaries is not None
@@ -866,8 +1120,7 @@ def sort_merge_join_aligned_boundaries(
     num_partitions: int,
     left_is_larger: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """
-    Sort-merge join the partitions from `left_plan` and `right_plan` together.
+    """Sort-merge join the partitions from `left_plan` and `right_plan` together.
 
     This assumes that both `left_plan` and `right_plan` need to be sorted, and will be sorted using the same
     partitioning boundaries.
@@ -1064,7 +1317,7 @@ def _to_per_partition_bounds(boundaries: MicroPartition, num_partitions: int) ->
 def concat(
     top_plan: InProgressPhysicalPlan[PartitionT], bottom_plan: InProgressPhysicalPlan[PartitionT]
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """Vertical concat of the partitions in `top_plan` and `bottom_plan`"""
+    """Vertical concat of the partitions in `top_plan` and `bottom_plan`."""
     # Yield steps in order from the top_plan to bottom_plan
     yield from top_plan
     yield from bottom_plan
@@ -1100,7 +1353,6 @@ def global_limit(
     num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Return the first n rows from the `child_plan`."""
-
     remaining_rows = limit_rows
     assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
     remaining_partitions = num_partitions
@@ -1198,7 +1450,6 @@ def global_limit(
 
 def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPhysicalPlan[PartitionT]:
     """Wrap a plan that emits multi-output tasks to a plan that emits single-output tasks."""
-
     materializations: deque[MultiOutputPartitionTask[PartitionT]] = deque()
     stage_id = next(stage_id_counter)
     while True:
@@ -1231,61 +1482,30 @@ def split(
     num_input_partitions: int,
     num_output_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """Repartition the child_plan into more partitions by splitting partitions only. Preserves order."""
+    """Repartition the child_plan into more partitions by splitting partitions only. Preserves order.
 
+    This performs a naive split, which might lead to data skews but does not require a full materialization of
+    input partitions when performing the split.
+    """
     assert (
         num_output_partitions >= num_input_partitions
     ), f"Cannot split from {num_input_partitions} to {num_output_partitions}."
 
-    # Materialize the input partitions so we can see the number of rows and try to split evenly.
-    # Splitting evenly is fairly important if this operation is to be used for parallelism.
-    # (optimization TODO: don't materialize if num_rows is already available in physical plan metadata.)
-    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    stage_id = next(stage_id_counter)
+    base_splits_per_partition, num_partitions_with_extra_output = divmod(num_output_partitions, num_input_partitions)
+
+    input_partition_idx = 0
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output(stage_id=stage_id)
-            materializations.append(step)
-        yield step
-
-    while any(not _.done() for _ in materializations):
-        logger.debug("split_to blocked on completion of all sources: %s", materializations)
-        yield None
-
-    splits_per_partition = deque([1 for _ in materializations])
-    num_splits_to_apply = num_output_partitions - num_input_partitions
-
-    # Split by rows for now.
-    # In the future, maybe parameterize to allow alternatively splitting by size.
-    rows_by_partitions = [task.partition_metadata().num_rows for task in materializations]
-
-    # Calculate how to spread the required splits across all the partitions.
-    # Iteratively apply a split and update how many rows would be in the resulting partitions.
-    # After this loop, splits_per_partition has the final number of splits to apply to each partition.
-    rows_after_splitting = [float(_) for _ in rows_by_partitions]
-    for _ in range(num_splits_to_apply):
-        _, split_at = max((rows, index) for (index, rows) in enumerate(rows_after_splitting))
-        splits_per_partition[split_at] += 1
-        rows_after_splitting[split_at] = float(rows_by_partitions[split_at] / splits_per_partition[split_at])
-
-    # Emit the split partitions.
-    for task, num_out, num_rows in zip(consume_deque(materializations), splits_per_partition, rows_by_partitions):
-        if num_out == 1:
-            yield PartitionTaskBuilder[PartitionT](
-                inputs=[task.partition()],
-                partial_metadatas=[task.partition_metadata()],
-                resource_request=ResourceRequest(memory_bytes=task.partition_metadata().size_bytes),
+            num_out = (
+                base_splits_per_partition + 1
+                if input_partition_idx < num_partitions_with_extra_output
+                else base_splits_per_partition
             )
+            step = step.add_instruction(instruction=execution_step.FanoutEvenSlices(_num_outputs=num_out))
+            input_partition_idx += 1
+            yield step
         else:
-            boundaries = [math.ceil(num_rows * i / num_out) for i in range(num_out + 1)]
-            starts, ends = boundaries[:-1], boundaries[1:]
-            yield PartitionTaskBuilder[PartitionT](
-                inputs=[task.partition()],
-                partial_metadatas=[task.partition_metadata()],
-                resource_request=ResourceRequest(memory_bytes=task.partition_metadata().size_bytes),
-            ).add_instruction(
-                instruction=execution_step.FanoutSlices(_num_outputs=num_out, slices=list(zip(starts, ends)))
-            )
+            yield step
 
 
 def coalesce(
@@ -1297,7 +1517,6 @@ def coalesce(
 
     The current implementation only does partition merging, no rebalancing.
     """
-
     assert (
         to_num_partitions <= from_num_partitions
     ), f"Cannot coalesce upwards from {from_num_partitions} to {to_num_partitions} partitions."
@@ -1373,7 +1592,6 @@ def reduce(
 
     Then, the reduce instruction is applied to each `i`th slice across the child lists.
     """
-
     materializations = list()
     stage_id = next(stage_id_counter)
 
@@ -1415,10 +1633,10 @@ def sort(
     child_plan: InProgressPhysicalPlan[PartitionT],
     sort_by: ExpressionsProjection,
     descending: list[bool],
+    nulls_first: list[bool],
     num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Sort the result of `child_plan` according to `sort_info`."""
-
     # First, materialize the child plan.
     source_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     stage_id_children = next(stage_id_counter)
@@ -1470,6 +1688,7 @@ def sort(
                 num_quantiles=num_partitions,
                 sort_by=sort_by,
                 descending=descending,
+                nulls_first=nulls_first,
             ),
         )
         .finalize_partition_task_single_output(stage_id=stage_id_reduce)
@@ -1507,6 +1726,7 @@ def sort(
             execution_step.ReduceMergeAndSort(
                 sort_by=sort_by,
                 descending=descending,
+                nulls_first=nulls_first,
                 bounds=per_part_boundaries,
             )
             for per_part_boundaries in per_partition_bounds
@@ -1514,8 +1734,34 @@ def sort(
     )
 
 
-def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int):
-    """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions"""
+def top_n(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    sort_by: ExpressionsProjection,
+    descending: list[bool],
+    nulls_first: list[bool],
+    limit: int,
+    num_partitions: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Take the top N values from the result of `child_plan` according to `sort_info` and `limit`."""
+    # TODO: The current distributed top_n implementation will perform a full sort
+    # followed by a limit. This is not optimal, but upcoming infrastructure changes
+    # to the distributed execution engine will make it easier to add a more efficient
+    # distributed top_n implementation.
+
+    child_plan = sort(
+        child_plan=child_plan,
+        sort_by=sort_by,
+        descending=descending,
+        nulls_first=nulls_first,
+        num_partitions=num_partitions,
+    )
+    yield from global_limit(child_plan=child_plan, limit_rows=limit, eager=False, num_partitions=num_partitions)
+
+
+def fanout_random(
+    child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions."""
     seed = 0
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
@@ -1528,7 +1774,7 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
 def _best_effort_next_step(
     stage_id: int, child_plan: InProgressPhysicalPlan[PartitionT]
 ) -> tuple[PartitionTask[PartitionT] | None, bool]:
-    """Performs a best-effort attempt at retrieving the next step from a child plan
+    """Performs a best-effort attempt at retrieving the next step from a child plan.
 
     Returns None in cases where there is nothing to run, or the plan has been exhausted.
 
@@ -1542,7 +1788,7 @@ def _best_effort_next_step(
         return (None, False)
     else:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output(stage_id=stage_id)
+            step = step.finalize_partition_task_single_output(stage_id=stage_id, cache_metadata_on_done=False)
             return (step, True)
         elif isinstance(step, PartitionTask):
             return (step, False)
@@ -1550,7 +1796,7 @@ def _best_effort_next_step(
             return (None, False)
 
 
-class Materialize:
+class Materialize(Generic[PartitionT]):
     """Materialize the child plan.
 
     Repeatedly yields either a PartitionTask (to produce an intermediate partition)
@@ -1562,11 +1808,11 @@ class Materialize:
         child_plan: InProgressPhysicalPlan[PartitionT],
         results_buffer_size: int | None,
     ):
-        self.child_plan = child_plan
+        self.child_plan: InProgressPhysicalPlan[PartitionT] = child_plan
         self.materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
         self.results_buffer_size = results_buffer_size
 
-    def __iter__(self) -> MaterializedPhysicalPlan:
+    def __iter__(self) -> MaterializedPhysicalPlan[PartitionT]:
         num_materialized_yielded = 0
         num_intermediate_yielded = 0
         num_final_yielded = 0
@@ -1632,7 +1878,7 @@ class Materialize:
             try:
                 step = next(self.child_plan)
                 if isinstance(step, PartitionTaskBuilder):
-                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                    step = step.finalize_partition_task_single_output(stage_id=stage_id, cache_metadata_on_done=False)
                     self.materializations.append(step)
                     num_final_yielded += 1
                     logger.debug("[plan-%s] YIELDING final task (%s so far)", stage_id, num_final_yielded)

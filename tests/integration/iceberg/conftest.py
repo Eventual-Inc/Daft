@@ -1,15 +1,26 @@
 from __future__ import annotations
 
-from typing import Generator, TypeVar
+import sys
+from collections.abc import Generator, Iterator
+from typing import TypeVar
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 import pyarrow as pa
 import pytest
 
+import daft
+import daft.catalog
+
 pyiceberg = pytest.importorskip("pyiceberg")
 
-PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="iceberg writes only supported if pyarrow >= 8.0.0")
-
+PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
+pytestmark = pytest.mark.skipif(
+    PYARROW_LOWER_BOUND_SKIP, reason="iceberg writes not supported on old versions of pyarrow"
+)
 
 import tenacity
 from pyiceberg.catalog import Catalog, load_catalog
@@ -17,7 +28,7 @@ from pyiceberg.table import Table
 
 T = TypeVar("T")
 
-YieldFixture = Generator[T, None, None]
+YieldFixture: TypeAlias = Generator[T, None, None]
 
 local_tables_names = [
     "test_all_types",
@@ -45,18 +56,8 @@ cloud_tables_names = [
 ]
 
 
-@tenacity.retry(
-    stop=tenacity.stop_after_delay(60),
-    retry=tenacity.retry_if_exception_type(pyiceberg.exceptions.NoSuchTableError),
-    wait=tenacity.wait_fixed(5),
-    reraise=True,
-)
-def _load_table(catalog, name) -> Table:
-    return catalog.load_table(f"default.{name}")
-
-
 @pytest.fixture(scope="session")
-def local_iceberg_catalog() -> Catalog:
+def local_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
     cat = load_catalog(
         "local",
         **{
@@ -67,23 +68,20 @@ def local_iceberg_catalog() -> Catalog:
             "s3.secret-access-key": "password",
         },
     )
+
     # ensure all tables are available
     for name in local_tables_names:
         _load_table(cat, name)
 
-    return cat
-
-
-@pytest.fixture(scope="session", params=local_tables_names)
-def local_iceberg_tables(request, local_iceberg_catalog) -> Table:
-    NAMESPACE = "default"
-    table_name = request.param
-    return local_iceberg_catalog.load_table(f"{NAMESPACE}.{table_name}")
+    catalog_name = "_local_iceberg_catalog"
+    daft.attach_catalog(cat, alias=catalog_name)
+    yield catalog_name, cat
+    daft.detach_catalog(alias=catalog_name)
 
 
 @pytest.fixture(scope="session")
-def cloud_iceberg_catalog() -> Catalog:
-    return load_catalog(
+def azure_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
+    cat = load_catalog(
         "default",
         **{
             "uri": "sqlite:///tests/assets/pyiceberg_catalog.db",
@@ -91,7 +89,29 @@ def cloud_iceberg_catalog() -> Catalog:
         },
     )
 
+    catalog_name = "_azure_iceberg_catalog"
+    daft.attach_catalog(cat, alias=catalog_name)
+    yield catalog_name, cat
+    daft.detach_catalog(alias=catalog_name)
 
-@pytest.fixture(scope="session", params=cloud_tables_names)
-def cloud_iceberg_table(request, cloud_iceberg_catalog) -> Table:
-    return cloud_iceberg_catalog.load_table(request.param)
+
+@tenacity.retry(
+    stop=tenacity.stop_after_delay(60),
+    retry=tenacity.retry_if_exception_type(pyiceberg.exceptions.NoSuchTableError),
+    wait=tenacity.wait_fixed(5),
+    reraise=True,
+)
+def _load_table(catalog, name) -> Table:
+    return catalog.load_table(f"default.{name}")
+
+
+@pytest.fixture(scope="function", params=local_tables_names)
+def local_iceberg_tables(request, local_iceberg_catalog) -> Iterator[str]:
+    NAMESPACE = "default"
+    table_name = request.param
+    yield f"{NAMESPACE}.{table_name}"
+
+
+@pytest.fixture(scope="function", params=cloud_tables_names)
+def azure_iceberg_table(request, azure_iceberg_catalog) -> Iterator[str]:
+    yield request.param

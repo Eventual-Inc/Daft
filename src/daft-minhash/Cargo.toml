@@ -1,7 +1,25 @@
+[[bench]]
+harness = false
+name = "minhash"
+
+[[bench]]
+harness = false
+name = "windowed"
+
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
 fastrand = "2.1.0"
-mur3 = "0.1.0"
+memchr = "2.7.4"
+common-error.workspace = true
+
+[dev-dependencies]
+xxhash-rust = {workspace = true, features = ["xxh64", "xxh3"]}
+approx.workspace = true
+daft-hash.workspace = true
+proptest.workspace = true
+tango-bench.workspace = true
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}
