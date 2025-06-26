@@ -18,7 +18,7 @@ For other file formats, you will need to manually specify the path or glob patte
     ```python
     import daft
 
-    df = daft.read_parquet("hf://datasets/username/dataset_name")
+    df = daft.read_parquet("hf://datasets/username/dataset_name/data")
     ```
 
 This will read the entire dataset into a DataFrame.
@@ -30,9 +30,9 @@ Not only can you read entire datasets, but you can also read individual files fr
     ```python
     import daft
 
-    df = daft.read_parquet("hf://datasets/username/dataset_name/file_name.parquet")
+    df = daft.read_parquet("hf://datasets/username/dataset_name/data/file_name.parquet")
     # or a csv file
-    df = daft.read_csv("hf://datasets/username/dataset_name/file_name.csv")
+    df = daft.read_csv("hf://datasets/username/dataset_name/data/file_name.csv")
 
     # or a glob pattern
     df = daft.read_parquet("hf://datasets/username/dataset_name/**/*.parquet")
@@ -48,7 +48,7 @@ For authenticated datasets:
     from daft.io import IOConfig, HTTPConfig
 
     io_config = IoConfig(http=HTTPConfig(bearer_token="your_token"))
-    df = daft.read_parquet("hf://datasets/username/dataset_name", io_config=io_config)
+    df = daft.read_parquet("hf://datasets/username/dataset_name/data", io_config=io_config)
     ```
 
 It's important to note that this will not work with standard tier private datasets.
@@ -57,7 +57,7 @@ Hugging Face does not auto convert private datasets to parquet format, so you wi
 === "🐍 Python"
 
     ```python
-    df = daft.read_parquet("hf://datasets/username/my_private_dataset", io_config=io_config) # Errors
+    df = daft.read_parquet("hf://datasets/username/my_private_dataset/data", io_config=io_config) # Errors
     ```
 
 to get around this, you can read all files using a glob pattern *(assuming they are in parquet format)*
