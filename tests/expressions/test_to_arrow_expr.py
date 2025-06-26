@@ -149,8 +149,9 @@ def test_bitwise_functions(daft_expr: Expression, arrow_expr: str):
         (lit(1).log(5), "logb(1, 5)"),
         (lit(1).ln(), "ln(1)"),
         (lit(1).log1p(), "log1p(1)"),
-        (lit(1).exp(), "exp(1)"),
-        (lit(1).expm1(), "expm1(1)"),
+        # not available in older versions
+        # (lit(1).exp(), "exp(1)"),
+        # (lit(1).expm1(), "expm1(1)"),
         # not supported
         # (lit(1).cbrt(), "cbrt(1)"),
         # (lit(1).csc(), "csc(1)"),
