@@ -1757,6 +1757,20 @@ class DataFrame:
         return self.with_columns({column_name: expr})
 
     @DataframePublicAPI
+    def iter_batches(
+        self,
+        batch_size: int = 1024,
+        prefetch: int = 2,
+        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
+    ) -> Iterator[PyResultBatch]:
+        rust_batcher = rust_module.BatchIterator(
+            partitions_iter=self.iter_partitions(),
+            batch_size=batch_size,
+            prefetch_size=prefetch,
+        )
+        yield from rust_batcher
+
+    @DataframePublicAPI
     def with_columns(
         self,
         columns: dict[str, Expression],
