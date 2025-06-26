@@ -901,7 +901,7 @@ impl RecordBatch {
 
         for field in self.schema.as_ref() {
             res.push_str(
-                "<th style=\"text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left\">",
+                "<th style=\"text-wrap: nowrap; overflow:auto; text-align:left\">",
             );
             res.push_str(&html_escape::encode_text(&field.name));
             res.push_str("<br />");
@@ -922,7 +922,7 @@ impl RecordBatch {
         };
 
         let styled_td =
-            "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
+            "<td><div style=\"text-align:left; overflow:auto\">";
 
         for i in 0..head_rows {
             // Begin row.
