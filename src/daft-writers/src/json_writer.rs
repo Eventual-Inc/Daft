@@ -100,7 +100,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         }
         // TODO(desmond): This is a hack to estimate the size in bytes. Arrow-json currently doesn't support getting the
         // bytes written, nor does it allow us to access the LineDelimitedWriter's inner writer which prevents
-        // us from using a counting writer. We should fix this upstream.
+        // us from using a counting writer. We need to fix this upstream.
         let est_bytes_to_write = data.size_bytes()?.unwrap_or(0);
         self.bytes_written += est_bytes_to_write;
         let record_batches = data.get_tables()?;

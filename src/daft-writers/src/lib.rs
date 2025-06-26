@@ -153,10 +153,9 @@ pub fn make_physical_writer_factory(
             }
         }
         FileFormat::Json => {
-            // TODO(desmond): replace with json target filesize and inflation factor.
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
-                cfg.csv_target_filesize,
-                cfg.csv_inflation_factor,
+                cfg.json_target_filesize,
+                cfg.json_inflation_factor,
             );
 
             let file_writer_factory = TargetFileSizeWriterFactory::new(
