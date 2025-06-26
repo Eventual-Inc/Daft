@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from functools import cache
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from daft.dependencies import pc
@@ -242,11 +243,11 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
         pc_expr = self.visit(expr)
         pc_lower = self.visit(lower)
         pc_upper = self.visit(upper)
-        return (pc_lower <= pc_expr) and (pc_expr <= pc_upper)
+        return (pc_lower <= pc_expr) & (pc_expr <= pc_upper)
 
     def visit_is_in(self, expr: Expression, items: list[Expression]) -> pc.Expression:
         pc_expr = self.visit(expr)
-        pc_items = [self.visit(item) for item in items]
+        pc_items = [_get_lit(item) for item in items]
         return pc_expr.isin(pc_items)
 
     def visit_is_null(self, expr: Expression) -> pc.Expression:
@@ -273,3 +274,32 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
             raise ValueError(
                 f"pyarrow.compute has not function '{pc_name}', please see: https://arrow.apache.org/docs/python/api/compute.html."
             )
+
+
+@cache
+def _get_lit_visitor() -> _LitExtractor:
+    """Lazily initialized singleton."""
+    return _LitExtractor()
+
+
+def _get_lit(expr: Expression) -> Any:
+    return _get_lit_visitor().visit(expr)
+
+
+class _LitExtractor(ExpressionVisitor[Any]):
+    """Extracts a literal python value, otherwise error."""
+
+    def visit_col(self, name: str) -> Any:
+        raise ValueError("Expected literal, found column expression.")
+
+    def visit_lit(self, value: Any) -> Any:
+        return value
+
+    def visit_alias(self, expr: Expression, alias: str) -> Any:
+        raise ValueError("Expected literal, found alias expression.")
+
+    def visit_cast(self, expr: Expression, dtype: DataType) -> Any:
+        raise ValueError("Expected literal, found cast expression.")
+
+    def visit_function(self, name: str, args: list[Expression]) -> Any:
+        raise ValueError("Expected literal, found function expression.")
