@@ -583,6 +583,8 @@ impl DurationArray {
 macro_rules! pycast_then_arrowcast {
     ($self:expr, $daft_type:expr, $pytype_str:expr) => {
         {
+            use daft_schema::python::PyDataType;
+
             let old_pyseries = PySeries::from($self.clone().into_series());
 
             let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
@@ -598,10 +600,12 @@ macro_rules! pycast_then_arrowcast {
                         .getattr(pyo3::intern!(py, $pytype_str))?
                 };
 
+                let py_dtype = PyDataType { dtype: $daft_type.clone() };
+
                 old_daft_series
                     .call_method1(
                         (pyo3::intern!(py, "_pycast_to_pynative")),
-                        (py_type_fn,),
+                        (py_type_fn, py_dtype),
                     )?
                     .getattr(pyo3::intern!(py, "_series"))?
                     .extract()

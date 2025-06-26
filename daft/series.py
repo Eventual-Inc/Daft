@@ -103,6 +103,7 @@ class Series:
         data: list[Any],
         name: str = "list_series",
         pyobj: Literal["allow", "disallow", "force"] = "allow",
+        dtype: DataType | None = None,
     ) -> Series:
         """Construct a Series from a Python list.
 
@@ -117,6 +118,8 @@ class Series:
             pyobj: Whether we want to ``"allow"`` coercion to Arrow types, ``"disallow"``
                 falling back to Python type representation, or ``"force"`` the data to only
                 have a Python type representation. Default is ``"allow"``.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
         """
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
@@ -136,7 +139,7 @@ class Series:
                 np_arr = np.array(data)
                 arrow_array = pa.array(np_arr)
             else:
-                arrow_array = pa.array(data)
+                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
             return Series.from_arrow(arrow_array, name=name)
         except pa.lib.ArrowInvalid:
             if pyobj == "disallow":
@@ -222,7 +225,7 @@ class Series:
         pylist = self.to_pylist()
         return Series.from_pylist(pylist, self.name(), pyobj="force")
 
-    def _pycast_to_pynative(self, typefn: type) -> Series:
+    def _pycast_to_pynative(self, typefn: type, dtype: DataType) -> Series:
         """Apply Python-level casting to this Series.
 
         Call Series.to_pylist(), apply the Python cast (e.g. str(x)),
@@ -235,7 +238,7 @@ class Series:
         """
         pylist = self.to_pylist()
         pylist = [typefn(_) if _ is not None else None for _ in pylist]
-        return Series.from_pylist(pylist, self.name(), pyobj="disallow")
+        return Series.from_pylist(pylist, self.name(), pyobj="disallow", dtype=dtype)
 
     @staticmethod
     def concat(series: list[Series]) -> Series:
