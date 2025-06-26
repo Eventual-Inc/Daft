@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from functools import cache
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from daft.dependencies import pc
@@ -159,13 +158,6 @@ class PredicateVisitor(ExpressionVisitor[R]):
 class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
     """This visitor does a tree fold into the pyarrow.compute.Expression domain."""
 
-    # FUNCTION OVERRIDES
-    #
-    #   This maps daft functions to pyarrow.compute expression functions.
-    #   https://arrow.apache.org/docs/python/api/compute.html
-    #
-    _FUNCTION_OVERRIDES: dict[str, str] = {}
-
     def visit_col(self, name: str) -> pc.Expression:
         """Convert the daft column to pc field reference by name."""
         return pc.field(name)
@@ -247,7 +239,7 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
 
     def visit_is_in(self, expr: Expression, items: list[Expression]) -> pc.Expression:
         pc_expr = self.visit(expr)
-        pc_items = [_get_lit(item) for item in items]
+        pc_items = [item.as_py() for item in items]
         return pc_expr.isin(pc_items)
 
     def visit_is_null(self, expr: Expression) -> pc.Expression:
@@ -260,46 +252,72 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
 
     def visit_function(self, name: str, args: list[Expression]) -> pc.Expression:
         """Converting using either the EXACT function name or an override, otherwise error."""
-        pc_func = self._get_pc_func(name)
-        pc_args = [self.visit(arg) for arg in args]
-        return pc_func(pc_args)
+        if hasattr(self, "_" + name):
+            # special form, call the overriding method
+            return getattr(self, "_" + name)(*args)
+        else:
+            # normal form, call the pyarrow.compute method
+            pc_func = self._get_pc_func(name)
+            pc_args = [self.visit(arg) for arg in args]
+            return pc_func(*pc_args)
 
     def _get_pc_func(self, name: str) -> Any:
         """Resolve the pyarrow.compute function from the module, otherwise error."""
         try:
-            pc_name = self._FUNCTION_OVERRIDES.get(name, name)
+            pc_name = self._PC_FUNCTION_OVERRIDES.get(name, name)
             pc_func = getattr(pc, pc_name)
             return pc_func
         except AttributeError:
             raise ValueError(
-                f"pyarrow.compute has not function '{pc_name}', please see: https://arrow.apache.org/docs/python/api/compute.html."
+                f"pyarrow.compute has no function '{name}', please see: https://arrow.apache.org/docs/python/api/compute.html."
             )
 
+    # FUNCTION OVERRIDES
+    #
+    #   This maps daft functions to pyarrow.compute expression functions.
+    #   https://arrow.apache.org/docs/python/api/compute.html
+    #
+    #   Normal forms map to strings.
+    #   Special forms map to the special translation functions.
+    #
+    _PC_FUNCTION_OVERRIDES: dict[str, str] = {
+        "plus": "add",
+        "minus": "subtract",
+        # math overrides
+        "log": "logb",
+        "negative": "negate",
+        "arcsin": "asin",
+        "arccos": "acos",
+        "arctan": "atan",
+        "arctan2": "atan2",
+        # string overrides
+        "capitalize": "utf8_capitalize",
+    }
 
-@cache
-def _get_lit_visitor() -> _LitExtractor:
-    """Lazily initialized singleton."""
-    return _LitExtractor()
+    def _round(self, input: Expression, precision: Expression) -> pc.Expression:
+        pc_input = self.visit(input)
+        pc_precision = precision.as_py()  # must be a literal
+        return pc.round(pc_input, pc_precision)
 
+    def _count_matches(
+        self, input: Expression, pattern: Expression, whole_words: Expression, case_sensitive: Expression
+    ) -> pc.Expression:
+        pc_strings = self.visit(input)
+        pc_pattern = pattern.as_py()  # must be literal
+        pc_ignore_case = not case_sensitive.as_py()
+        return pc.count_substring(pc_strings, pc_pattern, ignore_case=pc_ignore_case)
 
-def _get_lit(expr: Expression) -> Any:
-    return _get_lit_visitor().visit(expr)
+    def _contains(self, input: Expression, substring: Expression) -> pc.Expression:
+        pc_strings = self.visit(input)
+        pc_pattern = substring.as_py()  # must be literal
+        return pc.match_substring(pc_strings, pc_pattern)
 
+    def _ends_with(self, input: Expression, suffix: Expression) -> pc.Expression:
+        pc_strings = self.visit(input)
+        pc_pattern = suffix.as_py()  # must be literal
+        return pc.ends_with(pc_strings, pc_pattern)
 
-class _LitExtractor(ExpressionVisitor[Any]):
-    """Extracts a literal python value, otherwise error."""
-
-    def visit_col(self, name: str) -> Any:
-        raise ValueError("Expected literal, found column expression.")
-
-    def visit_lit(self, value: Any) -> Any:
-        return value
-
-    def visit_alias(self, expr: Expression, alias: str) -> Any:
-        raise ValueError("Expected literal, found alias expression.")
-
-    def visit_cast(self, expr: Expression, dtype: DataType) -> Any:
-        raise ValueError("Expected literal, found cast expression.")
-
-    def visit_function(self, name: str, args: list[Expression]) -> Any:
-        raise ValueError("Expected literal, found function expression.")
+    def _starts_with(self, input: Expression, prefix: Expression) -> pc.Expression:
+        pc_strings = self.visit(input)
+        pc_pattern = prefix.as_py()  # must be literal
+        return pc.starts_with(pc_strings, pc_pattern)

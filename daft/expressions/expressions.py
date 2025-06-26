@@ -373,6 +373,10 @@ class Expression:
 
         return _PyArrowExpressionVisitor().visit(self)
 
+    def as_py(self) -> Any:
+        """Returns this literal expression as a python value, raises a ValueError if this is not a literal expression."""
+        return self._expr.as_py()
+
     @staticmethod
     def udf(
         name: builtins.str,

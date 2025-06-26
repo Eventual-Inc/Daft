@@ -1171,6 +1171,12 @@ class PyExpr:
     def _hash(self) -> int: ...
 
     ###
+    # Conversion methods
+    ###
+
+    def as_py(self) -> Any: ...
+
+    ###
     # Helper methods required by optimizer:
     # These should be removed from the Python API for Expressions when logical plans and optimizer are migrated to Rust
     ###
