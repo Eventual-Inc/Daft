@@ -8,9 +8,7 @@ from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
-from daft.dependencies import pc
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.pushdowns import Pushdowns
 from daft.io.scan import ScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
@@ -122,13 +120,9 @@ class LanceDBScanOperator(ScanOperator):
                 else pushdowns.columns + filter_required_column_names
             )
 
-        # convert to the python pushdowns
-        pds = Pushdowns._from_pypushdowns(pushdowns)
-
-        # convert the filter pushdown to pyarrow expression.
-        filter_ = self._get_filter_pushdown(pds)
-
-        fragments = self._ds.get_fragments(filter=filter_)
+        # TODO: figure out how to translate Pushdowns into LanceDB filters
+        filters = None
+        fragments = self._ds.get_fragments(filter=filters)
         for i, fragment in enumerate(fragments):
             # TODO: figure out how if we can get this metadata from LanceDB fragments cheaply
             size_bytes = None
@@ -152,13 +146,3 @@ class LanceDBScanOperator(ScanOperator):
                 pushdowns=pushdowns,
                 stats=stats,
             )
-
-    def _get_filter_pushdown(self, pushdowns: Pushdowns) -> pc.Expression:
-        if not pushdowns.filters:
-            return None
-        try:
-            # best attempt convert to pyarrow.compute.Expression
-            return pushdowns.filters.to_arrow_expr()
-        except ValueError:
-            # don't error, just accept that we couldn't push this down.
-            return None
