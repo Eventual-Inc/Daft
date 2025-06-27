@@ -176,10 +176,11 @@ class FlotillaPlanRunner:
     separate from the Ray actor wrapper.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, is_actor) -> None:
+        self.is_actor = is_actor
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[tuple[ray.ObjectRef, int, int]]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner()
+        self.plan_runner = DistributedPhysicalPlanRunner(is_actor=is_actor)
 
     def run_plan(
         self,
@@ -231,7 +232,7 @@ class LocalFlotillaPlanRunner:
         self.core = self.loop.run_until_complete(self._make_runner())
 
     async def _make_runner(self) -> FlotillaPlanRunner:
-        return FlotillaPlanRunner()
+        return FlotillaPlanRunner(False)
 
     def run_plan(
         self,
@@ -256,7 +257,7 @@ class RemoteFlotillaPlanRunner:
     """
 
     def __init__(self) -> None:
-        self.core = FlotillaPlanRunner()
+        self.core = FlotillaPlanRunner(True)
 
     def run_plan(
         self,

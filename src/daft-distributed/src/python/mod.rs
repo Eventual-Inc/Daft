@@ -102,15 +102,17 @@ impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {
     runner: Arc<PlanRunner<RaySwordfishWorker>>,
+    is_actor: bool,
 }
 
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new() -> PyResult<Self> {
+    fn new(is_actor: bool) -> PyResult<Self> {
         let worker_manager = RayWorkerManager::try_new()?;
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
+            is_actor,
         })
     }
 
@@ -132,7 +134,7 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
         let statistics_manager =
-            StatisticsManager::new(vec![Box::new(FlotillaProgressBar::try_new(py)?)]);
+            StatisticsManager::new(vec![Box::new(FlotillaProgressBar::try_new(py, self.is_actor)?)]);
         let plan_result = self
             .runner
             .run_plan(&plan.plan, psets, statistics_manager)?;
