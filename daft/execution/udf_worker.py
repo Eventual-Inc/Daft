@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 import traceback
 from multiprocessing.connection import Client
@@ -16,8 +15,6 @@ def udf_event_loop(
     secret: bytes,
     socket_path: str,
 ) -> None:
-    print("Initialized in process", os.getpid(), file=sys.stderr)
-
     # Initialize the client-side communication
     conn = Client(socket_path, authkey=secret)
 

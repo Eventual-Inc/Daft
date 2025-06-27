@@ -118,16 +118,10 @@ impl SplitActorPoolProjects {
 ///        └─────────────────┘  └────────────────────┘                 └───────────┘
 impl OptimizerRule for SplitActorPoolProjects {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        let out = plan.transform_down(|node| match node.as_ref() {
+        plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Project(projection) => try_optimize_project(projection, node.clone()),
             _ => Ok(Transformed::no(node)),
-        })?;
-
-        println!(
-            "SplitActorPoolProjects done\n{}",
-            out.data.repr_ascii(false)
-        );
-        Ok(out)
+        })
     }
 }
 
@@ -212,9 +206,8 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
                         e.clone()
                     }
                 });
-                println!("TruncateAnyActorPoolUDF");
+
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
-                println!("TruncateAnyActorPoolUDF done");
                 Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
             _ => Ok(common_treenode::Transformed::no(node)),
@@ -277,9 +270,8 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                         e.clone()
                     }
                 });
-                println!("TruncateAnyActorPoolUDFChildren");
+
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
-                println!("TruncateAnyActorPoolUDFChildren done");
                 Ok(common_treenode::Transformed::yes(new_truncated_node))
             }
         }
@@ -470,7 +462,12 @@ fn recursive_optimize_project(
         let mut child = new_plan;
 
         for expr in actor_pool_stages {
-            let passthrough_columns = child.schema().field_names().map(resolved_col).collect();
+            let passthrough_columns = child
+                .schema()
+                .field_names()
+                .map(resolved_col)
+                .filter(|c| c.name() != expr.name())
+                .collect();
             child = LogicalPlan::UDFProject(UDFProject::try_new(child, expr, passthrough_columns)?)
                 .arced();
         }

@@ -607,9 +607,7 @@ impl PushDownProjection {
                 Project::try_new(upstream_plan.clone(), pushdown_column_exprs)?.into()
             };
 
-            println!("try_optimize_udf_project");
             let new_udf_project = plan.with_new_children(&[new_subprojection.into()]);
-            println!("try_optimize_udf_project done");
             Ok(Transformed::yes(new_udf_project.into()))
         } else {
             Ok(Transformed::no(plan))
