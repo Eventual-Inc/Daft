@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::{
     plan::PlanID,
-    scheduling::task::{TaskContext, TaskName},
+    scheduling::task::{TaskContext, TaskName, TaskStatus},
 };
 
 #[allow(clippy::enum_variant_names)]
@@ -21,12 +21,34 @@ pub(crate) enum StatisticsEvent {
         context: TaskContext,
     },
     #[allow(dead_code)]
+    FailedTask {
+        context: TaskContext,
+    },
+    CancelledTask {
+        context: TaskContext,
+    },
+    #[allow(dead_code)]
     PlanStarted {
         plan_id: PlanID,
     },
     PlanFinished {
         plan_id: PlanID,
     },
+}
+
+impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
+    fn from((context, result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
+        match result {
+            Ok(status) => match status {
+                TaskStatus::Success { .. } => Self::FinishedTask { context },
+                TaskStatus::Failed { .. } => Self::FailedTask { context },
+                TaskStatus::Cancelled => Self::CancelledTask { context },
+                TaskStatus::WorkerDied => Self::FailedTask { context },
+                TaskStatus::WorkerUnavailable => Self::FailedTask { context },
+            },
+            Err(_) => Self::FailedTask { context },
+        }
+    }
 }
 
 pub(crate) trait StatisticsSubscriber: Send + Sync + 'static {

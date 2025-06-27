@@ -40,15 +40,6 @@ impl<T: Send + 'static> JoinSet<T> {
         }
     }
 
-    pub fn try_join_next(&mut self) -> Option<DaftResult<T>> {
-        let res = self.inner.try_join_next();
-        match res {
-            Some(Ok(result)) => Some(Ok(result)),
-            Some(Err(e)) => Some(Err(DaftError::External(e.into()))),
-            None => None,
-        }
-    }
-
     pub fn poll_join_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<DaftResult<T>>> {
         let res = self.inner.poll_join_next(cx);
         match res {
@@ -68,7 +59,6 @@ impl<T: Send + 'static> JoinSet<T> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn try_join_next_with_id(&mut self) -> Option<(JoinSetId, DaftResult<T>)> {
         let res = self.inner.try_join_next_with_id();
         match res {

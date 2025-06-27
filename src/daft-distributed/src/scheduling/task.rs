@@ -221,8 +221,6 @@ impl Task for SwordfishTask {
     }
 }
 
-pub(crate) type TaskResult = (TaskContext, TaskStatus);
-
 pub(crate) enum TaskStatus {
     Success { result: Vec<MaterializedOutput> },
     Failed { error: DaftError },
@@ -233,31 +231,29 @@ pub(crate) enum TaskStatus {
 
 pub(crate) trait TaskResultHandle: Send + Sync {
     fn task_context(&self) -> TaskContext;
-    fn get_result(&mut self) -> impl Future<Output = TaskResult> + Send + 'static;
+    fn get_result(&mut self) -> impl Future<Output = TaskStatus> + Send + 'static;
     fn cancel_callback(&mut self);
 }
 
 pub(crate) struct TaskResultAwaiter<H: TaskResultHandle> {
-    task_context: TaskContext,
     handle: H,
     cancel_token: CancellationToken,
 }
 
 impl<H: TaskResultHandle> TaskResultAwaiter<H> {
-    pub fn new(task_context: TaskContext, handle: H, cancel_token: CancellationToken) -> Self {
+    pub fn new(handle: H, cancel_token: CancellationToken) -> Self {
         Self {
-            task_context,
             handle,
             cancel_token,
         }
     }
 
-    pub async fn await_result(mut self) -> TaskResult {
+    pub async fn await_result(mut self) -> TaskStatus {
         tokio::select! {
             biased;
             () = self.cancel_token.cancelled() => {
                 self.handle.cancel_callback();
-                (self.task_context, TaskStatus::Cancelled)
+                TaskStatus::Cancelled
             }
             result = self.handle.get_result() => {
                 result
@@ -456,7 +452,7 @@ pub(super) mod tests {
             self.task.task_context
         }
 
-        fn get_result(&mut self) -> impl Future<Output = TaskResult> + Send + 'static {
+        fn get_result(&mut self) -> impl Future<Output = TaskStatus> + Send + 'static {
             let task = self.task.clone();
 
             async move {
@@ -466,24 +462,18 @@ pub(super) mod tests {
                 if let Some(failure) = task.failure {
                     match failure {
                         MockTaskFailure::Error(error_message) => {
-                            return (
-                                task.task_context,
-                                TaskStatus::Failed {
-                                    error: DaftError::InternalError(error_message.clone()),
-                                },
-                            );
+                            return TaskStatus::Failed {
+                                error: DaftError::InternalError(error_message.clone()),
+                            };
                         }
                         MockTaskFailure::Panic(error_message) => {
                             panic!("{}", error_message);
                         }
                     }
                 }
-                (
-                    task.task_context,
-                    TaskStatus::Success {
-                        result: task.task_result,
-                    },
-                )
+                TaskStatus::Success {
+                    result: task.task_result,
+                }
             }
         }
 

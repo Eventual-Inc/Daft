@@ -6,6 +6,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
@@ -498,7 +499,10 @@ def test_udf_with_error(use_actor_pool):
     assert re.search(pattern, str(exc_info.value)), f"String doesn't end with expected pattern: {exc_info.value!s}"
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.flotilla is False,
+    reason="requires Flotilla to be in use",
+)
 @pytest.mark.parametrize("use_actor_pool", [True, False])
 def test_udf_retry_with_process_killed_ray(use_actor_pool):
     import os

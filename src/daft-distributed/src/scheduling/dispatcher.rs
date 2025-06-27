@@ -4,25 +4,28 @@ use common_error::DaftResult;
 
 use super::{
     scheduler::{SchedulableTask, ScheduledTask},
-    task::{Task, TaskContext, TaskResult, TaskResultAwaiter, TaskStatus},
+    task::{Task, TaskResultAwaiter, TaskStatus},
     worker::{Worker, WorkerManager},
 };
 use crate::{
     scheduling::task::TaskResultHandle,
-    statistics::{StatisticsEvent, StatisticsManagerRef},
-    utils::joinset::JoinSet,
+    statistics::StatisticsManagerRef,
+    utils::joinset::{JoinSet, JoinSetId},
 };
 
 pub(super) struct Dispatcher<W: Worker> {
-    task_result_futures: JoinSet<TaskResult>,
-    running_tasks: HashMap<TaskContext, ScheduledTask<W::Task>>,
+    // JoinSet of task results futures
+    task_result_joinset: JoinSet<TaskStatus>,
+    // Mapping of joinset task id to the scheduled task
+    // The scheduled task is kept here so that we can reschedule the task if it fails
+    joinset_id_to_task: HashMap<JoinSetId, ScheduledTask<W::Task>>,
 }
 
 impl<W: Worker> Dispatcher<W> {
     pub fn new() -> Self {
         Self {
-            task_result_futures: JoinSet::new(),
-            running_tasks: HashMap::new(),
+            task_result_joinset: JoinSet::new(),
+            joinset_id_to_task: HashMap::new(),
         }
     }
 
@@ -32,12 +35,12 @@ impl<W: Worker> Dispatcher<W> {
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
     ) -> DaftResult<()> {
         let mut worker_to_tasks = HashMap::new();
+        let mut task_context_to_task = HashMap::new();
 
         for scheduled_task in scheduled_tasks {
             let worker_id = scheduled_task.worker_id();
             let task = scheduled_task.task();
-            self.running_tasks
-                .insert(task.task_context(), scheduled_task);
+            task_context_to_task.insert(task.task_context(), scheduled_task);
             worker_to_tasks
                 .entry(worker_id)
                 .or_insert_with(Vec::new)
@@ -46,17 +49,15 @@ impl<W: Worker> Dispatcher<W> {
 
         let result_handles = worker_manager.submit_tasks_to_workers(worker_to_tasks)?;
         for result_handle in result_handles {
-            let scheduled_task = self
-                .running_tasks
-                .get(&result_handle.task_context())
-                .expect("Task should be present in running_tasks");
-            let result_awaiter = TaskResultAwaiter::new(
-                result_handle.task_context(),
-                result_handle,
-                scheduled_task.cancel_token(),
-            );
-            self.task_result_futures
+            let scheduled_task = task_context_to_task
+                .remove(&result_handle.task_context())
+                .expect("Task should be present in task_context_to_task");
+            let result_awaiter =
+                TaskResultAwaiter::new(result_handle, scheduled_task.cancel_token());
+            let id = self
+                .task_result_joinset
                 .spawn(result_awaiter.await_result());
+            self.joinset_id_to_task.insert(id, scheduled_task);
         }
         Ok(())
     }
@@ -73,48 +74,69 @@ impl<W: Worker> Dispatcher<W> {
         let mut task_results = Vec::new();
 
         // Wait for at least one task to complete
-        if let Some(task_result) = self.task_result_futures.join_next().await {
-            task_results.push(task_result?);
+        if let Some((id, task_result)) = self.task_result_joinset.join_next_with_id().await {
+            task_results.push((id, task_result));
 
             // Collect any additional completed tasks that are immediately available
-            while let Some(task_result) = self.task_result_futures.try_join_next() {
-                task_results.push(task_result?);
+            while let Some((id, task_result)) = self.task_result_joinset.try_join_next_with_id() {
+                task_results.push((id, task_result));
             }
 
             // Process all completed tasks
-            for (task_context, task_status) in task_results {
+            for (id, task_result) in task_results {
                 let scheduled_task = self
-                    .running_tasks
-                    .remove(&task_context)
-                    .expect("Task should be present in running_tasks");
+                    .joinset_id_to_task
+                    .remove(&id)
+                    .expect("Task should be present in joinset_id_to_task");
                 let (worker_id, task, result_tx, canc) = scheduled_task.into_inner();
 
-                match task_status {
-                    TaskStatus::Success { result } => {
-                        worker_manager.mark_task_finished(task_context, worker_id);
-                        statistics_manager.handle_event(StatisticsEvent::FinishedTask {
-                            context: task_context,
-                        })?;
-                        let _ = result_tx.send(Ok(result));
-                    }
-                    TaskStatus::Failed { error } => {
-                        worker_manager.mark_task_finished(task_context, worker_id);
-                        let _ = result_tx.send(Err(error));
-                    }
-                    TaskStatus::Cancelled => {
-                        worker_manager.mark_task_finished(task_context, worker_id);
-                        statistics_manager.handle_event(StatisticsEvent::FinishedTask {
-                            context: task_context,
-                        })?;
-                    }
-                    TaskStatus::WorkerDied => {
-                        worker_manager.mark_worker_died(worker_id);
-                        let schedulable_task = SchedulableTask::new(task, result_tx, canc);
-                        failed_tasks.push(schedulable_task);
-                    }
-                    TaskStatus::WorkerUnavailable => {
-                        let schedulable_task = SchedulableTask::new(task, result_tx, canc);
-                        failed_tasks.push(schedulable_task);
+                // Always mark the task as finished regardless of the result
+                worker_manager.mark_task_finished(task.task_context(), worker_id.clone());
+                // Send the event to the statistics manager
+                statistics_manager.handle_event((task.task_context(), &task_result).into())?;
+
+                match task_result {
+                    Ok(task_status) => match task_status {
+                        // Task completed successfully, send the result to the result_tx
+                        TaskStatus::Success { result } => {
+                            if result_tx.send(Ok(result)).is_err() {
+                                eprintln!(
+                                    "Failed to send result of task {:?} to result_tx",
+                                    task.task_context()
+                                );
+                            }
+                        }
+                        // Task failed, send the error to the result_tx
+                        TaskStatus::Failed { error } => {
+                            if result_tx.send(Err(error)).is_err() {
+                                eprintln!(
+                                    "Failed to send error of task {:?} to result_tx",
+                                    task.task_context()
+                                );
+                            }
+                        }
+                        // Task cancelled, do nothing
+                        TaskStatus::Cancelled => {}
+                        // Task worker died, add the task to the failed tasks, and mark the worker as dead
+                        TaskStatus::WorkerDied => {
+                            worker_manager.mark_worker_died(worker_id);
+                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            failed_tasks.push(schedulable_task);
+                        }
+                        // Task worker unavailable, add the task to the failed tasks
+                        TaskStatus::WorkerUnavailable => {
+                            let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                            failed_tasks.push(schedulable_task);
+                        }
+                    },
+                    // Task failed because of panic in joinset, send the error to the result_tx
+                    Err(e) => {
+                        if result_tx.send(Err(e)).is_err() {
+                            eprintln!(
+                                "Failed to send error of task {:?} to result_tx",
+                                task.task_context()
+                            );
+                        }
                     }
                 }
             }
@@ -124,7 +146,7 @@ impl<W: Worker> Dispatcher<W> {
     }
 
     pub fn has_running_tasks(&self) -> bool {
-        !self.task_result_futures.is_empty()
+        !self.task_result_joinset.is_empty()
     }
 }
 
@@ -309,8 +331,9 @@ mod tests {
             .await?;
         assert!(failed_tasks.is_empty());
 
-        let result = submitted_task.await?;
-        assert_eq!(result.len(), 0);
+        let result = submitted_task.await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("test panic"));
 
         Ok(())
     }

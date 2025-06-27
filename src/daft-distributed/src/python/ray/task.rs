@@ -9,7 +9,7 @@ use pyo3::{pyclass, pymethods, PyObject, PyResult, Python};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, TaskContext, TaskResult, TaskResultHandle, TaskStatus},
+        task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
@@ -78,7 +78,7 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 
     /// Get the result of the task, awaiting if necessary
-    fn get_result(&mut self) -> impl Future<Output = TaskResult> + Send + 'static {
+    fn get_result(&mut self) -> impl Future<Output = TaskStatus> + Send + 'static {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
@@ -92,7 +92,6 @@ impl TaskResultHandle for RayTaskResultHandle {
         };
 
         let worker_id = self.worker_id.clone();
-        let task_context = self.task_context;
         async move {
             let ray_task_result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
                 .await
@@ -111,18 +110,13 @@ impl TaskResultHandle for RayTaskResultHandle {
                             )
                         })
                         .collect();
-                    (
-                        task_context,
-                        TaskStatus::Success {
-                            result: materialized_outputs,
-                        },
-                    )
+                    TaskStatus::Success {
+                        result: materialized_outputs,
+                    }
                 }
-                Ok(RayTaskResult::WorkerDied()) => (task_context, TaskStatus::WorkerDied),
-                Ok(RayTaskResult::WorkerUnavailable()) => {
-                    (task_context, TaskStatus::WorkerUnavailable)
-                }
-                Err(e) => (task_context, TaskStatus::Failed { error: e.into() }),
+                Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,
+                Ok(RayTaskResult::WorkerUnavailable()) => TaskStatus::WorkerUnavailable,
+                Err(e) => TaskStatus::Failed { error: e.into() },
             }
         }
     }

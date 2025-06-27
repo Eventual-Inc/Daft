@@ -635,16 +635,11 @@ mod tests {
             .build();
         let submittable_task = SubmittableTask::new(task);
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
-        let result = submitted_task.await?;
-        assert_eq!(result.len(), 0);
+        let result = submitted_task.await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("test panic"));
 
-        let test_context_result = test_context.cleanup().await;
-        assert!(test_context_result.is_err());
-        assert!(test_context_result
-            .unwrap_err()
-            .to_string()
-            .contains("test panic"));
-
+        test_context.cleanup().await?;
         Ok(())
     }
 

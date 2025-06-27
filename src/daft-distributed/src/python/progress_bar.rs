@@ -103,6 +103,13 @@ impl StatisticsSubscriber for FlotillaProgressBar {
                 self.close_bars(bar_ids);
                 Ok(())
             }
+            // We don't care about failed tasks as they will be retried
+            StatisticsEvent::FailedTask { .. } => Ok(()),
+            // We consider cancelled tasks as finished tasks
+            StatisticsEvent::CancelledTask { context } => {
+                self.update_bar(BarId::from(context))?;
+                Ok(())
+            }
         }
     }
 }
