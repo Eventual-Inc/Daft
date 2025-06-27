@@ -10,7 +10,7 @@ use crate::{
     },
     utils::{
         channel::{create_channel, Receiver, Sender},
-        joinset::JoinSet,
+        joinset::{JoinSet, OrderedJoinSet},
         stream::JoinableForwardingStream,
     },
 };
@@ -62,9 +62,10 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
         mut finalized_tasks_receiver: Receiver<DaftResult<FinalizedTask>>,
         tx: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: JoinSet<DaftResult<Vec<MaterializedOutput>>> = JoinSet::new();
+        let mut pending_tasks: OrderedJoinSet<DaftResult<Vec<MaterializedOutput>>> =
+            OrderedJoinSet::new();
         loop {
-            let num_pending = pending_tasks.len();
+            let num_pending = pending_tasks.num_pending();
             tokio::select! {
                 biased;
                 Some(finalized_task) = finalized_tasks_receiver.recv() => {
@@ -124,9 +125,10 @@ pub(crate) fn materialize_running_pipeline_outputs<T: Task>(
             + 'static,
         tx: Sender<PipelineOutput<T>>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: JoinSet<DaftResult<Vec<PipelineOutput<T>>>> = JoinSet::new();
+        let mut pending_tasks: OrderedJoinSet<DaftResult<Vec<PipelineOutput<T>>>> =
+            OrderedJoinSet::new();
         loop {
-            let num_pending = pending_tasks.len();
+            let num_pending = pending_tasks.num_pending();
 
             tokio::select! {
                 biased;
