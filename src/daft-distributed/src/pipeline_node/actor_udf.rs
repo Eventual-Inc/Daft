@@ -319,7 +319,6 @@ impl ActorUDF {
                 soft: false,
             },
             self.context.to_hashmap(),
-            self.context.node_id,
         ));
 
         Ok(task)
@@ -356,7 +355,6 @@ impl ActorUDF {
             psets,
             scheduling_strategy,
             self.context.to_hashmap(),
-            self.context.node_id,
         ));
         Ok(task)
     }
