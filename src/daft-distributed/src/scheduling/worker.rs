@@ -45,7 +45,9 @@ pub(crate) trait WorkerManager: Send + Sync {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::sync::{atomic::AtomicBool, Mutex};
+    use std::sync::atomic::AtomicBool;
+
+    use parking_lot::Mutex;
 
     use super::*;
     use crate::scheduling::tests::{MockTask, MockTaskResultHandle};
@@ -75,7 +77,7 @@ pub(super) mod tests {
             for (worker_id, tasks) in tasks_per_worker {
                 for task in tasks {
                     // Update the worker's active task count
-                    if let Some(worker) = self.workers.lock().unwrap().get(&worker_id) {
+                    if let Some(worker) = self.workers.lock().get(&worker_id) {
                         worker.add_active_task(&task);
                     }
                     result.push(MockTaskResultHandle::new(task));
@@ -85,13 +87,13 @@ pub(super) mod tests {
         }
 
         fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId) {
-            if let Some(worker) = self.workers.lock().unwrap().get(&worker_id) {
+            if let Some(worker) = self.workers.lock().get(&worker_id) {
                 worker.mark_task_finished(task_context);
             }
         }
 
         fn mark_worker_died(&self, worker_id: WorkerId) {
-            if let Some(worker) = self.workers.lock().unwrap().get(&worker_id) {
+            if let Some(worker) = self.workers.lock().get(&worker_id) {
                 worker.shutdown();
             }
         }
@@ -100,7 +102,6 @@ pub(super) mod tests {
             Ok(self
                 .workers
                 .lock()
-                .unwrap()
                 .values()
                 .map(WorkerSnapshot::from)
                 .collect())
@@ -109,7 +110,7 @@ pub(super) mod tests {
         fn try_autoscale(&self, _num_cpus: usize) -> DaftResult<()> {
             // add 1 worker for each num_cpus
             let num_workers = _num_cpus as usize;
-            let mut workers = self.workers.lock().unwrap();
+            let mut workers = self.workers.lock();
             let num_existing_workers = workers.len();
             for i in 0..num_workers {
                 let new_worker_id: WorkerId =
@@ -123,11 +124,7 @@ pub(super) mod tests {
         }
 
         fn shutdown(&self) -> DaftResult<()> {
-            self.workers
-                .lock()
-                .unwrap()
-                .values()
-                .for_each(|w| w.shutdown());
+            self.workers.lock().values().for_each(|w| w.shutdown());
             Ok(())
         }
     }
@@ -153,16 +150,12 @@ pub(super) mod tests {
         }
 
         pub fn mark_task_finished(&self, task_context: TaskContext) {
-            self.active_task_details
-                .lock()
-                .unwrap()
-                .remove(&task_context);
+            self.active_task_details.lock().remove(&task_context);
         }
 
         pub fn add_active_task(&self, task: &impl Task) {
             self.active_task_details
                 .lock()
-                .unwrap()
                 .insert(task.task_context(), TaskDetails::from(task));
         }
 
@@ -191,7 +184,6 @@ pub(super) mod tests {
         fn active_num_cpus(&self) -> f64 {
             self.active_task_details
                 .lock()
-                .expect("Active task ids should be present")
                 .values()
                 .map(|details| details.num_cpus())
                 .sum()
@@ -200,17 +192,13 @@ pub(super) mod tests {
         fn active_num_gpus(&self) -> f64 {
             self.active_task_details
                 .lock()
-                .expect("Active task ids should be present")
                 .values()
                 .map(|details| details.num_gpus())
                 .sum()
         }
 
         fn active_task_details(&self) -> HashMap<TaskContext, TaskDetails> {
-            self.active_task_details
-                .lock()
-                .expect("Active task ids should be present")
-                .clone()
+            self.active_task_details.lock().clone()
         }
     }
 }

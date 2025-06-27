@@ -16,15 +16,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Literal,
-    Optional,
-    TypeVar,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union, overload
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -1315,7 +1307,18 @@ class DataFrame:
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
         return column_inputs_to_expressions(column_input)
 
-    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
+    if TYPE_CHECKING:
+
+        @overload
+        def __getitem__(self, item: int) -> Expression: ...
+        @overload
+        def __getitem__(self, item: str) -> Expression: ...
+        @overload
+        def __getitem__(self, item: slice) -> "DataFrame": ...
+        @overload
+        def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
+
+    def __getitem__(self, item: Union[int, str, slice, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)."""
         result: Optional[Expression]
 
@@ -3683,7 +3686,18 @@ class GroupedDataFrame:
             if field.dtype == DataType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
-    def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, DataFrame]:
+    if TYPE_CHECKING:
+
+        @overload
+        def __getitem__(self, item: int) -> Expression: ...
+        @overload
+        def __getitem__(self, item: str) -> Expression: ...
+        @overload
+        def __getitem__(self, item: slice) -> DataFrame: ...
+        @overload
+        def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
+
+    def __getitem__(self, item: Union[int, str, slice, Iterable[Union[str, int]]]) -> Union[Expression, DataFrame]:
         """Gets a column from the DataFrame as an Expression."""
         return self.df.__getitem__(item)
 

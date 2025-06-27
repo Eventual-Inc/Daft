@@ -65,9 +65,9 @@ impl WorkerManager for RayWorkerManager {
             let mut task_result_handles =
                 Vec::with_capacity(tasks_per_worker.values().map(|v| v.len()).sum());
 
-            let mut workers_guard = self.ray_workers.lock();
+            let mut workers = self.ray_workers.lock();
             for (worker_id, tasks) in tasks_per_worker {
-                let handles = workers_guard
+                let handles = workers
                     .get_mut(&worker_id)
                     .expect("Worker should be present in RayWorkerManager")
                     .submit_tasks(tasks, py, &self.task_locals)?;
@@ -87,8 +87,8 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId) {
-        let mut workers_guard = self.ray_workers.lock();
-        workers_guard
+        let mut workers = self.ray_workers.lock();
+        workers
             .get_mut(&worker_id)
             .expect("Worker should be present in RayWorkerManager")
             .mark_task_finished(&task_context);

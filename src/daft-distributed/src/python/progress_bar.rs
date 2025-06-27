@@ -1,6 +1,7 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::collections::HashMap;
 
 use common_error::DaftResult;
+use parking_lot::Mutex;
 use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
 
 use crate::{
@@ -80,7 +81,6 @@ impl StatisticsSubscriber for FlotillaProgressBar {
                 let bar_id = BarId::from(context);
                 self.bar_ids_by_plan_id
                     .lock()
-                    .unwrap()
                     .entry(context.plan_id)
                     .or_default()
                     .push(bar_id);
@@ -98,7 +98,6 @@ impl StatisticsSubscriber for FlotillaProgressBar {
                 let bar_ids = self
                     .bar_ids_by_plan_id
                     .lock()
-                    .unwrap()
                     .remove(plan_id)
                     .unwrap_or_default();
                 self.close_bars(bar_ids);
