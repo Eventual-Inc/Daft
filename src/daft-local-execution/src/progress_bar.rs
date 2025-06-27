@@ -1,9 +1,9 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use common_error::DaftResult;
@@ -59,9 +59,15 @@ impl ProgressBarColor {
 pub struct OperatorProgressBar {
     inner_progress_bar: Box<dyn ProgressBar>,
     runtime_stats: Arc<RuntimeStatsContext>,
+    start_time: Instant,
+    last_update: AtomicU64,
 }
 
 impl OperatorProgressBar {
+    // 500ms = 500_000_000ns
+    // Only throttles the text updates, not the spinner
+    const UPDATE_INTERVAL: u64 = 500_000_000;
+
     pub fn new(
         progress_bar: Box<dyn ProgressBar>,
         runtime_stats: Arc<RuntimeStatsContext>,
@@ -69,13 +75,43 @@ impl OperatorProgressBar {
         Self {
             inner_progress_bar: progress_bar,
             runtime_stats,
+            start_time: Instant::now(),
+            last_update: AtomicU64::new(0),
+        }
+    }
+
+    fn should_update_progress_bar(&self, now: Instant) -> bool {
+        if now < self.start_time {
+            return false;
+        }
+
+        {
+            {
+                let prev = self.last_update.load(Ordering::Acquire);
+                let elapsed = (now - self.start_time).as_nanos() as u64;
+                let diff = elapsed.saturating_sub(prev);
+
+                // Fast path - check if enough time has passed
+                if diff < Self::UPDATE_INTERVAL {
+                    return false;
+                }
+
+                // Only calculate remainder if we're actually going to update
+                let remainder = diff % Self::UPDATE_INTERVAL;
+                self.last_update
+                    .store(elapsed - remainder, Ordering::Release);
+                true
+            }
         }
     }
 
     pub fn render(&self) {
-        let _ = self
-            .inner_progress_bar
-            .set_message(self.runtime_stats.render());
+        let now = std::time::Instant::now();
+        if self.should_update_progress_bar(now) {
+            let _ = self
+                .inner_progress_bar
+                .set_message(self.runtime_stats.render());
+        }
     }
 }
 
@@ -85,23 +121,26 @@ impl Drop for OperatorProgressBar {
     }
 }
 
-struct IndicatifProgressBar(indicatif::ProgressBar, AtomicBool);
+struct IndicatifProgressBar {
+    progress_bar: indicatif::ProgressBar,
+    started: AtomicBool,
+}
 
-const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
+const TICK_INTERVAL: Duration = Duration::from_millis(100);
 
 impl ProgressBar for IndicatifProgressBar {
     fn set_message(&self, stats: IndexMap<&'static str, String>) -> DaftResult<()> {
-        if !self.1.load(Ordering::Acquire) {
-            self.0.enable_steady_tick(UPDATE_INTERVAL);
-            self.1.store(true, Ordering::Release);
+        if !self.started.load(Ordering::Acquire) {
+            self.progress_bar.enable_steady_tick(TICK_INTERVAL);
+            self.started.store(true, Ordering::Release);
         }
 
-        self.0.set_message(stats_to_message(stats));
+        self.progress_bar.set_message(stats_to_message(stats));
         Ok(())
     }
 
     fn close(&self) -> DaftResult<()> {
-        self.0.finish();
+        self.progress_bar.finish();
         Ok(())
     }
 }
@@ -152,7 +191,10 @@ impl ProgressBarManager for IndicatifProgressBarManager {
             )
             .with_prefix(formatted_prefix);
         self.multi_progress.insert(0, pb.clone());
-        DaftResult::Ok(Box::new(IndicatifProgressBar(pb, AtomicBool::new(false))))
+        DaftResult::Ok(Box::new(IndicatifProgressBar {
+            progress_bar: pb,
+            started: AtomicBool::new(false),
+        }))
     }
 
     fn close_all(&self) -> DaftResult<()> {
