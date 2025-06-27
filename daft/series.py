@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     import builtins
     from collections.abc import Iterator
 
+    from daft.daft import PyDataType
+
 
 class SeriesIterable:
     """Iterable wrapper for Series that efficiently handles different data types."""
@@ -225,7 +227,7 @@ class Series:
         pylist = self.to_pylist()
         return Series.from_pylist(pylist, self.name(), pyobj="force")
 
-    def _pycast_to_pynative(self, typefn: type, dtype: DataType) -> Series:
+    def _pycast_to_pynative(self, typefn: type, dtype: PyDataType) -> Series:
         """Apply Python-level casting to this Series.
 
         Call Series.to_pylist(), apply the Python cast (e.g. str(x)),
@@ -238,7 +240,7 @@ class Series:
         """
         pylist = self.to_pylist()
         pylist = [typefn(_) if _ is not None else None for _ in pylist]
-        return Series.from_pylist(pylist, self.name(), pyobj="disallow", dtype=dtype)
+        return Series.from_pylist(pylist, self.name(), pyobj="disallow", dtype=DataType._from_pydatatype(dtype))
 
     @staticmethod
     def concat(series: list[Series]) -> Series:
