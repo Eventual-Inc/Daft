@@ -37,7 +37,7 @@ from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, TimeUnit
-from daft.dependencies import pa
+from daft.dependencies import pa, pc
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
@@ -366,6 +366,16 @@ class Expression:
             return obj
         else:
             return lit(obj)
+
+    def to_arrow_expr(self) -> pc.Expression:
+        """Returns this expression as a pyarrow.compute.Expression for integrations with other systems."""
+        from daft.expressions.visitor import _PyArrowExpressionVisitor
+
+        return _PyArrowExpressionVisitor().visit(self)
+
+    def as_py(self) -> Any:
+        """Returns this literal expression as a python value, raises a ValueError if this is not a literal expression."""
+        return self._expr.as_py()
 
     @staticmethod
     def udf(

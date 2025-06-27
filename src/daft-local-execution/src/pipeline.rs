@@ -269,6 +269,7 @@ pub fn physical_plan_to_pipeline(
             partition_by,
             order_by,
             descending,
+            nulls_first,
             schema,
             stats_state,
             functions,
@@ -281,6 +282,7 @@ pub fn physical_plan_to_pipeline(
                 partition_by,
                 order_by,
                 descending,
+                nulls_first,
                 schema,
             )
             .with_context(|_| PipelineCreationSnafu {
@@ -299,6 +301,7 @@ pub fn physical_plan_to_pipeline(
             partition_by,
             order_by,
             descending,
+            nulls_first,
             frame,
             min_periods,
             schema,
@@ -314,6 +317,7 @@ pub fn physical_plan_to_pipeline(
                 partition_by,
                 order_by,
                 descending,
+                nulls_first,
                 frame,
                 schema,
             )
@@ -332,17 +336,24 @@ pub fn physical_plan_to_pipeline(
             input,
             order_by,
             descending,
+            nulls_first,
             schema,
             stats_state,
             functions,
             aliases,
         }) => {
             let input_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let window_order_by_only_op =
-                WindowOrderByOnlySink::new(functions, aliases, order_by, descending, schema)
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let window_order_by_only_op = WindowOrderByOnlySink::new(
+                functions,
+                aliases,
+                order_by,
+                descending,
+                nulls_first,
+                schema,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             BlockingSinkNode::new(
                 Arc::new(window_order_by_only_op),
                 input_node,

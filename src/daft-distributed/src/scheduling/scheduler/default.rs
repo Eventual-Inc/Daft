@@ -2,6 +2,7 @@ use std::collections::{BinaryHeap, HashMap};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
+    autoscaler::AutoscalerRequest,
     task::{SchedulingStrategy, Task, TaskDetails},
     worker::WorkerId,
 };
@@ -111,6 +112,16 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
 
     fn num_pending_tasks(&self) -> usize {
         self.pending_tasks.len()
+    }
+
+    fn get_autoscaling_request(&mut self) -> Option<AutoscalerRequest> {
+        // if there's no workers, we need to scale up by the number of pending tasks
+        if self.worker_snapshots.is_empty() {
+            return Some(AutoscalerRequest::ScaleUp {
+                workers: self.pending_tasks.len(),
+            });
+        }
+        None
     }
 }
 
@@ -530,5 +541,22 @@ mod tests {
 
         assert_eq!(*worker_task_counts.get(&worker_1).unwrap(), 1);
         assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_default_scheduler_with_no_workers_can_autoscale() {
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&HashMap::new());
+
+        let tasks = vec![create_spread_task()];
+
+        scheduler.enqueue_tasks(tasks);
+        let result = scheduler.get_schedulable_tasks();
+
+        assert_eq!(result.len(), 0);
+        assert_eq!(scheduler.num_pending_tasks(), 1);
+        assert_eq!(
+            scheduler.get_autoscaling_request(),
+            Some(AutoscalerRequest::ScaleUp { workers: 1 })
+        );
     }
 }
