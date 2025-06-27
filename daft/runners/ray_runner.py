@@ -995,10 +995,10 @@ class Scheduler(ActorPoolManager):
             # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread
             except Exception as e:
                 self._place_in_queue(result_uuid, e)
-                pbar.close()
+                pbar.close_all()
                 raise
 
-        pbar.close()
+        pbar.close_all()
 
     @contextlib.contextmanager
     def actor_pool_context(

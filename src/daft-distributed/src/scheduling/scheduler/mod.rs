@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskID, TaskPriority},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskPriority},
     worker::{Worker, WorkerId},
 };
 use crate::{
@@ -16,7 +16,7 @@ mod scheduler_actor;
 
 use common_error::DaftResult;
 pub(crate) use scheduler_actor::{
-    spawn_default_scheduler_actor, SchedulerHandle, SubmittableTask, SubmittedTask,
+    spawn_default_scheduler_actor, SchedulerHandle, SchedulerSender, SubmittableTask, SubmittedTask,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -94,24 +94,44 @@ impl<T: Task> Ord for SchedulableTask<T> {
 
 #[derive(Debug)]
 pub(super) struct ScheduledTask<T: Task> {
-    schedulable_task: SchedulableTask<T>,
+    task: T,
+    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+    cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
 
 impl<T: Task> ScheduledTask<T> {
     pub fn new(task: SchedulableTask<T>, worker_id: WorkerId) -> Self {
+        let (task, result_tx, cancel_token) = task.into_inner();
         Self {
-            schedulable_task: task,
+            task,
+            result_tx,
+            cancel_token,
             worker_id,
         }
     }
 
-    pub fn task(&self) -> &T {
-        &self.schedulable_task.task
+    pub fn worker_id(&self) -> WorkerId {
+        self.worker_id.clone()
     }
 
-    pub fn into_inner(self) -> (WorkerId, SchedulableTask<T>) {
-        (self.worker_id, self.schedulable_task)
+    pub fn task(&self) -> T {
+        self.task.clone()
+    }
+
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.clone()
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        WorkerId,
+        T,
+        OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        CancellationToken,
+    ) {
+        (self.worker_id, self.task, self.result_tx, self.cancel_token)
     }
 }
 
@@ -120,7 +140,7 @@ pub(crate) struct WorkerSnapshot {
     worker_id: WorkerId,
     total_num_cpus: f64,
     total_num_gpus: f64,
-    active_task_details: HashMap<TaskID, TaskDetails>,
+    active_task_details: HashMap<TaskContext, TaskDetails>,
 }
 
 impl WorkerSnapshot {
@@ -128,7 +148,7 @@ impl WorkerSnapshot {
         worker_id: WorkerId,
         total_num_cpus: f64,
         total_num_gpus: f64,
-        active_task_details: HashMap<TaskID, TaskDetails>,
+        active_task_details: HashMap<TaskContext, TaskDetails>,
     ) -> Self {
         Self {
             worker_id,

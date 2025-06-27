@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, future::Future, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use daft_local_plan::LocalPhysicalPlanRef;
@@ -12,7 +12,6 @@ use crate::{
     pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext},
     plan::PlanID,
     stage::StageID,
-    utils::channel::OneshotSender,
 };
 
 #[derive(Debug, Clone)]
@@ -74,7 +73,7 @@ impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
     }
 }
 
-pub(crate) trait Task: Send + Sync + Debug + 'static {
+pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     fn priority(&self) -> TaskPriority;
     fn task_context(&self) -> TaskContext;
     fn resource_request(&self) -> &TaskResourceRequest;
@@ -222,58 +221,46 @@ impl Task for SwordfishTask {
     }
 }
 
-pub(crate) trait TaskResultHandle: Send + Sync {
-    fn get_result(
-        &mut self,
-    ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static;
-    fn cancel_callback(&mut self) -> DaftResult<()>;
+pub(crate) type TaskResult = (TaskContext, TaskStatus);
+
+pub(crate) enum TaskStatus {
+    Success { result: Vec<MaterializedOutput> },
+    Failed { error: DaftError },
+    Cancelled,
+    WorkerDied,
+    WorkerUnavailable,
 }
 
-pub(crate) struct TaskResultHandleAwaiter<H: TaskResultHandle> {
+pub(crate) trait TaskResultHandle: Send + Sync {
+    fn task_context(&self) -> TaskContext;
+    fn get_result(&mut self) -> impl Future<Output = TaskResult> + Send + 'static;
+    fn cancel_callback(&mut self);
+}
+
+pub(crate) struct TaskResultAwaiter<H: TaskResultHandle> {
     task_context: TaskContext,
-    worker_id: WorkerId,
     handle: H,
-    result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
-impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
-    pub fn new(
-        task_context: TaskContext,
-        worker_id: WorkerId,
-        handle: H,
-        result_sender: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
-        cancel_token: CancellationToken,
-    ) -> Self {
+impl<H: TaskResultHandle> TaskResultAwaiter<H> {
+    pub fn new(task_context: TaskContext, handle: H, cancel_token: CancellationToken) -> Self {
         Self {
             task_context,
-            worker_id,
             handle,
-            result_sender,
             cancel_token,
         }
     }
 
-    pub fn task_context(&self) -> TaskContext {
-        self.task_context
-    }
-
-    pub fn worker_id(&self) -> &WorkerId {
-        &self.worker_id
-    }
-
-    pub async fn await_result(mut self) {
+    pub async fn await_result(mut self) -> TaskResult {
         tokio::select! {
             biased;
             () = self.cancel_token.cancelled() => {
-                if let Err(e) = self.handle.cancel_callback() {
-                    tracing::debug!("Failed to cancel task: {}", e);
-                }
+                self.handle.cancel_callback();
+                (self.task_context, TaskStatus::Cancelled)
             }
             result = self.handle.get_result() => {
-                if self.result_sender.send(result).is_err() {
-                    tracing::debug!("Task result receiver was dropped before task result could be sent");
-                }
+                result
             }
         }
     }
@@ -283,8 +270,9 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
 pub(super) mod tests {
     use std::{any::Any, time::Duration};
 
-    use common_error::DaftError;
+    use common_error::{DaftError, DaftResult};
     use common_partitioning::Partition;
+    use parking_lot::Mutex;
 
     use super::*;
     use crate::utils::channel::OneshotSender;
@@ -322,7 +310,7 @@ pub(super) mod tests {
         Arc::new(MockPartition::new(num_rows, size_bytes))
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct MockTask {
         task_context: TaskContext,
         task_name: TaskName,
@@ -330,7 +318,7 @@ pub(super) mod tests {
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
         task_result: Vec<MaterializedOutput>,
-        cancel_notifier: Option<OneshotSender<()>>,
+        cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
     }
@@ -349,7 +337,7 @@ pub(super) mod tests {
         scheduling_strategy: SchedulingStrategy,
         task_result: Vec<MaterializedOutput>,
         resource_request: TaskResourceRequest,
-        cancel_notifier: Option<OneshotSender<()>>,
+        cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<Duration>,
         failure: Option<MockTaskFailure>,
     }
@@ -370,7 +358,7 @@ pub(super) mod tests {
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
                 task_result: vec![MaterializedOutput::new(partition_ref, "".into())],
-                cancel_notifier: None,
+                cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,
                 failure: None,
             }
@@ -399,7 +387,7 @@ pub(super) mod tests {
 
         /// Set a cancel marker
         pub fn with_cancel_notifier(mut self, cancel_notifier: OneshotSender<()>) -> Self {
-            self.cancel_notifier = Some(cancel_notifier);
+            self.cancel_notifier = Arc::new(Mutex::new(Some(cancel_notifier)));
             self
         }
 
@@ -454,54 +442,56 @@ pub(super) mod tests {
 
     /// A mock implementation of the SwordfishTaskResultHandle trait for testing
     pub struct MockTaskResultHandle {
-        result: Vec<MaterializedOutput>,
-        sleep_duration: Option<Duration>,
-        cancel_notifier: Option<OneshotSender<()>>,
-        failure: Option<MockTaskFailure>,
+        task: MockTask,
     }
 
     impl MockTaskResultHandle {
         pub fn new(task: MockTask) -> Self {
-            Self {
-                result: task.task_result,
-                sleep_duration: task.sleep_duration,
-                cancel_notifier: task.cancel_notifier,
-                failure: task.failure,
-            }
+            Self { task }
         }
     }
 
     impl TaskResultHandle for MockTaskResultHandle {
-        fn get_result(
-            &mut self,
-        ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static {
-            let sleep_duration = self.sleep_duration.clone();
-            let failure = self.failure.clone();
-            let result = self.result.clone();
+        fn task_context(&self) -> TaskContext {
+            self.task.task_context
+        }
+
+        fn get_result(&mut self) -> impl Future<Output = TaskResult> + Send + 'static {
+            let task = self.task.clone();
 
             async move {
-                if let Some(sleep_duration) = sleep_duration {
+                if let Some(sleep_duration) = task.sleep_duration {
                     tokio::time::sleep(sleep_duration).await;
                 }
-                if let Some(failure) = failure {
+                if let Some(failure) = task.failure {
                     match failure {
                         MockTaskFailure::Error(error_message) => {
-                            return Err(DaftError::InternalError(error_message.clone()));
+                            return (
+                                task.task_context,
+                                TaskStatus::Failed {
+                                    error: DaftError::InternalError(error_message.clone()),
+                                },
+                            );
                         }
                         MockTaskFailure::Panic(error_message) => {
                             panic!("{}", error_message);
                         }
                     }
                 }
-                Ok(result)
+                (
+                    task.task_context,
+                    TaskStatus::Success {
+                        result: task.task_result,
+                    },
+                )
             }
         }
 
-        fn cancel_callback(&mut self) -> DaftResult<()> {
-            if let Some(cancel_notifier) = self.cancel_notifier.take() {
-                cancel_notifier.send(()).unwrap();
+        fn cancel_callback(&mut self) {
+            let mut cancel_notifier = self.task.cancel_notifier.lock();
+            if let Some(cancel_notifier) = cancel_notifier.take() {
+                let _ = cancel_notifier.send(());
             }
-            Ok(())
         }
     }
 }

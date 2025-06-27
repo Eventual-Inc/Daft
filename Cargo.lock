@@ -2513,6 +2513,7 @@ dependencies = [
  "daft-schema",
  "futures",
  "itertools 0.14.0",
+ "parking_lot 0.12.4",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",

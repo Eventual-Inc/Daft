@@ -5,14 +5,19 @@ use common_error::{DaftError, DaftResult};
 use super::{
     scheduler::{ScheduledTask, WorkerSnapshot},
     task::Task,
-    worker::{Worker, WorkerId, WorkerManager},
+    worker::{Worker, WorkerManager},
 };
 use crate::{
-    scheduling::task::TaskContext,
+    scheduling::{
+        scheduler::{SchedulableTask, SchedulerSender},
+        task::{TaskContext, TaskResult, TaskResultAwaiter, TaskResultHandle, TaskStatus},
+    },
     statistics::{StatisticsEvent, StatisticsManagerRef},
     utils::{
-        channel::{create_channel, Receiver, Sender},
-        joinset::{JoinSet, JoinSetId},
+        channel::{
+            create_channel, create_watch_channel, Receiver, Sender, WatchReceiver, WatchSender,
+        },
+        joinset::JoinSet,
     },
 };
 
@@ -31,13 +36,15 @@ impl<W: Worker> DispatcherActor<W> {
         dispatcher: Self,
         joinset: &mut JoinSet<DaftResult<()>>,
         statistics_manager: StatisticsManagerRef,
+        failed_task_sender: SchedulerSender<W::Task>,
     ) -> DispatcherHandle<W::Task> {
         let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
-        let (worker_update_sender, worker_update_receiver) = tokio::sync::watch::channel(vec![]);
+        let (worker_update_sender, worker_update_receiver) = create_watch_channel(vec![]);
         joinset.spawn(Self::run_dispatcher_loop(
             dispatcher.worker_manager,
             dispatcher_receiver,
             worker_update_sender,
+            failed_task_sender,
             statistics_manager,
         ));
         DispatcherHandle::new(dispatcher_sender, worker_update_receiver)
@@ -46,13 +53,15 @@ impl<W: Worker> DispatcherActor<W> {
     fn dispatch_tasks(
         scheduled_tasks: Vec<ScheduledTask<W::Task>>,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
-        running_tasks: &mut JoinSet<()>,
-        running_tasks_by_context: &mut HashMap<JoinSetId, (TaskContext, WorkerId)>,
+        task_result_futures: &mut JoinSet<TaskResult>,
+        running_tasks: &mut HashMap<TaskContext, ScheduledTask<W::Task>>,
     ) -> DaftResult<()> {
         let mut worker_to_tasks = HashMap::new();
 
         for scheduled_task in scheduled_tasks {
-            let (worker_id, task) = scheduled_task.into_inner();
+            let worker_id = scheduled_task.worker_id();
+            let task = scheduled_task.task();
+            running_tasks.insert(task.task_context(), scheduled_task);
             worker_to_tasks
                 .entry(worker_id)
                 .or_insert_with(Vec::new)
@@ -61,54 +70,68 @@ impl<W: Worker> DispatcherActor<W> {
 
         let result_handles = worker_manager.submit_tasks_to_workers(worker_to_tasks)?;
         for result_handle in result_handles {
-            let (task_context, worker_id) = (
+            let scheduled_task = running_tasks
+                .get(&result_handle.task_context())
+                .expect("Task should be present in running_tasks");
+            let result_awaiter = TaskResultAwaiter::new(
                 result_handle.task_context(),
-                result_handle.worker_id().clone(),
+                result_handle,
+                scheduled_task.cancel_token(),
             );
-            let id = running_tasks.spawn(result_handle.await_result());
-            running_tasks_by_context.insert(id, (task_context, worker_id));
+            task_result_futures.spawn(result_awaiter.await_result());
         }
         Ok(())
     }
 
-    async fn handle_finished_task(
-        finished_joinset_id: JoinSetId,
-        finished_task_result: DaftResult<()>,
-        running_tasks_by_context: &mut HashMap<JoinSetId, (TaskContext, WorkerId)>,
-        running_tasks: &mut JoinSet<()>,
+    async fn handle_finished_tasks(
+        task_results: Vec<TaskResult>,
+        running_tasks: &mut HashMap<TaskContext, ScheduledTask<W::Task>>,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
-        worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+        worker_update_sender: &WatchSender<Vec<WorkerSnapshot>>,
+        failed_task_sender: &SchedulerSender<W::Task>,
         statistics_manager: &StatisticsManagerRef,
     ) -> DaftResult<()> {
-        // Remove the first task from the running_tasks_by_id map
-        finished_task_result?;
-        let (task_context, worker_id) = running_tasks_by_context
-            .remove(&finished_joinset_id)
-            .expect("Task should be present in running_tasks_by_id");
-        worker_manager.mark_task_finished(&task_context.task_id, &worker_id);
-        statistics_manager.handle_event(StatisticsEvent::FinishedTask {
-            context: task_context,
-        })?;
-
-        // Try to get any other finished tasks
-        while let Some((id, finished_task_result)) = running_tasks.try_join_next_with_id() {
-            finished_task_result?;
-            let (task_context, worker_id) = running_tasks_by_context
-                .remove(&id)
+        for (task_context, task_status) in task_results {
+            let scheduled_task = running_tasks
+                .remove(&task_context)
                 .expect("Task should be present in running_tasks_by_id");
-            worker_manager.mark_task_finished(&task_context.task_id, &worker_id);
-            statistics_manager.handle_event(StatisticsEvent::FinishedTask {
-                context: task_context,
-            })?;
+            let (worker_id, task, result_tx, canc) = scheduled_task.into_inner();
+            match task_status {
+                TaskStatus::Success { result } => {
+                    worker_manager.mark_task_finished(task_context, worker_id);
+                    statistics_manager.handle_event(StatisticsEvent::FinishedTask {
+                        context: task_context,
+                    })?;
+                    let _ = result_tx.send(Ok(result));
+                }
+                TaskStatus::Failed { error } => {
+                    worker_manager.mark_task_finished(task_context, worker_id);
+                    let _ = result_tx.send(Err(error));
+                }
+                TaskStatus::Cancelled => {
+                    worker_manager.mark_task_finished(task_context, worker_id);
+                    statistics_manager.handle_event(StatisticsEvent::FinishedTask {
+                        context: task_context,
+                    })?;
+                }
+                TaskStatus::WorkerDied => {
+                    worker_manager.mark_worker_died(worker_id);
+                    let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                    let _ = failed_task_sender.send(schedulable_task);
+                }
+                TaskStatus::WorkerUnavailable => {
+                    let schedulable_task = SchedulableTask::new(task, result_tx, canc);
+                    let _ = failed_task_sender.send(schedulable_task);
+                }
+            }
         }
-
         Self::handle_worker_updates(worker_manager, worker_update_sender).await?;
         Ok(())
     }
 
     async fn handle_worker_updates(
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
-        worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+        worker_update_sender: &WatchSender<Vec<WorkerSnapshot>>,
     ) -> DaftResult<()> {
         let worker_snapshots = worker_manager.worker_snapshots()?;
         if worker_update_sender.send(worker_snapshots).is_err() {
@@ -121,7 +144,8 @@ impl<W: Worker> DispatcherActor<W> {
     async fn run_dispatcher_loop(
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         mut task_rx: Receiver<Vec<ScheduledTask<W::Task>>>,
-        worker_update_sender: tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+        worker_update_sender: WatchSender<Vec<WorkerSnapshot>>,
+        failed_task_sender: SchedulerSender<W::Task>,
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()>
     where
@@ -129,7 +153,6 @@ impl<W: Worker> DispatcherActor<W> {
     {
         // send worker updates at the start of the loop
         Self::handle_worker_updates(&worker_manager, &worker_update_sender).await?;
-
         let mut input_exhausted = false;
         let mut running_tasks = JoinSet::new();
         let mut running_tasks_by_context = HashMap::new();
@@ -148,14 +171,17 @@ impl<W: Worker> DispatcherActor<W> {
                         input_exhausted = true;
                     }
                 }
-                Some((id, finished_task_result)) = running_tasks.join_next_with_id() => {
-                     Self::handle_finished_task(
-                        id,
-                        finished_task_result,
+                Some(task_result) = running_tasks.join_next() => {
+                    let mut task_results = vec![task_result?];
+                    while let Some(task_result) = running_tasks.try_join_next() {
+                        task_results.push(task_result?);
+                    }
+                    Self::handle_finished_tasks(
+                        task_results,
                         &mut running_tasks_by_context,
-                        &mut running_tasks,
                         &worker_manager,
                         &worker_update_sender,
+                        &failed_task_sender,
                         &statistics_manager,
                     ).await?;
                 }
@@ -170,13 +196,13 @@ impl<W: Worker> DispatcherActor<W> {
 
 pub(super) struct DispatcherHandle<T: Task> {
     dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
-    worker_update_receiver: tokio::sync::watch::Receiver<Vec<WorkerSnapshot>>,
+    worker_update_receiver: WatchReceiver<Vec<WorkerSnapshot>>,
 }
 
 impl<T: Task> DispatcherHandle<T> {
     fn new(
         dispatcher_sender: Sender<Vec<ScheduledTask<T>>>,
-        worker_update_receiver: tokio::sync::watch::Receiver<Vec<WorkerSnapshot>>,
+        worker_update_receiver: WatchReceiver<Vec<WorkerSnapshot>>,
     ) -> Self {
         Self {
             dispatcher_sender,
@@ -210,14 +236,15 @@ mod tests {
             },
             task::tests::MockTaskFailure,
             tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
-            worker::tests::MockWorkerManager,
+            worker::{tests::MockWorkerManager, WorkerId},
         },
-        utils::channel::create_oneshot_channel,
+        utils::channel::{create_oneshot_channel, create_unbounded_channel, UnboundedReceiver},
     };
 
     struct DispatcherTestContext {
         dispatcher_handle: DispatcherHandle<MockTask>,
         joinset: JoinSet<DaftResult<()>>,
+        _failed_task_receiver: UnboundedReceiver<SchedulableTask<MockTask>>,
     }
 
     fn setup_dispatcher_test_context(
@@ -228,14 +255,17 @@ mod tests {
 
         let dispatcher = DispatcherActor::new(worker_manager);
         let mut joinset = JoinSet::new();
+        let (failed_task_sender, failed_task_receiver) = create_unbounded_channel();
         let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(
             dispatcher,
             &mut joinset,
             StatisticsManagerRef::default(),
+            failed_task_sender,
         );
         DispatcherTestContext {
             dispatcher_handle,
             joinset,
+            _failed_task_receiver: failed_task_receiver,
         }
     }
 

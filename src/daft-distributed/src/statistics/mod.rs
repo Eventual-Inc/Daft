@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use crate::scheduling::task::{TaskContext, TaskName};
+use crate::{
+    plan::PlanID,
+    scheduling::task::{TaskContext, TaskName},
+};
 
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum StatisticsEvent {
@@ -16,6 +19,13 @@ pub(crate) enum StatisticsEvent {
     },
     FinishedTask {
         context: TaskContext,
+    },
+    #[allow(dead_code)]
+    PlanStarted {
+        plan_id: PlanID,
+    },
+    PlanFinished {
+        plan_id: PlanID,
     },
 }
 

@@ -22,12 +22,15 @@ use crate::{
     statistics::{StatisticsEvent, StatisticsManagerRef},
     utils::{
         channel::{
-            create_channel, create_oneshot_channel, OneshotReceiver, OneshotSender, Receiver,
-            Sender,
+            create_oneshot_channel, create_unbounded_channel, OneshotReceiver, OneshotSender,
+            UnboundedReceiver, UnboundedSender,
         },
         joinset::JoinSet,
     },
 };
+
+pub(crate) type SchedulerSender<T> = UnboundedSender<SchedulableTask<T>>;
+pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<SchedulableTask<T>>;
 
 struct SchedulerActor<W: Worker, S: Scheduler<W::Task>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
@@ -63,19 +66,19 @@ where
         joinset: &mut JoinSet<DaftResult<()>>,
         statistics_manager: StatisticsManagerRef,
     ) -> SchedulerHandle<W::Task> {
+        let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
         // Spawn a dispatcher actor to handle task dispatch and await task results
         let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager.clone());
         let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(
             dispatcher_actor,
             joinset,
             statistics_manager.clone(),
+            scheduler_sender.clone(),
         );
-
         let autoscaler_actor = AutoscalerActor::new(scheduler.worker_manager);
         let autoscaler_handle = AutoscalerActor::spawn_autoscaler_actor(autoscaler_actor, joinset);
 
         // Spawn the scheduler actor to schedule tasks and dispatch them to the dispatcher
-        let (scheduler_sender, scheduler_receiver) = create_channel(10000);
         joinset.spawn(Self::run_scheduler_loop(
             scheduler.scheduler,
             scheduler_receiver,
@@ -88,7 +91,7 @@ where
 
     fn handle_new_tasks(
         maybe_new_task: Option<SchedulableTask<W::Task>>,
-        task_rx: &mut Receiver<SchedulableTask<W::Task>>,
+        task_rx: &mut SchedulerReceiver<W::Task>,
         statistics_manager: &StatisticsManagerRef,
         scheduler: &mut S,
         input_exhausted: &mut bool,
@@ -119,7 +122,7 @@ where
     #[instrument(name = "FlotillaScheduler", skip_all)]
     async fn run_scheduler_loop(
         mut scheduler: S,
-        mut task_rx: Receiver<SchedulableTask<W::Task>>,
+        mut task_rx: SchedulerReceiver<W::Task>,
         mut dispatcher_handle: DispatcherHandle<W::Task>,
         autoscaler_handle: AutoscalerHandle,
         statistics_manager: StatisticsManagerRef,
@@ -134,6 +137,7 @@ where
         while !input_exhausted || scheduler.num_pending_tasks() > 0 {
             // 1: Get all tasks that are ready to be scheduled
             let scheduled_tasks = scheduler.get_schedulable_tasks();
+            println!("Scheduled tasks: {:?}", scheduled_tasks);
             // 2: Dispatch tasks to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::debug!("Dispatching tasks: {:?}", scheduled_tasks);
@@ -166,6 +170,7 @@ where
                 }
             }
         }
+        println!("Scheduler loop complete");
         tracing::debug!("Scheduler loop complete");
         Ok(())
     }
@@ -192,7 +197,7 @@ pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
 
 #[derive(Debug)]
 pub(crate) struct SchedulerHandle<T: Task> {
-    scheduler_sender: Sender<SchedulableTask<T>>,
+    scheduler_sender: SchedulerSender<T>,
 }
 
 impl<T: Task> Clone for SchedulerHandle<T> {
@@ -204,7 +209,7 @@ impl<T: Task> Clone for SchedulerHandle<T> {
 }
 
 impl<T: Task> SchedulerHandle<T> {
-    fn new(scheduler_sender: Sender<SchedulableTask<T>>) -> Self {
+    fn new(scheduler_sender: SchedulerSender<T>) -> Self {
         Self { scheduler_sender }
     }
 
@@ -227,16 +232,12 @@ impl<T: Task> SchedulerHandle<T> {
         (schedulable_task, submitted_task)
     }
 
-    #[allow(dead_code)]
-    async fn submit_task(&self, submittable_task: SubmittableTask<T>) -> DaftResult<SubmittedTask> {
+    fn submit_task(&self, submittable_task: SubmittableTask<T>) -> DaftResult<SubmittedTask> {
         let (schedulable_task, submitted_task) =
             Self::prepare_task_for_submission(submittable_task);
-        self.scheduler_sender
-            .send(schedulable_task)
-            .await
-            .map_err(|_| {
-                DaftError::InternalError("Failed to send task to scheduler".to_string())
-            })?;
+        self.scheduler_sender.send(schedulable_task).map_err(|_| {
+            DaftError::InternalError("Failed to send task to scheduler".to_string())
+        })?;
         Ok(submitted_task)
     }
 }
@@ -278,8 +279,8 @@ impl<T: Task> SubmittableTask<T> {
         self
     }
 
-    pub async fn submit(self, scheduler_handle: &SchedulerHandle<T>) -> DaftResult<SubmittedTask> {
-        scheduler_handle.submit_task(self).await
+    pub fn submit(self, scheduler_handle: &SchedulerHandle<T>) -> DaftResult<SubmittedTask> {
+        scheduler_handle.submit_task(self)
     }
 }
 
@@ -355,11 +356,14 @@ mod tests {
     use rand::Rng;
 
     use super::*;
-    use crate::scheduling::{
-        scheduler::test_utils::setup_workers,
-        task::tests::MockTaskFailure,
-        tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
-        worker::{tests::MockWorkerManager, WorkerId},
+    use crate::{
+        scheduling::{
+            scheduler::test_utils::setup_workers,
+            task::tests::MockTaskFailure,
+            tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
+            worker::{tests::MockWorkerManager, WorkerId},
+        },
+        utils::channel::create_channel,
     };
 
     struct SchedulerActorTestContext {
@@ -403,9 +407,7 @@ mod tests {
         let task = MockTaskBuilder::new(partition_ref.clone()).build();
 
         let submittable_task = SubmittableTask::new(task);
-        let submitted_task = submittable_task
-            .submit(&test_context.scheduler_handle_ref)
-            .await?;
+        let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
 
         let result = submitted_task.await?;
         assert!(Arc::ptr_eq(&result[0].partition(), &partition_ref));
@@ -429,9 +431,7 @@ mod tests {
                 .with_sleep_duration(task_duration)
                 .build();
             let submittable_task = SubmittableTask::new(task);
-            let submitted_task = submittable_task
-                .submit(&test_context.scheduler_handle_ref)
-                .await?;
+            let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
             submitted_tasks.push(submitted_task);
         }
 
@@ -480,7 +480,7 @@ mod tests {
                         .with_sleep_duration(task_duration)
                         .build();
                     let submittable_task = SubmittableTask::new(task);
-                    let submitted_task = submittable_task.submit(&scheduler_handle).await?;
+                    let submitted_task = submittable_task.submit(&scheduler_handle)?;
                     submitted_task_tx
                         .send((submitted_task, num_rows, num_bytes))
                         .await
@@ -514,9 +514,7 @@ mod tests {
             .build();
 
         let submittable_task = SubmittableTask::new(task);
-        let submitted_task = submittable_task
-            .submit(&test_context.scheduler_handle_ref)
-            .await?;
+        let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         drop(submitted_task);
         cancel_receiver.await.unwrap();
 
@@ -560,7 +558,7 @@ mod tests {
                             .with_sleep_duration(task_duration);
                         let task = task.build();
                         let submittable_task = SubmittableTask::new(task);
-                        let submitted_task = submittable_task.submit(&scheduler_handle).await?;
+                        let submitted_task = submittable_task.submit(&scheduler_handle)?;
                         submitted_task_tx
                             .send((submitted_task, num_rows, num_bytes, Some(cancel_receiver)))
                             .await
@@ -571,7 +569,7 @@ mod tests {
                         let task = task.with_sleep_duration(task_duration);
                         let task = task.build();
                         let submittable_task = SubmittableTask::new(task);
-                        let submitted_task = submittable_task.submit(&scheduler_handle).await?;
+                        let submitted_task = submittable_task.submit(&scheduler_handle)?;
                         submitted_task_tx
                             .send((submitted_task, num_rows, num_bytes, None))
                             .await
@@ -610,9 +608,7 @@ mod tests {
             .with_failure(MockTaskFailure::Error("test error".to_string()))
             .build();
         let submittable_task = SubmittableTask::new(task);
-        let submitted_task = submittable_task
-            .submit(&test_context.scheduler_handle_ref)
-            .await?;
+        let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         let result = submitted_task.await;
         assert!(result.is_err());
         assert_eq!(
@@ -633,9 +629,7 @@ mod tests {
             .with_failure(MockTaskFailure::Panic("test panic".to_string()))
             .build();
         let submittable_task = SubmittableTask::new(task);
-        let submitted_task = submittable_task
-            .submit(&test_context.scheduler_handle_ref)
-            .await?;
+        let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         let result = submitted_task.await?;
         assert_eq!(result.len(), 0);
 
@@ -657,9 +651,7 @@ mod tests {
             .with_task_id(0)
             .build();
         let submittable_task = SubmittableTask::new(task);
-        let submitted_task = submittable_task
-            .submit(&test_context.scheduler_handle_ref)
-            .await?;
+        let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         let result = submitted_task.await?;
         assert_eq!(result.len(), 1);
 

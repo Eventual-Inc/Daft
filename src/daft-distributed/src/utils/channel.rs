@@ -14,3 +14,19 @@ pub fn create_oneshot_channel<T>() -> (OneshotSender<T>, OneshotReceiver<T>) {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     (sender, receiver)
 }
+
+pub type WatchSender<T> = tokio::sync::watch::Sender<T>;
+pub type WatchReceiver<T> = tokio::sync::watch::Receiver<T>;
+
+pub fn create_watch_channel<T>(initial_value: T) -> (WatchSender<T>, WatchReceiver<T>) {
+    let (sender, receiver) = tokio::sync::watch::channel(initial_value);
+    (sender, receiver)
+}
+
+pub type UnboundedSender<T> = tokio::sync::mpsc::UnboundedSender<T>;
+pub type UnboundedReceiver<T> = tokio::sync::mpsc::UnboundedReceiver<T>;
+
+pub fn create_unbounded_channel<T>() -> (UnboundedSender<T>, UnboundedReceiver<T>) {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    (sender, receiver)
+}

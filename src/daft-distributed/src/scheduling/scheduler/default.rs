@@ -87,7 +87,7 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
                     .get_mut(&worker_id)
                     .expect("Worker should be present in DefaultScheduler")
                     .active_task_details
-                    .insert(task.task_context().task_id, TaskDetails::from(&task.task));
+                    .insert(task.task_context(), TaskDetails::from(&task.task));
                 scheduled.push(ScheduledTask::new(task, worker_id));
             } else {
                 unscheduled.push(task);

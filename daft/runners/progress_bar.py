@@ -30,6 +30,7 @@ def get_tqdm(use_ray_tqdm: bool) -> Any:
                             kwargs["file"] = sys.stdout  # avoid the red block in IPython
 
                         super().__init__(*args, **kwargs)
+
             else:
                 tqdm = _tqdm
         except ImportError:
@@ -93,7 +94,15 @@ class ProgressBar:
         if self.show_tasks_bar:
             self.pbars[-1].update(1)
 
-    def close(self) -> None:
+    def close_bar(self, bar_id: int) -> None:
+        if bar_id in self.pbars:
+            p = self.pbars[bar_id]
+            if not self.use_ray_tqdm:
+                p.clear()
+            p.close()
+            del self.pbars[bar_id]
+
+    def close_all(self) -> None:
         for p in self.pbars.values():
             if not self.use_ray_tqdm:
                 p.clear()
