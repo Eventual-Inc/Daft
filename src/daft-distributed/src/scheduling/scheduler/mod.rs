@@ -227,9 +227,10 @@ pub(super) mod test_utils {
         )
     }
 
-    pub fn create_spread_task() -> SchedulableTask<MockTask> {
+    pub fn create_spread_task(id: Option<TaskID>) -> SchedulableTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::Spread)
+            .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)
     }
@@ -237,12 +238,14 @@ pub(super) mod test_utils {
     pub fn create_worker_affinity_task(
         worker_id: &WorkerId,
         soft: bool,
+        id: Option<TaskID>,
     ) -> SchedulableTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
                 worker_id: worker_id.clone(),
                 soft,
             })
+            .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)
     }
