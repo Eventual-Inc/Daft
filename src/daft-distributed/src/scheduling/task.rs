@@ -221,6 +221,7 @@ impl Task for SwordfishTask {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum TaskStatus {
     Success { result: Vec<MaterializedOutput> },
     Failed { error: DaftError },
@@ -323,6 +324,8 @@ pub(super) mod tests {
     pub enum MockTaskFailure {
         Error(String),
         Panic(String),
+        WorkerDied,
+        WorkerUnavailable,
     }
 
     /// A builder pattern implementation for creating MockTask instances
@@ -468,6 +471,12 @@ pub(super) mod tests {
                         }
                         MockTaskFailure::Panic(error_message) => {
                             panic!("{}", error_message);
+                        }
+                        MockTaskFailure::WorkerDied => {
+                            return TaskStatus::WorkerDied;
+                        }
+                        MockTaskFailure::WorkerUnavailable => {
+                            return TaskStatus::WorkerUnavailable;
                         }
                     }
                 }

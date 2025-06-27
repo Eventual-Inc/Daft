@@ -188,6 +188,11 @@ impl WorkerSnapshot {
         self.total_num_gpus
     }
 
+    #[cfg(test)]
+    pub fn worker_id(&self) -> &WorkerId {
+        &self.worker_id
+    }
+
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
         self.available_num_cpus() >= task.resource_request().num_cpus()
             && self.available_num_gpus() >= task.resource_request().num_gpus()

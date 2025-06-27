@@ -93,9 +93,7 @@ pub(super) mod tests {
         }
 
         fn mark_worker_died(&self, worker_id: WorkerId) {
-            if let Some(worker) = self.workers.lock().get(&worker_id) {
-                worker.shutdown();
-            }
+            self.workers.lock().remove(&worker_id);
         }
 
         fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {

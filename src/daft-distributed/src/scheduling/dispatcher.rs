@@ -160,7 +160,7 @@ mod tests {
             scheduler::{
                 test_utils::setup_workers, SchedulerHandle, SubmittableTask, SubmittedTask,
             },
-            task::tests::MockTaskFailure,
+            task::{tests::MockTaskFailure, SchedulingStrategy},
             tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
             worker::{
                 tests::{MockWorker, MockWorkerManager},
@@ -334,6 +334,181 @@ mod tests {
         let result = submitted_task.await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("test panic"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_worker_died() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let (mut dispatcher, worker_manager) =
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+
+        // Verify worker is initially present
+        let initial_snapshots = worker_manager.worker_snapshots()?;
+        assert_eq!(initial_snapshots.len(), 1);
+        assert_eq!(initial_snapshots[0].worker_id(), &worker_id);
+
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+            .with_failure(MockTaskFailure::WorkerDied)
+            .build();
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, _submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id.clone())];
+        dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
+
+        let failed_tasks = dispatcher
+            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
+            .await?;
+
+        // Task should be returned as a failed task that needs rescheduling
+        assert_eq!(failed_tasks.len(), 1);
+        let failed_task = &failed_tasks[0];
+        assert_eq!(failed_task.task_context().task_id, 0);
+
+        // Verify that the worker that died is no longer in the worker snapshots
+        let worker_snapshots = worker_manager.worker_snapshots()?;
+        assert!(
+            worker_snapshots.is_empty(),
+            "Dead worker should not appear in worker snapshots"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_worker_unavailable() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let (mut dispatcher, worker_manager) =
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+
+        // Verify worker is initially present
+        let initial_snapshots = worker_manager.worker_snapshots()?;
+        assert_eq!(initial_snapshots.len(), 1);
+        assert_eq!(initial_snapshots[0].worker_id(), &worker_id);
+
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+            .with_failure(MockTaskFailure::WorkerUnavailable)
+            .build();
+        let submittable_task = SubmittableTask::new(task);
+        let (schedulable_task, _submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id.clone())];
+        dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
+
+        let failed_tasks = dispatcher
+            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
+            .await?;
+
+        // Task should be returned as a failed task that needs rescheduling
+        assert_eq!(failed_tasks.len(), 1);
+        let failed_task = &failed_tasks[0];
+        assert_eq!(failed_task.task_context().task_id, 0);
+
+        // Verify that the worker is still present in snapshots (unavailable != dead)
+        let worker_snapshots = worker_manager.worker_snapshots()?;
+        assert_eq!(
+            worker_snapshots.len(),
+            1,
+            "Worker should still be present when unavailable"
+        );
+        assert_eq!(worker_snapshots[0].worker_id(), &worker_id);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_multiple_failed_tasks() -> DaftResult<()> {
+        // Use multiple workers to avoid interference between tasks
+        let worker1_id: WorkerId = Arc::from("worker1");
+        let worker2_id: WorkerId = Arc::from("worker2");
+        let worker3_id: WorkerId = Arc::from("worker3");
+        let (mut dispatcher, worker_manager) = setup_dispatcher_test_context(&[
+            (worker1_id.clone(), 1),
+            (worker2_id.clone(), 1),
+            (worker3_id.clone(), 1),
+        ]);
+
+        let tasks = vec![
+            MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+                .with_task_id(1)
+                .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
+                    worker_id: worker1_id.clone(),
+                    soft: false,
+                })
+                .with_failure(MockTaskFailure::WorkerDied)
+                .build(),
+            MockTaskBuilder::new(create_mock_partition_ref(200, 2048))
+                .with_task_id(2)
+                .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
+                    worker_id: worker2_id.clone(),
+                    soft: false,
+                })
+                .with_failure(MockTaskFailure::WorkerUnavailable)
+                .build(),
+            MockTaskBuilder::new(create_mock_partition_ref(300, 3072))
+                .with_task_id(3)
+                .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
+                    worker_id: worker3_id.clone(),
+                    soft: false,
+                })
+                .with_failure(MockTaskFailure::WorkerDied)
+                .build(),
+        ];
+
+        let (scheduled_tasks, _submitted_tasks) = tasks
+            .into_iter()
+            .zip(vec![
+                worker1_id.clone(),
+                worker2_id.clone(),
+                worker3_id.clone(),
+            ])
+            .map(|(task, worker_id)| {
+                let submittable_task = SubmittableTask::new(task);
+                let (schedulable_task, submitted_task) =
+                    SchedulerHandle::prepare_task_for_submission(submittable_task);
+                (
+                    ScheduledTask::new(schedulable_task, worker_id),
+                    submitted_task,
+                )
+            })
+            .unzip::<_, _, Vec<ScheduledTask<MockTask>>, Vec<SubmittedTask>>();
+
+        // Dispatch all tasks at once
+        dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
+
+        // Wait for all tasks to complete and collect failed tasks
+        let mut all_failed_tasks = Vec::new();
+        while dispatcher.has_running_tasks() {
+            let failed_tasks = dispatcher
+                .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
+                .await?;
+            all_failed_tasks.extend(failed_tasks);
+        }
+
+        // All tasks should be returned as failed tasks that need rescheduling
+        assert_eq!(all_failed_tasks.len(), 3);
+
+        // Check that we have all the expected task IDs
+        let mut failed_task_ids: Vec<_> = all_failed_tasks
+            .iter()
+            .map(|task| task.task_context().task_id)
+            .collect();
+        failed_task_ids.sort();
+        assert_eq!(failed_task_ids, vec![1, 2, 3]);
+
+        // Verify worker state: Workers 1 and 3 should be dead, worker 2 should be alive
+        let worker_snapshots = worker_manager.worker_snapshots()?;
+        println!("worker_snapshots: {:?}", worker_snapshots);
+        assert_eq!(
+            worker_snapshots.len(),
+            1,
+            "Only worker2 should remain alive"
+        );
+        assert_eq!(worker_snapshots[0].worker_id(), &worker2_id);
 
         Ok(())
     }
