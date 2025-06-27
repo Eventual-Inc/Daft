@@ -41,42 +41,29 @@ use crate::{
 pub trait RuntimeStatsBuilder: Send + Sync + std::any::Any {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
 
-    fn render(&self, stats: &mut IndexMap<Arc<str>, String>, rows_received: u64, rows_emitted: u64);
+    fn build(
+        &self,
+        stats: &mut IndexMap<&'static str, String>,
+        rows_received: u64,
+        rows_emitted: u64,
+    );
 }
 
 pub struct BaseStatsBuilder {}
-
-impl BaseStatsBuilder {
-    pub fn render_helper(
-        &self,
-        stats: &mut IndexMap<Arc<str>, String>,
-        rows_received: u64,
-        rows_emitted: u64,
-    ) {
-        stats.insert(
-            Arc::from("rows received"),
-            HumanCount(rows_received).to_string(),
-        );
-        stats.insert(
-            Arc::from("rows emitted"),
-            HumanCount(rows_emitted).to_string(),
-        );
-    }
-}
 
 impl RuntimeStatsBuilder for BaseStatsBuilder {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
 
-    fn render(
+    fn build(
         &self,
-        stats: &mut IndexMap<Arc<str>, String>,
+        stats: &mut IndexMap<&'static str, String>,
         rows_received: u64,
         rows_emitted: u64,
     ) {
-        // Default is render the stats as is
-        self.render_helper(stats, rows_received, rows_emitted);
+        stats.insert("rows received", HumanCount(rows_received).to_string());
+        stats.insert("rows emitted", HumanCount(rows_emitted).to_string());
     }
 }
 
@@ -344,7 +331,7 @@ impl RuntimeStatsContext {
     /// Name is a small description. Can be rendered with different casing
     /// Value can be a string. Function is responsible for formatting the value
     /// This is used to update in-progress stats and final stats in UI clients
-    pub(crate) fn render(&self) -> IndexMap<Arc<str>, String> {
+    pub(crate) fn render(&self) -> IndexMap<&'static str, String> {
         let rows_received = self
             .rows_received
             .load(std::sync::atomic::Ordering::Relaxed);
@@ -353,11 +340,11 @@ impl RuntimeStatsContext {
 
         let mut stats = IndexMap::new();
         stats.insert(
-            Arc::from("cpu time"),
+            "cpu time",
             HumanDuration(Duration::from_micros(cpu_us)).to_string(),
         );
 
-        self.builder.render(&mut stats, rows_received, rows_emitted);
+        self.builder.build(&mut stats, rows_received, rows_emitted);
         stats
     }
 }

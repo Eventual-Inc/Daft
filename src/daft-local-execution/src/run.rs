@@ -35,7 +35,7 @@ use crate::{
         get_pipeline_relationship_mapping, physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid, RelationshipInformation, RuntimeContext,
     },
-    progress_bar::{make_progress_bar_manager, ProgressBarManager},
+    progress_bar::make_progress_bar_manager,
     resource_manager::get_or_init_memory_manager,
     runtime_stats::RuntimeStatsEventHandler,
     ExecutionRuntimeContext,
@@ -245,7 +245,6 @@ impl PyNativeExecutor {
 pub struct NativeExecutor {
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
-    pb_manager: Option<Arc<dyn ProgressBarManager>>,
     rt_stats_handler: Arc<RuntimeStatsEventHandler>,
     enable_explain_analyze: bool,
 }
@@ -255,8 +254,6 @@ impl Default for NativeExecutor {
         Self {
             cancel: CancellationToken::new(),
             runtime: None,
-            // todo: make progressbar another subscriber instances
-            pb_manager: None,
             enable_explain_analyze: should_enable_explain_analyze(),
             rt_stats_handler: Arc::new(RuntimeStatsEventHandler::new()),
         }
@@ -265,29 +262,12 @@ impl Default for NativeExecutor {
 
 impl NativeExecutor {
     pub fn new() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
-            runtime: None,
-            // todo: make progressbar another subscriber instances
-            pb_manager: None,
-            enable_explain_analyze: should_enable_explain_analyze(),
-            rt_stats_handler: Arc::new(RuntimeStatsEventHandler::new()),
-        }
+        Self::default()
     }
 
     pub fn with_runtime(mut self, runtime: Arc<tokio::runtime::Runtime>) -> Self {
         self.runtime = Some(runtime);
         self
-    }
-
-    pub fn with_progress_bar_manager(mut self, pb_manager: Arc<dyn ProgressBarManager>) -> Self {
-        self.pb_manager = Some(pb_manager);
-        self
-    }
-
-    pub fn reset_progress_bar_manager(&mut self, total_nodes: usize) {
-        self.pb_manager =
-            should_enable_progress_bar().then(|| make_progress_bar_manager(total_nodes));
     }
 
     pub fn enable_explain_analyze(mut self, b: bool) -> Self {
@@ -308,12 +288,12 @@ impl NativeExecutor {
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
         let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
         let total_nodes = pipeline.node_id();
-        self.reset_progress_bar_manager(total_nodes);
+        let pb_manager =
+            should_enable_progress_bar().then(|| make_progress_bar_manager(total_nodes));
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
-        let pb_manager = self.pb_manager.clone();
         let stats_handler = self.rt_stats_handler.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method

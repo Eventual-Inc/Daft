@@ -9,27 +9,21 @@ use std::{
 use common_error::DaftResult;
 use indexmap::IndexMap;
 use indicatif::ProgressStyle;
+use itertools::Itertools;
 
 use crate::runtime_stats::RuntimeStatsContext;
 
 /// Convert statistics to a message for progress bars
-fn stats_to_message(stats: IndexMap<Arc<str>, String>) -> String {
-    let mut messages = vec![];
-
-    for (name, value) in stats {
-        // Tracked by the progress bar itself
-        if name.as_ref() == "cpu time" {
-            continue;
-        }
-
-        messages.push(format!("{} {}", value, name.to_lowercase()));
-    }
-
-    messages.join(", ")
+fn stats_to_message(stats: IndexMap<&'static str, String>) -> String {
+    stats
+        .into_iter()
+        .filter(|(name, _)| *name != "cpu time")
+        .map(|(name, value)| format!("{} {}", value, name.to_lowercase()))
+        .join(", ")
 }
 
 pub trait ProgressBar: Send + Sync {
-    fn set_message(&self, message: IndexMap<Arc<str>, String>) -> DaftResult<()>;
+    fn set_message(&self, message: IndexMap<&'static str, String>) -> DaftResult<()>;
     fn close(&self) -> DaftResult<()>;
 }
 
@@ -37,7 +31,7 @@ pub trait ProgressBarManager: std::fmt::Debug + Send + Sync {
     fn make_new_bar(
         &self,
         color: ProgressBarColor,
-        prefix: String,
+        prefix: &'static str,
         node_id: usize,
     ) -> DaftResult<Box<dyn ProgressBar>>;
 
@@ -96,7 +90,7 @@ struct IndicatifProgressBar(indicatif::ProgressBar, AtomicBool);
 const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 
 impl ProgressBar for IndicatifProgressBar {
-    fn set_message(&self, stats: IndexMap<Arc<str>, String>) -> DaftResult<()> {
+    fn set_message(&self, stats: IndexMap<&'static str, String>) -> DaftResult<()> {
         if !self.1.load(Ordering::Acquire) {
             self.0.enable_steady_tick(UPDATE_INTERVAL);
             self.1.store(true, Ordering::Release);
@@ -130,11 +124,13 @@ impl IndicatifProgressBarManager {
     }
 }
 
+pub const MAX_PIPELINE_NAME_LEN: usize = 18;
+
 impl ProgressBarManager for IndicatifProgressBarManager {
     fn make_new_bar(
         &self,
         color: ProgressBarColor,
-        prefix: String,
+        prefix: &'static str,
         node_id: usize,
     ) -> DaftResult<Box<dyn ProgressBar>> {
         #[allow(clippy::literal_string_with_formatting_args)]
@@ -146,13 +142,15 @@ impl ProgressBarManager for IndicatifProgressBarManager {
             total_len = self.total.to_string().len(),
         );
 
+        let formatted_prefix = format!("{:>1$}", prefix, MAX_PIPELINE_NAME_LEN);
+
         let pb = indicatif::ProgressBar::new_spinner()
             .with_style(
                 ProgressStyle::with_template(template_str.as_str())
                     .unwrap()
                     .tick_chars("⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈✓"),
             )
-            .with_prefix(prefix);
+            .with_prefix(formatted_prefix);
         self.multi_progress.insert(0, pb.clone());
         DaftResult::Ok(Box::new(IndicatifProgressBar(pb, AtomicBool::new(false))))
     }
@@ -201,7 +199,7 @@ mod python {
     }
 
     impl ProgressBar for TqdmProgressBar {
-        fn set_message(&self, stats: IndexMap<Arc<str>, String>) -> DaftResult<()> {
+        fn set_message(&self, stats: IndexMap<&'static str, String>) -> DaftResult<()> {
             let message = stats_to_message(stats);
             self.manager.update_bar(self.pb_id, message.as_str())
         }
@@ -249,7 +247,7 @@ mod python {
         fn make_new_bar(
             &self,
             _color: ProgressBarColor,
-            prefix: String,
+            prefix: &'static str,
             _node_id: usize,
         ) -> DaftResult<Box<dyn ProgressBar>> {
             let bar_format = format!("🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}", prefix = prefix);

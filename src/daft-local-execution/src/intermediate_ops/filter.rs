@@ -19,22 +19,16 @@ impl RuntimeStatsBuilder for FilterStatsBuilder {
         self
     }
 
-    fn render(
+    fn build(
         &self,
-        stats: &mut IndexMap<Arc<str>, String>,
+        stats: &mut IndexMap<&'static str, String>,
         rows_received: u64,
         rows_emitted: u64,
     ) {
+        stats.insert("rows received", HumanCount(rows_received).to_string());
+        stats.insert("rows emitted", HumanCount(rows_emitted).to_string());
         stats.insert(
-            Arc::from("rows received"),
-            HumanCount(rows_received).to_string(),
-        );
-        stats.insert(
-            Arc::from("rows emitted"),
-            HumanCount(rows_emitted).to_string(),
-        );
-        stats.insert(
-            Arc::from("selectivity"),
+            "selectivity",
             HumanFloatCount(rows_emitted as f64 / rows_received as f64 * 100.0).to_string(),
         );
     }

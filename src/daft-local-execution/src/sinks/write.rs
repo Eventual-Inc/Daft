@@ -30,22 +30,16 @@ impl RuntimeStatsBuilder for WriteStatsBuilder {
         self
     }
 
-    fn render(
+    fn build(
         &self,
-        stats: &mut IndexMap<Arc<str>, String>,
+        stats: &mut IndexMap<&'static str, String>,
         rows_received: u64,
         rows_emitted: u64,
     ) {
+        stats.insert("rows received", HumanCount(rows_received).to_string());
+        stats.insert("rows written", HumanCount(rows_emitted).to_string());
         stats.insert(
-            Arc::from("rows received"),
-            HumanCount(rows_received).to_string(),
-        );
-        stats.insert(
-            Arc::from("rows written"),
-            HumanCount(rows_emitted).to_string(),
-        );
-        stats.insert(
-            Arc::from("bytes written"),
+            "bytes written",
             HumanBytes(
                 self.bytes_written
                     .load(std::sync::atomic::Ordering::Relaxed),

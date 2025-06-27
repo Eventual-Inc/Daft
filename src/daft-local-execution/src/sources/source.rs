@@ -14,7 +14,7 @@ use indicatif::HumanCount;
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{NodeInfo, PipelineNode, RuntimeContext, MAX_PIPELINE_NAME_LEN},
+    pipeline::{NodeInfo, PipelineNode, RuntimeContext},
     progress_bar::ProgressBarColor,
     runtime_stats::{CountingSender, RuntimeStatsBuilder, RuntimeStatsContext},
     ExecutionRuntimeContext,
@@ -29,16 +29,13 @@ impl RuntimeStatsBuilder for SourceStatsBuilder {
         self
     }
 
-    fn render(
+    fn build(
         &self,
-        stats: &mut IndexMap<Arc<str>, String>,
+        stats: &mut IndexMap<&'static str, String>,
         _rows_received: u64,
         rows_emitted: u64,
     ) {
-        stats.insert(
-            Arc::from("rows emitted"),
-            HumanCount(rows_emitted).to_string(),
-        );
+        stats.insert("rows emitted", HumanCount(rows_emitted).to_string());
     }
 }
 
@@ -132,8 +129,8 @@ impl TreeDisplay for SourceNode {
 }
 
 impl PipelineNode for SourceNode {
-    fn name(&self) -> String {
-        format!("{:>1$}", self.source.name(), MAX_PIPELINE_NAME_LEN)
+    fn name(&self) -> &'static str {
+        self.source.name()
     }
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![]
@@ -174,7 +171,7 @@ impl PipelineNode for SourceNode {
                 }
                 Ok(())
             },
-            self.name().as_str(),
+            self.name(),
         );
         Ok(destination_receiver)
     }
