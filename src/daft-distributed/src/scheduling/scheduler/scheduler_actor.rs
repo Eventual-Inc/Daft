@@ -137,7 +137,6 @@ where
         while !input_exhausted || scheduler.num_pending_tasks() > 0 {
             // 1: Get all tasks that are ready to be scheduled
             let scheduled_tasks = scheduler.get_schedulable_tasks();
-            println!("Scheduled tasks: {:?}", scheduled_tasks);
             // 2: Dispatch tasks to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::debug!("Dispatching tasks: {:?}", scheduled_tasks);
@@ -170,7 +169,6 @@ where
                 }
             }
         }
-        println!("Scheduler loop complete");
         tracing::debug!("Scheduler loop complete");
         Ok(())
     }

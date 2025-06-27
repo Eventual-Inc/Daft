@@ -153,8 +153,6 @@ impl<W: Worker> DispatcherActor<W> {
     {
         // send worker updates at the start of the loop
         Self::handle_worker_updates(&worker_manager, &worker_update_sender).await?;
-        // send worker updates at the start of the loop
-        Self::handle_worker_updates(&worker_manager, &worker_update_sender).await?;
 
         let mut input_exhausted = false;
         let mut running_tasks = JoinSet::new();

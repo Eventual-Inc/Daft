@@ -449,7 +449,7 @@ pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
     match maybe_image {
         None => "None".to_string(),
         Some(image) => {
-            let thumb = image;
+            let thumb = image.fit_to(128, 128);
             let mut bytes: Vec<u8> = vec![];
             let mut writer = std::io::BufWriter::new(std::io::Cursor::new(&mut bytes));
             thumb.encode(ImageFormat::PNG, &mut writer).unwrap();
