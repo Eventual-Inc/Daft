@@ -5,9 +5,7 @@ use super::{
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::MaterializedOutput,
-    scheduling::{autoscaler::AutoscalerRequest, task::TaskContext},
-    utils::channel::OneshotSender,
+    pipeline_node::MaterializedOutput, scheduling::task::TaskContext, utils::channel::OneshotSender,
 };
 
 mod default;
@@ -16,7 +14,7 @@ mod scheduler_actor;
 
 use common_error::DaftResult;
 pub(crate) use scheduler_actor::{
-    spawn_default_scheduler_actor, SchedulerHandle, SchedulerSender, SubmittableTask, SubmittedTask,
+    spawn_default_scheduler_actor, SchedulerHandle, SubmittableTask, SubmittedTask,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -24,7 +22,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>);
     fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>>;
-    fn get_autoscaling_request(&mut self) -> Option<AutoscalerRequest>;
+    fn get_autoscaling_request(&mut self) -> Option<usize>;
     fn num_pending_tasks(&self) -> usize;
 }
 

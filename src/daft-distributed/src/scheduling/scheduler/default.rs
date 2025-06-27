@@ -2,7 +2,6 @@ use std::collections::{BinaryHeap, HashMap};
 
 use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
-    autoscaler::AutoscalerRequest,
     task::{SchedulingStrategy, Task, TaskDetails},
     worker::WorkerId,
 };
@@ -114,12 +113,10 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         self.pending_tasks.len()
     }
 
-    fn get_autoscaling_request(&mut self) -> Option<AutoscalerRequest> {
+    fn get_autoscaling_request(&mut self) -> Option<usize> {
         // if there's no workers, we need to scale up by the number of pending tasks
         if self.worker_snapshots.is_empty() {
-            return Some(AutoscalerRequest::ScaleUp {
-                workers: self.pending_tasks.len(),
-            });
+            return Some(self.pending_tasks.len());
         }
         None
     }
@@ -554,9 +551,6 @@ mod tests {
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
-        assert_eq!(
-            scheduler.get_autoscaling_request(),
-            Some(AutoscalerRequest::ScaleUp { workers: 1 })
-        );
+        assert_eq!(scheduler.get_autoscaling_request(), Some(1));
     }
 }

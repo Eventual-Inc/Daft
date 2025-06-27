@@ -3,6 +3,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -14,8 +15,7 @@ use super::{default::DefaultScheduler, linear::LinearScheduler, SchedulableTask,
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        autoscaler::{AutoscalerActor, AutoscalerHandle},
-        dispatcher::{DispatcherActor, DispatcherHandle},
+        dispatcher::Dispatcher,
         task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
@@ -67,23 +67,16 @@ where
         statistics_manager: StatisticsManagerRef,
     ) -> SchedulerHandle<W::Task> {
         let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
-        // Spawn a dispatcher actor to handle task dispatch and await task results
-        let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager.clone());
-        let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(
-            dispatcher_actor,
-            joinset,
-            statistics_manager.clone(),
-            scheduler_sender.clone(),
-        );
-        let autoscaler_actor = AutoscalerActor::new(scheduler.worker_manager);
-        let autoscaler_handle = AutoscalerActor::spawn_autoscaler_actor(autoscaler_actor, joinset);
 
-        // Spawn the scheduler actor to schedule tasks and dispatch them to the dispatcher
+        // Create dispatcher directly instead of spawning it as an actor
+        let dispatcher = Dispatcher::new();
+
+        // Spawn the scheduler actor to schedule tasks and dispatch them directly via the dispatcher
         joinset.spawn(Self::run_scheduler_loop(
             scheduler.scheduler,
             scheduler_receiver,
-            dispatcher_handle,
-            autoscaler_handle,
+            dispatcher,
+            scheduler.worker_manager,
             statistics_manager,
         ));
         SchedulerHandle::new(scheduler_sender)
@@ -123,21 +116,29 @@ where
     async fn run_scheduler_loop(
         mut scheduler: S,
         mut task_rx: SchedulerReceiver<W::Task>,
-        mut dispatcher_handle: DispatcherHandle<W::Task>,
-        autoscaler_handle: AutoscalerHandle,
+        mut dispatcher: Dispatcher<W>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
-        // await worker updates at the start of the loop to initialize the scheduler with the current worker state
-        if let Some(worker_updates) = dispatcher_handle.await_worker_updates().await {
-            scheduler.update_worker_state(&worker_updates);
-        }
+        // Initialize the scheduler with the current worker state
+        let worker_snapshots = worker_manager.worker_snapshots()?;
+        scheduler.update_worker_state(&worker_snapshots);
 
         let mut input_exhausted = false;
+        let mut tick_interval = tokio::time::interval(Duration::from_secs(1));
+
         // Keep running until the input is exhausted, i.e. no more new tasks, and there are no more pending tasks in the scheduler
-        while !input_exhausted || scheduler.num_pending_tasks() > 0 {
+        while !input_exhausted
+            || scheduler.num_pending_tasks() > 0
+            || dispatcher.has_running_tasks()
+        {
+            // Update worker snapshots at the start of each loop iteration
+            let worker_snapshots = worker_manager.worker_snapshots()?;
+            scheduler.update_worker_state(&worker_snapshots);
+
             // 1: Get all tasks that are ready to be scheduled
             let scheduled_tasks = scheduler.get_schedulable_tasks();
-            // 2: Dispatch tasks to the dispatcher
+            // 2: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::debug!("Dispatching tasks: {:?}", scheduled_tasks);
 
@@ -146,7 +147,7 @@ where
                         context: task.task().task_context(),
                     })?;
                 }
-                dispatcher_handle.dispatch_tasks(scheduled_tasks).await?;
+                dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
             }
 
             // 3: Send autoscaling request if needed
@@ -154,18 +155,24 @@ where
             if let Some(request) = autoscaling_request {
                 tracing::debug!("Sending autoscaling request: {:?}", request);
 
-                autoscaler_handle.send_autoscaling_request(request).await?;
+                worker_manager.try_autoscale(request)?;
             }
 
-            // 4: Concurrently wait for new tasks or worker updates
+            // 4: Concurrently wait for new tasks, task completions, or periodic tick
             tokio::select! {
                 maybe_new_task = task_rx.recv() => {
                     Self::handle_new_tasks(maybe_new_task, &mut task_rx, &statistics_manager, &mut scheduler, &mut input_exhausted)?;
                 }
-                Some(snapshots) = dispatcher_handle.await_worker_updates() => {
-                    tracing::debug!("Received worker updates: {:?}", snapshots);
-
-                    scheduler.update_worker_state(&snapshots);
+                failed_tasks = dispatcher.await_completed_tasks(&worker_manager, &statistics_manager), if dispatcher.has_running_tasks() => {
+                    let failed_tasks = failed_tasks?;
+                    // Re-enqueue any failed tasks
+                    if !failed_tasks.is_empty() {
+                        tracing::debug!("Re-enqueueing {} failed tasks", failed_tasks.len());
+                        scheduler.enqueue_tasks(failed_tasks);
+                    }
+                }
+                _ = tick_interval.tick() => {
+                    // Tick completed - worker snapshots will be updated at the top of the next loop iteration
                 }
             }
         }
