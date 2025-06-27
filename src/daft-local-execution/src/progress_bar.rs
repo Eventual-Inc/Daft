@@ -1,14 +1,14 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use common_error::DaftResult;
 use indexmap::IndexMap;
-use indicatif::ProgressStyle;
+use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 
 use crate::runtime_stats::RuntimeStatsContext;
@@ -59,15 +59,9 @@ impl ProgressBarColor {
 pub struct OperatorProgressBar {
     inner_progress_bar: Box<dyn ProgressBar>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    start_time: Instant,
-    last_update: AtomicU64,
 }
 
 impl OperatorProgressBar {
-    // 500ms = 500_000_000ns
-    // Only throttles the text updates, not the spinner
-    const UPDATE_INTERVAL: u64 = 500_000_000;
-
     pub fn new(
         progress_bar: Box<dyn ProgressBar>,
         runtime_stats: Arc<RuntimeStatsContext>,
@@ -75,43 +69,13 @@ impl OperatorProgressBar {
         Self {
             inner_progress_bar: progress_bar,
             runtime_stats,
-            start_time: Instant::now(),
-            last_update: AtomicU64::new(0),
-        }
-    }
-
-    fn should_update_progress_bar(&self, now: Instant) -> bool {
-        if now < self.start_time {
-            return false;
-        }
-
-        {
-            {
-                let prev = self.last_update.load(Ordering::Acquire);
-                let elapsed = (now - self.start_time).as_nanos() as u64;
-                let diff = elapsed.saturating_sub(prev);
-
-                // Fast path - check if enough time has passed
-                if diff < Self::UPDATE_INTERVAL {
-                    return false;
-                }
-
-                // Only calculate remainder if we're actually going to update
-                let remainder = diff % Self::UPDATE_INTERVAL;
-                self.last_update
-                    .store(elapsed - remainder, Ordering::Release);
-                true
-            }
         }
     }
 
     pub fn render(&self) {
-        let now = std::time::Instant::now();
-        if self.should_update_progress_bar(now) {
-            let _ = self
-                .inner_progress_bar
-                .set_message(self.runtime_stats.render());
-        }
+        let _ = self
+            .inner_progress_bar
+            .set_message(self.runtime_stats.render());
     }
 }
 
@@ -155,6 +119,7 @@ impl IndicatifProgressBarManager {
     fn new(total: usize) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
         multi_progress.set_move_cursor(true);
+        multi_progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
 
         Self {
             multi_progress,
