@@ -24,6 +24,7 @@ impl<W: Worker> DispatcherActor<W> {
     const DISPATCHER_TICK_INTERVAL: Duration = Duration::from_secs(1);
 
     pub fn new(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
+        tracing::info!(target: "DaftFlotillaDispatcher", "Dispatcher actor created");
         Self { worker_manager }
     }
 
@@ -32,6 +33,8 @@ impl<W: Worker> DispatcherActor<W> {
         joinset: &mut JoinSet<DaftResult<()>>,
         statistics_manager: StatisticsManagerRef,
     ) -> DispatcherHandle<W::Task> {
+        tracing::info!(target: "DaftFlotillaDispatcher", "Spawning dispatcher actor");
+
         let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
         let (worker_update_sender, worker_update_receiver) = tokio::sync::watch::channel(vec![]);
         joinset.spawn(Self::run_dispatcher_loop(
@@ -49,6 +52,9 @@ impl<W: Worker> DispatcherActor<W> {
         running_tasks: &mut JoinSet<()>,
         running_tasks_by_context: &mut HashMap<JoinSetId, (TaskContext, WorkerId)>,
     ) -> DaftResult<()> {
+        let num_tasks = scheduled_tasks.len();
+        tracing::info!(target: "DaftFlotillaDispatcher", num_tasks, "Dispatching tasks to workers");
+
         let mut worker_to_tasks = HashMap::new();
 
         for scheduled_task in scheduled_tasks {
@@ -59,7 +65,12 @@ impl<W: Worker> DispatcherActor<W> {
                 .push(task);
         }
 
-        let result_handles = worker_manager.submit_tasks_to_workers(worker_to_tasks)?;
+        let result_handles = worker_manager.submit_tasks_to_workers(worker_to_tasks)
+            .map_err(|e| {
+                tracing::error!(target: "DaftFlotillaDispatcher", error = %e, "Failed to submit tasks to workers");
+                e
+            })?;
+
         for result_handle in result_handles {
             let (task_context, worker_id) = (
                 result_handle.task_context(),
@@ -68,6 +79,7 @@ impl<W: Worker> DispatcherActor<W> {
             let id = running_tasks.spawn(result_handle.await_result());
             running_tasks_by_context.insert(id, (task_context, worker_id));
         }
+
         Ok(())
     }
 
@@ -80,22 +92,40 @@ impl<W: Worker> DispatcherActor<W> {
         worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
         statistics_manager: &StatisticsManagerRef,
     ) -> DaftResult<()> {
-        // Remove the first task from the running_tasks_by_id map
-        finished_task_result?;
+        // Handle the primary finished task
         let (task_context, worker_id) = running_tasks_by_context
             .remove(&finished_joinset_id)
             .expect("Task should be present in running_tasks_by_id");
+
+        match finished_task_result {
+            Ok(()) => {
+                tracing::info!(target: "DaftFlotillaDispatcher", task_id = task_context.task_id, "Task completed successfully");
+            }
+            Err(e) => {
+                tracing::error!(target: "DaftFlotillaDispatcher", task_id = task_context.task_id, error = %e, "Task failed");
+                return Err(e);
+            }
+        }
+
         worker_manager.mark_task_finished(&task_context.task_id, &worker_id);
         statistics_manager.handle_event(StatisticsEvent::FinishedTask {
             context: task_context,
         })?;
 
-        // Try to get any other finished tasks
+        // Process any additional finished tasks in batch
         while let Some((id, finished_task_result)) = running_tasks.try_join_next_with_id() {
-            finished_task_result?;
             let (task_context, worker_id) = running_tasks_by_context
                 .remove(&id)
                 .expect("Task should be present in running_tasks_by_id");
+
+            match finished_task_result {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::error!(target: "DaftFlotillaDispatcher", task_id = task_context.task_id, error = %e, "Task failed");
+                    return Err(e);
+                }
+            }
+
             worker_manager.mark_task_finished(&task_context.task_id, &worker_id);
             statistics_manager.handle_event(StatisticsEvent::FinishedTask {
                 context: task_context,
@@ -110,9 +140,14 @@ impl<W: Worker> DispatcherActor<W> {
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
         worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
     ) -> DaftResult<()> {
-        let worker_snapshots = worker_manager.worker_snapshots()?;
+        let worker_snapshots = worker_manager.worker_snapshots()
+            .map_err(|e| {
+                tracing::error!(target: "DaftFlotillaDispatcher", error = %e, "Failed to get worker snapshots");
+                e
+            })?;
+
         if worker_update_sender.send(worker_snapshots).is_err() {
-            tracing::debug!("Unable to send worker update while handling worker updates, dispatcher handle dropped");
+            // Silently ignore - dispatcher handle was dropped
         }
         Ok(())
     }
@@ -127,6 +162,8 @@ impl<W: Worker> DispatcherActor<W> {
     where
         <W as Worker>::TaskResultHandle: std::marker::Send,
     {
+        tracing::info!(target: "DaftFlotillaDispatcher", "Dispatcher event loop starting");
+
         // send worker updates at the start of the loop
         Self::handle_worker_updates(&worker_manager, &worker_update_sender).await?;
 
@@ -134,10 +171,14 @@ impl<W: Worker> DispatcherActor<W> {
         let mut running_tasks = JoinSet::new();
         let mut running_tasks_by_context = HashMap::new();
         let mut tick_interval = tokio::time::interval(Self::DISPATCHER_TICK_INTERVAL);
+
         while !input_exhausted || !running_tasks.is_empty() {
             tokio::select! {
                 maybe_tasks = task_rx.recv() => {
                     if let Some(tasks) = maybe_tasks {
+                        let task_count = tasks.len();
+                        tracing::info!(target: "DaftFlotillaDispatcher", task_count, "Received scheduled tasks");
+
                         Self::dispatch_tasks(
                             tasks,
                             &worker_manager,
@@ -146,10 +187,11 @@ impl<W: Worker> DispatcherActor<W> {
                         )?;
                     } else if !input_exhausted {
                         input_exhausted = true;
+                        tracing::info!(target: "DaftFlotillaDispatcher", "Task input stream exhausted");
                     }
                 }
                 Some((id, finished_task_result)) = running_tasks.join_next_with_id() => {
-                     Self::handle_finished_task(
+                    Self::handle_finished_task(
                         id,
                         finished_task_result,
                         &mut running_tasks_by_context,
@@ -164,6 +206,8 @@ impl<W: Worker> DispatcherActor<W> {
                 }
             }
         }
+
+        tracing::info!(target: "DaftFlotillaDispatcher", "Dispatcher event loop completed");
         Ok(())
     }
 }

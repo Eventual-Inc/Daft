@@ -159,6 +159,12 @@ impl SwordfishTask {
         let resource_request = TaskResourceRequest::new(plan.resource_request());
         context.insert("task_id".to_string(), task_context.task_id.to_string());
 
+        tracing::info!(
+            target: "DaftFlotillaTask",
+            task_id = task_context.task_id,
+            "SwordfishTask created"
+        );
+
         Self {
             task_context,
             plan,
@@ -263,16 +269,56 @@ impl<H: TaskResultHandle> TaskResultHandleAwaiter<H> {
     }
 
     pub async fn await_result(mut self) {
+        tracing::info!(
+            target: "DaftFlotillaTask",
+            task_id = self.task_context.task_id,
+            worker_id = %self.worker_id,
+            "Task execution started"
+        );
+
         tokio::select! {
             biased;
             () = self.cancel_token.cancelled() => {
+                tracing::warn!(
+                    target: "DaftFlotillaTask",
+                    task_id = self.task_context.task_id,
+                    "Task cancelled"
+                );
+
                 if let Err(e) = self.handle.cancel_callback() {
-                    tracing::debug!("Failed to cancel task: {}", e);
+                    tracing::error!(
+                        target: "DaftFlotillaTask",
+                        task_id = self.task_context.task_id,
+                        error = %e,
+                        "Failed to cancel task"
+                    );
                 }
             }
             result = self.handle.get_result() => {
+                match &result {
+                    Ok(_) => {
+                        tracing::info!(
+                            target: "DaftFlotillaTask",
+                            task_id = self.task_context.task_id,
+                            "Task completed successfully"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target: "DaftFlotillaTask",
+                            task_id = self.task_context.task_id,
+                            error = %e,
+                            "Task execution failed"
+                        );
+                    }
+                }
+
                 if self.result_sender.send(result).is_err() {
-                    tracing::debug!("Task result receiver was dropped before task result could be sent");
+                    tracing::warn!(
+                        target: "DaftFlotillaTask",
+                        task_id = self.task_context.task_id,
+                        "Task result receiver was dropped"
+                    );
                 }
             }
         }

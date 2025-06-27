@@ -29,6 +29,8 @@ use crate::{
     },
 };
 
+const SCHEDULER_LOG_TARGET: &str = "DaftFlotillaScheduler";
+
 struct SchedulerActor<W: Worker, S: Scheduler<W::Task>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     scheduler: S,
@@ -63,6 +65,8 @@ where
         joinset: &mut JoinSet<DaftResult<()>>,
         statistics_manager: StatisticsManagerRef,
     ) -> SchedulerHandle<W::Task> {
+        tracing::info!(target: SCHEDULER_LOG_TARGET, "Spawning scheduler actor");
+
         // Spawn a dispatcher actor to handle task dispatch and await task results
         let dispatcher_actor = DispatcherActor::new(scheduler.worker_manager.clone());
         let dispatcher_handle = DispatcherActor::spawn_dispatcher_actor(
@@ -83,6 +87,8 @@ where
             autoscaler_handle,
             statistics_manager,
         ));
+
+        tracing::info!(target: SCHEDULER_LOG_TARGET, "Spawned scheduler actor");
         SchedulerHandle::new(scheduler_sender)
     }
 
@@ -95,22 +101,28 @@ where
     ) -> DaftResult<()> {
         // If there are any new tasks, enqueue them all
         if let Some(new_task) = maybe_new_task {
-            tracing::debug!("Received new task: {:?}", new_task);
-
             let mut enqueueable_tasks = vec![new_task];
+
+            // Drain all available tasks from the channel
             while let Ok(task) = task_rx.try_recv() {
                 enqueueable_tasks.push(task);
             }
+
+            let total_tasks = enqueueable_tasks.len();
+            tracing::info!(target: SCHEDULER_LOG_TARGET, total_tasks, "Enqueueing task batch");
+
+            // Register statistics for all tasks
             for task in &enqueueable_tasks {
+                let task_context = task.task_context();
                 statistics_manager.handle_event(StatisticsEvent::SubmittedTask {
-                    context: task.task_context(),
+                    context: task_context,
                     name: task.task.task_name().clone(),
                 })?;
             }
+
             scheduler.enqueue_tasks(enqueueable_tasks);
         } else if !*input_exhausted {
-            tracing::debug!("Input exhausted");
-
+            tracing::info!(target: SCHEDULER_LOG_TARGET, "Task input stream exhausted");
             *input_exhausted = true;
         }
         Ok(())
@@ -124,33 +136,42 @@ where
         autoscaler_handle: AutoscalerHandle,
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
+        tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop starting");
+
         // await worker updates at the start of the loop to initialize the scheduler with the current worker state
         if let Some(worker_updates) = dispatcher_handle.await_worker_updates().await {
+            let num_workers = worker_updates.len();
+            tracing::info!(target: SCHEDULER_LOG_TARGET, num_workers, "Received initial worker state");
             scheduler.update_worker_state(&worker_updates);
         }
 
         let mut input_exhausted = false;
+
         // Keep running until the input is exhausted, i.e. no more new tasks, and there are no more pending tasks in the scheduler
         while !input_exhausted || scheduler.num_pending_tasks() > 0 {
             // 1: Get all tasks that are ready to be scheduled
             let scheduled_tasks = scheduler.get_schedulable_tasks();
+
             // 2: Dispatch tasks to the dispatcher
             if !scheduled_tasks.is_empty() {
-                tracing::debug!("Dispatching tasks: {:?}", scheduled_tasks);
+                let task_count = scheduled_tasks.len();
+                tracing::info!(target: SCHEDULER_LOG_TARGET, task_count, "Scheduling tasks for dispatch");
 
+                // Report to statistics manager
                 for task in &scheduled_tasks {
+                    let task_context = task.task().task_context();
                     statistics_manager.handle_event(StatisticsEvent::ScheduledTask {
-                        context: task.task().task_context(),
+                        context: task_context,
                     })?;
                 }
+
                 dispatcher_handle.dispatch_tasks(scheduled_tasks).await?;
             }
 
             // 3: Send autoscaling request if needed
             let autoscaling_request = scheduler.get_autoscaling_request();
             if let Some(request) = autoscaling_request {
-                tracing::debug!("Sending autoscaling request: {:?}", request);
-
+                tracing::info!(target: SCHEDULER_LOG_TARGET, ?request, "Sending autoscaling request");
                 autoscaler_handle.send_autoscaling_request(request).await?;
             }
 
@@ -160,13 +181,12 @@ where
                     Self::handle_new_tasks(maybe_new_task, &mut task_rx, &statistics_manager, &mut scheduler, &mut input_exhausted)?;
                 }
                 Some(snapshots) = dispatcher_handle.await_worker_updates() => {
-                    tracing::debug!("Received worker updates: {:?}", snapshots);
-
                     scheduler.update_worker_state(&snapshots);
                 }
             }
         }
-        tracing::debug!("Scheduler loop complete");
+
+        tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop completed");
         Ok(())
     }
 }
@@ -176,8 +196,14 @@ pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,
 ) -> SchedulerHandle<W::Task> {
+    tracing::info!(target: SCHEDULER_LOG_TARGET, "Spawning default scheduler actor");
+
     let scheduler = SchedulerActor::default_scheduler(worker_manager);
-    SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
+    let handle = SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager);
+
+    tracing::info!(target: SCHEDULER_LOG_TARGET, "Default scheduler actor spawned successfully");
+
+    handle
 }
 
 #[allow(dead_code)]
@@ -186,8 +212,14 @@ pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,
 ) -> SchedulerHandle<W::Task> {
+    tracing::info!(target: SCHEDULER_LOG_TARGET, "Spawning linear scheduler actor");
+
     let scheduler = SchedulerActor::linear_scheduler(worker_manager);
-    SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
+    let handle = SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager);
+
+    tracing::info!(target: SCHEDULER_LOG_TARGET, "Linear scheduler actor spawned successfully");
+
+    handle
 }
 
 #[derive(Debug)]
@@ -212,6 +244,9 @@ impl<T: Task> SchedulerHandle<T> {
         submittable_task: SubmittableTask<T>,
     ) -> (SchedulableTask<T>, SubmittedTask) {
         let task_id = submittable_task.task.task_id();
+
+        tracing::trace!(target: SCHEDULER_LOG_TARGET, task_id, "Preparing task for submission");
+
         let schedulable_task = SchedulableTask::new(
             submittable_task.task,
             submittable_task.result_tx,
@@ -224,20 +259,32 @@ impl<T: Task> SchedulerHandle<T> {
             submittable_task.notify_token,
         );
 
+        tracing::trace!(target: SCHEDULER_LOG_TARGET, task_id, "Task preparation completed");
+
         (schedulable_task, submitted_task)
     }
 
     #[allow(dead_code)]
     async fn submit_task(&self, submittable_task: SubmittableTask<T>) -> DaftResult<SubmittedTask> {
+        let task_id = submittable_task.task.task_id();
+
+        tracing::debug!(target: SCHEDULER_LOG_TARGET, task_id, "Submitting task to scheduler");
+
         let (schedulable_task, submitted_task) =
             Self::prepare_task_for_submission(submittable_task);
-        self.scheduler_sender
-            .send(schedulable_task)
-            .await
-            .map_err(|_| {
-                DaftError::InternalError("Failed to send task to scheduler".to_string())
-            })?;
-        Ok(submitted_task)
+
+        match self.scheduler_sender.send(schedulable_task).await {
+            Ok(()) => {
+                tracing::debug!(target: SCHEDULER_LOG_TARGET, task_id, "Task submitted successfully");
+                Ok(submitted_task)
+            }
+            Err(_) => {
+                let error =
+                    DaftError::InternalError("Failed to send task to scheduler".to_string());
+                tracing::error!(target: SCHEDULER_LOG_TARGET, task_id, error = %error, "Failed to submit task");
+                Err(error)
+            }
+        }
     }
 }
 
@@ -299,6 +346,8 @@ impl SubmittedTask {
         cancel_token: Option<CancellationToken>,
         notify_token: Option<OneshotSender<()>>,
     ) -> Self {
+        tracing::trace!(target: SCHEDULER_LOG_TARGET, task_id, "SubmittedTask created");
+
         Self {
             _task_id: task_id,
             result_rx,
@@ -321,16 +370,31 @@ impl Future for SubmittedTask {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
+
+                match &result {
+                    Ok(outputs) => {
+                        tracing::debug!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, output_count = outputs.len(), "Task completed successfully");
+                    }
+                    Err(error) => {
+                        tracing::error!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, error = %error, "Task completed with error");
+                    }
+                }
+
                 if let Some(notify_token) = self.notify_token.take() {
                     let _ = notify_token.send(());
+                    tracing::trace!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, "Notify token sent");
                 }
                 Poll::Ready(result)
             }
             // If the receiver is dropped, return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
+
+                tracing::warn!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, "Task result receiver dropped");
+
                 if let Some(notify_token) = self.notify_token.take() {
                     let _ = notify_token.send(());
+                    tracing::trace!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, "Notify token sent after receiver drop");
                 }
                 Poll::Ready(Ok(vec![]))
             }
@@ -342,10 +406,15 @@ impl Future for SubmittedTask {
 impl Drop for SubmittedTask {
     fn drop(&mut self) {
         if self.finished {
+            tracing::trace!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, "SubmittedTask dropped after completion");
             return;
         }
+
         if let Some(cancel_token) = self.cancel_token.take() {
+            tracing::info!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, "SubmittedTask cancelled on drop");
             cancel_token.cancel();
+        } else {
+            tracing::debug!(target: SCHEDULER_LOG_TARGET, task_id = self._task_id, "SubmittedTask dropped without cancellation token");
         }
     }
 }
