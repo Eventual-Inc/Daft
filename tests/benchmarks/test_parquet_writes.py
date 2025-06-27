@@ -220,10 +220,11 @@ def generate_parquet_file(config: FileConfig, output_path: Path) -> None:
 
 # Test data configurations for different benchmark scenarios
 TEST_CONFIGS = {
-    "27_boolean_heavy_partitioned": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05, partition_count=32),
+#     "27_boolean_heavy_partitioned": FileConfig.from_pattern(num_rows=10000000, pattern="boolean", repeat=20, null_percentage=0.05, partition_count=32),
     "28_high_nulls_partitioned": FileConfig(
             num_rows=2000000,
             schema=[
+                ColumnSpec("partition", ColumnType.INT),
                 ColumnSpec("id", ColumnType.INT),
                 ColumnSpec("optional_name", ColumnType.STRING, null_percentage=0.7),
                 ColumnSpec("optional_score", ColumnType.FLOAT, null_percentage=0.8),
@@ -464,10 +465,11 @@ def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_di
             output_file = f"s3://eventual-dev-benchmarking-fixtures/write-outputs/{config_name}_{writer}.parquet"
 
         if config.partition_count is not None:
-            df.write_parquet(str(output_file), write_mode="overwrite", partition_cols="partition")
+            df.write_parquet(str(output_file), write_mode="overwrite", partition_cols=["partition"])
         else:
             df.write_parquet(str(output_file), write_mode="overwrite")
 
+        print(f"Wrote {output_file}")
         return output_file
 
     benchmark_group = f"write_{config_name}-{target}"
