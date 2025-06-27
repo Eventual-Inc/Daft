@@ -48,14 +48,14 @@ impl PySeries {
         py: Python<'_>,
         name: &str,
         pylist: Bound<PyAny>,
-        pyobj: &str,
+        dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let dtype = match pyobj {
-            "force" => DataType::Python,
-            "allow" => infer_daft_dtype_for_sequence(&vec_pyobj, py, name)?.unwrap_or(DataType::Python),
-            "disallow" => panic!("Cannot create a Series from a pylist and being strict about only using Arrow types by setting pyobj=disallow"),
-            _ => panic!("Unsupported pyobj behavior when creating Series from pylist: {}", pyobj)
+        let dtype = match dtype {
+            Some(dtype) => dtype.into(),
+            None => {
+                infer_daft_dtype_for_sequence(&vec_pyobj, py, name)?.unwrap_or(DataType::Python)
+            }
         };
         let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
         let arrow_array: Box<dyn arrow2::array::Array> =

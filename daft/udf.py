@@ -179,7 +179,9 @@ def run_udf(
         if return_dtype == DataType.python():
             return Series.from_pylist(result_list, name=name, pyobj="force")._series
         else:
-            return Series.from_pylist(result_list, name=name, pyobj="allow").cast(return_dtype)._series
+            return (
+                Series.from_pylist(result_list, name=name, pyobj="allow", dtype=return_dtype).cast(return_dtype)._series
+            )
     elif np.module_available() and isinstance(results[0], np.ndarray):  # type: ignore[attr-defined]
         np_results = cast("list[np.ndarray[Any, Any]]", results)
         result_np = np.concatenate(np_results)
