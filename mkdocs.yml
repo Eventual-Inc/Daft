@@ -42,6 +42,7 @@ nav:
   - Advanced:
     - Managing Memory Usage: advanced/memory.md
     - Partitioning: advanced/partitioning.md
+    - Observability: advanced/observability.md
   - Resources:
     - Architecture: resources/architecture.md
     - Engine Comparison: resources/engine_comparison.md

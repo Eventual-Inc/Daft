@@ -233,6 +233,7 @@ def set_execution_config(
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
+        min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 1.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -267,6 +268,7 @@ def set_execution_config(
             scantask_splitting_level=scantask_splitting_level,
             native_parquet_writer=native_parquet_writer,
             flotilla=flotilla,
+            min_cpu_per_task=min_cpu_per_task,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
