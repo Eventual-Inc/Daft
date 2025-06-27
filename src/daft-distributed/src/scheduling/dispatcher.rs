@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
 
@@ -21,6 +21,8 @@ pub(super) struct DispatcherActor<W: Worker> {
 }
 
 impl<W: Worker> DispatcherActor<W> {
+    const DISPATCHER_TICK_INTERVAL: Duration = Duration::from_secs(1);
+
     pub fn new(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self { worker_manager }
     }
@@ -31,14 +33,7 @@ impl<W: Worker> DispatcherActor<W> {
         statistics_manager: StatisticsManagerRef,
     ) -> DispatcherHandle<W::Task> {
         let (dispatcher_sender, dispatcher_receiver) = create_channel(1);
-        let initial_worker_snapshots = dispatcher
-            .worker_manager
-            .workers()
-            .values()
-            .map(WorkerSnapshot::from)
-            .collect::<Vec<_>>();
-        let (worker_update_sender, worker_update_receiver) =
-            tokio::sync::watch::channel(initial_worker_snapshots);
+        let (worker_update_sender, worker_update_receiver) = tokio::sync::watch::channel(vec![]);
         joinset.spawn(Self::run_dispatcher_loop(
             dispatcher.worker_manager,
             dispatcher_receiver,
@@ -107,15 +102,18 @@ impl<W: Worker> DispatcherActor<W> {
             })?;
         }
 
-        let workers = worker_manager.workers();
-        let worker_snapshots = workers
-            .values()
-            .map(WorkerSnapshot::from)
-            .collect::<Vec<_>>();
-        if worker_update_sender.send(worker_snapshots).is_err() {
-            tracing::debug!("Unable to send worker update, dispatcher handle dropped");
-        }
+        Self::handle_worker_updates(worker_manager, worker_update_sender).await?;
+        Ok(())
+    }
 
+    async fn handle_worker_updates(
+        worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
+        worker_update_sender: &tokio::sync::watch::Sender<Vec<WorkerSnapshot>>,
+    ) -> DaftResult<()> {
+        let worker_snapshots = worker_manager.worker_snapshots()?;
+        if worker_update_sender.send(worker_snapshots).is_err() {
+            tracing::debug!("Unable to send worker update while handling worker updates, dispatcher handle dropped");
+        }
         Ok(())
     }
 
@@ -129,10 +127,13 @@ impl<W: Worker> DispatcherActor<W> {
     where
         <W as Worker>::TaskResultHandle: std::marker::Send,
     {
+        // send worker updates at the start of the loop
+        Self::handle_worker_updates(&worker_manager, &worker_update_sender).await?;
+
         let mut input_exhausted = false;
         let mut running_tasks = JoinSet::new();
         let mut running_tasks_by_context = HashMap::new();
-
+        let mut tick_interval = tokio::time::interval(Self::DISPATCHER_TICK_INTERVAL);
         while !input_exhausted || !running_tasks.is_empty() {
             tokio::select! {
                 maybe_tasks = task_rx.recv() => {
@@ -157,6 +158,9 @@ impl<W: Worker> DispatcherActor<W> {
                         &worker_update_sender,
                         &statistics_manager,
                     ).await?;
+                }
+                _ = tick_interval.tick() => {
+                    Self::handle_worker_updates(&worker_manager, &worker_update_sender).await?;
                 }
             }
         }

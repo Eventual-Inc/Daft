@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use pyo3::prelude::*;
@@ -13,7 +10,7 @@ use crate::scheduling::{
     worker::{Worker, WorkerId},
 };
 
-type ActiveTaskDetails = Arc<Mutex<HashMap<TaskID, TaskDetails>>>;
+type ActiveTaskDetails = HashMap<TaskID, TaskDetails>;
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishWorker")]
 #[derive(Debug, Clone)]
@@ -49,15 +46,12 @@ impl RaySwordfishWorker {
 }
 
 impl RaySwordfishWorker {
-    pub fn mark_task_finished(&self, task_id: &TaskID) {
-        self.active_task_details
-            .lock()
-            .expect("Active task ids should be present")
-            .remove(task_id);
+    pub fn mark_task_finished(&mut self, task_id: &TaskID) {
+        self.active_task_details.remove(task_id);
     }
 
     pub fn submit_tasks(
-        &self,
+        &mut self,
         tasks: Vec<SchedulableTask<SwordfishTask>>,
         py: Python<'_>,
         task_locals: &pyo3_async_runtimes::TaskLocals,
@@ -77,8 +71,6 @@ impl RaySwordfishWorker {
             let coroutine = py_task_handle.call_method0(py, pyo3::intern!(py, "get_result"))?;
 
             self.active_task_details
-                .lock()
-                .expect("Active task details should be present")
                 .insert(task_context.task_id, task_details);
 
             let task_locals = task_locals.clone_ref(py);
@@ -126,8 +118,6 @@ impl Worker for RaySwordfishWorker {
 
     fn active_num_cpus(&self) -> f64 {
         self.active_task_details
-            .lock()
-            .expect("Active task details should be present")
             .values()
             .map(|details| details.num_cpus())
             .sum()
@@ -135,17 +125,12 @@ impl Worker for RaySwordfishWorker {
 
     fn active_num_gpus(&self) -> f64 {
         self.active_task_details
-            .lock()
-            .expect("Active task details should be present")
             .values()
             .map(|details| details.num_gpus())
             .sum()
     }
 
     fn active_task_details(&self) -> HashMap<TaskID, TaskDetails> {
-        self.active_task_details
-            .lock()
-            .expect("Active task details should be present")
-            .clone()
+        self.active_task_details.clone()
     }
 }
