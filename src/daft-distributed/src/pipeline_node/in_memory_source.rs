@@ -105,7 +105,6 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-            self.context.node_id,
         );
         Ok(task)
     }

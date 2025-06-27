@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskID, TaskPriority},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskID},
     worker::{Worker, WorkerId},
 };
 use crate::{
@@ -50,11 +50,6 @@ impl<T: Task> SchedulableTask<T> {
 
     pub fn strategy(&self) -> &SchedulingStrategy {
         self.task.strategy()
-    }
-
-    #[allow(dead_code)]
-    pub fn priority(&self) -> TaskPriority {
-        self.task.priority()
     }
 
     pub fn task_context(&self) -> TaskContext {
@@ -170,11 +165,9 @@ impl WorkerSnapshot {
         self.total_num_gpus
     }
 
+    // TODO: Potentially include memory as well, and also be able to overschedule tasks.
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
         self.available_num_cpus() >= task.resource_request().num_cpus()
-            && self.available_num_gpus() >= task.resource_request().num_gpus()
-            // For now, we only schedule one task at a time per worker
-            && self.active_task_details.is_empty()
     }
 }
 
@@ -234,9 +227,10 @@ pub(super) mod test_utils {
         )
     }
 
-    pub fn create_spread_task() -> SchedulableTask<MockTask> {
+    pub fn create_spread_task(id: Option<TaskID>) -> SchedulableTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::Spread)
+            .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)
     }
@@ -244,12 +238,14 @@ pub(super) mod test_utils {
     pub fn create_worker_affinity_task(
         worker_id: &WorkerId,
         soft: bool,
+        id: Option<TaskID>,
     ) -> SchedulableTask<MockTask> {
         let task = MockTaskBuilder::default()
             .with_scheduling_strategy(SchedulingStrategy::WorkerAffinity {
                 worker_id: worker_id.clone(),
                 soft,
             })
+            .with_task_id(id.unwrap_or_default())
             .build();
         create_schedulable_task(task)
     }
