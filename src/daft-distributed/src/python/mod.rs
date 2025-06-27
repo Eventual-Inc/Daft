@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
+    python::ray::RayTaskResult,
     statistics::StatisticsManager,
 };
 
@@ -144,5 +145,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
+    parent.add_class::<RayTaskResult>()?;
     Ok(())
 }
