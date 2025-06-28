@@ -1835,6 +1835,13 @@ impl Expr {
             })?
             .data)
     }
+
+    pub fn unwrap_alias(self: &ExprRef) -> (ExprRef, Option<Arc<str>>) {
+        match self.as_ref() {
+            Self::Alias(expr, name) => (expr.clone(), Some(name.clone())),
+            _ => (self.clone(), None),
+        }
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -1963,6 +1970,36 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
             ..
         }
     )
+}
+
+#[inline]
+pub fn is_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF { .. }),
+            ..
+        }
+    )
+}
+
+pub fn count_udfs(exprs: &[ExprRef]) -> usize {
+    exprs
+        .iter()
+        .map(|expr| {
+            let mut count = 0;
+            expr.apply(|e| {
+                if is_udf(e) {
+                    count += 1;
+                }
+
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            })
+            .unwrap();
+
+            count
+        })
+        .sum()
 }
 
 pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
