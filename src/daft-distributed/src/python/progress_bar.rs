@@ -70,7 +70,12 @@ impl Drop for FlotillaProgressBar {
 }
 
 impl StatisticsSubscriber for FlotillaProgressBar {
-    fn handle_event(&self, event: &StatisticsEvent) -> DaftResult<()> {
+    fn handle_event(
+        &self,
+        event: &StatisticsEvent,
+        _plans: &std::collections::HashMap<u32, crate::statistics::PlanState>,
+        _tasks: &std::collections::HashMap<crate::scheduling::task::TaskContext, crate::statistics::TaskState>,
+    ) -> DaftResult<()> {
         match event {
             StatisticsEvent::SubmittedTask { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
@@ -78,10 +83,24 @@ impl StatisticsSubscriber for FlotillaProgressBar {
             }
             // For progress bar we don't care if it is scheduled, for now.
             StatisticsEvent::ScheduledTask { .. } => Ok(()),
+            StatisticsEvent::TaskStarted { .. } => Ok(()), // Progress bar doesn't need to handle task start separately
             StatisticsEvent::FinishedTask { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
+            StatisticsEvent::TaskFailed { context, .. } => {
+                // Treat failed tasks the same as finished for progress bar purposes
+                self.update_bar(BarId::from(context))?;
+                Ok(())
+            }
+            StatisticsEvent::TaskCanceled { context, .. } => {
+                // Treat canceled tasks the same as finished for progress bar purposes
+                self.update_bar(BarId::from(context))?;
+                Ok(())
+            }
+            // Plan-level events don't affect individual task progress bars
+            StatisticsEvent::PlanStarted { .. } => Ok(()),
+            StatisticsEvent::PlanFinished { .. } => Ok(()),
         }
     }
 }
