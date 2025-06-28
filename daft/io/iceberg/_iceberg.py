@@ -86,7 +86,7 @@ def read_iceberg(
     """
     from pyiceberg.table import StaticTable
 
-    from daft.iceberg.iceberg_scan import IcebergScanOperator
+    from daft.io.iceberg.iceberg_scan import IcebergScanOperator
 
     # support for read_iceberg('path/to/metadata.json')
     if isinstance(table, str):

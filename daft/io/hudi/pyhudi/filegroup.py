@@ -8,7 +8,7 @@ from sortedcontainers import SortedDict
 from daft.dependencies import pa
 
 if TYPE_CHECKING:
-    from daft.hudi.pyhudi.utils import FsFileMetadata
+    from daft.io.hudi.pyhudi.utils import FsFileMetadata
 
 
 @dataclass(init=False)
