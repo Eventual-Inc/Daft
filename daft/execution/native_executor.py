@@ -58,8 +58,8 @@ class NativeExecutor:
     ) -> str:
         """Pretty prints the current underlying logical plan."""
         if format == "ascii":
-            return self._executor.repr_ascii(builder._builder, daft_execution_config, simple)
+            return _NativeExecutor.repr_ascii(builder._builder, daft_execution_config, simple)
         elif format == "mermaid":
-            return self._executor.repr_mermaid(builder._builder, daft_execution_config, MermaidOptions(simple))
+            return _NativeExecutor.repr_mermaid(builder._builder, daft_execution_config, MermaidOptions(simple))
         else:
             raise ValueError(f"Unknown format: {format}")

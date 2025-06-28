@@ -4,7 +4,7 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{instrument, Span};
 
-use super::streaming_sink::{
+use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };

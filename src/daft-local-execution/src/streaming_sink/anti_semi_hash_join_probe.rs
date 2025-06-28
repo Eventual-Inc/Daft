@@ -11,10 +11,8 @@ use itertools::Itertools;
 use tracing::{info_span, instrument, Span};
 
 use super::{
+    base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkOutput, StreamingSinkState},
     outer_hash_join_probe::IndexBitmapBuilder,
-    streaming_sink::{
-        StreamingSink, StreamingSinkExecuteResult, StreamingSinkOutput, StreamingSinkState,
-    },
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
@@ -303,9 +301,9 @@ impl StreamingSink for AntiSemiProbeSink {
     #[instrument(skip_all, name = "AntiSemiProbeSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn super::streaming_sink::StreamingSinkState>>,
+        states: Vec<Box<dyn super::base::StreamingSinkState>>,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> super::streaming_sink::StreamingSinkFinalizeResult {
+    ) -> super::base::StreamingSinkFinalizeResult {
         if self.build_on_left {
             let is_semi = self.params.is_semi;
             task_spawner
