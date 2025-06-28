@@ -1287,7 +1287,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        from daft.lance.lance_data_sink import LanceDataSink
+        from daft.io.lance.lance_data_sink import LanceDataSink
 
         if schema is None:
             schema = self.schema()
