@@ -1,7 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
-use parking_lot::Mutex;
 use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
@@ -32,7 +34,10 @@ impl RayWorkerManager {
         let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
 
         // Get existing worker IDs to avoid duplicates
-        let mut workers_guard = self.ray_workers.lock();
+        let mut workers_guard = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
 
         let ray_workers = flotilla_module
             .call_method1(
@@ -65,7 +70,10 @@ impl WorkerManager for RayWorkerManager {
             let mut task_result_handles =
                 Vec::with_capacity(tasks_per_worker.values().map(|v| v.len()).sum());
 
-            let mut workers = self.ray_workers.lock();
+            let mut workers = self
+                .ray_workers
+                .lock()
+                .expect("Failed to lock RayWorkerManager");
             for (worker_id, tasks) in tasks_per_worker {
                 let handles = workers
                     .get_mut(&worker_id)
@@ -79,7 +87,10 @@ impl WorkerManager for RayWorkerManager {
 
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {
         Python::with_gil(|py| self.refresh_workers(py))?;
-        let workers_guard = self.ray_workers.lock();
+        let workers_guard = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
         Ok(workers_guard
             .values()
             .map(WorkerSnapshot::from)
@@ -87,7 +98,10 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId) {
-        let mut workers = self.ray_workers.lock();
+        let mut workers = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
         workers
             .get_mut(&worker_id)
             .expect("Worker should be present in RayWorkerManager")
@@ -95,13 +109,19 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn mark_worker_died(&self, worker_id: WorkerId) {
-        let mut workers_guard = self.ray_workers.lock();
+        let mut workers_guard = self
+            .ray_workers
+            .lock()
+            .expect("Failed to lock RayWorkerManager");
         workers_guard.remove(&worker_id);
     }
 
     fn shutdown(&self) -> DaftResult<()> {
         Python::with_gil(|py| {
-            let workers_guard = self.ray_workers.lock();
+            let workers_guard = self
+                .ray_workers
+                .lock()
+                .expect("Failed to lock RayWorkerManager");
             for worker in workers_guard.values() {
                 worker.shutdown(py);
             }

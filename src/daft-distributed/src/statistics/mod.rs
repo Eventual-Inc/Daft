@@ -20,6 +20,7 @@ pub(crate) enum StatisticsEvent {
     #[allow(dead_code)]
     FailedTask {
         context: TaskContext,
+        reason: String,
     },
     CancelledTask {
         context: TaskContext,
@@ -31,12 +32,24 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
         match result {
             Ok(status) => match status {
                 TaskStatus::Success { .. } => Self::FinishedTask { context },
-                TaskStatus::Failed { .. } => Self::FailedTask { context },
+                TaskStatus::Failed { error, .. } => Self::FailedTask {
+                    context,
+                    reason: error.to_string(),
+                },
                 TaskStatus::Cancelled => Self::CancelledTask { context },
-                TaskStatus::WorkerDied => Self::FailedTask { context },
-                TaskStatus::WorkerUnavailable => Self::FailedTask { context },
+                TaskStatus::WorkerDied => Self::FailedTask {
+                    context,
+                    reason: "Worker died".to_string(),
+                },
+                TaskStatus::WorkerUnavailable => Self::FailedTask {
+                    context,
+                    reason: "Worker unavailable".to_string(),
+                },
             },
-            Err(_) => Self::FailedTask { context },
+            Err(e) => Self::FailedTask {
+                context,
+                reason: e.to_string(),
+            },
         }
     }
 }

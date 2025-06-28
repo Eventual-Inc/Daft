@@ -97,9 +97,7 @@ class RaySwordfishTaskHandle:
                     for result, metadata in zip(results, metadatas)
                 ]
             )
-        except ray.exceptions.ActorDiedError:
-            return RayTaskResult.worker_died()
-        except ray.exceptions.ActorUnschedulableError:
+        except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
             return RayTaskResult.worker_died()
         except ray.exceptions.ActorUnavailableError:
             return RayTaskResult.worker_unavailable()

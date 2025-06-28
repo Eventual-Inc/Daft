@@ -130,7 +130,7 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef")]
+#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
 #[derive(Debug, Clone)]
 pub(crate) struct RayPartitionRef {
     pub object_ref: Arc<PyObject>,

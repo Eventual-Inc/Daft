@@ -302,11 +302,10 @@ impl<H: TaskResultHandle> TaskResultAwaiter<H> {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::{any::Any, time::Duration};
+    use std::{any::Any, sync::Mutex, time::Duration};
 
     use common_error::{DaftError, DaftResult};
     use common_partitioning::Partition;
-    use parking_lot::Mutex;
 
     use super::*;
     use crate::utils::channel::OneshotSender;
@@ -531,7 +530,11 @@ pub(super) mod tests {
         }
 
         fn cancel_callback(&mut self) {
-            let mut cancel_notifier = self.task.cancel_notifier.lock();
+            let mut cancel_notifier = self
+                .task
+                .cancel_notifier
+                .lock()
+                .expect("Failed to lock cancel_notifier");
             if let Some(cancel_notifier) = cancel_notifier.take() {
                 let _ = cancel_notifier.send(());
             }
