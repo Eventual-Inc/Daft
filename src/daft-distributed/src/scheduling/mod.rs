@@ -1,4 +1,3 @@
-pub(super) mod autoscaler;
 pub(super) mod dispatcher;
 pub(super) mod scheduler;
 pub(crate) mod task;

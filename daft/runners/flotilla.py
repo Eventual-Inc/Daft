@@ -14,13 +14,10 @@ from daft.daft import (
     RayPartitionRef,
     RaySwordfishTask,
     RaySwordfishWorker,
+    RayTaskResult,
     set_compute_runtime_num_worker_threads,
 )
 from daft.recordbatch.micropartition import MicroPartition
-from daft.runners.constants import (
-    MAX_SWORDFISH_ACTOR_RESTARTS,
-    MAX_SWORDFISH_ACTOR_TASK_RETRIES,
-)
 from daft.runners.partitioning import (
     PartitionMetadata,
     PartitionSet,
@@ -40,10 +37,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-@ray.remote(
-    max_restarts=MAX_SWORDFISH_ACTOR_RESTARTS,
-    max_task_retries=MAX_SWORDFISH_ACTOR_TASK_RETRIES,
-)
+@ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
 
@@ -86,23 +80,31 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
-    task: asyncio.Task[list[RayPartitionRef]] | None = None
+    task: asyncio.Task[RayTaskResult] | None = None
 
-    async def _get_result(self) -> list[RayPartitionRef]:
-        await self.result_handle.completed()
-        results = [result for result in self.result_handle]
-        metadatas_ref = results.pop()
+    async def _get_result(self) -> RayTaskResult:
+        try:
+            await self.result_handle.completed()
+            results = [result for result in self.result_handle]
+            metadatas_ref = results.pop()
 
-        metadatas = await metadatas_ref
-        assert len(results) == len(metadatas)
+            metadatas = await metadatas_ref
+            assert len(results) == len(metadatas)
 
-        res = [
-            RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
-            for result, metadata in zip(results, metadatas)
-        ]
-        return res
+            return RayTaskResult.success(
+                [
+                    RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
+                    for result, metadata in zip(results, metadatas)
+                ]
+            )
+        except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
+            return RayTaskResult.worker_died()
+        except ray.exceptions.ActorUnavailableError:
+            return RayTaskResult.worker_unavailable()
+        except Exception as e:
+            raise e
 
-    async def get_result(self) -> list[RayPartitionRef]:
+    async def get_result(self) -> RayTaskResult:
         self.task = asyncio.create_task(self._get_result())
         return await self.task
 
@@ -178,7 +180,7 @@ class FlotillaPlanRunner:
 
     def __init__(self) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
-        self.curr_result_gens: dict[str, AsyncIterator[tuple[ray.ObjectRef, int, int]]] = {}
+        self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
 
     def run_plan(
@@ -202,16 +204,17 @@ class FlotillaPlanRunner:
         if plan_id not in self.curr_result_gens:
             raise ValueError(f"Plan {plan_id} not found in FlotillaPlanRunner")
 
-        next_result = await self.curr_result_gens[plan_id].__anext__()
-        if next_result is None:
+        next_partition_ref = await self.curr_result_gens[plan_id].__anext__()
+        if next_partition_ref is None:
             self.curr_plans.pop(plan_id)
             self.curr_result_gens.pop(plan_id)
             return None
 
-        obj, num_rows, size_bytes = next_result
-        metadata_accessor = PartitionMetadataAccessor.from_metadata_list([PartitionMetadata(num_rows, size_bytes)])
+        metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
+            [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
+        )
         materialized_result = RayMaterializedResult(
-            partition=obj,
+            partition=next_partition_ref.object_ref,
             metadatas=metadata_accessor,
             metadata_idx=0,
         )
