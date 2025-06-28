@@ -41,7 +41,7 @@ impl TaskResourceRequest {
 pub(crate) type TaskID = u32;
 pub(crate) type TaskName = String;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct TaskContext {
     pub plan_id: PlanID,
@@ -58,6 +58,16 @@ impl TaskContext {
             node_id,
             task_id,
         }
+    }
+}
+
+impl std::fmt::Debug for TaskContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TaskContext(plan_id = {}, stage_id = {}, node_id = {}, task_id = {})",
+            self.plan_id, self.stage_id, self.node_id, self.task_id
+        )
     }
 }
 
@@ -101,10 +111,9 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     fn task_name(&self) -> TaskName;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct TaskDetails {
-    #[allow(dead_code)]
-    pub id: TaskID,
+    pub name: TaskName,
     pub resource_request: TaskResourceRequest,
 }
 
@@ -116,14 +125,28 @@ impl TaskDetails {
     pub fn num_gpus(&self) -> f64 {
         self.resource_request.num_gpus()
     }
+
+    pub fn memory_bytes(&self) -> usize {
+        self.resource_request.memory_bytes()
+    }
 }
 
 impl<T: Task> From<&T> for TaskDetails {
     fn from(task: &T) -> Self {
         Self {
-            id: task.task_id(),
+            name: task.task_name(),
             resource_request: task.resource_request().clone(),
         }
+    }
+}
+
+impl std::fmt::Debug for TaskDetails {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TaskDetails(name = {}, resource_request = (num_cpus = {}, num_gpus = {}, memory_bytes = {}))",
+            self.name, self.num_cpus(), self.num_gpus(), self.memory_bytes()
+        )
     }
 }
 
@@ -197,12 +220,6 @@ impl SwordfishTask {
     ) -> Self {
         let resource_request = TaskResourceRequest::new(plan.resource_request());
         context.insert("task_id".to_string(), task_context.task_id.to_string());
-
-        tracing::info!(
-            target: "DaftFlotillaTask",
-            task_id = task_context.task_id,
-            "SwordfishTask created"
-        );
 
         Self {
             task_context,
