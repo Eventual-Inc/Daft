@@ -2,11 +2,8 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use common_error::DaftResult;
 
-use super::{
-    scheduler::SchedulableTask,
-    task::{Task, TaskDetails, TaskID, TaskResultHandle, TaskResultHandleAwaiter},
-};
-use crate::scheduling::scheduler::WorkerSnapshot;
+use super::task::{Task, TaskDetails, TaskResultHandle};
+use crate::scheduling::{scheduler::WorkerSnapshot, task::TaskContext};
 
 pub(crate) type WorkerId = Arc<str>;
 
@@ -15,7 +12,7 @@ pub(crate) trait Worker: Send + Sync + Debug + 'static {
     type TaskResultHandle: TaskResultHandle;
 
     fn id(&self) -> &WorkerId;
-    fn active_task_details(&self) -> HashMap<TaskID, TaskDetails>;
+    fn active_task_details(&self) -> HashMap<TaskContext, TaskDetails>;
     fn total_num_cpus(&self) -> f64;
     fn total_num_gpus(&self) -> f64;
     #[allow(dead_code)]
@@ -37,14 +34,10 @@ pub(crate) trait WorkerManager: Send + Sync {
 
     fn submit_tasks_to_workers(
         &self,
-        tasks_per_worker: HashMap<
-            WorkerId,
-            Vec<SchedulableTask<<<Self as WorkerManager>::Worker as Worker>::Task>>,
-        >,
-    ) -> DaftResult<
-        Vec<TaskResultHandleAwaiter<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>,
-    >;
-    fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId);
+        tasks_per_worker: HashMap<WorkerId, Vec<<<Self as WorkerManager>::Worker as Worker>::Task>>,
+    ) -> DaftResult<Vec<<<Self as WorkerManager>::Worker as Worker>::TaskResultHandle>>;
+    fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId);
+    fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
     fn try_autoscale(&self, num_cpus: usize) -> DaftResult<()>;
     fn shutdown(&self) -> DaftResult<()>;
@@ -76,51 +69,49 @@ pub(super) mod tests {
 
         fn submit_tasks_to_workers(
             &self,
-            tasks_per_worker: HashMap<
-                WorkerId,
-                Vec<SchedulableTask<<<Self as WorkerManager>::Worker as Worker>::Task>>,
-            >,
-        ) -> DaftResult<
-            Vec<
-                TaskResultHandleAwaiter<
-                    <<Self as WorkerManager>::Worker as Worker>::TaskResultHandle,
-                >,
-            >,
-        > {
+            tasks_per_worker: HashMap<WorkerId, Vec<MockTask>>,
+        ) -> DaftResult<Vec<MockTaskResultHandle>> {
             let mut result = Vec::new();
-
             for (worker_id, tasks) in tasks_per_worker {
                 for task in tasks {
-                    let (task, result_tx, cancel_token) = task.into_inner();
                     // Update the worker's active task count
-                    if let Some(worker) = self.workers.lock().unwrap().get(&worker_id) {
+                    if let Some(worker) = self
+                        .workers
+                        .lock()
+                        .expect("Failed to lock workers")
+                        .get(&worker_id)
+                    {
                         worker.add_active_task(&task);
                     }
-
-                    result.push(TaskResultHandleAwaiter::new(
-                        task.task_context(),
-                        worker_id.clone(),
-                        MockTaskResultHandle::new(task),
-                        result_tx,
-                        cancel_token,
-                    ));
+                    result.push(MockTaskResultHandle::new(task));
                 }
             }
-
             Ok(result)
         }
 
-        fn mark_task_finished(&self, task_id: &TaskID, worker_id: &WorkerId) {
-            if let Some(worker) = self.workers.lock().unwrap().get(worker_id) {
-                worker.mark_task_finished(task_id);
+        fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId) {
+            if let Some(worker) = self
+                .workers
+                .lock()
+                .expect("Failed to lock workers")
+                .get(&worker_id)
+            {
+                worker.mark_task_finished(task_context);
             }
+        }
+
+        fn mark_worker_died(&self, worker_id: WorkerId) {
+            self.workers
+                .lock()
+                .expect("Failed to lock workers")
+                .remove(&worker_id);
         }
 
         fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {
             Ok(self
                 .workers
                 .lock()
-                .unwrap()
+                .expect("Failed to lock workers")
                 .values()
                 .map(WorkerSnapshot::from)
                 .collect())
@@ -129,7 +120,7 @@ pub(super) mod tests {
         fn try_autoscale(&self, _num_cpus: usize) -> DaftResult<()> {
             // add 1 worker for each num_cpus
             let num_workers = _num_cpus as usize;
-            let mut workers = self.workers.lock().unwrap();
+            let mut workers = self.workers.lock().expect("Failed to lock workers");
             let num_existing_workers = workers.len();
             for i in 0..num_workers {
                 let new_worker_id: WorkerId =
@@ -145,7 +136,7 @@ pub(super) mod tests {
         fn shutdown(&self) -> DaftResult<()> {
             self.workers
                 .lock()
-                .unwrap()
+                .expect("Failed to lock workers")
                 .values()
                 .for_each(|w| w.shutdown());
             Ok(())
@@ -157,7 +148,7 @@ pub(super) mod tests {
         worker_id: WorkerId,
         total_num_cpus: f64,
         total_num_gpus: f64,
-        active_task_details: Arc<Mutex<HashMap<TaskID, TaskDetails>>>,
+        active_task_details: Arc<Mutex<HashMap<TaskContext, TaskDetails>>>,
         is_shutdown: Arc<AtomicBool>,
     }
 
@@ -172,15 +163,18 @@ pub(super) mod tests {
             }
         }
 
-        pub fn mark_task_finished(&self, task_id: &TaskID) {
-            self.active_task_details.lock().unwrap().remove(task_id);
+        pub fn mark_task_finished(&self, task_context: TaskContext) {
+            self.active_task_details
+                .lock()
+                .expect("Failed to lock active_task_details")
+                .remove(&task_context);
         }
 
         pub fn add_active_task(&self, task: &impl Task) {
             self.active_task_details
                 .lock()
-                .unwrap()
-                .insert(task.task_id(), TaskDetails::from(task));
+                .expect("Failed to lock active_task_details")
+                .insert(task.task_context(), TaskDetails::from(task));
         }
 
         pub fn shutdown(&self) {
@@ -208,7 +202,7 @@ pub(super) mod tests {
         fn active_num_cpus(&self) -> f64 {
             self.active_task_details
                 .lock()
-                .expect("Active task ids should be present")
+                .expect("Failed to lock active_task_details")
                 .values()
                 .map(|details| details.num_cpus())
                 .sum()
@@ -217,16 +211,16 @@ pub(super) mod tests {
         fn active_num_gpus(&self) -> f64 {
             self.active_task_details
                 .lock()
-                .expect("Active task ids should be present")
+                .expect("Failed to lock active_task_details")
                 .values()
                 .map(|details| details.num_gpus())
                 .sum()
         }
 
-        fn active_task_details(&self) -> HashMap<TaskID, TaskDetails> {
+        fn active_task_details(&self) -> HashMap<TaskContext, TaskDetails> {
             self.active_task_details
                 .lock()
-                .expect("Active task ids should be present")
+                .expect("Failed to lock active_task_details")
                 .clone()
         }
     }

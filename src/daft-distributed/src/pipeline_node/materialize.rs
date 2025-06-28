@@ -44,7 +44,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                 PipelineOutput::Materialized(partition) => FinalizedTask::Materialized(partition),
                 // If the pipeline output is a task, we need to submit it to the task dispatcher
                 PipelineOutput::Task(task) => {
-                    let submitted_task = task.submit(&scheduler_handle).await?;
+                    let submitted_task = task.submit(&scheduler_handle)?;
                     FinalizedTask::Running(submitted_task)
                 }
                 // If the task is already running, we can just send it through the channel
@@ -311,9 +311,7 @@ mod tests {
             .with_task_id(0)
             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
             .build();
-        let submitted_task = SubmittableTask::new(task)
-            .submit(&test_context.handle())
-            .await?;
+        let submitted_task = SubmittableTask::new(task).submit(&test_context.handle())?;
 
         // Create input stream with different pipeline output types
         let inputs = vec![
@@ -380,7 +378,7 @@ mod tests {
                             .with_task_id(i as u32)
                             .with_sleep_duration(sleep_duration)
                             .build();
-                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle)?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),
@@ -451,7 +449,7 @@ mod tests {
                             .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build();
-                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle)?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),
@@ -498,9 +496,7 @@ mod tests {
             .with_task_id(0)
             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
             .build();
-        let submitted_task = SubmittableTask::new(task)
-            .submit(&test_context.handle())
-            .await?;
+        let submitted_task = SubmittableTask::new(task).submit(&test_context.handle())?;
 
         let inputs = vec![
             Ok(PipelineOutput::Materialized(MaterializedOutput::new(
@@ -573,7 +569,7 @@ mod tests {
                             .with_task_id(i as u32)
                             .with_sleep_duration(sleep_duration)
                             .build();
-                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle)?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),
@@ -645,7 +641,7 @@ mod tests {
                             .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
                             .build();
-                        let submitted_task = SubmittableTask::new(task).submit(&handle).await?;
+                        let submitted_task = SubmittableTask::new(task).submit(&handle)?;
                         Ok(PipelineOutput::Running(submitted_task))
                     }
                     _ => unreachable!(),

@@ -81,7 +81,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             let scheduler_handle = spawn_default_scheduler_actor(
                 self.worker_manager.clone(),
                 &mut joinset,
-                statistics_manager,
+                statistics_manager.clone(),
             );
 
             joinset.spawn(async move {
