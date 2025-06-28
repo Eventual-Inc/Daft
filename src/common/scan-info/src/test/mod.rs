@@ -131,7 +131,7 @@ impl ScanOperator for DummyScanOperator {
     }
 
     fn can_absorb_limit(&self) -> bool {
-        false
+        true
     }
 
     fn can_absorb_shard(&self) -> bool {
