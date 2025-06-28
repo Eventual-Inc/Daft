@@ -16,8 +16,8 @@ use itertools::Itertools;
 use tracing::{instrument, Span};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSinkState, BlockingSinkStatus,
 };
 use crate::ExecutionTaskSpawner;
 
@@ -412,7 +412,9 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(Some(Arc::new(concated)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(Some(Arc::new(
+                        concated,
+                    ))))
                 },
                 Span::current(),
             )
