@@ -10,9 +10,8 @@ from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
-    import pyarrow
-
     import lance
+    import pyarrow
 
 
 # TODO support fts and fast_search

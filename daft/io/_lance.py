@@ -7,8 +7,8 @@ from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
+from daft.io.lance.lance_scan import LanceDBScanOperator
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.lance.lance_scan import LanceDBScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 
 
