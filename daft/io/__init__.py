@@ -10,11 +10,11 @@ from daft.daft import (
     UnityConfig,
 )
 from daft.io._csv import read_csv
-from daft.io._deltalake import read_deltalake
-from daft.io._hudi import read_hudi
-from daft.io._iceberg import read_iceberg
+from daft.io.delta_lake._deltalake import read_deltalake
+from daft.io.hudi._hudi import read_hudi
+from daft.io.iceberg._iceberg import read_iceberg
 from daft.io._json import read_json
-from daft.io._lance import read_lance
+from daft.io.iceberg._lance import read_lance
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc

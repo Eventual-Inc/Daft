@@ -5,9 +5,9 @@ from dataclasses import dataclass
 
 from daft.dependencies import pa, pafs
 from daft.filesystem import join_path
-from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
-from daft.hudi.pyhudi.timeline import Timeline
-from daft.hudi.pyhudi.utils import (
+from daft.io.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
+from daft.io.hudi.pyhudi.timeline import Timeline
+from daft.io.hudi.pyhudi.utils import (
     list_full_sub_dirs,
     list_leaf_dirs,
     list_relative_file_paths,
