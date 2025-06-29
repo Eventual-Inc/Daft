@@ -43,7 +43,8 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
-            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Limit(_)
+            | LogicalPlan::Offset(_)=> Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Sort(_)
             | LogicalPlan::Repartition(_)
             | LogicalPlan::Distinct(_)

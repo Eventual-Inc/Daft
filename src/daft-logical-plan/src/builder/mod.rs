@@ -326,6 +326,11 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn offset(&self, offset: i64) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::Offset::new(self.plan.clone(), offset).into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> DaftResult<Self> {
         let sharder = Sharder::new(
             ShardingStrategy::from(strategy),
@@ -985,6 +990,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
         Ok(self.builder.limit(limit, eager)?.into())
+    }
+
+    pub fn offset(&self, offset: i64) -> PyResult<Self> {
+        Ok(self.builder.offset(offset)?.into())
     }
 
     pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {

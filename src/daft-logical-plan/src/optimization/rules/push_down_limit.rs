@@ -5,7 +5,10 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
-    ops::{Limit as LogicalLimit, Sort as LogicalSort, Source, TopN as LogicalTopN},
+    ops::{
+        Limit as LogicalLimit, Offset as LogicalOffset, Sort as LogicalSort, Source,
+        TopN as LogicalTopN,
+    },
     source_info::SourceInfo,
     LogicalPlan,
 };
@@ -98,11 +101,11 @@ impl PushDownLimit {
                     LogicalPlan::Limit(LogicalLimit {
                         input,
                         limit: child_limit,
-                        eager: child_eagar,
+                        eager: child_eager,
                         ..
                     }) => {
                         let new_limit = limit.min(*child_limit as usize);
-                        let new_eager = eager | child_eagar;
+                        let new_eager = eager | child_eager;
 
                         let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
                             input.clone(),
@@ -135,6 +138,23 @@ impl PushDownLimit {
                         )?));
 
                         Ok(Transformed::yes(new_plan))
+                    }
+                    // Merge offset value and limit value into Limit, and pushes down Limit through
+                    // Offset.
+                    //
+                    // Limit(x)-Offset(y) -> Offset(y)-Limit(x + y)
+                    LogicalPlan::Offset(LogicalOffset { input, offset, .. }) => {
+                        let limit = limit + (*offset as usize);
+                        let new_limit = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                            input.clone(),
+                            limit as i64,
+                            *eager,
+                        )));
+
+                        let new_offset =
+                            Arc::new(LogicalPlan::Offset(LogicalOffset::new(new_limit, *offset)));
+
+                        Ok(Transformed::yes(new_offset))
                     }
                     _ => Ok(Transformed::no(plan)),
                 }
