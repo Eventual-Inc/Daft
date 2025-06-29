@@ -322,6 +322,12 @@ impl LogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
+        if limit < 0 {
+            return Err(DaftError::ValueError(format!(
+                "The limit expression must be equal to or greater than 0, but got {}",
+                limit
+            )));
+        }
         let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
         Ok(self.with_new_plan(logical_plan))
     }

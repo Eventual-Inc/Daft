@@ -1963,15 +1963,13 @@ class DataFrame:
 
         Args:
             num (int): maximum rows to allow.
-            eager (bool): whether to maximize for latency (time to first result) by eagerly executing
-                only one partition at a time, or throughput by executing multiple limits at a time
 
         Returns:
             DataFrame: Limited DataFrame
 
         Examples:
             >>> import daft
-            >>> df = df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
             >>> df_limited = df.limit(5)  # returns 5 rows
             >>> df_limited.show()
             ╭───────╮
