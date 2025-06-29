@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
+    python::ray::RayTaskResult,
     statistics::StatisticsManager,
 };
 
@@ -36,25 +37,20 @@ impl PythonPartitionRefStream {
                 let mut inner = inner.lock().await;
                 inner.next().await
             };
-            Python::with_gil(|py| {
-                let next = match next {
-                    Some(result) => {
-                        let result = result?;
-                        let ray_part_ref = result
-                            .partition()
-                            .as_any()
-                            .downcast_ref::<RayPartitionRef>()
-                            .expect("Failed to downcast to RayPartitionRef");
-                        let objref = ray_part_ref.object_ref.clone_ref(py);
-                        let size_bytes = ray_part_ref.size_bytes;
-                        let num_rows = ray_part_ref.num_rows;
-                        let ret = (objref, num_rows, size_bytes);
-                        Some(ret)
-                    }
-                    None => None,
-                };
-                Ok(next)
-            })
+            let next = match next {
+                Some(result) => {
+                    let result = result?;
+                    let ray_part_ref = result
+                        .partition()
+                        .as_any()
+                        .downcast_ref::<RayPartitionRef>()
+                        .expect("Failed to downcast to RayPartitionRef")
+                        .clone();
+                    Some(ray_part_ref)
+                }
+                None => None,
+            };
+            Ok(next)
         })
     }
 }
@@ -107,8 +103,8 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new() -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::try_new()?;
+    fn new(py: Python) -> PyResult<Self> {
+        let worker_manager = RayWorkerManager::try_new(py)?;
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
@@ -149,5 +145,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
+    parent.add_class::<RayTaskResult>()?;
     Ok(())
 }

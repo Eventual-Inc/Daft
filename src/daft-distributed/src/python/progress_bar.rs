@@ -6,6 +6,7 @@ use crate::{
     statistics::{StatisticsEvent, StatisticsSubscriber},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
@@ -79,6 +80,13 @@ impl StatisticsSubscriber for FlotillaProgressBar {
             // For progress bar we don't care if it is scheduled, for now.
             StatisticsEvent::ScheduledTask { .. } => Ok(()),
             StatisticsEvent::FinishedTask { context } => {
+                self.update_bar(BarId::from(context))?;
+                Ok(())
+            }
+            // We don't care about failed tasks as they will be retried
+            StatisticsEvent::FailedTask { .. } => Ok(()),
+            // We consider cancelled tasks as finished tasks
+            StatisticsEvent::CancelledTask { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }

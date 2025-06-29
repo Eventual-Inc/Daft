@@ -1,13 +1,11 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use super::{
-    task::{SchedulingStrategy, Task, TaskDetails, TaskID},
+    task::{SchedulingStrategy, Task, TaskDetails},
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::MaterializedOutput,
-    scheduling::{autoscaler::AutoscalerRequest, task::TaskContext},
-    utils::channel::OneshotSender,
+    pipeline_node::MaterializedOutput, scheduling::task::TaskContext, utils::channel::OneshotSender,
 };
 
 mod default;
@@ -24,7 +22,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>);
     fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>>;
-    fn get_autoscaling_request(&mut self) -> Option<AutoscalerRequest>;
+    fn get_autoscaling_request(&mut self) -> Option<usize>;
     fn num_pending_tasks(&self) -> usize;
 }
 
@@ -89,24 +87,44 @@ impl<T: Task> Ord for SchedulableTask<T> {
 
 #[derive(Debug)]
 pub(super) struct ScheduledTask<T: Task> {
-    schedulable_task: SchedulableTask<T>,
+    task: T,
+    result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+    cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
 
 impl<T: Task> ScheduledTask<T> {
     pub fn new(task: SchedulableTask<T>, worker_id: WorkerId) -> Self {
+        let (task, result_tx, cancel_token) = task.into_inner();
         Self {
-            schedulable_task: task,
+            task,
+            result_tx,
+            cancel_token,
             worker_id,
         }
     }
 
-    pub fn task(&self) -> &T {
-        &self.schedulable_task.task
+    pub fn worker_id(&self) -> WorkerId {
+        self.worker_id.clone()
     }
 
-    pub fn into_inner(self) -> (WorkerId, SchedulableTask<T>) {
-        (self.worker_id, self.schedulable_task)
+    pub fn task(&self) -> T {
+        self.task.clone()
+    }
+
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.clone()
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        WorkerId,
+        T,
+        OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
+        CancellationToken,
+    ) {
+        (self.worker_id, self.task, self.result_tx, self.cancel_token)
     }
 }
 
@@ -115,7 +133,7 @@ pub(crate) struct WorkerSnapshot {
     worker_id: WorkerId,
     total_num_cpus: f64,
     total_num_gpus: f64,
-    active_task_details: HashMap<TaskID, TaskDetails>,
+    active_task_details: HashMap<TaskContext, TaskDetails>,
 }
 
 impl WorkerSnapshot {
@@ -123,7 +141,7 @@ impl WorkerSnapshot {
         worker_id: WorkerId,
         total_num_cpus: f64,
         total_num_gpus: f64,
-        active_task_details: HashMap<TaskID, TaskDetails>,
+        active_task_details: HashMap<TaskContext, TaskDetails>,
     ) -> Self {
         Self {
             worker_id,
@@ -165,6 +183,11 @@ impl WorkerSnapshot {
         self.total_num_gpus
     }
 
+    #[cfg(test)]
+    pub fn worker_id(&self) -> &WorkerId {
+        &self.worker_id
+    }
+
     // TODO: Potentially include memory as well, and also be able to overschedule tasks.
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
         self.available_num_cpus() >= task.resource_request().num_cpus()
@@ -189,6 +212,7 @@ pub(super) mod test_utils {
 
     use super::*;
     use crate::scheduling::{
+        task::TaskID,
         tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
     };
