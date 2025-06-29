@@ -1,6 +1,6 @@
 use std::{
-    any::Any, collections::HashMap, num::ParseIntError, ops::Range, str::FromStr,
-    string::FromUtf8Error, sync::Arc,
+    any::Any, collections::HashMap, num::ParseIntError, str::FromStr, string::FromUtf8Error,
+    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -20,6 +20,7 @@ use super::object_io::{GetResult, ObjectSource};
 use crate::{
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat,
@@ -250,7 +251,7 @@ impl ObjectSource for HFSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let path_parts = uri.parse::<HFPathParts>()?;
@@ -258,10 +259,7 @@ impl ObjectSource for HFSource {
         let request = self.http_source.client.get(uri);
         let request = match range {
             None => request,
-            Some(range) => request.header(
-                RANGE,
-                format!("bytes={}-{}", range.start, range.end.saturating_sub(1)),
-            ),
+            Some(range) => request.header(RANGE, range.to_string()),
         };
 
         let response = request

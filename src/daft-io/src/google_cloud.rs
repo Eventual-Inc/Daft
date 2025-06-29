@@ -1,4 +1,4 @@
-use std::{any::Any, ops::Range, sync::Arc, time::Duration};
+use std::{any::Any, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_io_config::GCSConfig;
@@ -18,10 +18,11 @@ use tokio::sync::Semaphore;
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    range::GetRange,
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, GetResult,
+    FileFormat, GetResult, InvalidRangeRequestSnafu,
 };
 
 const GCS_DELIMITER: &str = "/";
@@ -189,7 +190,7 @@ impl GCSClientWrapper {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let (bucket, key) = parse_raw_uri(uri)?;
@@ -210,10 +211,7 @@ impl GCSClientWrapper {
         };
         use google_cloud_storage::http::objects::download::Range as GRange;
         let (grange, size) = if let Some(range) = range {
-            (
-                GRange(Some(range.start as u64), Some(range.end as u64)),
-                Some(range.len()),
-            )
+            range.as_grange().context(InvalidRangeRequestSnafu)?
         } else {
             (GRange::default(), None)
         };
@@ -543,7 +541,7 @@ impl ObjectSource for GCSSource {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         self.client.get(uri, range, io_stats).await
