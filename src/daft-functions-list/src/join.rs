@@ -22,7 +22,7 @@ impl ScalarUDF for ListJoin {
     fn aliases(&self) -> &'static [&'static str] {
         &["array_to_string"]
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let delimiter = inputs.required((1, "delimiter"))?;
         ensure!(
@@ -32,11 +32,7 @@ impl ScalarUDF for ListJoin {
 
         Ok(input.join(delimiter.utf8()?)?.into_series())
     }
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         ensure!(
             inputs.len() == 2,
             SchemaMismatch: "Expected 2 arguments, received: {}",

@@ -24,18 +24,14 @@ impl ScalarUDF for RegexpReplace {
     fn name(&self) -> &'static str {
         "regexp_replace"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;
         series_replace(input, pattern, replacement, true)
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         function_args_to_field_impl(inputs, schema)
     }
 
@@ -52,18 +48,14 @@ impl ScalarUDF for Replace {
     fn name(&self) -> &'static str {
         "replace"
     }
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;
         series_replace(input, pattern, replacement, false)
     }
 
-    fn function_args_to_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        schema: &Schema,
-    ) -> DaftResult<Field> {
+    fn get_return_type(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         function_args_to_field_impl(inputs, schema)
     }
 
