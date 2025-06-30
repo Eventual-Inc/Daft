@@ -10,9 +10,9 @@ Additionally, certain global operations in a distributed setting requires data t
 
 !!! note "Note"
 
-    When running locally on just a single machine, Daft is currently still using partitioning as well. This is still useful for controlling parallelism and how much data is being materialized at a time.
+    When running locally on just a single machine, Daft does not use partitions. Instead of using partitioning to control parallelism, the local execution engine performs a streaming-based execution on small "morsels" of data, which provides much more stable memory utilization while improving the user experience with not having to worry about partitioning.
 
-    However, Daft's new experimental execution engine will remove the concept of partitioning entirely for local execution. You may enable it with `DAFT_RUNNER=native`. Instead of using partitioning to control parallelism, this new execution engine performs a streaming-based execution on small "morsels" of data, which provides much more stable memory utilization while improving the user experience with not having to worry about partitioning.
+    Daft's local execution engine, the native runner, is enabled by default. You can also explicitly enable it with the `DAFT_RUNNER=native` environment variable or using [`daft.context.set_runner_native()`][daft.context.set_runner_native].
 
 This user guide helps you think about how to correctly partition your data to improve performance as well as memory stability in Daft.
 
