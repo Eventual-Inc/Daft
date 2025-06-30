@@ -26,7 +26,6 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn num_pending_tasks(&self) -> usize;
 }
 
-#[derive(Debug)]
 pub(crate) struct SchedulableTask<T: Task> {
     task: T,
     result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
@@ -65,6 +64,17 @@ impl<T: Task> SchedulableTask<T> {
     }
 }
 
+impl<T: Task> std::fmt::Debug for SchedulableTask<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SchedulableTask({:?}, {:?})",
+            self.task_context(),
+            TaskDetails::from(&self.task)
+        )
+    }
+}
+
 impl<T: Task> PartialEq for SchedulableTask<T> {
     fn eq(&self, other: &Self) -> bool {
         self.task.task_id() == other.task.task_id()
@@ -85,7 +95,6 @@ impl<T: Task> Ord for SchedulableTask<T> {
     }
 }
 
-#[derive(Debug)]
 pub(super) struct ScheduledTask<T: Task> {
     task: T,
     result_tx: OneshotSender<DaftResult<Vec<MaterializedOutput>>>,
@@ -128,7 +137,19 @@ impl<T: Task> ScheduledTask<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+impl<T: Task> std::fmt::Debug for ScheduledTask<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ScheduledTask(worker_id = {}, {:?}, {:?})",
+            self.worker_id,
+            self.task.task_context(),
+            TaskDetails::from(&self.task)
+        )
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct WorkerSnapshot {
     worker_id: WorkerId,
     total_num_cpus: f64,
@@ -191,6 +212,12 @@ impl WorkerSnapshot {
     // TODO: Potentially include memory as well, and also be able to overschedule tasks.
     pub fn can_schedule_task(&self, task: &impl Task) -> bool {
         self.available_num_cpus() >= task.resource_request().num_cpus()
+    }
+}
+
+impl std::fmt::Debug for WorkerSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "WorkerSnapshot(worker_id = {}, total_num_cpus = {}, total_num_gpus = {}, active_task_details = {:#?})", self.worker_id, self.total_num_cpus, self.total_num_gpus, self.active_task_details)
     }
 }
 
