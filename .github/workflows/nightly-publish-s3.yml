@@ -91,7 +91,7 @@ jobs:
     if: ${{ failure() }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.0
       with:
         payload: |
           {
@@ -159,7 +159,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -246,7 +246,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -278,7 +278,7 @@ jobs:
     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.0
       with:
         payload: |
           {
@@ -311,7 +311,7 @@ jobs:
     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.0
       with:
         payload: |
           {

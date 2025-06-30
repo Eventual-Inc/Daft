@@ -61,7 +61,7 @@ jobs:
         HYPOTHESIS_MAX_EXAMPLES: 10000
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
