@@ -5,6 +5,7 @@ use std::{
 
 use arrow2::array::Array;
 use common_error::DaftResult;
+use daft_hash::HashFunctionKind;
 use fnv::FnvHashMap;
 
 use super::{as_arrow::AsArrow, IntoGroups};

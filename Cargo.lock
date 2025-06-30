@@ -2566,6 +2566,7 @@ dependencies = [
  "common-resource-request",
  "common-treenode",
  "daft-core",
+ "daft-hash",
  "daft-sketch",
  "derive_more",
  "indexmap 2.9.0",
