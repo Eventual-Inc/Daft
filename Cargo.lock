@@ -360,7 +360,7 @@ dependencies = [
  "regex-syntax 0.8.5",
  "rustc_version",
  "sample-arrow2",
- "sample-std 0.1.1",
+ "sample-std 0.2.1",
  "sample-test",
  "serde",
  "serde_derive",
