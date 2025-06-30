@@ -18,7 +18,6 @@ use daft_core::{
         display_timestamp,
     },
 };
-use daft_hash::HashFunctionKind;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -550,7 +549,6 @@ impl LiteralValue {
             DataType::UInt64 => s.u64()?.get(idx).literal_value(),
             DataType::Float64 => s.f64()?.get(idx).literal_value(),
             DataType::Float32 => todo!(),
-<<<<<<< HEAD
             DataType::Decimal128(precision, scale) => map_or_null(s.decimal128()?.get(idx), |v| {
                 Self::Decimal(v, *precision as _, *scale as _)
             }),
@@ -558,19 +556,6 @@ impl LiteralValue {
                 Self::Timestamp(v, *tu, tz.clone())
             }),
             DataType::Date => map_or_null(s.date()?.get(idx), Self::Date),
-=======
-            DataType::Decimal128(precision, scale) => Ok(Self::Decimal(
-                s.decimal128()?.get(idx).ok_or_else(err)?,
-                *precision as _,
-                *scale as _,
-            )),
-            DataType::Timestamp(tu, tz) => Ok(Self::Timestamp(
-                s.timestamp()?.get(idx).ok_or_else(err)?,
-                *tu,
-                tz.clone(),
-            )),
-            DataType::Date => Ok(Self::Date(s.date()?.get(idx).ok_or_else(|| err())? as i32)),
->>>>>>> 06a36330 (Add support for specify hash algorithm used in hash() func)
             DataType::Time(time_unit) => {
                 map_or_null(s.time()?.get(idx), |v| Self::Time(v, *time_unit))
             }
@@ -766,7 +751,7 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         DataType::Float64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Float64));
 
-            Float64Array::from_iter(Field::new("literal", DataType::Float64), data).into_series()
+            Float64Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         dtype @ DataType::Decimal128 { .. } => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Decimal));

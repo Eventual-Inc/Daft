@@ -11,6 +11,7 @@ use daft_core::prelude::*;
 use snafu::{ResultExt, Snafu};
 
 use crate::DaftCoreComputeSnafu;
+use daft_hash::HashFunctionKind;
 #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ColumnRangeStatistics {
     Missing,
@@ -23,11 +24,11 @@ impl Hash for ColumnRangeStatistics {
             Self::Missing => (),
             Self::Loaded(l, u) => {
                 let lower_hashes = l
-                    .hash(None)
+                    .hash(None, HashFunctionKind::XxHash)
                     .expect("Failed to hash lower column range statistics");
                 lower_hashes.into_iter().for_each(|h| h.hash(state));
                 let upper_hashes = u
-                    .hash(None)
+                    .hash(None, HashFunctionKind::XxHash)
                     .expect("Failed to hash upper column range statistics");
                 upper_hashes.into_iter().for_each(|h| h.hash(state));
             }

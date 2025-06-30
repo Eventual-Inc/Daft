@@ -9,6 +9,7 @@ use std::{ops::Sub, sync::Arc};
 pub use array_impl::IntoSeries;
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::DaftResult;
+use daft_hash::HashFunctionKind;
 use derive_more::Display;
 use indexmap::{map::RawEntryApiV1, IndexMap};
 pub use ops::cast_series_to_supertype;
@@ -64,7 +65,7 @@ impl Series {
         }
 
         const DEFAULT_SIZE: usize = 20;
-        let hashed_series = self.hash_with_validity(None)?;
+        let hashed_series = self.hash_with_validity(None, HashFunctionKind::XxHash)?;
         let array = self.to_arrow();
         let comparator = build_is_equal(&*array, &*array, true, false)?;
 

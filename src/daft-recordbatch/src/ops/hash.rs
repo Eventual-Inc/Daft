@@ -7,6 +7,8 @@ use daft_core::{
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
 
+use daft_hash::HashFunctionKind;
+
 use crate::RecordBatch;
 
 impl RecordBatch {
@@ -16,9 +18,9 @@ impl RecordBatch {
                 "Attempting to Hash Table with no columns".to_string(),
             ));
         }
-        let mut hash_so_far = self.columns.first().unwrap().hash(None)?;
+        let mut hash_so_far = self.columns.first().unwrap().hash(None, HashFunctionKind::XxHash)?;
         for c in self.columns.iter().skip(1) {
-            hash_so_far = c.hash(Some(&hash_so_far))?;
+            hash_so_far = c.hash(Some(&hash_so_far), HashFunctionKind::XxHash)?;
         }
         Ok(hash_so_far)
     }

@@ -32,7 +32,8 @@ impl ScalarUDF for HashFunction {
 
         let hash_function = hash_function
             .map(|s| s.parse::<HashFunctionKind>())
-            .transpose()?;
+            .transpose()?
+            .unwrap_or(HashFunctionKind::XxHash);
 
         if let Some(seed) = seed {
             match seed.len() {
@@ -49,12 +50,7 @@ impl ScalarUDF for HashFunction {
                     );
                     let seed = seed.cast(&DataType::UInt64)?;
                     let seed = seed.u64().unwrap();
-                    match hash_function {
-                        Some(hash_fn) => input
-                            .hash_with_specified_algorithm(Some(seed), hash_fn)
-                            .map(IntoSeries::into_series),
-                        None => input.hash(Some(seed)).map(IntoSeries::into_series),
-                    }
+                    input.hash(Some(seed), hash_function).map(IntoSeries::into_series)
                 }
                 1 => {
                     let seed = seed.cast(&DataType::UInt64)?;
@@ -65,34 +61,19 @@ impl ScalarUDF for HashFunction {
                         Field::new("seed", DataType::UInt64),
                         std::iter::repeat_n(Some(seed), input.len()),
                     );
-                    match hash_function {
-                        Some(hash_fn) => input
-                            .hash_with_specified_algorithm(Some(&seed), hash_fn)
-                            .map(IntoSeries::into_series),
-                        None => input.hash(Some(&seed)).map(IntoSeries::into_series),
-                    }
+                    input.hash(Some(&seed), hash_function).map(IntoSeries::into_series)
                 }
                 _ if seed.len() == input.len() => {
                     let seed = seed.cast(&DataType::UInt64)?;
                     let seed = seed.u64().unwrap();
-                    match hash_function {
-                        Some(hash_fn) => input
-                            .hash_with_specified_algorithm(Some(seed), hash_fn)
-                            .map(IntoSeries::into_series),
-                        None => input.hash(Some(seed)).map(IntoSeries::into_series),
-                    }
+                    input.hash(Some(seed), hash_function).map(IntoSeries::into_series)
                 }
                 _ => Err(DaftError::ValueError(
                     "Seed must be a single value or the same length as the input".to_string(),
                 )),
             }
         } else {
-            match hash_function {
-                Some(hash_fn) => input
-                    .hash_with_specified_algorithm(None, hash_fn)
-                    .map(|arr| arr.into_series()),
-                None => input.hash(None).map(|arr| arr.into_series()),
-            }
+            input.hash(None, hash_function).map(IntoSeries::into_series)
         }
     }
 

@@ -8,7 +8,7 @@ use daft_core::{
         ops::arrow2::comparison::build_is_equal,
         FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::try_mean_aggregation_supertype,
+    datatypes::{try_mean_aggregation_supertype},
     kernels::search_sorted::build_is_valid,
     prelude::{
         AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
@@ -17,10 +17,12 @@ use daft_core::{
     series::{IntoSeries, Series},
     utils::identity_hash_set::IdentityBuildHasher,
 };
+use daft_hash::HashFunctionKind;
 use indexmap::{
     map::{raw_entry_v1::RawEntryMut, RawEntryApiV1},
     IndexMap,
 };
+
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
@@ -74,7 +76,7 @@ impl ListArrayExtension for ListArray {
 
         let original_name = self.name();
 
-        let hashes = self.flat_child.hash(None)?;
+        let hashes = self.flat_child.hash(None, HashFunctionKind::XxHash)?;
 
         let flat_child = self.flat_child.to_arrow();
         let flat_child = &*flat_child;

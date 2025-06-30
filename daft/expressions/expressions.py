@@ -1587,10 +1587,13 @@ class Expression:
             Null values will produce a hash value instead of being propagated as null.
 
         """
-        # Default to xxhash for backward compatibility
-        if hash_function is None:
-            hash_function = "xxhash"
-        return self._eval_expressions("hash", seed=seed, hash_function=hash_function)
+        # Only pass hash_function if explicitly provided to maintain backward compatibility in string representation
+        kwargs = {}
+        if seed is not None:
+            kwargs["seed"] = seed
+        if hash_function is not None:
+            kwargs["hash_function"] = hash_function
+        return self._eval_expressions("hash", **kwargs)
 
     def minhash(
         self,
