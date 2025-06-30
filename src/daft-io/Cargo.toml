@@ -25,7 +25,7 @@ home = "0.5.9"
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-rand = "0.8.5"
+rand = "0.9.1"
 regex = {version = "1.10.4"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
