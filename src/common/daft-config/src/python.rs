@@ -102,7 +102,7 @@ impl PyDaftExecutionConfig {
         enable_ray_tracing=None,
         scantask_splitting_level=None,
         native_parquet_writer=None,
-        flotilla=None,
+        use_experimental_distributed_engine=None,
         min_cpu_per_task=None,
     ))]
     fn with_config_values(
@@ -133,7 +133,7 @@ impl PyDaftExecutionConfig {
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
         native_parquet_writer: Option<bool>,
-        flotilla: Option<bool>,
+        use_experimental_distributed_engine: Option<bool>,
         min_cpu_per_task: Option<f64>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -239,8 +239,8 @@ impl PyDaftExecutionConfig {
             config.native_parquet_writer = native_parquet_writer;
         }
 
-        if let Some(flotilla) = flotilla {
-            config.flotilla = flotilla;
+        if let Some(use_experimental_distributed_engine) = use_experimental_distributed_engine {
+            config.use_experimental_distributed_engine = use_experimental_distributed_engine;
         }
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
@@ -364,8 +364,8 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn flotilla(&self) -> PyResult<bool> {
-        Ok(self.config.flotilla)
+    fn use_experimental_distributed_engine(&self) -> PyResult<bool> {
+        Ok(self.config.use_experimental_distributed_engine)
     }
 
     #[getter]

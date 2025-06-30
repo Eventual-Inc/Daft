@@ -21,6 +21,7 @@ struct WindowOrderByOnlyParams {
     aliases: Vec<String>,
     order_by: Vec<BoundExpr>,
     descending: Vec<bool>,
+    nulls_first: Vec<bool>,
     original_schema: SchemaRef,
 }
 
@@ -34,6 +35,7 @@ impl WindowOrderByOnlySink {
         aliases: &[String],
         order_by: &[BoundExpr],
         descending: &[bool],
+        nulls_first: &[bool],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
         Ok(Self {
@@ -42,6 +44,7 @@ impl WindowOrderByOnlySink {
                 aliases: aliases.to_vec(),
                 order_by: order_by.to_vec(),
                 descending: descending.to_vec(),
+                nulls_first: nulls_first.to_vec(),
                 original_schema: schema.clone(),
             }),
         })
@@ -130,7 +133,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                     let sorted = concatenated.sort(
                         &params.order_by,
                         &params.descending,
-                        &params.descending, // Use descending for nulls_first as well, matching the sort behavior
+                        &params.nulls_first,
                     )?;
 
                     if sorted.is_empty() {
@@ -221,7 +224,13 @@ impl BlockingSink for WindowOrderByOnlySink {
                 .order_by
                 .iter()
                 .zip(self.params.descending.iter())
-                .map(|(e, d)| format!("{} {}", e, if *d { "desc" } else { "asc" }))
+                .zip(self.params.nulls_first.iter())
+                .map(|((e, d), n)| format!(
+                    "{} {} {}",
+                    e,
+                    if *d { "desc" } else { "asc" },
+                    if *n { "nulls first" } else { "nulls last" }
+                ))
                 .join(", ")
         ));
         display

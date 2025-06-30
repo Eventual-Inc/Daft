@@ -336,7 +336,6 @@ where
             soft: false,
         },
         node.context().to_hashmap(),
-        node.node_id(),
     );
     Ok(SubmittableTask::new(task))
 }
@@ -355,7 +354,6 @@ where
     let scheduling_strategy = submittable_task.task().strategy().clone();
     let psets = submittable_task.task().psets().clone();
     let config = submittable_task.task().config().clone();
-    let task_priority = submittable_task.task().task_priority();
 
     let task = submittable_task.with_new_task(SwordfishTask::new(
         task_context,
@@ -364,7 +362,6 @@ where
         psets,
         scheduling_strategy,
         node.context().to_hashmap(),
-        task_priority,
     ));
     Ok(task)
 }
