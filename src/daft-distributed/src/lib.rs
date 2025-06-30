@@ -5,6 +5,7 @@ mod plan;
 pub mod python;
 mod scheduling;
 mod stage;
+mod statistics;
 pub(crate) mod utils;
 
 #[cfg(feature = "python")]

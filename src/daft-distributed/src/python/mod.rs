@@ -1,5 +1,5 @@
+mod progress_bar;
 mod ray;
-
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
@@ -7,12 +7,17 @@ use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
+use progress_bar::FlotillaProgressBar;
 use pyo3::prelude::*;
 use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner};
+use crate::{
+    plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
+    python::ray::RayTaskResult,
+    statistics::StatisticsManager,
+};
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
@@ -32,25 +37,20 @@ impl PythonPartitionRefStream {
                 let mut inner = inner.lock().await;
                 inner.next().await
             };
-            Python::with_gil(|py| {
-                let next = match next {
-                    Some(result) => {
-                        let result = result?;
-                        let ray_part_ref = result
-                            .partition()
-                            .as_any()
-                            .downcast_ref::<RayPartitionRef>()
-                            .expect("Failed to downcast to RayPartitionRef");
-                        let objref = ray_part_ref.object_ref.clone_ref(py);
-                        let size_bytes = ray_part_ref.size_bytes;
-                        let num_rows = ray_part_ref.num_rows;
-                        let ret = (objref, num_rows, size_bytes);
-                        Some(ret)
-                    }
-                    None => None,
-                };
-                Ok(next)
-            })
+            let next = match next {
+                Some(result) => {
+                    let result = result?;
+                    let ray_part_ref = result
+                        .partition()
+                        .as_any()
+                        .downcast_ref::<RayPartitionRef>()
+                        .expect("Failed to downcast to RayPartitionRef")
+                        .clone();
+                    Some(ray_part_ref)
+                }
+                None => None,
+            };
+            Ok(next)
         })
     }
 }
@@ -98,20 +98,23 @@ impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
 struct PyDistributedPhysicalPlanRunner {
     runner: Arc<PlanRunner<RaySwordfishWorker>>,
+    on_ray_actor: bool,
 }
 
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new() -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::try_new()?;
+    fn new(py: Python, on_ray_actor: bool) -> PyResult<Self> {
+        let worker_manager = RayWorkerManager::try_new(py)?;
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
+            on_ray_actor,
         })
     }
 
     fn run_plan(
         &self,
+        py: Python,
         plan: &PyDistributedPhysicalPlan,
         psets: HashMap<String, Vec<RayPartitionRef>>,
     ) -> PyResult<PythonPartitionRefStream> {
@@ -126,7 +129,12 @@ impl PyDistributedPhysicalPlanRunner {
                 )
             })
             .collect();
-        let plan_result = self.runner.run_plan(&plan.plan, psets)?;
+        let statistics_manager = StatisticsManager::new(vec![Box::new(
+            FlotillaProgressBar::try_new(py, self.on_ray_actor)?,
+        )]);
+        let plan_result = self
+            .runner
+            .run_plan(&plan.plan, psets, statistics_manager)?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
         };
@@ -140,5 +148,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
+    parent.add_class::<RayTaskResult>()?;
     Ok(())
 }

@@ -13,8 +13,14 @@ try:
 except ImportError:
     raise
 
+MAX_UDFACTOR_ACTOR_RESTARTS = 4
+MAX_UDFACTOR_ACTOR_TASK_RETRIES = 4
 
-@ray.remote
+
+@ray.remote(
+    max_restarts=MAX_UDFACTOR_ACTOR_RESTARTS,
+    max_task_retries=MAX_UDFACTOR_ACTOR_TASK_RETRIES,
+)
 class UDFActor:
     def __init__(self, uninitialized_projection: ExpressionsProjection) -> None:
         self.projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])

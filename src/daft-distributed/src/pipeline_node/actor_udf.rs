@@ -20,10 +20,10 @@ use super::{
 use crate::{
     scheduling::{
         scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask},
+        task::{SchedulingStrategy, SwordfishTask, TaskContext},
         worker::WorkerId,
     },
-    stage::{StageConfig, StageExecutionContext},
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
         channel::{create_channel, Sender},
         joinset::JoinSet,
@@ -176,7 +176,7 @@ impl ActorUDF {
             stage_config,
             node_id,
             Self::NODE_NAME,
-            vec![*child.node_id()],
+            vec![child.node_id()],
             vec![child.name()],
         );
         let config = PipelineNodeConfig::new(schema, stage_config.config.clone());
@@ -198,6 +198,7 @@ impl ActorUDF {
         self: Arc<Self>,
         input: RunningPipelineNode,
         result_tx: Sender<PipelineOutput<SwordfishTask>>,
+        task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         let mut udf_actors = UDFActors::Uninitialized(self.projection.clone());
 
@@ -221,6 +222,7 @@ impl ActorUDF {
                         vec![materialized_output],
                         worker_id,
                         actors,
+                        TaskContext::from((&self.context, task_id_counter.next())),
                     )?;
                     let (submittable_task, notify_token) = task.with_notify_token();
                     running_tasks.spawn(notify_token);
@@ -242,7 +244,12 @@ impl ActorUDF {
                     // Pick actors using round robin
                     let (worker_id, actors) = udf_actors.get_round_robin_actors()?;
 
-                    let modified_task = self.append_actor_udf_to_task(worker_id, task, actors)?;
+                    let modified_task = self.append_actor_udf_to_task(
+                        worker_id,
+                        task,
+                        actors,
+                        TaskContext::from((&self.context, task_id_counter.next())),
+                    )?;
                     let (submittable_task, notify_token) = modified_task.with_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx
@@ -271,6 +278,7 @@ impl ActorUDF {
         materialized_outputs: Vec<MaterializedOutput>,
         worker_id: WorkerId,
         actors: Vec<PyObjectWrapper>,
+        task_context: TaskContext,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
         // Extract all partitions from materialized outputs
         let mut partitions = Vec::new();
@@ -302,6 +310,7 @@ impl ActorUDF {
             StatsState::NotMaterialized,
         );
         let task = SubmittableTask::new(SwordfishTask::new(
+            task_context,
             actor_pool_project_plan,
             self.config.execution_config.clone(),
             HashMap::from([(self.context.node_id.to_string(), partitions)]),
@@ -310,7 +319,6 @@ impl ActorUDF {
                 soft: false,
             },
             self.context.to_hashmap(),
-            self.context.node_id,
         ));
 
         Ok(task)
@@ -321,6 +329,7 @@ impl ActorUDF {
         worker_id: WorkerId,
         submittable_task: SubmittableTask<SwordfishTask>,
         actors: Vec<PyObjectWrapper>,
+        task_context: TaskContext,
     ) -> DaftResult<SubmittableTask<SwordfishTask>> {
         let task_plan = submittable_task.task().plan();
         let actor_pool_project_plan = LocalPhysicalPlan::distributed_actor_pool_project(
@@ -340,12 +349,12 @@ impl ActorUDF {
         let psets = submittable_task.task().psets().clone();
 
         let task = submittable_task.with_new_task(SwordfishTask::new(
+            task_context,
             actor_pool_project_plan,
             self.config.execution_config.clone(),
             psets,
             scheduling_strategy,
             self.context.to_hashmap(),
-            self.context.node_id,
         ));
         Ok(task)
     }
@@ -412,8 +421,9 @@ impl DistributedPipelineNode for ActorUDF {
         let input_node = self.child.clone().start(stage_context);
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop_fused(input_node, result_tx);
-        stage_context.joinset.spawn(execution_loop);
+        let execution_loop =
+            self.execution_loop_fused(input_node, result_tx, stage_context.task_id_counter());
+        stage_context.spawn(execution_loop);
 
         RunningPipelineNode::new(result_rx)
     }

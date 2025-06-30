@@ -26,7 +26,7 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
-from daft.runners.flotilla import FlotillaPlanRunner
+from daft.runners.flotilla import FlotillaRunner
 from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
@@ -955,7 +955,7 @@ class Scheduler(ActorPoolManager):
                                 for result in result_obj_refs:
                                     inflight_ref_to_task[result] = task.id()
 
-                                pbar.mark_task_start(task)
+                                pbar.make_bar_or_update_total(task.stage_id, task.name())
 
                             # Break the dispatch batching/dispatch loop if no more dispatches allowed, or physical plan
                             # needs work for forward progress
@@ -986,7 +986,7 @@ class Scheduler(ActorPoolManager):
                                     for partition in task.partitions():
                                         del inflight_ref_to_task[partition]
 
-                                pbar.mark_task_done(task)
+                                pbar.update_bar(task.stage_id)
                                 del inflight_tasks[task_id]
 
             except StopIteration as e:
@@ -1021,17 +1021,6 @@ class Scheduler(ActorPoolManager):
 
 SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
-
-
-def get_head_node_id() -> str | None:
-    for node in ray.nodes():
-        if (
-            "Resources" in node
-            and "node:__internal_head__" in node["Resources"]
-            and node["Resources"]["node:__internal_head__"] == 1
-        ):
-            return node["NodeID"]
-    return None
 
 
 @ray.remote(num_cpus=1)
@@ -1270,8 +1259,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
-
-        self.flotilla_plan_runner: FlotillaPlanRunner | None = None
+        self.flotilla_plan_runner: FlotillaRunner | None = None
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return PartitionSetCache()
@@ -1386,7 +1374,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
                 explain_analyze_dir.mkdir(exist_ok=True, parents=True)
                 adaptive_planner.explain_analyze(str(explain_analyze_dir))
-        elif daft_execution_config.flotilla:
+        elif daft_execution_config.use_experimental_distributed_engine:
             try:
                 distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
                     builder._builder, daft_execution_config
@@ -1397,28 +1385,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
             else:
                 if self.flotilla_plan_runner is None:
-                    head_node_id = get_head_node_id()
-                    if head_node_id is None:
-                        self.flotilla_plan_runner = FlotillaPlanRunner.remote()  # type: ignore
-                    else:
-                        self.flotilla_plan_runner = FlotillaPlanRunner.options(  # type: ignore
-                            scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                                node_id=head_node_id,
-                                soft=False,
-                            ),
-                        ).remote()
-
-                plan_id = distributed_plan.id()
-                ray.get(
-                    self.flotilla_plan_runner.run_plan.remote(  # type: ignore
-                        distributed_plan, self._part_set_cache.get_all_partition_sets()
-                    )
+                    self.flotilla_plan_runner = FlotillaRunner(self.ray_client_mode)
+                yield from self.flotilla_plan_runner.stream_plan(
+                    distributed_plan, self._part_set_cache.get_all_partition_sets()
                 )
-                while True:
-                    materialized_result = ray.get(self.flotilla_plan_runner.get_next_partition.remote(plan_id))  # type: ignore
-                    if materialized_result is None:
-                        break
-                    yield materialized_result
+
         else:
             yield from self._execute_plan(builder, daft_execution_config, results_buffer_size)
 
