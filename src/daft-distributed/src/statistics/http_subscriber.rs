@@ -31,7 +31,7 @@ pub struct QueryGraphNode {
     pub metrics: Option<Vec<MetricDisplayInformation>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeStatus {
     Created,
@@ -62,7 +62,7 @@ impl HttpSubscriber {
         }
     }
 
-    fn build_query_graph(
+    pub fn build_query_graph(
         &self,
         plans: &HashMap<u32, PlanState>,
         tasks: &HashMap<TaskContext, TaskState>,
@@ -127,10 +127,8 @@ impl HttpSubscriber {
         }
     }
 
-    fn generate_node_id(context: &TaskContext) -> u32 {
-        ((context.plan_id as u32) << 16)
-            | ((context.stage_id as u32) << 8)
-            | context.node_id
+    pub fn generate_node_id(context: &TaskContext) -> u32 {
+        ((context.plan_id as u32) << 16) | ((context.stage_id as u32) << 8) | context.node_id
     }
 
     fn extract_operation_name(task_name: &str) -> String {
@@ -162,7 +160,7 @@ impl HttpSubscriber {
         }
     }
 
-    fn build_adjacency_list(
+    pub fn build_adjacency_list(
         &self,
         plans: &HashMap<u32, PlanState>,
         logical_to_query_map: &HashMap<usize, usize>,
@@ -214,9 +212,7 @@ impl HttpSubscriber {
                     }
                 }
 
-                if !child_ids.is_empty() {
-                    adjacency.insert(parent_id, child_ids);
-                }
+                adjacency.insert(parent_id, child_ids);
             }
 
             Ok(common_treenode::TreeNodeRecursion::Continue)

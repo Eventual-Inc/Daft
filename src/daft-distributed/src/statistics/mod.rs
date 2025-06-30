@@ -11,6 +11,9 @@ use crate::scheduling::task::{TaskContext, TaskName};
 pub mod http_subscriber;
 pub use http_subscriber::{HttpSubscriber, MetricDisplayInformation, QueryGraph, QueryGraphNode};
 
+#[cfg(test)]
+mod http_subscriber_test;
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PlanState {
