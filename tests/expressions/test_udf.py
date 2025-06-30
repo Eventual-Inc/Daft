@@ -500,7 +500,8 @@ def test_udf_with_error(use_actor_pool):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.flotilla is False,
+    get_tests_daft_runner_name() != "ray"
+    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
     reason="requires Flotilla to be in use",
 )
 @pytest.mark.parametrize("use_actor_pool", [True, False])
