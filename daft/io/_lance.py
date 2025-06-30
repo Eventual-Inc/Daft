@@ -23,12 +23,15 @@ def read_lance(
     index_cache_size: Optional[int] = None,
     default_scan_options: Optional[dict[str, str]] = None,
     metadata_cache_size_bytes: Optional[int] = None,
+    use_scalar_index: bool = False
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
     Args:
         url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
+        version: Optional version of the LanceDB table to read. If not specified, the latest version will be used.
+        use_scalar_index: Whether to use the scalar index for reading the LanceDB table. Defaults
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
@@ -73,7 +76,7 @@ def read_lance(
         default_scan_options=default_scan_options,
         metadata_cache_size_bytes=metadata_cache_size_bytes,
     )
-    lance_operator = LanceDBScanOperator(ds)
+    lance_operator = LanceDBScanOperator(ds, use_scalar_index)
 
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)

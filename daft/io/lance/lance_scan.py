@@ -21,16 +21,18 @@ def _lancedb_table_factory_function(
     required_columns: Optional[list[str]] = None,
     filter: Optional["pyarrow.compute.Expression"] = None,
     limit: Optional[int] = None,
+    use_scalar_index: bool = False,
 ) -> Iterator[PyRecordBatch]:
     fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
     assert fragments, RuntimeError(f"Unable to find lance fragments {fragment_ids}")
-    scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
+    scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit, use_scalar_index=use_scalar_index)
     return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
 
 
 class LanceDBScanOperator(ScanOperator):
-    def __init__(self, ds: "lance.LanceDataset"):
+    def __init__(self, ds: "lance.LanceDataset", use_scalar_index: bool = False):
         self._ds = ds
+        self._use_scalar_index = use_scalar_index
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -90,7 +92,7 @@ class LanceDBScanOperator(ScanOperator):
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
                 func_name=_lancedb_table_factory_function.__name__,
-                func_args=(self._ds, [fragment.fragment_id], required_columns, filters, pushdowns.limit),
+                func_args=(self._ds, [fragment.fragment_id], required_columns, filters, pushdowns.limit, self._use_scalar_index),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
                 size_bytes=size_bytes,

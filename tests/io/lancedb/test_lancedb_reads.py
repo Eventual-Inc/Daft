@@ -52,3 +52,10 @@ def test_lancedb_read_limit(lance_dataset_path):
 def test_lancedb_with_version(lance_dataset_path):
     df = daft.read_lance(lance_dataset_path, version=1)
     assert df.to_pydict() == data
+
+
+def test_lancedb_with_use_scalar_index(lance_dataset_path):
+    ds = lance.dataset(lance_dataset_path, version=1)
+    ds.create_scalar_index("long", "BTREE")
+    df = daft.read_lance(lance_dataset_path, version=1, use_scalar_index=True)
+    assert df.to_pydict() == data
