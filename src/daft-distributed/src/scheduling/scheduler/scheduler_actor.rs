@@ -159,6 +159,7 @@ where
                 maybe_new_task = task_rx.recv() => {
                     Self::handle_new_tasks(maybe_new_task, &mut task_rx, &statistics_manager, &mut scheduler, &mut input_exhausted)?;
                 }
+                // Add a task that regularly runs at a 1s interval to send statistics, using tokio
                 Some(snapshots) = dispatcher_handle.await_worker_updates() => {
                     tracing::debug!("Received worker updates: {:?}", snapshots);
 

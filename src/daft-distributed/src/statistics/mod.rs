@@ -1,5 +1,7 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
 use daft_logical_plan::LogicalPlanRef;
@@ -7,13 +9,12 @@ use daft_logical_plan::LogicalPlanRef;
 use crate::scheduling::task::{TaskContext, TaskName};
 
 pub mod http_subscriber;
-pub use http_subscriber::{HttpSubscriber, QueryGraph, QueryGraphNode, MetricDisplayInformation};
+pub use http_subscriber::{HttpSubscriber, MetricDisplayInformation, QueryGraph, QueryGraphNode};
 
-pub mod usage_example;
-
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PlanState {
-    pub plan_id: u32,
+    pub plan_id: usize,
     pub logical_plan: LogicalPlanRef,
     pub description: String,
 }
@@ -38,6 +39,7 @@ pub enum TaskExecutionStatus {
     Canceled,
 }
 
+#[allow(dead_code)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum StatisticsEvent {
     SubmittedTask {
@@ -98,13 +100,21 @@ impl StatisticsManager {
         })
     }
 
-    pub fn register_plan(&self, plan_id: u32, logical_plan: LogicalPlanRef, description: String) -> DaftResult<()> {
+    pub fn register_plan(
+        &self,
+        plan_id: u32,
+        logical_plan: LogicalPlanRef,
+        description: String,
+    ) -> DaftResult<()> {
         let mut plans = self.plans.lock().unwrap();
-        plans.insert(plan_id, PlanState {
+        plans.insert(
             plan_id,
-            logical_plan,
-            description,
-        });
+            PlanState {
+                plan_id: plan_id as usize,
+                logical_plan,
+                description,
+            },
+        );
         Ok(())
     }
 

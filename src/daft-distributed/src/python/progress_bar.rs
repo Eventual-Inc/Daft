@@ -74,7 +74,10 @@ impl StatisticsSubscriber for FlotillaProgressBar {
         &self,
         event: &StatisticsEvent,
         _plans: &std::collections::HashMap<u32, crate::statistics::PlanState>,
-        _tasks: &std::collections::HashMap<crate::scheduling::task::TaskContext, crate::statistics::TaskState>,
+        _tasks: &std::collections::HashMap<
+            crate::scheduling::task::TaskContext,
+            crate::statistics::TaskState,
+        >,
     ) -> DaftResult<()> {
         match event {
             StatisticsEvent::SubmittedTask { context, name } => {
