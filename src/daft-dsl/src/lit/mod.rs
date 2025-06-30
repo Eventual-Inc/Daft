@@ -138,7 +138,7 @@ impl Hash for LiteralValue {
                 scale.hash(state);
             }
             Self::Series(series) => {
-                let hash_result = series.hash(None);
+                let hash_result = series.hash(None, HashFunctionKind::XxHash);
                 match hash_result {
                     Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
                     Err(..) => panic!("Cannot hash series"),

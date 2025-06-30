@@ -3,6 +3,7 @@ arrow2 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-hash = { path = "../daft-hash", default-features = false }
 indexmap = {workspace = true, features = ["serde"]}
 serde = {workspace = true}
 typetag = {workspace = true}

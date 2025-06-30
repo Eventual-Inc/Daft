@@ -3,6 +3,7 @@ common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-hash = { path = "../daft-hash", default-features = false }
 serde = {workspace = true}
 snafu = {workspace = true}
 

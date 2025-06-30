@@ -6,6 +6,7 @@ use std::{
 use daft_core::array::ops::{DaftCompare, DaftLogical};
 use daft_dsl::{ExprRef, Literal};
 use daft_recordbatch::RecordBatch;
+use daft_hash::HashFunctionKind;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PartitionSpec {
@@ -75,7 +76,7 @@ impl Hash for PartitionSpec {
         self.keys.schema.hash(state);
 
         for column in self.keys.columns() {
-            let column_hashes = column.hash(None).expect("Failed to hash column");
+            let column_hashes = column.hash(None, HashFunctionKind::XxHash).expect("Failed to hash column");
             column_hashes.into_iter().for_each(|h| h.hash(state));
         }
     }
