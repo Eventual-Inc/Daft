@@ -5144,6 +5144,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "marrow"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3641f6a55539a8b6e5349b3bdfb5b315714fbceda3253815838f49e40e3ea757"
+dependencies = [
+ "arrow2",
+ "bytemuck",
+ "half",
+ "serde",
+]
+
+[[package]]
 name = "matchers"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7133,14 +7145,15 @@ dependencies = [
 
 [[package]]
 name = "serde_arrow"
-version = "0.11.8"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11dc39a704b214e72e4cec092fff98180ac432f5f7850dd0d55e9012c29fba9"
+checksum = "221bea57dc6cb0aec429ab73af67b4a46cfdef464082e391cd609f7c5b50be4f"
 dependencies = [
  "arrow2",
  "bytemuck",
  "chrono",
  "half",
+ "marrow",
  "serde",
 ]
 
