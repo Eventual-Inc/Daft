@@ -125,7 +125,6 @@ fn hash_list(
     flat_child: &Series,
     validity: Option<&arrow2::bitmap::Bitmap>,
     seed: Option<&UInt64Array>,
-    hash_function: HashFunctionKind,
 ) -> DaftResult<UInt64Array> {
     // first we hash the flat child
     // turning [[stuff], [stuff, stuff], ...] into [[hash], [hash, hash], ...]
@@ -188,12 +187,11 @@ fn hash_list(
 
 impl ListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+        self.hash_with_specified_algorithm(seed)
     }
     pub fn hash_with_specified_algorithm(
         &self,
         seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         hash_list(
             self.name(),
@@ -201,19 +199,17 @@ impl ListArray {
             &self.flat_child,
             self.validity(),
             seed,
-            hash_function,
         )
     }
 }
 
 impl FixedSizeListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+        self.hash_with_specified_algorithm(seed)
     }
     pub fn hash_with_specified_algorithm(
         &self,
         seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
         let len = self.flat_child.len() as i64;
@@ -225,32 +221,23 @@ impl FixedSizeListArray {
             &self.flat_child,
             self.validity(),
             seed,
-            hash_function,
         )
     }
 }
 
 impl StructArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
-    }
-    pub fn hash_with_specified_algorithm(
-        &self,
-        seed: Option<&UInt64Array>,
-        hash_function: HashFunctionKind,
-    ) -> DaftResult<UInt64Array> {
+        // seed first child with input seed,
+        // then seed each child after with the output of the previous
         if self.children.is_empty() {
             return Err(DaftError::ValueError(
                 "Cannot hash struct with no children".into(),
             ));
         }
-        let mut res = self
-            .children
-            .first()
-            .unwrap()
-            .hash_with_specified_algorithm(seed, hash_function)?;
+        let mut res = self.children.first().unwrap().hash(seed)?;
+
         for child in self.children.iter().skip(1) {
-            res = child.hash_with_specified_algorithm(Some(&res), hash_function)?;
+            res = child.hash(Some(&res))?;
         }
         res.rename(self.name())
             .with_validity(self.validity().cloned())
