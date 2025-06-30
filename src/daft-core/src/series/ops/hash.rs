@@ -1,5 +1,6 @@
 use arrow2::bitmap::Bitmap;
 use common_error::DaftResult;
+use daft_hash::HashFunctionKind;
 
 use crate::{
     datatypes::{DataType, Int32Array, UInt64Array},
@@ -9,10 +10,18 @@ use crate::{
 
 impl Series {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let s = self.as_physical()?;
         with_match_hashable_daft_types!(s.data_type(), |$T| {
             let downcasted = s.downcast::<<$T as DaftDataType>::ArrayType>()?;
-            downcasted.hash(seed)
+            downcasted.hash_with_specified_algorithm(seed, hash_function)
         })
     }
 

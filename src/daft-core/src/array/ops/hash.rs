@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use arrow2::types::Index;
 use common_error::{DaftError, DaftResult};
+use daft_hash::HashFunctionKind;
 use daft_schema::{dtype::DataType, field::Field};
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
@@ -24,72 +25,96 @@ where
     T: DaftPrimitiveType,
 {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
-
         let seed = seed.map(|v| v.as_arrow());
-
-        let result = kernels::hashing::hash(as_arrowed, seed)?;
-
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
 
 impl Utf8Array {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
-
         let seed = seed.map(|v| v.as_arrow());
-
-        let result = kernels::hashing::hash(as_arrowed, seed)?;
-
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
 
 impl BinaryArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
-
         let seed = seed.map(|v| v.as_arrow());
-
-        let result = kernels::hashing::hash(as_arrowed, seed)?;
-
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
 
 impl FixedSizeBinaryArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
-
         let seed = seed.map(|v| v.as_arrow());
-
-        let result = kernels::hashing::hash(as_arrowed, seed)?;
-
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
 
 impl BooleanArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
-
         let seed = seed.map(|v| v.as_arrow());
-
-        let result = kernels::hashing::hash(as_arrowed, seed)?;
-
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
 
 impl NullArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.data();
-
         let seed = seed.map(|v| v.as_arrow());
-
-        let result = kernels::hashing::hash(as_arrowed, seed)?;
-
+        let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
 }
@@ -100,6 +125,7 @@ fn hash_list(
     flat_child: &Series,
     validity: Option<&arrow2::bitmap::Bitmap>,
     seed: Option<&UInt64Array>,
+    hash_function: HashFunctionKind,
 ) -> DaftResult<UInt64Array> {
     // first we hash the flat child
     // turning [[stuff], [stuff, stuff], ...] into [[hash], [hash, hash], ...]
@@ -162,18 +188,33 @@ fn hash_list(
 
 impl ListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         hash_list(
             self.name(),
             self.offsets(),
             &self.flat_child,
             self.validity(),
             seed,
+            hash_function,
         )
     }
 }
 
 impl FixedSizeListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
         let len = self.flat_child.len() as i64;
         // see comment on hash_list for why we are collecting
@@ -184,23 +225,32 @@ impl FixedSizeListArray {
             &self.flat_child,
             self.validity(),
             seed,
+            hash_function,
         )
     }
 }
 
 impl StructArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        // seed first child with input seed,
-        // then seed each child after with the output of the previous
+        self.hash_with_specified_algorithm(seed, HashFunctionKind::XxHash)
+    }
+    pub fn hash_with_specified_algorithm(
+        &self,
+        seed: Option<&UInt64Array>,
+        hash_function: HashFunctionKind,
+    ) -> DaftResult<UInt64Array> {
         if self.children.is_empty() {
             return Err(DaftError::ValueError(
                 "Cannot hash struct with no children".into(),
             ));
         }
-        let mut res = self.children.first().unwrap().hash(seed)?;
-
+        let mut res = self
+            .children
+            .first()
+            .unwrap()
+            .hash_with_specified_algorithm(seed, hash_function)?;
         for child in self.children.iter().skip(1) {
-            res = child.hash(Some(&res))?;
+            res = child.hash_with_specified_algorithm(Some(&res), hash_function)?;
         }
         res.rename(self.name())
             .with_validity(self.validity().cloned())

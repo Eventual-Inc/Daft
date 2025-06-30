@@ -9,6 +9,7 @@ common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
+daft-hash = {path = "../daft-hash"}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 indexmap = {workspace = true}

@@ -12,6 +12,9 @@ struct Args<T> {
 
     #[arg(optional)]
     seed: Option<T>,
+
+    #[arg(optional)]
+    hash_function: Option<String>,
 }
 
 #[typetag::serde]
@@ -21,7 +24,16 @@ impl ScalarUDF for HashFunction {
     }
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let Args { input, seed } = inputs.try_into()?;
+        let Args {
+            input,
+            seed,
+            hash_function,
+        } = inputs.try_into()?;
+
+        let hash_function = hash_function
+            .map(|s| s.parse::<HashFunctionKind>())
+            .transpose()?;
+
         if let Some(seed) = seed {
             match seed.len() {
                 1 if seed.data_type().is_list() => {
@@ -37,7 +49,12 @@ impl ScalarUDF for HashFunction {
                     );
                     let seed = seed.cast(&DataType::UInt64)?;
                     let seed = seed.u64().unwrap();
-                    input.hash(Some(seed)).map(IntoSeries::into_series)
+                    match hash_function {
+                        Some(hash_fn) => input
+                            .hash_with_specified_algorithm(Some(seed), hash_fn)
+                            .map(IntoSeries::into_series),
+                        None => input.hash(Some(seed)).map(IntoSeries::into_series),
+                    }
                 }
                 1 => {
                     let seed = seed.cast(&DataType::UInt64)?;
@@ -48,19 +65,34 @@ impl ScalarUDF for HashFunction {
                         Field::new("seed", DataType::UInt64),
                         std::iter::repeat_n(Some(seed), input.len()),
                     );
-                    input.hash(Some(&seed)).map(IntoSeries::into_series)
+                    match hash_function {
+                        Some(hash_fn) => input
+                            .hash_with_specified_algorithm(Some(&seed), hash_fn)
+                            .map(IntoSeries::into_series),
+                        None => input.hash(Some(&seed)).map(IntoSeries::into_series),
+                    }
                 }
                 _ if seed.len() == input.len() => {
                     let seed = seed.cast(&DataType::UInt64)?;
                     let seed = seed.u64().unwrap();
-                    input.hash(Some(seed)).map(IntoSeries::into_series)
+                    match hash_function {
+                        Some(hash_fn) => input
+                            .hash_with_specified_algorithm(Some(seed), hash_fn)
+                            .map(IntoSeries::into_series),
+                        None => input.hash(Some(seed)).map(IntoSeries::into_series),
+                    }
                 }
                 _ => Err(DaftError::ValueError(
                     "Seed must be a single value or the same length as the input".to_string(),
                 )),
             }
         } else {
-            input.hash(None).map(|arr| arr.into_series())
+            match hash_function {
+                Some(hash_fn) => input
+                    .hash_with_specified_algorithm(None, hash_fn)
+                    .map(|arr| arr.into_series()),
+                None => input.hash(None).map(|arr| arr.into_series()),
+            }
         }
     }
 
@@ -69,7 +101,7 @@ impl ScalarUDF for HashFunction {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let Args { input, seed } = inputs.try_into()?;
+        let Args { input, seed, .. } = inputs.try_into()?;
         let input = input.to_field(schema)?;
 
         if let Some(seed) = seed {
@@ -88,11 +120,14 @@ impl ScalarUDF for HashFunction {
 }
 
 #[must_use]
-pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
-    let inputs = match seed {
-        Some(seed) => vec![input, seed],
-        None => vec![input],
-    };
+pub fn hash(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef>) -> ExprRef {
+    let mut inputs = vec![input];
+    if let Some(seed) = seed {
+        inputs.push(seed);
+    }
+    if let Some(hash_function) = hash_function {
+        inputs.push(hash_function);
+    }
 
     ScalarFn::builtin(HashFunction, inputs).into()
 }
