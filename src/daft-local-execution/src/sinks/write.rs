@@ -37,7 +37,7 @@ impl RuntimeStatsBuilder for WriteStatsBuilder {
         rows_emitted: u64,
     ) {
         stats.insert("rows received", HumanCount(rows_received).to_string());
-        stats.insert("rows written", HumanCount(rows_emitted).to_string());
+        stats.insert("files written", HumanCount(rows_emitted).to_string());
         stats.insert(
             "bytes written",
             HumanBytes(

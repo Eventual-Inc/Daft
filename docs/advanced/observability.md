@@ -29,4 +29,4 @@ In remote execution on Ray, the progress indicator shows:
 
 #### Why is the progress indicator different?
 
-Ray automatically manages a different progress indicator based on tasks and actors. This progress indicator tracks different statistics and is not as customizable. We recommend that you ignore the estimated time left, as
+Ray automatically manages a different progress indicator based on tasks and actors. This progress indicator tracks different statistics and is not as customizable.

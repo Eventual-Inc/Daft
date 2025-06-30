@@ -186,6 +186,8 @@ pub fn make_progress_bar_manager(total: usize) -> Arc<dyn ProgressBarManager> {
 
 #[cfg(feature = "python")]
 mod python {
+    use std::{sync::atomic::AtomicU64, time::Instant};
+
     use pyo3::{types::PyAnyMethods, PyObject, Python};
 
     use super::*;
@@ -203,12 +205,49 @@ mod python {
     struct TqdmProgressBar {
         pb_id: usize,
         manager: TqdmProgressBarManager,
+        start_time: Instant,
+        last_update: AtomicU64,
+    }
+
+    impl TqdmProgressBar {
+        // 500ms = 500_000_000ns
+        const UPDATE_INTERVAL: u64 = 500_000_000;
+
+        fn should_update_progress_bar(&self, now: Instant) -> bool {
+            if now < self.start_time {
+                return false;
+            }
+
+            {
+                {
+                    let prev = self.last_update.load(Ordering::Acquire);
+                    let elapsed = (now - self.start_time).as_nanos() as u64;
+                    let diff = elapsed.saturating_sub(prev);
+
+                    // Fast path - check if enough time has passed
+                    if diff < Self::UPDATE_INTERVAL {
+                        return false;
+                    }
+
+                    // Only calculate remainder if we're actually going to update
+                    let remainder = diff % Self::UPDATE_INTERVAL;
+                    self.last_update
+                        .store(elapsed - remainder, Ordering::Release);
+                    true
+                }
+            }
+        }
     }
 
     impl ProgressBar for TqdmProgressBar {
         fn set_message(&self, stats: IndexMap<&'static str, String>) -> DaftResult<()> {
-            let message = stats_to_message(stats);
-            self.manager.update_bar(self.pb_id, message.as_str())
+            let now = Instant::now();
+            if self.should_update_progress_bar(now) {
+                let message = stats_to_message(stats);
+                self.manager.update_bar(self.pb_id, message.as_str())
+            } else {
+                Ok(())
+            }
         }
 
         fn close(&self) -> DaftResult<()> {
@@ -267,6 +306,8 @@ mod python {
             DaftResult::Ok(Box::new(TqdmProgressBar {
                 pb_id,
                 manager: self.clone(),
+                start_time: Instant::now(),
+                last_update: AtomicU64::new(0),
             }))
         }
 
