@@ -64,7 +64,7 @@ pub struct DaftExecutionConfig {
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
     pub native_parquet_writer: bool,
-    pub flotilla: bool,
+    pub use_experimental_distributed_engine: bool,
     pub min_cpu_per_task: f64,
 }
 
@@ -97,7 +97,7 @@ impl Default for DaftExecutionConfig {
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
             native_parquet_writer: true,
-            flotilla: false,
+            use_experimental_distributed_engine: true,
             min_cpu_per_task: 0.5,
         }
     }
@@ -137,7 +137,7 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(flotilla_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
-            cfg.flotilla = true;
+            cfg.use_experimental_distributed_engine = true;
         }
         let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
         if let Ok(val) = std::env::var(min_cpu_var) {
