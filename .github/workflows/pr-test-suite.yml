@@ -60,7 +60,7 @@ jobs:
       run: rustup component add llvm-tools-preview
 
     - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -1087,7 +1087,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
     - name: Install pre-commit
