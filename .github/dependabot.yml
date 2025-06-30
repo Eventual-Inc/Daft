@@ -4,10 +4,6 @@ updates:
   directory: /
   schedule:
     interval: monthly
-    # Add assignees
-  assignees:
-  - samster25
-  - jaychia
   groups:
     # Python updates are mainly dev-only, so we can group them together.
     all:
@@ -18,10 +14,6 @@ updates:
   directory: /
   schedule:
     interval: monthly
-    # Add assignees
-  assignees:
-  - samster25
-  - jaychia
   ignore:
     # Ignore arrow-rs related updates.
   - dependency-name: "arrow-array"
@@ -44,10 +36,6 @@ updates:
   directory: /
   schedule:
     interval: monthly
-    # Add assignees
-  assignees:
-  - samster25
-  - jaychia
   groups:
     # Will group all updates together.
     all:
