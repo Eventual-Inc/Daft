@@ -23,7 +23,8 @@ def _lancedb_table_factory_function(
     limit: Optional[int] = None,
 ) -> Iterator[PyRecordBatch]:
     fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
-    assert fragments, RuntimeError(f"Unable to find lance fragments {fragment_ids}")
+    if not fragments:
+        raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
     scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
     return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
 
