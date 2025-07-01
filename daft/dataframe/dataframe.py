@@ -274,7 +274,7 @@ class DataFrame:
             if get_context().get_or_create_runner().name != "native":
                 # Check if flotilla is enabled for distributed execution
                 daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.flotilla:
+                if daft_execution_config.use_experimental_distributed_engine:
                     try:
                         from daft.daft import DistributedPhysicalPlan
 
