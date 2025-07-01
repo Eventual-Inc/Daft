@@ -234,7 +234,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
@@ -258,7 +258,7 @@ mod tests {
         let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -320,7 +320,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
@@ -346,7 +346,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
@@ -371,7 +371,7 @@ mod tests {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, Some(100), io_client, None).await?;
@@ -421,7 +421,7 @@ mod tests {
         );
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        io_config.s3.as_mut().unwrap().anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;

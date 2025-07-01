@@ -377,7 +377,6 @@ impl ScanOperator for GlobScanOperator {
             format!("Glob paths = [{}]", condensed_glob_paths),
         ];
         lines.extend(self.file_format_config.multiline_display());
-        lines.extend(self.storage_config.multiline_display());
 
         lines
     }
