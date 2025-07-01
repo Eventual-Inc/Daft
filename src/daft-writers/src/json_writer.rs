@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use arrow_array::RecordBatch as ArrowRecordBatch;
-use arrow_json::LineDelimitedWriter;
+use arrow_json::{writer::LineDelimited, LineDelimitedWriter, WriterBuilder};
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
@@ -92,7 +92,8 @@ impl<B: StorageBackend> JsonWriter<B> {
 
     async fn create_writer(&mut self) -> DaftResult<()> {
         let backend_writer = self.storage_backend.create_writer(&self.filename).await?;
-        let file_writer = LineDelimitedWriter::new(backend_writer);
+        let builder = WriterBuilder::new().with_explicit_nulls(true);
+        let file_writer = builder.build::<_, LineDelimited>(backend_writer);
         self.file_writer = Some(file_writer);
         Ok(())
     }
