@@ -231,31 +231,37 @@ impl IOClient {
                 // Hugging Face requires special logic around cache busting. That logic is encapsulated in the HFSource.
                 match url.domain() {
                     Some("huggingface.co") => {
-                        HFSource::get_client(&self.config.hf, &self.config.http).await?
+                        HFSource::get_client(&self.config.hf.clone().unwrap_or_default(), &self.config.http.clone().unwrap_or_default()).await?
                             as Arc<dyn ObjectSource>
                     }
                     _ => HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>,
                 }
             }
             SourceType::S3 => {
-                S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
+                S3LikeSource::get_client(&self.config.s3.clone().unwrap_or_default()).await?
+                    as Arc<dyn ObjectSource>
             }
             SourceType::AzureBlob => {
-                AzureBlobSource::get_client(&self.config.azure, &path).await?
-                    as Arc<dyn ObjectSource>
+                AzureBlobSource::get_client(&self.config.azure.clone().unwrap_or_default(), &path)
+                    .await? as Arc<dyn ObjectSource>
             }
 
             SourceType::GCS => {
-                GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
+                GCSSource::get_client(&self.config.gcs.clone().unwrap_or_default()).await?
+                    as Arc<dyn ObjectSource>
             }
             SourceType::HF => {
-                HFSource::get_client(&self.config.hf, &self.config.http).await?
-                    as Arc<dyn ObjectSource>
+                HFSource::get_client(
+                    &self.config.hf.clone().unwrap_or_default(),
+                    &self.config.http.clone().unwrap_or_default(),
+                )
+                .await? as Arc<dyn ObjectSource>
             }
             SourceType::Unity => {
                 #[cfg(feature = "python")]
                 {
-                    UnitySource::get_client(&self.config.unity).await? as Arc<dyn ObjectSource>
+                    UnitySource::get_client(&self.config.unity.clone().unwrap_or_default()).await?
+                        as Arc<dyn ObjectSource>
                 }
                 #[cfg(not(feature = "python"))]
                 {

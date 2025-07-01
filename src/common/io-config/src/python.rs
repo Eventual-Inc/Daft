@@ -194,12 +194,12 @@ impl IOConfig {
     ) -> Self {
         Self {
             config: config::IOConfig {
-                s3: s3.unwrap_or_default().config,
-                azure: azure.unwrap_or_default().config,
-                gcs: gcs.unwrap_or_default().config,
-                http: http.unwrap_or_default().config,
-                unity: unity.unwrap_or_default().config,
-                hf: hf.unwrap_or_default().config,
+                s3: s3.map(|s| s.config),
+                azure: azure.map(|a| a.config),
+                gcs: gcs.map(|g| g.config),
+                http: http.map(|h| h.config),
+                unity: unity.map(|u| u.config),
+                hf: hf.map(|h| h.config),
             },
         }
     }
@@ -224,24 +224,16 @@ impl IOConfig {
     ) -> Self {
         Self {
             config: config::IOConfig {
-                s3: s3
-                    .map(|s3| s3.config)
-                    .unwrap_or_else(|| self.config.s3.clone()),
+                s3: s3.map(|s| s.config).or_else(|| self.config.s3.clone()),
                 azure: azure
-                    .map(|azure| azure.config)
-                    .unwrap_or_else(|| self.config.azure.clone()),
-                gcs: gcs
-                    .map(|gcs| gcs.config)
-                    .unwrap_or_else(|| self.config.gcs.clone()),
-                http: http
-                    .map(|http| http.config)
-                    .unwrap_or_else(|| self.config.http.clone()),
+                    .map(|a| a.config)
+                    .or_else(|| self.config.azure.clone()),
+                gcs: gcs.map(|g| g.config).or_else(|| self.config.gcs.clone()),
+                http: http.map(|h| h.config).or_else(|| self.config.http.clone()),
                 unity: unity
-                    .map(|unity| unity.config)
-                    .unwrap_or_else(|| self.config.unity.clone()),
-                hf: hf
-                    .map(|hf| hf.config)
-                    .unwrap_or_else(|| self.config.hf.clone()),
+                    .map(|u| u.config)
+                    .or_else(|| self.config.unity.clone()),
+                hf: hf.map(|hf| hf.config).or_else(|| self.config.hf.clone()),
             },
         }
     }
@@ -254,7 +246,7 @@ impl IOConfig {
     #[getter]
     pub fn s3(&self) -> PyResult<S3Config> {
         Ok(S3Config {
-            config: self.config.s3.clone(),
+            config: self.config.s3.clone().unwrap_or_default(),
         })
     }
 
@@ -262,7 +254,7 @@ impl IOConfig {
     #[getter]
     pub fn azure(&self) -> PyResult<AzureConfig> {
         Ok(AzureConfig {
-            config: self.config.azure.clone(),
+            config: self.config.azure.clone().unwrap_or_default(),
         })
     }
 
@@ -270,7 +262,7 @@ impl IOConfig {
     #[getter]
     pub fn gcs(&self) -> PyResult<GCSConfig> {
         Ok(GCSConfig {
-            config: self.config.gcs.clone(),
+            config: self.config.gcs.clone().unwrap_or_default(),
         })
     }
 
@@ -278,21 +270,21 @@ impl IOConfig {
     #[getter]
     pub fn http(&self) -> PyResult<HTTPConfig> {
         Ok(HTTPConfig {
-            config: self.config.http.clone(),
+            config: self.config.http.clone().unwrap_or_default(),
         })
     }
 
     #[getter]
     pub fn unity(&self) -> PyResult<UnityConfig> {
         Ok(UnityConfig {
-            config: self.config.unity.clone(),
+            config: self.config.unity.clone().unwrap_or_default(),
         })
     }
 
     #[getter]
     pub fn hf(&self) -> PyResult<HuggingFaceConfig> {
         Ok(HuggingFaceConfig {
-            config: self.config.hf.clone(),
+            config: self.config.hf.clone().unwrap_or_default(),
         })
     }
 
