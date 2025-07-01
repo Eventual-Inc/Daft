@@ -3,7 +3,8 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use daft_dsl::{
-    count_actor_pool_udfs, exprs_to_schema,
+    expr::count_udfs,
+    exprs_to_schema,
     functions::python::{get_resource_request, get_udf_names, try_get_concurrency},
     ExprRef,
 };
@@ -46,9 +47,13 @@ impl UDFProject {
         project: ExprRef,
         passthrough_columns: Vec<ExprRef>,
     ) -> Result<Self> {
-        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&[project.clone()]);
-        if !num_actor_pool_udfs == 1 {
-            return Err(Error::CreationError { source: DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")) });
+        let num_udfs: usize = count_udfs(&[project.clone()]);
+        if num_udfs != 1 {
+            return Err(Error::CreationError {
+                source: DaftError::InternalError(format!(
+                    "Expected UDFProject to have exactly 1 UDF expression but found: {num_udfs}"
+                )),
+            });
         }
 
         let projected_field = project.to_field(&input.schema())?;
