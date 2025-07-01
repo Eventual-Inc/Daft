@@ -474,6 +474,11 @@ impl SQLPlanner<'_> {
                         window_spec
                             .descending
                             .push(order.asc.is_some_and(|asc| !asc));
+                        window_spec.nulls_first.push(
+                            order
+                                .nulls_first
+                                .unwrap_or_else(|| order.asc.is_some_and(|asc| !asc)),
+                        );
                     }
                 }
 

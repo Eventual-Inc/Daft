@@ -15,8 +15,11 @@ use super::{
 };
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    scheduling::{scheduler::SchedulerHandle, task::SwordfishTask},
-    stage::{StageConfig, StageExecutionContext},
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, TaskContext},
+    },
+    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{create_channel, Sender},
 };
 
@@ -43,7 +46,7 @@ impl SinkNode {
             stage_config,
             node_id,
             Self::NODE_NAME,
-            vec![*child.node_id()],
+            vec![child.node_id()],
             vec![child.name()],
         );
         let config = PipelineNodeConfig::new(file_schema, stage_config.config.clone());
@@ -113,6 +116,7 @@ impl SinkNode {
         info: OutputFileInfo<ExprRef>,
         input: RunningPipelineNode,
         scheduler: SchedulerHandle<SwordfishTask>,
+        task_id_counter: TaskIDCounter,
         sender: Sender<PipelineOutput<SwordfishTask>>,
     ) -> DaftResult<()> {
         let file_schema = self.config.schema.clone();
@@ -120,6 +124,7 @@ impl SinkNode {
         let materialized_stream = input.materialize(scheduler);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
         let task = make_new_task_from_materialized_outputs(
+            TaskContext::from((&self.context, task_id_counter.next())),
             materialized,
             &(self as Arc<dyn DistributedPipelineNode>),
             &move |input| {
@@ -226,13 +231,15 @@ impl DistributedPipelineNode for SinkNode {
             )
         {
             let sink_node = self.clone();
-            let scheduler = stage_context.scheduler_handle.clone();
+            let scheduler = stage_context.scheduler_handle();
+            let task_id_counter = stage_context.task_id_counter();
             let (sender, receiver) = create_channel(1);
-            stage_context.joinset.spawn(Self::finish_writes_and_commit(
+            stage_context.spawn(Self::finish_writes_and_commit(
                 sink_node,
                 info.clone(),
                 pipelined_node_with_writes,
                 scheduler,
+                task_id_counter,
                 sender,
             ));
             RunningPipelineNode::new(receiver)
