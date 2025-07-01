@@ -1,12 +1,17 @@
-use std::{collections::HashMap, env};
+use std::{collections::HashMap, env, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::TreeNode;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::{PlanState, StatisticsEvent, StatisticsSubscriber, TaskState};
 use crate::scheduling::task::TaskContext;
+
+// Type alias to simplify the complex type used in latest_data
+type LatestDataType =
+    Arc<Mutex<Option<(HashMap<u32, PlanState>, HashMap<TaskContext, TaskState>)>>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryGraph {
@@ -58,11 +63,113 @@ pub struct MetricDisplayInformation {
     pub unit: String,
 }
 
-pub struct HttpSubscriber;
+pub struct HttpSubscriber {
+    latest_data: LatestDataType,
+    _interval_handle: tokio::task::JoinHandle<()>,
+}
 
 impl HttpSubscriber {
     pub fn new() -> Self {
-        Self
+        let latest_data: LatestDataType = Arc::new(Mutex::new(None));
+        let latest_data_clone = latest_data.clone();
+
+        // Spawn interval task that sends updates every 1 second
+        let interval_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            interval.tick().await; // Skip the first immediate tick
+
+            loop {
+                interval.tick().await;
+
+                let data_guard = latest_data_clone.lock().await;
+                if let Some((plans, tasks)) = data_guard.as_ref() {
+                    let plans_clone = plans.clone();
+                    let tasks_clone = tasks.clone();
+                    drop(data_guard); // Release lock before async work
+
+                    // Build the query graph and send the request
+                    let http_subscriber = Self::new_for_sending();
+                    let query_graph = http_subscriber.build_query_graph(&plans_clone, &tasks_clone);
+
+                    let endpoint = format!(
+                        "{}/queries",
+                        env::var("DAFT_DASHBOARD_URL")
+                            .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
+                    );
+
+                    // Build headers
+                    let mut headers = reqwest::header::HeaderMap::new();
+                    headers.insert(
+                        reqwest::header::CONTENT_TYPE,
+                        reqwest::header::HeaderValue::from_static("application/json"),
+                    );
+
+                    if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
+                        let auth_value = format!("Bearer {}", auth_token);
+                        if let Ok(header_value) =
+                            reqwest::header::HeaderValue::from_str(&auth_value)
+                        {
+                            headers.insert(reqwest::header::AUTHORIZATION, header_value);
+                        }
+                    }
+
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(1))
+                        .default_headers(headers)
+                        .build()
+                        .unwrap_or_else(|_| reqwest::Client::new());
+
+                    let optimized_plan =
+                        serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
+
+                    // Extract query ID from the first plan state, or generate a new UUID if no plans exist
+                    let query_id = plans_clone
+                        .values()
+                        .next()
+                        .map(|plan| plan.query_id.clone())
+                        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+                    let payload = QueryPayload {
+                        id: query_id,
+                        optimized_plan,
+                        run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
+                        logs: String::new(),
+                    };
+
+                    // Send update
+                    let response = client.post(&endpoint).json(&payload).send().await;
+
+                    match response {
+                        Ok(resp) => {
+                            if resp.status().is_success() {
+                                tracing::debug!("Successfully sent query information");
+                            } else {
+                                tracing::warn!(
+                                    "Failed to send query information: {}",
+                                    resp.status()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to broadcast metrics over {}: {}", endpoint, e);
+                        }
+                    }
+                }
+            }
+        });
+
+        Self {
+            latest_data,
+            _interval_handle: interval_handle,
+        }
+    }
+
+    fn new_for_sending() -> Self {
+        let dummy_handle = tokio::spawn(async {});
+        Self {
+            latest_data: Arc::new(Mutex::new(None)),
+            _interval_handle: dummy_handle,
+        }
     }
 
     pub fn build_query_graph(
@@ -230,67 +337,13 @@ impl StatisticsSubscriber for HttpSubscriber {
         plans: &HashMap<u32, PlanState>,
         tasks: &HashMap<TaskContext, TaskState>,
     ) -> DaftResult<()> {
-        let query_graph = self.build_query_graph(plans, tasks);
+        let latest_data = self.latest_data.clone();
+        let plans_clone = plans.clone();
+        let tasks_clone = tasks.clone();
 
-        let endpoint = format!(
-            "{}/queries",
-            env::var("DAFT_DASHBOARD_URL")
-                .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
-        );
-
-        // Build headers
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            reqwest::header::HeaderValue::from_static("application/json"),
-        );
-
-        if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
-            let auth_value = format!("Bearer {}", auth_token);
-            if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&auth_value) {
-                headers.insert(reqwest::header::AUTHORIZATION, header_value);
-            }
-        }
-
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(1))
-            .default_headers(headers)
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
-
-        let optimized_plan =
-            serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
-
-        // Extract query ID from the first plan state, or generate a new UUID if no plans exist
-        let query_id = plans
-            .values()
-            .next()
-            .map(|plan| plan.query_id.clone())
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-        let payload = QueryPayload {
-            id: query_id,
-            optimized_plan,
-            run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
-            logs: String::new(),
-        };
-
-        // Send update asynchronously (fire and forget)
         tokio::spawn(async move {
-            let response = client.post(&endpoint).json(&payload).send().await;
-
-            match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        tracing::debug!("Successfully sent query information");
-                    } else {
-                        tracing::warn!("Failed to send query information: {}", resp.status());
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to broadcast metrics over {}: {}", endpoint, e);
-                }
-            }
+            let mut data_guard = latest_data.lock().await;
+            *data_guard = Some((plans_clone, tasks_clone));
         });
 
         Ok(())
