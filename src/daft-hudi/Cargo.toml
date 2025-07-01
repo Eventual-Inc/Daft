@@ -1,0 +1,14 @@
+[dependencies]
+daft-core = {path = "../daft-core", default-features = false}
+hudi = {git = "https://github.com/apache/hudi-rs.git", branch = "release/0.4.x"}
+
+[dev-dependencies]
+tokio = {workspace = true, features = ["full"]}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-hudi"
+version = {workspace = true}

@@ -186,6 +186,7 @@ members = [
   "src/daft-functions-utf8",
   "src/daft-functions-temporal",
   "src/daft-hash",
+  "src/daft-hudi",
   "src/daft-image",
   "src/daft-io",
   "src/daft-ir",
