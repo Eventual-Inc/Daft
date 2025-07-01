@@ -89,8 +89,16 @@ def nginx_config() -> tuple[str, pathlib.Path]:
 def retry_server_s3_config(request) -> daft.io.IOConfig:
     """Returns the URL to the local retry_server fixture."""
     retry_mode = request.param
+    # set a bogus region to avoid a weird aws sdk bug that causes it to use a previously set config instead of the new one.
+    # once we upgrade, we can try removing the region_name param
     return daft.io.IOConfig(
-        s3=daft.io.S3Config(endpoint_url="http://127.0.0.1:8001", anonymous=True, num_tries=10, retry_mode=retry_mode)
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:8001",
+            region_name="test",
+            anonymous=True,
+            num_tries=10,
+            retry_mode=retry_mode,
+        )
     )
 
 

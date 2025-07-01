@@ -129,7 +129,19 @@ impl Window {
                 .order_by
                 .iter()
                 .zip(self.window_spec.descending.iter())
-                .map(|(e, desc)| format!("{} {}", e.name(), if *desc { "DESC" } else { "ASC" }))
+                .zip(self.window_spec.nulls_first.iter())
+                .map(|((e, desc), nulls_first)| {
+                    format!(
+                        "{} {} {}",
+                        e.name(),
+                        if *desc { "DESC" } else { "ASC" },
+                        if *nulls_first {
+                            "NULLS FIRST"
+                        } else {
+                            "NULLS LAST"
+                        }
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             lines.push(format!("  Order by: [{}]", order_cols));

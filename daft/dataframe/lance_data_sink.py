@@ -39,7 +39,6 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         io_config: IOConfig | None = None,
         **kwargs: Any,
     ) -> None:
-        from daft.dependencies import pa
         from daft.io.object_store_options import io_config_to_storage_options
 
         lance = self._import_lance()
@@ -53,7 +52,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
         self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
 
-        self._pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in schema)
+        self._pyarrow_schema = schema.to_pyarrow_schema()
 
         try:
             table = lance.dataset(self._table_uri, storage_options=self._storage_options)

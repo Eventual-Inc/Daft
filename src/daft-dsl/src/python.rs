@@ -604,6 +604,17 @@ impl PyExpr {
         self.expr.hash(&mut hasher);
         hasher.finish()
     }
+
+    pub fn as_py<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        if let Expr::Literal(lit) = self.expr.as_ref() {
+            lit.clone().into_pyobject(py)
+        } else {
+            Err(PyValueError::new_err(format!(
+                "The method .py_any() was called on a non literal value! Got: {}",
+                &self.expr
+            )))
+        }
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);

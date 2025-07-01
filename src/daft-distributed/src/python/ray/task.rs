@@ -4,19 +4,45 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
-use pyo3::{pyclass, pymethods, FromPyObject, PyObject, PyResult, Python};
+use pyo3::{pyclass, pymethods, PyObject, PyResult, Python};
 
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, TaskResultHandle},
+        task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
 
+#[pyclass(module = "daft.daft", name = "RayTaskResult")]
+#[derive(Clone)]
+pub(crate) enum RayTaskResult {
+    Success(Vec<RayPartitionRef>),
+    WorkerDied(),
+    WorkerUnavailable(),
+}
+
+#[pymethods]
+impl RayTaskResult {
+    #[staticmethod]
+    fn success(ray_part_refs: Vec<RayPartitionRef>) -> Self {
+        Self::Success(ray_part_refs)
+    }
+
+    #[staticmethod]
+    fn worker_died() -> Self {
+        Self::WorkerDied()
+    }
+
+    #[staticmethod]
+    fn worker_unavailable() -> Self {
+        Self::WorkerUnavailable()
+    }
+}
+
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
-#[allow(dead_code)]
 pub(crate) struct RayTaskResultHandle {
+    task_context: TaskContext,
     /// The handle to the RaySwordfishTaskHandle
     handle: PyObject,
     /// The coroutine to await the result of the task
@@ -29,14 +55,15 @@ pub(crate) struct RayTaskResultHandle {
 
 impl RayTaskResultHandle {
     /// Create a new TaskHandle from a Python RaySwordfishTaskHandle
-    #[allow(dead_code)]
     pub fn new(
+        task_context: TaskContext,
         handle: PyObject,
         coroutine: PyObject,
         task_locals: pyo3_async_runtimes::TaskLocals,
         worker_id: WorkerId,
     ) -> Self {
         Self {
+            task_context,
             handle,
             coroutine: Some(coroutine),
             task_locals: Some(task_locals),
@@ -46,10 +73,12 @@ impl RayTaskResultHandle {
 }
 
 impl TaskResultHandle for RayTaskResultHandle {
+    fn task_context(&self) -> TaskContext {
+        self.task_context
+    }
+
     /// Get the result of the task, awaiting if necessary
-    fn get_result(
-        &mut self,
-    ) -> impl Future<Output = DaftResult<Vec<MaterializedOutput>>> + Send + 'static {
+    fn get_result(&mut self) -> impl Future<Output = TaskStatus> + Send + 'static {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
@@ -64,35 +93,47 @@ impl TaskResultHandle for RayTaskResultHandle {
 
         let worker_id = self.worker_id.clone();
         async move {
-            let materialized_result =
-                pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-            let ray_part_refs =
-                Python::with_gil(|py| materialized_result.extract::<Vec<RayPartitionRef>>(py))?;
-            let materialized_outputs = ray_part_refs
-                .into_iter()
-                .map(|ray_part_ref| {
-                    MaterializedOutput::new(
-                        Arc::new(ray_part_ref) as PartitionRef,
-                        worker_id.clone(),
-                    )
-                })
-                .collect();
-            Ok(materialized_outputs)
+            let ray_task_result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
+                .await
+                .and_then(|result| {
+                    Python::with_gil(|py| result.extract::<RayTaskResult>(py)).map_err(|e| e.into())
+                });
+
+            match ray_task_result {
+                Ok(RayTaskResult::Success(ray_part_refs)) => {
+                    let materialized_outputs = ray_part_refs
+                        .into_iter()
+                        .map(|ray_part_ref| {
+                            MaterializedOutput::new(
+                                Arc::new(ray_part_ref) as PartitionRef,
+                                worker_id.clone(),
+                            )
+                        })
+                        .collect();
+                    TaskStatus::Success {
+                        result: materialized_outputs,
+                    }
+                }
+                Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,
+                Ok(RayTaskResult::WorkerUnavailable()) => TaskStatus::WorkerUnavailable,
+                Err(e) => TaskStatus::Failed { error: e.into() },
+            }
         }
     }
 
-    fn cancel_callback(&mut self) -> DaftResult<()> {
+    fn cancel_callback(&mut self) {
         Python::with_gil(|py| {
-            self.handle.call_method0(py, "cancel")?;
-            Ok(())
-        })
+            self.handle
+                .call_method0(py, "cancel")
+                .expect("Failed to cancel task");
+        });
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef")]
-#[derive(Debug, FromPyObject)]
+#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
+#[derive(Debug, Clone)]
 pub(crate) struct RayPartitionRef {
-    pub object_ref: PyObject,
+    pub object_ref: Arc<PyObject>,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
@@ -102,7 +143,7 @@ impl RayPartitionRef {
     #[new]
     pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
         Self {
-            object_ref,
+            object_ref: Arc::new(object_ref),
             num_rows,
             size_bytes,
         }
@@ -142,7 +183,6 @@ pub(crate) struct RaySwordfishTask {
 }
 
 impl RaySwordfishTask {
-    #[allow(dead_code)]
     pub fn new(task: SwordfishTask) -> Self {
         Self { task }
     }
@@ -163,7 +203,7 @@ impl RaySwordfishTask {
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn psets(&self, py: Python) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
+    fn psets(&self) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
         let psets = self
             .task
             .psets()
@@ -178,7 +218,7 @@ impl RaySwordfishTask {
                                 .downcast_ref::<RayPartitionRef>()
                                 .expect("Failed to downcast to RayPartitionRef");
                             RayPartitionRef {
-                                object_ref: v.object_ref.clone_ref(py),
+                                object_ref: v.object_ref.clone(),
                                 num_rows: v.num_rows,
                                 size_bytes: v.size_bytes,
                             }

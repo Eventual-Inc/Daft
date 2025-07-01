@@ -28,15 +28,6 @@ impl Default for HTTPConfig {
 }
 
 impl HTTPConfig {
-    pub fn new<S: Into<ObfuscatedString>>(bearer_token: Option<S>) -> Self {
-        Self {
-            bearer_token: bearer_token.map(std::convert::Into::into),
-            ..Default::default()
-        }
-    }
-}
-
-impl HTTPConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];

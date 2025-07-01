@@ -31,32 +31,53 @@ impl PhysicalWriterFactory {
         output_file_info: OutputFileInfo<BoundExpr>,
         file_schema: SchemaRef,
         native_enabled: bool,
-        native_remote_enabled: bool,
     ) -> DaftResult<Self> {
-        let writer_type = match output_file_info.file_format {
-            FileFormat::Parquet => {
-                if native_enabled
-                    && native_parquet_writer_supported(
-                        output_file_info.file_format,
-                        &output_file_info.root_dir,
-                        &file_schema,
-                        native_remote_enabled,
-                    )?
-                {
-                    WriterType::Native
-                } else {
-                    WriterType::Pyarrow
-                }
-            }
-            FileFormat::Json if native_enabled => WriterType::Native,
-            _ => WriterType::Pyarrow,
-        };
+        let writer_type =
+            Self::select_writer_type(&output_file_info, &file_schema, native_enabled)?;
 
         Ok(Self {
             output_file_info,
             schema: file_schema,
             writer_type,
         })
+    }
+
+    /// Determines which writer type to use based on file format and configuration.
+    fn select_writer_type(
+        output_file_info: &OutputFileInfo<BoundExpr>,
+        file_schema: &SchemaRef,
+        native_enabled: bool,
+    ) -> DaftResult<WriterType> {
+        match output_file_info.file_format {
+            FileFormat::Parquet => {
+                Self::select_parquet_writer_type(output_file_info, file_schema, native_enabled)
+            }
+            FileFormat::Json => Ok(WriterType::Native), // There is only a native implementation of the JSON writer.
+            _ => Ok(WriterType::Pyarrow), // Default to PyArrow for unsupported formats.
+        }
+    }
+
+    /// Selects writer type for Parquet format.
+    fn select_parquet_writer_type(
+        output_file_info: &OutputFileInfo<BoundExpr>,
+        file_schema: &SchemaRef,
+        native_enabled: bool,
+    ) -> DaftResult<WriterType> {
+        if !native_enabled {
+            return Ok(WriterType::Pyarrow);
+        }
+
+        let native_supported = native_parquet_writer_supported(
+            output_file_info.file_format,
+            &output_file_info.root_dir,
+            file_schema,
+        )?;
+
+        if native_supported {
+            Ok(WriterType::Native)
+        } else {
+            Ok(WriterType::Pyarrow)
+        }
     }
 }
 

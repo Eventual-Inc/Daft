@@ -24,6 +24,7 @@ use crate::stats::{PlanStats, StatsState};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogicalPlan {
     Source(Source),
+    Shard(Shard),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
@@ -83,6 +84,7 @@ impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
+            Self::Shard(Shard { input, .. }) => input.schema(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
@@ -118,6 +120,7 @@ impl LogicalPlan {
     pub fn required_columns(&self) -> Vec<IndexSet<String>> {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
+            Self::Shard(..) => vec![IndexSet::new()],
             Self::Limit(..) => vec![IndexSet::new()],
             Self::Sample(..) => vec![IndexSet::new()],
             Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
@@ -171,13 +174,18 @@ impl LogicalPlan {
                 vec![res]
             }
             Self::Distinct(distinct) => {
-                let res = distinct
-                    .input
-                    .schema()
-                    .field_names()
-                    .map(ToString::to_string)
-                    .collect();
-                vec![res]
+                if let Some(on) = &distinct.columns {
+                    let res = on.iter().flat_map(get_required_columns).collect();
+                    vec![res]
+                } else {
+                    let res = distinct
+                        .input
+                        .schema()
+                        .field_names()
+                        .map(ToString::to_string)
+                        .collect();
+                    vec![res]
+                }
             }
             Self::Aggregate(aggregate) => {
                 let res = aggregate
@@ -256,6 +264,7 @@ impl LogicalPlan {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Source(..) => "Source",
+            Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
@@ -283,6 +292,7 @@ impl LogicalPlan {
     pub fn stats_state(&self) -> &StatsState {
         match self {
             Self::Source(Source { stats_state, .. })
+            | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -322,6 +332,7 @@ impl LogicalPlan {
     pub fn with_materialized_stats(self) -> Self {
         match self {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
+            Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
@@ -357,6 +368,7 @@ impl LogicalPlan {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
+            Self::Shard(shard) => shard.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::ActorPoolProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
@@ -386,6 +398,7 @@ impl LogicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
+            Self::Shard(Shard { input, .. }) => vec![input],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
@@ -416,16 +429,17 @@ impl LogicalPlan {
         match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
+                Self::Shard(Shard { sharder, .. }) => Self::Shard(Shard::new(input.clone(), sharder.clone())),
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
-                    input.clone(), projection.clone(),
-                ).unwrap()),
+                        input.clone(), projection.clone(),
+                    ).unwrap()),
                 Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
                 Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
-                Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
+                Self::Distinct(distinct) => Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
@@ -569,6 +583,7 @@ impl LogicalPlan {
     pub fn plan_id(&self) -> &Option<usize> {
         match self {
             Self::Source(Source { plan_id, .. })
+            | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
             | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
@@ -596,6 +611,7 @@ impl LogicalPlan {
     pub fn with_plan_id(self: Arc<Self>, plan_id: usize) -> Self {
         match self.as_ref() {
             Self::Source(source) => Self::Source(source.clone().with_plan_id(plan_id)),
+            Self::Shard(shard) => Self::Shard(shard.clone().with_plan_id(plan_id)),
             Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
             Self::ActorPoolProject(project) => {
                 Self::ActorPoolProject(project.clone().with_plan_id(plan_id))
@@ -711,6 +727,7 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 }
 
 impl_from_data_struct_for_logical_plan!(Source);
+impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);

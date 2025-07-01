@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import PIL.Image as pil_image
     import pyarrow as pa
+    import pyarrow.compute as pc
     import pyarrow.csv as pacsv
     import pyarrow.dataset as pads
     import pyarrow.flight as flight
@@ -26,6 +27,7 @@ else:
     pads = LazyImport("pyarrow.dataset")
     pafs = LazyImport("pyarrow.fs")
     pajson = LazyImport("pyarrow.json")
+    pc = LazyImport("pyarrow.compute")
     pq = LazyImport("pyarrow.parquet")
     flight = LazyImport("pyarrow.flight")
 
@@ -40,6 +42,7 @@ __all__ = [
     "pads",
     "pafs",
     "pajson",
+    "pc",
     "pd",
     "pil_image",
     "pq",

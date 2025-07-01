@@ -31,7 +31,6 @@ impl<T: Send + 'static> JoinSet<T> {
         handle.id()
     }
 
-    #[allow(dead_code)]
     pub async fn join_next(&mut self) -> Option<DaftResult<T>> {
         let res = self.inner.join_next().await;
         match res {
@@ -84,7 +83,6 @@ impl<T: Send + 'static> From<tokio::task::JoinSet<T>> for JoinSet<T> {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
     JoinSet::new()
 }

@@ -5,6 +5,8 @@ use daft_dsl::{estimated_selectivity, ExprRef};
 use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
 
+use crate::Sharder;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
@@ -15,11 +17,13 @@ pub struct Pushdowns {
     pub columns: Option<Arc<Vec<String>>>,
     /// Optional number of rows to read.
     pub limit: Option<usize>,
+    /// Sharding information.
+    pub sharder: Option<Sharder>,
 }
 
 impl Default for Pushdowns {
     fn default() -> Self {
-        Self::new(None, None, None, None)
+        Self::new(None, None, None, None, None)
     }
 }
 
@@ -30,12 +34,14 @@ impl Pushdowns {
         partition_filters: Option<ExprRef>,
         columns: Option<Arc<Vec<String>>>,
         limit: Option<usize>,
+        sharder: Option<Sharder>,
     ) -> Self {
         Self {
             filters,
             partition_filters,
             columns,
             limit,
+            sharder,
         }
     }
 
@@ -54,6 +60,7 @@ impl Pushdowns {
             partition_filters: self.partition_filters.clone(),
             columns: self.columns.clone(),
             limit,
+            sharder: self.sharder.clone(),
         }
     }
 
@@ -64,6 +71,7 @@ impl Pushdowns {
             partition_filters: self.partition_filters.clone(),
             columns: self.columns.clone(),
             limit: self.limit,
+            sharder: self.sharder.clone(),
         }
     }
 
@@ -74,6 +82,7 @@ impl Pushdowns {
             partition_filters,
             columns: self.columns.clone(),
             limit: self.limit,
+            sharder: self.sharder.clone(),
         }
     }
 
@@ -84,6 +93,18 @@ impl Pushdowns {
             partition_filters: self.partition_filters.clone(),
             columns,
             limit: self.limit,
+            sharder: self.sharder.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_sharder(&self, sharder: Option<Sharder>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+            sharder,
         }
     }
 
@@ -101,6 +122,9 @@ impl Pushdowns {
         }
         if let Some(limit) = self.limit {
             res.push(format!("Limit pushdown = {limit}"));
+        }
+        if let Some(sharder) = &self.sharder {
+            res.push(format!("Sharder = {sharder}"));
         }
         res
     }
@@ -132,6 +156,9 @@ impl DisplayAs for Pushdowns {
                 }
                 if let Some(limit) = self.limit {
                     sub_items.push(format!("limit: {limit}"));
+                }
+                if let Some(sharder) = &self.sharder {
+                    sub_items.push(format!("sharder: {sharder}"));
                 }
                 s.push_str(&sub_items.join(", "));
                 s.push('}');

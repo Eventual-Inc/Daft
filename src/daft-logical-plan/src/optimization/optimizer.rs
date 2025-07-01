@@ -10,11 +10,15 @@ use super::{
         EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg,
         MaterializeScans, OptimizerRule, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, ReorderJoins,
-        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitActorPoolProjects,
-        SplitGranularProjection, UnnestPredicateSubquery, UnnestScalarSubquery,
+        RewriteCountDistinct, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
+        SplitActorPoolProjects, SplitGranularProjection, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
-use crate::LogicalPlan;
+use crate::{
+    optimization::rules::{PushDownShard, ShardScans},
+    LogicalPlan,
+};
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -97,11 +101,10 @@ impl Default for OptimizerBuilder {
                 RuleBatch::new(
                     vec![
                         Box::new(LiftProjectFromAgg::new()),
+                        Box::new(RewriteCountDistinct::new()),
                         Box::new(UnnestScalarSubquery::new()),
                         Box::new(UnnestPredicateSubquery::new()),
                         Box::new(EliminateSubqueryAliasRule::new()),
-                        Box::new(SplitActorPoolProjects::new()),
-                        Box::new(DetectMonotonicId::new()),
                         Box::new(ExtractWindowFunction::new()),
                     ],
                     RuleExecutionStrategy::FixedPoint(None),
@@ -149,6 +152,27 @@ impl Default for OptimizerBuilder {
                     vec![Box::new(PushDownLimit::new())],
                     RuleExecutionStrategy::FixedPoint(Some(3)),
                 ),
+                // --- Rewrite projections ---
+                // Once optimization rules have been applied,split actor pool projects and detect monotonic IDs.
+                // By delaying these rewrite rules, we avoid having to special case optimization rules for
+                // actor pool projects and monotonically increasing ids.
+                RuleBatch::new(
+                    vec![
+                        Box::new(SplitActorPoolProjects::new()),
+                        Box::new(DetectMonotonicId::new()),
+                    ],
+                    RuleExecutionStrategy::Once,
+                ),
+                // Push down projections after rewriting projections.
+                RuleBatch::new(
+                    vec![Box::new(PushDownProjection::new())],
+                    RuleExecutionStrategy::FixedPoint(None),
+                ),
+                // --- Shard pushdowns ---
+                RuleBatch::new(
+                    vec![Box::new(PushDownShard::new())],
+                    RuleExecutionStrategy::Once,
+                ),
                 // --- Simplify expressions before scans are materialized ---
                 RuleBatch::new(
                     vec![Box::new(SimplifyExpressionsRule::new())],
@@ -157,6 +181,11 @@ impl Default for OptimizerBuilder {
                 // --- Materialize scan nodes ---
                 RuleBatch::new(
                     vec![Box::new(MaterializeScans::new())],
+                    RuleExecutionStrategy::Once,
+                ),
+                // --- Shard scans ---
+                RuleBatch::new(
+                    vec![Box::new(ShardScans::new())],
                     RuleExecutionStrategy::Once,
                 ),
                 // --- Enrich logical plan with stats ---
@@ -342,15 +371,19 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use common_error::DaftResult;
+    use common_scan_info::Pushdowns;
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
-    use daft_dsl::{lit, unresolved_col};
+    use daft_dsl::{
+        functions::{python::PythonUDF, FunctionExpr},
+        lit, resolved_col, unresolved_col, Expr,
+    };
 
-    use super::{Optimizer, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
+    use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
-        ops::{Filter, Project},
-        optimization::rules::OptimizerRule,
-        test::{dummy_scan_node, dummy_scan_operator},
+        ops::{ActorPoolProject, Filter, Project},
+        optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
+        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };
 
@@ -630,4 +663,135 @@ mod tests {
             })
         }
     }
+
+    fn get_scan_materializer_and_stats_enricher() -> Optimizer {
+        Optimizer::with_rule_batches(
+            vec![RuleBatch::new(
+                vec![
+                    Box::new(MaterializeScans::new()),
+                    Box::new(EnrichWithStats::new()),
+                ],
+                RuleExecutionStrategy::Once,
+            )],
+            OptimizerConfig::new(5),
+        )
+    }
+
+    /// Tests that Limit commutes with ActorPoolProject.
+    ///
+    /// Limit-ActorPoolProject-Source -> ActorPoolProject-Source[with_limit]
+    #[test]
+    fn limit_commutes_with_actor_pool_project() -> DaftResult<()> {
+        let limit = 5;
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+
+        // Create an actor pool project expression.
+        let actor_pool_expr = Arc::new(Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::new_testing_udf()),
+            inputs: vec![resolved_col("a").into()],
+        });
+
+        // Create a plan with Select using actor pool project followed by Limit.
+        let plan = dummy_scan_node(scan_op.clone())
+            .select(vec![actor_pool_expr.clone()])?
+            .limit(limit, false)?
+            .build();
+
+        // Expected optimized plan should have Limit pushed down.
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected.clone(),
+            // Internally, splitting an actor pool project always re-aliases the column to its original name.
+            vec![actor_pool_expr.alias("a")],
+        )?)
+        .arced();
+        let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
+        let expected = scan_materializer_and_stats_enricher
+            .optimize_with_rules(
+                scan_materializer_and_stats_enricher.rule_batches[0]
+                    .rules
+                    .as_slice(),
+                expected,
+            )?
+            .data;
+
+        // Check that the limit commutes with the actor pool project.
+        let optimizer = OptimizerBuilder::default().build();
+        let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
+        assert_eq!(
+            opt_plan,
+            expected,
+            "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
+            opt_plan.repr_ascii(false),
+            expected.repr_ascii(false)
+        );
+        Ok(())
+    }
+
+    /// Tests that Filter commutes with ActorPoolProject.
+    ///
+    /// Filter-ActorPoolProject-Source -> ActorPoolProject-Source[with_filter]
+    #[test]
+    fn filter_commutes_with_actor_pool_project() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+
+        // Create an actor pool project expression.
+        let actor_pool_expr = Arc::new(Expr::Function {
+            func: FunctionExpr::Python(PythonUDF::new_testing_udf()),
+            inputs: vec![resolved_col("a").into()],
+        });
+
+        // Create a plan with Select using actor pool project followed by Filter.
+        let plan = dummy_scan_node(scan_op.clone())
+            .select(vec![
+                resolved_col("a"),
+                actor_pool_expr.clone().alias("renamed_col"),
+            ])?
+            .filter(resolved_col("a").lt(lit(2)))?
+            .build();
+
+        // Expected optimized plan should have Filter pushed down.
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_filters(Some(resolved_col("a").lt(lit(2)))),
+        )
+        .build();
+        let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
+            expected.clone(),
+            // Internally, splitting an actor pool project always re-aliases the column to its original name.
+            vec![resolved_col("a"), actor_pool_expr.alias("renamed_col")],
+        )?)
+        .arced();
+        let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
+        let expected = scan_materializer_and_stats_enricher
+            .optimize_with_rules(
+                scan_materializer_and_stats_enricher.rule_batches[0]
+                    .rules
+                    .as_slice(),
+                expected,
+            )?
+            .data;
+
+        // Check that the filter commutes with the actor pool project.
+        let optimizer = OptimizerBuilder::default().build();
+        let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
+        assert_eq!(
+            opt_plan,
+            expected,
+            "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
+            opt_plan.repr_ascii(false),
+            expected.repr_ascii(false)
+        );
+        Ok(())
+    }
+
+    // TODO(desmond): Add tests that Filter and Limit commutes with monotonically increasing ids.
+    // We can't do this at the momente currently rewrite monotonically increasing ids to a
+    // monotonically increasing id column node that produces a column with a uuid. Moving away from
+    // string-based column matching will make this test easier to write.
 }
