@@ -9,7 +9,7 @@ use daft_logical_plan::LogicalPlanRef;
 use crate::scheduling::task::{TaskContext, TaskName};
 
 pub mod http_subscriber;
-pub use http_subscriber::{HttpSubscriber, MetricDisplayInformation, QueryGraph, QueryGraphNode};
+pub use http_subscriber::{HttpSubscriber};
 
 #[cfg(test)]
 mod http_subscriber_test;
@@ -18,8 +18,8 @@ mod http_subscriber_test;
 #[derive(Debug, Clone)]
 pub struct PlanState {
     pub plan_id: usize,
+    pub query_id: String,
     pub logical_plan: LogicalPlanRef,
-    pub description: String,
 }
 
 #[derive(Debug, Clone)]
@@ -106,16 +106,16 @@ impl StatisticsManager {
     pub fn register_plan(
         &self,
         plan_id: u32,
+        query_id: String,
         logical_plan: LogicalPlanRef,
-        description: String,
     ) -> DaftResult<()> {
         let mut plans = self.plans.lock().unwrap();
         plans.insert(
             plan_id,
             PlanState {
                 plan_id: plan_id as usize,
+                query_id,
                 logical_plan,
-                description,
             },
         );
         Ok(())

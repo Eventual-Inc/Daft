@@ -24,6 +24,7 @@ tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
 itertools.workspace = true
+uuid = {workspace = true}
 
 [features]
 python = [

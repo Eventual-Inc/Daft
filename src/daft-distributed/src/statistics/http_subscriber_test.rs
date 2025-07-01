@@ -92,8 +92,8 @@ fn create_simple_test_logical_plan() -> LogicalPlanRef {
 fn create_test_plan_state(plan_id: u32, logical_plan: LogicalPlanRef) -> PlanState {
     PlanState {
         plan_id: plan_id as usize,
+        query_id: uuid::Uuid::new_v4().to_string(),
         logical_plan,
-        description: format!("Test Plan {}", plan_id),
     }
 }
 

@@ -5,7 +5,7 @@ use std::sync::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use daft_logical_plan::LogicalPlanBuilder;
+use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -28,6 +28,7 @@ pub(crate) type PlanID = u16;
 pub(crate) struct DistributedPhysicalPlan {
     id: PlanID,
     stage_plan: StagePlan,
+    logical_plan: Arc<LogicalPlan>,
 }
 
 impl DistributedPhysicalPlan {
@@ -36,16 +37,21 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let logical_plan = builder.build();
-        let stage_plan = StagePlan::from_logical_plan(logical_plan, config)?;
+        let stage_plan = StagePlan::from_logical_plan(logical_plan.clone(), config)?;
 
         Ok(Self {
             id: PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
             stage_plan,
+            logical_plan,
         })
     }
 
     pub fn id(&self) -> PlanID {
         self.id
+    }
+
+    pub fn logical_plan(&self) -> &daft_logical_plan::LogicalPlanRef {
+        &self.logical_plan
     }
 
     pub fn stage_plan(&self) -> &StagePlan {

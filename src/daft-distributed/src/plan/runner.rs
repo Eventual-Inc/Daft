@@ -71,6 +71,9 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let plan_id = plan.id();
         let stage_plan = plan.stage_plan().clone();
 
+        let query_id = uuid::Uuid::new_v4().to_string();
+        statistics_manager.register_plan(plan_id as u32, query_id, plan.logical_plan().clone())?;
+
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);
 

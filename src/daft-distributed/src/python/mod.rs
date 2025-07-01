@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
-    statistics::StatisticsManager,
+    statistics::{HttpSubscriber, StatisticsManager, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
@@ -131,8 +131,14 @@ impl PyDistributedPhysicalPlanRunner {
                 )
             })
             .collect();
-        let statistics_manager =
-            StatisticsManager::new(vec![Box::new(FlotillaProgressBar::try_new(py)?)]);
+
+        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
+            vec![Box::new(FlotillaProgressBar::try_new(py)?)];
+        if let Ok(endpoint) = std::env::var("DAFT_DASHBOARD_URL") {
+            subscribers.push(Box::new(HttpSubscriber::new(endpoint)));
+        }
+
+        let statistics_manager = StatisticsManager::new(subscribers);
         let plan_result = self
             .runner
             .run_plan(&plan.plan, psets, statistics_manager)?;
