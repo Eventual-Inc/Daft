@@ -2530,6 +2530,7 @@ dependencies = [
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
+ "daft-physical-plan",
  "daft-schema",
  "futures",
  "indexmap 2.9.0",
