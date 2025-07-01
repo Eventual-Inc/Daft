@@ -8,6 +8,7 @@ mod explode;
 mod get;
 mod join;
 mod list_fill;
+mod list_map;
 mod max;
 mod mean;
 mod min;
@@ -39,6 +40,8 @@ pub(crate) mod series;
 pub use bool_and::*;
 use daft_dsl::functions::FunctionModule;
 pub use series::SeriesListExtension;
+
+use crate::list_map::ListMap;
 pub struct ListFunctions;
 
 impl FunctionModule for ListFunctions {
@@ -60,5 +63,6 @@ impl FunctionModule for ListFunctions {
         parent.add_fn(ListSort);
         parent.add_fn(ListSum);
         parent.add_fn(ListValueCounts);
+        parent.add_fn(ListMap);
     }
 }
