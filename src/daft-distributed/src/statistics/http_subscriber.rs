@@ -74,89 +74,197 @@ impl HttpSubscriber {
         let latest_data_clone = latest_data.clone();
 
         // Spawn interval task that sends updates every 1 second
-        let interval_handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
-            interval.tick().await; // Skip the first immediate tick
+        let interval_handle = {
+            let runtime = crate::utils::runtime::get_or_init_runtime();
+            match tokio::runtime::Handle::try_current() {
+                Ok(_) => {
+                    // We already have a runtime context, use it directly
+                    tokio::spawn(async move {
+                        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+                        interval.tick().await; // Skip the first immediate tick
 
-            loop {
-                interval.tick().await;
+                        loop {
+                            interval.tick().await;
 
-                let data_guard = latest_data_clone.lock().await;
-                if let Some((plans, tasks)) = data_guard.as_ref() {
-                    let plans_clone = plans.clone();
-                    let tasks_clone = tasks.clone();
-                    drop(data_guard); // Release lock before async work
+                            let data_guard = latest_data_clone.lock().await;
+                            if let Some((plans, tasks)) = data_guard.as_ref() {
+                                let plans_clone = plans.clone();
+                                let tasks_clone = tasks.clone();
+                                drop(data_guard); // Release lock before async work
 
-                    // Build the query graph and send the request
-                    let http_subscriber = Self::new_for_sending();
-                    let query_graph = http_subscriber.build_query_graph(&plans_clone, &tasks_clone);
+                                // Build the query graph and send the request
+                                let http_subscriber = Self::new_for_sending();
+                                let query_graph =
+                                    http_subscriber.build_query_graph(&plans_clone, &tasks_clone);
 
-                    let endpoint = format!(
-                        "{}/queries",
-                        env::var("DAFT_DASHBOARD_URL")
-                            .unwrap_or_else(|_| "http://localhost:3238/api/queries".into())
-                    );
-
-                    // Build headers
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    headers.insert(
-                        reqwest::header::CONTENT_TYPE,
-                        reqwest::header::HeaderValue::from_static("application/json"),
-                    );
-
-                    if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
-                        let auth_value = format!("Bearer {}", auth_token);
-                        if let Ok(header_value) =
-                            reqwest::header::HeaderValue::from_str(&auth_value)
-                        {
-                            headers.insert(reqwest::header::AUTHORIZATION, header_value);
-                        }
-                    }
-
-                    let client = reqwest::Client::builder()
-                        .timeout(std::time::Duration::from_secs(1))
-                        .default_headers(headers)
-                        .build()
-                        .unwrap_or_else(|_| reqwest::Client::new());
-
-                    let optimized_plan =
-                        serde_json::to_string(&query_graph).unwrap_or_else(|_| "{}".to_string());
-
-                    // Extract query ID from the first plan state, or generate a new UUID if no plans exist
-                    let query_id = plans_clone
-                        .values()
-                        .next()
-                        .map(|plan| plan.query_id.clone())
-                        .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-                    let payload = QueryPayload {
-                        id: query_id,
-                        optimized_plan,
-                        run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
-                        logs: String::new(),
-                    };
-
-                    // Send update
-                    let response = client.post(&endpoint).json(&payload).send().await;
-
-                    match response {
-                        Ok(resp) => {
-                            if resp.status().is_success() {
-                                tracing::debug!("Successfully sent query information");
-                            } else {
-                                tracing::warn!(
-                                    "Failed to send query information: {}",
-                                    resp.status()
+                                let endpoint = format!(
+                                    "{}/queries",
+                                    env::var("DAFT_DASHBOARD_URL").unwrap_or_else(|_| {
+                                        "http://localhost:3238/api/queries".into()
+                                    })
                                 );
+
+                                // Build headers
+                                let mut headers = reqwest::header::HeaderMap::new();
+                                headers.insert(
+                                    reqwest::header::CONTENT_TYPE,
+                                    reqwest::header::HeaderValue::from_static("application/json"),
+                                );
+
+                                if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
+                                    let auth_value = format!("Bearer {}", auth_token);
+                                    if let Ok(header_value) =
+                                        reqwest::header::HeaderValue::from_str(&auth_value)
+                                    {
+                                        headers
+                                            .insert(reqwest::header::AUTHORIZATION, header_value);
+                                    }
+                                }
+
+                                let client = reqwest::Client::builder()
+                                    .timeout(std::time::Duration::from_secs(1))
+                                    .default_headers(headers)
+                                    .build()
+                                    .unwrap_or_else(|_| reqwest::Client::new());
+
+                                let optimized_plan = serde_json::to_string(&query_graph)
+                                    .unwrap_or_else(|_| "{}".to_string());
+
+                                // Extract query ID from the first plan state, or generate a new UUID if no plans exist
+                                let query_id = plans_clone
+                                    .values()
+                                    .next()
+                                    .map(|plan| plan.query_id.clone())
+                                    .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+                                let payload = QueryPayload {
+                                    id: query_id,
+                                    optimized_plan,
+                                    run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
+                                    logs: String::new(),
+                                };
+
+                                // Send update
+                                let response = client.post(&endpoint).json(&payload).send().await;
+
+                                match response {
+                                    Ok(resp) => {
+                                        if resp.status().is_success() {
+                                            tracing::debug!("Successfully sent query information");
+                                        } else {
+                                            tracing::warn!(
+                                                "Failed to send query information: {}",
+                                                resp.status()
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Failed to broadcast metrics over {}: {}",
+                                            endpoint,
+                                            e
+                                        );
+                                    }
+                                }
                             }
                         }
-                        Err(e) => {
-                            tracing::warn!("Failed to broadcast metrics over {}: {}", endpoint, e);
+                    })
+                }
+                Err(_) => {
+                    // No current runtime, spawn using the distributed runtime
+                    runtime.runtime.spawn(async move {
+                        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+                        interval.tick().await; // Skip the first immediate tick
+
+                        loop {
+                            interval.tick().await;
+
+                            let data_guard = latest_data_clone.lock().await;
+                            if let Some((plans, tasks)) = data_guard.as_ref() {
+                                let plans_clone = plans.clone();
+                                let tasks_clone = tasks.clone();
+                                drop(data_guard); // Release lock before async work
+
+                                // Build the query graph and send the request
+                                let http_subscriber = Self::new_for_sending();
+                                let query_graph =
+                                    http_subscriber.build_query_graph(&plans_clone, &tasks_clone);
+
+                                let endpoint = format!(
+                                    "{}/queries",
+                                    env::var("DAFT_DASHBOARD_URL").unwrap_or_else(|_| {
+                                        "http://localhost:3238/api/queries".into()
+                                    })
+                                );
+
+                                // Build headers
+                                let mut headers = reqwest::header::HeaderMap::new();
+                                headers.insert(
+                                    reqwest::header::CONTENT_TYPE,
+                                    reqwest::header::HeaderValue::from_static("application/json"),
+                                );
+
+                                if let Ok(auth_token) = env::var("DAFT_DASHBOARD_AUTH_TOKEN") {
+                                    let auth_value = format!("Bearer {}", auth_token);
+                                    if let Ok(header_value) =
+                                        reqwest::header::HeaderValue::from_str(&auth_value)
+                                    {
+                                        headers
+                                            .insert(reqwest::header::AUTHORIZATION, header_value);
+                                    }
+                                }
+
+                                let client = reqwest::Client::builder()
+                                    .timeout(std::time::Duration::from_secs(1))
+                                    .default_headers(headers)
+                                    .build()
+                                    .unwrap_or_else(|_| reqwest::Client::new());
+
+                                let optimized_plan = serde_json::to_string(&query_graph)
+                                    .unwrap_or_else(|_| "{}".to_string());
+
+                                // Extract query ID from the first plan state, or generate a new UUID if no plans exist
+                                let query_id = plans_clone
+                                    .values()
+                                    .next()
+                                    .map(|plan| plan.query_id.clone())
+                                    .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+                                let payload = QueryPayload {
+                                    id: query_id,
+                                    optimized_plan,
+                                    run_id: env::var("DAFT_DASHBOARD_RUN_ID").ok(),
+                                    logs: String::new(),
+                                };
+
+                                // Send update
+                                let response = client.post(&endpoint).json(&payload).send().await;
+
+                                match response {
+                                    Ok(resp) => {
+                                        if resp.status().is_success() {
+                                            tracing::debug!("Successfully sent query information");
+                                        } else {
+                                            tracing::warn!(
+                                                "Failed to send query information: {}",
+                                                resp.status()
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Failed to broadcast metrics over {}: {}",
+                                            endpoint,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
                         }
-                    }
+                    })
                 }
             }
-        });
+        };
 
         Self {
             latest_data,
