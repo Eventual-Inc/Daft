@@ -196,7 +196,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_io::{IOClient, IOConfig};
+    use daft_io::{init_s3_config, IOClient, IOConfig};
     use rstest::rstest;
 
     use super::read_json_schema;
@@ -233,8 +233,7 @@ mod tests {
             compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
@@ -257,8 +256,7 @@ mod tests {
     async fn test_json_schema_local_dtypes() -> DaftResult<()> {
         let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
@@ -319,8 +317,7 @@ mod tests {
     async fn test_json_schema_local_nulls() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
@@ -345,8 +342,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
@@ -370,8 +366,7 @@ mod tests {
     async fn test_json_schema_local_max_bytes() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, Some(100), io_client, None).await?;
@@ -420,8 +415,7 @@ mod tests {
             compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        init_s3_config!(io_config);
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
