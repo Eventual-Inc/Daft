@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Generic, Protocol
 
 from daft.context import get_context
 from daft.daft import JoinSide, PyRecordBatch, ResourceRequest
+from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import overwrite_files
 from daft.io.sink import WriteResultType
@@ -588,7 +589,7 @@ class DataSinkWrite(SingleOutputInstruction, Generic[WriteResultType]):
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         result_field_name = "write_results"
         results = list(self.sink.write(iter(inputs)))
-        results_series = Series.from_pylist(results, result_field_name, pyobj="force")
+        results_series = Series.from_pylist(results, result_field_name, dtype=DataType.python())
         series_dict = {result_field_name: results_series._series}
         rb = RecordBatch._from_pyrecordbatch(PyRecordBatch.from_pylist_series(series_dict))
         mp = MicroPartition._from_record_batches([rb])

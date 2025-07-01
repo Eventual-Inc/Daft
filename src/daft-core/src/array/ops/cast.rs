@@ -1137,7 +1137,7 @@ impl PythonArray {
             DataType::Python => Ok(self.clone().into_series()),
 
             DataType::Null => {
-                // (Follow Arrow cast behaviour: turn all elements into Null.)
+                // (Follow Arrow cast behavior: turn all elements into Null.)
                 let null_array = crate::datatypes::NullArray::full_null(
                     self.name(),
                     &DataType::Null,

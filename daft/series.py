@@ -69,17 +69,21 @@ class Series:
         return s
 
     @staticmethod
-    def from_arrow(array: pa.Array | pa.ChunkedArray, name: str = "arrow_series") -> Series:
+    def from_arrow(
+        array: pa.Array | pa.ChunkedArray, name: str = "arrow_series", dtype: DataType | None = None
+    ) -> Series:
         """Construct a Series from an pyarrow array or chunked array.
 
         Args:
             array: The pyarrow (chunked) array whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
         """
         _ensure_registered_super_ext_type()
         if DataType.from_arrow_type(array.type) == DataType.python():
             # If the Arrow type is not natively supported, go through the Python list path.
-            return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
+            return Series.from_pylist(array.to_pylist(), name=name, dtype=DataType.python())
         elif isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
@@ -104,35 +108,36 @@ class Series:
     def from_pylist(
         data: list[Any],
         name: str = "list_series",
-        pyobj: Literal["allow", "disallow", "force"] = "allow",
         dtype: DataType | None = None,
+        pyobj: Literal["allow", "disallow"] = "allow",
     ) -> Series:
         """Construct a Series from a Python list.
 
-        The resulting type depends on the setting of pyobjects:
+        If `dtype` is not defined, then the resulting type depends on the setting of `pyobj`:
             - ``"allow"``: Arrow-backed types if possible, else PyObject;
             - ``"disallow"``: Arrow-backed types only, raising error if not convertible;
-            - ``"force"``: Store as PyObject types.
+        If you want to always store as PyObject types, set `dtype=daft.DataType.python()`.
 
         Args:
             data: The Python list whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
-            pyobj: Whether we want to ``"allow"`` coercion to Arrow types, ``"disallow"``
-                falling back to Python type representation, or ``"force"`` the data to only
-                have a Python type representation. Default is ``"allow"``.
             dtype: The DataType to use for the Series. If not provided, Daft will infer the
                 DataType from the data.
+            pyobj: Whether we want to ``"allow"`` coercion to Arrow types, ``"disallow"``
+                falling back to Python type representation. Default is ``"allow"``.
         """
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
 
-        if pyobj not in {"allow", "disallow", "force"}:
-            raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
+        if pyobj not in {"allow", "disallow"}:
+            raise ValueError(f"pyobj: expected either 'allow' or 'disallow', but got {pyobj})")
 
-        if pyobj == "force":
-            pys = PySeries.from_pylist(name, data, dtype=DataType.python()._dtype)
+        # If dtype is known, use it for casting directly
+        if dtype:
+            pys = PySeries.from_pylist(name, data, dtype=dtype._dtype)
             return Series._from_pyseries(pys)
 
+        # Otherwise, try to infer from parameters provided
         try:
             # Workaround: wrap list of np.datetime64 in an np.array
             #   - https://github.com/apache/arrow/issues/40580
@@ -141,16 +146,18 @@ class Series:
                 np_arr = np.array(data)
                 arrow_array = pa.array(np_arr)
             else:
-                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
+                arrow_array = pa.array(data)
             return Series.from_arrow(arrow_array, name=name)
         except pa.lib.ArrowInvalid:
             if pyobj == "disallow":
                 raise
-            pys = PySeries.from_pylist(name, data, dtype=dtype._dtype if dtype else None)
+            pys = PySeries.from_pylist(name, data)
             return Series._from_pyseries(pys)
 
     @classmethod
-    def from_numpy(cls, data: np.ndarray[Any, Any], name: str = "numpy_series") -> Series:
+    def from_numpy(
+        cls, data: np.ndarray[Any, Any], name: str = "numpy_series", dtype: DataType | None = None
+    ) -> Series:
         """Construct a Series from a NumPy ndarray.
 
         If the provided NumPy ndarray is 1-dimensional, Daft will attempt to store the ndarray
@@ -160,6 +167,8 @@ class Series:
         Args:
             data: The NumPy ndarray whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
         """
         if not isinstance(data, np.ndarray):
             raise TypeError(f"Expected a NumPy ndarray, got {type(data)}")
@@ -169,14 +178,14 @@ class Series:
             except pa.ArrowInvalid:
                 pass
             else:
-                return cls.from_arrow(arrow_array, name=name)
+                return cls.from_arrow(arrow_array, name=name, dtype=dtype)
         # TODO(Clark): Represent the tensor series with an Arrow extension type in order
         # to keep the series data contiguous.
         list_ndarray = [np.asarray(item) for item in data]
-        return cls.from_pylist(list_ndarray, name=name, pyobj="allow")
+        return cls.from_pylist(list_ndarray, name=name, dtype=dtype)
 
     @classmethod
-    def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series") -> Series:
+    def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series", dtype: DataType | None = None) -> Series:
         """Construct a Series from a pandas Series.
 
         This will first try to convert the series into a pyarrow array, then will fall
@@ -187,6 +196,8 @@ class Series:
         Args:
             data: The pandas Series whose data we wish to put in the Daft Series.
             name: The name associated with the Series; this is usually the column name.
+            dtype: The DataType to use for the Series. If not provided, Daft will infer the
+                DataType from the data.
         """
         if not isinstance(data, pd.Series):
             raise TypeError(f"expected a pandas Series, got {type(data)}")
@@ -196,20 +207,20 @@ class Series:
         except pa.ArrowInvalid:
             pass
         else:
-            return cls.from_arrow(arrow_arr, name=name)
+            return cls.from_arrow(arrow_arr, name=name, dtype=dtype)
         # Second, fall back to NumPy path. Note that .from_numpy() does _not_ fall back to
         # the pylist representation for 1D arrays and instead raises an error that we can catch.
         # We do the pylist representation fallback ourselves since the pd.Series.to_list()
         # preserves more type information for types that are not natively representable in Python.
         try:
             ndarray = data.to_numpy()
-            return cls.from_numpy(ndarray, name=name)
+            return cls.from_numpy(ndarray, name=name, dtype=dtype)
         except Exception:
             pass
         # Finally, fall back to pylist path.
         # NOTE: For element types that don't have a native Python representation,
         # a Pandas scalar object will be returned.
-        return cls.from_pylist(data.to_list(), name=name, pyobj="force")
+        return cls.from_pylist(data.to_list(), name=name, dtype=dtype if dtype else DataType.python())
 
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
@@ -225,7 +236,7 @@ class Series:
         Do not call this method directly in Python; call cast() instead.
         """
         pylist = self.to_pylist()
-        return Series.from_pylist(pylist, self.name(), pyobj="force")
+        return Series.from_pylist(pylist, self.name(), dtype=DataType.python())
 
     def _pycast_to_pynative(self, typefn: type, dtype: PyDataType) -> Series:
         """Apply Python-level casting to this Series.
@@ -239,8 +250,8 @@ class Series:
         Do not call this method directly in Python; call cast() instead.
         """
         pylist = self.to_pylist()
-        pylist = [typefn(_) if _ is not None else None for _ in pylist]
-        return Series.from_pylist(pylist, self.name(), pyobj="disallow", dtype=DataType._from_pydatatype(dtype))
+        pylist = [typefn(val) if val is not None else None for val in pylist]
+        return Series.from_pylist(pylist, self.name(), dtype=DataType._from_pydatatype(dtype))
 
     @staticmethod
     def concat(series: list[Series]) -> Series:
@@ -730,14 +741,14 @@ class Series:
                 [
                     builtins.list[Any],
                     builtins.str,
-                    Literal["allow", "disallow", "force"],
+                    Literal["allow", "disallow"],
                 ],
                 Series,
             ],
             tuple[
                 builtins.list[Any],
                 builtins.str,
-                Literal["allow", "disallow", "force"],
+                Literal["allow", "disallow"],
             ],
         ]
         | tuple[
@@ -746,7 +757,7 @@ class Series:
         ]
     ):
         if self.datatype().is_python():
-            return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
+            return (Series.from_pylist, (self.to_pylist(), self.name()))
         else:
             return (Series.from_arrow, (self.to_arrow(), self.name()))
 

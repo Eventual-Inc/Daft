@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 import daft
+from daft import DataType
 from tests.utils import ANSI_ESCAPE, TD_STYLE, TH_STYLE
 
 ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
@@ -253,9 +254,9 @@ def test_repr_html_custom_hooks():
 
     df = daft.from_pydict(
         {
-            "objects": daft.Series.from_pylist([MyObj() for _ in range(3)], pyobj="force"),
-            "np": daft.Series.from_pylist([arr for _ in range(3)], pyobj="force"),
-            "pil": daft.Series.from_pylist([img for _ in range(3)], pyobj="force"),
+            "objects": daft.Series.from_pylist([MyObj() for _ in range(3)], dtype=DataType.python()),
+            "np": daft.Series.from_pylist([arr for _ in range(3)], dtype=DataType.python()),
+            "pil": daft.Series.from_pylist([img for _ in range(3)], dtype=DataType.python()),
         }
     )
 

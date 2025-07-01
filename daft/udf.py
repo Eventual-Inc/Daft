@@ -176,19 +176,14 @@ def run_udf(
         return result_series.rename(name).cast(return_dtype)._series
     elif isinstance(results[0], list):
         result_list = [x for res in results for x in res]
-        if return_dtype == DataType.python():
-            return Series.from_pylist(result_list, name=name, pyobj="force")._series
-        else:
-            return (
-                Series.from_pylist(result_list, name=name, pyobj="allow", dtype=return_dtype).cast(return_dtype)._series
-            )
+        return Series.from_pylist(result_list, name=name, dtype=return_dtype)._series
     elif np.module_available() and isinstance(results[0], np.ndarray):  # type: ignore[attr-defined]
         np_results = cast("list[np.ndarray[Any, Any]]", results)
         result_np = np.concatenate(np_results)
-        return Series.from_numpy(result_np, name=name).cast(return_dtype)._series
+        return Series.from_numpy(result_np, name=name, dtype=return_dtype)._series
     elif pa.module_available() and isinstance(results[0], (pa.Array, pa.ChunkedArray)):
         result_pa = pa.concat_arrays(results)
-        return Series.from_arrow(result_pa, name=name).cast(return_dtype)._series
+        return Series.from_arrow(result_pa, name=name, dtype=return_dtype)._series
     else:
         raise NotImplementedError(
             f"Return type {type(results[0])} not supported for UDF {func}, expected daft.Series, list, np.ndarray, or pa.Array containing {return_dtype}"
