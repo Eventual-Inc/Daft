@@ -6,7 +6,7 @@ use std::{
 use common_error::DaftResult;
 use daft_logical_plan::LogicalPlanRef;
 
-use crate::scheduling::task::{TaskContext, TaskName};
+use crate::scheduling::task::{TaskContext, TaskName, TaskStatus};
 
 pub mod http_subscriber;
 pub use http_subscriber::HttpSubscriber;
@@ -56,7 +56,6 @@ pub(crate) enum StatisticsEvent {
     FinishedTask {
         context: TaskContext,
     },
-    // Additional events for more detailed tracking
     TaskStarted {
         context: TaskContext,
     },
@@ -74,6 +73,33 @@ pub(crate) enum StatisticsEvent {
     PlanFinished {
         plan_id: u32,
     },
+}
+
+impl From<(TaskContext, &DaftResult<TaskStatus>)> for StatisticsEvent {
+    fn from((context, result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
+        match result {
+            Ok(status) => match status {
+                TaskStatus::Success { .. } => Self::FinishedTask { context },
+                TaskStatus::Failed { error, .. } => Self::TaskFailed {
+                    context,
+                    error: error.to_string(),
+                },
+                TaskStatus::Cancelled => Self::TaskCanceled { context },
+                TaskStatus::WorkerDied => Self::TaskFailed {
+                    context,
+                    error: "Worker died".to_string(),
+                },
+                TaskStatus::WorkerUnavailable => Self::TaskFailed {
+                    context,
+                    error: "Worker unavailable".to_string(),
+                },
+            },
+            Err(e) => Self::TaskFailed {
+                context,
+                error: e.to_string(),
+            },
+        }
+    }
 }
 
 pub trait StatisticsSubscriber: Send + Sync + 'static {

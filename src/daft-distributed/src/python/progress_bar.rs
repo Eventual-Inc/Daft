@@ -6,6 +6,7 @@ use crate::{
     statistics::{StatisticsEvent, StatisticsSubscriber},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
@@ -23,10 +24,12 @@ pub(crate) struct FlotillaProgressBar {
 }
 
 impl FlotillaProgressBar {
-    pub fn try_new(py: Python) -> PyResult<Self> {
+    pub fn try_new(py: Python, use_ray_tqdm: bool) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
-        let progress_bar = progress_bar_class.call1((true,))?.extract::<PyObject>()?;
+        let progress_bar = progress_bar_class
+            .call1((use_ray_tqdm,))?
+            .extract::<PyObject>()?;
         Ok(Self {
             progress_bar_pyobject: progress_bar,
         })
@@ -91,13 +94,10 @@ impl StatisticsSubscriber for FlotillaProgressBar {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
-            StatisticsEvent::TaskFailed { context, .. } => {
-                // Treat failed tasks the same as finished for progress bar purposes
-                self.update_bar(BarId::from(context))?;
-                Ok(())
-            }
-            StatisticsEvent::TaskCanceled { context, .. } => {
-                // Treat canceled tasks the same as finished for progress bar purposes
+            // We don't care about failed tasks as they will be retried
+            StatisticsEvent::TaskFailed { .. } => Ok(()),
+            // We consider cancelled tasks as finished tasks
+            StatisticsEvent::TaskCanceled { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
