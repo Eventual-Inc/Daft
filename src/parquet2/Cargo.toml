@@ -5,7 +5,7 @@ flate2 = {version = "^1.0", optional = true, default-features = false}
 futures = {version = "0.3", optional = true}
 indexmap = {workspace = true, features = ["serde"]}
 lz4 = {version = "1.28", optional = true}
-lz4_flex = {version = "^0.9", optional = true}
+lz4_flex = {version = "^0.11", optional = true}
 parquet-format-safe = {workspace = true}
 seq-macro = {version = "0.3", default-features = false}
 serde = {version = "^1.0", features = ["derive"]}
