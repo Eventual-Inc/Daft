@@ -126,8 +126,8 @@ fn create_test_task_state(name: &str, status: TaskExecutionStatus) -> TaskState 
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_generate_node_id() {
+    #[tokio::test]
+    async fn test_generate_node_id() {
         let context = create_test_task_context(1, 2, 3, 4);
         let node_id = HttpSubscriber::generate_node_id(&context);
 
@@ -136,8 +136,8 @@ mod tests {
         assert_eq!(node_id, 66051);
     }
 
-    #[test]
-    fn test_build_query_graph_simple() {
+    #[tokio::test]
+    async fn test_build_query_graph_simple() {
         let subscriber = HttpSubscriber::new();
 
         // Create a simple logical plan
@@ -198,8 +198,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_adjacency_list_structure() {
+    #[tokio::test]
+    async fn test_adjacency_list_structure() {
         let subscriber = HttpSubscriber::new();
 
         let logical_plan = create_test_logical_plan();
@@ -255,8 +255,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_multiple_tasks_progress_aggregation() {
+    #[tokio::test]
+    async fn test_multiple_tasks_progress_aggregation() {
         let subscriber = HttpSubscriber::new();
 
         let logical_plan = create_simple_test_logical_plan();
@@ -443,8 +443,8 @@ mod tests {
         println!("═══════════════════════════════");
     }
 
-    #[test]
-    fn test_query_graph_serialization() {
+    #[tokio::test]
+    async fn test_query_graph_serialization() {
         let subscriber = HttpSubscriber::new();
 
         // Create a test logical plan
@@ -523,8 +523,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_query_payload_serialization() {
+    #[tokio::test]
+    async fn test_query_payload_serialization() {
         // Create a test QueryPayload
         let original_payload = crate::statistics::http_subscriber::QueryPayload {
             id: "test-query-123".to_string(),
@@ -555,8 +555,8 @@ mod tests {
         assert_eq!(deserialized_payload.logs, original_payload.logs);
     }
 
-    #[test]
-    fn test_node_status_serialization() {
+    #[tokio::test]
+    async fn test_node_status_serialization() {
         let test_cases = vec![
             (
                 crate::statistics::http_subscriber::NodeStatus::Created,
@@ -593,8 +593,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_metric_display_information_serialization() {
+    #[tokio::test]
+    async fn test_metric_display_information_serialization() {
         let original_metric = crate::statistics::http_subscriber::MetricDisplayInformation {
             name: "execution_time".to_string(),
             description: "Total execution time in seconds".to_string(),
@@ -623,8 +623,8 @@ mod tests {
         assert_eq!(deserialized_metric.unit, original_metric.unit);
     }
 
-    #[test]
-    fn test_complex_query_graph_with_metrics_serialization() {
+    #[tokio::test]
+    async fn test_complex_query_graph_with_metrics_serialization() {
         // Create a complex QueryGraph with metrics to test all serialization paths
         let metrics = vec![
             crate::statistics::http_subscriber::MetricDisplayInformation {
@@ -731,8 +731,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_serialization_round_trip_preserves_data() {
+    #[tokio::test]
+    async fn test_serialization_round_trip_preserves_data() {
         let subscriber = HttpSubscriber::new();
 
         // Create a comprehensive test setup
@@ -796,8 +796,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_optimized_plan_query_graph_serialization() {
+    #[tokio::test]
+    async fn test_optimized_plan_query_graph_serialization() {
         let subscriber = HttpSubscriber::new();
 
         // Create a more complex logical plan that would benefit from optimization
