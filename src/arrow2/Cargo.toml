@@ -71,7 +71,7 @@ streaming-iterator = {version = "0.1", optional = true}
 # for division/remainder optimization at runtime
 strength_reduce = {version = "0.2", optional = true}
 thiserror = {workspace = true}
-zstd = {version = "0.12", optional = true}
+zstd = {version = "0.13", optional = true}
 
 # parquet support
 [dependencies.parquet2]
