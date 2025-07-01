@@ -70,6 +70,7 @@ struct JsonWriter<B: StorageBackend> {
 
 impl<B: StorageBackend> JsonWriter<B> {
     const PATH_FIELD_NAME: &str = "path";
+    const INFLATION_FACTOR: f64 = 0.5;
 
     fn new(filename: PathBuf, partition_values: Option<RecordBatch>, storage_backend: B) -> Self {
         Self {
@@ -79,6 +80,14 @@ impl<B: StorageBackend> JsonWriter<B> {
             file_writer: None,
             bytes_written: 0,
         }
+    }
+
+    /// Estimates the number of bytes that will be written for the given data.
+    /// This is a temporary workaround since arrow-json doesn't provide bytes written or access to the underlying writer.
+    fn estimate_bytes_to_write(&self, data: &MicroPartition) -> DaftResult<usize> {
+        let base_size = data.size_bytes()?.unwrap_or(0);
+        let estimated_size = (base_size as f64 * Self::INFLATION_FACTOR) as usize;
+        Ok(estimated_size)
     }
 
     async fn create_writer(&mut self) -> DaftResult<()> {
@@ -101,7 +110,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         // TODO(desmond): This is a hack to estimate the size in bytes. Arrow-json currently doesn't support getting the
         // bytes written, nor does it allow us to access the LineDelimitedWriter's inner writer which prevents
         // us from using a counting writer. We need to fix this upstream.
-        let est_bytes_to_write = data.size_bytes()?.unwrap_or(0);
+        let est_bytes_to_write = self.estimate_bytes_to_write(&data)?;
         self.bytes_written += est_bytes_to_write;
         let record_batches = data.get_tables()?;
         let record_batches: Vec<ArrowRecordBatch> = record_batches
