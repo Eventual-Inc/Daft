@@ -220,32 +220,26 @@ pub fn try_get_concurrency(exprs: &[ExprRef]) -> Option<usize> {
 
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 /// Errors if no UDF is found
-pub fn try_get_batch_size_from_udf(exprs: &[ExprRef]) -> DaftResult<Option<usize>> {
+pub fn try_get_batch_size_from_udf(expr: &ExprRef) -> DaftResult<Option<usize>> {
     let mut projection_batch_size = None;
-    for expr in exprs {
-        let mut found_udf = false;
-        expr.apply(|e| match e.as_ref() {
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
-                ..
-            } => {
-                found_udf = true;
-                projection_batch_size = Some(*batch_size);
-                Ok(common_treenode::TreeNodeRecursion::Stop)
-            }
-            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-        })
-        .unwrap();
-        if found_udf {
-            break;
+    expr.apply(|e| match e.as_ref() {
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+            ..
+        } => {
+            projection_batch_size = Some(*batch_size);
+            Ok(common_treenode::TreeNodeRecursion::Stop)
         }
-    }
+        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+    })
+    .unwrap();
+
     if let Some(batch_size) = projection_batch_size {
         Ok(batch_size)
     } else {
         Err(DaftError::ValueError(format!(
-            "No UDF with batch size found in expressions: {:?}",
-            exprs
+            "No UDF with batch size found in expression: {:?}",
+            expr
         )))
     }
 }

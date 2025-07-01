@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration, vec};
 
 use common_error::{DaftError, DaftResult};
+use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
@@ -218,7 +219,8 @@ impl IntermediateOpState for UdfState {
 pub struct UdfOperator {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
-    concurrency: Option<usize>,
+    is_actor_pool_udf: bool,
+    concurrency: usize,
     batch_size: Option<usize>,
     memory_request: u64,
 }
@@ -231,19 +233,55 @@ impl UdfOperator {
         let num_udfs = count_udfs(&[project_unbound.clone()]);
         assert_eq!(num_udfs, 1, "Expected only one udf in an udf project");
 
-        let concurrency = try_get_concurrency(&[project_unbound.clone()]);
-        let batch_size = try_get_batch_size_from_udf(&[project_unbound.clone()])?;
-        let memory_request = get_resource_request(&[project_unbound])
+        // Determine if its an ActorPoolUDF or not
+        let exp_concurrency = try_get_concurrency(&[project_unbound.clone()]);
+        let is_actor_pool_udf = exp_concurrency.is_some();
+
+        let resource_request = get_resource_request(&[project_unbound.clone()]);
+
+        // Determine optimal parallelism
+        let max_concurrency = Self::get_optimal_allocation(resource_request.as_ref())?;
+        // If parallelism is already specified, use that
+        let concurrency = exp_concurrency.unwrap_or(max_concurrency);
+        let batch_size = try_get_batch_size_from_udf(&project_unbound)?;
+        let memory_request = resource_request
             .and_then(|req| req.memory_bytes())
             .map(|m| m as u64)
             .unwrap_or(0);
+
         Ok(Self {
             project,
             passthrough_columns,
+            is_actor_pool_udf,
             concurrency,
             batch_size,
             memory_request,
         })
+    }
+
+    // This function is used to determine the optimal allocation of concurrency and expression parallelism
+    fn get_optimal_allocation(resource_request: Option<&ResourceRequest>) -> DaftResult<usize> {
+        let num_cpus = get_compute_pool_num_threads();
+        // The number of CPUs available for the operator.
+        let available_cpus = match resource_request {
+            // If the resource request specifies a number of CPUs, the available cpus is the number of actual CPUs
+            // divided by the requested number of CPUs, clamped to (1, NUM_CPUS).
+            // E.g. if the resource request specifies 2 CPUs and NUM_CPUS is 4, the number of available cpus is 2.
+            Some(resource_request) if resource_request.num_cpus().is_some() => {
+                let requested_num_cpus = resource_request.num_cpus().unwrap();
+                if requested_num_cpus > num_cpus as f64 {
+                    Err(DaftError::ValueError(format!(
+                        "Requested {} CPUs but found only {} available",
+                        requested_num_cpus, num_cpus
+                    )))
+                } else {
+                    Ok((num_cpus as f64 / requested_num_cpus).clamp(1.0, num_cpus as f64) as usize)
+                }
+            }
+            _ => Ok(num_cpus),
+        }?;
+
+        Ok(available_cpus)
     }
 }
 
@@ -305,7 +343,7 @@ impl IntermediateOperator for UdfOperator {
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the udf
         let mut udf_handle = UdfHandle::no_handle(&self.project, &self.passthrough_columns);
-        if self.concurrency.is_some() {
+        if self.is_actor_pool_udf {
             udf_handle.create_handle()?;
         }
 
@@ -313,9 +351,7 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self
-            .concurrency
-            .unwrap_or_else(get_compute_pool_num_threads))
+        Ok(self.concurrency)
     }
 
     fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
@@ -326,3 +362,5 @@ impl IntermediateOperator for UdfOperator {
         }
     }
 }
+
+// TODO: Add test for UDFs, can't create a fake one for testing

@@ -2815,6 +2815,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-resource-request",
  "common-runtime",
  "common-scan-info",
  "common-system-info",

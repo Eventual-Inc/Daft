@@ -91,7 +91,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::UDFProject(udf) => {
                 #[cfg(feature = "python")]
                 {
-                    let batch_size = try_get_batch_size_from_udf(&[udf.project.clone()])?;
+                    let batch_size = try_get_batch_size_from_udf(&udf.project)?;
                     let memory_request = get_resource_request(&[udf.project.clone()])
                         .and_then(|req| req.memory_bytes())
                         .map(|m| m as u64)

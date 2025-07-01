@@ -714,12 +714,6 @@ impl LocalPhysicalPlan {
     pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
         let mut base = ResourceRequest::default_cpu();
         self.apply(|plan| match plan.as_ref() {
-            Self::Project(Project { projection, .. }) => {
-                if let Some(resource_request) = get_resource_request(projection) {
-                    base = base.max(&resource_request);
-                }
-                Ok(TreeNodeRecursion::Continue)
-            }
             Self::UDFProject(UDFProject { project, .. }) => {
                 if let Some(resource_request) = get_resource_request([project]) {
                     base = base.max(&resource_request);
