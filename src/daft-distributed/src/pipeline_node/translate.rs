@@ -14,9 +14,9 @@ use daft_logical_plan::{partitioning::RepartitionSpec, LogicalPlan, LogicalPlanR
 use crate::{
     pipeline_node::{
         explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
-        limit::LimitNode, local_repartition::LocalRepartitionNode, project::ProjectNode,
-        sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode,
-        DistributedPipelineNode, NodeID,
+        limit::LimitNode, project::ProjectNode, repartition::RepartitionNode, sample::SampleNode,
+        scan_source::ScanSourceNode, sink::SinkNode, unpivot::UnpivotNode, DistributedPipelineNode,
+        NodeID,
     },
     stage::StageConfig,
 };
@@ -210,7 +210,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 };
 
                 let columns = BoundExpr::bind_all(&repart_spec.by, &repartition.input.schema())?;
-                LocalRepartitionNode::new(
+                RepartitionNode::new(
                     &self.stage_config,
                     node_id,
                     columns,

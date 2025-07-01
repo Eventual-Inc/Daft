@@ -1051,10 +1051,11 @@ pub fn physical_plan_to_pipeline(
             columns,
             num_partitions,
             stats_state,
-            ..
+            schema,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let repartition_op = RepartitionSink::new(columns.clone(), *num_partitions);
+            let repartition_op =
+                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
             BlockingSinkNode::new(
                 Arc::new(repartition_op),
                 child_node,

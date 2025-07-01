@@ -43,9 +43,9 @@ impl StagePlanBuilder {
             | LogicalPlan::Explode(_)
             | LogicalPlan::ActorPoolProject(_)
             | LogicalPlan::Unpivot(_)
-            | LogicalPlan::Limit(_) => Ok(TreeNodeRecursion::Continue),
+            | LogicalPlan::Limit(_)
+            | LogicalPlan::Repartition(_) => Ok(TreeNodeRecursion::Continue),
             LogicalPlan::Sort(_)
-            | LogicalPlan::Repartition(_)
             | LogicalPlan::Distinct(_)
             | LogicalPlan::Aggregate(_)
             | LogicalPlan::Window(_)
@@ -150,9 +150,7 @@ impl StagePlanBuilder {
                         // until we hit a stage boundary (e.g., a HashJoin)
                         if matches!(
                             node.as_ref(),
-                            LogicalPlan::Join(_)
-                                | LogicalPlan::Aggregate(_)
-                                | LogicalPlan::Repartition(_)
+                            LogicalPlan::Join(_) | LogicalPlan::Aggregate(_)
                         ) {
                             let ph = PlaceHolderInfo::new(
                                 node.schema(),

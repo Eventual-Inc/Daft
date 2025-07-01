@@ -2512,6 +2512,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-schema",
  "futures",
+ "indexmap 2.9.0",
  "itertools 0.14.0",
  "pyo3",
  "pyo3-async-runtimes",

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_runtime::get_compute_pool_num_threads;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -27,13 +28,18 @@ impl RepartitionState {
         }
     }
 
-    fn finalize(&mut self, columns: &[BoundExpr], num_partitions: usize) -> DaftResult<()> {
+    fn finalize(
+        &mut self,
+        columns: &[BoundExpr],
+        num_partitions: usize,
+        schema: SchemaRef,
+    ) -> DaftResult<()> {
         let Self::Accumulating(ref mut parts) = self else {
             // If we're already in the Done state, don't do anything
             return Ok(());
         };
 
-        let concated = MicroPartition::concat(parts)?;
+        let concated = MicroPartition::concat_or_empty(parts, schema)?;
         let reparted = concated.partition_by_hash(columns, num_partitions)?;
 
         *self = Self::Done(reparted);
@@ -42,7 +48,7 @@ impl RepartitionState {
 
     fn emit(&mut self) -> Option<MicroPartition> {
         let Self::Done(ref mut reparted) = self else {
-            panic!("AggregateSink should be in Done state");
+            panic!("RepartitionSink should be in Done state");
         };
 
         reparted.pop()
@@ -58,13 +64,15 @@ impl BlockingSinkState for RepartitionState {
 pub struct RepartitionSink {
     columns: Arc<Vec<BoundExpr>>,
     num_partitions: usize,
+    schema: SchemaRef,
 }
 
 impl RepartitionSink {
-    pub fn new(columns: Vec<BoundExpr>, num_partitions: usize) -> Self {
+    pub fn new(columns: Vec<BoundExpr>, num_partitions: usize, schema: SchemaRef) -> Self {
         Self {
             columns: Arc::new(columns),
             num_partitions,
+            schema,
         }
     }
 }
@@ -93,11 +101,12 @@ impl BlockingSink for RepartitionSink {
     ) -> BlockingSinkFinalizeResult {
         let columns = self.columns.clone();
         let num_partitions = self.num_partitions;
+        let schema = self.schema.clone();
 
         spawner
             .spawn(
                 async move {
-                    let _ = states
+                    let mut repart_states = states
                         .iter_mut()
                         .map(|state| {
                             let repart_state = state
@@ -105,19 +114,17 @@ impl BlockingSink for RepartitionSink {
                                 .downcast_mut::<RepartitionState>()
                                 .expect("RepartitionSink should have RepartitionState");
 
-                            repart_state.finalize(&columns, num_partitions)
+                            repart_state
                         })
-                        .collect::<DaftResult<Vec<_>>>()?;
+                        .collect::<Vec<_>>();
 
-                    let all_parts = states
+                    for repart_state in &mut repart_states {
+                        repart_state.finalize(&columns, num_partitions, schema.clone())?;
+                    }
+
+                    let all_parts = repart_states
                         .iter_mut()
-                        .map(|state| {
-                            let repart_state = state
-                                .as_any_mut()
-                                .downcast_mut::<RepartitionState>()
-                                .expect("RepartitionSink should have RepartitionState");
-                            repart_state.emit()
-                        })
+                        .map(|repart_state| repart_state.emit())
                         .collect::<Option<Vec<_>>>();
 
                     if let Some(all_parts) = all_parts {

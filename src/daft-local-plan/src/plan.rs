@@ -70,9 +70,9 @@ pub enum LocalPhysicalPlan {
     WindowOrderByOnly(WindowOrderByOnly),
 
     // Flotilla Only Nodes
+    Repartition(Repartition),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
-    Repartition(Repartition),
 }
 
 impl LocalPhysicalPlan {
