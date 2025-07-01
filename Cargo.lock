@@ -326,7 +326,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "chrono-tz",
- "comfy-table 6.2.0",
+ "comfy-table",
  "criterion",
  "crossbeam-channel",
  "csv",
@@ -1709,24 +1709,13 @@ dependencies = [
 
 [[package]]
 name = "comfy-table"
-version = "6.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e959d788268e3bf9d35ace83e81b124190378e4c91c9067524675e33394b8ba"
-dependencies = [
- "strum 0.24.1",
- "strum_macros 0.24.3",
- "unicode-width 0.1.14",
-]
-
-[[package]]
-name = "comfy-table"
 version = "7.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a65ebfec4fb190b6f90e944a817d60499ee0744e582530e2c9900a22e591d9a"
 dependencies = [
  "crossterm",
  "unicode-segmentation",
- "unicode-width 0.2.1",
+ "unicode-width",
 ]
 
 [[package]]
@@ -1751,7 +1740,7 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
- "comfy-table 7.1.4",
+ "comfy-table",
  "indexmap 2.9.0",
  "pyo3",
  "terminal_size",
@@ -1927,7 +1916,7 @@ dependencies = [
  "encode_unicode",
  "libc",
  "once_cell",
- "unicode-width 0.2.1",
+ "unicode-width",
  "windows-sys 0.59.0",
 ]
 
@@ -2405,7 +2394,7 @@ dependencies = [
  "bincode",
  "chrono",
  "chrono-tz",
- "comfy-table 7.1.4",
+ "comfy-table",
  "common-arrow-ffi",
  "common-display",
  "common-error",
@@ -3043,7 +3032,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow2",
- "comfy-table 7.1.4",
+ "comfy-table",
  "common-arrow-ffi",
  "common-display",
  "common-error",
@@ -4640,7 +4629,7 @@ dependencies = [
  "console",
  "number_prefix",
  "portable-atomic",
- "unicode-width 0.2.1",
+ "unicode-width",
  "web-time",
 ]
 
@@ -7478,12 +7467,6 @@ checksum = "57bd81eb48f4c437cadc685403cad539345bf703d78e63707418431cecd4522b"
 
 [[package]]
 name = "strum"
-version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
-
-[[package]]
-name = "strum"
 version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
@@ -7500,19 +7483,6 @@ dependencies = [
  "heck 0.3.3",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "strum_macros"
-version = "0.24.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e385be0d24f186b4ce2f9982191e7101bb737312ad61c1f2f984f34bcf85d59"
-dependencies = [
- "heck 0.4.1",
- "proc-macro2",
- "quote",
- "rustversion",
  "syn 1.0.109",
 ]
 
@@ -7712,7 +7682,7 @@ checksum = "c13547615a44dc9c452a8a534638acdf07120d4b6847c8178705da06306a3057"
 dependencies = [
  "smawk",
  "unicode-linebreak",
- "unicode-width 0.2.1",
+ "unicode-width",
 ]
 
 [[package]]
@@ -8311,12 +8281,6 @@ name = "unicode-segmentation"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
-
-[[package]]
-name = "unicode-width"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "unicode-width"

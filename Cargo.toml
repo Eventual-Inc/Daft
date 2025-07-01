@@ -227,7 +227,7 @@ base64 = "0.22.1"
 bytes = "1.8.0"
 chrono = "0.4.38"
 chrono-tz = "0.10.0"
-comfy-table = "7.1.1"
+comfy-table = "7.1.4"
 common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
